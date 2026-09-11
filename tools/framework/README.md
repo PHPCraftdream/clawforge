@@ -20,6 +20,11 @@ The gateway image, Docker, WSL, SSH, and provider credentials belong to the depl
 framework does not bundle OpenClaw or any provider key. Read the repository documentation
 for transport requirements, archive profiles, set artifacts, and the security model.
 
+Provider setup is provider-agnostic: put `<PROVIDER>_API_KEY` in the target's
+`config/.env`, then run `clawforge configure-provider`. Use `--provider <id> --env <VAR>`
+when the provider uses a custom variable name; URLs, adapters and model catalogues stay in
+`config/desired-state.json`.
+
 ## MCP
 
 The project-local servers are named `clawforge` (OpenClaw's channel bridge) and

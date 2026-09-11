@@ -169,7 +169,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `cli-start` | — | Start the persistent CLI container: `cli`/`mcp-serve` then exec into it instead of paying create/destroy per call |
 | `cli-stop` | — | Stop and remove the persistent CLI container |
 | `apply-config` | `[--dry-run] [--break-lock]` | Apply `config/desired-state.json`, overwriting hand edits to `openclaw.json` |
-| `configure-provider` | `[--force]` | Configure the provider from the key in `config/.env`; the key never enters `openclaw.json` |
+| `configure-provider` | `[--provider <id>] [--env <VAR>] [--force]` | Configure any provider from a target-side SecretRef; key values never enter `openclaw.json` |
 | `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--store <name>] [--force]` | The manifest of required secrets, the template, the local store of values |
 | `backup` | `[--profile full\|migrate\|share] [--hot]` | Snapshot the data directory; the gateway is stopped for the duration by default |
 | `restore` | `[<archive>] [--force] [--fresh-identity] [--no-start] [--break-lock]` | Restore an archive; the structural check runs before anything is stopped, the secrets check before anything is started |
@@ -224,6 +224,25 @@ leaves room for a native installation, but no such setup exists.
 What is unverified says so on purpose: the code is written and covered by checks, which is
 not the same thing as a scenario that has run.
 
+
+### Source layout
+
+The TypeScript source is grouped by responsibility. Each source directory has at most
+seven direct entries; checks are grouped the same way, so a module and its regressions stay
+near their theme without creating a flat catalogue.
+
+- `tools/framework/core`: shared types, environment, paths and output
+- `tools/framework/runtime`: deployment, transport, runtime and lock handling
+- `tools/framework/service`: archives, inspection, OpenClaw integration and secrets
+- `tools/framework/integration`: gates, scaffolding and MCP setup
+- `tools/framework/commands`: lifecycle, orchestration, management, sets and interface
+- `tools/framework/set`: artifact and ownership concerns
+- `tools/checks`: foundation, runtime, integration, security, sets and release checks
+
+Run `npm run format:check` for the native TypeScript check and Oxlint before opening a
+change. Public modules and exported functions use short TsDoc comments that describe their
+contract; implementation comments are kept to the decision they explain.
+
 ### What is checked without an instance
 
 ```bash
@@ -232,11 +251,11 @@ not the same thing as a scenario that has run.
 
 | File | What it covers |
 | --- | --- |
-| `paths.check.ts` | 48 translations between the four coordinate systems |
-| `archive.check.ts` | absolute paths, `..`, links pointing outside (symlink and hard link), consistency of the `share` profile |
-| `arguments.check.ts` | argument declarations, MCP schemas, the reverse mapping back to argv |
-| `deploy.check.ts` | what a server delivery contains: what travels and what stays, and that it refuses to mirror a tree that is not a checkout |
-| `transport-listing.check.ts` | `listFiles`: a real local tree (no separator leaks into a target path, directories are not files) and what the remote implementations make of `find` output |
+| `foundation/core/paths.check.ts` | 48 translations between the four coordinate systems |
+| `foundation/core/archive.check.ts` | absolute paths, `..`, links pointing outside (symlink and hard link), consistency of the `share` profile |
+| `foundation/core/arguments.check.ts` | argument declarations, MCP schemas, the reverse mapping back to argv |
+| `runtime/service/deploy.check.ts` | what a server delivery contains: what travels and what stays, and that it refuses to mirror a tree that is not a checkout |
+| `integration/mcp/transport-listing.check.ts` | `listFiles`: a real local tree (no separator leaks into a target path, directories are not files) and what the remote implementations make of `find` output |
 | `secrets.check.ts` | masking of secrets in diagnostics, including a failing child process |
 | `ssh-quoting.check.ts` | a remote script survives ssh joining its arguments into one line — checked against a real `sh` |
 | `verify.check.ts` | a fatal structural finding rejects an archive before unpacking, not after |
@@ -375,7 +394,7 @@ What cannot be mirrored at all is a short list, and each entry says why:
 | `help` | a client already holds the text: every tool's description is the same summary and details `help <command>` prints, from the same declaration |
 | `--app <name>` | it settles which deployment the server serves when the client launches it; switching mid-session would change what every other tool refers to |
 
-The list lives in `MCP_EXEMPTIONS` (`framework/mcp-server.ts`) rather than in prose, and
+The list lives in `MCP_EXEMPTIONS` (`framework/integration/mcp-server.ts`) rather than in prose, and
 `mcp-mirror.check.ts` compares the two real surfaces against it — so a command added without
 a tool, or a tool without a command, fails `./clawforge check` rather than being noticed later.
 
@@ -510,7 +529,7 @@ repository.
 
 Pinning the reasoning level per model is not possible in OpenClaw — it comes from
 `agents.defaults.thinkingDefault`; a declaration can also carry the provider parameter
-`params.reasoning_effort`, which Z.AI accepts directly (`low|high|max`).
+`params.reasoning_effort`, when the selected provider accepts it.
 
 ## Data
 
@@ -527,15 +546,22 @@ All state lives in bind mounts on the host (`/srv/openclaw/data` by default), ow
 
 ### Model provider
 
+Provider credentials are configured by their OpenClaw provider id and a target-side
+SecretRef. The usual convention is `<PROVIDER>_API_KEY`; any non-empty variable with that
+suffix opts into that provider. The convention is overrideable for providers with a
+custom variable name:
+
 ```bash
-echo 'ZAI_API_KEY=<key>' >> /srv/openclaw/data/config/.env
-./clawforge configure-provider
+printf 'OPENAI_API_KEY=<key>\n' >> /srv/openclaw/data/config/.env
+./clawforge configure-provider --provider openai --env OPENAI_API_KEY
 ./clawforge up
 ```
 
-Onboarding runs with `--secret-input-mode ref`, so only a reference to an environment
-variable lands in `openclaw.json`. The key stays in `config/.env` — that is what makes the
-deployment reproducible.
+The command writes only `{ "source": "env", "id": "OPENAI_API_KEY" }` to
+`models.providers.openai.apiKey`; the key remains in `config/.env`. Provider base URLs,
+API adapters and model catalogues belong in `config/desired-state.json`, so the same
+provider setup can be reviewed and applied on every target. This supports built-in and
+custom OpenClaw providers without a provider-specific framework table.
 
 ### Secrets: manifest, template, store
 
@@ -813,5 +839,5 @@ ClawForge is dual-licensed under the MIT License or the Apache License, Version 
 * [OpenClaw documentation — Docker](https://docs.openclaw.ai/install/docker)
 * [Environment variables](https://docs.openclaw.ai/help/environment)
 * [The `openclaw mcp serve` bridge](https://docs.openclaw.ai/cli/mcp)
-* [Z.AI provider](https://docs.openclaw.ai/providers/zai)
+* [OpenClaw provider configuration](https://docs.openclaw.ai/providers)
 * [openclaw/openclaw repository](https://github.com/openclaw/openclaw)

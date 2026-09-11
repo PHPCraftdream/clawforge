@@ -17,8 +17,14 @@ consists of one host's paths, its keys and its snapshots, which is exactly what 
 committed. A fresh clone therefore starts with `./clawforge new-app <name>`.
 
 ```
-tools/framework/          transport, path bridge, runtime, recipes, CLI, MCP + every command
-  docker-compose.yml      the service definition, shared by every deployment
+tools/framework/          package metadata and shared service definition
+  core/                    types, environment, paths and output
+  runtime/                 deployment, transport, runtime and locks
+  service/                 archives, inspection, OpenClaw integration and secrets
+  integration/             gates, scaffolding and MCP setup
+  commands/                lifecycle, orchestration, management, sets and interface
+  set/                     artifact and ownership modules
+  docker-compose.yml       the service definition, shared by every deployment
 tools/clawforge.ts               the gate: picks a deployment and hands over to the framework
 apps/openclaw/            git-ignored: one host's configuration
   app.ts                  which service is managed and which commands are available
@@ -31,7 +37,7 @@ apps/openclaw/            git-ignored: one host's configuration
 `docker-compose.yml` lives inside `tools/framework/` rather than at the repository root, so
 that it ends up in the npm package if the framework is ever installed as a dependency in
 someone else's repository instead of being used colocated as in this checkout (see the
-notes in `env.ts`/`deployment.ts`).
+notes in `core/env.ts`/`runtime/deployment.ts`).
 
 ## Why the boundary runs here
 
@@ -84,15 +90,15 @@ another deployment's keys.
 ## The second distribution route: the framework as an npm dependency
 
 Everything above describes monorepo mode: the framework and `apps/` in one checkout. The
-framework has a second, independent entry point — `tools/framework/bin.ts` (after the build,
-`dist/bin.js`) — which is installed as an npm package into someone else's repository and
+framework has a second, independent entry point — `tools/framework/entry/bin.ts` (after the build,
+`dist/entry/bin.js`) — which is installed as an npm package into someone else's repository and
 works with exactly one deployment at that repository's root, with no `apps/<name>`: there
 is nowhere for neighbours to come from there. Both entry points share one dispatcher
 (`cli.ts`), so the command set cannot drift; what differs is only what genuinely is
 different: `tools/clawforge.ts` resolves `apps/<name>` from the monorepo root (`monorepoRoot`,
-`env.ts`), `bin.ts` resolves the single deployment from its own `cwd`; `new-app`
-(scaffold.ts) generates a declaration with a relative import into `tools/framework/`,
-`init` (init.ts) with a package-specifier import (`@clawforge/framework/app`), because
+`core/env.ts`), `entry/bin.ts` resolves the single deployment from its own `cwd`; `new-app`
+(integration/scaffold.ts) generates a declaration with a relative import into `tools/framework/`,
+`init` (integration/init.ts) with a package-specifier import (`@clawforge/framework/app`), because
 outside the monorepo the relative path does not exist.
 
 The practical flow, and why packaging raw `.ts` does not work, are in the README, under
@@ -112,7 +118,7 @@ for a file name.
 This is also what makes the MCP surface a *mirror* rather than a subset. Everything `./clawforge`
 can do from a terminal is offered as a tool, including the commands that run before a
 deployment exists (`check`, `new-app`/`init`) — those are declared as `GateCommand`s
-(framework/gate.ts) for exactly this reason: the gate needs dispatch and help, the server
+(framework/integration/gate.ts) for exactly this reason: the gate needs dispatch and help, the server
 needs a schema, and a capability that only one of them knows about is how a surface drifts.
 
 Two shapes of the same capability are allowed where the console behaviour cannot be a tool
@@ -122,7 +128,7 @@ on anything that is neither mirrored nor listed. The promise is checked, not ass
 
 ## Problem codes are a public contract
 
-`framework/inspection.ts` holds a table of codes — `CONFIG_DRIFT`, `SECRET_MISSING`,
+`framework/service/inspection.ts` holds a table of codes — `CONFIG_DRIFT`, `SECRET_MISSING`,
 `RESTART_REQUIRED`, `RECIPE_MIRROR_DRIFT`, `AGENT_MISSING`, `MCP_SERVER_MISSING`,
 `CRON_DRIFT`, `GATEWAY_DOWN`, `GATEWAY_UNHEALTHY`, `LOCK_MISSING`, `LOCK_DRIFT` — and each
 carries its severity and the command that resolves it. Six commands read that one table:

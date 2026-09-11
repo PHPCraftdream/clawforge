@@ -93,7 +93,7 @@ P1 — исправить до заявления о готовности MCP и
 
 **Файлы:** `docker-compose.yml`, `.env.example`, `tools/openclaw2.ts`,
 `tools/framework/{scaffold,context,deployment,runtime-docker,recipe}.ts`,
-`tools/framework/commands/{recipe,secrets}.ts`.
+`tools/framework/commands/{management/recipe,management/secrets}.ts`.
 
 **Приёмка:** два временных развёртывания имеют разные ресурсы; остановка одного
 не затрагивает второе; одинаковый рецепт получает разные Compose projects;
@@ -120,7 +120,7 @@ P1 — исправить до заявления о готовности MCP и
   в диагностике ошибок дочерних процессов, включая аргументы onboarding.
 
 **Файлы:** `tools/framework/{cli,context,env,transport,runtime-docker}.ts`,
-`tools/framework/commands/{bootstrap,provider}.ts`.
+`tools/framework/commands/{lifecycle/bootstrap,management/provider}.ts`.
 
 **Приёмка:** сценарии отсутствующего `.env`, пустого токена и существующего токена;
 первый вызов runtime получает актуальные значения; повторный bootstrap сохраняет токен
@@ -151,8 +151,8 @@ P1 — исправить до заявления о готовности MCP и
 - Если `pull --share` отклоняет архив, учесть обе созданные копии: backup и snapshot.
   Не оставлять отклонённый файл с обозначением пригодного для передачи.
 
-**Файлы:** `tools/framework/archive.ts`,
-`tools/framework/commands/{backup,verify,restore,state,secrets}.ts`.
+**Файлы:** `tools/framework/service/archive.ts`,
+`tools/framework/commands/{lifecycle/backup,lifecycle/verify,lifecycle/restore,lifecycle/state,management/secrets}.ts`.
 
 **Приёмка:** разрешённый share-архив принимается; архив с известным секретом отклоняется;
 ошибка сканирования не даёт успеха; нестандартное имя каталога проверяется корректно;
@@ -177,7 +177,7 @@ P1 — исправить до заявления о готовности MCP и
   должен разрешать неинтерактивное выполнение без дополнительного скрытого требования `force`.
 
 **Файлы:** `tools/framework/{app,cli,mcp-server}.ts`,
-`tools/framework/commands/index.ts` и парсеры соответствующих команд.
+`tools/framework/commands/interface/index.ts` и парсеры соответствующих команд.
 
 **Приёмка:** `profile: "share"`, `store: "prod"` и `path` со пробелами доходят до команды
 без потери структуры; неверные типы и неизвестные параметры отклоняются;
@@ -204,7 +204,7 @@ CLI и MCP выбирают одинаковые действия; destructive-�
   продолжает обрабатывать следующий запрос после ошибки.
 
 **Файлы:** `tools/framework/{mcp-server,cli,context,transport,runtime-docker}.ts`,
-`tools/framework/commands/{mcp,recipe}.ts`.
+`tools/framework/commands/{management/mcp,management/recipe}.ts`.
 
 **Приёмка:** через stdio пройти initialize → tools/list → tools/call;
 каждая строка stdout является сообщением протокола даже при выводе дочернего процесса;
@@ -229,7 +229,7 @@ CLI и MCP выбирают одинаковые действия; destructive-�
 - Использовать общее экранирование удалённых аргументов. Проверять зависимости и версию
   Node до изменения серверных файлов; проверить поведение без интерактивного терминала.
 
-**Файлы:** `tools/framework/commands/deploy.ts`,
+**Файлы:** `tools/framework/commands/management/deploy.ts`,
 `tools/framework/{transport,scaffold,deployment}.ts`.
 
 **Приёмка:** локальная проверка состава доставки и argv с поддельными секретами;

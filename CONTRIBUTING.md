@@ -10,6 +10,7 @@ Use Node.js 22.6 or newer. From the repository root:
 ```bash
 npm install
 npm test
+npm run format:check
 npm run build
 npm run pack:check
 ```
@@ -26,6 +27,9 @@ archives, snapshots, MCP client settings, or deployment data.
 
 Changes to archive extraction, remote commands, MCP dispatch, credentials, ownership, or
 confirmation behavior need a focused regression check and a security review.
+
+`tsgo` provides the fast native TypeScript check and Oxlint keeps the source consistent.
+Run `npm run format:check` before sending a change; generated `dist/` files stay ignored.
 
 ## Licensing contributions
 

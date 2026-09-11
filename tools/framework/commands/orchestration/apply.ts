@@ -1,0 +1,365 @@
+// `./clawforge apply` — run the plan, then check the result.
+//
+// "Applied" and "working" are different claims, and the weaker one is the easy one to make:
+// every step returned successfully, so the command reports success, and the instance is
+// still broken for a reason none of the steps was looking at. This command makes the
+// stronger claim — it inspects again afterwards and reports what it found, so the answer a
+// coder gets is about the instance rather than about the steps.
+//
+// It refuses a plan whose declaration changed while it was being read. That is the cheap
+// half of concurrency safety: it does not stop two people applying at once, but it does
+// stop the far more ordinary case of applying steps that were chosen for a different
+// version of the repository.
+
+import { log, info, warn, die } from "../../core/log.ts";
+import { emit, isCaptured } from "../../core/output.ts";
+import { computePlan } from "./plan.ts";
+import { gatherInspection } from "./inspect.ts";
+import { currentComposition, declarationChecksum } from "../management/lock.ts";
+import { isHealthy, nextActions, PROBLEM_CODES } from "../../service/inspection.ts";
+import { applyConfig } from "./config.ts";
+import { secrets } from "../management/secrets.ts";
+import { up, restart } from "../lifecycle/lifecycle.ts";
+import { provisionAgent, removeOwnedObject } from "../management/provision-agent.ts";
+import type { OwnedKind } from "../../set/ownership/ledger.ts";
+import { Journal, snapshotConfig, newOperationId } from "../../service/operations.ts";
+import { takeLock } from "../../runtime/instance-lock.ts";
+import { withSetSource } from "../../set/artifacts/source.ts";
+import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback } from "../../set/artifacts/install.ts";
+import type { PlanAction, Plan } from "./plan.ts";
+import type { Context } from "../../core/context.ts";
+
+/** How each executable step is actually performed. Commands are called directly rather than
+ *  by shelling out to `./clawforge`: the step already knows which function it means, and going back
+ *  out through the dispatcher would lose the Context, the output sink and the error. */
+const RUNNERS: Record<string, (ctx: Context, action: PlanAction) => Promise<void>> = {
+  secrets: (ctx) => secrets(ctx, ["--apply"]),
+  "apply-config": (ctx) => applyConfig(ctx, []),
+  up: (ctx) => up(ctx, []),
+  restart: (ctx) => restart(ctx, []),
+};
+
+function runnerFor(action: PlanAction): ((ctx: Context, action: PlanAction) => Promise<void>) | undefined {
+  if (action.id.startsWith("provision-agent:")) {
+    const recipe = action.id.slice("provision-agent:".length);
+    return (ctx) => provisionAgent(ctx, [recipe]);
+  }
+  if (action.id.startsWith("remove-owned:")) {
+    // "remove-owned:<kind>:<name>" — the agent case never reaches here: planActions marks it
+    // advisory, and runSteps skips advisory actions before asking for a runner at all.
+    const rest = action.id.slice("remove-owned:".length);
+    const separator = rest.indexOf(":");
+    const kind = rest.slice(0, separator) as OwnedKind;
+    const name = rest.slice(separator + 1);
+    return (ctx) => removeOwnedObject(ctx, kind, name);
+  }
+  return RUNNERS[action.id];
+}
+
+export interface StepOutcome {
+  readonly id: string;
+  readonly status: "done" | "failed" | "skipped";
+  readonly detail?: string;
+}
+
+export interface ApplyOutcome {
+  readonly deployment: string;
+  /** The journal entry this run wrote — the same id the configuration snapshot and the MCP
+   *  result carry, so "what happened in that operation" has one answer. */
+  readonly operationId: string;
+  readonly changed: boolean;
+  readonly healthy: boolean;
+  readonly steps: StepOutcome[];
+  readonly problems: readonly { readonly code: string; readonly detail: string }[];
+  readonly nextActions: string[];
+}
+
+/** Runs the executable steps in order, stopping at the first failure.
+ *
+ *  Stopping is the point. The steps depend on each other — a restart after a configuration
+ *  that failed to apply would put the instance back on exactly what it was already running,
+ *  and reporting the later steps as successful would describe an instance nobody has. What
+ *  did not run is reported as skipped rather than omitted, so the answer says where it got
+ *  to. */
+export async function runSteps(
+  ctx: Context,
+  actions: readonly PlanAction[],
+  journal?: Journal,
+): Promise<StepOutcome[]> {
+  const outcomes: StepOutcome[] = [];
+  let stopped = false;
+
+  const record = async (outcome: StepOutcome): Promise<void> => {
+    outcomes.push(outcome);
+    // Written as each step finishes, not once at the end: a run that is killed mid-way is
+    // exactly the case the journal exists for, and a record assembled afterwards would be
+    // lost with it.
+    await journal?.step(outcome.id, outcome.status, outcome.detail);
+  };
+
+  for (const action of actions) {
+    if (action.advisory === true) {
+      await record({ id: action.id, status: "skipped", detail: "advisory: for you to do, not this command" });
+      continue;
+    }
+    if (stopped) {
+      await record({ id: action.id, status: "skipped", detail: "an earlier step failed" });
+      continue;
+    }
+
+    const runner = runnerFor(action);
+    if (runner === undefined) {
+      await record({ id: action.id, status: "skipped", detail: "no runner for this step" });
+      continue;
+    }
+
+    log(`step: ${action.summary}`);
+    try {
+      await runner(ctx, action);
+      await record({ id: action.id, status: "done" });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      await record({ id: action.id, status: "failed", detail });
+      stopped = true;
+    }
+  }
+
+  return outcomes;
+}
+
+export async function apply(ctx: Context, args: string[]): Promise<void> {
+  return applyWithSource(ctx, args);
+}
+
+/** With --set, the declaration and the recipe files come from the artifact for the whole run:
+ *  planning AND every step. Unpacking only for the plan would compute steps from the artifact
+ *  and then execute them against the working tree — an install that reports the set's id while
+ *  having mirrored somebody's uncommitted edits. */
+async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
+  const index = args.indexOf("--set");
+  if (index === -1) return applyFromSource(ctx, args);
+
+  const artifact = args[index + 1] ?? die("--set needs an artifact path");
+  return withUnpackedArtifact(artifact, (staging, verified) =>
+    withSetSource(staging, async () => {
+      if (args.includes("--dry-run")) return applyFromSource(ctx, args);
+      const operationId = newOperationId("apply");
+      const held = await takeLock(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock") });
+      try {
+        await storeArtifactForRollback(artifact, verified);
+        await applyFromSource(ctx, args, operationId);
+        await recordInstalledSet(ctx, verified.manifest, verified.id);
+      } finally {
+        await held.release();
+      }
+    }),
+  );
+}
+
+async function applyFromSource(ctx: Context, args: string[], heldOperationId?: string): Promise<void> {
+  const jsonOnly = args.includes("--json");
+  const dryRun = args.includes("--dry-run");
+  const breakLock = args.includes("--break-lock");
+  let expected: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--json" || arg === "--dry-run" || arg === "--break-lock") continue;
+    if (arg === "--set") {
+      // Consumed by applyWithSource above; skipped here so its value is not read as a flag.
+      index += 1;
+      continue;
+    }
+    if (arg === "--expect") {
+      expected = args[index + 1] ?? die("--expect needs a declaration checksum");
+      index += 1; // the value, consumed here so the loop does not read it as a flag
+      continue;
+    }
+    die(`unknown argument: ${arg}`);
+  }
+
+  const plan = await computePlan(ctx);
+
+  // The declaration a caller planned against, if it named one. Checked before any step runs:
+  // the value of the refusal is entirely in it happening first.
+  if (expected !== undefined && expected !== plan.declarationChecksum) {
+    die(
+      "the declaration changed after that plan was computed — the steps in it were chosen " +
+        "for a different version of this repository.\n" +
+        `planned against ${expected}, now ${plan.declarationChecksum}\n` +
+        "Look at the current one and apply that: ./clawforge plan",
+    );
+  }
+
+  if (dryRun) {
+    emitOrPrint(jsonOnly, plan, () => {
+      log(`${plan.actions.length} step(s) would run — nothing was applied`);
+      for (const action of plan.actions) info(`  ${action.advisory === true ? "(you)" : action.command}`);
+    });
+    return;
+  }
+
+  const executable = plan.actions.filter((action) => action.advisory !== true);
+  if (executable.length === 0) {
+    // Nothing to record: an operation that changes nothing does not need a journal entry,
+    // and writing one for every no-op apply would bury the runs that did something.
+    //
+    // But it still ends the same way as a run that did work. Returning here before the
+    // blocking check was half a fix, and half is worse than none for a command whose own
+    // help promises the stronger claim: an unhealthy gateway with nothing for the plan to
+    // do reported success and exited zero.
+    const outcome = await confirm(
+      ctx,
+      plan,
+      plan.actions.map((action) => ({ id: action.id, status: "skipped" as const, detail: "advisory" })),
+      false,
+      "(none)",
+    );
+    report(jsonOnly, outcome, "nothing to apply");
+    failOnRemainder(blockingRemainder(outcome.problems), outcome);
+    return;
+  }
+
+  // The lock first, and the journal only once it is held. A run refused here never started,
+  // so it must not leave a record that reads as one: an entry with no outcome means "began
+  // and we do not know how it ended", which is the state worth noticing, and filling the
+  // journal with refusals would drown it.
+  //
+  // Held for the whole run rather than per step: what this prevents happens between the
+  // steps — one run restarting the instance while another is halfway through provisioning
+  // against it.
+  const operationId = heldOperationId ?? newOperationId("apply");
+  const held = heldOperationId === undefined ? await takeLock(ctx, "apply", operationId, { breakLock }) : undefined;
+
+  let journal: Journal;
+  let steps: StepOutcome[];
+  let outcome: ApplyOutcome;
+  let failedStep: StepOutcome | undefined;
+  let snapshot: string | undefined;
+  let remaining: readonly { readonly code: string; readonly detail: string }[] = [];
+
+  try {
+    if (declarationChecksum(await currentComposition(ctx)) !== plan.declarationChecksum) {
+      die("the declaration changed while preparing this apply — compute a new plan");
+    }
+    journal = await Journal.open(ctx, "apply", plan.deployment, operationId);
+    // Before the first mutating step, not after one fails: a copy taken afterwards would be
+    // a copy of the damage.
+    snapshot = await snapshotConfig(ctx, journal.id);
+    if (snapshot !== undefined) await journal.noteSnapshot(snapshot);
+
+    steps = await runSteps(ctx, plan.actions, journal);
+    failedStep = steps.find((step) => step.status === "failed");
+    outcome = await confirm(ctx, plan, steps, steps.some((step) => step.status === "done"), journal.id);
+
+    // Every step succeeding is not the claim this command makes. What it promises is that
+    // the instance is now what the repository declares — so the confirming inspection has
+    // the last word, and a run that ends with something blocking is a failed run whatever
+    // its steps returned. Recorded that way too: a journal entry reading "succeeded" beside
+    // an instance running an unapplied declaration is worse than no entry.
+    remaining = blockingRemainder(outcome.problems);
+
+    await journal.close(
+      failedStep === undefined && remaining.length === 0 ? "succeeded" : "failed",
+      failedStep !== undefined
+        ? `stopped at "${failedStep.id}": ${failedStep.detail ?? "no detail"}`
+        : remaining.length === 0
+          ? undefined
+          : `every step ran, but the instance still reports ${remaining.map((entry) => entry.code).join(", ")}`,
+    );
+  } finally {
+    await held?.release();
+  }
+
+  report(jsonOnly, outcome, undefined);
+
+  if (failedStep !== undefined) {
+    throw new Error(
+      `step "${failedStep.id}" failed: ${failedStep.detail ?? "no detail"}\n` +
+        `The instance is left as that step found it. What ran, and what did not: ` +
+        `./clawforge operations ${journal.id}\n` +
+        (snapshot === undefined
+          ? "No configuration snapshot was taken, so there is nothing to roll back to."
+          : `Put the previous configuration back: ./clawforge rollback --operation ${journal.id}`),
+    );
+  }
+
+  failOnRemainder(remaining, outcome);
+}
+
+/** The one place both paths end. A run that leaves the instance not doing its job is a
+ *  failed run, whether it executed ten steps or none — which is the difference between
+ *  "applied" and "working", and the only reason this command inspects afterwards at all. */
+function failOnRemainder(
+  remaining: readonly { readonly code: string; readonly detail: string }[],
+  outcome: ApplyOutcome,
+): void {
+  if (remaining.length === 0) return;
+  throw new Error(
+    `the instance is not what this repository declares: ${remaining.map((entry) => entry.code).join(", ")}\n` +
+      `${remaining.map((entry) => `  ${entry.code}  ${entry.detail}`).join("\n")}\n` +
+      `Next: ${outcome.nextActions.join(", ")}`,
+  );
+}
+
+/** Which codes mean "not doing its job". Derived from the one table rather than listed here
+ *  again, so a code added there is covered without anyone remembering to come back. */
+const BLOCKING = new Set(
+  Object.entries(PROBLEM_CODES)
+    .filter(([, meaning]) => meaning.severity === "blocking")
+    .map(([code]) => code),
+);
+
+/** What the confirming inspection found that still means the instance is not what the
+ *  repository declares.
+ *
+ *  Exported so the rule can be checked on its own: reaching it through apply() would need a
+ *  planner, an inspector and a target, and the rule — "the inspection afterwards has the
+ *  last word, not the steps" — is the entire fix. */
+export function blockingRemainder(
+  problems: readonly { readonly code: string; readonly detail: string }[],
+): readonly { readonly code: string; readonly detail: string }[] {
+  return problems.filter((entry) => BLOCKING.has(entry.code));
+}
+
+/** The stronger claim: inspect again and report what the instance actually is now. */
+async function confirm(ctx: Context, plan: Plan, steps: StepOutcome[], changed: boolean, operationId: string): Promise<ApplyOutcome> {
+  const after = await gatherInspection(ctx);
+  return {
+    deployment: plan.deployment,
+    operationId,
+    changed,
+    healthy: isHealthy(after),
+    steps,
+    problems: after.problems.map((entry) => ({ code: entry.code, detail: entry.detail })),
+    nextActions: nextActions(after.problems),
+  };
+}
+
+function emitOrPrint(jsonOnly: boolean, payload: unknown, print: () => void): void {
+  if (jsonOnly || isCaptured()) {
+    emit(`${JSON.stringify(payload, null, 2)}\n`);
+    return;
+  }
+  print();
+}
+
+function report(jsonOnly: boolean, outcome: ApplyOutcome, headline: string | undefined): void {
+  emitOrPrint(jsonOnly, outcome, () => {
+    if (headline !== undefined) log(`${outcome.deployment}: ${headline}`);
+    for (const step of outcome.steps) {
+      if (step.status === "done") info(`done     ${step.id}`);
+      else if (step.status === "failed") warn(`failed   ${step.id}: ${step.detail ?? ""}`);
+      else info(`skipped  ${step.id}${step.detail === undefined ? "" : ` (${step.detail})`}`);
+    }
+
+    // What the instance is now, not what the steps returned.
+    if (outcome.healthy && outcome.problems.length === 0) {
+      log(`${outcome.deployment} is what this repository declares`);
+      return;
+    }
+    log(`${outcome.problems.length} problem(s) remain`);
+    for (const entry of outcome.problems) warn(`${entry.code}  ${entry.detail}`);
+    if (outcome.nextActions.length > 0) info(`next: ${outcome.nextActions.join(", ")}`);
+  });
+}

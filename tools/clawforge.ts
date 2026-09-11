@@ -13,15 +13,15 @@
 
 import { resolve } from "node:path";
 import { access } from "node:fs/promises";
-import { main } from "./framework/cli.ts";
-import { runGateCommand, gateHelpLines, type GateCommand } from "./framework/gate.ts";
-import { reportError } from "./framework/log.ts";
-import { monorepoRoot } from "./framework/env.ts";
-import { useDeployment } from "./framework/deployment.ts";
-import { createApp } from "./framework/scaffold.ts";
-import { safeName } from "./framework/names.ts";
-import { openclawCommands } from "./framework/commands/index.ts";
-import type { AppDefinition } from "./framework/app.ts";
+import { main } from "./framework/entry/cli.ts";
+import { runGateCommand, gateHelpLines, type GateCommand } from "./framework/integration/gate.ts";
+import { reportError } from "./framework/core/log.ts";
+import { monorepoRoot } from "./framework/core/env.ts";
+import { useDeployment } from "./framework/runtime/deployment.ts";
+import { createApp } from "./framework/integration/scaffold.ts";
+import { safeName } from "./framework/core/names.ts";
+import { openclawCommands } from "./framework/commands/interface/index.ts";
+import type { AppDefinition } from "./framework/core/app.ts";
 
 const argv = process.argv.slice(2);
 

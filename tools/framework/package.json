@@ -22,12 +22,12 @@
   },
   "type": "module",
   "bin": {
-    "clawforge": "dist/bin.js"
+    "clawforge": "dist/entry/bin.js"
   },
   "exports": {
-    "./app": "./dist/app.js",
-    "./mounts": "./dist/mounts.js",
-    "./commands": "./dist/commands/index.js"
+    "./app": "./dist/core/app.js",
+    "./mounts": "./dist/runtime/mounts.js",
+    "./commands": "./dist/commands/interface/index.js"
   },
   "files": [
     "dist",

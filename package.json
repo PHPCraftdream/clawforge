@@ -9,7 +9,15 @@
     "check": "node --experimental-strip-types tools/clawforge.ts check",
     "test": "npm run check",
     "build": "node --experimental-strip-types tools/build-framework-package.ts",
+    "typecheck": "tsgo --noEmit",
+    "lint": "oxlint tools --deny-warnings",
+    "format:check": "npm run typecheck && npm run lint",
     "pack:check": "cd tools/framework && npm pack --dry-run --json"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.21",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "oxlint": "1.74.0"
   },
   "engines": {
     "node": ">=22.6.0"

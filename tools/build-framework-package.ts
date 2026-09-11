@@ -67,7 +67,7 @@ async function build(): Promise<void> {
 
     // The source shebang picks --experimental-strip-types for the raw-.ts case; the
     // compiled output is plain JS and needs none of that.
-    const finalContent = rel === "bin.js"
+    const finalContent = rel === "entry/bin.js"
       ? rewritten.replace(/^#!.*\n/, "#!/usr/bin/env node\n")
       : rewritten;
 

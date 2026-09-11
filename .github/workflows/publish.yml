@@ -1,0 +1,85 @@
+name: Publish ClawForge
+
+# The first release is made with the NPM_TOKEN secret. The OIDC path is prepared for a
+# later Trusted Publisher and stays unavailable until its repository variable is enabled.
+on:
+  workflow_dispatch:
+    inputs:
+      publish_mode:
+        description: "How to authenticate the publish"
+        required: true
+        type: choice
+        options:
+          - token
+          - trusted-publisher
+        default: token
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the selected release ref
+        uses: actions/checkout@v4
+
+      - name: Require a version tag
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: exit 1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify package contents
+        run: npm run pack:check
+
+  publish-token:
+    needs: verify
+    if: ${{ inputs.publish_mode == 'token' }}
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Check out the selected release ref
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish with the NPM_TOKEN secret
+        working-directory: tools/framework
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+  publish-trusted-publisher:
+    needs: verify
+    if: ${{ inputs.publish_mode == 'trusted-publisher' && vars.CLAWFORGE_ENABLE_TRUSTED_PUBLISHER == 'true' }}
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Check out the selected release ref
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish with npm Trusted Publisher
+        working-directory: tools/framework
+        run: npm publish --provenance --access public

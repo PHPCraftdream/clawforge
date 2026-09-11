@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Entry point for the ClawForge tooling that manages OpenClaw.
+#
+# The only shell file left by design: it runs before Node, so it cannot be TypeScript.
+# It finds a usable Node and hands over to tools/clawforge.ts — nothing else.
+#
+# It deliberately does NOT require Linux. The tooling can run on the Windows Node and
+# reach the target through wsl.exe; which transport is used is decided in TypeScript,
+# not here. Prerequisites are the user's responsibility — this installs nothing.
+#
+#   ./clawforge <command> [options]
+
+set -Eeuo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -t 2 ]]; then
+  C_RED=$'\033[31m'; C_YELLOW=$'\033[33m'; C_DIM=$'\033[2m'; C_OFF=$'\033[0m'
+else
+  C_RED=''; C_YELLOW=''; C_DIM=''; C_OFF=''
+fi
+
+fail() { printf '%s\n' "${C_RED}error:${C_OFF} $*" >&2; }
+hint() { printf '%s\n' "${C_DIM}    $*${C_OFF}" >&2; }
+
+# Candidates in preference order. A Linux Node talks to the target directly; the Windows
+# Node reaches it through wsl.exe. Both are supported.
+node_bin=""
+for candidate in node /usr/local/bin/node "/c/Program Files/nodejs/node.exe" "/mnt/c/Program Files/nodejs/node.exe"; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    node_bin="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$node_bin" ]]; then
+  fail "node not found (Node 22.6 or newer is required)."
+  printf '\n%s\n' "${C_YELLOW}Install Node, then run this again.${C_OFF}" >&2
+  hint "Without sudo:  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install 24"
+  hint "With sudo:     curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt-get install -y nodejs"
+  hint "On Windows:    https://nodejs.org/en/download"
+  exit 1
+fi
+
+node_version="$("$node_bin" -e 'process.stdout.write(process.versions.node)' 2>/dev/null || echo 0.0.0)"
+node_major="${node_version%%.*}"
+node_minor="$(printf '%s' "$node_version" | cut -d. -f2)"
+
+# TypeScript is executed directly (type stripping): 22.6+ behind a flag, 23+ by default.
+if (( node_major < 22 || (node_major == 22 && node_minor < 6) )); then
+  fail "node $node_version is too old — 22.6 or newer is required to run TypeScript directly."
+  exit 1
+fi
+
+node_args=()
+if (( node_major == 22 )); then
+  node_args+=(--experimental-strip-types)
+fi
+
+script_path="$REPO_ROOT/tools/clawforge.ts"
+
+# A Windows Node cannot open a POSIX path like /d/dev/... or /mnt/d/dev/..., so the script
+# path is translated explicitly. Automatic MSYS path conversion is switched off instead of
+# relied upon, because it would also mangle user arguments such as /srv/openclaw/data.
+#
+# The platform is asked of Node itself rather than guessed from the file name: in Git Bash
+# the Windows build sits on PATH as plain `node`, with no .exe suffix to match on.
+node_platform="$("$node_bin" -e 'process.stdout.write(process.platform)' 2>/dev/null || echo unknown)"
+if [[ "$node_platform" == "win32" ]]; then
+  if command -v cygpath >/dev/null 2>&1; then
+    script_path="$(cygpath -w "$script_path")"
+  elif command -v wslpath >/dev/null 2>&1; then
+    script_path="$(wslpath -w "$script_path")"
+  fi
+fi
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL="*"
+
+exec "$node_bin" "${node_args[@]}" "$script_path" "$@"

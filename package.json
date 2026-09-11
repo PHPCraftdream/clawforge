@@ -1,0 +1,17 @@
+{
+  "name": "clawforge-framework-repository",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Development repository for the @clawforge/framework package.",
+  "license": "(MIT OR Apache-2.0)",
+  "type": "module",
+  "scripts": {
+    "check": "node --experimental-strip-types tools/clawforge.ts check",
+    "test": "npm run check",
+    "build": "node --experimental-strip-types tools/build-framework-package.ts",
+    "pack:check": "cd tools/framework && npm pack --dry-run --json"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  }
+}

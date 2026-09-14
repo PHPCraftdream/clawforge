@@ -23,7 +23,7 @@ import { log, info, warn, die } from "../../core/log.ts";
 import { emit, isCaptured } from "../../core/output.ts";
 import { recipesDir, deploymentName } from "../../runtime/deployment.ts";
 import { openclawCliJson } from "../../service/openclaw-cli.ts";
-import { recipeServerContainerPath } from "../management/provision-agent.ts";
+import { recipeServerContainerPath, mcpServerMatches } from "../management/provision-agent.ts";
 import type { Context } from "../../core/context.ts";
 import { withUnpackedArtifact } from "../../set/artifacts/install.ts";
 import type { VerifiedArtifact } from "../../set/artifacts/install.ts";
@@ -288,10 +288,15 @@ export async function runCheck(ctx: Context, recipe: string, check: AcceptanceCh
         const agents = await openclawCliJson<Array<{ id: string }>>(ctx, ["agents", "list", "--json"]);
         if (!agents.some((entry) => entry.id === agentId)) return fail(`the instance has no agent "${agentId}"`);
 
-        const servers = await openclawCliJson<Record<string, unknown>>(ctx, ["mcp", "list", "--json"]);
-        return server in servers
-          ? pass(`agent "${agentId}" and MCP server "${server}" are both registered`)
-          : fail(`MCP server "${server}" is not registered, so agent "${agentId}" cannot call it`);
+        const servers = await openclawCliJson<Record<string, { command?: unknown; args?: unknown }>>(ctx, ["mcp", "list", "--json"]);
+        const entry = servers[server];
+        if (entry === undefined) return fail(`MCP server "${server}" is not registered, so agent "${agentId}" cannot call it`);
+        // A name present says nothing about whether it still launches the recipe's own
+        // server.ts — a hand-edited or stale command registers cleanly and answers nothing.
+        if (!mcpServerMatches(entry, recipe)) {
+          return fail(`MCP server "${server}" is registered but its command does not match recipe "${recipe}" — it will not serve the recipe's tools`);
+        }
+        return pass(`agent "${agentId}" and MCP server "${server}" are both registered`);
       }
 
       case "cron_matches": {

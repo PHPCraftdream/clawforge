@@ -241,6 +241,13 @@ check(
 check("providerIsLocalEndpoint is true for a localhost baseUrl", providerIsLocalEndpoint({ models: { providers: { lmstudio: { baseUrl: "http://localhost:1234" } } } }, "lmstudio"), true);
 check("providerIsLocalEndpoint is false for a remote baseUrl", providerIsLocalEndpoint({ models: { providers: { custom: { baseUrl: "https://api.example.com" } } } }, "custom"), false);
 check("providerIsLocalEndpoint is false when there is no baseUrl at all", providerIsLocalEndpoint({ models: { providers: { zai: {} } } }, "zai"), false);
+// Regression: Node normalizes a literal IPv6 loopback host to "[::1]" (bracketed), not "::1".
+check(
+  "a loopback provider on IPv6 ([::1]) needs no apiKey either",
+  await requirements(makeCtx({ config: { models: { providers: { lmstudio: { baseUrl: "http://[::1]:1234/v1" } } } } })),
+  [],
+);
+check("providerIsLocalEndpoint is true for an IPv6 loopback baseUrl", providerIsLocalEndpoint({ models: { providers: { lmstudio: { baseUrl: "http://[::1]:1234" } } } }, "lmstudio"), true);
 
 // The convention fallback itself must still fire for the one case it exists for: a provider
 // present in models.providers or auth.profiles with nothing at all said about credentials.

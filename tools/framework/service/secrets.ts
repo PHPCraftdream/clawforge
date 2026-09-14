@@ -171,7 +171,9 @@ export function providerIsLocalEndpoint(config: unknown, providerId: string): bo
   if (typeof baseUrl !== "string") return false;
   try {
     const hostname = new URL(baseUrl).hostname;
-    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+    // Node normalizes a literal IPv6 host to the bracketed form ("[::1]"), not "::1" —
+    // confirmed directly: new URL("http://[::1]:1234").hostname === "[::1]".
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
   } catch {
     return false;
   }

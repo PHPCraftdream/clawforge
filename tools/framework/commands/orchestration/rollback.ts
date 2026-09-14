@@ -86,6 +86,36 @@ async function rollbackSet(ctx: Context, args: string[]): Promise<void> {
   info("reversed together: prompts, MCP server registrations, schedules, gateway settings — everything the set declares");
   info("left alone: an agent's own memory, and anything else written to the data directory since — this is a set install, not a data restore");
 
+  // Reinstalling the previous set below only ever SETS the paths ITS OWN desired-state.json
+  // declares — apply-config is a batch config set, never an unset, and CONFIG_DRIFT is only
+  // ever computed over declared paths. A setting the CURRENT set added that the previous one
+  // never declared (agents.defaults.thinkingDefault, say) is invisible to both and survives
+  // untouched. The apply that installed the current set already took a full snapshot of the
+  // live config before its first mutating step (every apply does, via snapshotConfig) — the
+  // same mechanism the single-file rollback path above restores from. Putting that back first
+  // undoes exactly what that apply changed, additions included, before the previous set's own
+  // declaration is reapplied on top. latestRollbackable is the newest operation with such a
+  // snapshot — in the ordinary case (nothing else applied since) that is exactly the apply
+  // that installed the current set, the same default the single-file path already uses when
+  // not told which operation to undo.
+  const priorApply = await latestRollbackable(ctx);
+  if (priorApply?.configSnapshot !== undefined && (await ctx.transport.exists(priorApply.configSnapshot))) {
+    const configJournal = await Journal.open(ctx, "rollback", deploymentName());
+    const configHeld = await takeLock(ctx, `rollback of ${priorApply.id}`, configJournal.id, { breakLock: args.includes("--break-lock") });
+    try {
+      const live = `${ctx.settings.dataDir}/config/openclaw.json`;
+      log(`putting back the configuration from before ${priorApply.id}, so nothing the current set added is left behind`);
+      await ctx.transport.writeFile(live, await ctx.transport.readFile(priorApply.configSnapshot));
+      await configJournal.step("restore-config", "done", `from ${priorApply.configSnapshot}`);
+      // No restart here: the reinstall below runs its own plan against this now-stale-on-disk
+      // config, which detects RESTART_REQUIRED (config mtime after the container's own start)
+      // the same way any other unrestarted write would, and restarts once as part of it.
+      await configJournal.close("succeeded", `restored the configuration from before ${priorApply.id} as part of rollback --set`);
+    } finally {
+      await configHeld.release();
+    }
+  }
+
   await withUnpackedArtifact(artifact, async (_staging, verified) => {
     if (verified.id !== previous.id) die("the rollback artifact does not match the recorded previous set");
     await apply(ctx, [...args, "--set", artifact]);

@@ -406,7 +406,12 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
 
       case "tools/call": {
         const params = request.params ?? {};
-        const name = String(params.name ?? "");
+        // Never String(params.name ?? "") — an object whose toString is not callable (e.g.
+        // {"toString": null}) makes String() throw ("Cannot convert object to primitive
+        // value"), and nothing here catches it: the whole process would exit, answering
+        // neither this request nor any queued after it. Anything not already a string is
+        // simply not a valid tool name, reported the same way as any other unknown one.
+        const name = typeof params.name === "string" ? params.name : "";
         const args = (params.arguments ?? {}) as Record<string, unknown>;
         const entry = tools.find(([toolName]) => toolName === name);
 

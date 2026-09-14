@@ -139,6 +139,17 @@ try {
   assert.equal((await readInstalledSet(ctx))?.id, built.id);
   assert.equal(files.get(`${sourceData}/workspace/MEMORY.md`), "keep me");
 
+  // The "second" set just rolled back from declared agents.defaults.name, which "lifecycle"
+  // (the one just reinstalled) never did — apply-config is additive only (a batch config
+  // set, never an unset), so reinstalling "lifecycle" alone would leave that key in place.
+  const restoredConfig = JSON.parse(files.get(`${sourceData}/config/openclaw.json`) ?? "{}");
+  assert.equal(
+    restoredConfig?.agents?.defaults?.name,
+    undefined,
+    "rollback --set must undo a setting the newer set added but the older one never declared",
+  );
+  assert.equal(restoredConfig?.gateway?.mode, "local", "the previous set's own declared settings are still in force after rollback");
+
   const dependencies = {
     findFreePort: async () => 24567,
     createContext: async () => { lastTryDir = deploymentDir(); return context(parseEnv(await readFile(envFile(), "utf8"))); },
@@ -179,6 +190,22 @@ try {
   const evidence = await listReceipts(next.id);
   assert.equal(evidence.length, 4, "success, startup failure, teardown failure and kept trials each leave evidence");
   assert.ok(evidence.every((receipt) => receipt.verdict === "not-verified"), "empty acceptance never certifies a set");
+
+  // --- apply --set must refuse before recording a set whose required image the runtime
+  // does not run, not record it as installed with nothing said about the mismatch. -------
+  {
+    const beforeMismatch = await readInstalledSet(ctx);
+    const mismatchedCtx = context({ ...baseEnv, OPENCLAW_IMAGE: "fixture@sha256:def" });
+    const mismatched = await captured(() => apply(mismatchedCtx, ["--set", next.artifact, "--json"]));
+    assert.match(mismatched.error?.message ?? "", /cannot be installed here/);
+    assert.match(mismatched.error?.message ?? "", /fixture@sha256:def/);
+    assert.equal(
+      (await readInstalledSet(ctx))?.id,
+      beforeMismatch?.id,
+      "a refused apply --set must not overwrite the previously-installed set",
+    );
+  }
+
   process.stderr.write("all set lifecycle checks passed\n");
 } finally {
   if (previousDeployment !== undefined) useDeployment(previousDeployment);

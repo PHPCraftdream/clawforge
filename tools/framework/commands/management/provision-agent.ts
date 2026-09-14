@@ -171,15 +171,36 @@ export function agentsAddArgv(config: AgentConfig): string[] {
   return ["agents", "add", config.agentId, "--workspace", agentWorkspaceContainerDir(config.agentId), "--non-interactive", "--json"];
 }
 
+/** The command and args a recipe's MCP server registration should run — the one place both
+ *  mcpAddArgv() (what registers it) and mcpServerMatches() (what checks it is still that)
+ *  read from, so they cannot drift apart from each other. */
+export function mcpServerSpec(recipeName: string): { command: string; args: string[] } {
+  return { command: "node", args: ["--experimental-strip-types", recipeServerContainerPath(recipeName)] };
+}
+
 export function mcpAddArgv(config: AgentConfig, recipeName: string): string[] {
+  const spec = mcpServerSpec(recipeName);
   return [
     "mcp", "add", config.mcpServerName,
-    "--command", "node",
-    "--arg", "--experimental-strip-types",
-    "--arg", recipeServerContainerPath(recipeName),
+    "--command", spec.command,
+    ...spec.args.flatMap((arg) => ["--arg", arg]),
     "--parallel",
     "--no-probe",
   ];
+}
+
+/** Whether a live "mcp list --json" entry still launches the recipe's own server. Per
+ *  OpenClaw's own registry (docs.openclaw.ai/cli/mcp/registry), a stdio entry carries its
+ *  launch command under "command" and "args" — exactly what mcpAddArgv() sends via
+ *  --command/--arg. A name being registered at all says nothing about whether it still
+ *  points at a working command; this is what lets ensureMcpServer() tell "present and
+ *  correct" apart from "present and broken". */
+export function mcpServerMatches(entry: { command?: unknown; args?: unknown } | undefined, recipeName: string): boolean {
+  if (entry === undefined) return false;
+  const spec = mcpServerSpec(recipeName);
+  if (entry.command !== spec.command) return false;
+  if (!Array.isArray(entry.args) || entry.args.length !== spec.args.length) return false;
+  return entry.args.every((value, index) => value === spec.args[index]);
 }
 
 export function cronAddArgv(config: AgentConfig, cronMessage: string): string[] {
@@ -309,11 +330,21 @@ export async function ensureAgent(ctx: Context, config: AgentConfig): Promise<bo
   return true;
 }
 
-export async function ensureMcpServer(ctx: Context, config: AgentConfig, recipeName: string): Promise<boolean> {
-  const servers = await openclawCliJson<Record<string, unknown>>(ctx, ["mcp", "list", "--json"]);
-  if (Object.prototype.hasOwnProperty.call(servers, config.mcpServerName)) return false;
+/** Reconciled the same way ensureCronJob() already is: a registration present under a
+ *  command that no longer matches the recipe (hand-edited, or left over from a renamed
+ *  server.ts) is replaced rather than left broken and silently reported as fine. */
+export async function ensureMcpServer(ctx: Context, config: AgentConfig, recipeName: string): Promise<"created" | "replaced" | "unchanged"> {
+  const servers = await openclawCliJson<Record<string, { command?: unknown; args?: unknown }>>(ctx, ["mcp", "list", "--json"]);
+  const existing = servers[config.mcpServerName];
+  if (existing !== undefined) {
+    if (mcpServerMatches(existing, recipeName)) return "unchanged";
+    log(`MCP server "${config.mcpServerName}" is registered with a different command than the recipe declares — replacing it`);
+    await openclawCli(ctx, mcpUnsetArgv(config.mcpServerName));
+    await openclawCli(ctx, mcpAddArgv(config, recipeName));
+    return "replaced";
+  }
   await openclawCli(ctx, mcpAddArgv(config, recipeName));
-  return true;
+  return "created";
 }
 
 /** Reconciled rather than merely created: a job whose schedule, message, timeout or
@@ -491,8 +522,8 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
     } else {
       await updateOwnedPromptFiles(ctx, bundle.config.agentId, Object.keys(bundle.promptFiles));
     }
-    const mcpCreated = await ensureMcpServer(ctx, bundle.config, recipeName);
-    if (mcpCreated) await recordOwned(ctx, { kind: "mcp-server", name: bundle.config.mcpServerName, recipe: recipeName, setId });
+    const mcpState = await ensureMcpServer(ctx, bundle.config, recipeName);
+    if (mcpState !== "unchanged") await recordOwned(ctx, { kind: "mcp-server", name: bundle.config.mcpServerName, recipe: recipeName, setId });
     const cronState = bundle.cronMessage === undefined
       ? undefined
       : await ensureCronJob(ctx, bundle.config, bundle.cronMessage, {
@@ -501,7 +532,7 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
     if (cronState === "created") {
       await recordOwned(ctx, { kind: "cron-job", name: bundle.config.cronJobName!, recipe: recipeName, setId });
     }
-    reportProvisioned(ctx, bundle, recipeName, mirror, agentCreated, mcpCreated, cronState);
+    reportProvisioned(ctx, bundle, recipeName, mirror, agentCreated, mcpState, cronState);
   } finally {
     await held?.release();
   }
@@ -513,13 +544,13 @@ function reportProvisioned(
   recipeName: string,
   mirror: { written: number; removed: string[] },
   agentCreated: boolean,
-  mcpCreated: boolean,
+  mcpState: "created" | "replaced" | "unchanged",
   cronState: "created" | "updated" | "unchanged" | undefined,
 ): void {
 
   log(`agent "${bundle.config.agentId}" provisioned from recipe "${recipeName}"`);
   info(`  agent  ${bundle.config.agentId}          ${agentCreated ? "created" : "already present"}`);
-  info(`  mcp    ${bundle.config.mcpServerName}  ${mcpCreated ? "created" : "already present"}`);
+  info(`  mcp    ${bundle.config.mcpServerName}  ${mcpState}`);
   if (cronState !== undefined) {
     info(`  cron   ${bundle.config.cronJobName}    ${cronState} (${bundle.config.cronSchedule})`);
   }

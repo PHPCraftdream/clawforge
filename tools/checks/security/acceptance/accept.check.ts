@@ -5,6 +5,7 @@
 // each failure can be provoked deliberately.
 
 import { runCheck, requiresModel, summarize, acceptanceSpecError } from "../../../framework/commands/orchestration/accept.ts";
+import { mcpServerSpec } from "../../../framework/commands/management/provision-agent.ts";
 import type { AcceptanceCheck } from "../../../framework/commands/orchestration/accept.ts";
 import type { Context } from "../../../framework/core/context.ts";
 import type { ExecResult } from "../../../framework/runtime/transport.ts";
@@ -35,7 +36,11 @@ interface Answers {
   /** Exit code of the process that served them. */
   exit?: number;
   agents?: { id: string }[];
+  /** Registered under a command/args matching mcpServerSpec("demo") — the same recipe name
+   *  run() always passes to runCheck() — unless overridden via serverEntries. */
   servers?: string[];
+  /** Explicit override for a server's registered command/args, for the drift case. */
+  serverEntries?: Record<string, { command?: unknown; args?: unknown }>;
   cron?: { name?: string; schedule?: { expr?: string } }[];
   agentReply?: string;
 }
@@ -55,7 +60,10 @@ function stubContext(answers: Answers): Context {
         const key = args.slice(0, 2).join(" ");
         if (key === "agents list") return { code: 0, stdout: JSON.stringify(answers.agents ?? []), stderr: "" };
         if (key === "mcp list") {
-          return { code: 0, stdout: JSON.stringify(Object.fromEntries((answers.servers ?? []).map((name) => [name, {}]))), stderr: "" };
+          const entries = Object.fromEntries(
+            (answers.servers ?? []).map((name) => [name, answers.serverEntries?.[name] ?? mcpServerSpec("demo")]),
+          );
+          return { code: 0, stdout: JSON.stringify(entries), stderr: "" };
         }
         if (key === "cron list") return { code: 0, stdout: JSON.stringify({ jobs: answers.cron ?? [] }), stderr: "" };
         if (args[0] === "agent") return { code: 0, stdout: answers.agentReply ?? "", stderr: "" };
@@ -193,6 +201,15 @@ async function run(answers: Answers, declared: AcceptanceCheck) {
   });
   check("a registered agent with no server fails", noServer.status, "failed");
   check("saying it cannot call it", noServer.detail?.includes("cannot call"), true);
+
+  // A name present says nothing about whether it still launches the recipe's own server —
+  // before the fix, `server in servers` alone made this pass regardless of the command.
+  const broken = await run(
+    { agents: [{ id: "example-agent" }], servers: ["example-recipe"], serverEntries: { "example-recipe": { command: "missing-program", args: [] } } },
+    { kind: "agent_has_tools", agent: "example-agent", server: "example-recipe" },
+  );
+  check("a registered server whose command does not match the recipe fails", broken.status, "failed");
+  check("saying the command does not match", broken.detail?.includes("does not match"), true);
 }
 
 // --- cron_matches ------------------------------------------------------------------------------------

@@ -15,7 +15,7 @@ import { log, info, warn, die } from "../../core/log.ts";
 import { emit, isCaptured } from "../../core/output.ts";
 import { computePlan } from "./plan.ts";
 import { gatherInspection } from "./inspect.ts";
-import { currentComposition, declarationChecksum } from "../management/lock.ts";
+import { currentComposition, declarationChecksum, frameworkVersion } from "../management/lock.ts";
 import { isHealthy, nextActions, PROBLEM_CODES } from "../../service/inspection.ts";
 import { applyConfig } from "./config.ts";
 import { secrets } from "../management/secrets.ts";
@@ -25,7 +25,7 @@ import type { OwnedKind } from "../../set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "../../service/operations.ts";
 import { takeLock } from "../../runtime/instance-lock.ts";
 import { withSetSource } from "../../set/artifacts/source.ts";
-import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback } from "../../set/artifacts/install.ts";
+import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems } from "../../set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "../../core/context.ts";
 
@@ -143,6 +143,27 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
   return withUnpackedArtifact(artifact, (staging, verified) =>
     withSetSource(staging, async () => {
       if (args.includes("--dry-run")) return applyFromSource(ctx, args);
+
+      // Refused before anything is touched, the same way the declaration-changed check
+      // below refuses before any step runs. up/restart (the only steps that touch the
+      // running container) start whatever this deployment's OWN .env already names —
+      // applying this artifact never pulls or switches to the image it requires. Recording
+      // this set as installed while the runtime keeps running a different image would not be
+      // optimistic, it would be false: not "may still work", but provably does not match,
+      // right now. requirementProblems is the same check inspect's own SET_REQUIREMENT_UNMET
+      // finding already uses — reused here so this run reports the mismatch itself, instead
+      // of leaving it to a LATER inspect that reads the record this apply is about to write.
+      const requirementIssues = requirementProblems(verified.manifest, {
+        framework: await frameworkVersion(),
+        imageDigest: await ctx.runtime.imageReference(),
+      });
+      if (requirementIssues.length > 0) {
+        die(
+          `this set cannot be installed here:\n${requirementIssues.map((entry) => `  ${entry.detail}`).join("\n")}\n` +
+            "Point this deployment's OPENCLAW_IMAGE at the required digest (or update the framework) before applying it.",
+        );
+      }
+
       const operationId = newOperationId("apply");
       const held = await takeLock(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock") });
       try {

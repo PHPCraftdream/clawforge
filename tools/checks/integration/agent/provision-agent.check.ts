@@ -19,6 +19,9 @@ import {
   writeWorkspacePromptFiles,
   ensureAgent,
   ensureMcpServer,
+  mcpServerSpec,
+  mcpServerMatches,
+  mcpUnsetArgv,
   ensureCronJob,
   cronJobMatches,
   cronRmArgv,
@@ -264,15 +267,38 @@ function stubContext(listAnswer: unknown) {
 
 {
   const { ctx, calls } = stubContext({});
-  const created = await ensureMcpServer(ctx, CONFIG, "demo-recipe");
-  checkTrue("ensureMcpServer reports creation when the server is absent", created);
+  const state = await ensureMcpServer(ctx, CONFIG, "demo-recipe");
+  check("ensureMcpServer reports creation when the server is absent", state, "created");
   check("ensureMcpServer's add call matches mcpAddArgv()", calls[1], mcpAddArgv(CONFIG, "demo-recipe"));
 }
 {
-  const { ctx, calls } = stubContext({ "demo-recipe": {} });
-  const created = await ensureMcpServer(ctx, CONFIG, "demo-recipe");
-  checkTrue("ensureMcpServer reports no creation when the server already exists", !created);
-  check("ensureMcpServer only lists, no add call, when already present", calls.length, 1);
+  const matching = mcpServerSpec("demo-recipe");
+  const { ctx, calls } = stubContext({ "demo-recipe": matching });
+  const state = await ensureMcpServer(ctx, CONFIG, "demo-recipe");
+  check("ensureMcpServer reports the server unchanged when its command already matches", state, "unchanged");
+  check("ensureMcpServer only lists, no write call, when already matching", calls.length, 1);
+}
+
+// --- mcp reconciliation: a registration whose command drifted is replaced -----------------
+//
+// Before the fix, presence of the name alone was "already present, no action" — a server
+// registered with any command at all, including a broken one, was reported as fine. Mirrors
+// ensureCronJob's own drift-and-replace test just above it in spirit.
+
+{
+  check("mcpServerMatches accepts an entry equal to the spec", mcpServerMatches(mcpServerSpec("demo-recipe"), "demo-recipe"), true);
+  check("a changed command counts as drift", mcpServerMatches({ ...mcpServerSpec("demo-recipe"), command: "missing-program" }, "demo-recipe"), false);
+  check("changed args count as drift", mcpServerMatches({ ...mcpServerSpec("demo-recipe"), args: ["--wrong"] }, "demo-recipe"), false);
+  check("an absent entry is not a match", mcpServerMatches(undefined, "demo-recipe"), false);
+}
+
+{
+  const { ctx, calls } = stubContext({ "demo-recipe": { command: "missing-program", args: [] } });
+  const state = await ensureMcpServer(ctx, CONFIG, "demo-recipe");
+  check("ensureMcpServer reports replacement when the command has drifted", state, "replaced");
+  check("it lists, unsets, then re-adds — exactly three calls", calls.length, 3);
+  check("the unset call matches mcpUnsetArgv()", calls[1], mcpUnsetArgv(CONFIG.mcpServerName));
+  check("the re-add call matches mcpAddArgv()", calls[2], mcpAddArgv(CONFIG, "demo-recipe"));
 }
 
 {

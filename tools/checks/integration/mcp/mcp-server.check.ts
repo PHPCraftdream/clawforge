@@ -120,6 +120,46 @@ try {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
 }
 
+// --- a malformed tools/call params.name must not crash the process ------------------------
+//
+// String(params.name ?? "") used to throw when params.name was an object whose toString is
+// not callable — confirmed directly: String({toString: null}) throws "Cannot convert object
+// to primitive value". Uncaught inside the dispatch loop, that took the whole process down
+// before any request queued after it (including a later initialize) got answered.
+
+{
+  const badCallDeployment = `mcp-check-badcall-${randomBytes(4).toString("hex")}`;
+  const malformedCallLines = [
+    '{"jsonrpc":"2.0","id":1,"method":"initialize"}',
+    '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":{"toString":null}}}',
+    '{"jsonrpc":"2.0","id":3,"method":"initialize"}',
+  ];
+
+  try {
+    await createApp(badCallDeployment);
+    const result = await runServer(badCallDeployment, malformedCallLines.join("\n"));
+    const responses = result.stdout
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    check("the process does not crash on a tools/call with a non-string params.name", result.code, 0);
+    check("all three requests get a reply", responses.length, 3);
+
+    const badCallReply = responses.find((r) => r.id === 2);
+    check("the malformed call gets an ordinary JSON-RPC error, not silence", badCallReply?.error !== undefined, true);
+
+    const secondInit = responses.find((r) => r.id === 3);
+    check(
+      "the request queued after it still gets answered",
+      (secondInit?.result as { serverInfo?: unknown } | undefined)?.serverInfo !== undefined,
+      true,
+    );
+  } finally {
+    await rm(resolve(appsDir, badCallDeployment), { recursive: true, force: true });
+  }
+}
+
 // --- confirming a destructive call is not permission to seize a lock ----------------------
 //
 // toArgv appends --force for a destructive command that declares it, because over MCP the

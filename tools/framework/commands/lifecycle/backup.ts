@@ -9,6 +9,7 @@ import type { Context } from "../../core/context.ts";
 import { sudoFor } from "../../runtime/datadir.ts";
 import { deploymentName } from "../../runtime/deployment.ts";
 import { createArchive, fileSize, isProfile, type Profile } from "../../service/archive.ts";
+import { guarded } from "../../runtime/instance-lock.ts";
 
 export interface BackupOptions {
   hot?: boolean;
@@ -62,8 +63,18 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
   await ctx.transport.exec(rmHead, rmRest);
 }
 
-/** Creates a backup and returns the archive path on the target. */
+/** Creates a backup and returns the archive path on the target.
+ *
+ *  Guarded like every other mutating command: it stops the gateway, archives the data
+ *  directory, and starts it again, all of which race against apply/restore/rollback doing
+ *  the same instance's work at once if nothing serializes them. guarded() is nesting-safe,
+ *  so pull() and smoke() calling this while already holding the lock for their own
+ *  operation cost nothing extra here. */
 export async function createBackup(ctx: Context, options: BackupOptions = {}): Promise<string> {
+  return guarded(ctx, "backup", [], () => createBackupLocked(ctx, options));
+}
+
+async function createBackupLocked(ctx: Context, options: BackupOptions): Promise<string> {
   const profile: Profile = options.profile ?? "full";
   const { dataDir, backupDir } = ctx.settings;
 

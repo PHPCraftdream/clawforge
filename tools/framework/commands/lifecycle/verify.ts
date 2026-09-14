@@ -49,6 +49,27 @@ async function collectSecrets(ctx: Context): Promise<{ critical: string[]; ident
   const token = ctx.settings.env.OPENCLAW_GATEWAY_TOKEN;
   if (token !== undefined && token.length >= 12) critical.push(token);
 
+  // A provider apiKey stored as a plain string, directly in openclaw.json rather than as a
+  // SecretRef, ships baked into the config itself — openclaw.json IS allowed content for
+  // 'share', so this is the one place a live credential can travel inside the archive
+  // without any other check here ever knowing to look for it. Flagged the same as any other
+  // provider key.
+  const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
+  if (await ctx.transport.exists(configPath)) {
+    try {
+      const config = JSON.parse(await ctx.transport.readFile(configPath)) as {
+        models?: { providers?: Record<string, unknown> };
+      };
+      for (const provider of Object.values(config.models?.providers ?? {})) {
+        const apiKey = (provider as { apiKey?: unknown } | null)?.apiKey;
+        if (typeof apiKey === "string" && apiKey.length >= 12) critical.push(apiKey);
+      }
+    } catch {
+      // A config that cannot be parsed is reported elsewhere (inspect/doctor); this scan
+      // just has nothing to add from it.
+    }
+  }
+
   // Operator/device tokens — these hand over control of the instance.
   const identityPath = `${ctx.settings.dataDir}/config/identity/device-auth.json`;
   if (await ctx.transport.exists(identityPath)) {

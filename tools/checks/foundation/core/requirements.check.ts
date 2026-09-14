@@ -4,7 +4,7 @@
 // Assertions compare the actual returned arrays/objects/strings, not just "did not throw".
 // Provider ids are inferred at runtime; no provider-specific table belongs in the framework.
 
-import { collectSecretRefs, requirements, status, missing, template, providerEnvironmentVariable, providerSecretVariable, providerUsesNonApiKeyAuth, providerApiKeyExplicit } from "../../../framework/service/secrets.ts";
+import { collectSecretRefs, requirements, status, missing, template, providerEnvironmentVariable, providerSecretVariable, providerUsesNonApiKeyAuth, providerApiKeyExplicit, providerIsLocalEndpoint } from "../../../framework/service/secrets.ts";
 import type { SecretRequirement, SecretStatus } from "../../../framework/service/secrets.ts";
 import type { Context } from "../../../framework/core/context.ts";
 
@@ -122,7 +122,15 @@ check(
 );
 check(
   "an auth profile SecretRef overrides the convention",
-  providerSecretVariable({ auth: { profiles: { "custom:default": { apiKey: { source: "env", id: "CUSTOM_TOKEN" } } } } }, "custom"),
+  providerSecretVariable({ auth: { profiles: { work: { provider: "custom", apiKey: { source: "env", id: "CUSTOM_TOKEN" } } } } }, "custom"),
+  "CUSTOM_TOKEN",
+);
+// Regression: the profile's own key ("work") is an arbitrary label per OpenClaw's real
+// schema, not a "provider:default"-formatted id — before the fix, a key that did not
+// happen to start with "custom:" would silently fail to match at all.
+check(
+  "the profile's own key is irrelevant — only its .provider field is read",
+  providerSecretVariable({ auth: { profiles: { anything_at_all: { provider: "custom", apiKey: { source: "env", id: "CUSTOM_TOKEN" } } } } }, "custom"),
   "CUSTOM_TOKEN",
 );
 check(
@@ -134,9 +142,20 @@ check(
 // --- requirements(): provider configured via auth.profiles -------------------------
 
 check(
-  "a provider configured via auth.profiles (id before ':') adds its conventional key",
-  await requirements(makeCtx({ config: { auth: { profiles: { "zai:default": {} } } } })),
+  "a provider configured via auth.profiles (its own .provider field, not the profile's key) adds its conventional key",
+  await requirements(makeCtx({ config: { auth: { profiles: { "some-arbitrary-label": { provider: "zai" } } } } })),
   [{ name: "ZAI_API_KEY", location: "target-env", usedBy: "provider zai", required: true }],
+);
+// Regression: a profile keyed "zai:default" with no .provider field is not itself a
+// provider id — before the fix, splitting the key on ":" treated "zai" (whatever came
+// before the colon, even by coincidence) as the provider, masking the real bug that no
+// .provider field means OpenClaw's own schema (auth.profiles.<key>: strictObject with a
+// required .provider field) rejects this profile outright; the framework must not invent
+// a provider id from a key shape the schema never actually guarantees.
+check(
+  "a profile with no .provider field names no provider at all",
+  await requirements(makeCtx({ config: { auth: { profiles: { "zai:default": {} } } } })),
+  [],
 );
 
 // --- requirements(): both paths configuring the same provider is not duplicated -----
@@ -144,7 +163,7 @@ check(
 check(
   "the same provider configured via both paths yields exactly one requirement",
   await requirements(
-    makeCtx({ config: { models: { providers: { zai: {} } }, auth: { profiles: { "zai:default": {} } } } }),
+    makeCtx({ config: { models: { providers: { zai: {} } }, auth: { profiles: { default: { provider: "zai" } } } } }),
   ),
   [{ name: "ZAI_API_KEY", location: "target-env", usedBy: "provider zai", required: true }],
 );
@@ -203,6 +222,25 @@ check(
   await requirements(makeCtx({ config: { models: { providers: { custom: { apiKey: "inline-value-nobody-should-use" } } } } })),
   [],
 );
+
+// A local, unauthenticated server (baseUrl on loopback, nothing said about credentials) is
+// a fifth legitimate case, confirmed against OpenClaw's real ModelProviderSchema (apiKey/
+// auth/localService are all optional, no superRefine requires any of them) and its own docs
+// for a self-hosted LM Studio with authentication disabled. Guessing LMSTUDIO_API_KEY here
+// blocks a correctly configured, schema-valid instance exactly like the other four cases.
+check(
+  "a loopback provider (baseUrl on localhost) with nothing said about credentials needs no apiKey",
+  await requirements(makeCtx({ config: { models: { providers: { lmstudio: { baseUrl: "http://localhost:1234/v1" } } } } })),
+  [],
+);
+check(
+  "a loopback provider on 127.0.0.1 needs no apiKey either",
+  await requirements(makeCtx({ config: { models: { providers: { lmstudio: { baseUrl: "http://127.0.0.1:1234/v1" } } } } })),
+  [],
+);
+check("providerIsLocalEndpoint is true for a localhost baseUrl", providerIsLocalEndpoint({ models: { providers: { lmstudio: { baseUrl: "http://localhost:1234" } } } }, "lmstudio"), true);
+check("providerIsLocalEndpoint is false for a remote baseUrl", providerIsLocalEndpoint({ models: { providers: { custom: { baseUrl: "https://api.example.com" } } } }, "custom"), false);
+check("providerIsLocalEndpoint is false when there is no baseUrl at all", providerIsLocalEndpoint({ models: { providers: { zai: {} } } }, "zai"), false);
 
 // The convention fallback itself must still fire for the one case it exists for: a provider
 // present in models.providers or auth.profiles with nothing at all said about credentials.

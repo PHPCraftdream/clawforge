@@ -4,7 +4,7 @@ import { log, info, die } from "../../core/log.ts";
 import type { Context } from "../../core/context.ts";
 import { parseEnv } from "../../core/env.ts";
 import { secretsFileOnTarget } from "../../runtime/datadir.ts";
-import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable } from "../../service/secrets.ts";
+import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "../../service/secrets.ts";
 
 /** Gateway flags used by headless onboarding. */
 function gatewayFlags(ctx: Context): string[] {
@@ -54,12 +54,21 @@ export async function configureProvider(ctx: Context, args: string[]): Promise<v
   const config = (await ctx.transport.exists(configPath))
     ? JSON.parse(await ctx.transport.readFile(configPath)) as unknown
     : {};
-  const providers = new Set<string>(options.provider === undefined ? collectConfiguredProviders(config) : [options.provider]);
+  const configured = options.provider === undefined ? collectConfiguredProviders(config) : [options.provider];
+  const providers = new Set<string>(configured);
   // Auto-discovery only when no provider was named: with --provider given, this must touch
-  // exactly that one provider, never anything else found in the secrets file.
+  // exactly that one provider, never anything else found in the secrets file. And only for
+  // a secret no already-configured provider already claims: converting an env var name back
+  // to an id is lossy (CUSTOM_PROXY_API_KEY -> "custom_proxy", underscored) and can mint a
+  // second, distinct id for a provider already configured under a differently-punctuated one
+  // (e.g. "custom-proxy") — a new, apiKey-only provider object with none of its declared
+  // settings, which can then fail bootstrap.
   if (options.provider === undefined) {
     for (const name of Object.keys(secrets)) {
-      if (name.endsWith("_API_KEY") && secrets[name] !== "") providers.add(name.slice(0, -8).toLowerCase());
+      if (!name.endsWith("_API_KEY") || secrets[name] === "") continue;
+      const alreadyCovered = configured.some((id) => (providerSecretVariable(config, id) ?? providerEnvironmentVariable(id)) === name);
+      if (alreadyCovered) continue;
+      providers.add(name.slice(0, -8).toLowerCase());
     }
   }
 
@@ -70,6 +79,13 @@ export async function configureProvider(ctx: Context, args: string[]): Promise<v
     const current = providerSecretVariable(config, id);
     if (!options.force && current === env) {
       info(`provider ${id} already references ${env}`);
+      continue;
+    }
+    // providerSecretVariable only recognizes an env-sourced ref; a file/exec/store ref or a
+    // plain string apiKey returns undefined from it, which must not be mistaken for "nothing
+    // set" — it is an explicit, deliberate credential this command must not silently replace.
+    if (!options.force && current === undefined && providerApiKeyExplicit(config, id)) {
+      info(`provider ${id} already has an explicit apiKey (not env-sourced) — use --force to replace it`);
       continue;
     }
     log(`configuring provider ${id} with ${env} (key stays in ${secretsPath})`);

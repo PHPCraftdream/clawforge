@@ -62,6 +62,17 @@ export function collectSecretRefs(config: unknown, path = ""): { name: string; u
   return found;
 }
 
+/** The provider id an auth.profiles entry actually names. Per OpenClaw's real schema
+ *  (zod-schema.root-shape.ts), auth.profiles.<key> is z.strictObject({ provider, mode,
+ *  email?, displayName? }) — the key itself is an arbitrary label, the id lives in the
+ *  object's own .provider field. Not the key split on ":", which is not how the schema
+ *  is actually shaped and misreads an arbitrarily-named profile as its own provider. */
+function profileProviderId(profile: unknown): string | undefined {
+  if (profile === null || typeof profile !== "object" || Array.isArray(profile)) return undefined;
+  const id = (profile as { provider?: unknown }).provider;
+  return typeof id === "string" ? id : undefined;
+}
+
 /** Providers that are actually configured on this instance. */
 export function collectConfiguredProviders(config: unknown): string[] {
   if (config === null || typeof config !== "object") return [];
@@ -72,9 +83,9 @@ export function collectConfiguredProviders(config: unknown): string[] {
 
   const ids = new Set<string>();
   for (const id of Object.keys(node.models?.providers ?? {})) ids.add(id);
-  for (const profile of Object.keys(node.auth?.profiles ?? {})) {
-    // Profile ids look like "provider:default".
-    ids.add(profile.split(":")[0]);
+  for (const profile of Object.values(node.auth?.profiles ?? {})) {
+    const id = profileProviderId(profile);
+    if (id !== undefined) ids.add(id);
   }
   return [...ids];
 }
@@ -95,8 +106,8 @@ export function providerSecretVariable(config: unknown, providerId: string): str
       return (ref as { id: string }).id;
     }
   }
-  for (const [profile, value] of Object.entries(node.auth?.profiles ?? {})) {
-    if (profile.split(":")[0] !== providerId) continue;
+  for (const value of Object.values(node.auth?.profiles ?? {})) {
+    if (profileProviderId(value) !== providerId) continue;
     const ref = collectSecretRefs(value).find((entry) => entry.name !== "OPENCLAW_GATEWAY_TOKEN");
     if (ref !== undefined) return ref.name;
   }
@@ -124,9 +135,8 @@ export function providerUsesNonApiKeyAuth(config: unknown, providerId: string): 
     if ((provider as { localService?: unknown }).localService !== undefined) return true;
   }
 
-  for (const [profile, value] of Object.entries(node.auth?.profiles ?? {})) {
-    if (profile.split(":")[0] !== providerId) continue;
-    if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+  for (const value of Object.values(node.auth?.profiles ?? {})) {
+    if (profileProviderId(value) !== providerId) continue;
     const mode = (value as { mode?: unknown }).mode;
     if (mode === "oauth" || mode === "aws-sdk" || mode === "token") return true;
   }
@@ -144,6 +154,27 @@ export function providerApiKeyExplicit(config: unknown, providerId: string): boo
   const provider = node.models?.providers?.[providerId];
   if (provider === null || typeof provider !== "object" || Array.isArray(provider)) return false;
   return "apiKey" in provider;
+}
+
+/** Whether this provider's baseUrl points at a loopback address. OpenClaw's own
+ *  ModelProviderSchema makes apiKey/auth/localService all fully optional with no
+ *  superRefine requiring credentials — and its docs (e.g. a self-hosted LM Studio with
+ *  authentication disabled) confirm a loopback endpoint is trusted without one. A provider
+ *  that says nothing at all about credentials AND points at localhost is this legitimate
+ *  case, not a misconfigured remote provider that simply forgot to set a key. */
+export function providerIsLocalEndpoint(config: unknown, providerId: string): boolean {
+  if (config === null || typeof config !== "object") return false;
+  const node = config as { models?: { providers?: Record<string, unknown> } };
+  const provider = node.models?.providers?.[providerId];
+  if (provider === null || typeof provider !== "object" || Array.isArray(provider)) return false;
+  const baseUrl = (provider as { baseUrl?: unknown }).baseUrl;
+  if (typeof baseUrl !== "string") return false;
+  try {
+    const hostname = new URL(baseUrl).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
 }
 
 /** Return secret names required by the target configuration. */
@@ -185,6 +216,11 @@ export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
     // a file/exec/store SecretRef. Satisfied on its own; the convention guess is only for a
     // provider that said nothing at all about its credentials.
     if (providerApiKeyExplicit(config, provider)) continue;
+
+    // A provider whose baseUrl is loopback and which said nothing about credentials is a
+    // self-hosted, unauthenticated local server (e.g. LM Studio with auth disabled) — a
+    // schema-valid shape OpenClaw itself trusts without a key, not a forgotten one.
+    if (providerIsLocalEndpoint(config, provider)) continue;
 
     const guessed = providerEnvironmentVariable(provider);
     if (guessed === undefined) continue;

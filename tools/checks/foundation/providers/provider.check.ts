@@ -54,4 +54,39 @@ assert.equal(calls.length, 2, "auto-discovery still configures every provider it
 const touched = calls.map((call) => call[3]).sort();
 assert.deepEqual(touched, ["models.providers.anthropic.apiKey", "models.providers.openai.apiKey"]);
 
+// Regression: auto-discovery must not mint a second, differently-punctuated provider id
+// from an env var name. "custom-proxy" is already configured; CUSTOM_PROXY_API_KEY converts
+// back to "custom_proxy" (underscored) if read blindly — a distinct id that would get its
+// own apiKey-only provider object with none of custom-proxy's declared settings.
+calls.length = 0;
+const dashedProvider = { ...ctx, transport: {
+  exists: async (path: string) => path.endsWith("config/.env") || path.endsWith("openclaw.json"),
+  readFile: async (path: string) => path.endsWith("openclaw.json")
+    ? JSON.stringify({ models: { providers: { "custom-proxy": {} } } })
+    : "CUSTOM_PROXY_API_KEY=proxy-secret\n",
+} } as unknown as Context;
+await configureProvider(dashedProvider, []);
+assert.equal(calls.length, 1, "only the already-configured provider is touched, not a second minted one");
+assert.ok(calls[0].includes("models.providers.custom-proxy.apiKey"), "the real, hyphenated id is used");
+assert.ok(!calls.flat().some((arg) => arg.includes("custom_proxy")), "no underscored duplicate is ever created");
+
+// Regression: a provider whose apiKey is already an explicit, non-env SecretRef (file/exec/
+// store) must not be silently replaced by a conventional env ref without --force.
+// providerSecretVariable only recognizes the env case, so "current" reads as undefined for
+// a file ref — that must not be mistaken for "nothing set yet".
+calls.length = 0;
+const fileRefProvider = { ...ctx, transport: {
+  exists: async (path: string) => path.endsWith("config/.env") || path.endsWith("openclaw.json"),
+  readFile: async (path: string) => path.endsWith("openclaw.json")
+    ? JSON.stringify({ models: { providers: { custom: { apiKey: { source: "file", provider: "vault", id: "/key" } } } } })
+    : "CUSTOM_API_KEY=secret-value\n",
+} } as unknown as Context;
+await configureProvider(fileRefProvider, []);
+assert.equal(calls.length, 0, "an explicit file-ref apiKey is left alone without --force");
+
+calls.length = 0;
+await configureProvider(fileRefProvider, ["--force"]);
+assert.equal(calls.length, 1, "--force does replace it");
+assert.ok(calls[0].includes("models.providers.custom.apiKey"));
+
 process.stderr.write("provider configuration checks passed\n");

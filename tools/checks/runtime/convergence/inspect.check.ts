@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { gatherInspection, renderJson, doctor } from "../../../framework/commands/orchestration/inspect.ts";
 import { recipeFileChecksums, agentBundleChecksums } from "../../../framework/service/checksums.ts";
+import { mcpServerSpec } from "../../../framework/commands/management/provision-agent.ts";
 import { currentComposition, lockFile } from "../../../framework/commands/management/lock.ts";
 import { useDeployment } from "../../../framework/runtime/deployment.ts";
 import { monorepoRoot } from "../../../framework/core/env.ts";
@@ -46,7 +47,11 @@ interface TargetSpec {
   configMtimeSeconds?: number;
   startedAtMs?: number;
   agents?: string[];
+  /** Registered under a command/args matching mcpServerSpec("demo") — the recipe this whole
+   *  fixture declares — unless overridden via mcpServerEntries. */
   mcpServers?: string[];
+  /** Explicit override for a server's registered command/args/enabled, for the drift cases. */
+  mcpServerEntries?: Record<string, { command?: unknown; args?: unknown; enabled?: unknown }>;
   cronJobs?: Record<string, unknown>[];
   mirrorChecksums?: Record<string, string>;
   /** What the agent's workspace holds — its prompt files as the target reports them. */
@@ -126,7 +131,10 @@ function stubContext(spec: TargetSpec): Context {
       async runOneOff(_service: string, args: string[]): Promise<ExecResult> {
         const key = args.slice(0, 2).join(" ");
         if (key === "agents list") return json(( spec.agents ?? ["main", "onboarding"]).map((id) => ({ id })));
-        if (key === "mcp list") return json(Object.fromEntries((spec.mcpServers ?? ["demo-mcp"]).map((name) => [name, {}])));
+        if (key === "mcp list") {
+          const names = spec.mcpServers ?? ["demo-mcp"];
+          return json(Object.fromEntries(names.map((name) => [name, spec.mcpServerEntries?.[name] ?? mcpServerSpec("demo")])));
+        }
         if (key === "cron list") {
           return json({ jobs: spec.cronJobs ?? [matchingJob()] });
         }
@@ -327,6 +335,34 @@ try {
       inspection.problems[0]?.nextAction,
       "./clawforge provision-agent demo",
     );
+  }
+
+  {
+    // Present under the wrong command — not absent — must still be MCP_SERVER_MISSING: a
+    // name match alone (the old behaviour) let a broken registration report healthy.
+    const inspection = await gatherInspection(
+      stubContext({
+        targetEnv: "ZAI_API_KEY=k\n",
+        mirrorChecksums: goodChecksums,
+        mcpServerEntries: { "demo-mcp": { command: "missing-program", args: [] } },
+      }),
+    );
+    const broken = inspection.problems.find((entry) => entry.code === "MCP_SERVER_MISSING");
+    check("a registered server with the wrong command is still MCP_SERVER_MISSING", broken !== undefined, true);
+    check("saying it is registered but wrong, not absent", broken?.detail.includes("does not launch"), true);
+    check("the remedy still names the recipe", broken?.nextAction, "./clawforge provision-agent demo");
+    check("the instance is not reported healthy", renderJson(inspection).healthy, false);
+  }
+  {
+    // Disabled — right command, but excluded from tool discovery — is the same finding.
+    const inspection = await gatherInspection(
+      stubContext({
+        targetEnv: "ZAI_API_KEY=k\n",
+        mirrorChecksums: goodChecksums,
+        mcpServerEntries: { "demo-mcp": { ...mcpServerSpec("demo"), enabled: false } },
+      }),
+    );
+    check("a disabled registration is MCP_SERVER_MISSING too", codes(inspection.problems), ["MCP_SERVER_MISSING"]);
   }
 
   {

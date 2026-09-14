@@ -40,7 +40,7 @@ interface Answers {
    *  run() always passes to runCheck() — unless overridden via serverEntries. */
   servers?: string[];
   /** Explicit override for a server's registered command/args, for the drift case. */
-  serverEntries?: Record<string, { command?: unknown; args?: unknown }>;
+  serverEntries?: Record<string, { command?: unknown; args?: unknown; enabled?: unknown }>;
   cron?: { name?: string; schedule?: { expr?: string } }[];
   agentReply?: string;
 }
@@ -210,6 +210,14 @@ async function run(answers: Answers, declared: AcceptanceCheck) {
   );
   check("a registered server whose command does not match the recipe fails", broken.status, "failed");
   check("saying the command does not match", broken.detail?.includes("does not match"), true);
+
+  // A disabled entry is excluded from tool discovery entirely (OpenClaw's own docs) — right
+  // command/args is not enough for agent_has_tools to call it working.
+  const disabled = await run(
+    { agents: [{ id: "example-agent" }], servers: ["example-recipe"], serverEntries: { "example-recipe": { ...mcpServerSpec("demo"), enabled: false } } },
+    { kind: "agent_has_tools", agent: "example-agent", server: "example-recipe" },
+  );
+  check("a disabled MCP server registration fails agent_has_tools", disabled.status, "failed");
 }
 
 // --- cron_matches ------------------------------------------------------------------------------------

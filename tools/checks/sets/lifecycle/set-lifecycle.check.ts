@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, rm, rename, access } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, rename, access, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -76,6 +76,7 @@ function context(env: Record<string, string>): Context {
       waitForHealth: async () => {},
       health: async () => "healthy", probe: async () => 200, startedAt: async () => 1,
       imageReference: async () => settings.image,
+      runningImageIdentity: async () => (running ? { imageId: "img-1", digests: [settings.image], containerId: "container-1" } : undefined),
       runOneOff: async (_service: string, args: string[]) => {
         let stdout = "{}";
         if (args.includes("onboard")) files.set(configFile, "{}");
@@ -150,6 +151,70 @@ try {
   );
   assert.equal(restoredConfig?.gateway?.mode, "local", "the previous set's own declared settings are still in force after rollback");
 
+  // --- rollback --set must use the snapshot from the operation that installed the CURRENT
+  // set, not "whatever snapshot is newest" — an ordinary apply run after that install also
+  // takes one, and restoring THAT one would restore to a config that already includes
+  // whatever the current set added. install B again, run an unrelated ordinary apply (which
+  // takes its own, LATER snapshot — already including B's agents.defaults.name), then roll
+  // back: agents.defaults.name must still be gone. -------------------------------------------
+  {
+    const reinstalled = await captured(() => apply(ctx, ["--set", next.artifact, "--json"]));
+    assert.equal(reinstalled.error, undefined, reinstalled.error?.message);
+    assert.equal((await readInstalledSet(ctx))?.id, next.id);
+    assert.equal((await readInstalledSet(ctx))?.previous?.id, built.id);
+
+    // An unrelated working-tree edit, applied the ordinary way (no --set) — this takes ITS
+    // OWN snapshot, of the config as B left it (agents.defaults.name already present).
+    await writeFile(
+      join(root, "config", "desired-state.json"),
+      '[{"path":"gateway.mode","value":"local"},{"path":"agents.defaults.name","value":"second"},{"path":"agents.defaults.temperature","value":0.5}]',
+    );
+    const ordinary = await captured(() => apply(ctx, ["--json"]));
+    assert.equal(ordinary.error, undefined, ordinary.error?.message);
+
+    const rolledBackAgain = await captured(() => rollback(ctx, ["--set", "--json"]));
+    assert.equal(rolledBackAgain.error, undefined, rolledBackAgain.error?.message);
+    assert.equal((await readInstalledSet(ctx))?.id, built.id, "the set id still reverts to the previous one");
+
+    const configAfter = JSON.parse(files.get(`${sourceData}/config/openclaw.json`) ?? "{}");
+    assert.equal(
+      configAfter?.agents?.defaults?.name,
+      undefined,
+      "an intervening ordinary apply's later snapshot must not be the one restored — B's own setting must still be undone",
+    );
+    assert.equal(configAfter?.agents?.defaults?.temperature, undefined, "the ordinary apply's own addition is undone too");
+  }
+
+  // --- rollback --set must verify the artifact BEFORE touching the live configuration -----
+  //
+  // Before the fix, the config-snapshot restore ran before withUnpackedArtifact() ever
+  // verified the artifact — a corrupt archive was refused only after the config was already
+  // overwritten. installed.previous is "next" (B) at this point (left there by the rollback
+  // just above); its stored copy under <deployment>/sets/ is corrupted directly on disk.
+  {
+    const installedBefore = await readInstalledSet(ctx);
+    assert.equal(installedBefore?.previous?.id, next.id, "the fixture for this test needs a previous set on record");
+    const configBefore = files.get(`${sourceData}/config/openclaw.json`);
+
+    const storedArtifact = join(root, "sets", `lifecycle-${next.id}.tar.gz`);
+    await access(storedArtifact);
+    // Backed up and restored rather than corrupted in place: this file (or one identical to
+    // it) is also `next.artifact`, which later setTry() calls in this same file still need.
+    const backup = join(root, "sets", `lifecycle-${next.id}.tar.gz.backup`);
+    await copyFile(storedArtifact, backup);
+    try {
+      await writeFile(storedArtifact, "not a real gzip archive at all");
+
+      const corrupted = await captured(() => rollback(ctx, ["--set", "--json"]));
+      assert.notEqual(corrupted.error, undefined, "a corrupt rollback artifact must be refused");
+      assert.equal(files.get(`${sourceData}/config/openclaw.json`), configBefore, "a refused rollback must leave the live configuration untouched");
+      assert.equal((await readInstalledSet(ctx))?.id, installedBefore?.id, "and must not change which set is recorded as installed");
+    } finally {
+      await copyFile(backup, storedArtifact);
+      await rm(backup, { force: true });
+    }
+  }
+
   const dependencies = {
     findFreePort: async () => 24567,
     createContext: async () => { lastTryDir = deploymentDir(); return context(parseEnv(await readFile(envFile(), "utf8"))); },
@@ -194,6 +259,7 @@ try {
   // --- apply --set must refuse before recording a set whose required image the runtime
   // does not run, not record it as installed with nothing said about the mismatch. -------
   {
+    running = true;
     const beforeMismatch = await readInstalledSet(ctx);
     const mismatchedCtx = context({ ...baseEnv, OPENCLAW_IMAGE: "fixture@sha256:def" });
     const mismatched = await captured(() => apply(mismatchedCtx, ["--set", next.artifact, "--json"]));
@@ -204,6 +270,33 @@ try {
       beforeMismatch?.id,
       "a refused apply --set must not overwrite the previously-installed set",
     );
+  }
+
+  // --- a stale local tag must not fool the check — the running CONTAINER is what has to
+  // match, not whatever a re-pulled tag now points to locally. -----------------------------
+  {
+    running = true;
+    const beforeStaleTag = await readInstalledSet(ctx);
+    const base = context(baseEnv);
+    const staleTagCtx = {
+      ...base,
+      runtime: {
+        ...base.runtime,
+        // The locally re-pulled tag already matches — imageReference() alone would have
+        // passed this. The running container is still on a different image, exactly the
+        // "docker pull without recreating the container" scenario imageReference() cannot
+        // see, and runningImageIdentity() (what the fix now uses) can.
+        imageReference: async () => next.manifest.requires.image,
+        runningImageIdentity: async () => ({ imageId: "stale-img", digests: ["fixture@sha256:stale-not-required"], containerId: "container-1" }),
+      },
+    } as unknown as Context;
+    const staleTag = await captured(() => apply(staleTagCtx, ["--set", next.artifact, "--json"]));
+    assert.match(
+      staleTag.error?.message ?? "",
+      /cannot be installed here/,
+      "a stale local tag must not fool the check — the running container is what matters",
+    );
+    assert.equal((await readInstalledSet(ctx))?.id, beforeStaleTag?.id);
   }
 
   process.stderr.write("all set lifecycle checks passed\n");

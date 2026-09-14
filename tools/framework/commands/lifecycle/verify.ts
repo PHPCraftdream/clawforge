@@ -184,6 +184,35 @@ export async function verifySnapshot(
     const [head, ...rest] = [...prefix, "tar", "-xzf", archive, "-C", workdir];
     await ctx.transport.exec(head, rest);
 
+    // A plain-string provider apiKey embedded in the ARCHIVE'S OWN openclaw.json is a
+    // finding on its own, independent of whatever the live instance's current config holds.
+    // Deriving the pattern to search for from the live config (collectSecrets, above) misses
+    // a key that has since been rotated out of the live config but is still sitting,
+    // embedded, inside this particular archive — this is direct evidence, not something to
+    // grep for: the archive's own file already says what it contains.
+    const archivedConfigPath = `${workdir}/${root}/config/openclaw.json`;
+    if (await ctx.transport.exists(archivedConfigPath)) {
+      try {
+        const archivedConfig = JSON.parse(await ctx.transport.readFile(archivedConfigPath)) as {
+          models?: { providers?: Record<string, unknown> };
+        };
+        const embeddedKeys = Object.entries(archivedConfig.models?.providers ?? {})
+          .filter(([, provider]) => {
+            const apiKey = (provider as { apiKey?: unknown } | null)?.apiKey;
+            return typeof apiKey === "string" && apiKey.length >= 12;
+          })
+          .map(([id]) => id);
+        if (embeddedKeys.length > 0) {
+          warn("the archive's own openclaw.json embeds a plain-string provider apiKey:");
+          for (const id of embeddedKeys) info(`provider ${id}`);
+          failures += 1;
+        }
+      } catch {
+        // Malformed or unreadable — nothing this specific check can add; the content scan
+        // below still runs against whatever the archive actually contains.
+      }
+    }
+
     const criticalHits = await findSecrets(ctx, workdir, secrets.critical);
     if (criticalHits.length > 0) {
       warn("provider/gateway credentials found inside the archive:");

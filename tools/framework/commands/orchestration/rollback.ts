@@ -17,7 +17,7 @@ import { resolve } from "node:path";
 import { log, info, die } from "../../core/log.ts";
 import { emit, isCaptured } from "../../core/output.ts";
 import { deploymentName, deploymentDir } from "../../runtime/deployment.ts";
-import { Journal, readOperation, latestRollbackable } from "../../service/operations.ts";
+import { Journal, readOperation, latestRollbackable, newOperationId } from "../../service/operations.ts";
 import { restart } from "../lifecycle/lifecycle.ts";
 import { takeLock } from "../../runtime/instance-lock.ts";
 import { readInstalledSet, withUnpackedArtifact } from "../../set/artifacts/install.ts";
@@ -80,45 +80,62 @@ async function rollbackSet(ctx: Context, args: string[]): Promise<void> {
     );
   });
 
-  // Said before anything runs, not folded into apply's own report afterwards: which parts
-  // move together and which do not is the one thing a coder must know before agreeing to this.
-  log(`rolling back from set "${installed.name}" (${installed.id}) to "${previous.name}" (${previous.id})`);
-  info("reversed together: prompts, MCP server registrations, schedules, gateway settings — everything the set declares");
-  info("left alone: an agent's own memory, and anything else written to the data directory since — this is a set install, not a data restore");
-
-  // Reinstalling the previous set below only ever SETS the paths ITS OWN desired-state.json
-  // declares — apply-config is a batch config set, never an unset, and CONFIG_DRIFT is only
-  // ever computed over declared paths. A setting the CURRENT set added that the previous one
-  // never declared (agents.defaults.thinkingDefault, say) is invisible to both and survives
-  // untouched. The apply that installed the current set already took a full snapshot of the
-  // live config before its first mutating step (every apply does, via snapshotConfig) — the
-  // same mechanism the single-file rollback path above restores from. Putting that back first
-  // undoes exactly what that apply changed, additions included, before the previous set's own
-  // declaration is reapplied on top. latestRollbackable is the newest operation with such a
-  // snapshot — in the ordinary case (nothing else applied since) that is exactly the apply
-  // that installed the current set, the same default the single-file path already uses when
-  // not told which operation to undo.
-  const priorApply = await latestRollbackable(ctx);
-  if (priorApply?.configSnapshot !== undefined && (await ctx.transport.exists(priorApply.configSnapshot))) {
-    const configJournal = await Journal.open(ctx, "rollback", deploymentName());
-    const configHeld = await takeLock(ctx, `rollback of ${priorApply.id}`, configJournal.id, { breakLock: args.includes("--break-lock") });
-    try {
-      const live = `${ctx.settings.dataDir}/config/openclaw.json`;
-      log(`putting back the configuration from before ${priorApply.id}, so nothing the current set added is left behind`);
-      await ctx.transport.writeFile(live, await ctx.transport.readFile(priorApply.configSnapshot));
-      await configJournal.step("restore-config", "done", `from ${priorApply.configSnapshot}`);
-      // No restart here: the reinstall below runs its own plan against this now-stale-on-disk
-      // config, which detects RESTART_REQUIRED (config mtime after the container's own start)
-      // the same way any other unrestarted write would, and restarts once as part of it.
-      await configJournal.close("succeeded", `restored the configuration from before ${priorApply.id} as part of rollback --set`);
-    } finally {
-      await configHeld.release();
-    }
-  }
-
+  // Verified BEFORE anything is touched — a corrupt archive, or one that does not actually
+  // match the recorded previous set, must be refused before the live configuration is
+  // written, not discovered afterward with the config already changed and the installed
+  // marker still naming the set this was trying to leave.
   await withUnpackedArtifact(artifact, async (_staging, verified) => {
     if (verified.id !== previous.id) die("the rollback artifact does not match the recorded previous set");
-    await apply(ctx, [...args, "--set", artifact]);
+
+    // Said before anything runs, not folded into apply's own report afterwards: which parts
+    // move together and which do not is the one thing a coder must know before agreeing to this.
+    log(`rolling back from set "${installed.name}" (${installed.id}) to "${previous.name}" (${previous.id})`);
+    info("reversed together: prompts, MCP server registrations, schedules, gateway settings — everything the set declares");
+    info("left alone: an agent's own memory, and anything else written to the data directory since — this is a set install, not a data restore");
+
+    // One lock for the whole rollback: putting the configuration back and reinstalling the
+    // previous set are one operation, not two separately-locked ones — a gap between them is
+    // exactly the window another operation could mutate the instance in, between "config put
+    // back" and "recipes/agents/MCP reconciled to match it". apply --set's own lock-taking
+    // (apply.ts) is nesting-safe the same way provision-agent's already is: it skips
+    // acquiring when this outer one is already held.
+    const operationId = newOperationId("rollback");
+    const held = await takeLock(ctx, `rollback --set to ${previous.id}`, operationId, { breakLock: args.includes("--break-lock") });
+    try {
+      const journal = await Journal.open(ctx, "rollback", deploymentName(), operationId);
+      try {
+        // The EXACT operation that installed the set currently in force — its own
+        // configSnapshot is the configuration exactly as the previous set left it, before
+        // that apply's config step ever ran. latestRollbackable() (the newest operation with
+        // ANY snapshot) is the wrong thing here: an ordinary apply run after the current set
+        // was installed takes its own snapshot too, and restoring that one would restore to a
+        // config that already includes whatever the current set added — installed.operationId
+        // names the one apply that actually matters, regardless of what ran since.
+        const installingOperation = installed.operationId === undefined
+          ? undefined
+          : await readOperation(ctx, installed.operationId);
+        if (installingOperation?.configSnapshot !== undefined && (await ctx.transport.exists(installingOperation.configSnapshot))) {
+          const live = `${ctx.settings.dataDir}/config/openclaw.json`;
+          log(`putting back the configuration from before ${installingOperation.id}, so nothing the current set added is left behind`);
+          await ctx.transport.writeFile(live, await ctx.transport.readFile(installingOperation.configSnapshot));
+          await journal.step("restore-config", "done", `from ${installingOperation.configSnapshot}`);
+        } else {
+          await journal.step("restore-config", "skipped", "no recorded snapshot for the operation that installed the current set");
+        }
+
+        // Reinstalls recipes/agents/MCP/cron and reapplies the previous set's own declared
+        // config on top — a no-op for anything the restore above already put back correctly,
+        // a real fix for anything that had drifted independently of the set boundary.
+        await apply(ctx, [...args, "--set", artifact]);
+        await journal.close("succeeded", `rolled back to "${previous.name}" (${previous.id})`);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        await journal.close("failed", detail);
+        throw error;
+      }
+    } finally {
+      await held.release();
+    }
   });
 }
 

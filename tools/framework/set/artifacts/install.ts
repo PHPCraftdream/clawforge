@@ -46,6 +46,11 @@ export interface InstalledSet {
   /** What the set required, kept beside the id so a later mismatch can be described without
    *  the artifact being present — the machine that installed it may be long gone. */
   readonly requires: SetManifest["requires"];
+  /** The apply operation that installed this set. Its own configSnapshot (operations.ts),
+   *  when it took one, is the configuration exactly as the PREVIOUS set left it — what
+   *  `rollback --set` needs to restore precisely. Absent for a record written before this
+   *  field existed, or when no operation id was available to record. */
+  readonly operationId?: string;
   /** The set this one replaced, so a rollback has somewhere to go back to. Absent for the
    *  first set ever installed on this instance. */
   readonly previous?: PreviousSet;
@@ -89,7 +94,7 @@ function isSetId(value: unknown): value is string {
  *  overwrite `previous` with the set itself: that would make a rollback undo nothing. And a
  *  `previous` already on record survives an apply that changes nothing about which set is
  *  installed, for the same reason. */
-export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id: string): Promise<void> {
+export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id: string, operationId?: string): Promise<void> {
   if (!isSetId(id) || id !== setManifestId(manifest)) {
     throw new Error("refusing to record an installed set whose id does not match its manifest");
   }
@@ -104,6 +109,7 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
     name: manifest.name,
     installedAt: new Date().toISOString(),
     requires: manifest.requires,
+    ...(operationId === undefined ? {} : { operationId }),
     ...(previous === undefined ? {} : { previous }),
   };
   await ctx.transport.writeFile(installedSetFile(ctx), `${JSON.stringify(record, null, 2)}\n`);

@@ -37,6 +37,7 @@ import {
   agentWorkspaceTargetDir,
   loadRecipeAgentBundle,
   cronJobMatches,
+  mcpServerMatches,
 } from "../management/provision-agent.ts";
 import type { RecipeAgentBundle, AgentConfig, CronJob } from "../management/provision-agent.ts";
 import {
@@ -262,7 +263,13 @@ async function observeLive(
   // --- what OpenClaw itself has registered ----------------------------------------------
   const agents = await listOrEmpty(ctx, ["agents", "list", "--json"], (parsed) =>
     (parsed as Array<{ id?: string }>).map((entry) => entry.id ?? "").filter((id) => id !== ""));
-  const mcpServers = await listOrEmpty(ctx, ["mcp", "list", "--json"], (parsed) => Object.keys(parsed as Record<string, unknown>));
+  // The full entries, not just names: a server present under the wrong command (or
+  // disabled) is registered but broken, and the per-recipe check below needs to tell that
+  // apart from genuinely missing — mcpServerMatches() is the same comparison
+  // provision-agent's own reconciliation already uses.
+  const mcpServerEntries = await listOrEmpty(ctx, ["mcp", "list", "--json"], (parsed) =>
+    Object.entries(parsed as Record<string, { command?: unknown; args?: unknown; enabled?: unknown }>));
+  const mcpServers = mcpServerEntries.map(([name]) => name);
   // Whole jobs, not flattened names: the declared contract is the message, the timeout, the
   // session target and the delivery mode as well as the schedule, and a job compared on two
   // of those can differ in every other one while reporting no drift at all.
@@ -311,9 +318,18 @@ async function observeLive(
         problem("AGENT_MISSING", `recipe "${expectation.recipe}" declares agent "${agentId}", which the instance does not have`, `./clawforge provision-agent ${expectation.recipe}`),
       );
     }
-    if (!mcpServers.includes(config.mcpServerName)) {
+    const registeredServer = mcpServerEntries.find(([name]) => name === config.mcpServerName)?.[1];
+    if (registeredServer === undefined) {
       problems.push(
         problem("MCP_SERVER_MISSING", `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is not registered`, `./clawforge provision-agent ${expectation.recipe}`),
+      );
+    } else if (!mcpServerMatches(registeredServer, expectation.recipe)) {
+      problems.push(
+        problem(
+          "MCP_SERVER_MISSING",
+          `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is registered but does not launch the recipe's server.ts (wrong command, or disabled)`,
+          `./clawforge provision-agent ${expectation.recipe}`,
+        ),
       );
     }
     if (config.cronJobName !== undefined && cronMessage !== undefined) {

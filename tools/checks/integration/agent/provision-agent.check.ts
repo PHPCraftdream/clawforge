@@ -290,6 +290,18 @@ function stubContext(listAnswer: unknown) {
   check("a changed command counts as drift", mcpServerMatches({ ...mcpServerSpec("demo-recipe"), command: "missing-program" }, "demo-recipe"), false);
   check("changed args count as drift", mcpServerMatches({ ...mcpServerSpec("demo-recipe"), args: ["--wrong"] }, "demo-recipe"), false);
   check("an absent entry is not a match", mcpServerMatches(undefined, "demo-recipe"), false);
+  // A disabled entry excludes itself from tool discovery entirely (OpenClaw's own registry
+  // docs) — correct command/args is not enough for it to count as "working".
+  check("a disabled entry does not match even with the right command/args", mcpServerMatches({ ...mcpServerSpec("demo-recipe"), enabled: false }, "demo-recipe"), false);
+  check("enabled explicitly true still matches", mcpServerMatches({ ...mcpServerSpec("demo-recipe"), enabled: true }, "demo-recipe"), true);
+  check("an absent enabled field defaults to matching (conservative default)", mcpServerMatches(mcpServerSpec("demo-recipe"), "demo-recipe"), true);
+}
+
+{
+  const { ctx, calls } = stubContext({ "demo-recipe": { ...mcpServerSpec("demo-recipe"), enabled: false } });
+  const state = await ensureMcpServer(ctx, CONFIG, "demo-recipe");
+  check("ensureMcpServer reconciles a disabled-but-otherwise-correct registration", state, "replaced");
+  check("it lists, unsets, then re-adds", calls.length, 3);
 }
 
 {

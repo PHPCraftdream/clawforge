@@ -195,8 +195,13 @@ export function mcpAddArgv(config: AgentConfig, recipeName: string): string[] {
  *  --command/--arg. A name being registered at all says nothing about whether it still
  *  points at a working command; this is what lets ensureMcpServer() tell "present and
  *  correct" apart from "present and broken". */
-export function mcpServerMatches(entry: { command?: unknown; args?: unknown } | undefined, recipeName: string): boolean {
+export function mcpServerMatches(entry: { command?: unknown; args?: unknown; enabled?: unknown } | undefined, recipeName: string): boolean {
   if (entry === undefined) return false;
+  // OpenClaw excludes a disabled entry from tool discovery entirely (docs.openclaw.ai/cli/
+  // mcp/registry) — a correctly-commanded but disabled registration is exactly as broken,
+  // from an agent's point of view, as one that was never registered at all. Only an explicit
+  // false counts as disabled; absent or true stays enabled, the conservative default.
+  if (entry.enabled === false) return false;
   const spec = mcpServerSpec(recipeName);
   if (entry.command !== spec.command) return false;
   if (!Array.isArray(entry.args) || entry.args.length !== spec.args.length) return false;

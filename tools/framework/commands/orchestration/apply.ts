@@ -23,11 +23,26 @@ import { up, restart } from "../lifecycle/lifecycle.ts";
 import { provisionAgent, removeOwnedObject } from "../management/provision-agent.ts";
 import type { OwnedKind } from "../../set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "../../service/operations.ts";
-import { takeLock } from "../../runtime/instance-lock.ts";
+import { takeLock, lockHeldHere } from "../../runtime/instance-lock.ts";
 import { withSetSource } from "../../set/artifacts/source.ts";
 import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems } from "../../set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "../../core/context.ts";
+import type { SetManifest } from "../../set/artifacts/model.ts";
+
+/** The digest of the image the CONTAINER actually runs, not what a tag currently resolves
+ *  to locally. ctx.runtime.imageReference() inspects the configured reference itself — after
+ *  a `docker pull` updates what a tag points to, that reports the newly-pulled digest even
+ *  when the running container was never recreated and is still on the old one. This is the
+ *  same primitive (and the same by-hash-suffix matching, since the digests array can carry
+ *  more than one repo/tag form of the same image) evidence.ts's observeRuntime() already uses
+ *  for exactly this reason. */
+async function runningImageDigest(ctx: Context, manifest: SetManifest): Promise<string | undefined> {
+  const running = await ctx.runtime.runningImageIdentity?.();
+  const digests = running?.digests ?? [];
+  const requiredHash = manifest.requires.image.split("@").at(-1);
+  return digests.find((digest) => digest.split("@").at(-1) === requiredHash) ?? digests[0];
+}
 
 /** How each executable step is actually performed. Commands are called directly rather than
  *  by shelling out to `./clawforge`: the step already knows which function it means, and going back
@@ -153,9 +168,10 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
       // right now. requirementProblems is the same check inspect's own SET_REQUIREMENT_UNMET
       // finding already uses — reused here so this run reports the mismatch itself, instead
       // of leaving it to a LATER inspect that reads the record this apply is about to write.
+      const framework = await frameworkVersion();
       const requirementIssues = requirementProblems(verified.manifest, {
-        framework: await frameworkVersion(),
-        imageDigest: await ctx.runtime.imageReference(),
+        framework,
+        imageDigest: await runningImageDigest(ctx, verified.manifest),
       });
       if (requirementIssues.length > 0) {
         die(
@@ -165,13 +181,35 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
       }
 
       const operationId = newOperationId("apply");
-      const held = await takeLock(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock") });
+      // Nesting-safe, the same way provisionAgent()'s own lock-taking already is: a caller
+      // (rollback --set) that already holds the instance lock for the whole operation must
+      // not have this acquire refuse itself as "another operation changing this instance".
+      const held = lockHeldHere() ? undefined : await takeLock(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock") });
       try {
         await storeArtifactForRollback(artifact, verified);
         await applyFromSource(ctx, args, operationId);
-        await recordInstalledSet(ctx, verified.manifest, verified.id);
+
+        // Checked again now that up/restart have run: the pre-check only proves the
+        // instance was NOT already wrong before this apply touched it, not that whatever
+        // apply actually did brought it into line — up/restart may not have recreated the
+        // container at all (nothing in the plan called for it), or compose may not have
+        // picked up the change for a reason of its own. The set is not recorded as installed
+        // over a running instance this apply cannot show actually matches it.
+        const afterIssues = requirementProblems(verified.manifest, {
+          framework,
+          imageDigest: await runningImageDigest(ctx, verified.manifest),
+        });
+        if (afterIssues.length > 0) {
+          die(
+            `apply finished, but the running instance still does not match what this set requires:\n` +
+              `${afterIssues.map((entry) => `  ${entry.detail}`).join("\n")}\n` +
+              "The set is NOT recorded as installed.",
+          );
+        }
+
+        await recordInstalledSet(ctx, verified.manifest, verified.id, operationId);
       } finally {
-        await held.release();
+        await held?.release();
       }
     }),
   );

@@ -148,5 +148,69 @@ function makeCtxWithConfig(configApiKey: string | undefined): { ctx: Context; ca
   check("with no plain-string apiKey at all, the share check still passes", passed, true);
 }
 
+// --- the archive's OWN embedded apiKey must be caught, even when it differs from the live one
+//
+// Before this fix, the pattern to search for came only from the LIVE instance's current
+// config — an archive is often an older snapshot whose embedded openclaw.json carries a
+// DIFFERENT (since-rotated) plain-string apiKey, never present in the live config at all.
+// collectSecrets() never learns to look for that value, so the archive passes.
+
+function makeCtxWithArchivedKey(liveApiKey: string | undefined, archivedApiKey: string | undefined): { ctx: Context } {
+  const liveConfigPath = "/srv/openclaw/data/config/openclaw.json";
+  const liveConfigBody = JSON.stringify({ models: { providers: liveApiKey === undefined ? {} : { custom: { apiKey: liveApiKey } } } });
+  const archivedConfigBody = JSON.stringify({ models: { providers: archivedApiKey === undefined ? {} : { custom: { apiKey: archivedApiKey } } } });
+  const listing = "data/\ndata/config/openclaw.json\n";
+  const verboseListing =
+    "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n" +
+    "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/openclaw.json\n";
+  // verifySnapshot picks its own random workdir; captured from the tar -xzf ... -C <dir>
+  // call, the same way the real archived config path would only become knowable after it.
+  let workdir: string | undefined;
+  const archivedConfigPath = (): string | undefined => (workdir === undefined ? undefined : `${workdir}/data/config/openclaw.json`);
+
+  const ctx = {
+    settings: { dataDir: "/srv/openclaw/data", env: {} },
+    transport: {
+      description: "stub",
+      async exists(path: string): Promise<boolean> {
+        return path === ARCHIVE || path === liveConfigPath || path === archivedConfigPath();
+      },
+      async readFile(path: string): Promise<string> {
+        if (path === liveConfigPath) return liveConfigBody;
+        if (path === archivedConfigPath()) return archivedConfigBody;
+        return "";
+      },
+      async writeFile(): Promise<void> {},
+      async remove(): Promise<void> {},
+      async mkdirp(): Promise<void> {},
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (args.includes("-tzf")) return { code: 0, stdout: listing, stderr: "" };
+        if (args.includes("-tvzf")) return { code: 0, stdout: verboseListing, stderr: "" };
+        if (args.includes("-xzf")) {
+          workdir = args[args.indexOf("-C") + 1];
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        // grep deliberately never reports a hit: isolates this test to the archive-direct
+        // check, independent of the live-config-derived scan #163 already covers.
+        if (command === "grep") return { code: 1, stdout: "", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  return { ctx };
+}
+
+{
+  const { ctx } = makeCtxWithArchivedKey("current-live-key-999999", "old-rotated-out-key-000");
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "share"));
+  check("an archive whose own embedded key differs from the current live one still fails", passed, false);
+}
+{
+  const { ctx } = makeCtxWithArchivedKey(undefined, undefined);
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "share"));
+  check("with no plain-string apiKey anywhere, the share check still passes", passed, true);
+}
+
 process.stderr.write(failed === 0 ? "all verify checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

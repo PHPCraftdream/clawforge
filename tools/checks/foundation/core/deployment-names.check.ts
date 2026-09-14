@@ -21,6 +21,7 @@ import {
   secretsTemplateFile,
   secretStoreFile,
   useDeployment,
+  useDeploymentName,
 } from "../../../framework/runtime/deployment.ts";
 import { safeName } from "../../../framework/core/names.ts";
 import { monorepoRoot } from "../../../framework/core/env.ts";
@@ -139,6 +140,31 @@ check(
   secretsDir().startsWith(dir + sep),
   true,
 );
+
+// --- deploymentName() override: an instance under a name the directory itself cannot use ---
+
+check("with no override, deploymentName() is still the directory's basename", deploymentName(), "example app");
+
+useDeploymentName("open_claw");
+check("an override is returned instead of the basename", deploymentName(), "open_claw");
+check("the directory itself is untouched by the override", deploymentDir(), dir);
+
+useDeploymentName(undefined);
+check("clearing the override reverts to the basename", deploymentName(), "example app");
+
+checkThrows(
+  "an override with an uppercase letter is refused — Docker's own rule, not safeName's",
+  () => useDeploymentName("Open_Claw"),
+  ["OC_COMPOSE_PROJECT", "Open_Claw"],
+);
+checkThrows(
+  "an override starting with a hyphen is refused",
+  () => useDeploymentName("-open_claw"),
+  ["OC_COMPOSE_PROJECT"],
+);
+useDeploymentName("open_claw");
+check("an override may contain an underscore — Docker accepts it even though safeName does not", deploymentName(), "open_claw");
+useDeploymentName(undefined);
 
 // --- names.ts: safeName() directly --------------------------------------------
 

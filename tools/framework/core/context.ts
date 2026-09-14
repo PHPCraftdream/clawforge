@@ -9,6 +9,7 @@ import { registerSecret } from "./log.ts";
 import { createTransport, WslTransport, SshTransport, type Transport } from "../runtime/transport.ts";
 import { createPathBridge, type PathBridge, type MountPoint } from "./paths.ts";
 import { DockerRuntime } from "../runtime/runtime-docker.ts";
+import { useDeploymentName } from "../runtime/deployment.ts";
 import type { Runtime } from "../runtime/runtime.ts";
 
 export interface Context {
@@ -30,6 +31,11 @@ export async function createContext(options: ContextOptions = {}): Promise<Conte
   // Registered here rather than where it is generated: every entry point builds a context,
   // and a failing child process is reported with its whole command line.
   registerSecret(config.env.OPENCLAW_GATEWAY_TOKEN);
+  // Optional, and read from this same .env rather than a separate file: an instance that
+  // already exists under a compose project name the deployment directory itself cannot use
+  // (Docker allows underscores, safeName does not) is managed under its real name instead
+  // of being forced to rename.
+  useDeploymentName(config.env.OC_COMPOSE_PROJECT === "" ? undefined : config.env.OC_COMPOSE_PROJECT);
   const transport = await createTransport({
     location: config.location,
     wslDistro: config.wslDistro,

@@ -143,9 +143,17 @@ async function declaredState(ctx: Context, problems: Problem[]): Promise<Declare
   let raw: string | undefined;
   try {
     raw = await readFile(desiredStateFile(), "utf8");
-  } catch {
-    // No file at all: a deployment with no desired state declares nothing about the config.
-    // Reported as an empty declaration rather than as a failure: inspect must still work.
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      // A directory sitting where the file should be, a permissions error, or anything else
+      // that is not "there is genuinely no file" must not be silently treated the same way
+      // as a legitimate empty declaration — that is how a broken (or blocked) declaration
+      // produced healthy: true with nothing ever saying it could not even be read.
+      problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} could not be read: ${(error as Error).message}`));
+    }
+    // ENOENT: no file at all. A deployment with no desired state declares nothing about the
+    // config — reported as an empty declaration rather than as a failure: inspect must still
+    // work.
   }
   if (raw !== undefined) {
     try {

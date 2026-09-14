@@ -587,6 +587,28 @@ try {
       await writeFile(desiredStatePath, validDesiredState);
     }
   }
+
+  {
+    // A directory sitting where the file should be is a DIFFERENT read failure (EISDIR) than
+    // "no file at all" (ENOENT) — before the fix, declaredState()'s catch-all treated every
+    // readFile failure the same way, silently downgrading this to an empty declaration too.
+    const desiredStatePath = resolve(deployment, "config", "desired-state.json");
+    const validDesiredState = await readFile(desiredStatePath, "utf8");
+    await rm(desiredStatePath, { force: true });
+    await mkdir(desiredStatePath);
+    try {
+      const inspection = await gatherInspection(
+        stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums }),
+      );
+      const broken = inspection.problems.find((entry) => entry.detail.includes("desired-state.json"));
+      check("a directory where desired-state.json should be is a finding", broken !== undefined, true);
+      check("and it is blocking, not silently empty", broken?.severity, "blocking");
+      check("the instance is not reported healthy", renderJson(inspection).healthy, false);
+    } finally {
+      await rm(desiredStatePath, { recursive: true, force: true });
+      await writeFile(desiredStatePath, validDesiredState);
+    }
+  }
 } finally {
   await rm(deployment, { recursive: true, force: true });
   // The active deployment is process-wide and the checks share one process: leave it where

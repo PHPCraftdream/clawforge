@@ -120,6 +120,20 @@ async function rollbackSet(ctx: Context, args: string[]): Promise<void> {
     const operationId = newOperationId("rollback");
     const held = await takeLock(ctx, `rollback --set to ${previous.id}`, operationId, { breakLock: args.includes("--break-lock") });
     try {
+      // Re-verified under the lock: which set is installed (and therefore which "previous"
+      // is the correct rollback target) could have changed in the window between the
+      // initial read above and taking this lock — another apply --set may have completed
+      // installing a newer one in it. Acting on the stale read would silently overwrite that
+      // later install with the wrong transition entirely (B -> A instead of the actual C -> B).
+      const stillInstalled = await readInstalledSet(ctx);
+      if (stillInstalled?.id !== installed.id) {
+        die(
+          `the installed set changed while this rollback was preparing (was "${installed.name}" (${installed.id}), ` +
+            `is now ${stillInstalled === undefined ? "nothing recorded" : `"${stillInstalled.name}" (${stillInstalled.id})`}) — ` +
+            "re-run ./clawforge rollback --set against the current state.",
+        );
+      }
+
       const journal = await Journal.open(ctx, "rollback", deploymentName(), operationId);
       try {
         // The EXACT operation that installed the set currently in force — its own

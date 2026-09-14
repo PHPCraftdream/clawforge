@@ -52,7 +52,11 @@ export async function runningImageDigest(ctx: Context, manifest: SetManifest): P
  *  decision needs proof of a match, not merely the absence of a proven mismatch. */
 export async function runningImageUnconfirmed(ctx: Context): Promise<boolean> {
   const running = await ctx.runtime.runningImageIdentity?.();
-  return running !== undefined && running.digests.length === 0;
+  // Either shape of "cannot determine anything about the running image" refuses recording —
+  // an identity object with no digests, AND no identity at all (no container found, or a
+  // runtime backend that does not implement this). Only checking the former let a fully
+  // unknown image identity sail through as if it were confirmed.
+  return running === undefined || running.digests.length === 0;
 }
 
 /** How each executable step is actually performed. Commands are called directly rather than

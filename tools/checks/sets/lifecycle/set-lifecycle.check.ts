@@ -378,6 +378,73 @@ try {
     assert.equal((await readInstalledSet(ctx))?.id, beforeUnconfirmed?.id);
   }
 
+  // --- a running container with NO image identity at all (not merely empty digests) must
+  // also refuse recording — no container found by containerId, or a runtime backend that
+  // does not implement runningImageIdentity(), is exactly as unproven as an empty digests
+  // array. -------------------------------------------------------------------------------
+  {
+    running = true;
+    const beforeNoIdentity = await readInstalledSet(ctx);
+    const base = context(baseEnv);
+    const noIdentityCtx = {
+      ...base,
+      runtime: {
+        ...base.runtime,
+        runningImageIdentity: async () => undefined,
+      },
+    } as unknown as Context;
+    const noIdentity = await captured(() => apply(noIdentityCtx, ["--set", next.artifact, "--json"]));
+    assert.match(
+      noIdentity.error?.message ?? "",
+      /could not be resolved to any digest/,
+      "no image identity at all must refuse recording, not be treated as confirmed",
+    );
+    assert.equal((await readInstalledSet(ctx))?.id, beforeNoIdentity?.id);
+  }
+
+  // --- rollback --set must re-verify the installed set under the lock, not act on a stale
+  // pre-lock read — another apply --set can complete installing a newer set (C) in the
+  // window between rollbackSet's initial readInstalledSet() and takeLock(). --------------
+  {
+    running = true;
+    const setup = await captured(() => apply(ctx, ["--set", next.artifact, "--json"]));
+    assert.equal(setup.error, undefined, setup.error?.message);
+    const beforeRace = await readInstalledSet(ctx);
+    assert.equal(beforeRace?.id, next.id, "the fixture for this test needs B installed with a previous (A) on record");
+
+    let raced = false;
+    const raceRecord = {
+      id: "c".repeat(64),
+      name: next.manifest.name,
+      installedAt: new Date().toISOString(),
+      requires: next.manifest.requires,
+      previous: { id: beforeRace!.id, name: beforeRace!.name, installedAt: beforeRace!.installedAt },
+    };
+    const raceCtx = {
+      ...ctx,
+      transport: {
+        ...ctx.transport,
+        exec: async (command: string, args: string[], options?: ExecOptions) => {
+          if (!raced && command === "mkdir" && !args.includes("-p")) {
+            raced = true;
+            // Simulates apply --set installing "C" completing in the window just before
+            // this rollback's own lock claim actually lands.
+            files.set(`${sourceData}/clawforge-installed-set.json`, `${JSON.stringify(raceRecord, null, 2)}\n`);
+          }
+          return transport.exec(command, args, options);
+        },
+      },
+    } as unknown as Context;
+
+    const rolledBackRaced = await captured(() => rollback(raceCtx, ["--set", "--json"]));
+    assert.match(rolledBackRaced.error?.message ?? "", /installed set changed while this rollback was preparing/);
+    assert.equal(
+      (await readInstalledSet(ctx))?.id,
+      raceRecord.id,
+      "the race winner's install must survive — a stale rollback must not silently overwrite it",
+    );
+  }
+
   process.stderr.write("all set lifecycle checks passed\n");
 } finally {
   if (previousDeployment !== undefined) useDeployment(previousDeployment);

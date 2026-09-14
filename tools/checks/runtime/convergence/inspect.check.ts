@@ -6,7 +6,7 @@
 // the declaration side is a real temp deployment on disk, since that half is read with
 // node:fs and is exactly what a coder edits.
 
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { gatherInspection, renderJson, doctor } from "../../../framework/commands/orchestration/inspect.ts";
@@ -565,6 +565,27 @@ try {
     const drift = inspection.problems.find((entry) => entry.code === "LOCK_DRIFT");
     check("a recipe edited since the lock is drift from it", drift !== undefined, true);
     check("and the differing file is named", drift?.detail.includes("data/page.md"), true);
+  }
+
+  {
+    // A desired-state.json that EXISTS but cannot be parsed is a different situation than
+    // "no file at all" — before the fix, both were caught by the same catch and silently
+    // treated as an empty declaration, so a broken file produced healthy: true with nothing
+    // ever saying the declaration itself was unreadable.
+    const desiredStatePath = resolve(deployment, "config", "desired-state.json");
+    const validDesiredState = await readFile(desiredStatePath, "utf8");
+    await writeFile(desiredStatePath, "{broken");
+    try {
+      const inspection = await gatherInspection(
+        stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums }),
+      );
+      const broken = inspection.problems.find((entry) => entry.detail.includes("desired-state.json"));
+      check("a desired-state.json that exists but fails to parse is a finding", broken !== undefined, true);
+      check("and it is blocking, not silently empty", broken?.severity, "blocking");
+      check("the instance is not reported healthy", renderJson(inspection).healthy, false);
+    } finally {
+      await writeFile(desiredStatePath, validDesiredState);
+    }
   }
 } finally {
   await rm(deployment, { recursive: true, force: true });

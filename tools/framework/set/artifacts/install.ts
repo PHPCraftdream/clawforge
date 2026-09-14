@@ -100,16 +100,23 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
   }
   safeName("set", manifest.name);
   const current = await readInstalledSet(ctx);
-  const previous: PreviousSet | undefined = current === undefined || current.id === id
+  const sameSet = current !== undefined && current.id === id;
+  const previous: PreviousSet | undefined = current === undefined || sameSet
     ? current?.previous
     : { id: current.id, name: current.name, installedAt: current.installedAt };
+  // A no-op re-apply of the SAME set (nothing changed, so applyFromSource() took its
+  // "nothing to apply" early return and never opened a Journal or took a snapshot for this
+  // fresh operationId) must not overwrite the id that actually installed it — rollback --set
+  // reads this field to find the one snapshot that matters, and a clobbered id points at an
+  // operation record that was never written, silently losing the snapshot to restore from.
+  const effectiveOperationId = sameSet ? current.operationId : operationId;
 
   const record: InstalledSet = {
     id,
     name: manifest.name,
     installedAt: new Date().toISOString(),
     requires: manifest.requires,
-    ...(operationId === undefined ? {} : { operationId }),
+    ...(effectiveOperationId === undefined ? {} : { operationId: effectiveOperationId }),
     ...(previous === undefined ? {} : { previous }),
   };
   await ctx.transport.writeFile(installedSetFile(ctx), `${JSON.stringify(record, null, 2)}\n`);

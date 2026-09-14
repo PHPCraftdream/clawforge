@@ -10,6 +10,7 @@
 //              instance is moving), fatal in `share`.
 
 import { randomBytes } from "node:crypto";
+import JSON5 from "json5";
 import { log, info, warn, die } from "../../core/log.ts";
 import type { Context } from "../../core/context.ts";
 import { sudoFor } from "../../runtime/datadir.ts";
@@ -190,10 +191,16 @@ export async function verifySnapshot(
     // a key that has since been rotated out of the live config but is still sitting,
     // embedded, inside this particular archive — this is direct evidence, not something to
     // grep for: the archive's own file already says what it contains.
+    //
+    // Parsed as JSON5, not JSON: OpenClaw's own gateway config format IS JSON5
+    // (docs.openclaw.ai/gateway/configuration — comments and trailing commas are valid), so
+    // a real archived openclaw.json can use syntax plain JSON.parse rejects outright. And a
+    // parse failure here must not be silence: a file this check cannot read is a file this
+    // check cannot clear, the same as any other unverifiable secret-bearing content.
     const archivedConfigPath = `${workdir}/${root}/config/openclaw.json`;
     if (await ctx.transport.exists(archivedConfigPath)) {
       try {
-        const archivedConfig = JSON.parse(await ctx.transport.readFile(archivedConfigPath)) as {
+        const archivedConfig = JSON5.parse(await ctx.transport.readFile(archivedConfigPath)) as {
           models?: { providers?: Record<string, unknown> };
         };
         const embeddedKeys = Object.entries(archivedConfig.models?.providers ?? {})
@@ -207,9 +214,9 @@ export async function verifySnapshot(
           for (const id of embeddedKeys) info(`provider ${id}`);
           failures += 1;
         }
-      } catch {
-        // Malformed or unreadable — nothing this specific check can add; the content scan
-        // below still runs against whatever the archive actually contains.
+      } catch (error) {
+        warn(`the archive's own openclaw.json could not be parsed, so it could not be checked for an embedded key: ${(error as Error).message}`);
+        failures += 1;
       }
     }
 

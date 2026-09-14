@@ -41,6 +41,9 @@
   "scripts": {
     "prepack": "node --experimental-strip-types ../build-framework-package.ts"
   },
+  "dependencies": {
+    "json5": "^2.2.3"
+  },
   "publishConfig": {
     "access": "public"
   },

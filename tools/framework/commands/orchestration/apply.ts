@@ -37,11 +37,22 @@ import type { SetManifest } from "../../set/artifacts/model.ts";
  *  same primitive (and the same by-hash-suffix matching, since the digests array can carry
  *  more than one repo/tag form of the same image) evidence.ts's observeRuntime() already uses
  *  for exactly this reason. */
-async function runningImageDigest(ctx: Context, manifest: SetManifest): Promise<string | undefined> {
+export async function runningImageDigest(ctx: Context, manifest: SetManifest): Promise<string | undefined> {
   const running = await ctx.runtime.runningImageIdentity?.();
   const digests = running?.digests ?? [];
   const requiredHash = manifest.requires.image.split("@").at(-1);
   return digests.find((digest) => digest.split("@").at(-1) === requiredHash) ?? digests[0];
+}
+
+/** Whether the container is running but its image could not be resolved to any digest at
+ *  all — a container built or tagged in a way docker cannot report RepoDigests for, say.
+ *  requirementProblems() treats an undefined imageDigest as "nothing to compare, no
+ *  problem", which is right for inspect's informational reporting (unknown legitimately
+ *  means "cannot say") but wrong for deciding whether to RECORD a set as installed: that
+ *  decision needs proof of a match, not merely the absence of a proven mismatch. */
+export async function runningImageUnconfirmed(ctx: Context): Promise<boolean> {
+  const running = await ctx.runtime.runningImageIdentity?.();
+  return running !== undefined && running.digests.length === 0;
 }
 
 /** How each executable step is actually performed. Commands are called directly rather than
@@ -199,11 +210,19 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
           framework,
           imageDigest: await runningImageDigest(ctx, verified.manifest),
         });
-        if (afterIssues.length > 0) {
+        // An undefined imageDigest here means requirementProblems() found nothing to compare
+        // against — which, for THIS decision, is not good enough: recording a set as
+        // installed is a claim of proof, and a container running with no resolvable digest
+        // at all is exactly as unproven as one with the wrong digest.
+        const unconfirmed = await runningImageUnconfirmed(ctx);
+        if (afterIssues.length > 0 || unconfirmed) {
           die(
-            `apply finished, but the running instance still does not match what this set requires:\n` +
-              `${afterIssues.map((entry) => `  ${entry.detail}`).join("\n")}\n` +
-              "The set is NOT recorded as installed.",
+            unconfirmed && afterIssues.length === 0
+              ? "apply finished, but this instance's running image could not be resolved to any digest — " +
+                "there is no proof it matches what this set requires. The set is NOT recorded as installed."
+              : `apply finished, but the running instance still does not match what this set requires:\n` +
+                `${afterIssues.map((entry) => `  ${entry.detail}`).join("\n")}\n` +
+                "The set is NOT recorded as installed.",
           );
         }
 

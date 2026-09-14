@@ -20,8 +20,9 @@ import { deploymentName, deploymentDir } from "../../runtime/deployment.ts";
 import { Journal, readOperation, latestRollbackable, newOperationId } from "../../service/operations.ts";
 import { restart } from "../lifecycle/lifecycle.ts";
 import { takeLock } from "../../runtime/instance-lock.ts";
-import { readInstalledSet, withUnpackedArtifact } from "../../set/artifacts/install.ts";
-import { apply } from "./apply.ts";
+import { readInstalledSet, withUnpackedArtifact, requirementProblems } from "../../set/artifacts/install.ts";
+import { frameworkVersion } from "../management/lock.ts";
+import { apply, runningImageDigest } from "./apply.ts";
 import type { OperationRecord } from "../../service/operations.ts";
 import type { Context } from "../../core/context.ts";
 
@@ -86,6 +87,23 @@ async function rollbackSet(ctx: Context, args: string[]): Promise<void> {
   // marker still naming the set this was trying to leave.
   await withUnpackedArtifact(artifact, async (_staging, verified) => {
     if (verified.id !== previous.id) die("the rollback artifact does not match the recorded previous set");
+
+    // Runtime/framework compatibility, checked here too — not left to the nested apply()
+    // call below, which only runs AFTER the config-snapshot restore has already written to
+    // the live config. A refusal inside that nested call would leave openclaw.json holding
+    // the previous set's config while the installed marker still names the current one: an
+    // inconsistent state this framework has spent its rounds removing. Same check apply
+    // --set's own pre-check runs, reused rather than duplicated.
+    const runtimeIssues = requirementProblems(verified.manifest, {
+      framework: await frameworkVersion(),
+      imageDigest: await runningImageDigest(ctx, verified.manifest),
+    });
+    if (runtimeIssues.length > 0) {
+      die(
+        `the previous set cannot be reinstalled here:\n${runtimeIssues.map((entry) => `  ${entry.detail}`).join("\n")}\n` +
+          "Point this deployment's OPENCLAW_IMAGE at the required digest (or update the framework) before rolling back.",
+      );
+    }
 
     // Said before anything runs, not folded into apply's own report afterwards: which parts
     // move together and which do not is the one thing a coder must know before agreeing to this.

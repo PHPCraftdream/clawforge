@@ -215,6 +215,62 @@ try {
     }
   }
 
+  // --- a no-op re-apply of the currently-installed set must not lose track of which
+  // operation actually installed it — recordInstalledSet() must preserve operationId the
+  // same way it already preserves `previous` when the id does not change. ------------------
+  {
+    running = true;
+    const reinstalled = await captured(() => apply(ctx, ["--set", next.artifact, "--json"]));
+    assert.equal(reinstalled.error, undefined, reinstalled.error?.message);
+    const afterFirstInstall = await readInstalledSet(ctx);
+    assert.equal(afterFirstInstall?.id, next.id);
+
+    // Nothing changed: this run takes applyFromSource()'s "nothing to apply" early return
+    // and never opens a Journal for its own fresh operationId.
+    const noop = await captured(() => apply(ctx, ["--set", next.artifact, "--json"]));
+    assert.equal(noop.error, undefined, noop.error?.message);
+    const afterNoop = await readInstalledSet(ctx);
+    assert.equal(
+      afterNoop?.operationId,
+      afterFirstInstall?.operationId,
+      "a no-op re-apply must not overwrite the operationId that actually installed this set",
+    );
+
+    const rolledBackThird = await captured(() => rollback(ctx, ["--set", "--json"]));
+    assert.equal(rolledBackThird.error, undefined, rolledBackThird.error?.message);
+    assert.equal((await readInstalledSet(ctx))?.id, built.id);
+    const configAfterThird = JSON.parse(files.get(`${sourceData}/config/openclaw.json`) ?? "{}");
+    assert.equal(
+      configAfterThird?.agents?.defaults?.name,
+      undefined,
+      "rollback --set must still undo the setting the set added, even after an intervening no-op re-apply",
+    );
+  }
+
+  // --- rollback --set must check runtime/framework compatibility BEFORE the config-snapshot
+  // restore, not only inside the nested apply() call that runs after it. --------------------
+  {
+    running = true;
+    const beforeIncompatible = await readInstalledSet(ctx);
+    const configBeforeIncompatible = files.get(`${sourceData}/config/openclaw.json`);
+    const base = context(baseEnv);
+    const incompatibleCtx = {
+      ...base,
+      runtime: {
+        ...base.runtime,
+        runningImageIdentity: async () => ({ imageId: "wrong-img", digests: ["fixture@sha256:not-what-is-required"], containerId: "container-1" }),
+      },
+    } as unknown as Context;
+    const incompatible = await captured(() => rollback(incompatibleCtx, ["--set", "--json"]));
+    assert.match(incompatible.error?.message ?? "", /cannot be reinstalled here/);
+    assert.equal(
+      files.get(`${sourceData}/config/openclaw.json`),
+      configBeforeIncompatible,
+      "a refused rollback must leave the live configuration untouched — checked before the snapshot restore, not after it inside the nested apply",
+    );
+    assert.equal((await readInstalledSet(ctx))?.id, beforeIncompatible?.id, "and must not change which set is recorded as installed");
+  }
+
   const dependencies = {
     findFreePort: async () => 24567,
     createContext: async () => { lastTryDir = deploymentDir(); return context(parseEnv(await readFile(envFile(), "utf8"))); },
@@ -297,6 +353,29 @@ try {
       "a stale local tag must not fool the check — the running container is what matters",
     );
     assert.equal((await readInstalledSet(ctx))?.id, beforeStaleTag?.id);
+  }
+
+  // --- a running container whose image cannot be resolved to any digest at all must not be
+  // recorded as installed — absence of a proven mismatch is not proof of a match. -----------
+  {
+    running = true;
+    const beforeUnconfirmed = await readInstalledSet(ctx);
+    const base = context(baseEnv);
+    const unconfirmedCtx = {
+      ...base,
+      runtime: {
+        ...base.runtime,
+        // Running, but docker could not report any RepoDigests for it at all.
+        runningImageIdentity: async () => ({ imageId: "unresolvable-img", digests: [], containerId: "container-1" }),
+      },
+    } as unknown as Context;
+    const unconfirmed = await captured(() => apply(unconfirmedCtx, ["--set", next.artifact, "--json"]));
+    assert.match(
+      unconfirmed.error?.message ?? "",
+      /could not be resolved to any digest/,
+      "no resolvable digest at all must refuse recording, not be treated as 'nothing to compare'",
+    );
+    assert.equal((await readInstalledSet(ctx))?.id, beforeUnconfirmed?.id);
   }
 
   process.stderr.write("all set lifecycle checks passed\n");

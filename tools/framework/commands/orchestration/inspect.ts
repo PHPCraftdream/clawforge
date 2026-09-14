@@ -138,14 +138,27 @@ async function frameworkVersion(): Promise<string | undefined> {
   return undefined;
 }
 
-async function declaredState(ctx: Context): Promise<DeclaredState> {
+async function declaredState(ctx: Context, problems: Problem[]): Promise<DeclaredState> {
   let config: { path: string; value: unknown }[] = [];
+  let raw: string | undefined;
   try {
-    const parsed = JSON.parse(await readFile(desiredStateFile(), "utf8")) as { path: string; value?: unknown }[];
-    config = parsed.map((entry) => ({ path: entry.path, value: entry.value }));
+    raw = await readFile(desiredStateFile(), "utf8");
   } catch {
-    // A deployment with no desired state declares nothing about the config. Reported as an
-    // empty declaration rather than as a failure: inspect must still work.
+    // No file at all: a deployment with no desired state declares nothing about the config.
+    // Reported as an empty declaration rather than as a failure: inspect must still work.
+  }
+  if (raw !== undefined) {
+    try {
+      const parsed = JSON.parse(raw) as { path: string; value?: unknown }[];
+      config = parsed.map((entry) => ({ path: entry.path, value: entry.value }));
+    } catch (error) {
+      // The file EXISTS and was meant to declare something — silently treating that the same
+      // way as "no file at all" is how a broken declaration produced healthy: true and
+      // changed: false, with nothing wrong ever reported. Same code and remedy
+      // observeConfig() (below) already uses for its own equivalent case, the LIVE config
+      // failing to parse.
+      problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} exists but is not valid JSON: ${(error as Error).message}`));
+    }
   }
 
   return {
@@ -423,7 +436,7 @@ async function listOrEmpty<T>(ctx: Context, args: string[], extract: (parsed: un
  *  gathering their own — three gatherers would be three answers to one question. */
 export async function gatherInspection(ctx: Context): Promise<Inspection> {
   const problems: Problem[] = [];
-  const declared = await declaredState(ctx);
+  const declared = await declaredState(ctx, problems);
 
   const running = await ctx.runtime.isRunning();
   const secrets = await secretStatus(ctx);

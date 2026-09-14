@@ -55,8 +55,12 @@ export async function configureProvider(ctx: Context, args: string[]): Promise<v
     ? JSON.parse(await ctx.transport.readFile(configPath)) as unknown
     : {};
   const providers = new Set<string>(options.provider === undefined ? collectConfiguredProviders(config) : [options.provider]);
-  for (const name of Object.keys(secrets)) {
-    if (name.endsWith("_API_KEY") && secrets[name] !== "") providers.add(name.slice(0, -8).toLowerCase());
+  // Auto-discovery only when no provider was named: with --provider given, this must touch
+  // exactly that one provider, never anything else found in the secrets file.
+  if (options.provider === undefined) {
+    for (const name of Object.keys(secrets)) {
+      if (name.endsWith("_API_KEY") && secrets[name] !== "") providers.add(name.slice(0, -8).toLowerCase());
+    }
   }
 
   let changed = false;

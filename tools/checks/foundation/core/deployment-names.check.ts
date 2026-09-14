@@ -21,7 +21,9 @@ import {
   secretsTemplateFile,
   secretStoreFile,
   useDeployment,
-  useDeploymentName,
+  composeProjectName,
+  useComposeProjectOverride,
+  composeProjectOverride,
 } from "../../../framework/runtime/deployment.ts";
 import { safeName } from "../../../framework/core/names.ts";
 import { monorepoRoot } from "../../../framework/core/env.ts";
@@ -141,30 +143,36 @@ check(
   true,
 );
 
-// --- deploymentName() override: an instance under a name the directory itself cannot use ---
+// --- composeProjectName() override: an instance under a name the directory itself cannot use
 
-check("with no override, deploymentName() is still the directory's basename", deploymentName(), "example app");
+check("with no override, composeProjectName() is still the directory's basename", composeProjectName(), "example app");
+check("and composeProjectOverride() reports none is set", composeProjectOverride(), undefined);
 
-useDeploymentName("open_claw");
-check("an override is returned instead of the basename", deploymentName(), "open_claw");
+useComposeProjectOverride("open_claw");
+check("an override is returned instead of the basename", composeProjectName(), "open_claw");
+check("composeProjectOverride() reports the raw value", composeProjectOverride(), "open_claw");
 check("the directory itself is untouched by the override", deploymentDir(), dir);
+// The whole point of separating the two: deploy's remote apps/<name> path, archive names,
+// a built set's default name — everything that reads deploymentName() — must never see a
+// compose-only override. This is the specific bug the separation exists to prevent.
+check("deploymentName() itself is never affected by the compose override", deploymentName(), "example app");
 
-useDeploymentName(undefined);
-check("clearing the override reverts to the basename", deploymentName(), "example app");
+useComposeProjectOverride(undefined);
+check("clearing the override reverts to the basename", composeProjectName(), "example app");
 
 checkThrows(
   "an override with an uppercase letter is refused — Docker's own rule, not safeName's",
-  () => useDeploymentName("Open_Claw"),
+  () => useComposeProjectOverride("Open_Claw"),
   ["OC_COMPOSE_PROJECT", "Open_Claw"],
 );
 checkThrows(
   "an override starting with a hyphen is refused",
-  () => useDeploymentName("-open_claw"),
+  () => useComposeProjectOverride("-open_claw"),
   ["OC_COMPOSE_PROJECT"],
 );
-useDeploymentName("open_claw");
-check("an override may contain an underscore — Docker accepts it even though safeName does not", deploymentName(), "open_claw");
-useDeploymentName(undefined);
+useComposeProjectOverride("open_claw");
+check("an override may contain an underscore — Docker accepts it even though safeName does not", composeProjectName(), "open_claw");
+useComposeProjectOverride(undefined);
 
 // --- names.ts: safeName() directly --------------------------------------------
 

@@ -29,4 +29,29 @@ await configureProvider(explicit, ["--provider", "vertex", "--env", "VERTEX_TOKE
 assert.equal(calls.length, 1);
 assert.ok(calls[0].includes("models.providers.vertex.apiKey"));
 assert.ok(calls[0].includes(JSON.stringify({ source: "env", id: "VERTEX_TOKEN" })));
+
+// Regression: --provider openai --env OPENAI_API_KEY must touch only openai, even when
+// another provider's key (ANTHROPIC_API_KEY) is also present in the secrets file. Before
+// the fix, the auto-discovery loop over secrets ran unconditionally and folded anthropic
+// into the same pass, repointing it at OPENAI_API_KEY too.
+calls.length = 0;
+const twoKeys = { ...ctx, transport: {
+  exists: async (path: string) => path.endsWith("config/.env") || path.endsWith("openclaw.json"),
+  readFile: async (path: string) => path.endsWith("openclaw.json")
+    ? JSON.stringify({ models: { providers: { openai: {}, anthropic: {} } } })
+    : "OPENAI_API_KEY=openai-secret\nANTHROPIC_API_KEY=anthropic-secret\n",
+} } as unknown as Context;
+await configureProvider(twoKeys, ["--provider", "openai", "--env", "OPENAI_API_KEY"]);
+assert.equal(calls.length, 1, "only one provider must be reconfigured");
+assert.ok(calls[0].includes("models.providers.openai.apiKey"), "the named provider is the one touched");
+assert.ok(!calls.flat().some((arg) => arg.includes("anthropic")), "the other provider must not be mentioned at all");
+
+// Auto-discovery (no --provider) must still sweep every provider it finds a key for — the
+// fix scopes the loop to the explicit-provider case, it must not remove discovery itself.
+calls.length = 0;
+await configureProvider(twoKeys, []);
+assert.equal(calls.length, 2, "auto-discovery still configures every provider it found a key for");
+const touched = calls.map((call) => call[3]).sort();
+assert.deepEqual(touched, ["models.providers.anthropic.apiKey", "models.providers.openai.apiKey"]);
+
 process.stderr.write("provider configuration checks passed\n");

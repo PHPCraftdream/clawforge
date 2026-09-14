@@ -9,7 +9,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { deploy, frameworkSourceRoot } from "../../../framework/commands/management/deploy.ts";
-import { useDeployment } from "../../../framework/runtime/deployment.ts";
+import { useDeployment, useComposeProjectOverride } from "../../../framework/runtime/deployment.ts";
 import { monorepoRoot, isMonorepoCheckout } from "../../../framework/core/env.ts";
 import { withOutputSink } from "../../../framework/core/output.ts";
 import type { Context } from "../../../framework/core/context.ts";
@@ -197,6 +197,41 @@ check(
   } finally {
     await rm(fake, { recursive: true, force: true });
   }
+}
+
+// --- a compose-project override must never reach a remote --app argument -----
+//
+// deploy builds apps/<name> and a remote --app <name> from the deployment's own identity.
+// With OC_COMPOSE_PROJECT set (an instance already running under a name this directory
+// cannot have — Docker accepts underscores, safeName does not), the remote clawforge is a
+// different, freshly-scaffolded install with no reason to share that override, and its own
+// --app parser applies the same safeName rule regardless — an override with an underscore
+// sent there would be refused on arrival.
+{
+  useComposeProjectOverride("example_app_compose_project");
+  const overrideCalls: { command: string; args: string[] }[] = [];
+  const overrideCtx = {
+    ...ctx,
+    transport: {
+      description: "stub",
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        overrideCalls.push({ command, args });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+  try {
+    await withOutputSink(() => {}, () => deploy(overrideCtx, ["deployer@server"]));
+  } finally {
+    useComposeProjectOverride(undefined);
+  }
+
+  const overrideScriptCalls = overrideCalls.filter(
+    (call) => call.command === "ssh" && !call.args.includes("BatchMode=yes"),
+  );
+  const overrideBootstrap = overrideScriptCalls.find((call) => call.args.some((arg) => arg.includes("bootstrap")))?.args.at(-1) ?? "";
+  check("the remote --app argument uses the deployment's own directory name", overrideBootstrap.includes("example app"), true);
+  check("never the compose-project override", overrideBootstrap.includes("example_app_compose_project"), false);
 }
 
 check("this checkout is recognized as one", await isMonorepoCheckout(), true);

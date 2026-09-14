@@ -5,7 +5,7 @@
 // without a circular import.
 
 import { composeFile, type Settings } from "../core/env.ts";
-import { deploymentDir, deploymentName } from "./deployment.ts";
+import { deploymentDir, composeProjectName } from "./deployment.ts";
 import type { PathBridge } from "../core/paths.ts";
 import type { ExecResult, Transport } from "./transport.ts";
 import { HelperNotRunning, type Runtime, type RunOneOffOptions, type Stack } from "./runtime.ts";
@@ -62,7 +62,7 @@ export class DockerRuntime implements Runtime {
     return [
       "compose",
       "--project-name",
-      deploymentName(),
+      composeProjectName(),
       "--file",
       file,
       "--project-directory",
@@ -164,7 +164,7 @@ export class DockerRuntime implements Runtime {
     for (const line of result.stdout.split("\n")) {
       const [project, container] = line.split("\t");
       if (container === undefined || container.trim() === "") continue;
-      if (project === deploymentName()) continue;
+      if (project === composeProjectName()) continue;
       return `${container.trim()} (compose project ${project === "" ? "none" : project})`;
     }
     return undefined;

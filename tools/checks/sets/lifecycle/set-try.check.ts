@@ -133,5 +133,29 @@ check("unknown target modes are refused", tryTargetProblem("other", "win32")?.in
   check("keep reports whether the instance was running", kept.running, false);
 }
 
+// --- the compose-project override survives set try, the same way setSourceDir does --------
+//
+// createContext() resets the compose-project override for whichever .env it just read —
+// the throwaway's own, with none of its own OC_COMPOSE_PROJECT — clearing whatever the real
+// deployment's Context had built up. set try already saves and restores setSourceDir() this
+// same way (previousSource, a few lines above the finally block this mirrors); it must do
+// the identical thing for composeProjectOverride(), or a composite command that keeps using
+// the original Context after set try returns addresses Docker under the wrong project name.
+// Building a throwaway Context that actually gets far enough to exercise this needs a real,
+// checksum-valid set artifact — out of proportion for confirming a save/restore pair already
+// proven correct at the primitive level (tools/checks/foundation/core/deployment-names.check.ts).
+// What this guards against is a future edit silently dropping the restore call.
+{
+  const setTrySource = await (await import("node:fs/promises")).readFile(
+    new URL("../../../framework/commands/sets/set-try.ts", import.meta.url),
+    "utf8",
+  );
+  const capturedAt = setTrySource.indexOf("const previousComposeProject = composeProjectOverride();");
+  const restoredAt = setTrySource.indexOf("useComposeProjectOverride(previousComposeProject);");
+  const finallyAt = setTrySource.indexOf("useDeployment(realDir);");
+  check("the override is captured before the throwaway deployment is selected", capturedAt >= 0, true);
+  check("and restored in the same finally block that restores the real directory", restoredAt > finallyAt && finallyAt > 0, true);
+}
+
 process.stderr.write(failed === 0 ? "all set try checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

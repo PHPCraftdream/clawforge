@@ -103,6 +103,49 @@ export function providerSecretVariable(config: unknown, providerId: string): str
   return undefined;
 }
 
+/** Whether this provider has explicitly declared an auth mode that needs no apiKey at all —
+ *  OAuth, the AWS SDK's own credential chain, or a bearer token issued some other way.
+ *  Checked in both places OpenClaw records an auth mode: models.providers.<id>.auth (spelled
+ *  "api-key" there) and a matching auth.profiles entry's own .mode (spelled "api_key" there,
+ *  underscored — the two enums use different spellings in OpenClaw's own schema). A local
+ *  subprocess service (localService) is the same story by a different route: it authenticates
+ *  however it authenticates on its own, never through the conventional env-var guess. */
+export function providerUsesNonApiKeyAuth(config: unknown, providerId: string): boolean {
+  if (config === null || typeof config !== "object") return false;
+  const node = config as {
+    models?: { providers?: Record<string, unknown> };
+    auth?: { profiles?: Record<string, unknown> };
+  };
+
+  const provider = node.models?.providers?.[providerId];
+  if (provider !== null && typeof provider === "object" && !Array.isArray(provider)) {
+    const mode = (provider as { auth?: unknown }).auth;
+    if (mode === "oauth" || mode === "aws-sdk" || mode === "token") return true;
+    if ((provider as { localService?: unknown }).localService !== undefined) return true;
+  }
+
+  for (const [profile, value] of Object.entries(node.auth?.profiles ?? {})) {
+    if (profile.split(":")[0] !== providerId) continue;
+    if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+    const mode = (value as { mode?: unknown }).mode;
+    if (mode === "oauth" || mode === "aws-sdk" || mode === "token") return true;
+  }
+
+  return false;
+}
+
+/** Whether apiKey is already set to something explicit that is not an env-sourced ref — a
+ *  plain string, or a file/exec/store SecretRef. providerSecretVariable() only recognizes
+ *  the env case; this is what stops the conventional fallback from firing on top of an
+ *  already-satisfied, non-env credential and inventing a phantom second requirement. */
+export function providerApiKeyExplicit(config: unknown, providerId: string): boolean {
+  if (config === null || typeof config !== "object") return false;
+  const node = config as { models?: { providers?: Record<string, unknown> } };
+  const provider = node.models?.providers?.[providerId];
+  if (provider === null || typeof provider !== "object" || Array.isArray(provider)) return false;
+  return "apiKey" in provider;
+}
+
 /** Return secret names required by the target configuration. */
 export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
   const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
@@ -122,12 +165,31 @@ export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
     });
   }
 
-  // Conventional provider keys, which no SecretRef points at.
+  // Conventional provider keys, which no SecretRef points at — but only for a provider
+  // that actually needs one. OAuth, the AWS SDK's own credential chain, a bearer token
+  // issued some other way, or a local subprocess service authenticate without an apiKey at
+  // all; guessing <PROVIDER>_API_KEY for one of those invents a requirement nothing needs
+  // and blocks a correctly configured instance from starting.
   for (const provider of collectConfiguredProviders(config)) {
-    const variable = providerSecretVariable(config, provider) ?? providerEnvironmentVariable(provider);
-    if (variable === undefined) continue;
-    if (result.some((entry) => entry.name === variable)) continue;
-    result.push({ name: variable, location: "target-env", usedBy: `provider ${provider}`, required: true });
+    if (providerUsesNonApiKeyAuth(config, provider)) continue;
+
+    const envRef = providerSecretVariable(config, provider);
+    if (envRef !== undefined) {
+      if (!result.some((entry) => entry.name === envRef)) {
+        result.push({ name: envRef, location: "target-env", usedBy: `provider ${provider}`, required: true });
+      }
+      continue;
+    }
+
+    // apiKey already set to something explicit that is not an env ref — a plain string, or
+    // a file/exec/store SecretRef. Satisfied on its own; the convention guess is only for a
+    // provider that said nothing at all about its credentials.
+    if (providerApiKeyExplicit(config, provider)) continue;
+
+    const guessed = providerEnvironmentVariable(provider);
+    if (guessed === undefined) continue;
+    if (result.some((entry) => entry.name === guessed)) continue;
+    result.push({ name: guessed, location: "target-env", usedBy: `provider ${provider}`, required: true });
   }
 
   return result;

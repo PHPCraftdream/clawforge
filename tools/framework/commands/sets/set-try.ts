@@ -17,7 +17,7 @@ import { createServer } from "node:net";
 import { log, info, warn, die } from "../../core/log.ts";
 import { emit, isCaptured } from "../../core/output.ts";
 import { parseEnv, frameworkRoot } from "../../core/env.ts";
-import { useDeployment, deploymentDir, envFile } from "../../runtime/deployment.ts";
+import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride } from "../../runtime/deployment.ts";
 import { createContext } from "../../core/context.ts";
 import type { Context } from "../../core/context.ts";
 import { mountPoints } from "../../runtime/mounts.ts";
@@ -221,6 +221,12 @@ export async function setTry(ctx: Context, args: string[], dependencies: {
   // running instance is actually configured with cannot be.
   const realDir = deploymentDir();
   const previousSource = setSourceDir();
+  // The throwaway's own createContext() call resets this the same way it resets the set
+  // source above — its .env has no OC_COMPOSE_PROJECT of its own, so building its Context
+  // clears whatever the real deployment's .env had set. Restored in the same finally block,
+  // for the same reason: a composite command that keeps using the original Context after
+  // set try returns must still address Docker under the name it started with.
+  const previousComposeProject = composeProjectOverride();
   const realEnv = parseEnv(await readFile(envFile(), "utf8").catch(() => ""));
   const targetLocation = (realEnv.OC_TARGET_LOCATION ?? "auto").toLowerCase();
   const targetProblem = tryTargetProblem(targetLocation);
@@ -355,8 +361,11 @@ export async function setTry(ctx: Context, args: string[], dependencies: {
 
       await tryCtx.runtime.pullImage();
       await ensureBaselineConfig(tryCtx);
-      await configureProvider(tryCtx, []);
+      // Same order as bootstrap, same reason: a new custom provider's baseUrl and models
+      // come from the set's own desired-state.json, and OpenClaw's schema requires them
+      // before it accepts an apiKey for a provider id it does not already know.
       await applyConfig(tryCtx, []);
+      await configureProvider(tryCtx, []);
       await preflightSecrets(tryCtx);
 
       await tryCtx.runtime.start();
@@ -483,6 +492,7 @@ export async function setTry(ctx: Context, args: string[], dependencies: {
     }
     if (previousSource === undefined) clearSetSource();
     else useSetSource(previousSource);
+    useComposeProjectOverride(previousComposeProject);
   }
 
   if (report === undefined) {

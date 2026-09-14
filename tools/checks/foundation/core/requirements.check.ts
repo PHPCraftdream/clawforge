@@ -4,7 +4,7 @@
 // Assertions compare the actual returned arrays/objects/strings, not just "did not throw".
 // Provider ids are inferred at runtime; no provider-specific table belongs in the framework.
 
-import { collectSecretRefs, requirements, status, missing, template, providerEnvironmentVariable, providerSecretVariable } from "../../../framework/service/secrets.ts";
+import { collectSecretRefs, requirements, status, missing, template, providerEnvironmentVariable, providerSecretVariable, providerUsesNonApiKeyAuth, providerApiKeyExplicit } from "../../../framework/service/secrets.ts";
 import type { SecretRequirement, SecretStatus } from "../../../framework/service/secrets.ts";
 import type { Context } from "../../../framework/core/context.ts";
 
@@ -162,6 +162,57 @@ check(
     }),
   ),
   [{ name: "ZAI_API_KEY", location: "target-env", usedBy: "provider.key", required: true }],
+);
+
+// --- requirements(): providers that need no apiKey at all must not get a phantom one ---
+//
+// Four ways a provider is legitimately configured without an env-sourced apiKey, confirmed
+// against OpenClaw's real config schema (github.com/openclaw/openclaw
+// src/config/zod-schema.core.ts, zod-schema.root-shape.ts): an OAuth auth-profile, the AWS
+// SDK's own credential chain, a bearer token issued some other way, and a local subprocess
+// service. The prior code fell back to the <PROVIDER>_API_KEY convention in all four cases,
+// which is exactly the reported defect: a correctly configured instance refused to start.
+
+check(
+  "an OAuth auth profile (mode: oauth) needs no apiKey",
+  await requirements(makeCtx({ config: { auth: { profiles: { "openai-codex:default": { provider: "openai-codex", mode: "oauth" } } } } })),
+  [],
+);
+check(
+  "an aws-sdk provider (models.providers.<id>.auth) needs no apiKey",
+  await requirements(makeCtx({ config: { models: { providers: { bedrock: { auth: "aws-sdk" } } } } })),
+  [],
+);
+check(
+  "a token-mode auth profile needs no apiKey",
+  await requirements(makeCtx({ config: { auth: { profiles: { "vertex:default": { provider: "vertex", mode: "token" } } } } })),
+  [],
+);
+check(
+  "a local subprocess service (localService) needs no apiKey",
+  await requirements(makeCtx({ config: { models: { providers: { local: { localService: { command: "llama-server" } } } } } })),
+  [],
+);
+check(
+  "a provider whose apiKey is already a file SecretRef is not given an additional phantom requirement",
+  await requirements(makeCtx({ config: { models: { providers: { custom: { apiKey: { source: "file", path: "/run/secrets/custom" } } } } } })),
+  [],
+);
+check(
+  "a provider whose apiKey is already a plain string is not given an additional phantom requirement",
+  await requirements(makeCtx({ config: { models: { providers: { custom: { apiKey: "inline-value-nobody-should-use" } } } } })),
+  [],
+);
+
+// The convention fallback itself must still fire for the one case it exists for: a provider
+// present in models.providers or auth.profiles with nothing at all said about credentials.
+check("providerUsesNonApiKeyAuth is false for a bare provider entry", providerUsesNonApiKeyAuth({ models: { providers: { zai: {} } } }, "zai"), false);
+check("providerUsesNonApiKeyAuth is false when the provider is not configured at all", providerUsesNonApiKeyAuth({}, "zai"), false);
+check("providerApiKeyExplicit is false when apiKey is absent", providerApiKeyExplicit({ models: { providers: { zai: {} } } }, "zai"), false);
+check(
+  "an api-key-mode provider still gets its conventional key when no env ref is set",
+  await requirements(makeCtx({ config: { models: { providers: { zai: { auth: "api-key" } } } } })),
+  [{ name: "ZAI_API_KEY", location: "target-env", usedBy: "provider zai", required: true }],
 );
 
 // --- status(): repo-env presence follows ctx.settings.env --------------------------

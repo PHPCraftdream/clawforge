@@ -29,41 +29,57 @@ import { safeName } from "../core/names.ts";
 import { setSourceDir } from "../set/artifacts/source.ts";
 
 let activeDir: string | undefined;
-let nameOverride: string | undefined;
+let composeOverride: string | undefined;
 
 export function useDeployment(directory: string): void {
   activeDir = directory;
 }
 
-/** Overrides what deploymentName() returns, independent of the directory's own basename.
- *
- *  The directory name and the compose project name are different concerns that happen to
- *  share one value by default: the directory's basename still goes through safeName at
- *  every --app resolution, because it becomes a filesystem path and `--app ../..` must stay
- *  blocked — that is a real path-traversal guard, not a convention to relax. Docker's own
- *  project-name alphabet is wider (it accepts underscores), and an instance that already
- *  exists under a name our own rule would reject should not have to be recreated just to be
- *  managed — set via OC_COMPOSE_PROJECT in .env, read once when the context is built. */
+/** The deployment's own identity — the directory it lives in, always. Everything that
+ *  crosses a process boundary or becomes an argument to another invocation of this tooling —
+ *  deploy's remote apps/<name> path and its --app argument, archive file names, a built
+ *  set's default name — uses this, and only this. It is never affected by
+ *  OC_COMPOSE_PROJECT: that override exists for the one thing Docker itself names, not for
+ *  this deployment's own identity, and conflating the two is exactly what made deploy
+ *  construct a remote --app argument its own target would refuse. */
+export function deploymentName(): string {
+  return basename(deploymentDir());
+}
+
 // Docker Compose's own project-name rule (compose-spec), wider than safeName's: lowercase
 // alphanumeric, hyphens and underscores, starting with a letter or digit. Checked here so a
 // typo in OC_COMPOSE_PROJECT fails with a clear message instead of deep inside a compose
 // invocation.
 const COMPOSE_PROJECT_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
-export function useDeploymentName(name: string | undefined): void {
+/** Overrides what composeProjectName() returns, independent of deploymentName().
+ *
+ *  Docker's own project-name alphabet is wider than safeName's (it accepts underscores), and
+ *  an instance that already exists under a name this deployment's directory cannot have
+ *  should not have to be recreated just to be managed — set via OC_COMPOSE_PROJECT in .env,
+ *  read once when the context is built. */
+export function useComposeProjectOverride(name: string | undefined): void {
   if (name !== undefined && !COMPOSE_PROJECT_PATTERN.test(name)) {
     throw new Error(
       `invalid OC_COMPOSE_PROJECT "${name}" — Docker Compose project names are lowercase letters, digits, hyphens and underscores, starting with a letter or digit`,
     );
   }
-  nameOverride = name;
+  composeOverride = name;
 }
 
-/** The deployment's name — the directory it lives in, unless OC_COMPOSE_PROJECT overrides
- *  it. Everything that has to be told apart between deployments derives from it: compose
- *  project, container, archive file names. */
-export function deploymentName(): string {
-  return nameOverride ?? basename(deploymentDir());
+/** The raw override, or undefined when none is set — for a caller that needs to save and
+ *  restore it around a nested Context, the same shape as set/artifacts/source.ts's own
+ *  setSourceDir(). */
+export function composeProjectOverride(): string | undefined {
+  return composeOverride;
+}
+
+/** What Docker actually calls this deployment's containers, networks and volumes — the
+ *  directory's own name, unless OC_COMPOSE_PROJECT overrides it. The only consumer this is
+ *  meant for is runtime-docker.ts's own compose invocations and the port-conflict check
+ *  beside them; everywhere else wants deploymentName() instead. */
+export function composeProjectName(): string {
+  return composeOverride ?? deploymentName();
 }
 
 /** The active deployment directory. Throws rather than guessing: a wrong default here

@@ -5,6 +5,7 @@ import type { Context } from "../../core/context.ts";
 import { parseEnv } from "../../core/env.ts";
 import { secretsFileOnTarget } from "../../runtime/datadir.ts";
 import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "../../service/secrets.ts";
+import { guarded } from "../../runtime/instance-lock.ts";
 
 /** Gateway flags used by headless onboarding. */
 function gatewayFlags(ctx: Context): string[] {
@@ -42,6 +43,12 @@ function parseArgs(args: string[]): { force: boolean; provider?: string; env?: s
 
 /** Configure every selected provider using a target-side SecretRef. */
 export async function configureProvider(ctx: Context, args: string[]): Promise<void> {
+  // No --break-lock support here (same choice backup.ts's own guarded() fix made): this
+  // command does not declare that flag, so nothing in args is read by guarded() either.
+  return guarded(ctx, "configure-provider", [], () => configureProviderLocked(ctx, args));
+}
+
+async function configureProviderLocked(ctx: Context, args: string[]): Promise<void> {
   const options = parseArgs(args);
   const secretsPath = secretsFileOnTarget(ctx);
   if (!(await ctx.transport.exists(secretsPath))) {

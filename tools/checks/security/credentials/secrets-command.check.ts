@@ -60,6 +60,11 @@ async function runSecretsChecks(): Promise<void> {
           return "";
         },
         async writeFile(): Promise<void> {},
+        // secrets --apply now takes the instance lock (#186) — a plain mkdir is the atomic
+        // claim takeLock() makes; harmless here since nothing else is contending for it.
+        async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
+          return { code: 0, stdout: "", stderr: "" };
+        },
       },
     } as unknown as Context;
 
@@ -168,6 +173,82 @@ async function runSecretsChecks(): Promise<void> {
     check("applying a missing store is refused", applyMessage !== "", true);
     check("the refusal names the correct fix", applyMessage.includes("--init-store --store missing-store"), true);
     check("the refusal does not point at --template", applyMessage.includes("--template"), false);
+  } finally {
+    await rm(deployDir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------------------
+// Part 1b: secrets --apply must respect the instance lock, not bypass it
+// ---------------------------------------------------------------------------------------
+//
+// Before the fix, applyStore() wrote config/.env on the target with no takeLock()/guarded()
+// call at all — it could run concurrently with apply/restore/rollback and race against them.
+
+async function runLockChecks(): Promise<void> {
+  const deployDir = await mkdtemp(resolve(tmpdir(), "clawforge-secrets-lock-check-"));
+  try {
+    await mkdir(resolve(deployDir, "config"), { recursive: true });
+    await mkdir(resolve(deployDir, "secrets"), { recursive: true });
+    useDeployment(deployDir);
+
+    const storeName = "store-locked";
+    const storePath = resolve(deployDir, "secrets", `${storeName}.env`);
+    await writeFile(storePath, "", "utf8");
+
+    function stubCtx(lockAlreadyHeld: boolean): Context {
+      const holder = JSON.stringify({
+        operationId: "op-holder", what: "apply", by: "someone@host pid 1", takenAt: new Date().toISOString(),
+      });
+      return {
+        settings: { dataDir: "/does/not/exist", env: {} },
+        transport: {
+          description: "stub",
+          async exists(path: string): Promise<boolean> {
+            return !path.endsWith("openclaw.json");
+          },
+          async readFile(path: string): Promise<string> {
+            return path.endsWith("holder.json") ? holder : "";
+          },
+          async writeFile(): Promise<void> {},
+          async remove(): Promise<void> {},
+          async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+            if (command === "mkdir" && args[0] !== "-p") return { code: lockAlreadyHeld ? 1 : 0, stdout: "", stderr: "" };
+            if (command === "test" && args[0] === "-d") return { code: lockAlreadyHeld ? 0 : 1, stdout: "", stderr: "" };
+            return { code: 0, stdout: "", stderr: "" };
+          },
+        },
+      } as unknown as Context;
+    }
+
+    let refused = "";
+    try {
+      await withOutputSink(
+        () => {},
+        () => secrets(stubCtx(true), ["--apply", "--store", storeName]),
+      );
+    } catch (error) {
+      refused = error instanceof Error ? error.message : String(error);
+    }
+    check("secrets --apply refuses when another operation already holds the instance lock", refused.includes("another operation is changing this instance"), true);
+
+    let unlockedMessage = "";
+    try {
+      await withOutputSink(
+        () => {},
+        () => secrets(stubCtx(false), ["--apply", "--store", storeName]),
+      );
+    } catch (error) {
+      unlockedMessage = error instanceof Error ? error.message : String(error);
+    }
+    // requirements() short-circuits to [] (no config), so applyStore() proceeds through the
+    // lock and only fails later, at loadSecrets()'s own "empty content" guard — a DIFFERENT
+    // failure than the lock refusal above, which is exactly what proves it got past the lock.
+    check(
+      "with no competing lock, secrets --apply gets past the lock check (fails later, for an unrelated reason)",
+      unlockedMessage.includes("refusing to install an empty secrets file"),
+      true,
+    );
   } finally {
     await rm(deployDir, { recursive: true, force: true });
   }
@@ -322,6 +403,7 @@ async function runMcpChecks(): Promise<void> {
 }
 
 await runSecretsChecks();
+await runLockChecks();
 await runMcpChecks();
 
 process.stderr.write(failed === 0 ? "all secrets-command checks passed\n" : `${failed} failed\n`);

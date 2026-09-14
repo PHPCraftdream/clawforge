@@ -152,7 +152,22 @@ async function rollbackSet(ctx: Context, args: string[]): Promise<void> {
           await ctx.transport.writeFile(live, await ctx.transport.readFile(installingOperation.configSnapshot));
           await journal.step("restore-config", "done", `from ${installingOperation.configSnapshot}`);
         } else {
-          await journal.step("restore-config", "skipped", "no recorded snapshot for the operation that installed the current set");
+          // Without this snapshot there is no way to prove a setting the current set added
+          // (but the previous one never declared) gets undone — reinstalling the previous
+          // set alone only ever SETS its own declared paths, it never unsets anything.
+          // Silently skipping this step and reporting the reinstall a success would be
+          // exactly the false "succeeded" this whole mechanism exists to prevent.
+          await journal.step("restore-config", "failed", "no recorded snapshot for the operation that installed the current set");
+          die(
+            `cannot roll back "${installed.name}" (${installed.id}) to "${previous.name}" (${previous.id}): ` +
+              "no configuration snapshot is available for the operation that installed the current set" +
+              (installed.operationId === undefined
+                ? " (none was ever recorded for it)"
+                : ` (operation ${installed.operationId} recorded none, or its snapshot file is gone)`) +
+              ".\nWithout it, a setting the current set added but the previous one never declared cannot be " +
+              "proven undone. Put the configuration back by hand, or restore data from a snapshot instead: " +
+              "./clawforge push.",
+          );
         }
 
         // Reinstalls recipes/agents/MCP/cron and reapplies the previous set's own declared

@@ -445,6 +445,41 @@ try {
     );
   }
 
+  // --- rollback --set must refuse when the snapshot it needs is missing/gone, not silently
+  // skip the restore and report the reinstall a success. -----------------------------------
+  {
+    running = true;
+    // Reset to a clean, valid A -> B chain: the previous test left a fabricated "C" record
+    // on file with no real stored artifact, which would refuse for an unrelated reason
+    // (missing artifact) before ever reaching the snapshot check this test is about. The
+    // live config is also forced to a value neither A nor B declares, so reinstalling each
+    // one below is guaranteed to find real CONFIG_DRIFT and actually take a snapshot — with
+    // nothing forcing drift, a config that happened to already match produces a genuine
+    // no-op apply, which (correctly) takes no snapshot at all, leaving nothing to delete.
+    files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ gateway: { mode: "remote" } }));
+    const resetToA = await captured(() => apply(ctx, ["--set", built.artifact, "--json"]));
+    assert.equal(resetToA.error, undefined, resetToA.error?.message);
+    const reinstallB = await captured(() => apply(ctx, ["--set", next.artifact, "--json"]));
+    assert.equal(reinstallB.error, undefined, reinstallB.error?.message);
+    const installedB = await readInstalledSet(ctx);
+    assert.equal(installedB?.previous?.id, built.id, "the fixture for this test needs a valid previous (A) on record");
+    assert.ok(installedB?.operationId !== undefined, "the fixture for this test needs a recorded operationId");
+
+    const snapshotPath = `${sourceData}/clawforge-operations/${installedB!.operationId}.openclaw.json`;
+    assert.ok(files.has(snapshotPath), "the fixture for this test needs the operation's own snapshot to exist first");
+    const configBeforeMissingSnapshot = files.get(`${sourceData}/config/openclaw.json`);
+    files.delete(snapshotPath);
+
+    const missingSnapshot = await captured(() => rollback(ctx, ["--set", "--json"]));
+    assert.match(missingSnapshot.error?.message ?? "", /no configuration snapshot is available/);
+    assert.equal(
+      files.get(`${sourceData}/config/openclaw.json`),
+      configBeforeMissingSnapshot,
+      "a refused rollback must leave the live configuration untouched",
+    );
+    assert.equal((await readInstalledSet(ctx))?.id, installedB?.id, "and must not change which set is recorded as installed");
+  }
+
   process.stderr.write("all set lifecycle checks passed\n");
 } finally {
   if (previousDeployment !== undefined) useDeployment(previousDeployment);

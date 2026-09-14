@@ -162,6 +162,17 @@ export async function initApp(root: string): Promise<void> {
   );
   if (exists) die(`${appFile} already exists — this directory is already initialised`);
 
+  // Checked BEFORE anything is written: app.ts existing is not the only way this directory
+  // could already hold state init is about to overwrite — an .env or a desired-state.json
+  // left over from something else (or a previous init that failed partway through) must be
+  // refused by name, not silently discarded.
+  const envFile = resolve(root, ".env");
+  const desiredStateFile = resolve(root, "config", "desired-state.json");
+  for (const conflict of [envFile, desiredStateFile]) {
+    const conflictExists = await access(conflict).then(() => true, () => false);
+    if (conflictExists) die(`${conflict} already exists — refusing to overwrite it. Remove it (or move it aside) first if this directory should be re-initialised.`);
+  }
+
   await mkdir(resolve(root, "config"), { recursive: true });
   await mkdir(resolve(root, "secrets"), { recursive: true });
   await mkdir(resolve(root, "recipes"), { recursive: true });

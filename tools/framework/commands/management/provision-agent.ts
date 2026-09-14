@@ -363,7 +363,10 @@ export async function ensureCronJob(
   cronMessage: string,
   options: { readonly allowUpdate?: boolean } = {},
 ): Promise<"created" | "updated" | "unchanged"> {
-  const listed = await openclawCliJson<{ jobs: CronJob[] }>(ctx, ["cron", "list", "--json"]);
+  // --all: OpenClaw's own cron list only shows ENABLED jobs by default (docs.openclaw.ai/
+  // cli/cron) — without it, a disabled job with this name is invisible here, and this would
+  // "create" a second job under the same name instead of finding and reconciling the first.
+  const listed = await openclawCliJson<{ jobs: CronJob[] }>(ctx, ["cron", "list", "--json", "--all"]);
   const existing = listed.jobs.find((job) => job.name === config.cronJobName);
 
   if (existing !== undefined) {
@@ -422,7 +425,9 @@ async function assertObjectNamesAvailable(
     throw new Error(`MCP server "${bundle.config.mcpServerName}" already exists but is not owned by this framework; refusing to adopt it`);
   }
   if (bundle.config.cronJobName !== undefined && bundle.cronMessage !== undefined) {
-    const listed = await openclawCliJson<{ jobs?: CronJob[] }>(ctx, ["cron", "list", "--json"]);
+    // --all: see ensureCronJob's own comment — a name collision with a DISABLED job is a
+    // real collision too, and must not go unnoticed just because it is invisible without it.
+    const listed = await openclawCliJson<{ jobs?: CronJob[] }>(ctx, ["cron", "list", "--json", "--all"]);
     if ((listed.jobs ?? []).some((job) => job.name === bundle.config.cronJobName) && ownerOf(ledger, "cron-job", bundle.config.cronJobName) === undefined) {
       throw new Error(`cron job "${bundle.config.cronJobName}" already exists but is not owned by this framework; refusing to adopt it`);
     }
@@ -480,7 +485,10 @@ export async function removeOwnedObject(ctx: Context, kind: OwnedKind, name: str
       ignoreAlreadyAbsent(error);
     }
   } else {
-    const listed = await openclawCliJson<{ jobs: CronJob[] }>(ctx, ["cron", "list", "--json"]);
+    // --all: see ensureCronJob's own comment — a DISABLED job is invisible without it, so
+    // this would silently skip calling cron rm on it and still forget the ownership record
+    // below, leaving the job itself behind, untracked.
+    const listed = await openclawCliJson<{ jobs: CronJob[] }>(ctx, ["cron", "list", "--json", "--all"]);
     const existing = listed.jobs.find((job) => job.name === name);
     if (existing !== undefined) await openclawCli(ctx, cronRmArgv(existing.id));
   }

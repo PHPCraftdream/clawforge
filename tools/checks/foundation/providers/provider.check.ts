@@ -3,9 +3,17 @@ import { configureProvider } from "../../../framework/commands/management/provid
 import type { Context } from "../../../framework/core/context.ts";
 
 const calls: string[][] = [];
+// configure-provider now takes the instance lock (#186) — a plain mkdir is the atomic claim
+// takeLock() makes; harmless here since nothing else is contending for it in these checks.
+const noContention = {
+  exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+  writeFile: async () => {},
+  remove: async () => {},
+};
 const ctx = {
   settings: { dataDir: "/target/data", gatewayPort: "18789" },
   transport: {
+    ...noContention,
     exists: async (path: string) => path.endsWith("config/.env") || path.endsWith("openclaw.json"),
     readFile: async (path: string) => path.endsWith("openclaw.json")
       ? JSON.stringify({ models: { providers: { custom: {} } } })
@@ -22,6 +30,7 @@ assert.ok(!calls.flat().includes("secret-value"));
 
 calls.length = 0;
 const explicit = { ...ctx, transport: {
+  ...noContention,
   exists: async (path: string) => path.endsWith("config/.env"),
   readFile: async () => "VERTEX_TOKEN=secret-value\n",
 } } as unknown as Context;
@@ -36,6 +45,7 @@ assert.ok(calls[0].includes(JSON.stringify({ source: "env", id: "VERTEX_TOKEN" }
 // into the same pass, repointing it at OPENAI_API_KEY too.
 calls.length = 0;
 const twoKeys = { ...ctx, transport: {
+  ...noContention,
   exists: async (path: string) => path.endsWith("config/.env") || path.endsWith("openclaw.json"),
   readFile: async (path: string) => path.endsWith("openclaw.json")
     ? JSON.stringify({ models: { providers: { openai: {}, anthropic: {} } } })
@@ -60,6 +70,7 @@ assert.deepEqual(touched, ["models.providers.anthropic.apiKey", "models.provider
 // own apiKey-only provider object with none of custom-proxy's declared settings.
 calls.length = 0;
 const dashedProvider = { ...ctx, transport: {
+  ...noContention,
   exists: async (path: string) => path.endsWith("config/.env") || path.endsWith("openclaw.json"),
   readFile: async (path: string) => path.endsWith("openclaw.json")
     ? JSON.stringify({ models: { providers: { "custom-proxy": {} } } })
@@ -76,6 +87,7 @@ assert.ok(!calls.flat().some((arg) => arg.includes("custom_proxy")), "no undersc
 // a file ref — that must not be mistaken for "nothing set yet".
 calls.length = 0;
 const fileRefProvider = { ...ctx, transport: {
+  ...noContention,
   exists: async (path: string) => path.endsWith("config/.env") || path.endsWith("openclaw.json"),
   readFile: async (path: string) => path.endsWith("openclaw.json")
     ? JSON.stringify({ models: { providers: { custom: { apiKey: { source: "file", provider: "vault", id: "/key" } } } } })
@@ -88,5 +100,36 @@ calls.length = 0;
 await configureProvider(fileRefProvider, ["--force"]);
 assert.equal(calls.length, 1, "--force does replace it");
 assert.ok(calls[0].includes("models.providers.custom.apiKey"));
+
+// Regression: configure-provider must respect the instance lock, not bypass it. Before the
+// fix, it wrote models.providers.<id>.apiKey with no takeLock()/guarded() call at all.
+{
+  const holder = JSON.stringify({ operationId: "op-holder", what: "apply", by: "someone@host pid 1", takenAt: new Date().toISOString() });
+  const lockedCtx = { ...ctx, transport: {
+    ...noContention,
+    exists: async (path: string) => path.endsWith("config/.env") || path.endsWith("openclaw.json"),
+    readFile: async (path: string) => {
+      if (path.endsWith("holder.json")) return holder;
+      return path.endsWith("openclaw.json")
+        ? JSON.stringify({ models: { providers: { custom: {} } } })
+        : "CUSTOM_API_KEY=secret-value\n";
+    },
+    exec: async (command: string, args: string[]) => {
+      if (command === "mkdir" && args[0] !== "-p") return { code: 1, stdout: "", stderr: "" };
+      if (command === "test" && args[0] === "-d") return { code: 0, stdout: "", stderr: "" };
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  } } as unknown as Context;
+
+  calls.length = 0;
+  let refused = "";
+  try {
+    await configureProvider(lockedCtx, []);
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+  assert.ok(refused.includes("another operation is changing this instance"), "configure-provider refuses when another operation already holds the instance lock");
+  assert.equal(calls.length, 0, "a refused configure-provider never writes the config");
+}
 
 process.stderr.write("provider configuration checks passed\n");

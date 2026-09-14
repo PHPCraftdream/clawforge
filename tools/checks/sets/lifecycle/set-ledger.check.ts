@@ -54,7 +54,10 @@ function fakeCtx(files: Map<string, string>, calls: string[][], cronJobs: { id: 
     runtime: {
       async runOneOff(_service: string, args: string[]) {
         calls.push(args);
-        if (args[0] === "cron" && args[1] === "list") return jsonResult({ jobs: cronJobs });
+        // --all required, the same way OpenClaw's own cron list itself requires it to show
+        // a disabled job (docs.openclaw.ai/cli/cron) — omitting it here would silently make
+        // every fixture job "invisible", the exact bug #188 fixed.
+        if (args[0] === "cron" && args[1] === "list") return jsonResult({ jobs: args.includes("--all") ? cronJobs : [] });
         return jsonResult({});
       },
     },
@@ -248,6 +251,21 @@ function inspectionWith(problems: Problem[]): Inspection {
   await removeOwnedObject(ctx, "cron-job", "vanished-cron");
   check("a cron job already gone from the instance is not removed twice", calls.map((entry) => entry.slice(0, 2).join(" ")), ["cron list"]);
   check("but is still forgotten", (await readLedger(ctx)).objects, []);
+}
+
+{
+  // A DISABLED job (not merely absent) is the case #188 fixed: without --all in the lookup,
+  // OpenClaw's own cron list hides it entirely (docs.openclaw.ai/cli/cron) — before the fix,
+  // that made this indistinguishable from "already gone", so cron rm was never called and
+  // the job was left behind, its ownership record deleted regardless.
+  const files = new Map<string, string>([["/srv/clawforge/clawforge-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("cron-job", "disabled-cron", "beta")] })]]);
+  const calls: string[][] = [];
+  const ctx = fakeCtx(files, calls, [{ id: "job-42", name: "disabled-cron" }]);
+  await removeOwnedObject(ctx, "cron-job", "disabled-cron");
+  check("the lookup passes --all, so a disabled job is still found", calls[0]?.includes("--all"), true);
+  check("and actually removed, not silently left behind", calls.map((entry) => entry.slice(0, 2).join(" ")), ["cron list", "cron rm"]);
+  check("targeting its live id", calls[1], cronRmArgv("job-42"));
+  check("and forgotten", (await readLedger(ctx)).objects, []);
 }
 
 // --- end to end: a recipe renames its agent, and only the old name goes -------------------

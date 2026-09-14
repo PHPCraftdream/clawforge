@@ -12,6 +12,7 @@ import { secretsTemplateFile, secretStoreFile, secretsDir } from "../../runtime/
 import type { Context } from "../../core/context.ts";
 import { missing, requirements, status, template } from "../../service/secrets.ts";
 import { loadSecrets } from "../lifecycle/state.ts";
+import { guarded } from "../../runtime/instance-lock.ts";
 
 /** Fills the target's config/.env from a local store, refusing on incomplete input.
  *
@@ -91,7 +92,9 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   }
 
   if (apply) {
-    await applyStore(ctx, store);
+    // Writes config/.env on the target — the same class of mutation apply/restore/rollback
+    // guard against each other for, and this used to bypass entirely.
+    await guarded(ctx, "secrets", [], () => applyStore(ctx, store));
     return;
   }
 

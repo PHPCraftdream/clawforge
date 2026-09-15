@@ -150,42 +150,49 @@ type ModuleTypeAction =
   | { kind: "set"; parsed: Record<string, unknown>; replacing?: string }
   | undefined;
 
-/** Every file in this directory whose meaning depends on package.json's "type", excluding
- *  node_modules and anything hidden. Only `.js` and `.ts` are ambiguous — `.cjs`/`.mjs` (and
- *  their TypeScript counterparts) carry their module system in the extension. */
+/** Finds type-sensitive source files, excluding dependencies and Git metadata. */
 async function typeSensitiveFiles(root: string): Promise<string[]> {
-  let entries;
-  try {
-    entries = await readdir(root, { withFileTypes: true, recursive: true });
-  } catch {
-    return [];
+  const files: string[] = [];
+  async function visit(directory: string): Promise<void> {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      const path = resolve(directory, entry.name);
+      if (entry.isDirectory()) await visit(path);
+      else if (entry.isFile() && /\.(js|ts)$/.test(entry.name)) files.push(relative(root, path));
+    }
   }
-  return entries
-    .filter((entry) => entry.isFile() && /\.(js|ts)$/.test(entry.name))
-    .map((entry) => relative(root, resolve(entry.parentPath, entry.name)))
-    .filter((path) => !path.split(/[\\/]/).some((segment) => segment === "node_modules" || segment.startsWith(".")));
+  await visit(root);
+  return files;
 }
 
-/** The deployment's app.ts is ESM — it imports @clawforge/framework — and Node decides how to
- *  read a .ts file from the nearest package.json's "type". Node only guesses when the field
- *  is absent entirely; `npm init -y` writes an explicit "type": "commonjs", and under that
- *  every command fails at the first import with "Cannot use import statement outside a
- *  module". That is the whole CLI, including bootstrap and both MCP servers, on a directory
- *  the operator prepared exactly as the README said to.
- *
- *  So the field is decided here rather than left to chance. "commonjs" is rewritten only when
- *  nothing in the directory depends on it — a package.json npm wrote by default, next to no
- *  JavaScript of its own, states nothing anyone chose. Where there IS such code, the field is
- *  load-bearing: flipping it would change how every one of those files is read, so init
- *  refuses and says what to do instead. */
+/** Chooses the package type without changing existing source semantics. */
 async function moduleTypeAction(root: string): Promise<ModuleTypeAction> {
   const file = resolve(root, "package.json");
+
+  const refuseForDependents = (declaration: string, reason: string, dependents: string[]): never => {
+    die(
+      `${file} ${declaration}, and this directory already holds ` +
+        `${dependents.length} file(s) read under it (${dependents.slice(0, 3).join(", ")}${dependents.length > 3 ? ", …" : ""}).\n` +
+        `The deployment declaration needs ESM, and ${reason}. Set "type": "module" yourself once they can take it,\n` +
+        "or initialise this deployment in a directory of its own.",
+    );
+  };
 
   let raw: string;
   try {
     raw = await readFile(file, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "create", name: basename(root) };
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      const dependents = await typeSensitiveFiles(root);
+      if (dependents.length > 0) {
+        refuseForDependents(
+          "does not exist",
+          "adding a package.json with \"type\": \"module\" would change how those files are read",
+          dependents,
+        );
+      }
+      return { kind: "create", name: basename(root) };
+    }
     return die(`${file} could not be read: ${(error as Error).message}`);
   }
 
@@ -204,18 +211,17 @@ async function moduleTypeAction(root: string): Promise<ModuleTypeAction> {
 
   const declared = (parsed as { type?: unknown }).type;
   if (declared === "module") return undefined;
-  if (declared === undefined) return { kind: "set", parsed: parsed as Record<string, unknown> };
-
   const dependents = await typeSensitiveFiles(root);
   if (dependents.length > 0) {
-    die(
-      `${file} declares "type": ${JSON.stringify(declared)}, and this directory already holds ` +
-        `${dependents.length} file(s) read under it (${dependents.slice(0, 3).join(", ")}${dependents.length > 3 ? ", …" : ""}).\n` +
-        "The deployment's app.ts is ESM, so Node would refuse it with \"Cannot use import statement outside a module\" on every command,\n" +
-        'and changing the field for you would change how those files are read. Set "type": "module" yourself once they can take it,\n' +
-        "or initialise this deployment in a directory of its own.",
-    );
+    const declaration = declared === undefined
+      ? 'does not declare a "type"'
+      : `declares "type": ${JSON.stringify(declared)}`;
+    const reason = declared === undefined
+      ? "adding \"type\": \"module\" would change how those files are read"
+      : "changing the field for you would change how those files are read";
+    refuseForDependents(declaration, reason, dependents);
   }
+  if (declared === undefined) return { kind: "set", parsed: parsed as Record<string, unknown> };
   return { kind: "set", parsed: parsed as Record<string, unknown>, replacing: String(declared) };
 }
 

@@ -21,6 +21,8 @@ export interface ExecOptions {
   /** Inherit stdio so the user watches long output live; stdout/stderr come back empty. */
   stream?: boolean;
   env?: Record<string, string>;
+  /** Remove these inherited names without putting their values in a command argument. */
+  unsetEnv?: string[];
   allowFailure?: boolean;
   timeoutMs?: number;
 }
@@ -29,6 +31,24 @@ export interface ExecResult {
   code: number;
   stdout: string;
   stderr: string;
+}
+
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function validateEnvNames(names: string[]): void {
+  const invalid = names.filter((name) => !ENV_NAME.test(name));
+  if (invalid.length > 0) throw new Error(`invalid environment variable name: ${invalid.join(", ")}`);
+}
+
+function unsetInheritedEnvironment(environment: Record<string, string | undefined>, names: string[]): void {
+  if (process.platform !== "win32") {
+    for (const name of names) delete environment[name];
+    return;
+  }
+  const removed = new Set(names.map((name) => name.toLowerCase()));
+  for (const name of Object.keys(environment)) {
+    if (removed.has(name.toLowerCase())) delete environment[name];
+  }
 }
 
 export interface Transport {
@@ -59,15 +79,20 @@ export interface Transport {
  *  so quoting is impossible to get wrong. */
 export function spawnLocal(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
   return new Promise((resolvePromise, rejectPromise) => {
+    validateEnvNames(Object.keys(options.env ?? {}));
+    validateEnvNames(options.unsetEnv ?? []);
     // Streaming means "let the user watch it happen", which is only true on a terminal.
     // When output is being captured, inheriting stdout would put the child's output into
     // the middle of a JSON-RPC message; it is piped and forwarded to the sink instead.
     const sink = outputSink();
     const streamToTerminal = options.stream === true && sink === undefined;
 
+    const environment = { ...process.env, ...options.env };
+    unsetInheritedEnvironment(environment, options.unsetEnv ?? []);
+
     const child = spawn(command, args, {
       stdio: streamToTerminal ? ["inherit", "inherit", "inherit"] : ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...options.env },
+      env: environment,
     });
 
     let stdout = "";
@@ -118,14 +143,19 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
  *  them on the local `wsl.exe` or `ssh` process does not put them in the target's process:
  *  WSL passes only what WSLENV names, and ssh only what the server's AcceptEnv allows. So
  *  they are prepended to the remote command itself with `env`. */
-function withEnvPrefix(
+/** Builds the target-side `env` wrapper without retaining values that are being cleared. */
+export function withEnvPrefix(
   command: string,
   args: string[],
   env: Record<string, string> | undefined,
+  unsetEnv: string[] | undefined,
 ): [string, string[]] {
   const entries = Object.entries(env ?? {});
-  if (entries.length === 0) return [command, args];
-  return ["env", [...entries.map(([key, value]) => `${key}=${value}`), command, ...args]];
+  const removals = unsetEnv ?? [];
+  const removed = new Set(removals);
+  const assignments = entries.filter(([key]) => !removed.has(key));
+  if (assignments.length === 0 && removals.length === 0) return [command, args];
+  return ["env", [...removals.flatMap((name) => ["-u", name]), ...assignments.map(([key, value]) => `${key}=${value}`), command, ...args]];
 }
 
 /** Answers the existence question on the target and says which of the four answers it is:
@@ -330,7 +360,7 @@ export class WslTransport implements Transport {
   }
 
   exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
-    const [head, rest] = withEnvPrefix(command, args, options.env);
+    const [head, rest] = withEnvPrefix(command, args, options.env, options.unsetEnv);
     return spawnLocal("wsl.exe", ["-d", this.#distro, "--", head, ...rest], options);
   }
 
@@ -397,7 +427,7 @@ export class SshTransport implements Transport {
   }
 
   exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
-    const [head, rest] = withEnvPrefix(command, args, options.env);
+    const [head, rest] = withEnvPrefix(command, args, options.env, options.unsetEnv);
     const remote = [head, ...rest].map(SshTransport.quote).join(" ");
     return spawnLocal("ssh", [this.#host, remote], options);
   }

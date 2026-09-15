@@ -11,7 +11,7 @@
 import { mkdtemp, mkdir, writeFile, rm, chmod, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { LocalTransport, SshTransport, listFilesVia, existsVia, spawnLocal } from "#framework/runtime/transport.ts";
+import { LocalTransport, SshTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix } from "#framework/runtime/transport.ts";
 import type { ExecResult, ExecOptions } from "#framework/runtime/transport.ts";
 
 let failed = 0;
@@ -255,6 +255,37 @@ if (process.platform === "win32") {
     await chmod(blockedDir, 0o755).catch(() => {});
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+// An env file supplies deployment values to compose; inherited host values for the same
+// names must be removed at every transport boundary.
+{
+  const name = "CLAWFORGE_UNSET_ENV_PROBE";
+  const result = await spawnLocal(
+    process.execPath,
+    ["-e", `process.stdout.write(process.env.${name} ?? "missing")`],
+    { env: { [name]: "configured" }, unsetEnv: [name] },
+  );
+  check("local: unsetEnv wins over env", result.stdout, "missing");
+  const mixedName = "ClawForge_Unset_Env_Probe";
+  const previousMixed = process.env[mixedName];
+  process.env[mixedName] = "host-value";
+  try {
+    const mixed = await spawnLocal(
+      process.execPath,
+      ["-p", `JSON.stringify(process.env.${mixedName})`],
+      { unsetEnv: [name] },
+    );
+    check("local: unsetEnv follows platform case rules", mixed.stdout.trim(), process.platform === "win32" ? "undefined" : '"host-value"');
+  } finally {
+    if (previousMixed === undefined) delete process.env[mixedName];
+    else process.env[mixedName] = previousMixed;
+  }
+  check(
+    "remote: unsetEnv carries names only",
+    withEnvPrefix("docker", ["compose"], { [name]: "secret-value" }, [name]),
+    ["env", ["-u", name, "docker", "compose"]],
+  );
 }
 
 process.stderr.write(failed === 0 ? "all transport listing checks passed\n" : `${failed} failed\n`);

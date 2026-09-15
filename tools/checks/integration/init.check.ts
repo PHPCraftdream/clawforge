@@ -5,6 +5,7 @@
 // that failed partway through) was silently discarded.
 
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { initApp } from "#framework/integration/init.ts";
@@ -36,6 +37,17 @@ async function run(root: string): Promise<string | undefined> {
     },
   );
   return message;
+}
+
+async function runNode(root: string, file: string): Promise<{ code: number | null; output: string }> {
+  return await new Promise((resolve) => {
+    const child = spawn(process.execPath, [file], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    child.once("close", (code) => resolve({ code, output }));
+    child.once("error", () => resolve({ code: null, output }));
+  });
 }
 
 // mkdtemp's own random suffix mixes upper and lower case, which safeName (checked before
@@ -110,10 +122,8 @@ async function run(root: string): Promise<string | undefined> {
 // --- the deployment must be loadable as ESM afterwards -------------------------------------
 //
 // app.ts imports @clawforge/framework, and Node decides how to read a .ts file from the
-// nearest package.json's "type". It guesses only when the field is absent; `npm init -y`
-// writes an explicit "type": "commonjs", and under that every command — including bootstrap
-// and both MCP servers — dies at the first import with "Cannot use import statement outside a
-// module". Reproduced against a real packed tarball before this was fixed.
+// nearest package.json's "type". Init must provide ESM for the generated declaration without
+// changing how source files already in the directory are interpreted.
 
 async function freshRoot(name: string): Promise<{ base: string; root: string }> {
   const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
@@ -140,6 +150,29 @@ async function packageJsonOf(root: string): Promise<Record<string, unknown>> {
     const parsed = await packageJsonOf(root);
     check("and gets one that says it is a module", parsed.type, "module");
     check("marked private, because nothing here belongs on a registry", parsed.private, true);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+}
+
+{
+  const { base, root } = await freshRoot("deployment-no-package-commonjs-code");
+  try {
+    const legacy = resolve(root, "legacy.js");
+    await writeFile(legacy, "module.exports = { hello: 1 }; console.log(module.exports.hello);\n", "utf8");
+
+    const before = await runNode(root, legacy);
+    check("CommonJS code without package.json runs before init", before.code, 0);
+    check("CommonJS code without package.json exports before init", before.output.trim(), "1");
+
+    const message = await run(root);
+    check("init refuses existing code without package.json", message?.includes("package.json does not exist") && message.includes("legacy.js"), true);
+    check("the refusal does not create package.json", await readFile(resolve(root, "package.json"), "utf8").then(() => true, () => false), false);
+    check("the refusal does not create app.ts", await readFile(resolve(root, "app.ts"), "utf8").then(() => true, () => false), false);
+
+    const after = await runNode(root, legacy);
+    check("CommonJS code without package.json runs after refused init", after.code, 0);
+    check("CommonJS code without package.json exports after refused init", after.output.trim(), "1");
   } finally {
     await rm(base, { recursive: true, force: true });
   }
@@ -194,10 +227,53 @@ async function packageJsonOf(root: string): Promise<Record<string, unknown>> {
     const message = await run(root);
     check("a commonjs package with commonjs code in it is refused", message?.includes('"type": "commonjs"'), true);
     check("the refusal names the files that would change meaning", message?.includes("index.js"), true);
-    check("and says what would happen instead", message?.includes("Cannot use import statement outside a module"), true);
+    check("and explains the ESM requirement", message?.includes("declaration needs ESM"), true);
     check("the operator's package.json is left exactly as it was", await readFile(resolve(root, "package.json"), "utf8"), original);
     // Refused whole: a directory the deployment cannot run in must not be left half-written.
     check("and nothing was written into the directory", await readFile(resolve(root, "app.ts"), "utf8").then(() => true, () => false), false);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+}
+
+{
+  const { base, root } = await freshRoot("deployment-typeless-commonjs-code");
+  try {
+    const original = `${JSON.stringify({ name: "consumer", version: "1.0.0", main: "legacy.js" }, undefined, 2)}\n`;
+    const legacy = resolve(root, "legacy.js");
+    await writeFile(resolve(root, "package.json"), original, "utf8");
+    await writeFile(legacy, "module.exports = { hello: 1 }; console.log(module.exports.hello);\n", "utf8");
+
+    const before = await runNode(root, legacy);
+    check("typeless CommonJS code runs before init", before.code, 0);
+    check("typeless CommonJS code exports before init", before.output.trim(), "1");
+
+    const message = await run(root);
+    check("init refuses typeless CommonJS code", message?.includes("does not declare a \"type\"") && message.includes("legacy.js"), true);
+    check("the typeless package.json is left untouched", await readFile(resolve(root, "package.json"), "utf8"), original);
+    check("the refusal does not create app.ts", await readFile(resolve(root, "app.ts"), "utf8").then(() => true, () => false), false);
+
+    const after = await runNode(root, legacy);
+    check("typeless CommonJS code runs after refused init", after.code, 0);
+    check("typeless CommonJS code exports after refused init", after.output.trim(), "1");
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+}
+
+{
+  const { base, root } = await freshRoot("deployment-hidden-commonjs");
+  try {
+    const original = '{"name":"consumer"}\n';
+    await writeFile(resolve(root, "package.json"), original);
+    await mkdir(resolve(root, ".scripts"));
+    const legacy = resolve(root, ".scripts", "setup.js");
+    await writeFile(legacy, 'module.exports = "working"; console.log(module.exports);\n');
+    check("hidden CommonJS script runs before init", (await runNode(root, legacy)).code, 0);
+    const message = await run(root);
+    check("init protects hidden CommonJS scripts", message?.includes("setup.js"), true);
+    check("hidden scripts keep their package type", await readFile(resolve(root, "package.json"), "utf8"), original);
+    check("hidden CommonJS script runs after refused init", (await runNode(root, legacy)).code, 0);
   } finally {
     await rm(base, { recursive: true, force: true });
   }

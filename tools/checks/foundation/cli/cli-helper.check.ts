@@ -56,6 +56,7 @@ function withFileOps(transport: Transport): Transport {
     ...transport,
     mkdirp: async (): Promise<void> => {},
     writeFile: async (): Promise<void> => {},
+    remove: async (): Promise<void> => {},
   } as unknown as Transport;
 }
 

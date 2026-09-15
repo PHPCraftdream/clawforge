@@ -76,30 +76,46 @@ export function desiredStateShapeError(value: unknown): string | undefined {
   return undefined;
 }
 
-/** Reads the desired state as declared, for the secret references inside it. Absent or
- *  unparseable is not this function's finding to report — `set build` already refuses to
- *  build from a declaration it cannot read, so anything reaching here has one. A shape
- *  error IS this function's finding: pushed to `problems` by its one caller below rather
- *  than swallowed the way a read/parse failure is, which is the distinction between "there
- *  is genuinely nothing to check" and "there is something here that is not what it claims
- *  to be". */
+/** Reads the desired state as declared, for the secret references inside it.
+ *
+ *  A genuinely absent desired-state.json is a legitimate empty declaration: a set need not
+ *  declare any configuration at all. Everything else is a finding. That distinction used to
+ *  be missing, justified by "`set build` already refuses to build from a declaration it
+ *  cannot read, so anything reaching here has one" — true for the working tree, false for
+ *  `set validate --set <artifact>`: an artifact carries whatever bytes it carries, and
+ *  checksum verification proves only that those bytes match what the manifest recorded,
+ *  never that they parse. A truncated declaration inside an otherwise coherent artifact
+ *  validated as `valid: true, problems: []`. */
 async function declaredConfig(problems: Problem[]): Promise<unknown> {
+  // Resolved once, outside the try: desiredStateFile() throws when no deployment has been
+  // selected at all, and that is a wiring error in the caller, not a finding about a set —
+  // catching it here would report a missing useDeployment() as an invalid declaration.
+  const path = desiredStateFile();
+
   let raw: string;
   try {
-    raw = await readFile(desiredStateFile(), "utf8");
-  } catch {
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      problems.push(
+        problem("SET_DECLARATION_INVALID", `${path} could not be read: ${(error as Error).message}`),
+      );
+    }
     return [];
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
+  } catch (error) {
+    problems.push(
+      problem("SET_DECLARATION_INVALID", `${path} is not valid JSON: ${(error as Error).message}`),
+    );
     return [];
   }
   const shapeError = desiredStateShapeError(parsed);
   if (shapeError !== undefined) {
     problems.push(
-      problem("SET_DECLARATION_INVALID", `${desiredStateFile()}: ${shapeError}`),
+      problem("SET_DECLARATION_INVALID", `${path}: ${shapeError}`),
     );
     return [];
   }

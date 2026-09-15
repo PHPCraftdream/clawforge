@@ -398,6 +398,48 @@ async function runReadErrorAbortsChecks(): Promise<void> {
     check("a live-config read error aborts secrets --apply instead of reporting success", thrown !== "", true);
     check("the error names the actual cause", thrown.includes("could not be read"), true);
     check("config/.env is never written on the target", writes["/srv/clawforge/data/config/.env"], undefined);
+
+    // The same hazard one layer up: the EXISTENCE check itself failing. A transport that
+    // cannot reach the target now throws from exists() rather than answering "absent"
+    // (transport.ts), and that must abort applyStore() just as a read error does — otherwise
+    // the empty base comes back and takes config/.env's other keys with it.
+    const checkFailureWrites: Record<string, string> = {};
+    const checkFailureCtx = {
+      settings: { dataDir: "/srv/clawforge/data", env: {} },
+      transport: {
+        description: "stub",
+        async exists(path: string): Promise<boolean> {
+          if (path.endsWith("openclaw.json")) {
+            throw new Error(`could not check whether ${path} exists (exit 255): ssh: connect to host target port 22: Network is unreachable`);
+          }
+          return true;
+        },
+        async readFile(): Promise<string> {
+          return "";
+        },
+        async writeFile(path: string, content: string): Promise<void> {
+          checkFailureWrites[path] = content;
+        },
+        async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+          if (command === "mkdir" && args[0] !== "-p") return { code: 0, stdout: "", stderr: "" };
+          if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      },
+    } as unknown as Context;
+
+    let checkFailure = "";
+    try {
+      await withOutputSink(
+        () => {},
+        () => secrets(checkFailureCtx, ["--apply", "--store", storeName]),
+      );
+    } catch (error) {
+      checkFailure = error instanceof Error ? error.message : String(error);
+    }
+
+    check("a failed existence check aborts secrets --apply too", checkFailure.includes("could not check whether"), true);
+    check("and config/.env is left alone", checkFailureWrites["/srv/clawforge/data/config/.env"], undefined);
   } finally {
     await rm(deployDir, { recursive: true, force: true });
   }

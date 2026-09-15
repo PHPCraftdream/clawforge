@@ -158,7 +158,19 @@ export async function observeConfig(
     // A deployment that has never been bootstrapped has no configuration at all, which is
     // not drift — there is nothing to have drifted from. Only a file that exists and cannot
     // be understood is a finding.
-    if (await ctx.transport.exists(configFile)) {
+    //
+    // exists() itself now throws when the CHECK could not run (an unreachable target, rather
+    // than an answer) — caught here rather than allowed to escape: inspect answers whatever
+    // it can see, and a target it cannot reach at all is a finding of its own, not a reason
+    // to abandon every other observation already gathered.
+    let present: boolean;
+    try {
+      present = await ctx.transport.exists(configFile);
+    } catch (error) {
+      problems.push(problem("CONFIG_DRIFT", `${configFile} could not be reached: ${(error as Error).message}`));
+      present = false;
+    }
+    if (present) {
       problems.push(problem("CONFIG_DRIFT", `${configFile} could not be read or parsed`));
     }
   }

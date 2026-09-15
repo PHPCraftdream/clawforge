@@ -128,6 +128,30 @@ function withEnvPrefix(
   return ["env", [...entries.map(([key, value]) => `${key}=${value}`), command, ...args]];
 }
 
+/** Present, absent, or "the check itself could not run" — and the third must never be
+ *  answered as the second.
+ *
+ *  `result.code === 0` was the whole test, so ssh exiting 255 because it never reached the
+ *  host, or wsl.exe failing because the distro would not start, both read as "that path is
+ *  not there" about a machine this process never spoke to. Callers act on that answer:
+ *  `secrets --apply` rebuilt config/.env from an empty requirement list and deleted the keys
+ *  it did not know about, and `restore` skips moving live data aside when it believes the
+ *  data directory is absent.
+ *
+ *  `test -e` exits 1 and says nothing at all on stderr for a path that is genuinely not
+ *  there; a plumbing failure carries a diagnostic and usually its own exit code. That is the
+ *  only signal available through an exec boundary, and it is a reliable one. */
+async function existsVia(
+  exec: (command: string, args: string[], options: ExecOptions) => Promise<ExecResult>,
+  path: string,
+): Promise<boolean> {
+  const result = await exec("test", ["-e", path], { allowFailure: true });
+  if (result.code === 0) return true;
+  const detail = result.stderr.trim();
+  if (result.code === 1 && detail === "") return false;
+  throw new Error(`could not check whether ${path} exists (exit ${result.code})${detail === "" ? "" : `: ${detail}`}`);
+}
+
 /** Target and tooling share a filesystem: the fast path. */
 export class LocalTransport implements Transport {
   readonly description = "local";
@@ -145,12 +169,17 @@ export class LocalTransport implements Transport {
     if (mode !== undefined) await chmod(path, Number.parseInt(mode, 8));
   }
 
+  /** Same distinction existsVia() makes for the exec-based transports: ENOENT (and ENOTDIR,
+   *  which also means the path genuinely is not there) is an answer; any other errno —
+   *  EACCES on a parent, an I/O error — is the check failing, not "absent". */
   async exists(path: string): Promise<boolean> {
     try {
       await access(path);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") return false;
+      throw new Error(`could not check whether ${path} exists: ${(error as Error).message}`);
     }
   }
 
@@ -230,9 +259,8 @@ export class WslTransport implements Transport {
     if (mode !== undefined) await this.exec("chmod", [mode, path]);
   }
 
-  async exists(path: string): Promise<boolean> {
-    const result = await this.exec("test", ["-e", path], { allowFailure: true });
-    return result.code === 0;
+  exists(path: string): Promise<boolean> {
+    return existsVia((command, args, options) => this.exec(command, args, options), path);
   }
 
   async mkdirp(path: string): Promise<void> {
@@ -298,9 +326,8 @@ export class SshTransport implements Transport {
     if (mode !== undefined) await this.exec("chmod", [mode, path]);
   }
 
-  async exists(path: string): Promise<boolean> {
-    const result = await this.exec("test", ["-e", path], { allowFailure: true });
-    return result.code === 0;
+  exists(path: string): Promise<boolean> {
+    return existsVia((command, args, options) => this.exec(command, args, options), path);
   }
 
   async mkdirp(path: string): Promise<void> {

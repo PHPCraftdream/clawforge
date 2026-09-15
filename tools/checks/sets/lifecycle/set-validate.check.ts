@@ -9,7 +9,6 @@ import { validateSet, cronProblem } from "#framework/set/ownership/validate.ts";
 import { defaultSetName } from "#framework/commands/sets/set.ts";
 import { buildSetManifest } from "#framework/set/artifacts/model.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
-import { monorepoRoot } from "#framework/core/env.ts";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -68,6 +67,15 @@ function coherent(overrides: Partial<SetManifest> = {}): SetManifest {
 function codes(problems: readonly { code: string }[]): string[] {
   return problems.map((entry) => entry.code).sort();
 }
+
+// A deployment of its own, selected before the first case rather than inherited from
+// whichever check file happened to run before this one in the same process: validateSet()
+// reads desiredStateFile() from the active deployment, so without this the cases below read
+// a real deployment's declaration — and passed only because a failure to resolve it at all
+// used to be swallowed.
+const baseDeployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-base-"));
+await mkdir(resolve(baseDeployment, "config"), { recursive: true });
+useDeployment(baseDeployment);
 
 // --- a coherent set is silent -----------------------------------------------------------
 
@@ -179,7 +187,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     check("the artifact path never looks at the tree", codes(await validateSet(coherent())), []);
   } finally {
     await rm(deployment, { recursive: true, force: true });
-    useDeployment(resolve(monorepoRoot, "apps", "example app"));
+    useDeployment(baseDeployment);
   }
 }
 
@@ -203,7 +211,47 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     check("it is blocking", problems[0]?.severity, "blocking");
   } finally {
     await rm(deployment, { recursive: true, force: true });
-    useDeployment(resolve(monorepoRoot, "apps", "example app"));
+    useDeployment(baseDeployment);
+  }
+}
+
+// --- a desired-state.json that does not parse at all is worse, and used to say nothing -------
+//
+// The old justification ("set build already refuses to build from a declaration it cannot
+// read") holds for the working tree but not for `set validate --set <artifact>`: an artifact
+// carries whatever bytes it carries, and checksum verification proves only that they match
+// what the manifest recorded, never that they parse. A truncated declaration inside an
+// otherwise coherent artifact validated as valid: true, problems: [].
+
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-parse-check-"));
+  try {
+    await mkdir(resolve(deployment, "config"), { recursive: true });
+    await writeFile(resolve(deployment, "config", "desired-state.json"), '[{"path":"gateway.mode","value":"loc');
+    useDeployment(deployment);
+
+    const problems = await validateSet(coherent());
+    check("a truncated declaration is a finding, not a clean validation", codes(problems), ["SET_DECLARATION_INVALID"]);
+    check("the finding names the file", problems[0]?.detail.includes("desired-state.json"), true);
+    check("and says it is the JSON that is wrong", problems[0]?.detail.includes("not valid JSON"), true);
+    check("a declaration that cannot be parsed is blocking", problems[0]?.severity, "blocking");
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+    useDeployment(baseDeployment);
+  }
+}
+
+// --- but a genuinely absent declaration is still a legitimate empty one ----------------------
+
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-absent-check-"));
+  try {
+    await mkdir(resolve(deployment, "config"), { recursive: true });
+    useDeployment(deployment);
+    check("a set that declares no configuration at all is silent", codes(await validateSet(coherent())), []);
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+    useDeployment(baseDeployment);
   }
 }
 
@@ -231,6 +279,8 @@ check("leading digits and punctuation are stripped rather than smuggled through"
   // part of the id, and a set called something arbitrary is a set nobody can ask for again.
   check("a name with nothing valid left asks for one instead", refused, true);
 }
+
+await rm(baseDeployment, { recursive: true, force: true });
 
 process.stderr.write(failed === 0 ? "all set validate checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

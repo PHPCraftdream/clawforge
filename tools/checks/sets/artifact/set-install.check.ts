@@ -86,6 +86,12 @@ function check(name: string, actual: unknown, expected: unknown): void {
   const otherImage = requirementProblems(manifest, { framework: "0.1.0", imageDigest: "ghcr.io/openclaw/openclaw@sha256:bbb" });
   check("a different image digest is reported", otherImage.map((entry) => entry.code), ["SET_REQUIREMENT_UNMET"]);
 
+  // Same digest hash, different repository (a pull-through mirror) — matchRequiredDigest()
+  // (install.ts) already picks the running digest by hash alone for exactly this case, so
+  // this comparison must agree with it rather than fail over the registry name.
+  const mirroredImage = requirementProblems(manifest, { framework: "0.1.0", imageDigest: "mirror.example.com/openclaw/openclaw@sha256:aaa" });
+  check("the same digest hash via a different registry is not reported", mirroredImage, []);
+
   // Reported, not refused: an older framework may install the set perfectly well, and the
   // reader decides. Silence would be the failure — a set pins its requirements so that
   // installing it elsewhere is not a silent substitution.

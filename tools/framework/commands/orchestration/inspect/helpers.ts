@@ -94,6 +94,32 @@ export async function readLiveConfigForProspective(ctx: Context): Promise<unknow
   }
 }
 
+/** The same read, for a caller that is about to WRITE based on the result — secrets --apply's
+ *  own prospective requirement list, not inspect's read-only report. readLiveConfigForProspective()
+ *  above degrading a transient read or parse error to "no config" is correct for gatherInspection
+ *  (it must always answer, and observeConfig() reports the break separately) but wrong here: a
+ *  config that genuinely exists and briefly failed to read still has real secrets in it, and
+ *  silently treating that the same as "never bootstrapped" produces an INCOMPLETE requirement
+ *  list that then overwrites config/.env down to just that incomplete list — deleting whatever
+ *  secret the missed requirement was for. Only a genuinely absent file (never bootstrapped) is
+ *  a legitimate empty base; anything else must abort before applyStore() writes a single byte. */
+export async function readLiveConfigOrThrow(ctx: Context): Promise<unknown> {
+  const path = `${ctx.settings.dataDir}/config/openclaw.json`;
+  if (!(await ctx.transport.exists(path))) return undefined;
+
+  let raw: string;
+  try {
+    raw = await ctx.transport.readFile(path);
+  } catch (error) {
+    throw new Error(`${path} exists but could not be read: ${(error as Error).message}`);
+  }
+  try {
+    return JSON5.parse(raw) as unknown;
+  } catch (error) {
+    throw new Error(`${path} exists but is not valid JSON5: ${(error as Error).message}`);
+  }
+}
+
 /** The raw {path,value} declarations from config/desired-state.json, with no problem
  *  reporting and none of declaredState()'s (observe.ts) recipe/image extras — a caller that
  *  only wants prospectiveConfig's own input (secrets --apply's own prospective requirements,

@@ -13,7 +13,7 @@ import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsFromConfig, status, template } from "#src/service/secrets.ts";
 import { loadSecrets } from "../lifecycle/state.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
-import { prospectiveConfig, readLiveConfigForProspective, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
+import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
 
 /** Fills the target's config/.env from a local store, refusing on incomplete input.
  *
@@ -41,7 +41,14 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   // about it yet — an empty or short `needed` list then made loadSecrets() refuse with
   // "refusing to install an empty secrets file" even though the value was sitting right
   // there in the store file.
-  const prospective = prospectiveConfig(await readLiveConfigForProspective(ctx), await readDeclaredConfig());
+  //
+  // readLiveConfigOrThrow(), not readLiveConfigForProspective(): this is about to WRITE
+  // config/.env from whatever `needed` comes out to, so a live config that genuinely exists
+  // but merely failed to read (a transient error) must abort the whole operation rather than
+  // silently degrade to an empty base — degrading here would compute an INCOMPLETE `needed`
+  // list and loadSecrets() would then overwrite config/.env down to just that list, deleting
+  // every secret the missed requirement was for while reporting success.
+  const prospective = prospectiveConfig(await readLiveConfigOrThrow(ctx), await readDeclaredConfig());
   const needed = requirementsFromConfig(prospective).filter((entry) => entry.location === "target-env");
 
   const absent = needed.filter((entry) => {

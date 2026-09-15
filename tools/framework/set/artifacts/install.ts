@@ -375,7 +375,13 @@ export function requirementProblems(manifest: SetManifest, present: { framework?
       ),
     );
   }
-  if (present.imageDigest !== undefined && present.imageDigest !== manifest.requires.image) {
+  // By hash suffix, not the full string: matchRequiredDigest() (above) already picks the
+  // running digest by matching the SHA-256 hash alone, precisely so a container pulled
+  // through a different repository/registry (a mirror) still counts as the same image —
+  // the same identity check runtimeMatches() (evidence.ts) uses throughout. Comparing the
+  // full string here undid that: a mirrored image whose hash genuinely matched still failed
+  // this stricter check purely over the registry name.
+  if (present.imageDigest !== undefined && present.imageDigest.split("@").at(-1) !== manifest.requires.image.split("@").at(-1)) {
     problems.push(
       problem(
         "SET_REQUIREMENT_UNMET",

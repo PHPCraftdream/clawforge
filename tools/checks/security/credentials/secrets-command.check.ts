@@ -323,6 +323,87 @@ async function runProspectiveApplyChecks(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------------------
+// Part 1d: secrets --apply must ABORT on a live-config read error, not silently write an
+// incomplete config/.env — a genuinely existing config that merely failed to read must not
+// be treated the same as "never bootstrapped"
+// ---------------------------------------------------------------------------------------
+//
+// Before the fix, applyStore() used the same lenient reader gatherInspection uses (any
+// failure at all degrades to "no config"). A transient read error on a live config that DOES
+// have real secrets in it then computed an incomplete requirement list from an empty base,
+// and loadSecrets() overwrote config/.env down to just that list — deleting every secret the
+// missed requirement was for, while reporting success.
+
+async function runReadErrorAbortsChecks(): Promise<void> {
+  const deployDir = await mkdtemp(resolve(tmpdir(), "clawforge-secrets-read-error-check-"));
+  try {
+    await mkdir(resolve(deployDir, "config"), { recursive: true });
+    await mkdir(resolve(deployDir, "secrets"), { recursive: true });
+    useDeployment(deployDir);
+
+    // The declaration alone asks for ZAI_API_KEY. The instance's actual LIVE config (if it
+    // could be read) would ALSO require OPENAI_API_KEY for a second, already-configured
+    // provider that the declaration never mentions — the requirement a swallowed read error
+    // makes invisible. Without the fix, `needed` ends up with ZAI_API_KEY alone (non-empty,
+    // so loadSecrets()'s "empty file" guard never fires), and the store's OPENAI_API_KEY
+    // value is silently dropped from config/.env instead of the whole operation aborting.
+    await writeFile(
+      resolve(deployDir, "config", "desired-state.json"),
+      JSON.stringify([{ path: "models.providers.zai", value: {} }]),
+      "utf8",
+    );
+
+    const storeName = "read-error-store";
+    await writeFile(
+      resolve(deployDir, "secrets", `${storeName}.env`),
+      "ZAI_API_KEY=zai-value\nOPENAI_API_KEY=openai-value\n",
+      "utf8",
+    );
+
+    const writes: Record<string, string> = {};
+    const ctx = {
+      settings: { dataDir: "/srv/clawforge/data", env: {} },
+      transport: {
+        description: "stub",
+        async exists(): Promise<boolean> {
+          // The live config genuinely exists — this is not a fresh, never-bootstrapped
+          // instance — but reading it hits a transient error, simulated below.
+          return true;
+        },
+        async readFile(path: string): Promise<string> {
+          if (path.endsWith("openclaw.json")) throw new Error("simulated transient read error");
+          return "";
+        },
+        async writeFile(path: string, content: string): Promise<void> {
+          writes[path] = content;
+        },
+        async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+          if (command === "mkdir" && args[0] !== "-p") return { code: 0, stdout: "", stderr: "" };
+          if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      },
+    } as unknown as Context;
+
+    let thrown = "";
+    try {
+      await withOutputSink(
+        () => {},
+        () => secrets(ctx, ["--apply", "--store", storeName]),
+      );
+    } catch (error) {
+      thrown = error instanceof Error ? error.message : String(error);
+    }
+
+    check("a live-config read error aborts secrets --apply instead of reporting success", thrown !== "", true);
+    check("the error names the actual cause", thrown.includes("could not be read"), true);
+    check("config/.env is never written on the target", writes["/srv/clawforge/data/config/.env"], undefined);
+  } finally {
+    await rm(deployDir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------------------
 // Part 2: mcp-setup
 // ---------------------------------------------------------------------------------------
 
@@ -473,6 +554,7 @@ async function runMcpChecks(): Promise<void> {
 await runSecretsChecks();
 await runLockChecks();
 await runProspectiveApplyChecks();
+await runReadErrorAbortsChecks();
 await runMcpChecks();
 
 process.stderr.write(failed === 0 ? "all secrets-command checks passed\n" : `${failed} failed\n`);

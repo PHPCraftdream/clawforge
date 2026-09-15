@@ -47,6 +47,23 @@ interface ConfigPathPart {
   readonly arrayIndex: boolean;
 }
 
+/** Compares JSON-shaped values without making object key order significant. */
+export function configValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((value, index) => configValuesEqual(value, right[index]));
+  }
+  const leftKeys = Object.keys(left as Record<string, unknown>).sort();
+  const rightKeys = Object.keys(right as Record<string, unknown>).sort();
+  if (leftKeys.length !== rightKeys.length || leftKeys.some((key, index) => key !== rightKeys[index])) return false;
+  return leftKeys.every((key) => configValuesEqual(
+    (left as Record<string, unknown>)[key],
+    (right as Record<string, unknown>)[key],
+  ));
+}
+
 const MAX_CONFIG_PATH_ARRAY_INDEX = 100_000;
 
 function arrayIndex(key: string): number | undefined {
@@ -142,6 +159,27 @@ function configPathParts(path: string): ConfigPathPart[] {
     throw new Error(`refusing to apply configuration path "${path}": "${unsafe.key}" is not a valid segment`);
   }
   return parts;
+}
+
+function pathPartsEqual(left: ConfigPathPart[], right: ConfigPathPart[]): boolean {
+  return left.length === right.length && left.every((part, index) => part.key === right[index].key);
+}
+
+function pathIsAncestor(ancestor: ConfigPathPart[], descendant: ConfigPathPart[]): boolean {
+  return ancestor.length < descendant.length && ancestor.every((part, index) => part.key === descendant[index].key);
+}
+
+/** Keeps only declarations whose final assignment still controls an outer value. */
+export function effectiveDeclarationPaths(
+  declared: DeclaredState["config"],
+): DeclaredState["config"] {
+  const parsed = declared.map((entry) => ({ entry, parts: configPathParts(entry.path) }));
+  const candidates = parsed.filter(({ parts }, index) => !parsed.slice(index + 1).some((later) =>
+    pathPartsEqual(later.parts, parts) || pathIsAncestor(later.parts, parts)));
+  return candidates
+    .filter(({ parts }, index) => !candidates.some((candidate, candidateIndex) =>
+      candidateIndex !== index && pathIsAncestor(candidate.parts, parts)))
+    .map(({ entry }) => entry);
 }
 
 /** Writes a config path, preserving arrays and rejecting unsafe segments. */

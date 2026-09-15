@@ -5,7 +5,9 @@
 // deleting it.
 
 import { log, info, warn, die } from "#src/core/log.ts";
+import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
+import { parseEnv } from "#src/core/env.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { isProfile, listArchive, fileSize, parseSnapshotArchive, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
@@ -41,6 +43,65 @@ function shellQuote(value: string): string {
 
 function snapshotGlob(directory: string): string {
   return `${shellQuote(`${directory}/${deploymentName()}-state-`)}*.tar.gz`;
+}
+
+/** Writes a staged sidecar, escalating when its directory requires it. */
+async function writeSnapshotSidecar(ctx: Context, path: string, content: string, mode?: string): Promise<void> {
+  const prefix = await sudoFor(ctx, path);
+  if (prefix.length === 0) {
+    await ctx.transport.writeFile(path, content, mode);
+    return;
+  }
+  const [head, ...rest] = [...prefix, "tee", path];
+  await ctx.transport.exec(head, rest, { input: content });
+  if (mode !== undefined) {
+    const [chmodHead, ...chmodRest] = [...prefix, "chmod", mode, path];
+    await ctx.transport.exec(chmodHead, chmodRest);
+  }
+  const uid = (await ctx.transport.exec("id", ["-u"])).stdout.trim();
+  const gid = (await ctx.transport.exec("id", ["-g"])).stdout.trim();
+  if (!/^\d+$/.test(uid) || !/^\d+$/.test(gid)) throw new Error("could not determine snapshot sidecar owner");
+  const [ownerHead, ...ownerRest] = [...prefix, "chown", `${uid}:${gid}`, path];
+  await ctx.transport.exec(ownerHead, ownerRest);
+}
+
+/** Checks a snapshot path with the same privileges used to publish it. */
+async function snapshotExists(ctx: Context, path: string): Promise<boolean> {
+  const prefix = await sudoFor(ctx, path);
+  const [head, ...rest] = [...prefix, "test", "-e", path];
+  const result = await ctx.transport.exec(head, rest, { allowFailure: true });
+  if (result.code === 0) return true;
+  if (result.code === 1) return false;
+  throw new Error(`could not check snapshot path ${path} (exit ${result.code})`);
+}
+
+/** Publishes one file without replacing an existing path. */
+async function moveSnapshotFile(ctx: Context, source: string, destination: string): Promise<void> {
+  const prefix = await sudoFor(ctx, destination);
+  const [head, ...rest] = [...prefix, "mv", "-nT", "--", source, destination];
+  const result = await ctx.transport.exec(head, rest, { allowFailure: true });
+  if (result.code !== 0) {
+    throw new Error(`could not publish ${destination}: ${result.stderr.trim() || `mv exited ${result.code}`}`);
+  }
+  if (await snapshotExists(ctx, source)) {
+    throw new Error(`snapshot path already exists: ${destination}`);
+  }
+  if (!(await snapshotExists(ctx, destination))) {
+    throw new Error(`could not publish ${destination}: mv did not create the destination`);
+  }
+}
+
+/** Removes owned pull artifacts, attempting every path before reporting failure. */
+async function removeSnapshotFiles(ctx: Context, paths: string[]): Promise<void> {
+  const failures: unknown[] = [];
+  for (const path of paths) {
+    try {
+      await runMaybePrivileged(ctx, path, "rm", ["-f", path]);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "could not remove all pull artifacts");
 }
 
 /** Filters a newest-first listing to snapshots owned by this deployment. */
@@ -136,66 +197,107 @@ export async function pull(ctx: Context, args: string[]): Promise<void> {
     } else die(`unknown argument: ${arg}`);
   }
 
+  // Validate argv before creating the lock or touching the target.
+  return guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot));
+}
+
+/** Captures the archive and sidecars under one instance lock. */
+async function pullLocked(ctx: Context, profile: Profile, hot: boolean): Promise<void> {
   const snapshotDir = await ensureSnapshotDir(ctx);
   const archive = await createBackup(ctx, { profile, hot });
   const snapshot = `${snapshotDir}/${deploymentName()}-state-${stamp()}.tar.gz`;
+  const snapshotTemplate = `${snapshot}.template.env`;
+  const snapshotSecrets = `${snapshot}${SECRETS_SUFFIX}`;
+  const staging = `${snapshotDir}/.clawforge-pull-${randomBytes(8).toString("hex")}`;
+  const staged = `${staging}/${snapshot.slice(snapshot.lastIndexOf("/") + 1)}`;
+  const stagedTemplate = `${staged}.template.env`;
+  const stagedSecrets = `${staged}${SECRETS_SUFFIX}`;
+  const publishedSidecars: string[] = [];
+  let hasStagedSecrets = false;
+  let publishedArchive = false;
+  let stagingCreated = false;
 
-  log(`copying into ${snapshotDir}`);
-  await runMaybePrivileged(ctx, snapshotDir, "cp", [archive, snapshot]);
-  await runMaybePrivileged(ctx, snapshot, "chmod", ["600", snapshot]);
-
-  // A share snapshot is meant to leave the machine, so it only exists if the check passes.
-  // Both copies go: the backup this was made from holds exactly the same bytes, and leaving
-  // it behind under a name that looks routine is how a rejected archive gets shared anyway.
-  //
-  // The check itself can throw rather than return false — a scan failure in verifySnapshot
-  // is reported that way — and an exception must clean up exactly like a rejection does:
-  // an unverified share copy left on disk because the verifier itself failed is worse than
-  // one left because it failed cleanly.
-  if (profile === "share") {
-    let passed: boolean;
-    try {
-      passed = await verifySnapshot(ctx, snapshot, "share");
-    } catch (error) {
-      await runMaybePrivileged(ctx, snapshot, "rm", ["-f", snapshot]);
-      await runMaybePrivileged(ctx, archive, "rm", ["-f", archive]);
-      throw error;
-    }
-    if (!passed) {
-      await runMaybePrivileged(ctx, snapshot, "rm", ["-f", snapshot]);
-      await runMaybePrivileged(ctx, archive, "rm", ["-f", archive]);
-      die(`snapshot rejected and deleted, along with ${archive}`);
-    }
+  if (await snapshotExists(ctx, snapshot) || await snapshotExists(ctx, snapshotTemplate) || await snapshotExists(ctx, snapshotSecrets)) {
+    die(`snapshot name already exists: ${snapshot}`);
   }
 
-  // Every snapshot ships a template of the variables the receiving side must fill in.
-  // It carries names and purpose, never values, so it is safe to hand over with a share
-  // archive as well.
-  const manifest = template(await requirements(ctx));
-  await ctx.transport.writeFile(`${snapshot}.template.env`, manifest);
-  info(`required variables: ${snapshot}.template.env`);
+  try {
+    // Build the complete pair in a private directory. The final archive is moved last.
+    await runMaybePrivileged(ctx, snapshotDir, "mkdir", ["-m", "700", staging]);
+    stagingCreated = true;
+    log(`preparing snapshot in ${snapshotDir}`);
+    await runMaybePrivileged(ctx, staging, "cp", [archive, staged]);
+    await runMaybePrivileged(ctx, staged, "chmod", ["600", staged]);
 
-  // In migrate mode the keys travel beside the archive, not inside it.
-  if (profile === "migrate") {
-    const secrets = await dumpSecrets(ctx);
-    if (secrets === undefined || secrets.trim() === "") {
-      warn("the target has no config/.env — no keys were dumped");
-    } else {
-      const secretsPath = `${snapshot}${SECRETS_SUFFIX}`;
-      await ctx.transport.writeFile(secretsPath, secrets, "600");
-      info(`keys: ${secretsPath}`);
+    if (profile === "share") {
+      let passed: boolean;
+      try {
+        passed = await verifySnapshot(ctx, staged, "share");
+      } catch (error) {
+        try {
+          await removeSnapshotFiles(ctx, [staged, archive]);
+        } catch (cleanupError) {
+          throw new AggregateError([error, cleanupError], "share snapshot verification and cleanup failed");
+        }
+        throw error;
+      }
+      if (!passed) {
+        await removeSnapshotFiles(ctx, [staged, archive]);
+        die(`snapshot rejected and deleted, along with ${archive}`);
+      }
     }
+
+    // Sidecars are prepared and checked before any final path becomes visible.
+    const needed = await requirements(ctx);
+    const manifest = template(needed);
+    await writeSnapshotSidecar(ctx, stagedTemplate, manifest);
+    if (profile === "migrate") {
+      const secrets = await dumpSecrets(ctx);
+      const requiredTarget = needed.filter((entry) => entry.location === "target-env" && entry.required);
+      const values = secrets === undefined ? {} : parseEnv(secrets);
+      const absent = requiredTarget.filter((entry) => values[entry.name] === undefined || values[entry.name]?.trim() === "");
+      if (absent.length > 0) {
+        for (const entry of absent) warn(`${secretsFileOnTarget(ctx)} has no value for ${entry.name} (${entry.usedBy})`);
+        die(`cannot publish a migrate snapshot: ${absent.length} required value(s) are missing`);
+      }
+      if (secrets === undefined || secrets.trim() === "") {
+        warn("the target has no config/.env — no keys were dumped");
+      } else {
+        await writeSnapshotSidecar(ctx, stagedSecrets, secrets, "600");
+        hasStagedSecrets = true;
+      }
+    }
+
+    const entries = await listArchive(ctx, staged);
+    const size = await fileSize(ctx, staged);
+
+    // Refuse collisions without replacing a previous complete snapshot.
+    await moveSnapshotFile(ctx, stagedTemplate, snapshotTemplate);
+    publishedSidecars.push(snapshotTemplate);
+    if (hasStagedSecrets) {
+      await moveSnapshotFile(ctx, stagedSecrets, snapshotSecrets);
+      publishedSidecars.push(snapshotSecrets);
+    }
+    await moveSnapshotFile(ctx, staged, snapshot);
+    publishedArchive = true;
+
+    log(`pulled ${entries.length} entries (${size}), profile: ${profile}`);
+    info(`required variables: ${snapshotTemplate}`);
+    if (hasStagedSecrets) info(`keys: ${snapshotSecrets}`);
+    info(snapshot);
+    if (profile === "full") warn("FULL archive — contains provider keys and the operator token. Never share it.");
+    if (profile === "migrate") info("no provider keys inside; still private (transcripts, identity tokens)");
+    if (profile === "share") info(`shareable profile: ${SHARE_ALLOWED.join(", ")}`);
+    await rotateSnapshots(ctx, snapshotDir);
+  } catch (error) {
+    // A failure before archive publication must not leave a discoverable partial snapshot.
+    if (!publishedArchive) {
+      await removeSnapshotFiles(ctx, publishedSidecars);
+    }
+    throw error;
+  } finally {
+    if (stagingCreated) await runMaybePrivileged(ctx, staging, "rm", ["-rf", staging]);
   }
-
-  const entries = await listArchive(ctx, snapshot);
-  log(`pulled ${entries.length} entries (${await fileSize(ctx, snapshot)}), profile: ${profile}`);
-  info(snapshot);
-
-  if (profile === "full") warn("FULL archive — contains provider keys and the operator token. Never share it.");
-  if (profile === "migrate") info("no provider keys inside; still private (transcripts, identity tokens)");
-  if (profile === "share") info(`shareable profile: ${SHARE_ALLOWED.join(", ")}`);
-
-  await rotateSnapshots(ctx, snapshotDir);
 }
 
 // --- push ---------------------------------------------------------------------

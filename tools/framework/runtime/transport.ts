@@ -18,7 +18,7 @@ import { outputSink } from "../core/output.ts";
 
 export interface ExecOptions {
   input?: string;
-  /** Inherit stdio so the user watches long output live; stdout/stderr come back empty. */
+  /** Stream output live; capture it when input or an output sink requires pipes. */
   stream?: boolean;
   env?: Record<string, string>;
   /** Remove these inherited names without putting their values in a command argument. */
@@ -85,7 +85,7 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     // When output is being captured, inheriting stdout would put the child's output into
     // the middle of a JSON-RPC message; it is piped and forwarded to the sink instead.
     const sink = outputSink();
-    const streamToTerminal = options.stream === true && sink === undefined;
+    const streamToTerminal = options.stream === true && sink === undefined && options.input === undefined;
 
     const environment = { ...process.env, ...options.env };
     unsetInheritedEnvironment(environment, options.unsetEnv ?? []);
@@ -97,27 +97,43 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
 
     let stdout = "";
     let stderr = "";
+    let launchError: Error | undefined;
+    let inputError: Error | undefined;
     child.stdout?.on("data", (chunk) => {
       stdout += String(chunk);
-      if (options.stream === true && sink !== undefined) sink(String(chunk));
+      if (options.stream === true) {
+        if (sink !== undefined) sink(String(chunk));
+        else process.stdout.write(chunk);
+      }
     });
     child.stderr?.on("data", (chunk) => {
       stderr += String(chunk);
-      if (options.stream === true && sink !== undefined) sink(String(chunk));
+      if (options.stream === true) {
+        if (sink !== undefined) sink(String(chunk));
+        else process.stderr.write(chunk);
+      }
     });
 
     const timer = options.timeoutMs === undefined
       ? undefined
       : setTimeout(() => child.kill("SIGTERM"), options.timeoutMs);
 
+    // Handle early stdin closure and wait for the complete child result.
+    child.stdin?.on("error", (error) => {
+      inputError ??= error;
+    });
+
     child.on("error", (error) => {
-      if (timer) clearTimeout(timer);
-      rejectPromise(error);
+      launchError ??= error;
     });
 
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
       const result: ExecResult = { code: code ?? -1, stdout, stderr };
+      if (launchError !== undefined) {
+        rejectPromise(launchError);
+        return;
+      }
       if (result.code !== 0 && options.allowFailure !== true) {
         const detail = (stderr.trim() || stdout.trim()).split("\n").slice(0, 5).join("\n");
         // Both halves are masked: the arguments may carry a token (onboarding takes one)
@@ -131,11 +147,21 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
         );
         return;
       }
+      if (inputError !== undefined && result.code === 0) {
+        rejectPromise(new Error(`failed to deliver stdin: ${inputError.message}`));
+        return;
+      }
       resolvePromise(result);
     });
 
-    if (options.input !== undefined) child.stdin?.end(options.input);
-    else child.stdin?.end();
+    try {
+      if (options.input !== undefined) child.stdin?.end(options.input);
+      else child.stdin?.end();
+    } catch (error) {
+      inputError ??= error as Error;
+      child.stdin?.destroy();
+      if (child.exitCode === null && !child.killed) child.kill();
+    }
   });
 }
 

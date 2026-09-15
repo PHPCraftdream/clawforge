@@ -21,7 +21,7 @@ import {
 import type { RecipeAgentBundle, CronJob } from "#src/commands/management/provision-agent/index.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem, DeclaredState, ObservedState } from "#src/service/inspection.ts";
-import { valueAt, cronDifferences } from "./helpers.ts";
+import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt, cronDifferences } from "./helpers.ts";
 import type { Context } from "#src/core/context.ts";
 
 const PROBE_ENDPOINTS = ["healthz", "startupz", "readyz"];
@@ -147,12 +147,14 @@ export async function observeConfig(
     // gateway/configuration) — a comment or trailing comma is legitimate there, and plain
     // JSON.parse rejecting it produced a false CONFIG_DRIFT on every run against such a config.
     const parsed = JSON5.parse(await ctx.transport.readFile(configFile)) as unknown;
-    for (const entry of declared.config) {
+    for (const entry of declared.config) config[entry.path] = valueAt(parsed, entry.path);
+    const target = prospectiveConfig(parsed, declared.config);
+    for (const entry of effectiveDeclarationPaths(declared.config)) {
       const actual = valueAt(parsed, entry.path);
-      config[entry.path] = actual;
-      if (JSON.stringify(actual) !== JSON.stringify(entry.value)) {
+      const desired = valueAt(target, entry.path);
+      if (!configValuesEqual(actual, desired)) {
         problems.push(
-          problem("CONFIG_DRIFT", `${entry.path} is ${JSON.stringify(actual)}, declared ${JSON.stringify(entry.value)}`),
+          problem("CONFIG_DRIFT", `${entry.path} is ${JSON.stringify(actual)}, declared ${JSON.stringify(desired)}`),
         );
       }
     }

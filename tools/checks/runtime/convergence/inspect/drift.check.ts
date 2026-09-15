@@ -6,8 +6,10 @@
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
-import { prospectiveConfig, valueAt } from "#framework/commands/orchestration/inspect/helpers.ts";
+import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt } from "#framework/commands/orchestration/inspect/helpers.ts";
+import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { apply } from "#framework/commands/orchestration/apply.ts";
+import { createFixture } from "#checks/sets/lifecycle/set-lifecycle/fixture.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes, CONFIG_FILE } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 
@@ -28,6 +30,61 @@ const { deployment, goodChecksums, goodPrompts, stubContext } = await setupFixtu
 
 try {
   // --- the instance is what the repository says ----------------------------------------
+
+  {
+    const fixture = await createFixture();
+    try {
+      fixture.state.running = true;
+      const configPath = `${fixture.sourceData}/config/openclaw.json`;
+      const declarationPath = resolve(fixture.root, "config", "desired-state.json");
+      let restarts = 0;
+      fixture.ctx.runtime.restart = async () => { restarts += 1; };
+      const cases = [
+        {
+          name: "repeated assignments and unrelated live settings",
+          live: { gateway: { mode: "local", bind: "lan" } },
+          declared: [{ path: "gateway.mode", value: "remote" }, { path: "gateway.mode", value: "local" }],
+        },
+        {
+          name: "parent followed by child",
+          live: { gateway: { mode: "local" } },
+          declared: [{ path: "gateway", value: { mode: "remote" } }, { path: "gateway.mode", value: "local" }],
+        },
+        {
+          name: "parent replacing a child",
+          live: { gateway: { mode: "local" } },
+          declared: [{ path: "gateway.controlUi", value: { enabled: true } }, { path: "gateway", value: { mode: "local" } }],
+        },
+        {
+          name: "equivalent path aliases",
+          live: { gateway: { mode: "local" } },
+          declared: [{ path: 'gateway["mode"]', value: "remote" }, { path: "gateway.mode", value: "local" }],
+        },
+        {
+          name: "reordered object keys",
+          live: { gateway: { controlUi: { enabled: true, allowedOrigins: ["http://127.0.0.1:18789"] } } },
+          declared: [{ path: "gateway.controlUi", value: { allowedOrigins: ["http://127.0.0.1:18789"], enabled: true } }],
+        },
+      ];
+      for (const scenario of cases) {
+        const original = JSON.stringify(scenario.live);
+        fixture.files.set(configPath, original);
+        await writeFile(declarationPath, JSON.stringify(scenario.declared));
+        const result = await fixture.captured(() => apply(fixture.ctx, ["--json"]));
+        check(`apply accepts ${scenario.name}`, result.error?.message, undefined);
+        check(`apply leaves ${scenario.name} unchanged`, fixture.files.get(configPath), original);
+        check(`apply does not restart for ${scenario.name}`, restarts, 0);
+      }
+      fixture.files.set(configPath, JSON.stringify({ gateway: { mode: "remote" } }));
+      await writeFile(declarationPath, JSON.stringify(cases[0].declared));
+      const repaired = await fixture.captured(() => apply(fixture.ctx, ["--json"]));
+      check("a different final value still applies successfully", repaired.error?.message, undefined);
+      check("apply writes the final assignment", JSON.parse(fixture.files.get(configPath)!).gateway.mode, "local");
+      check("real drift still restarts the instance", restarts, 1);
+    } finally {
+      await fixture.teardown();
+    }
+  }
 
   {
     const live = {
@@ -158,6 +215,58 @@ try {
     check("the live values it compared are reported too", inspection.observed.config["gateway.mode"], "local");
     check("the digest is recorded, not just the tag", inspection.observed.imageDigest, "ghcr.io/openclaw/openclaw@sha256:abc");
     check("versions are answered", inspection.observed.openclawVersion, "OpenClaw 2026.6.34");
+  }
+
+  {
+    const desiredStatePath = resolve(deployment, "config", "desired-state.json");
+    const validDesiredState = await readFile(desiredStatePath, "utf8");
+    const inspectDeclaration = async (
+      liveConfig: Record<string, unknown>,
+      declaration: { path: string; value: unknown }[],
+    ) => {
+      await writeFile(desiredStatePath, JSON.stringify(declaration));
+      return gatherInspection(stubContext({ targetEnv: "ZAI_API_KEY=k\n", liveConfig, mirrorChecksums: goodChecksums }));
+    };
+    try {
+      const finalAssignment = await inspectDeclaration(
+        { gateway: { mode: "local" } },
+        [{ path: "gateway.mode", value: "remote" }, { path: "gateway.mode", value: "local" }],
+      );
+      check("a final repeated assignment is compared, not its intermediate value", finalAssignment.problems.filter((entry) => entry.code === "CONFIG_DRIFT"), []);
+      check("a matching final assignment produces no executable plan", planActions(finalAssignment).filter((action) => action.id !== "lock"), []);
+
+      const parentThenChild = await inspectDeclaration(
+        { gateway: { mode: "local" } },
+        [{ path: "gateway", value: { mode: "remote" } }, { path: "gateway.mode", value: "local" }],
+      );
+      check("a child assignment is applied after its parent", parentThenChild.problems.filter((entry) => entry.code === "CONFIG_DRIFT"), []);
+
+      const childThenParent = await inspectDeclaration(
+        { gateway: { mode: "local" } },
+        [{ path: "gateway.mode", value: "remote" }, { path: "gateway", value: { mode: "local" } }],
+      );
+      check("a later parent assignment replaces an earlier child", childThenParent.problems.filter((entry) => entry.code === "CONFIG_DRIFT"), []);
+
+      const reorderedArray = await inspectDeclaration(
+        { gateway: { controlUi: { allowedOrigins: ["https://one.example", "https://two.example"] } } },
+        [{ path: "gateway.controlUi.allowedOrigins", value: ["https://two.example", "https://one.example"] }],
+      );
+      check("array order remains significant", reorderedArray.problems.filter((entry) => entry.code === "CONFIG_DRIFT").map((entry) => entry.code), ["CONFIG_DRIFT"]);
+
+      const reorderedObject = await inspectDeclaration(
+        { gateway: { controlUi: { enabled: true, allowedOrigins: ["https://one.example"] } } },
+        [{ path: "gateway.controlUi", value: { allowedOrigins: ["https://one.example"], enabled: true } }],
+      );
+      check("object key order is not configuration drift", reorderedObject.problems.filter((entry) => entry.code === "CONFIG_DRIFT"), []);
+    } finally {
+      await writeFile(desiredStatePath, validDesiredState);
+    }
+
+    check("semantic equality distinguishes values with different types", configValuesEqual(1, "1"), false);
+    check("effective paths normalize dot and bracket aliases", effectiveDeclarationPaths([
+      { path: "gateway.mode", value: "remote" },
+      { path: 'gateway["mode"]', value: "local" },
+    ]), [{ path: 'gateway["mode"]', value: "local" }]);
   }
 
   {

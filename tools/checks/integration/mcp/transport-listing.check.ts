@@ -288,5 +288,76 @@ if (process.platform === "win32") {
   );
 }
 
+// A short-lived child can close its stdin while a caller is still writing. The stream error
+// must be observed without hiding the child's result or taking down the MCP process.
+{
+  const input = "x".repeat(256 * 1024);
+  const earlyExit = ["-e", "process.stderr.write('early-stderr'); process.exit(1)"];
+  const allowed = await spawnLocal(process.execPath, earlyExit, { input, allowFailure: true });
+  check("local: early stdin close keeps the exit result", allowed.code, 1);
+  check("local: early stdin close keeps stderr", allowed.stderr, "early-stderr");
+
+  let rejected = false;
+  try {
+    await spawnLocal(process.execPath, earlyExit, { input });
+  } catch (error) {
+    rejected = (error as Error).message.includes("early-stderr");
+  }
+  check("local: allowFailure false still rejects the child exit", rejected, true);
+
+  let delivered = true;
+  try {
+    await spawnLocal(process.execPath, ["-e", "process.exit(0)"], { input });
+  } catch (error) {
+    delivered = !(error as Error).message.includes("failed to deliver stdin");
+  }
+  check("local: code zero with undelivered stdin is not success", delivered, false);
+
+  const echo = await spawnLocal(
+    process.execPath,
+    ["-e", "let n=0; process.stdin.on('data', chunk => n += chunk.length); process.stdin.on('end', () => process.stdout.write(String(n)))"],
+    { input },
+  );
+  check("local: a fully consumed stdin still succeeds", echo.stdout, String(Buffer.byteLength(input)));
+
+  let forwardedStdout = "";
+  let forwardedStderr = "";
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  const originalStderrWrite = process.stderr.write.bind(process.stderr);
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    forwardedStdout += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    forwardedStderr += String(chunk);
+    return true;
+  }) as typeof process.stderr.write;
+  let streamed: ExecResult | undefined;
+  try {
+    streamed = await spawnLocal(
+      process.execPath,
+      ["-e", "process.stdin.on('data', () => {}); process.stdin.on('end', () => { process.stdout.write('forwarded-out'); process.stderr.write('forwarded-err'); })"],
+      { input: "forwarded-input", stream: true },
+    );
+  } finally {
+    process.stdout.write = originalStdoutWrite as typeof process.stdout.write;
+    process.stderr.write = originalStderrWrite as typeof process.stderr.write;
+  }
+  check("local: stream with input forwards stdout", forwardedStdout, "forwarded-out");
+  check("local: stream with input forwards stderr", forwardedStderr, "forwarded-err");
+  check("local: stream with input still captures stdout", streamed?.stdout, "forwarded-out");
+  check("local: stream with input still captures stderr", streamed?.stderr, "forwarded-err");
+
+  let finallyRan = false;
+  try {
+    await spawnLocal("clawforge-command-that-does-not-exist", [], { input });
+  } catch {
+    // The caller gets the genuine launch failure.
+  } finally {
+    finallyRan = true;
+  }
+  check("local: a missing executable rejects normally", finallyRan, true);
+}
+
 process.stderr.write(failed === 0 ? "all transport listing checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

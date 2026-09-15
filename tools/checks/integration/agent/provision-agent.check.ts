@@ -336,6 +336,23 @@ function stubContext(listAnswer: unknown) {
   check("a changed agent counts as drift", cronJobMatches({ ...liveJob(), agentId: "someone-else" }, CONFIG, "scheduled message"), false);
   check("a job left on chat delivery counts as drift", cronJobMatches({ ...liveJob(), delivery: { mode: "announce" } }, CONFIG, "scheduled message"), false);
   check("a job left on the main session counts as drift", cronJobMatches({ ...liveJob(), sessionTarget: "main" }, CONFIG, "scheduled message"), false);
+  // --all (task #188) makes a disabled job visible to ensureCronJob at all — it must not
+  // also count as "still matching" just because every other declared field agrees, or a
+  // disabled job would sit disabled forever with nothing ever noticing.
+  check("a disabled job does not match even with every other field agreeing", cronJobMatches({ ...liveJob(), enabled: false }, CONFIG, "scheduled message"), false);
+  check("enabled explicitly true still matches", cronJobMatches({ ...liveJob(), enabled: true }, CONFIG, "scheduled message"), true);
+  check("an absent enabled field defaults to matching (conservative default)", cronJobMatches(liveJob(), CONFIG, "scheduled message"), true);
+}
+
+{
+  const { ctx, calls } = stubContext({ jobs: [{ ...liveJob(), enabled: false }] });
+  const state = await ensureCronJob(ctx, CONFIG, "scheduled message", { allowUpdate: true });
+  check("ensureCronJob reconciles a disabled-but-otherwise-correct job", state, "updated");
+  check(
+    "reconciling a disabled job means remove then add, same as any other drift",
+    calls.map((c) => c.slice(0, 2).join(" ")),
+    ["cron list", "cron rm", "cron add"],
+  );
 }
 
 {

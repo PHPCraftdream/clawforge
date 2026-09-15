@@ -34,7 +34,7 @@ import {
   secretsTemplateFile,
 } from "../../runtime/deployment.ts";
 import { collectSecretRefs } from "../../service/secrets.ts";
-import { validateSet } from "../../set/ownership/validate.ts";
+import { validateSet, desiredStateShapeError } from "../../set/ownership/validate.ts";
 import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "../../service/checksums.ts";
 import { frameworkVersion, readLock } from "../management/lock.ts";
 import { parseAgentConfig, removeOwnedObject } from "../management/provision-agent.ts";
@@ -250,6 +250,14 @@ export async function collectManifest(ctx: Context, setName: string): Promise<{ 
     desiredState = JSON.parse(desiredStateRaw);
   } catch (error) {
     die(`${desiredStateFile()} is not valid JSON: ${(error as Error).message}`);
+  }
+  // Syntactically valid JSON of the wrong shape (an object, say, instead of a list of
+  // {path,value} operations) passed this far unnoticed — set build/validate reported
+  // success, and the mistake only surfaced later when OpenClaw's own `config set
+  // --batch-file` (config.ts's applyConfig) choked on it during an actual apply.
+  const shapeError = desiredStateShapeError(desiredState);
+  if (shapeError !== undefined) {
+    die(`${desiredStateFile()} is not a valid desired-state declaration: ${shapeError}`);
   }
 
   const framework = await frameworkVersion();

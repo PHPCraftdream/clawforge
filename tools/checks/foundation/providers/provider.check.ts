@@ -132,4 +132,22 @@ assert.ok(calls[0].includes("models.providers.custom.apiKey"));
   assert.equal(calls.length, 0, "a refused configure-provider never writes the config");
 }
 
+// Regression: the live openclaw.json is OpenClaw's own JSON5 gateway format
+// (docs.openclaw.ai/gateway/configuration) — before the fix this read used plain
+// JSON.parse, unwrapped, so a config using JSON5-only syntax (a comment, a trailing
+// comma) crashed configure-provider outright instead of being read.
+{
+  calls.length = 0;
+  const json5Config = { ...ctx, transport: {
+    ...noContention,
+    exists: async (path: string) => path.endsWith("config/.env") || path.endsWith("openclaw.json"),
+    readFile: async (path: string) => path.endsWith("openclaw.json")
+      ? '{\n  // a comment plain JSON.parse rejects outright\n  "models": { "providers": { "custom": {}, }, },\n}\n'
+      : "CUSTOM_API_KEY=secret-value\n",
+  } } as unknown as Context;
+  await configureProvider(json5Config, []);
+  assert.equal(calls.length, 1, "a JSON5-syntax live config does not crash configure-provider");
+  assert.ok(calls[0].includes("models.providers.custom.apiKey"));
+}
+
 process.stderr.write("provider configuration checks passed\n");

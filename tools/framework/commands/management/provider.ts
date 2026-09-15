@@ -1,5 +1,6 @@
 // Configure OpenClaw provider credentials without storing key values in JSON.
 
+import JSON5 from "json5";
 import { log, info, die } from "../../core/log.ts";
 import type { Context } from "../../core/context.ts";
 import { parseEnv } from "../../core/env.ts";
@@ -58,8 +59,11 @@ async function configureProviderLocked(ctx: Context, args: string[]): Promise<vo
 
   const secrets = parseEnv(await ctx.transport.readFile(secretsPath));
   const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
+  // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format (docs.openclaw.ai/
+  // gateway/configuration), and this read is unwrapped — a comment or trailing comma would
+  // otherwise abort configure-provider outright instead of reading the config it is meant to edit.
   const config = (await ctx.transport.exists(configPath))
-    ? JSON.parse(await ctx.transport.readFile(configPath)) as unknown
+    ? JSON5.parse(await ctx.transport.readFile(configPath)) as unknown
     : {};
   const configured = options.provider === undefined ? collectConfiguredProviders(config) : [options.provider];
   const providers = new Set<string>(configured);

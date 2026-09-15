@@ -228,6 +228,29 @@ try {
     check("versions are answered", inspection.observed.openclawVersion, "OpenClaw 2026.6.34");
   }
 
+  {
+    // The LIVE openclaw.json is OpenClaw's own JSON5 gateway format (docs.openclaw.ai/
+    // gateway/configuration) — before the fix, observeConfig() read it with plain JSON.parse,
+    // whose thrown SyntaxError was caught and reported as a false CONFIG_DRIFT ("could not be
+    // read or parsed") for a perfectly valid, matching JSON5 config. Run against the clean,
+    // unmutated fixture state (before any later case rewrites recipe files on disk).
+    const base = stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums });
+    const rawJson5Config =
+      '{\n  // a comment plain JSON.parse rejects outright\n  "gateway": { "mode": "local", "auth": { "token": { "source": "env", "id": "OPENCLAW_GATEWAY_TOKEN" } }, },\n' +
+      '  "agents": { "defaults": { "model": { "primary": "zai/glm-5.3-flash" } } },\n' +
+      '  "models": { "providers": { "zai": {} } },\n}\n';
+    const ctx = {
+      ...base,
+      transport: {
+        ...base.transport,
+        readFile: async (path: string) => (path === CONFIG_FILE ? rawJson5Config : base.transport.readFile(path)),
+      },
+    } as unknown as Context;
+    const inspection = await gatherInspection(ctx);
+    check("a JSON5-syntax live config (comment) is not reported as a false CONFIG_DRIFT", codes(inspection.problems), []);
+    check("and its values are actually read, not just tolerated", inspection.observed.config["gateway.mode"], "local");
+  }
+
   // --- one finding per situation --------------------------------------------------------
 
   {

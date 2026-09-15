@@ -39,6 +39,7 @@ export type ProblemCode =
   | "SET_REFERENCE_BROKEN"
   | "SET_SCHEDULE_INVALID"
   | "SET_SECRET_UNDECLARED"
+  | "SET_DECLARATION_INVALID"
   | "SET_IMAGE_UNPINNED"
   | "SET_REQUIREMENT_UNMET"
   | "SET_OBJECT_ORPHANED";
@@ -148,6 +149,16 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     // A reference with no name behind it is how an instance comes up and then fails to
     // authenticate — the gateway resolves SecretRefs at startup and says so only in its log.
     summary: "the configuration references a secret the set does not declare by name",
+    nextAction: "./clawforge set validate",
+  },
+  SET_DECLARATION_INVALID: {
+    severity: "blocking",
+    // config/desired-state.json is a batch-file payload — OpenClaw's own `config set
+    // --batch-file` consumes it as a JSON array of { path, value } operations. Syntactically
+    // valid JSON of the wrong shape (an object, say) passes JSON.parse but is not a
+    // declaration at all; catching only "not valid JSON" let one through to build/install and
+    // fail only later, inside the container, when config set --batch-file itself chokes on it.
+    summary: "config/desired-state.json is valid JSON but not a valid list of {path, value} operations",
     nextAction: "./clawforge set validate",
   },
   SET_REQUIREMENT_UNMET: {

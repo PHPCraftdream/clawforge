@@ -15,6 +15,7 @@
 //       target-env  <data>/config/.env on the target, read by OpenClaw itself as its
 //                   trusted global environment. This is where provider keys belong.
 
+import JSON5 from "json5";
 import type { Context } from "../core/context.ts";
 import { parseEnv } from "../core/env.ts";
 
@@ -184,7 +185,11 @@ export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
   const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
   if (!(await ctx.transport.exists(configPath))) return [];
 
-  const config = JSON.parse(await ctx.transport.readFile(configPath)) as unknown;
+  // JSON5, not JSON: OpenClaw's own gateway config format IS JSON5 (docs.openclaw.ai/gateway/
+  // configuration — comments and trailing commas are valid), so a real target config can use
+  // syntax plain JSON.parse rejects outright, aborting this step (and the `up`/`apply` run it
+  // is part of) before the gateway ever started.
+  const config = JSON5.parse(await ctx.transport.readFile(configPath)) as unknown;
   const result: SecretRequirement[] = [];
 
   // Explicit references. The gateway token is supplied by compose from the repository

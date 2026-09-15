@@ -65,6 +65,7 @@ check(
     "RESTART_REQUIRED",
     "SECRET_MISSING",
     // Set-level findings: separate mistakes with separate fixes, so separate codes.
+    "SET_DECLARATION_INVALID",
     "SET_IMAGE_UNPINNED",
     "SET_OBJECT_ORPHANED",
     "SET_RECIPE_INCOMPLETE",

@@ -22,8 +22,9 @@ import { secrets } from "../management/secrets.ts";
 import { up, restart } from "../lifecycle/lifecycle.ts";
 import { provisionAgent, removeOwnedObject } from "../management/provision-agent.ts";
 import type { OwnedKind } from "../../set/ownership/ledger.ts";
-import { Journal, snapshotConfig, newOperationId } from "../../service/operations.ts";
+import { Journal, snapshotConfig, newOperationId, readOperation } from "../../service/operations.ts";
 import { takeLock, lockHeldHere } from "../../runtime/instance-lock.ts";
+import { deploymentName } from "../../runtime/deployment.ts";
 import { withSetSource } from "../../set/artifacts/source.ts";
 import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems } from "../../set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
@@ -203,6 +204,26 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
       try {
         await storeArtifactForRollback(artifact, verified);
         await applyFromSource(ctx, args, operationId);
+
+        // applyFromSource's own "nothing to apply" fast path (0 executable actions — the
+        // live config already matched what this set declares) returns WITHOUT ever opening
+        // a Journal or taking a config snapshot for operationId: there is nothing to run, so
+        // there was nothing it thought worth recording. But recordInstalledSet() below is
+        // about to write installed.operationId = operationId regardless — and rollback --set
+        // later reads exactly that field to find the one snapshot it needs to restore. A set
+        // transition (this set's id differs from whatever was installed before, e.g. the same
+        // set reinstalled under a new name) that happens to change nothing about the live
+        // config still needs a recorded operation for rollback --set to point at, or undoing
+        // it later finds nothing and refuses (task #185) even though nothing here actually
+        // needs restoring — the live config already IS what a rollback would reach. Recorded
+        // after applyFromSource rather than before: this branch only runs when nothing was
+        // executed, so the config here is exactly the config before this call too.
+        if ((await readOperation(ctx, operationId)) === undefined) {
+          const noopJournal = await Journal.open(ctx, "apply", deploymentName(), operationId);
+          const snapshot = await snapshotConfig(ctx, operationId);
+          if (snapshot !== undefined) await noopJournal.noteSnapshot(snapshot);
+          await noopJournal.close("succeeded", "no executable steps — the live configuration already matched this set");
+        }
 
         // Checked again now that up/restart have run: the pre-check only proves the
         // instance was NOT already wrong before this apply touched it, not that whatever

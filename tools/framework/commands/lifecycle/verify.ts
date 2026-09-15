@@ -58,7 +58,13 @@ async function collectSecrets(ctx: Context): Promise<{ critical: string[]; ident
   const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
   if (await ctx.transport.exists(configPath)) {
     try {
-      const config = JSON.parse(await ctx.transport.readFile(configPath)) as {
+      // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format
+      // (docs.openclaw.ai/gateway/configuration) — the same reason the archive-embedded scan
+      // below parses with JSON5. A config using JSON5-only syntax (a comment, a trailing
+      // comma) is exactly the case plain JSON.parse's catch here used to swallow silently,
+      // skipping this scan on a live config it could not read rather than on one with nothing
+      // to find.
+      const config = JSON5.parse(await ctx.transport.readFile(configPath)) as {
         models?: { providers?: Record<string, unknown> };
       };
       for (const provider of Object.values(config.models?.providers ?? {})) {

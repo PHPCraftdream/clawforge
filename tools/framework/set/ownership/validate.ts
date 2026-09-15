@@ -54,18 +54,58 @@ export function cronProblem(expression: string): string | undefined {
   return bad.length === 0 ? undefined : `field(s) ${bad.map((field) => JSON.stringify(field)).join(", ")} are not schedule terms`;
 }
 
+/** Why `value` is not a valid desired-state declaration, or undefined when it is. A
+ *  declaration is a list of { path, value } operations — the exact shape OpenClaw's own
+ *  `config set --batch-file` consumes (config.ts's applyConfig) and the exact shape
+ *  declaredState()/declaredConfig() below both assume. Exported so `set build`
+ *  (collectManifest) can refuse the same malformed declaration at the earliest point,
+ *  rather than only here or, worse, inside the container when `config set --batch-file`
+ *  itself chokes on it during an actual apply. */
+export function desiredStateShapeError(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return "must be an array of { path, value } operations — got a single object instead of a list";
+  }
+  for (const [index, entry] of value.entries()) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return `entry ${index} is not an object`;
+    }
+    if (typeof (entry as { path?: unknown }).path !== "string" || (entry as { path: string }).path === "") {
+      return `entry ${index} has no non-empty string "path"`;
+    }
+  }
+  return undefined;
+}
+
 /** Reads the desired state as declared, for the secret references inside it. Absent or
  *  unparseable is not this function's finding to report — `set build` already refuses to
- *  build from a declaration it cannot read, so anything reaching here has one. */
-async function declaredConfig(): Promise<unknown> {
+ *  build from a declaration it cannot read, so anything reaching here has one. A shape
+ *  error IS this function's finding: pushed to `problems` by its one caller below rather
+ *  than swallowed the way a read/parse failure is, which is the distinction between "there
+ *  is genuinely nothing to check" and "there is something here that is not what it claims
+ *  to be". */
+async function declaredConfig(problems: Problem[]): Promise<unknown> {
+  let raw: string;
   try {
-    const entries = JSON.parse(await readFile(desiredStateFile(), "utf8")) as { path: string; value?: unknown }[];
-    // collectSecretRefs walks a config OBJECT; the declaration is a list of path/value
-    // pairs, so the values are what it has to be shown.
-    return entries.map((entry) => entry.value);
+    raw = await readFile(desiredStateFile(), "utf8");
   } catch {
     return [];
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  const shapeError = desiredStateShapeError(parsed);
+  if (shapeError !== undefined) {
+    problems.push(
+      problem("SET_DECLARATION_INVALID", `${desiredStateFile()}: ${shapeError}`),
+    );
+    return [];
+  }
+  // collectSecretRefs walks a config OBJECT; the declaration is a list of path/value
+  // pairs, so the values are what it has to be shown.
+  return (parsed as { path: string; value?: unknown }[]).map((entry) => entry.value);
 }
 
 /** Every finding a set can produce without a gateway.
@@ -178,7 +218,7 @@ export async function validateSet(manifest: SetManifest, options: { checkFiles?:
   // a crash loop. A set that references a variable it does not require is that failure,
   // declared in advance.
   const declaredSecrets = new Set(manifest.secrets);
-  for (const ref of collectSecretRefs(await declaredConfig())) {
+  for (const ref of collectSecretRefs(await declaredConfig(problems))) {
     if (!declaredSecrets.has(ref.name)) {
       problems.push(
         problem("SET_SECRET_UNDECLARED", `the declaration references ${ref.name} (${ref.usedBy}) but the set does not require it by name`),

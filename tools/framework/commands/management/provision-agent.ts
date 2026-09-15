@@ -309,6 +309,7 @@ export interface CronJob {
   id: string;
   name?: string;
   agentId?: string;
+  enabled?: boolean;
   schedule?: { expr?: string; tz?: string };
   sessionTarget?: string;
   payload?: { message?: string; timeoutSeconds?: number };
@@ -317,9 +318,15 @@ export interface CronJob {
 
 /** Whether a live job still matches what the recipe declares. Only the declared fields are
  *  compared: everything else in a job (its id, run history, next run time) is state the
- *  gateway owns, and comparing it would make every run look like drift. */
+ *  gateway owns, and comparing it would make every run look like drift.
+ *
+ *  A disabled job is not a match even when every other field agrees — --all (see
+ *  ensureCronJob's own comment) is what makes it visible here at all, not what makes it
+ *  count as working. Only an explicit false counts as disabled, the same conservative
+ *  default mcpServerMatches already uses for its own "enabled" field. */
 export function cronJobMatches(job: CronJob, config: AgentConfig, cronMessage: string): boolean {
-  return job.agentId === config.agentId
+  return job.enabled !== false
+    && job.agentId === config.agentId
     && job.schedule?.expr === config.cronSchedule
     && (config.cronTimezone === undefined || job.schedule?.tz === config.cronTimezone)
     && job.sessionTarget === "isolated"

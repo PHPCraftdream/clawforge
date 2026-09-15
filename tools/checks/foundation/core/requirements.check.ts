@@ -374,5 +374,51 @@ check(
   false,
 );
 
+// --- requirements(): the live openclaw.json is JSON5, not JSON -----------------------
+//
+// OpenClaw's own gateway config format IS JSON5 (docs.openclaw.ai/gateway/configuration:
+// comments and trailing commas are valid). Before the fix, requirements() read it with
+// plain JSON.parse, unwrapped in a try/catch — a real target config using either syntax
+// threw a SyntaxError straight out of requirements(), aborting the `up`/`apply` secrets
+// step before the gateway ever started.
+
+function makeCtxWithRawConfig(rawConfig: string): Context {
+  return {
+    settings: { dataDir: DATA_DIR, env: {} },
+    transport: {
+      description: "stub",
+      async exists(path: string): Promise<boolean> {
+        return path === CONFIG_PATH;
+      },
+      async readFile(path: string): Promise<string> {
+        return path === CONFIG_PATH ? rawConfig : "";
+      },
+      async writeFile(): Promise<void> {},
+      async mkdirp(): Promise<void> {},
+      async remove(): Promise<void> {},
+      async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+}
+
+{
+  const raw = '{\n  // a comment plain JSON.parse rejects outright\n  "models": { "providers": { "zai": {}, }, },\n}\n';
+  let threw = false;
+  let result: SecretRequirement[] = [];
+  try {
+    result = await requirements(makeCtxWithRawConfig(raw));
+  } catch {
+    threw = true;
+  }
+  check("a JSON5 live config (comment, trailing commas) does not crash requirements()", threw, false);
+  check(
+    "and is actually parsed, not just tolerated",
+    result,
+    [{ name: "ZAI_API_KEY", location: "target-env", usedBy: "provider zai", required: true }],
+  );
+}
+
 process.stderr.write(failed === 0 ? "all requirements checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

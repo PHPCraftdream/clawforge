@@ -267,6 +267,32 @@ try {
     await rm(unpacked, { recursive: true, force: true });
   }
 
+  // --- a desired-state.json that is syntactically valid JSON but not a list of {path,value}
+  // operations must refuse, not build silently -------------------------------------------------
+  //
+  // config/desired-state.json is a batch-file payload — OpenClaw's own `config set
+  // --batch-file` (config.ts's applyConfig) consumes it as an array of operations. Before the
+  // fix, only "is this valid JSON" was checked; an object like {"gateway":{"mode":"local"}}
+  // passed JSON.parse and built into a real artifact, failing only later, inside the
+  // container, when config set --batch-file itself choked on it.
+  {
+    const desiredStatePath = resolve(deployment, "config", "desired-state.json");
+    const validDesiredState = await readFile(desiredStatePath, "utf8");
+    await writeFile(desiredStatePath, JSON.stringify({ gateway: { mode: "local" } }));
+    try {
+      let refused = "";
+      try {
+        await buildSet(ctx, "demo-set");
+      } catch (error) {
+        refused = error instanceof Error ? error.message : String(error);
+      }
+      check("set build refuses a desired-state.json that is an object, not an operations list", refused !== "", true);
+      check("the refusal names desired-state.json", refused.includes("desired-state.json"), true);
+    } finally {
+      await writeFile(desiredStatePath, validDesiredState);
+    }
+  }
+
   // --- the group does not pretend validate exists ----------------------------------------------------
 
   let unknownActionFails = false;

@@ -21,6 +21,7 @@
 
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import JSON5 from "json5";
 import { log, info, warn, die } from "../../core/log.ts";
 import { emit, isCaptured } from "../../core/output.ts";
 import { frameworkRoot } from "../../core/env.ts";
@@ -108,6 +109,7 @@ async function targetFileChecksums(ctx: Context, dir: string): Promise<Record<st
  *  what cronJobMatches compares — it decides, this only explains its verdict. */
 function cronDifferences(job: CronJob, config: AgentConfig, cronMessage: string): string[] {
   const differences: string[] = [];
+  if (job.enabled === false) differences.push("the job is disabled");
   if (job.agentId !== config.agentId) differences.push(`agent is ${job.agentId ?? "(none)"}, declared ${config.agentId}`);
   if (job.schedule?.expr !== config.cronSchedule) differences.push(`runs at ${job.schedule?.expr ?? "(none)"}, declared ${config.cronSchedule}`);
   if (config.cronTimezone !== undefined && job.schedule?.tz !== config.cronTimezone) differences.push(`timezone is ${job.schedule?.tz ?? "(host default)"}, declared ${config.cronTimezone}`);
@@ -195,7 +197,10 @@ async function observeConfig(
   let mtimeMs: number | undefined;
 
   try {
-    const parsed = JSON.parse(await ctx.transport.readFile(configFile)) as unknown;
+    // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format (docs.openclaw.ai/
+    // gateway/configuration) — a comment or trailing comma is legitimate there, and plain
+    // JSON.parse rejecting it produced a false CONFIG_DRIFT on every run against such a config.
+    const parsed = JSON5.parse(await ctx.transport.readFile(configFile)) as unknown;
     for (const entry of declared.config) {
       const actual = valueAt(parsed, entry.path);
       config[entry.path] = actual;

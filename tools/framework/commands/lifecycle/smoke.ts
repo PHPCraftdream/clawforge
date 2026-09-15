@@ -14,6 +14,7 @@
 // silently.
 
 import { readFile } from "node:fs/promises";
+import JSON5 from "json5";
 import { log, info, warn, die } from "../../core/log.ts";
 import type { Context } from "../../core/context.ts";
 import { createBackup } from "./backup.ts";
@@ -96,7 +97,8 @@ const checks: Check[] = [
         );
         await applyConfig(ctx, []);
 
-        const config = JSON.parse(await ctx.transport.readFile(configPath)) as Record<string, unknown>;
+        // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format.
+        const config = JSON5.parse(await ctx.transport.readFile(configPath)) as Record<string, unknown>;
         const actual = subject.path
           .split(".")
           .reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], config);

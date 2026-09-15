@@ -183,6 +183,30 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
   }
 }
 
+// --- a desired-state.json that parses as JSON but is not a list of {path,value} operations
+// must be a finding, not silently treated as "declares nothing" -------------------------------
+//
+// declaredConfig() feeds collectSecretRefs() for the SET_SECRET_UNDECLARED check below; before
+// the fix its catch-all swallowed a shape mismatch the same way it swallows a genuine read/parse
+// failure, so a malformed declaration validated clean instead of being reported.
+
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-shape-check-"));
+  try {
+    await mkdir(resolve(deployment, "config"), { recursive: true });
+    await writeFile(resolve(deployment, "config", "desired-state.json"), JSON.stringify({ gateway: { mode: "local" } }));
+    useDeployment(deployment);
+
+    const problems = await validateSet(coherent());
+    check("an object instead of an operations list is a finding", codes(problems), ["SET_DECLARATION_INVALID"]);
+    check("and it names the file", problems[0]?.detail.includes("desired-state.json"), true);
+    check("it is blocking", problems[0]?.severity, "blocking");
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+    useDeployment(resolve(monorepoRoot, "apps", "example app"));
+  }
+}
+
 // --- the default name is derivable from any deployment name ---------------------------------
 //
 // Found by running the command for real rather than by reasoning: this deployment is called

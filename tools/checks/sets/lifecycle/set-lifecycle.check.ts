@@ -480,6 +480,46 @@ try {
     assert.equal((await readInstalledSet(ctx))?.id, installedB?.id, "and must not change which set is recorded as installed");
   }
 
+  // --- rollback --set must succeed after a NO-OP set transition (a renamed set whose
+  // declared config is byte-identical to what is already live) — applyFromSource's own
+  // "nothing to apply" fast path never opens a Journal or takes a config snapshot for its
+  // operationId, but recordInstalledSet() still records that operationId as the one that
+  // installed the set. Before the fix, rollback --set later found no operation record for
+  // it and refused with "no configuration snapshot is available", even though nothing about
+  // the config actually needed restoring. ---------------------------------------------------
+  {
+    running = true;
+    // A clean, known state: live config forced to something neither set below declares, so
+    // installing A first is guaranteed to find real drift and take a real snapshot.
+    files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ gateway: { mode: "remote" } }));
+    await writeFile(join(root, "config", "desired-state.json"), '[{"path":"gateway.mode","value":"local"}]');
+    const setA = await buildSet(ctx, "lifecycle-noop-a");
+    const installA = await captured(() => apply(ctx, ["--set", setA.artifact, "--json"]));
+    assert.equal(installA.error, undefined, installA.error?.message);
+    assert.equal((await readInstalledSet(ctx))?.id, setA.id);
+
+    // setB: a different set (a different name, so a different content-addressed id) that
+    // declares the EXACT SAME desired-state.json content as setA — the file on disk has not
+    // changed since setA was built, and the live config now already matches it (from the
+    // install just above). Installing setB is therefore a genuine no-op: 0 executable
+    // actions, applyFromSource's fast path, no Journal ever opened for this run's operationId.
+    const setB = await buildSet(ctx, "lifecycle-noop-b");
+    assert.notEqual(setB.id, setA.id, "a renamed set with the same declared config still gets a different id");
+    const installB = await captured(() => apply(ctx, ["--set", setB.artifact, "--json"]));
+    assert.equal(installB.error, undefined, installB.error?.message);
+    const installedB = await readInstalledSet(ctx);
+    assert.equal(installedB?.id, setB.id);
+    assert.equal(installedB?.previous?.id, setA.id, "the fixture for this test needs A on record as previous");
+
+    const rolledBack = await captured(() => rollback(ctx, ["--set", "--json"]));
+    assert.equal(
+      rolledBack.error,
+      undefined,
+      `rollback --set must succeed after a no-op set transition, not refuse for lack of a snapshot: ${rolledBack.error?.message}`,
+    );
+    assert.equal((await readInstalledSet(ctx))?.id, setA.id, "rollback restores the previous set");
+  }
+
   process.stderr.write("all set lifecycle checks passed\n");
 } finally {
   if (previousDeployment !== undefined) useDeployment(previousDeployment);

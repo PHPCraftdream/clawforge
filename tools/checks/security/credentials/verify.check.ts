@@ -279,5 +279,59 @@ function makeCtxWithRawArchivedConfig(rawBody: string): { ctx: Context } {
   check("an ordinary plain-JSON archived config with no embedded key still passes", passed, true);
 }
 
+// --- the LIVE config's own plain-string apiKey scan (collectSecrets) must also parse JSON5 --
+//
+// Distinct from the archive-embedded scan above: this is the OTHER half of the credential
+// scan, deriving the pattern to search for from the live instance's CURRENT openclaw.json.
+// That file is the same OpenClaw JSON5 gateway format, but was still read with plain
+// JSON.parse — a comment or trailing comma there silently skipped this half of the scan
+// entirely (its catch reported nothing, rather than refusing), missing a live embedded key.
+
+function makeCtxWithRawLiveConfig(rawBody: string): { ctx: Context; calls: { command: string; args: string[] }[] } {
+  const calls: { command: string; args: string[] }[] = [];
+  const configPath = "/srv/openclaw/data/config/openclaw.json";
+  const listing = "data/\ndata/config/openclaw.json\n";
+  const verboseListing =
+    "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n" +
+    "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/openclaw.json\n";
+
+  const ctx = {
+    settings: { dataDir: "/srv/openclaw/data", env: {} },
+    transport: {
+      description: "stub",
+      async exists(path: string): Promise<boolean> {
+        return path === ARCHIVE || path === configPath;
+      },
+      async readFile(path: string): Promise<string> {
+        return path === configPath ? rawBody : "";
+      },
+      async writeFile(): Promise<void> {},
+      async remove(): Promise<void> {},
+      async mkdirp(): Promise<void> {},
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        calls.push({ command, args });
+        if (args.includes("-tzf")) return { code: 0, stdout: listing, stderr: "" };
+        if (args.includes("-tvzf")) return { code: 0, stdout: verboseListing, stderr: "" };
+        if (command === "grep") {
+          const directory = args[args.length - 1];
+          return { code: 0, stdout: `${directory}/config/openclaw.json\n`, stderr: "" };
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  return { ctx, calls };
+}
+
+{
+  // A trailing comma, exactly the syntax plain JSON.parse rejects outright.
+  const raw = '{ "models": { "providers": { "custom": { "apiKey": "a-live-json5-embedded-key-1", }, }, }, }\n';
+  const { ctx, calls } = makeCtxWithRawLiveConfig(raw);
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "share"));
+  check("a JSON5 live config (trailing comma) with an embedded key still fails", passed, false);
+  check("it was actually scanned for (grep ran)", calls.some((call) => call.command === "grep"), true);
+}
+
 process.stderr.write(failed === 0 ? "all verify checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

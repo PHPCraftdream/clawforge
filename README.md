@@ -25,6 +25,7 @@ works.
 ## Quick start
 
 ```bash
+npm install                    # json5, plus the dev tooling the checks use
 ./clawforge new-app openclaw   # deployment directory: .env, config/, secrets/, recipes/
 ./clawforge bootstrap          # from nothing: token, directories, image, config, provider, start
 ./clawforge status             # what is running and whether it is healthy
@@ -152,19 +153,19 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | Command | Arguments | Purpose |
 | --- | --- | --- |
 | `bootstrap` | `[--no-pull]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance |
-| `up` | — | Start and wait for `/healthz`; secrets and port availability are checked before the start, not after |
-| `restart` | — | Restart in place so the instance re-reads its configuration — what `apply-config` and `configure-provider` need, and what `up` cannot do |
-| `down` | — | Stop and remove the containers; data in bind mounts is untouched |
+| `up` | `[--break-lock]` | Start and wait for `/healthz`; secrets and port availability are checked before the start, not after |
+| `restart` | `[--break-lock]` | Restart in place so the instance re-reads its configuration — what `apply-config` and `configure-provider` need, and what `up` cannot do |
+| `down` | `[--break-lock]` | Stop and remove the containers; data in bind mounts is untouched |
 | `logs` | `[--tail <n>]` | Follow the service log on a terminal; called as a tool, read the last `n` lines and return them |
 | `status` | — | Containers, image, health probes (HTTP probes and Docker's own verdict side by side — they can disagree), disk usage |
 | `inspect` | `[--json]` | What is declared, what is running, and where they disagree — one answer, every finding carrying a stable code. Read-only |
 | `doctor` | `[--json]` | The same inspection read as a verdict; exits non-zero when something blocking was found |
-| `plan` | `[--json]` | The ordered actions the declaration implies, and why each one is there. Changes nothing |
-| `apply` | `[--expect <checksum>] [--dry-run] [--break-lock] [--json]` | Run that plan, stop at the first failure, then inspect again and report what the instance actually is |
+| `plan` | `[--set <artifact>] [--json]` | The ordered actions the declaration implies, and why each one is there. Changes nothing |
+| `apply` | `[--set <artifact>] [--expect <checksum>] [--dry-run] [--break-lock] [--json]` | Run that plan, stop at the first failure, then inspect again and report what the instance actually is |
 | `lock` | `[--check] [--json]` | Pin the composition — framework version, image digest, recipe checksums, secret names — or check it still matches |
-| `rollback` | `[--operation <id>] [--no-restart] [--break-lock] [--json]` | Put back the configuration an operation replaced, and restart. One file, not the data directory |
+| `rollback` | `[--operation <id>] [--no-restart] [--set] [--break-lock] [--json]` | Put back the configuration an operation replaced, and restart. One file, not the data directory |
 | `operations` | `[<id>] [--limit <n>] [--json]` | What mutating runs did: their steps, what failed, what never ran, and whether a snapshot was taken |
-| `accept` | `[<recipe>] [--with-model] [--json]` | Run the acceptance checks a recipe declares. Checks that call the model are skipped unless asked for, and counted |
+| `accept` | `[<recipe>] [--set <artifact>] [--with-model] [--json]` | Run the acceptance checks a recipe declares. Checks that call the model are skipped unless asked for, and counted |
 | `cli …` | arbitrary | OpenClaw's own CLI, e.g. `./clawforge cli config get gateway.mode`; a one-off container by default, but execs into the persistent one when `cli-start` is running. As a tool it takes the arguments as a list and needs `confirm: true` — it can run anything that CLI can |
 | `cli-start` | — | Start the persistent CLI container: `cli`/`mcp-serve` then exec into it instead of paying create/destroy per call |
 | `cli-stop` | — | Stop and remove the persistent CLI container |
@@ -176,11 +177,11 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `pull` | `[--profile ...] [--share] [--with-secrets] [--hot]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
 | `push` | `[<snapshot>] [--force] [--fresh-identity] [--break-lock]` | Push a snapshot back: restore → install keys if any travelled with it → check → start |
 | `verify` | `<archive> [--profile ...]` | Check an archive for credentials before sharing it — what `pull --share` does on its own |
-| `recipe` | `<list\|install\|remove\|status\|logs> [<name>] [--volumes] [--force-disabled]` | Third-party services beside the instance, each its own compose project |
-| `provision-agent` | `<recipe>` | Wire a recipe's MCP server to a dedicated agent: agent, workspace prompt files, MCP registration and an optional cron job |
+| `recipe` | `<list\|install\|remove\|status\|logs> [<name>] [--volumes] [--tail <n>] [--force-disabled]` | Third-party services beside the instance, each its own compose project |
+| `provision-agent` | `<recipe> [--break-lock]` | Wire a recipe's MCP server to a dedicated agent: agent, workspace prompt files, MCP registration and an optional cron job |
 | `deploy` | `<user@host> [--path <dir>] [--no-bootstrap]` | Deploy to a server: the code is mirrored whole, the deployment by name and by file, credentials never leave this machine. Only from a checkout — installed as a package it refuses, since there is no checkout to mirror |
 | `mcp-serve` | — | stdio bridge to OpenClaw's channels — what a client from `.mcp.json` starts, not something to run by hand; execs into the persistent CLI container when it is up |
-| `mcp-setup` | — | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
+| `mcp-setup` | `[--client <name>] [--json]` | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
 | `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
 | `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
 | `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance |
@@ -249,8 +250,12 @@ contract; implementation comments are kept to the decision they explain.
 ./clawforge check
 ```
 
+A selection — `./clawforge check` runs every `*.check.ts` under `tools/checks/`, and there are
+more of them than fit here:
+
 | File | What it covers |
 | --- | --- |
+| `release/release/installed-consumer.check.ts` | the published tarball, installed into a directory `npm init -y` made: `init` there, then a command through the installed entry point |
 | `foundation/core/paths.check.ts` | 48 translations between the four coordinate systems |
 | `foundation/core/archive.check.ts` | absolute paths, `..`, links pointing outside (symlink and hard link), consistency of the `share` profile |
 | `foundation/core/arguments.check.ts` | argument declarations, MCP schemas, the reverse mapping back to argv |
@@ -260,19 +265,19 @@ contract; implementation comments are kept to the decision they explain.
 | `ssh-quoting.check.ts` | a remote script survives ssh joining its arguments into one line — checked against a real `sh` |
 | `verify.check.ts` | a fatal structural finding rejects an archive before unpacking, not after |
 | `state.check.ts` | a share snapshot is removed whole even when verification throws rather than returning false |
-| `restore.check.ts` | a direct `restore` does not start the gateway on a config with missing secrets, and does not report a corrupted config as a successful restore |
+| `restore.check.ts` | a direct `restore` does not start the gateway on a config with missing secrets, does not report a corrupted config as a successful restore, and with no argument picks the newest FULL archive rather than the newest file |
 | `mcp-server.check.ts` | malformed JSON-RPC (`null`, a number, an array) does not take the server down — a real stdio process |
 | `env.check.ts` | `.env` parsing (quotes, comments, `=` inside a value), `toSettings()` defaults |
 | `deployment-names.check.ts` | deployment paths, `safeName` — protection against `--store ../../etc` |
 | `app-mounts-output.check.ts` | `defineApp`/`mcpCommands`, the bind-mount map, nested `withOutputSink` |
 | `requirements.check.ts` | collecting `SecretRef`s from the config, deduplicating provider vs explicit reference, rendering the template |
 | `recipe.check.ts` | parsing `recipe.json`, `install` refusing a disabled recipe without `--force-disabled` |
-| `secrets-command.check.ts` | `--init-store` refusing to overwrite a filled store; `mcp-setup` merging `.mcp.json` |
+| `secrets-command.check.ts` | `--init-store` refusing to overwrite a filled store; `--apply` aborting on a live config it could not read and naming the variables it replaces; `mcp-setup` merging `.mcp.json` |
 | `runtime-port.check.ts` | parsing `docker ps` through `.Label` (not `.Labels`), `preflightPort` |
 | `cli-help.check.ts` | `--help` for `control-mcp`/`new-app`/`help` neither hangs nor stays silent; `help` works before any deployment exists |
 | `passthrough-help.check.ts` | `cli` is marked `passesThroughHelp` — `--help` reaches OpenClaw instead of being intercepted here |
 | `cli-helper.check.ts` | the persistent CLI container: `startHelper`/`stopHelper`/`execInHelper`, `cli()`/`mcpServe()` falling back to `runOneOff` only on `HelperNotRunning` and not on any error; `runOneOff` forwarding `allowFailure` |
-| `backup.check.ts` | rotation removes one archive per run, the oldest, not the whole backlog |
+| `backup.check.ts` | rotation removes one archive per run, the oldest, counted per profile, and never a sibling deployment's |
 | `provision-agent.check.ts` | path and argv builders, `collectRecipeFiles` excluding `agent/`, the create-vs-skip decisions, and cron reconciliation against the declaration |
 | `mcp-mirror.check.ts` | the promise itself: every command `./clawforge help` lists is a tool or an explained exemption, and every tool is a command the console offers — both surfaces read from real processes |
 | `gate-commands.check.ts` | the gate's own commands: dispatch, `--help` from the declaration, and the same schema/argv derivation the deployment's commands get |
@@ -280,7 +285,7 @@ contract; implementation comments are kept to the decision they explain.
 | `openclaw-cli.check.ts` | the shared wrapper around OpenClaw's CLI: capture, the scope-upgrade approve-and-retry, and that an unrelated failure is not retried into a second error |
 | `restart.check.ts` | `restart` refuses a stopped instance, does not restart into a config with missing secrets, and waits for health |
 | `inspection.check.ts` | the problem-code table: every code has a severity and a runnable remedy, a caller cannot downgrade a blocking one, and "healthy" means serving rather than silent |
-| `inspect.check.ts` | every finding `inspect` can report, provoked one at a time against a stubbed target and a real temp deployment; and `doctor`'s exit contract in both directions |
+| `runtime/convergence/inspect/*.check.ts` | every finding `inspect` can report, provoked one at a time against a stubbed target and a real temp deployment; and `doctor`'s exit contract in both directions |
 | `lock.check.ts` | what the lock notices: an image that moved behind an unchanged tag, a framework bump, an edited recipe, a newly required secret — and that all of it is a warning |
 | `plan.check.ts` | the order, as rules: secrets before anything that needs the instance, configuration before the restart that reads it, start instead of start-then-restart, recipes after the gateway is up |
 | `apply.check.ts` | stopping at the first failure, reporting what did not run as skipped, and never performing an advisory step |
@@ -294,10 +299,15 @@ Calling `wslpath` is not an option: backslashes do not survive the trip through 
 and `D:\dev\x` arrives as `D:devx`. Translation is done in our own code and covered by the
 table above.
 
-**TypeScript is executed directly** (type stripping), with no build step, no `tsx` and no
-`node_modules`. The flip side: constructs that need code generation are unavailable —
-`constructor(private x)`, `enum`, `namespace`, decorators. All code is asynchronous, and
-commands are passed as argument arrays (no string building for a shell).
+**TypeScript is executed directly** (type stripping), with no build step and no `tsx`. The
+flip side: constructs that need code generation are unavailable — `constructor(private x)`,
+`enum`, `namespace`, decorators. All code is asynchronous, and commands are passed as
+argument arrays (no string building for a shell).
+
+There is one runtime dependency, `json5` — OpenClaw's own configuration is JSON5, and a
+second parser written here would disagree with it eventually. So `npm install` is a
+prerequisite of the gate in this repository, as the Quick start says; the published package
+declares it as a dependency and npm installs it with the package.
 
 The only shell file is `clawforge`: it runs before Node and only looks for a suitable Node.
 
@@ -506,8 +516,9 @@ a ready payload for OpenClaw's own `openclaw config set --batch-file`.
 
 `bootstrap` calls this itself, so `deploy` rolls the same settings out to a server. Hand
 edits to `openclaw.json` are overwritten on the next apply — that is the point. Ordering
-matters and is deliberate: the declaration is applied *after* `configure-provider`, whose
-onboarding run rewrites `openclaw.json` wholesale, so the declaration wins.
+matters and is deliberate: the declaration is applied *before* `configure-provider`, because
+a provider the declaration introduces needs its `baseUrl` in place before a key can be
+written to it — OpenClaw refuses an incomplete provider entry.
 
 The restart is not optional and not `up`: the instance loads this configuration once, at
 startup, and `up` converges on "running" — which an already-healthy container satisfies, so

@@ -12,6 +12,7 @@ const manifest = JSON.parse(await readFile(resolve(packageRoot, "package.json"),
   bugs?: { url?: string };
   repository?: { type?: string; url?: string; directory?: string };
   bin?: Record<string, string>;
+  main?: string;
   exports?: Record<string, string>;
   files?: string[];
   publishConfig?: { access?: string };
@@ -28,6 +29,13 @@ if (!manifest.homepage || !manifest.bugs?.url || manifest.repository?.type !== "
 if (manifest.bin?.clawforge !== "dist/entry/bin.js") throw new Error("the package bin must be clawforge -> dist/entry/bin.js");
 if (manifest.exports?.["./app"] !== "./dist/core/app.js" || manifest.exports?.["./mounts"] !== "./dist/runtime/mounts.js" || manifest.exports?.["./commands"] !== "./dist/commands/interface/index.js") {
   throw new Error("the package exports must follow the source layout");
+}
+// "main": "index.js" sat here naming a file the package does not ship and never did. Nothing
+// broke, because "exports" takes precedence over it — but a manifest that points at a file
+// that is not there is a claim nobody can act on, and the next tool to read it may not have
+// exports to fall back to.
+if (manifest.main !== undefined && !manifest.files?.some((entry) => manifest.main?.startsWith(entry))) {
+  throw new Error(`the package declares "main": ${JSON.stringify(manifest.main)}, which is not among the files it publishes`);
 }
 if (manifest.publishConfig?.access !== "public") throw new Error("scoped publishing must declare public access");
 if (!requiredFiles.every((file) => manifest.files?.includes(file))) throw new Error("the package files list omits release metadata");

@@ -186,8 +186,12 @@ export async function verifySnapshot(
   // Content scan.
   const workdir = `/tmp/clawforge-verify-${randomBytes(6).toString("hex")}`;
   await ctx.transport.mkdirp(workdir);
+  // Resolved before the try so the cleanup below can use it too: tar preserves ownership and
+  // mode, so an archive extracted with sudo leaves root-owned directories (auth-secrets is
+  // 700) that an unprivileged `rm -rf` cannot descend into. Cleaning up with anything less
+  // than what unpacked it turns a verdict about the archive into an error about /tmp.
+  const prefix = await sudoFor(ctx, archive);
   try {
-    const prefix = await sudoFor(ctx, archive);
     const [head, ...rest] = [...prefix, "tar", "-xzf", archive, "-C", workdir];
     await ctx.transport.exec(head, rest);
 
@@ -244,7 +248,10 @@ export async function verifySnapshot(
       }
     }
   } finally {
-    await ctx.transport.remove(workdir);
+    // allowFailure: a scan that finished has an answer, and a leftover directory in /tmp is
+    // not a reason to throw it away.
+    const [rmHead, ...rmRest] = [...prefix, "rm", "-rf", workdir];
+    await ctx.transport.exec(rmHead, rmRest, { allowFailure: true });
   }
 
   if (failures > 0) {

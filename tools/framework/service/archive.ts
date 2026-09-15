@@ -22,6 +22,35 @@ export function isProfile(value: string): value is Profile {
   return (PROFILES as string[]).includes(value);
 }
 
+/** What a backup archive is called, and how to read that name back.
+ *
+ *  The profile used to be absent from the name, and every consumer of a backup directory
+ *  then had to treat "an archive of this deployment" as one kind of thing. It is not: a
+ *  `migrate` archive carries no config/.env and a `share` one carries neither identity nor
+ *  devices, so restoring either over a live instance replaces it with something that cannot
+ *  start. `pull` writes both into the same backup directory that `backup` writes full
+ *  archives into, and `./clawforge restore` with no argument took whichever was newest.
+ *
+ *  A full archive keeps the name it always had, so directories written before this still
+ *  read correctly — with the one limitation that a profile which was never recorded cannot
+ *  be recovered from the name, and an old migrate/share archive still looks full. */
+export function backupArchiveName(deployment: string, stamp: string, profile: Profile): string {
+  return profile === "full"
+    ? `${deployment}-${stamp}.tar.gz`
+    : `${deployment}-${stamp}-${profile}.tar.gz`;
+}
+
+/** The stamp and profile of `fileName`, or undefined when it is not this deployment's backup
+ *  at all. Deliberately strict: a `ls <name>-*.tar.gz` glob also matches a sibling deployment
+ *  ("openclaw" matching "openclaw-staging-20260101-000000.tar.gz") when both share a backup
+ *  directory, and rotation that cannot tell them apart deletes the sibling's archives. */
+export function parseBackupArchive(fileName: string, deployment: string): { stamp: string; profile: Profile } | undefined {
+  const escaped = deployment.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const match = new RegExp(`^${escaped}-(\\d{8}-\\d{6})(?:-(migrate|share))?\\.tar\\.gz$`).exec(fileName);
+  if (match === null) return undefined;
+  return { stamp: match[1], profile: (match[2] ?? "full") as Profile };
+}
+
 /** Always excluded: host-local noise and artefacts reproducible from the repository.
  *
  *  The instance lock is here rather than in one profile's list, and that is a decision worth

@@ -23,6 +23,7 @@
 // was holding: two different permissions collapsed into one, and the more dangerous one
 // granted by default.
 
+import { locksDir } from "../core/env.ts";
 import { log, die } from "../core/log.ts";
 import { newOperationId } from "../service/operations.ts";
 import type { Context } from "../core/context.ts";
@@ -65,11 +66,7 @@ export interface LockHolder {
  *  (datadir.ts) and owned by whoever runs the tooling — the container never sees this. The
  *  data directory's name is kept so two deployments sharing a parent cannot collide. */
 export function lockHome(ctx: Context): string {
-  const dataDir = ctx.settings.dataDir.replace(/\/+$/, "");
-  const cut = dataDir.lastIndexOf("/");
-  const parent = cut <= 0 ? "" : dataDir.slice(0, cut);
-  const name = dataDir.slice(cut + 1);
-  return `${parent}/${name}-locks`;
+  return locksDir(ctx.settings.dataDir);
 }
 
 export function lockPath(ctx: Context): string {

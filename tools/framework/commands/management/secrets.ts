@@ -11,7 +11,8 @@ import { parseEnv } from "#src/core/env.ts";
 import { secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsFromConfig, status, template } from "#src/service/secrets.ts";
-import { loadSecrets } from "../lifecycle/state.ts";
+import { loadSecrets, dumpSecrets } from "../lifecycle/state.ts";
+import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
 
@@ -58,6 +59,23 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   if (absent.length > 0) {
     for (const entry of absent) warn(`${path} has no value for ${entry.name} (${entry.usedBy})`);
     die(`${absent.length} value(s) missing in ${path}`);
+  }
+
+  // config/.env is REPLACED by what follows, not merged into: the required list is the whole
+  // file afterwards. Anything an operator put there by hand — a variable OpenClaw reads that
+  // no provider reference names, something a recipe expects — disappears. That is the design
+  // (the file is derived from the requirements), but it used to happen without a word, and a
+  // variable that vanishes silently is one nobody thinks to put back. Names only: the values
+  // are the secrets themselves.
+  const current = await dumpSecrets(ctx);
+  if (current !== undefined) {
+    const keep = new Set(needed.map((entry) => entry.name));
+    const dropped = Object.keys(parseEnv(current)).filter((name) => !keep.has(name));
+    if (dropped.length > 0) {
+      warn(`${secretsFileOnTarget(ctx)} also holds ${dropped.length} variable(s) nothing requires, which this replaces:`);
+      for (const name of dropped) info(name);
+      info(`add them to ${path} if the instance needs them`);
+    }
   }
 
   const content = needed.map((entry) => `${entry.name}=${values[entry.name]}`).join("\n");

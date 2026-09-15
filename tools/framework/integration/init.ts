@@ -11,8 +11,8 @@
 // The measure of whether this is usable, same as scaffold.ts: the generated deployment
 // must run immediately after its .env is filled in.
 
-import { mkdir, writeFile, access, readFile, chmod } from "node:fs/promises";
-import { resolve, basename } from "node:path";
+import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
+import { resolve, basename, relative } from "node:path";
 import { log, info, die } from "../core/log.ts";
 import { frameworkRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
@@ -143,6 +143,104 @@ async function updateGitignore(root: string): Promise<void> {
   await writeFile(file, `${existing}${GITIGNORE_APPEND}`, "utf8");
 }
 
+/** What this directory's package.json has to say about module type, and what init must do
+ *  about it. `undefined` means there is nothing to do. */
+type ModuleTypeAction =
+  | { kind: "create"; name: string }
+  | { kind: "set"; parsed: Record<string, unknown>; replacing?: string }
+  | undefined;
+
+/** Every file in this directory whose meaning depends on package.json's "type", excluding
+ *  node_modules and anything hidden. Only `.js` and `.ts` are ambiguous — `.cjs`/`.mjs` (and
+ *  their TypeScript counterparts) carry their module system in the extension. */
+async function typeSensitiveFiles(root: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true, recursive: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => entry.isFile() && /\.(js|ts)$/.test(entry.name))
+    .map((entry) => relative(root, resolve(entry.parentPath, entry.name)))
+    .filter((path) => !path.split(/[\\/]/).some((segment) => segment === "node_modules" || segment.startsWith(".")));
+}
+
+/** The deployment's app.ts is ESM — it imports @clawforge/framework — and Node decides how to
+ *  read a .ts file from the nearest package.json's "type". Node only guesses when the field
+ *  is absent entirely; `npm init -y` writes an explicit "type": "commonjs", and under that
+ *  every command fails at the first import with "Cannot use import statement outside a
+ *  module". That is the whole CLI, including bootstrap and both MCP servers, on a directory
+ *  the operator prepared exactly as the README said to.
+ *
+ *  So the field is decided here rather than left to chance. "commonjs" is rewritten only when
+ *  nothing in the directory depends on it — a package.json npm wrote by default, next to no
+ *  JavaScript of its own, states nothing anyone chose. Where there IS such code, the field is
+ *  load-bearing: flipping it would change how every one of those files is read, so init
+ *  refuses and says what to do instead. */
+async function moduleTypeAction(root: string): Promise<ModuleTypeAction> {
+  const file = resolve(root, "package.json");
+
+  let raw: string;
+  try {
+    raw = await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "create", name: basename(root) };
+    return die(`${file} could not be read: ${(error as Error).message}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return die(
+      `${file} is not valid JSON (${(error as Error).message}) — init needs to know whether this ` +
+        'directory is ESM, and a file it cannot parse is not an answer. Fix it, or add "type": "module" by hand.',
+    );
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return die(`${file} is not a JSON object — init cannot tell whether this directory is ESM`);
+  }
+
+  const declared = (parsed as { type?: unknown }).type;
+  if (declared === "module") return undefined;
+  if (declared === undefined) return { kind: "set", parsed: parsed as Record<string, unknown> };
+
+  const dependents = await typeSensitiveFiles(root);
+  if (dependents.length > 0) {
+    die(
+      `${file} declares "type": ${JSON.stringify(declared)}, and this directory already holds ` +
+        `${dependents.length} file(s) read under it (${dependents.slice(0, 3).join(", ")}${dependents.length > 3 ? ", …" : ""}).\n` +
+        "The deployment's app.ts is ESM, so Node would refuse it with \"Cannot use import statement outside a module\" on every command,\n" +
+        'and changing the field for you would change how those files are read. Set "type": "module" yourself once they can take it,\n' +
+        "or initialise this deployment in a directory of its own.",
+    );
+  }
+  return { kind: "set", parsed: parsed as Record<string, unknown>, replacing: String(declared) };
+}
+
+async function applyModuleType(root: string, action: ModuleTypeAction): Promise<void> {
+  if (action === undefined) return;
+  const file = resolve(root, "package.json");
+
+  // private: nothing here is meant for a registry, and a deployment directory carrying a
+  // publishable package.json is an accident waiting for a stray `npm publish`.
+  const content = action.kind === "create"
+    ? { name: action.name, version: "0.0.0", private: true, type: "module" }
+    : { ...action.parsed, type: "module" };
+
+  await writeFile(file, `${JSON.stringify(content, undefined, 2)}\n`, "utf8");
+
+  if (action.kind === "create") {
+    log(`created ${file} ("type": "module")`);
+    return;
+  }
+  log(`set "type": "module" in ${file}`);
+  if (action.replacing !== undefined) {
+    info(`  it said "type": ${JSON.stringify(action.replacing)}, which no file in this directory depends on — the deployment is ESM`);
+  }
+}
+
 export async function initApp(root: string): Promise<void> {
   // The directory's own name becomes the compose project name (deploymentName() derives it
   // from deploymentDir()'s basename, unconditionally — see deployment.ts) — checked before
@@ -176,10 +274,15 @@ export async function initApp(root: string): Promise<void> {
     if (conflictExists) die(`${conflict} already exists — refusing to overwrite it. Remove it (or move it aside) first if this directory should be re-initialised.`);
   }
 
+  // Read before the first write for the same reason as the conflicts above: a directory this
+  // deployment cannot run in must be refused whole, not left half-initialised.
+  const moduleType = await moduleTypeAction(root);
+
   await mkdir(resolve(root, "config"), { recursive: true });
   await mkdir(resolve(root, "secrets"), { recursive: true });
   await mkdir(resolve(root, "recipes"), { recursive: true });
 
+  await applyModuleType(root, moduleType);
   await writeFile(appFile, DECLARATION, "utf8");
   await writeFile(resolve(root, "config", "desired-state.json"), DESIRED_STATE, "utf8");
   await writeFile(resolve(root, ".env"), await deploymentEnv(base), "utf8");

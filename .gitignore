@@ -37,3 +37,7 @@ node_modules/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Session checkpoints (/checkpoint, /resume): working notes of one machine, including its
+# own local paths. They belong to whoever produced them, not to the repository.
+docs/checkpoints/

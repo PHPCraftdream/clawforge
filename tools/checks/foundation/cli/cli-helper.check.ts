@@ -43,6 +43,22 @@ const paths = {
   },
 } as unknown as PathBridge;
 
+// Every case below is about the arguments a helper command gets. Two things the runtime
+// needs before it can build any of them, stated once here: a data directory (the deployment
+// environment is written beside it, and compose is pointed at that file rather than given
+// the values as arguments) and a transport that can write it.
+const stubSettings = { env: {}, dataDir: "/srv/openclaw/data" } as Settings;
+
+function withFileOps(transport: Transport): Transport {
+  // Added after the spread, not before: none of the stubs below writes files, and every case
+  // here is about the arguments a command gets rather than about what lands on the target.
+  return {
+    ...transport,
+    mkdirp: async (): Promise<void> => {},
+    writeFile: async (): Promise<void> => {},
+  } as unknown as Transport;
+}
+
 // --- DockerRuntime: startHelper / stopHelper / helperRunning / execInHelper -------------
 
 {
@@ -54,7 +70,7 @@ const paths = {
       return { code: 0, stdout: "", stderr: "" };
     },
   } as unknown as Transport;
-  const runtime = new DockerRuntime(transport, {} as Settings, paths, { service: "gateway" });
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
 
   await runtime.startHelper("cli-helper", "cli");
   const startCall = calls.at(-1) ?? [];
@@ -80,7 +96,7 @@ const paths = {
       return { code: 0, stdout: "", stderr: "" };
     },
   } as unknown as Transport;
-  const runtime = new DockerRuntime(transport, {} as Settings, paths, { service: "gateway" });
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
 
   await runtime.restart();
   const call = calls.at(-1) ?? [];
@@ -100,7 +116,7 @@ const paths = {
       return { code: 1, stdout: "", stderr: "" };
     },
   } as unknown as Transport;
-  const runtime = new DockerRuntime(transport, {} as Settings, paths, { service: "gateway" });
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
 
   const result = await runtime.runOneOff("cli", ["whatever"], { profile: "cli", input: "", allowFailure: true });
   check("runOneOff forwards allowFailure to transport.exec", sawAllowFailure, true);
@@ -114,7 +130,7 @@ const paths = {
       return { code: 0, stdout: "b23066c5927b\n", stderr: "" };
     },
   } as unknown as Transport;
-  const runtime = new DockerRuntime(transport, {} as Settings, paths, { service: "gateway" });
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
   check("helperRunning true when ps returns an id", await runtime.helperRunning("cli-helper"), true);
 }
 
@@ -125,7 +141,7 @@ const paths = {
       return { code: 0, stdout: "", stderr: "" };
     },
   } as unknown as Transport;
-  const runtime = new DockerRuntime(transport, {} as Settings, paths, { service: "gateway" });
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
   check("helperRunning false when ps returns nothing", await runtime.helperRunning("cli-helper"), false);
 }
 
@@ -138,7 +154,7 @@ const paths = {
       return { code: 0, stdout: "", stderr: "" };
     },
   } as unknown as Transport;
-  const runtime = new DockerRuntime(transport, {} as Settings, paths, { service: "gateway" });
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
   let threw: unknown;
   try {
     await runtime.execInHelper("cli-helper", ["--version"]);
@@ -158,7 +174,7 @@ const paths = {
       return { code: 0, stdout: "OpenClaw 2026.6.34\n", stderr: "" };
     },
   } as unknown as Transport;
-  const runtime = new DockerRuntime(transport, {} as Settings, paths, { service: "gateway" });
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
 
   await runtime.execInHelper("cli-helper", ["--version"]);
   const execCall = calls.at(-1) ?? [];

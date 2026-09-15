@@ -8,7 +8,7 @@ import { log, info, warn, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { sudoFor } from "#src/runtime/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { createArchive, fileSize, isProfile, type Profile } from "#src/service/archive.ts";
+import { createArchive, fileSize, isProfile, backupArchiveName, parseBackupArchive, type Profile } from "#src/service/archive.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 
 export interface BackupOptions {
@@ -46,7 +46,24 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
   const listing = await ctx.transport.exec(head, rest, { allowFailure: true });
   const archives = listing.stdout.split("\n").filter((line) => line.trim() !== "");
 
-  const stale = archives.slice(keep);
+  // Retention is counted per profile, and anything the glob caught that is not one of this
+  // deployment's own archives is dropped here. Both for the same reason: `keep` means "how
+  // many backups of this instance I can still restore from", and neither a share snapshot
+  // `pull` left behind nor a sibling deployment's archive is one of those. Counted together,
+  // a week of `pull` runs rotated away every full backup the instance had.
+  const byProfile = new Map<Profile, string[]>();
+  for (const line of archives) {
+    const path = line.trim();
+    const parsed = parseBackupArchive(path.slice(path.lastIndexOf("/") + 1), deploymentName());
+    if (parsed === undefined) continue;
+    byProfile.set(parsed.profile, [...(byProfile.get(parsed.profile) ?? []), path]);
+  }
+
+  // `ls -1t` ordered the listing, and grouping preserved it: each group is newest first.
+  // Put the stale ones back in that order, so "the oldest" below still means the oldest of
+  // all of them rather than the oldest of whichever group happened to be last.
+  const staleSet = new Set([...byProfile.values()].flatMap((group) => group.slice(keep)));
+  const stale = archives.map((line) => line.trim()).filter((path) => staleSet.has(path));
   if (stale.length === 0) return;
 
   // Only the single oldest excess archive is removed per run, not the whole backlog at
@@ -84,7 +101,7 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   const [mkHead, ...mkRest] = [...mkdirPrefix, "mkdir", "-p", backupDir];
   await ctx.transport.exec(mkHead, mkRest);
 
-  const archive = `${backupDir}/${deploymentName()}-${timestamp()}.tar.gz`;
+  const archive = `${backupDir}/${backupArchiveName(deploymentName(), timestamp(), profile)}`;
   const wasRunning = await ctx.runtime.isRunning();
 
   if (options.hot === true) {

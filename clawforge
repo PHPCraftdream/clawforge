@@ -6,7 +6,8 @@
 #
 # It deliberately does NOT require Linux. The tooling can run on the Windows Node and
 # reach the target through wsl.exe; which transport is used is decided in TypeScript,
-# not here. Prerequisites are the user's responsibility — this installs nothing.
+# not here. Prerequisites are the user's responsibility — this installs nothing, so
+# `npm install` has to have been run once in this repository (json5 is a real dependency).
 #
 #   ./clawforge <command> [options]
 

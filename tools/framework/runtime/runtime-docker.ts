@@ -4,7 +4,7 @@
 // settings and path bridge directly rather than a Context, so the context can build it
 // without a circular import.
 
-import { composeFile, type Settings } from "../core/env.ts";
+import { composeFile, locksDir, type Settings } from "../core/env.ts";
 import { deploymentDir, composeProjectName } from "./deployment.ts";
 import type { PathBridge } from "../core/paths.ts";
 import type { ExecResult, Transport } from "./transport.ts";
@@ -31,6 +31,7 @@ export class DockerRuntime implements Runtime {
   #paths: PathBridge;
   #service: string;
   #logTail: string;
+  #envFilePromise: Promise<string> | undefined;
 
   constructor(
     transport: Transport,
@@ -45,22 +46,75 @@ export class DockerRuntime implements Runtime {
     this.#logTail = options.logTail ?? "100";
   }
 
+  /** The deployment's environment, in a file on the target that compose reads itself.
+   *
+   *  It used to travel as `env VAR=value … docker compose …`, which put
+   *  OPENCLAW_GATEWAY_TOKEN in the target's process list and shell history for the duration
+   *  of every container command — and the longest-running commands (`up`, `logs --follow`,
+   *  the MCP bridge) held it there longest. A file referenced by path shows a path.
+   *
+   *  Written once per process: settings do not change inside one context, and a write per
+   *  compose call would be a round trip per call. Mode 600, in the framework's own directory
+   *  beside the data directory — not inside it, which `restore` replaces wholesale.
+   *
+   *  A failure here is not worked around. Falling back to the command line would put the
+   *  token back where this exists to remove it, quietly, on exactly the hosts where writing
+   *  a file failed for a reason worth knowing. */
+  async #envFileOnTarget(): Promise<string> {
+    this.#envFilePromise ??= this.#writeEnvFile();
+    return this.#envFilePromise;
+  }
+
+  async #writeEnvFile(): Promise<string> {
+    const directory = locksDir(this.#settings.dataDir);
+    const path = `${directory}/compose.env`;
+
+    // compose's env-file parser is line-oriented; a value with a newline in it would read as
+    // a new assignment. Named, never printed: these values are the credentials themselves.
+    const broken = Object.entries(this.#settings.env)
+      .filter(([, value]) => value.includes("\n"))
+      .map(([name]) => name);
+    if (broken.length > 0) {
+      throw new Error(`cannot pass ${broken.join(", ")} to compose: a value containing a newline cannot be written to an env file`);
+    }
+
+    const body = Object.entries(this.#settings.env)
+      .map(([name, value]) => `${name}=${value}`)
+      .join("\n");
+
+    try {
+      await this.#transport.mkdirp(directory);
+      await this.#transport.writeFile(path, `${body}\n`, "600");
+    } catch (error) {
+      throw new Error(`could not write the compose environment to ${path}: ${(error as Error).message}`);
+    }
+    return path;
+  }
+
   /** Compose needs the file and project directory in the target's coordinates: the tooling
    *  may be on Windows while compose runs inside WSL. */
   async #composeArgs(): Promise<string[]> {
-    // The service definition is shared, but the project directory is the deployment's:
-    // that is where compose picks up the .env it interpolates, so two deployments running
-    // the same definition stay separate.
+    // The service definition is shared, but the project directory is the deployment's, so two
+    // deployments running the same definition stay separate.
     //
     // The project name is the deployment's, stated rather than left to compose: it would
-    // otherwise come from COMPOSE_PROJECT_NAME in that .env, and two deployments copied
-    // from the same template would share containers, networks and volumes.
-    const [file, projectDir] = await Promise.all([
+    // otherwise come from COMPOSE_PROJECT_NAME in the project's .env, and two deployments
+    // copied from the same template would share containers, networks and volumes.
+    //
+    // --env-file REPLACES the project directory's own .env rather than adding to it (checked
+    // against compose v5: a variable only that .env defines comes out unset). That is why the
+    // file written above carries the whole environment and not just the secret part of it —
+    // and it is an improvement for a remote target, where the deployment directory, and the
+    // .env in it, is not necessarily on the machine compose runs on at all.
+    const [file, projectDir, envFileOnTarget] = await Promise.all([
       this.#paths.toTarget(composeFile),
       this.#paths.toTarget(deploymentDir()),
+      this.#envFileOnTarget(),
     ]);
     return [
       "compose",
+      "--env-file",
+      envFileOnTarget,
       "--project-name",
       composeProjectName(),
       "--file",
@@ -83,11 +137,7 @@ export class DockerRuntime implements Runtime {
   // "the project does not exist yet" is an answer, not an error.
   async #compose(args: string[], stream = false, allowFailure = false): Promise<ExecResult> {
     const base = await this.#composeArgs();
-    return this.#transport.exec("docker", [...base, ...args], {
-      stream,
-      allowFailure,
-      env: this.#settings.env,
-    });
+    return this.#transport.exec("docker", [...base, ...args], { stream, allowFailure });
   }
 
   async start(): Promise<void> {
@@ -272,7 +322,6 @@ export class DockerRuntime implements Runtime {
     return this.#transport.exec("docker", [...base, ...prefix, ...runArgs, service, ...args], {
       stream: options.input === undefined,
       input: options.input,
-      env: this.#settings.env,
       allowFailure: options.allowFailure,
     });
   }
@@ -293,17 +342,22 @@ export class DockerRuntime implements Runtime {
   /** A side stack: separate compose project, separate lifecycle. */
   stack(project: string, definitionPath: string): Stack {
     const transport = this.#transport;
-    const settings = this.#settings;
     const paths = this.#paths;
+    const envFileOnTarget = (): Promise<string> => this.#envFileOnTarget();
 
     const compose = async (args: string[], stream = true): Promise<ExecResult> => {
       // The definition lives in our checkout; compose runs on the target.
-      const file = await paths.toTarget(definitionPath);
+      //
+      // Same environment file as the main stack, for the same reason: a recipe's variables
+      // are declared in recipe.json and supplied from the deployment's .env (recipe.ts
+      // refuses to install one whose variables are not set there), so this is the environment
+      // a side stack is entitled to — and none of it belongs on the target's command line.
+      const [file, envFile] = await Promise.all([paths.toTarget(definitionPath), envFileOnTarget()]);
       const directory = file.slice(0, file.lastIndexOf("/"));
       return transport.exec(
         "docker",
-        ["compose", "--project-name", project, "--file", file, "--project-directory", directory, ...args],
-        { stream, env: settings.env },
+        ["compose", "--env-file", envFile, "--project-name", project, "--file", file, "--project-directory", directory, ...args],
+        { stream },
       );
     };
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --experimental-strip-types
+#!/usr/bin/env node
 // The installed-mode gate — the package's own bin entry once tools/framework/ is installed
 // as an npm dependency in a consumer repo, as opposed to tools/clawforge.ts (the monorepo gate,
 // used only inside this clawforge checkout, where several deployments sit side by side
@@ -8,12 +8,15 @@
 // selection, no apps/<name> nesting — those exist in the monorepo gate to let several
 // deployments share one checkout, which is not what an installed dependency is for.
 //
-// The flag in the shebang is harmless on a Node new enough to strip types by default (this
-// framework's own check suite already invokes tools/clawforge.ts the same way unconditionally);
-// it only matters for Node 22.6-22.x, where stripping is still behind the flag.
+// The shebang is a plain `#!/usr/bin/env node`, and the flag Node 22.6-22.17 needs to load
+// the consumer's app.ts is added by re-executing this file (see below) rather than carried
+// there. `#!/usr/bin/env -S node --experimental-strip-types` looks tidier and does work with
+// GNU coreutils, but busybox `env` has no -S at all — on an Alpine image, the most common
+// Node base image there is, the npm-linked bin then fails before a single line of this runs.
 
 import { access } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, type GateCommand } from "../integration/gate.ts";
@@ -62,12 +65,38 @@ try {
 // Set before anything reads configuration: every path below resolves against it.
 useDeployment(appRoot);
 
+/** This file again, with type stripping switched on.
+ *
+ *  app.ts belongs to the consumer and is never compiled by anything here, so loading it needs
+ *  a Node that strips types — on by default since 22.18, behind --experimental-strip-types
+ *  before that. The flag cannot ride in the shebang (busybox `env` has no -S), and guessing
+ *  from process.version or process.features would have to be right about every release; the
+ *  import failing with "Unknown file extension" is the capability itself answering.
+ *
+ *  Only that one flag is passed on: whatever disabled stripping in this process (an explicit
+ *  --no-experimental-strip-types, an old default) must not be inherited by the retry. */
+function retryWithTypeStripping(): never {
+  const result = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", fileURLToPath(import.meta.url), ...argv],
+    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1" } },
+  );
+  process.exit(result.status ?? 1);
+}
+
 let app: AppDefinition;
 try {
   const module = (await import(pathToFileURL(appFile).href)) as { default: AppDefinition };
   app = module.default;
 } catch (error) {
-  reportError(`cannot load ${appFile}: ${(error as Error).message}`);
+  const message = (error as Error).message;
+  const cannotReadTypeScript = message.includes("Unknown file extension") || message.includes("experimental-strip-types");
+  if (cannotReadTypeScript && process.env.CLAWFORGE_TYPE_STRIPPING_RETRY !== "1") retryWithTypeStripping();
+
+  reportError(`cannot load ${appFile}: ${message}`);
+  if (cannotReadTypeScript) {
+    reportError("this Node cannot execute TypeScript even with --experimental-strip-types — Node 22.6 or newer is required");
+  }
   process.exit(1);
 }
 

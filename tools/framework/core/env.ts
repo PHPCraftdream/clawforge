@@ -58,6 +58,21 @@ export const composeFile = resolve(frameworkRoot, "docker-compose.yml");
 
 export type Env = Record<string, string>;
 
+/** The framework's own scratch directory on the target, beside the data directory.
+ *
+ *  Beside rather than inside, because `restore` replaces the data directory whole and
+ *  anything kept in there leaves with the old tree. The data directory's own name is kept in
+ *  it so two deployments sharing a parent cannot collide. Pure and taking the path rather
+ *  than a Context: the instance lock lives here (instance-lock.ts) and so does the
+ *  environment file compose reads (runtime-docker.ts), and those two must agree on where
+ *  "here" is without importing each other. */
+export function locksDir(dataDir: string): string {
+  const trimmed = dataDir.replace(/\/+$/, "");
+  const cut = trimmed.lastIndexOf("/");
+  const parent = cut <= 0 ? "" : trimmed.slice(0, cut);
+  return `${parent}/${trimmed.slice(cut + 1)}-locks`;
+}
+
 /** Parses KEY=VALUE lines; comments, blanks and surrounding quotes handled, anything else
  *  ignored rather than executed. */
 export function parseEnv(text: string): Env {

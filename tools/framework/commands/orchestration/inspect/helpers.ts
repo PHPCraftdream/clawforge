@@ -4,9 +4,7 @@
 // the target, and gather.ts for gatherInspection/inspect/doctor/renderJson/renderText.
 
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import JSON5 from "json5";
-import { frameworkRoot } from "#src/core/env.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CronJob, AgentConfig } from "#src/commands/management/provision-agent/index.ts";
@@ -142,16 +140,6 @@ export async function readDeclaredConfig(): Promise<DeclaredState["config"]> {
   }
 }
 
-export async function frameworkVersion(): Promise<string | undefined> {
-  // Source mode puts package.json next to this file's directory; the built package puts it
-  // one level up from dist/. Asked for rather than assumed, same reasoning as clientEntry().
-  for (const candidate of [resolve(frameworkRoot, "package.json"), resolve(frameworkRoot, "..", "package.json")]) {
-    try {
-      const parsed = JSON.parse(await readFile(candidate, "utf8")) as { name?: string; version?: string };
-      if (parsed.name === "@clawforge/framework") return parsed.version;
-    } catch {
-      // Try the next one.
-    }
-  }
-  return undefined;
-}
+// Re-exported rather than reimplemented: this used to be a second copy of lock.ts's version,
+// and "which framework is this" answered twice is a question that can be answered two ways.
+export { frameworkVersion } from "#src/commands/management/lock.ts";

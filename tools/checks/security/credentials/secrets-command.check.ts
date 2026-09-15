@@ -593,10 +593,79 @@ async function runMcpChecks(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------------------
+// Part 1e: secrets --apply replaces config/.env wholesale, and must say what it is dropping
+// ---------------------------------------------------------------------------------------
+//
+// The file is derived from the requirements — that IS the design — but a variable an operator
+// added by hand (one a recipe reads, one OpenClaw takes directly) vanished without a word.
+// Names only: the values in that file are the secrets themselves.
+
+async function runDroppedVariableChecks(): Promise<void> {
+  const deployDir = await mkdtemp(resolve(tmpdir(), "clawforge-secrets-dropped-check-"));
+  try {
+    await mkdir(resolve(deployDir, "config"), { recursive: true });
+    await mkdir(resolve(deployDir, "secrets"), { recursive: true });
+    useDeployment(deployDir);
+
+    await writeFile(
+      resolve(deployDir, "config", "desired-state.json"),
+      JSON.stringify([{ path: "models.providers.zai", value: {} }]),
+      "utf8",
+    );
+
+    const storeName = "dropped-store";
+    await writeFile(resolve(deployDir, "secrets", `${storeName}.env`), "ZAI_API_KEY=zai-value\n", "utf8");
+
+    const targetEnv = "/srv/clawforge/data/config/.env";
+    const writes: Record<string, string> = {};
+    const ctx = {
+      settings: { dataDir: "/srv/clawforge/data", env: {} },
+      transport: {
+        description: "stub",
+        async exists(path: string): Promise<boolean> {
+          return !path.endsWith("openclaw.json");
+        },
+        async readFile(path: string): Promise<string> {
+          // What the operator has on the target right now: the required key, and one more
+          // they put there themselves.
+          if (path === targetEnv) return "ZAI_API_KEY=old-value\nRECIPE_WEBHOOK_URL=https://hooks.example/abc\n";
+          if (path.endsWith("openclaw.json")) throw new Error("no live config yet");
+          return "";
+        },
+        async writeFile(path: string, content: string): Promise<void> {
+          writes[path] = content;
+        },
+        async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+          if (command === "mkdir" && args[0] !== "-p") return { code: 0, stdout: "", stderr: "" };
+          if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      },
+    } as unknown as Context;
+
+    let said = "";
+    await withOutputSink(
+      (chunk: string) => {
+        said += chunk;
+      },
+      () => secrets(ctx, ["--apply", "--store", storeName]),
+    );
+
+    check("the variable about to be dropped is named", said.includes("RECIPE_WEBHOOK_URL"), true);
+    check("and the operator is told where to put it back", said.includes(`add them to ${resolve(deployDir, "secrets", `${storeName}.env`)}`), true);
+    check("its value is never printed", said.includes("hooks.example"), false);
+    check("the required key is still installed", writes[targetEnv], "ZAI_API_KEY=zai-value\n");
+  } finally {
+    await rm(deployDir, { recursive: true, force: true });
+  }
+}
+
 await runSecretsChecks();
 await runLockChecks();
 await runProspectiveApplyChecks();
 await runReadErrorAbortsChecks();
+await runDroppedVariableChecks();
 await runMcpChecks();
 
 process.stderr.write(failed === 0 ? "all secrets-command checks passed\n" : `${failed} failed\n`);

@@ -6,8 +6,8 @@
 // end to end with a restored config that references a variable nothing supplies.
 
 import { resolve } from "node:path";
-import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
-import { useDeployment } from "#framework/runtime/deployment.ts";
+import { restoreArchive, newestArchive } from "#framework/commands/lifecycle/restore.ts";
+import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -109,6 +109,64 @@ check("the gateway is never started when a required secret is missing", startCal
   );
 
   check("a corrupted restored config is not reported as a successful restore", corruptThrew, true);
+}
+
+// --- which archive `./clawforge restore` picks when given none ------------------------------
+//
+// `pull` writes migrate and share archives into the same directory `backup` writes full ones
+// into, and the rule used to be "the newest file matching <deployment>-*.tar.gz". So the
+// documented `./clawforge restore` run right after `pull --share` replaced the data directory
+// with an archive carrying neither identity nor credentials: the gateway could not start, and
+// the real data survived only as <data>.replaced-<stamp>.
+
+function listingContext(paths: string[]): Context {
+  return {
+    settings: { backupDir: BACKUP_DIR },
+    transport: {
+      async exists(): Promise<boolean> {
+        return true;
+      },
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (args.includes("-w")) return { code: 0, stdout: "", stderr: "" };
+        if (command === "sh" && args.some((arg) => arg.includes("ls -1t"))) {
+          return { code: 0, stdout: `${paths.join("\n")}\n`, stderr: "" };
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+}
+
+const BACKUP_DIR = "/srv/openclaw/backups";
+const NAME = deploymentName();
+
+{
+  const full = `${BACKUP_DIR}/${NAME}-20260101-000000.tar.gz`;
+  const picked = await newestArchive(
+    listingContext([
+      `${BACKUP_DIR}/${NAME}-20260103-000000-share.tar.gz`,
+      `${BACKUP_DIR}/${NAME}-20260102-000000-migrate.tar.gz`,
+      full,
+    ]),
+    BACKUP_DIR,
+  );
+
+  check("the newest FULL archive is chosen, not the newest file", picked.archive, full);
+  check("and what was passed over is reported, not swallowed", picked.skipped.length, 2);
+  check("by name and profile", picked.skipped[0].includes("share"), true);
+}
+
+{
+  // A sibling deployment sharing the directory matches the glob but is not ours to restore.
+  const picked = await newestArchive(listingContext([`${BACKUP_DIR}/${NAME}-staging-20260103-000000.tar.gz`]), BACKUP_DIR);
+  check("a sibling deployment's archive is not a candidate", picked.archive, undefined);
+  check("and is not reported as a skipped profile either", picked.skipped.length, 0);
+}
+
+{
+  const picked = await newestArchive(listingContext([`${BACKUP_DIR}/${NAME}-20260103-000000-share.tar.gz`]), BACKUP_DIR);
+  check("a directory holding only profile archives offers nothing to restore", picked.archive, undefined);
+  check("and says which ones it passed over", picked.skipped.length, 1);
 }
 
 process.stderr.write(failed === 0 ? "all restore checks passed\n" : `${failed} failed\n`);

@@ -306,10 +306,12 @@ that is `bootstrap`) get their preparation earlier: the framework creates `.env`
 template with this deployment's paths and port, generates a token if there is none, and
 only then builds the context. The MCP server uses the same path.
 
-`bootstrap` also fixes an ordering that matters for configuration: the provider is
-configured first (its onboarding rewrites `openclaw.json` wholesale), and the deployment's
-`desired-state.json` is applied after it, so the declaration wins over whatever onboarding
-decided.
+`bootstrap` also fixes an ordering that matters for configuration: the deployment's
+`desired-state.json` is applied first, and `configure-provider` runs after it. A brand-new
+custom provider's `baseUrl` and model catalog come from the declaration, and OpenClaw's
+schema requires `baseUrl` on any provider id it does not already know — writing just the
+apiKey first leaves that entry incomplete and OpenClaw refuses the write, which used to stop
+bootstrap before the declaration was ever applied.
 
 ## Where output goes
 

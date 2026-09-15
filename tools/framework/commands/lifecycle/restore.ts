@@ -17,6 +17,7 @@ import {
   extractArchive,
   listArchive,
   listArchiveLinks,
+  parseBackupArchive,
 } from "#src/service/archive.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
@@ -30,7 +31,21 @@ export interface RestoreOptions {
   noStart?: boolean;
 }
 
-async function newestArchive(ctx: Context, directory: string): Promise<string | undefined> {
+/** The newest FULL archive of this deployment, and what was skipped to find it.
+ *
+ *  "Newest archive in the backup directory" was the whole rule, and `pull` writes migrate and
+ *  share archives into that same directory. Restoring one of those over a live instance is
+ *  not a restore: a migrate archive has no config/.env, a share archive has neither identity
+ *  nor devices, so the data directory is replaced by something that cannot start while the
+ *  real data survives only as `<data>.replaced-<stamp>`. Named explicitly, any archive is
+ *  still restorable — the operator asking for that one has said which one they mean.
+ *
+ *  Exported for testing: which archive `./clawforge restore` picks is the decision worth
+ *  pinning, and it needs a listing rather than a data directory to exercise. */
+export async function newestArchive(
+  ctx: Context,
+  directory: string,
+): Promise<{ archive?: string; skipped: string[] }> {
   const prefix = await sudoFor(ctx, directory);
   const [head, ...rest] = [
     ...prefix,
@@ -39,8 +54,20 @@ async function newestArchive(ctx: Context, directory: string): Promise<string | 
     `ls -1t ${directory}/${deploymentName()}-*.tar.gz 2>/dev/null`,
   ];
   const result = await ctx.transport.exec(head, rest, { allowFailure: true });
-  const first = result.stdout.split("\n").find((line) => line.trim() !== "");
-  return first?.trim();
+
+  const skipped: string[] = [];
+  for (const line of result.stdout.split("\n")) {
+    const path = line.trim();
+    if (path === "") continue;
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    const parsed = parseBackupArchive(name, deploymentName());
+    // Not this deployment's archive at all (a sibling sharing the directory, or a file
+    // someone else put there): not a candidate, and not worth reporting either.
+    if (parsed === undefined) continue;
+    if (parsed.profile === "full") return { archive: path, skipped };
+    skipped.push(`${name} (profile: ${parsed.profile})`);
+  }
+  return { skipped };
 }
 
 async function confirm(question: string): Promise<boolean> {
@@ -172,10 +199,21 @@ export async function restore(ctx: Context, args: string[]): Promise<void> {
   }
 
   if (archive === undefined) {
-    archive = await newestArchive(ctx, ctx.settings.backupDir);
-    if (archive === undefined) {
+    const { archive: newest, skipped } = await newestArchive(ctx, ctx.settings.backupDir);
+    if (newest === undefined) {
+      if (skipped.length > 0) {
+        die(
+          `no full archives in ${ctx.settings.backupDir} — the ${skipped.length} archive(s) there are profile-limited ` +
+            `(${skipped[0]}) and restoring one replaces this instance with something that cannot start. ` +
+            "Run ./clawforge backup first, or pass the archive explicitly if that is really what you want.",
+        );
+      }
       die(`no archives found in ${ctx.settings.backupDir} — pass one explicitly`);
     }
+    archive = newest;
+    // Said rather than done quietly: the operator who just ran `pull --share` and then
+    // `restore` is entitled to know why the newest file in that directory was not used.
+    for (const entry of skipped) info(`skipping ${entry} — not a full backup`);
     log(`using the newest archive: ${archive}`);
   }
 

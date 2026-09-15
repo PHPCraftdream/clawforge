@@ -8,13 +8,19 @@ checks, and two MCP surfaces for the deployment and the OpenClaw gateway.
 
 ```bash
 npm install @clawforge/framework
-clawforge init
+npx clawforge init
 ./clawforge bootstrap
 ```
 
 The package requires Node.js 22.6 or newer. `clawforge init` writes an application
 declaration, host-specific environment template, a `clawforge` launcher, and project-local
 MCP configuration for Claude Code and Codex. It never edits global client settings.
+
+`npx` (or `node_modules/.bin/clawforge`) for that one call: a locally installed package is
+not on `PATH`, and afterwards the `./clawforge` launcher it writes takes over. The
+declaration it writes is ESM, so the directory's `package.json` has to say `"type":
+"module"` — init sets it, and refuses rather than changing it when the directory already
+holds CommonJS of its own.
 
 The gateway image, Docker, WSL, SSH, and provider credentials belong to the deployment. The
 framework does not bundle OpenClaw or any provider key. Read the repository documentation

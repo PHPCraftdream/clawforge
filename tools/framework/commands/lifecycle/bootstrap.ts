@@ -93,6 +93,11 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
 
   log("OpenClaw is up");
   info(`gateway: ${fresh.serviceUrl}`);
-  info(`token:   ${token}`);
+  // The token is named, not printed. This output is not always read by a person at a
+  // terminal: control-mcp runs the same command for an agent and hands back everything it
+  // wrote, so a token printed here is a token in a transcript. It is already in the
+  // deployment's .env, and `./clawforge mcp-creds --token` prints it when it is actually
+  // wanted — which is the moment the operator chose, not every bootstrap.
+  info(`token:   ${token === "" ? "(not generated)" : "in .env — print it with ./clawforge mcp-creds --token"}`);
   info(`data:    ${fresh.dataDir}`);
 }

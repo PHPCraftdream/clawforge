@@ -152,6 +152,9 @@ try {
         },
         async readFile(path: string): Promise<string> {
           if (path.endsWith("holder.json")) throw new Error("no holder recorded");
+          // A live config that parses: bootstrap runs to its summary here, and the summary
+          // is what the token assertions below are about.
+          if (path.endsWith("openclaw.json")) return "{}";
           return "";
         },
         async writeFile(): Promise<void> {},
@@ -210,11 +213,23 @@ try {
     } as unknown as Context;
 
     let freshError = "";
+    let said = "";
     try {
-      await withOutputSink(() => {}, () => bootstrap(freshCtx, ["--no-pull"]));
+      await withOutputSink(
+        (chunk: string) => {
+          said += chunk;
+        },
+        () => bootstrap(freshCtx, ["--no-pull"]),
+      );
     } catch (error) {
       freshError = error instanceof Error ? error.message : String(error);
     }
+
+    // The summary bootstrap prints is not always read by a person at a terminal: control-mcp
+    // runs this very command for an agent and returns everything it wrote, so a token printed
+    // here is a token in a transcript that outlives the run.
+    check("the gateway token is never printed by a successful bootstrap", said.includes("test-token"), false);
+    check("and the reader is told how to get it when they want it", said.includes("mcp-creds --token"), true);
 
     check(
       "a fresh host does not die inside the lock claim telling the reader to run bootstrap",

@@ -1,16 +1,15 @@
-// The compiled dist/entry/bin.js must keep the --experimental-strip-types flag its own
-// shebang carries in source.
+// The compiled dist/entry/bin.js must start with a shebang every POSIX system can execute.
 //
-// bin.ts's own comment explains why: the compiled bin.js dynamically imports the
-// CONSUMER's own app.ts at runtime — a real, uncompiled TypeScript file this build never
-// touches, since it belongs to a different project entirely. This package's declared
-// minimum, Node 22.6, requires the flag to load that file at all (type stripping is not
-// on by default until later versions). Stripping the flag from the COMPILED shebang (as
-// an earlier version of this build did, reasoning that "the compiled output is plain JS
-// and needs none of that") is true for bin.js's own module tree but false for the
-// consumer's app.ts it dynamically imports — and left a published, installed package
-// failing with `Unknown file extension ".ts"` on exactly the oldest Node version it
-// claims to support, invisible on any newer one where stripping is already unconditional.
+// Two ways to get this wrong, and this package has had both. Dropping the type-stripping
+// concern entirely leaves the installed package failing with `Unknown file extension ".ts"`
+// on Node 22.6-22.17, because bin.js dynamically imports the CONSUMER's own app.ts — a real,
+// uncompiled TypeScript file this build never touches. Carrying the flag in the shebang
+// instead (`#!/usr/bin/env -S node --experimental-strip-types`) fixes that on GNU coreutils
+// and breaks the package outright on busybox, whose `env` has no -S — Alpine is the most
+// common Node base image there is. So the shebang stays plain and bin.js re-executes itself
+// with the flag when, and only when, loading app.ts turns out to need it; what is asserted
+// here is that the shebang is plain, and installed-consumer.check.ts proves the recovery
+// works by running the entry point with stripping explicitly disabled.
 
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -25,14 +24,14 @@ const distDir = resolve(monorepoRoot, "tools", "framework", "dist");
 const binPath = resolve(distDir, "entry", "bin.js");
 const firstLine = (await readFile(binPath, "utf8")).split("\n")[0];
 
-if (!firstLine.includes("--experimental-strip-types")) {
+if (firstLine.trim() !== "#!/usr/bin/env node") {
   throw new Error(
-    `dist/entry/bin.js's shebang lost --experimental-strip-types (got: ${JSON.stringify(firstLine)}) — ` +
-      "this package's declared minimum, Node 22.6, needs it to load the consumer's own app.ts, which this build never compiles",
+    `dist/entry/bin.js must start with "#!/usr/bin/env node" (got: ${JSON.stringify(firstLine)}) — ` +
+      "anything else, `env -S` above all, is not executable on a busybox system such as Alpine",
   );
 }
 
-process.stderr.write("build output keeps the type-stripping flag bin.js needs on Node 22.6\n");
+process.stderr.write("build output starts with a shebang every POSIX system can execute\n");
 
 // The source tree uses "#src/..." subpath imports (tools/framework/package.json's own
 // "imports" map) for readability. dist/ ships with no package.json of its own, so a

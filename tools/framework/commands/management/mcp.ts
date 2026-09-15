@@ -5,8 +5,7 @@
 // and anything machine-readable goes through emit(), which the capture mode redirects.
 
 import { access } from "node:fs/promises";
-import { resolve, relative, dirname, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { log, info, die } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
@@ -51,27 +50,6 @@ interface McpServerEntry {
 export async function mcpServerEntries(_ctx: Context): Promise<Record<string, McpServerEntry>> {
   const installedMode = await access(resolve(deploymentDir(), "clawforge")).then(() => true, () => false);
   return projectMcpEntries(deploymentDir(), installedMode ? "installed" : "monorepo", "claude");
-}
-
-/** How a client on this machine starts the CLI: the command, then the arguments that get it
- *  as far as the dispatcher. Paths are relative to the directory holding .mcp.json, and
- *  always with forward slashes — a Windows-style path would be read as escapes by anything
- *  that parses the JSON, and Node accepts either separator on either platform. */
-export async function clientEntry(installedMode: boolean): Promise<string[]> {
-  if (!installedMode) {
-    // The monorepo gate is TypeScript executed directly, exactly as ./clawforge runs it.
-    return ["node", "--experimental-strip-types", "tools/clawforge.ts"];
-  }
-
-  // Derived from where this very module was loaded from rather than assumed: in installed
-  // mode that is node_modules/@clawforge/framework/dist/commands/, so the bin is its sibling,
-  // wherever the package manager happened to put the package.
-  const binFile = resolve(dirname(fileURLToPath(import.meta.url)), "..", "bin.js");
-  return ["node", posixRelative(deploymentDir(), binFile)];
-}
-
-function posixRelative(from: string, to: string): string {
-  return relative(from, to).split(sep).join("/");
 }
 
 async function mcpConfig(ctx: Context): Promise<string> {

@@ -33,9 +33,11 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
   // 12 backups, newest first — exactly what `ls -1t` returns — with OC_BACKUP_KEEP=10, so
   // 2 are stale. Only the oldest of those two should be removed by a single rotate() call.
+  // Real stamps: rotation reads the profile out of the name now, and a name that is not one
+  // this framework writes is not its archive to delete.
   const listing = Array.from(
     { length: 12 },
-    (_, i) => `${backupDir}/${name}-2026010${String(12 - i).padStart(2, "0")}-000000.tar.gz`,
+    (_, i) => `${backupDir}/${name}-202601${String(12 - i).padStart(2, "0")}-000000.tar.gz`,
   );
 
   const execCalls: { command: string; args: string[] }[] = [];
@@ -138,6 +140,90 @@ function stubBackupCtx(lockAlreadyHeld: boolean): { ctx: Context; calls: string[
   const archive = await withOutputSink(() => {}, () => createBackup(ctx, {}));
   check("with no competing lock, backup runs and returns the archive path", typeof archive === "string" && archive.length > 0, true);
   check("and it does pause/start the gateway around the archive", calls.includes("pause") && calls.includes("start"), true);
+}
+
+// --- retention counts each profile on its own -----------------------------------------------
+//
+// `pull` writes migrate and share archives into the same directory `backup` writes full ones
+// into. Counted together against OC_BACKUP_KEEP, a week of pulls rotated away every full
+// backup the instance had — the archives an operator would actually restore from.
+
+function rotationContext(listing: string[], keep: string): { ctx: Context; execCalls: { command: string; args: string[] }[] } {
+  const execCalls: { command: string; args: string[] }[] = [];
+  const ctx = {
+    settings: { env: { OC_BACKUP_KEEP: keep } },
+    transport: {
+      description: "stub",
+      async exists(): Promise<boolean> {
+        return true;
+      },
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        execCalls.push({ command, args });
+        if (args.includes("-w")) return { code: 0, stdout: "", stderr: "" };
+        if (command === "sh" && args.some((arg) => arg.includes("ls -1t"))) {
+          return { code: 0, stdout: `${listing.join("\n")}\n`, stderr: "" };
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+  return { ctx, execCalls };
+}
+
+{
+  const name = deploymentName();
+  const backupDir = "/srv/openclaw/backups";
+  const full = `${backupDir}/${name}-20260101-000000.tar.gz`;
+  // Three share snapshots, all newer than the one full backup, with keep = 2.
+  const listing = [
+    `${backupDir}/${name}-20260104-000000-share.tar.gz`,
+    `${backupDir}/${name}-20260103-000000-share.tar.gz`,
+    `${backupDir}/${name}-20260102-000000-share.tar.gz`,
+    full,
+  ];
+
+  const { ctx, execCalls } = rotationContext(listing, "2");
+  await withOutputSink(() => {}, () => rotate(ctx, backupDir));
+
+  const rmCalls = execCalls.filter((call) => call.command === "rm");
+  check("share snapshots do not push a full backup out of retention", rmCalls[0]?.args.includes(full), false);
+  check("the oldest excess share snapshot goes instead", rmCalls[0]?.args.includes(`${backupDir}/${name}-20260102-000000-share.tar.gz`), true);
+}
+
+{
+  const name = deploymentName();
+  const backupDir = "/srv/openclaw/backups";
+  // A sibling deployment sharing the directory: `ls <name>-*.tar.gz` matches its archives
+  // too, and rotating them away deletes backups this deployment never made.
+  const sibling = `${backupDir}/${name}-staging-20260101-000000.tar.gz`;
+  const listing = [
+    `${backupDir}/${name}-20260104-000000.tar.gz`,
+    `${backupDir}/${name}-20260103-000000.tar.gz`,
+    sibling,
+  ];
+
+  const { ctx, execCalls } = rotationContext(listing, "1");
+  await withOutputSink(() => {}, () => rotate(ctx, backupDir));
+
+  const rmCalls = execCalls.filter((call) => call.command === "rm");
+  check("a sibling deployment's archive is never rotated away", rmCalls[0]?.args.includes(sibling), false);
+  check("this deployment's own excess archive is", rmCalls[0]?.args.includes(`${backupDir}/${name}-20260103-000000.tar.gz`), true);
+}
+
+// --- the archive a profile produces says which profile it was --------------------------------
+
+{
+  const { ctx, calls } = stubBackupCtx(false);
+  const archive = await withOutputSink(() => {}, () => createBackup(ctx, { profile: "share" }));
+  check("a share backup is named as one", archive.endsWith("-share.tar.gz"), true);
+  check("and it is the file that was actually written", calls.some((call) => call.includes(archive)), true);
+}
+
+{
+  const { ctx } = stubBackupCtx(false);
+  const archive = await withOutputSink(() => {}, () => createBackup(ctx, {}));
+  // Unchanged on purpose: a backup directory written before this still reads correctly.
+  check("a full backup keeps the plain name", /-\d{8}-\d{6}\.tar\.gz$/.test(archive), true);
 }
 
 process.stderr.write(failed === 0 ? "all backup checks passed\n" : `${failed} failed\n`);

@@ -6,7 +6,8 @@
 // exception rather than a structural rejection. The two copies must still be removed.
 
 import { resolve } from "node:path";
-import { pull, rotateSnapshots } from "#framework/commands/lifecycle/state.ts";
+import { pull, rotateSnapshots, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
+import { parseSnapshotArchive } from "#framework/service/archive.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
@@ -27,6 +28,21 @@ function check(name: string, actual: unknown, expected: unknown): void {
 }
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
+
+const snapshotName = (name: string, stamp: string): string => `${name}-state-${stamp}.tar.gz`;
+const parsedSnapshot = parseSnapshotArchive(snapshotName("example app", "2026-01-12T03-04-05"), "example app");
+check("pull snapshot stamp is accepted", parsedSnapshot?.stamp, "2026-01-12T03-04-05");
+check("sibling deployment snapshot is rejected", parseSnapshotArchive(snapshotName("example app-state", "2026-01-12T03-04-05"), "example app"), undefined);
+check("snapshot with a non-pull suffix is rejected", parseSnapshotArchive("example app-state-2026-01-12T03-04-05-share.tar.gz", "example app"), undefined);
+check("snapshot with an impossible timestamp is rejected", parseSnapshotArchive(snapshotName("example app", "2026-02-30T03-04-05"), "example app"), undefined);
+check(
+  "newest selection preserves listing order and excludes siblings",
+  selectSnapshotPaths(
+    "/srv/snapshots/example app-state-state-2026-01-12T03-04-06.tar.gz\n/srv/snapshots/example app-state-2026-01-12T03-04-05.tar.gz",
+    "example app",
+  )[0],
+  "/srv/snapshots/example app-state-2026-01-12T03-04-05.tar.gz",
+);
 
 // Cleanup in state.ts runs `rm -f <path>` through exec(), not through the transport's own
 // remove() — that method is a different interface entry point verify.ts uses for its own
@@ -114,7 +130,9 @@ check("both the backup and the share copy were removed", removed.length, 2);
   // 12 snapshots, newest first — exactly what `ls -1t` returns — with OC_SNAPSHOT_KEEP=3,
   // so 9 are stale. A first-time rotation of a real, long-unrotated deployment looks like
   // this: dozens of snapshots, not one or two.
-  const listing = Array.from({ length: 12 }, (_, i) => `${snapshotDir}/${name}-state-2026-01-${String(12 - i).padStart(2, "0")}.tar.gz`);
+  const ownListing = Array.from({ length: 12 }, (_, i) => `${snapshotDir}/${name}-state-2026-01-12T03-04-${String(12 - i).padStart(2, "0")}.tar.gz`);
+  const foreign = `${snapshotDir}/${name}-state-state-2026-01-12T03-04-99.tar.gz`;
+  const listing = [ownListing[0], foreign, ...ownListing.slice(1)];
 
   const execCalls: { command: string; args: string[] }[] = [];
   const rotationCtx = {
@@ -144,8 +162,8 @@ check("both the backup and the share copy were removed", removed.length, 2);
   check("exactly one rm call regardless of how many snapshots are stale", rmCalls.length, 1);
 
   const removedTargets = rmCalls[0]?.args.filter((arg) => arg !== "-f") ?? [];
-  const stale = listing.slice(3);
-  const kept = listing.slice(0, 3);
+  const stale = ownListing.slice(3);
+  const kept = ownListing.slice(0, 3);
 
   check("every stale snapshot's base archive is targeted", stale.every((path) => removedTargets.includes(path)), true);
   check(
@@ -157,6 +175,7 @@ check("both the backup and the share copy were removed", removed.length, 2);
   );
   check("none of the kept snapshots are targeted", kept.some((path) => removedTargets.includes(path)), false);
   check("removing 9 beyond the last 3 with 12 total", stale.length, 9);
+  check("foreign deployment snapshot is preserved", removedTargets.includes(foreign), false);
 
   // The round-trip count that actually matters: this used to be one sudoFor probe per
   // candidate file (up to 3 per stale snapshot), which is what made a large backlog slow

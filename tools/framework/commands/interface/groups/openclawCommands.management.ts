@@ -169,6 +169,8 @@ export const managementCommands: Record<string, AppCommand> = {
     summary: "Wire a recipe's MCP server to a dedicated OpenClaw agent, with optional cron",
     run: provisionAgent,
     details:
+      "A scope upgrade never starts a model turn implicitly; use accept or set try with " +
+      "--with-model when you explicitly authorize the exact request.\n" +
       "Idempotent, re-runnable: creates the isolated agent declared by " +
       "recipes/<recipe>/agent/config.json if missing, mirrors the recipe's files into its " +
       "data mount so the container can spawn its server.ts, registers it as an MCP " +
@@ -177,9 +179,9 @@ export const managementCommands: Record<string, AppCommand> = {
       "Workspace prompt files (recipes/<recipe>/agent/*.md) are declared state and get " +
       "rewritten every run, same as apply-config; anything the agent writes to its own " +
       "workspace afterward (e.g. under memory/) is never touched by this command.\n" +
-      "A cron job needing a scope this deployment's \"cli\" client does not have yet is " +
-      "approved automatically by asking OpenClaw's \"main\" agent to approve that exact " +
-      "request — see openclaw-cli.ts.\n" +
+      "A cron job needing a scope this deployment's \"cli\" client does not have yet " +
+      "is reported for manual approval through a trusted admin session or the Control UI; " +
+      "only accept and set try offer --with-model for explicit model approval.\n" +
       "Requires the gateway to be running (./clawforge up).",
     arguments: [
       { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true },

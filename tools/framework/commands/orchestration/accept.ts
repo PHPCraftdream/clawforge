@@ -22,7 +22,7 @@ import { resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
 import { recipesDir, deploymentName } from "#src/runtime/deployment.ts";
-import { openclawCliJson } from "#src/service/openclaw-cli.ts";
+import { openclawCliJson, withModelApproval } from "#src/service/openclaw-cli.ts";
 import { recipeServerContainerPath, mcpServerMatches } from "../management/provision-agent/index.ts";
 import type { Context } from "#src/core/context.ts";
 import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
@@ -349,12 +349,14 @@ export async function runCheck(ctx: Context, recipe: string, check: AcceptanceCh
 
 export async function accept(ctx: Context, args: string[]): Promise<void> {
   const index = args.indexOf("--set");
-  if (index === -1) return acceptFromSource(ctx, args);
+  if (index === -1) return withModelApproval(args.includes("--with-model"), () => acceptFromSource(ctx, args));
   const artifact = args[index + 1];
   if (artifact === undefined || artifact.startsWith("--")) die("--set needs an artifact path");
   const rest = [...args.slice(0, index), ...args.slice(index + 2)];
   if (rest.includes("--set")) die("--set may be provided only once");
-  return withUnpackedArtifact(artifact, (staging, verified) => withSetSource(staging, () => acceptFromSource(ctx, rest, verified)));
+  return withModelApproval(rest.includes("--with-model"), () =>
+    withUnpackedArtifact(artifact, (staging, verified) => withSetSource(staging, () => acceptFromSource(ctx, rest, verified))),
+  );
 }
 
 async function acceptFromSource(ctx: Context, args: string[], verified?: VerifiedArtifact): Promise<void> {

@@ -31,6 +31,7 @@ import { preflightSecrets } from "../management/secrets.ts";
 import { down } from "../lifecycle/lifecycle.ts";
 import { provisionAgent } from "../management/provision-agent/index.ts";
 import { runCheck, requiresModel, summarize, acceptanceSpecError } from "../orchestration/accept.ts";
+import { withModelApproval } from "#src/service/openclaw-cli.ts";
 import type { AcceptanceResult } from "../orchestration/accept.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
@@ -60,6 +61,34 @@ export interface TryTeardownResult {
   readonly torndown: boolean;
   readonly running: boolean;
   readonly error?: unknown;
+}
+
+/** Parsed inputs for an isolated set trial. */
+export interface SetTryOptions {
+  readonly artifact: string;
+  readonly withModel: boolean;
+  readonly keep: boolean;
+  readonly jsonOnly: boolean;
+}
+
+/** Parses the artifact and explicit execution options. */
+export function parseSetTryArgs(args: string[]): SetTryOptions {
+  let artifact: string | undefined;
+  let withModel = false;
+  let keep = false;
+  let jsonOnly = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--set") {
+      artifact = args[index + 1] ?? die("--set needs an artifact path");
+      index += 1;
+    } else if (arg === "--with-model") withModel = true;
+    else if (arg === "--keep") keep = true;
+    else if (arg === "--json") jsonOnly = true;
+    else die(`unknown argument: ${arg}`);
+  }
+  if (artifact === undefined) die("usage: ./clawforge set try --set <artifact> [--with-model] [--keep] [--json]");
+  return { artifact, withModel, keep, jsonOnly };
 }
 
 /** Stops and removes only the resources owned by a try. The callbacks are injectable so the
@@ -106,22 +135,16 @@ export async function setTry(ctx: Context, args: string[], dependencies: {
   createContext?: typeof createContext;
   findFreePort?: typeof findFreePort;
 } = {}): Promise<void> {
+  const options = parseSetTryArgs(args);
+  return withModelApproval(options.withModel, () => setTryInScope(ctx, options, dependencies));
+}
+
+async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies: {
+  createContext?: typeof createContext;
+  findFreePort?: typeof findFreePort;
+} = {}): Promise<void> {
   const startedAt = new Date().toISOString();
-  let artifact: string | undefined;
-  let withModel = false;
-  let keep = false;
-  let jsonOnly = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--set") {
-      artifact = args[index + 1] ?? die("--set needs an artifact path");
-      index += 1;
-    } else if (arg === "--with-model") withModel = true;
-    else if (arg === "--keep") keep = true;
-    else if (arg === "--json") jsonOnly = true;
-    else die(`unknown argument: ${arg}`);
-  }
-  if (artifact === undefined) die("usage: ./clawforge set try --set <artifact> [--with-model] [--keep] [--json]");
+  const { artifact, withModel, keep, jsonOnly } = options;
 
   // Gathered from the real deployment before anything below points useDeployment() at the
   // throwaway one: the values already on this machine are what the throwaway needs too — a

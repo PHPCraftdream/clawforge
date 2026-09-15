@@ -8,11 +8,8 @@
 //
 // The scope gate. A write-level call — `cron add` is the one met in practice — can need a
 // wider scope than the deployment's "cli" client is paired with. The gateway then queues a
-// scope-upgrade request and refuses the call, and that same under-scoped connection cannot
-// approve its own request: self-escalation would defeat the point of gating it. The one
-// path that works is asking OpenClaw's own default agent to approve it — its exec tool
-// runs server-side, outside the client scope gate. Confirmed against a live deployment,
-// where it turned a browser round trip through the Control UI into nothing at all.
+// scope-upgrade request and refuses the call. Approving it through an agent costs a model
+// turn, so this module permits that only inside an explicit `--with-model` operation.
 //
 // The approval names the request the gateway just refused, taken from the refusal itself,
 // never `devices approve --latest`. "Latest" is whatever is newest at the moment the agent
@@ -26,12 +23,24 @@
 // thrown one is truncated to a few lines, and with `docker compose` those lines are spent
 // on compose's own progress output before the real error is reached.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { log } from "../core/log.ts";
 import type { Context } from "../core/context.ts";
 import type { ExecResult } from "../runtime/transport.ts";
 
 /** OpenClaw's own default agent id — the one that exists in every instance. */
 const APPROVAL_AGENT_ID = "main";
+
+const modelApproval = new AsyncLocalStorage<boolean>();
+
+/** Runs a command with explicit permission to spend a model turn on scope approval. */
+export function withModelApproval<T>(enabled: boolean, operation: () => Promise<T>): Promise<T> {
+  return modelApproval.run(enabled, operation);
+}
+
+function mayApproveWithModel(): boolean {
+  return modelApproval.getStore() === true;
+}
 
 const SCOPE_UPGRADE_MARKER = "scope upgrade pending approval";
 
@@ -79,11 +88,7 @@ function failure(args: string[], result: ExecResult): Error {
   return new Error(`openclaw ${args.join(" ")} failed (exit ${result.code})${detail === "" ? "" : `: ${detail}`}`);
 }
 
-/** Runs `openclaw <args>` with its output captured, throwing on failure.
- *
- *  A call refused because the client needs a wider scope is not a failure to report: the
- *  approval is requested and the call retried once. A refusal that survives the approval is
- *  a real failure — retrying further would loop against a gate that is not going to open. */
+/** Runs OpenClaw with captured output; model-backed approval requires scoped opt-in. */
 export async function openclawCli(ctx: Context, args: string[]): Promise<ExecResult> {
   const first = await run(ctx, args);
   if (first.code === 0) return first;
@@ -98,6 +103,14 @@ export async function openclawCli(ctx: Context, args: string[]): Promise<ExecRes
         "  ./clawforge cli devices list --json          # the pending entry whose clientId is \"cli\"\n" +
         "  ./clawforge cli devices approve <requestId>\n" +
         `refusal: ${(first.stderr || first.stdout).trim()}`,
+    );
+  }
+
+  if (!mayApproveWithModel()) {
+    throw new Error(
+      `openclaw ${args.join(" ")} needs a scope upgrade (request ${requestId}), but automatic ` +
+        "model approval is disabled. Approve this request through a trusted admin session " +
+        "or the Control UI; only accept/set try support opting in with --with-model.",
     );
   }
 

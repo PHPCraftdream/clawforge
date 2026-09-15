@@ -3,9 +3,11 @@
 // Split out of inspect.check.ts; see fixture.ts for the shared stub and on-disk
 // deployment, inspect-recipes.check.ts and inspect-lock.check.ts for the rest.
 
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
+import { prospectiveConfig, valueAt } from "#framework/commands/orchestration/inspect/helpers.ts";
+import { apply } from "#framework/commands/orchestration/apply.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes, CONFIG_FILE } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 
@@ -26,6 +28,125 @@ const { deployment, goodChecksums, goodPrompts, stubContext } = await setupFixtu
 
 try {
   // --- the instance is what the repository says ----------------------------------------
+
+  {
+    const live = {
+      gateway: { controlUi: { allowedOrigins: ["https://one.example", "https://two.example"] } },
+      maps: { "key.with.dots": { enabled: true } },
+    };
+    const overlaid = prospectiveConfig(live, [
+      { path: "gateway.controlUi.allowedOrigins[0]", value: "https://changed.example" },
+    ]);
+    check("dot/bracket paths read an array index", valueAt(live, "gateway.controlUi.allowedOrigins[0]"), "https://one.example");
+    check("quoted bracket paths preserve dots in a map key", valueAt(live, 'maps["key.with.dots"].enabled'), true);
+    check("quoted bracket paths decode escaped quotes", valueAt({ maps: { 'key"with"quotes': 7 } }, 'maps["key\\"with\\"quotes"]'), 7);
+    check("escaped dots remain part of a literal key", valueAt({ "key.with.dot": 8 }, "key\\.with\\.dot"), 8);
+    check("overlay changes one array element and preserves its neighbours", overlaid, {
+      gateway: { controlUi: { allowedOrigins: ["https://changed.example", "https://two.example"] } },
+      maps: { "key.with.dots": { enabled: true } },
+    });
+    check("prospective overlay does not mutate the live config", live.gateway.controlUi.allowedOrigins, ["https://one.example", "https://two.example"]);
+    const declared = [{ path: 'channels.discord.guilds["123"].requireMention', value: false }, { path: 'channels.discord.guilds["123"].roles', value: ["admin"] }];
+    const withMapKey = prospectiveConfig({}, declared);
+    check("quoted numeric keys remain map keys", withMapKey, {
+      channels: { discord: { guilds: { "123": { requireMention: false, roles: ["admin"] } } } },
+    });
+    check("overlay clones declaration values before child writes", declared, [
+      { path: 'channels.discord.guilds["123"].requireMention', value: false },
+      { path: 'channels.discord.guilds["123"].roles', value: ["admin"] },
+    ]);
+    const parentValue = { children: [{ name: "before", keep: true }, { name: "sibling" }] };
+    const parentDeclaration = [{ path: "tree", value: parentValue }, { path: "tree.children[0].name", value: "after" }];
+    check("child overlay does not mutate an inserted parent value", prospectiveConfig({}, parentDeclaration), {
+      tree: { children: [{ name: "after", keep: true }, { name: "sibling" }] },
+    });
+    check("parent declaration arrays remain unchanged after child overlay", parentValue, {
+      children: [{ name: "before", keep: true }, { name: "sibling" }],
+    });
+  }
+
+  {
+    const serviceDir = resolve(deployment, "recipes", "plain-service");
+    await mkdir(serviceDir);
+    try {
+      const inspection = await gatherInspection(stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums }));
+      check("a recipe without agent is still service-only", inspection.declared.recipes, ["demo"]);
+    } finally {
+      await rm(serviceDir, { recursive: true, force: true });
+    }
+  }
+
+  {
+    // A service-only recipe has no agent bundle and remains a valid inspection input. Once
+    // config.json exists, however, malformed declaration data must stop inspection rather
+    // than being mistaken for a service and allowing apply to remove owned objects.
+    const configPath = resolve(deployment, "recipes", "demo", "agent", "config.json");
+    const validConfig = await readFile(configPath, "utf8");
+    await writeFile(configPath, "{");
+    try {
+      let failedToRead = false;
+      try { await gatherInspection(stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums })); }
+      catch (error) { failedToRead = (error as Error).message.includes("agent/config.json"); }
+      check("malformed agent declaration blocks inspection", failedToRead, true);
+    } finally {
+      await writeFile(configPath, validConfig);
+    }
+  }
+
+  {
+    // Apply must fail before its first mutating step when an agent directory exists but its
+    // declaration is malformed or missing. A failed plan must never reach mcp unset or alter
+    // the ownership ledger while trying to clean up an object it misclassified as foreign.
+    const configPath = resolve(deployment, "recipes", "demo", "agent", "config.json");
+    const validConfig = await readFile(configPath, "utf8");
+    for (const [label, content] of [["malformed", "{"], ["missing", undefined], ["missing prompt target", validConfig]] as const) {
+      if (content === undefined) await rm(configPath);
+      else await writeFile(configPath, content);
+      const promptLink = resolve(deployment, "recipes", "demo", "agent", "MISSING.md");
+      if (label === "missing prompt target") {
+        await symlink(resolve(deployment, "missing-prompt-target"), promptLink, process.platform === "win32" ? "junction" : "file");
+      }
+      let mcpUnset = 0;
+      let writes = 0;
+      const ledgerPath = "/srv/clawforge/data/clawforge-managed.json";
+      const ledgerBefore = JSON.stringify({
+        version: 1,
+        objects: [{ kind: "mcp-server", name: "demo-mcp", recipe: "demo", createdAt: "2026-01-01T00:00:00.000Z" }],
+      });
+      let ledgerAfter = ledgerBefore;
+      const base = stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums });
+      const ctx = {
+        ...base,
+        transport: {
+          ...base.transport,
+          async readFile(path: string): Promise<string> {
+            if (path === ledgerPath) return ledgerAfter;
+            return base.transport.readFile(path);
+          },
+          async writeFile(path: string, value: string): Promise<void> {
+            writes += 1;
+            if (path === ledgerPath) ledgerAfter = value;
+          },
+        },
+        runtime: {
+          ...base.runtime,
+          async runOneOff(service: string, args: string[]) {
+            if (args[0] === "mcp" && args[1] === "unset") mcpUnset += 1;
+            return base.runtime.runOneOff(service, args);
+          },
+        },
+      } as unknown as Context;
+      let message = "";
+      try { await apply(ctx, []); }
+      catch (error) { message = (error as Error).message; }
+      check(`${label} agent bundle blocks full apply`, message.includes("agent"), true);
+      check(`${label} bundle does not reach MCP cleanup`, mcpUnset, 0);
+      check(`${label} bundle performs no target writes`, writes, 0);
+      check(`${label} bundle does not write a ledger`, ledgerAfter, ledgerBefore);
+      if (label === "missing prompt target") await rm(promptLink, { recursive: true, force: true });
+    }
+    await writeFile(configPath, validConfig);
+  }
 
   {
     const inspection = await gatherInspection(

@@ -8,7 +8,7 @@ import { log, info, warn, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
-import { isProfile, listArchive, fileSize, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
+import { isProfile, listArchive, fileSize, parseSnapshotArchive, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
 import { requirements, template } from "#src/service/secrets.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { createBackup } from "./backup.ts";
@@ -34,6 +34,24 @@ function stamp(): string {
   return new Date().toISOString().replaceAll(/[:.]/g, "-").slice(0, 19);
 }
 
+/** Quotes a path prefix while leaving the final glob active. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+function snapshotGlob(directory: string): string {
+  return `${shellQuote(`${directory}/${deploymentName()}-state-`)}*.tar.gz`;
+}
+
+/** Filters a newest-first listing to snapshots owned by this deployment. */
+export function selectSnapshotPaths(listing: string, deployment: string): string[] {
+  return listing
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((path) => path !== "")
+    .filter((path) => parseSnapshotArchive(path.slice(path.lastIndexOf("/") + 1), deployment) !== undefined);
+}
+
 /** Deletes snapshots beyond the configured retention count, each with its sidecar files
  *  (.template.env, and .secrets.env when a migrate pull produced one) — the same idea as
  *  backup.ts's rotate(), which snapshots never had: on a deployment pulled regularly
@@ -52,16 +70,16 @@ export async function rotateSnapshots(ctx: Context, snapshotDir: string): Promis
 
   const prefix = await sudoFor(ctx, snapshotDir);
 
-  // The base archive only — sidecar files never end in plain .tar.gz, so this glob does
-  // not need to exclude them separately.
+  // The base archive only — sidecar files never end in plain .tar.gz. The parser below is
+  // still required: a glob prefix can match a sibling deployment sharing this directory.
   const [lsHead, ...lsRest] = [
     ...prefix,
     "sh",
     "-c",
-    `ls -1t ${snapshotDir}/${deploymentName()}-state-*.tar.gz 2>/dev/null`,
+    `ls -1t ${snapshotGlob(snapshotDir)} 2>/dev/null`,
   ];
   const listing = await ctx.transport.exec(lsHead, lsRest, { allowFailure: true });
-  const snapshots = listing.stdout.split("\n").filter((line) => line.trim() !== "");
+  const snapshots = selectSnapshotPaths(listing.stdout, deploymentName());
 
   const stale = snapshots.slice(keep);
   if (stale.length === 0) return;
@@ -207,9 +225,9 @@ async function restoreFromSnapshot(ctx: Context, args: string[]): Promise<void> 
 
   if (archive === undefined) {
     const prefix = await sudoFor(ctx, snapshotDir);
-    const [head, ...rest] = [...prefix, "sh", "-c", `ls -1t ${snapshotDir}/${deploymentName()}-state-*.tar.gz 2>/dev/null`];
+    const [head, ...rest] = [...prefix, "sh", "-c", `ls -1t ${snapshotGlob(snapshotDir)} 2>/dev/null`];
     const listing = await ctx.transport.exec(head, rest, { allowFailure: true });
-    archive = listing.stdout.split("\n").find((line) => line.trim() !== "")?.trim();
+    archive = selectSnapshotPaths(listing.stdout, deploymentName())[0];
     if (archive === undefined) die(`no snapshots in ${snapshotDir} — run ./clawforge pull first`);
     log(`using the newest snapshot: ${archive}`);
   }

@@ -1,7 +1,4 @@
-// Pure helpers for `./clawforge inspect`'s gathering — no target I/O of their own beyond a
-// single, independent read of the live config (readLiveConfigForProspective). Split out of
-// inspect.ts; see observe.ts (this same directory) for the functions that actually observe
-// the target, and gather.ts for gatherInspection/inspect/doctor/renderJson/renderText.
+// Shared configuration-path and inspection helpers.
 
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
@@ -27,54 +24,157 @@ export function cronDifferences(job: CronJob, config: AgentConfig, cronMessage: 
   return differences;
 }
 
+/** Reads a config path without following inherited properties. */
 export function valueAt(config: unknown, path: string): unknown {
-  return path.split(".").reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], config);
+  let node = config;
+  try {
+    for (const part of configPathParts(path)) {
+      if (node === null || (typeof node !== "object" && typeof node !== "function")) return undefined;
+      if (Array.isArray(node) && arrayIndex(part.key) === undefined) return undefined;
+      if (!Object.hasOwn(node, part.key)) return undefined;
+      node = (node as Record<string, unknown>)[part.key];
+    }
+    return node;
+  } catch {
+    return undefined;
+  }
 }
 
 const UNSAFE_PATH_SEGMENTS = new Set(["__proto__", "constructor", "prototype"]);
 
-/** Sets a dot-path on a plain-object tree, creating intermediate objects as needed —
- *  valueAt()'s writing counterpart, and the same additive-merge semantics OpenClaw's own
- *  `config set --batch-file` applies (config.ts's applyConfig): each declared path
- *  overwrites exactly that value, nothing it does not name is ever unset.
- *
- *  Rejects "__proto__"/"constructor"/"prototype" segments outright, and descends only into
- *  a node's OWN properties: a plain `node[key]` read returns the shared, global
- *  Object.prototype for key "__proto__" (there being no own property to shadow the
- *  inherited accessor), which then makes the final assignment below write onto it directly
- *  — polluting every plain object in this process, not just this one config tree. The path
- *  here comes from config/desired-state.json, which travels inside a set artifact: an
- *  untrusted input by the time it reaches a coder installing someone else's set. */
-function setAt(config: Record<string, unknown>, path: string, value: unknown): void {
-  const parts = path.split(".");
-  if (parts.some((part) => UNSAFE_PATH_SEGMENTS.has(part))) {
-    throw new Error(`refusing to apply configuration path "${path}": "__proto__", "constructor" and "prototype" are not valid segments`);
+interface ConfigPathPart {
+  readonly key: string;
+  readonly arrayIndex: boolean;
+}
+
+const MAX_CONFIG_PATH_ARRAY_INDEX = 100_000;
+
+function arrayIndex(key: string): number | undefined {
+  if (!/^(0|[1-9]\d*)$/.test(key)) return undefined;
+  const value = Number(key);
+  return Number.isSafeInteger(value) && value <= MAX_CONFIG_PATH_ARRAY_INDEX ? value : undefined;
+}
+
+/** Parses OpenClaw's dot/bracket path notation, including quoted keys containing dots. */
+function configPathParts(path: string): ConfigPathPart[] {
+  const raw = path.trim();
+  if (raw === "") throw new Error("configuration path must not be empty");
+  const parts: ConfigPathPart[] = [];
+  let current = "";
+  let segmentEmitted = false;
+  const invalid = (): never => { throw new Error(`invalid configuration path "${path}"`); };
+  const emitDotSegment = (): void => {
+    if ((current.length > 0 && !current.trim()) || (!segmentEmitted && !current.trim())) invalid();
+    if (current) {
+      const key = current.trim();
+      parts.push({ key, arrayIndex: arrayIndex(key) !== undefined });
+    }
+    current = "";
+    segmentEmitted = false;
+  };
+  const bracketClose = (open: number): number => {
+    let quote: string | undefined;
+    for (let cursor = open + 1; cursor < raw.length; cursor += 1) {
+      const character = raw[cursor];
+      if (quote !== undefined) {
+        if (character === "\\") cursor += 1;
+        else if (character === quote) quote = undefined;
+        continue;
+      }
+      if (character === "]") return cursor;
+      if ((character === "\"" || character === "'") && !raw.slice(open + 1, cursor).trim()) quote = character;
+    }
+    return -1;
+  };
+  let index = 0;
+  while (index < raw.length) {
+    const character = raw[index];
+    if (character === "\\") {
+      if (raw[index + 1] === undefined) invalid();
+      current += raw[index + 1];
+      index += 2;
+      continue;
+    }
+    if (character === ".") {
+      emitDotSegment();
+      index += 1;
+      continue;
+    }
+    if (character === "[") {
+      if ((current.length > 0 && !current.trim()) || (!current.trim() && !segmentEmitted && parts.length > 0)) invalid();
+      if (current) {
+        const key = current.trim();
+        parts.push({ key, arrayIndex: arrayIndex(key) !== undefined });
+      }
+      current = "";
+      const close = bracketClose(index);
+      if (close === -1) invalid();
+      const inside = raw.slice(index + 1, close).trim();
+      if (inside === "") invalid();
+      let key: string;
+      let isArrayIndex = false;
+      if (inside.startsWith("\"") || inside.startsWith("'")) {
+        let parsed: unknown;
+        try { parsed = JSON5.parse(inside); } catch { invalid(); }
+        if (typeof parsed !== "string" || parsed.trim() === "") invalid();
+        key = parsed as string;
+      } else {
+        key = inside;
+        isArrayIndex = arrayIndex(key) !== undefined;
+      }
+      parts.push({ key, arrayIndex: isArrayIndex });
+      const next = raw[close + 1];
+      if (next !== undefined && next !== "." && next !== "[") invalid();
+      segmentEmitted = true;
+      index = close + 1;
+      continue;
+    }
+    current += character;
+    index += 1;
   }
-  let node = config;
-  for (const key of parts.slice(0, -1)) {
-    const next = Object.hasOwn(node, key) ? node[key] : undefined;
-    if (next !== null && typeof next === "object" && !Array.isArray(next)) {
-      node = next as Record<string, unknown>;
+  if (!segmentEmitted && !current.trim()) invalid();
+  if (current) {
+    const key = current.trim();
+    parts.push({ key, arrayIndex: arrayIndex(key) !== undefined });
+  }
+  const unsafe = parts.find((part) => UNSAFE_PATH_SEGMENTS.has(part.key));
+  if (unsafe !== undefined) {
+    throw new Error(`refusing to apply configuration path "${path}": "${unsafe.key}" is not a valid segment`);
+  }
+  return parts;
+}
+
+/** Writes a config path, preserving arrays and rejecting unsafe segments. */
+function setAt(config: Record<string, unknown>, path: string, value: unknown): void {
+  const parts = configPathParts(path);
+  let node: Record<string, unknown> | unknown[] = config;
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const key = parts[index].key;
+    if (Array.isArray(node) && arrayIndex(key) === undefined) {
+      throw new Error(`configuration path "${path}" expects a numeric array index`);
+    }
+    const next = Object.hasOwn(node, key) ? (node as Record<string, unknown>)[key] : undefined;
+    if (next !== null && typeof next === "object") {
+      node = next as Record<string, unknown> | unknown[];
     } else {
-      const created: Record<string, unknown> = {};
-      node[key] = created;
+      const created: Record<string, unknown> | unknown[] = parts[index + 1].arrayIndex ? [] : {};
+      (node as Record<string, unknown>)[key] = created;
       node = created;
     }
   }
-  node[parts.at(-1)!] = value;
+  const last = parts.at(-1)!.key;
+  if (Array.isArray(node) && arrayIndex(last) === undefined) {
+    throw new Error(`configuration path "${path}" expects a numeric array index`);
+  }
+  (node as Record<string, unknown>)[last] = value;
 }
 
-/** The configuration as it will be once config/desired-state.json is applied — the live
- *  config with every declared {path,value} overlaid on top. Used only to ask what secrets
- *  the DECLARATION is about to need: a SecretRef a coder just added is a real requirement
- *  before it has ever reached the target, and reporting it only after CONFIG_DRIFT has
- *  already been applied is exactly what let apply proceed with a config step that needs a
- *  secret no plan ever scheduled installing. */
+/** Overlays declarations without mutating either the live config or declared values. */
 export function prospectiveConfig(live: unknown, declared: DeclaredState["config"]): unknown {
   const base: Record<string, unknown> = live !== null && typeof live === "object" && !Array.isArray(live)
     ? structuredClone(live as Record<string, unknown>)
     : {};
-  for (const entry of declared) setAt(base, entry.path, entry.value);
+  for (const entry of declared) setAt(base, entry.path, structuredClone(entry.value));
   return base;
 }
 

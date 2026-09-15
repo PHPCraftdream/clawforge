@@ -11,7 +11,14 @@ import {
   isScopeUpgradePending,
   approveScopeUpgradeArgv,
   scopeUpgradeRequestId,
+  withModelApproval,
 } from "#framework/service/openclaw-cli.ts";
+import { accept } from "#framework/commands/orchestration/accept.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport.ts";
 
@@ -96,6 +103,29 @@ check(
   check("the first attempt tolerates failure so the reason can be read", options[0]?.allowFailure, true);
 }
 
+{
+  const { ctx, calls } = ctxWith(() => ({ code: 1, stdout: "", stderr: SCOPE_ERROR }));
+  let message = "";
+  try {
+    await openclawCli(ctx, ["cron", "add"]);
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  check("scope approval is denied by default", calls.length, 1);
+  check("default denial explains explicit opt-in", message.includes("--with-model"), true);
+}
+
+{
+  const { ctx, calls } = ctxWith(() => ({ code: 1, stdout: "", stderr: SCOPE_ERROR }));
+  await withModelApproval(true, async () => {
+    try { await openclawCli(ctx, ["cron", "add"]); } catch { /* expected after the first refusal */ }
+  });
+  let message = "";
+  try { await openclawCli(ctx, ["cron", "add"]); } catch (error) { message = (error as Error).message; }
+  check("model approval policy is restored after an opted-in call", calls.length, 3);
+  check("restored policy denies the next approval", message.includes("--with-model"), true);
+}
+
 // --- self-heal -----------------------------------------------------------------------------
 
 {
@@ -104,7 +134,7 @@ check(
     return { code: 0, stdout: "{}", stderr: "" };
   });
 
-  await openclawCli(ctx, ["cron", "add", "--name", "x"]);
+  await withModelApproval(true, () => openclawCli(ctx, ["cron", "add", "--name", "x"]));
   check(
     "a scope-refused call is approved and retried once",
     calls.map((c) => c.slice(0, 2).join(" ")),
@@ -123,7 +153,7 @@ check(
   const { ctx, calls } = ctxWith(() => ({ code: 1, stdout: "", stderr: "scope upgrade pending approval" }));
   let message = "";
   try {
-    await openclawCli(ctx, ["cron", "add"]);
+    await withModelApproval(true, () => openclawCli(ctx, ["cron", "add"]));
   } catch (error) {
     message = (error as Error).message;
   }
@@ -141,7 +171,7 @@ check(
 
   let threw: unknown;
   try {
-    await openclawCli(ctx, ["cron", "add"]);
+    await withModelApproval(true, () => openclawCli(ctx, ["cron", "add"]));
   } catch (error) {
     threw = error;
   }
@@ -177,6 +207,61 @@ check(
     message = (error as Error).message;
   }
   check("a non-JSON answer is named as such, not left as a SyntaxError", message.includes("did not answer with JSON"), true);
+}
+
+// --- accept scope policy -------------------------------------------------------------------
+
+{
+  const root = await mkdtemp(join(tmpdir(), "clawforge-accept-policy-"));
+  let previous: string | undefined;
+  try { previous = deploymentDir(); } catch { /* no deployment selected in this check */ }
+  await mkdir(join(root, "recipes", "demo"), { recursive: true });
+  await writeFile(join(root, "recipes", "demo", "acceptance.json"), JSON.stringify({
+    checks: [{ kind: "cron_matches", job: "refresh" }],
+  }));
+  const refused = { code: 1, stdout: "", stderr: SCOPE_ERROR };
+  const listed = { code: 0, stdout: JSON.stringify({ jobs: [{ name: "refresh" }] }), stderr: "" };
+  const answer = (args: string[], attempt: number): ExecResult => {
+    if (args[0] === "cron" && args[1] === "list") return attempt === 1 ? refused : listed;
+    if (args[0] === "agent") return { code: 0, stdout: "{}", stderr: "" };
+    return { code: 0, stdout: "{}", stderr: "" };
+  };
+  useDeployment(root);
+  try {
+    const noModel = ctxWith(answer);
+    let noModelOutput = "";
+    let noModelError = "";
+    await withOutputSink((chunk) => { noModelOutput += chunk; }, async () => {
+      try { await accept(noModel.ctx, ["--json"]); } catch (error) { noModelError = String(error); }
+    });
+    const noModelReport = JSON.parse(noModelOutput) as { couldNotCheck: number };
+    check("accept without --with-model does not call an agent", noModel.calls.some((args) => args[0] === "agent"), false);
+    check("accept reports the refused check as could-not-check", noModelReport.couldNotCheck, 1);
+    check("accept without --with-model exits nonzero", noModelError.includes("did not pass"), true);
+
+    const optedIn = ctxWith(answer);
+    let optedInOutput = "";
+    await withOutputSink(() => {}, async () => accept(optedIn.ctx, ["--json", "--with-model"]), (chunk) => { optedInOutput += chunk; });
+    check("accept with --with-model performs one approval and one retry", optedIn.calls.map((args) => args.slice(0, 2).join(" ")), ["cron list", "agent --agent", "cron list"]);
+    check("accept with --with-model passes after approval", (JSON.parse(optedInOutput) as { passed: number }).passed, 1);
+
+    const after = ctxWith(() => refused);
+    try { await openclawCli(after.ctx, ["cron", "list", "--json"]); } catch { /* expected */ }
+    check("accept restores default-deny after an opted-in call", after.calls.some((args) => args[0] === "agent"), false);
+
+    const concurrentModel = ctxWith(() => refused);
+    const concurrentDefault = ctxWith(() => refused);
+    await Promise.all([
+      withModelApproval(true, async () => { try { await openclawCli(concurrentModel.ctx, ["cron", "add"]); } catch { /* expected */ } }),
+      withModelApproval(false, async () => { try { await openclawCli(concurrentDefault.ctx, ["cron", "add"]); } catch { /* expected */ } }),
+    ]);
+    check("parallel opted-in scope is isolated", concurrentModel.calls.some((args) => args[0] === "agent"), true);
+    check("parallel default-deny scope is isolated", concurrentDefault.calls.some((args) => args[0] === "agent"), false);
+  } finally {
+    if (previous === undefined) useDeployment(root);
+    else useDeployment(previous);
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 process.stderr.write(failed === 0 ? "all openclaw-cli checks passed\n" : `${failed} failed\n`);

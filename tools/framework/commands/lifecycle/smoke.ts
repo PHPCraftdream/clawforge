@@ -23,6 +23,7 @@ import { applyConfig } from "../orchestration/config.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { pull, push } from "./state.ts";
 import { sudoFor } from "#src/runtime/datadir.ts";
+import { valueAt } from "../orchestration/inspect/helpers.ts";
 
 interface Check {
   readonly name: string;
@@ -99,9 +100,7 @@ const checks: Check[] = [
 
         // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format.
         const config = JSON5.parse(await ctx.transport.readFile(configPath)) as Record<string, unknown>;
-        const actual = subject.path
-          .split(".")
-          .reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], config);
+        const actual = valueAt(config, subject.path);
         expect(actual === wanted, `${subject.path} is ${String(actual)}, expected ${wanted}`);
       } finally {
         // Whatever happened, the declaration is what the instance should be left with.

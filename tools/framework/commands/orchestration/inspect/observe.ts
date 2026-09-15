@@ -3,7 +3,7 @@
 // the pure pieces these use, and gather.ts for gatherInspection/inspect/doctor/renderJson/
 // renderText.
 
-import { readFile, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import JSON5 from "json5";
 import { deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
@@ -41,19 +41,26 @@ async function recipeExpectations(): Promise<RecipeExpectation[]> {
     entries = (await readdir(recipesDir(), { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name);
-  } catch {
-    return found;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return found;
+    throw new Error(`${recipesDir()} could not be read: ${(error as Error).message}`);
   }
 
   for (const recipe of entries.sort()) {
+    const agentDir = resolve(recipesDir(), recipe, "agent");
+    let stat;
     try {
-      // The same loader provision-agent uses, defaults and all. Reading config.json a second
-      // way here is how the inspection came to compare less than the reconciliation does —
-      // it knew the job's name and schedule and nothing else about the contract.
-      found.push({ recipe, bundle: await loadRecipeAgentBundle(recipe) });
-    } catch {
-      // No agent bundle: a recipe can be a plain service. Not a finding.
+      stat = await lstat(agentDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        // No agent directory: a recipe can be a plain service. Not a finding.
+        continue;
+      }
+      throw error;
     }
+    if (!stat.isDirectory()) throw new Error(`${agentDir} is not a directory`);
+    // Once the bundle exists, every loader failure must block reconciliation.
+    found.push({ recipe, bundle: await loadRecipeAgentBundle(recipe) });
   }
   return found;
 }

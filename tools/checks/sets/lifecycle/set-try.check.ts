@@ -4,7 +4,7 @@
 // second Docker daemon in a check process would test the check's own stub, not this.
 
 import { createServer } from "node:net";
-import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem } from "#framework/commands/sets/set-try.ts";
+import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem, parseSetTryArgs } from "#framework/commands/sets/set-try.ts";
 
 let failed = 0;
 
@@ -100,6 +100,9 @@ check(
 }
 
 // --- teardownTry: lifecycle cleanup is best-effort and always targets the try root --------
+
+const valueNamedLikeModel = parseSetTryArgs(["--set", "--with-model", "--json"]);
+check("set try reads --with-model only as a flag, not as --set's value", valueNamedLikeModel.withModel, false);
 
 check("SSH is refused before unsafe local staging", tryTargetProblem("ssh", "win32")?.includes("not supported"), true);
 check("WSL is refused from a non-Windows tool host", tryTargetProblem("wsl", "linux")?.includes("requires"), true);

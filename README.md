@@ -134,6 +134,12 @@ tokens and takes an agent turn — which writes to that agent's workspace — so
 without `--with-model`, and is always reported as skipped and counted rather than quietly
 left out.
 
+Some read and reconciliation checks use OpenClaw's CLI. If the Gateway requests a wider
+scope, ClawForge never starts a model turn implicitly. `accept --with-model` and
+`set try --with-model` explicitly opt into approving that exact request through the `main`
+agent; without the flag the check is reported as unable to be checked and the request can be
+approved manually.
+
 ## Commands
 
 A short summary is below — for the details of one command, ask the tool rather than this
@@ -479,15 +485,12 @@ touched.
 Three behaviours worth knowing about:
 
 * A write-level call can need a wider scope than the deployment's `cli` client is paired
-  with (`cron add` is the one met in practice), and that client cannot approve its own
-  scope request — self-escalation would defeat the gate. Every call the framework makes to
-  OpenClaw's CLI goes through `openclaw-cli.ts`, which asks OpenClaw's own `main` agent to
-  approve it (its exec tool runs server-side, outside the client scope gate) and retries
-  once. A first run therefore needs no manual step in a browser. The approval names the
-  request id the gateway put in its own refusal, never `devices approve --latest`: "latest"
-  is whatever is newest when the approving agent gets to it, which on a gateway several
-  people pair against can be someone else's request. A refusal carrying no id approves
-  nothing and prints how to approve by hand.
+  with (`cron add` is the one met in practice). A scope refusal never starts a model turn
+  implicitly. `accept --with-model` and `set try --with-model` are the only commands that
+  opt into asking the `main` agent to approve the exact request and retrying once. Without
+  that flag, the check reports that it could not be checked. Otherwise approve the named
+  request through a trusted admin session or the Control UI; never use
+  `devices approve --latest`, because another device's request could be newer.
 * The recipe's files are mirrored, deletions included: a page removed from the recipe is
   removed from the target, or the recipe's MCP server would go on serving it and the agent
   would answer from withdrawn instructions with nothing reporting a problem. Only the

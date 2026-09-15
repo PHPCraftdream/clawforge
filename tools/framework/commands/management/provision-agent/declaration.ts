@@ -94,10 +94,19 @@ export async function loadRecipeAgentBundle(recipeName: string): Promise<RecipeA
   let configRaw: string;
   try {
     configRaw = await readFile(resolve(agentDir, "config.json"), "utf8");
-  } catch {
-    die(`recipe "${recipeName}" has no agent bundle — expected recipes/${recipeName}/agent/config.json`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      die(`recipe "${recipeName}" has no agent bundle — expected recipes/${recipeName}/agent/config.json`);
+    }
+    throw new Error(`recipe "${recipeName}" agent/config.json could not be read: ${(error as Error).message}`);
   }
-  const config = parseAgentConfig(JSON.parse(configRaw!));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(configRaw!);
+  } catch (error) {
+    throw new Error(`recipe "${recipeName}" agent/config.json is not valid JSON: ${(error as Error).message}`);
+  }
+  const config = parseAgentConfig(parsed);
 
   const promptFiles: Record<string, string> = {};
   for (const name of await readdir(agentDir)) {
@@ -108,8 +117,10 @@ export async function loadRecipeAgentBundle(recipeName: string): Promise<RecipeA
   let cronMessage: string | undefined;
   try {
     cronMessage = (await readFile(resolve(agentDir, "cron-message.txt"), "utf8")).trim();
-  } catch {
-    cronMessage = undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw new Error(`recipe "${recipeName}" agent/cron-message.txt could not be read: ${(error as Error).message}`);
+    }
   }
   if (cronMessage !== undefined && config.cronJobName === undefined) {
     die(`recipe "${recipeName}": agent/cron-message.txt exists but config.json has no "cronJobName"`);

@@ -51,6 +51,18 @@ export function parseBackupArchive(fileName: string, deployment: string): { stam
   return { stamp: match[1], profile: (match[2] ?? "full") as Profile };
 }
 
+/** Parses the exact snapshot name produced by `pull`. */
+export function parseSnapshotArchive(fileName: string, deployment: string): { stamp: string } | undefined {
+  const escaped = deployment.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const match = new RegExp(`^${escaped}-state-(\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2})\\.tar\\.gz$`).exec(fileName);
+  if (match === null) return undefined;
+  const stamp = match[1];
+  const iso = `${stamp.slice(0, 10)}T${stamp.slice(11).replaceAll("-", ":")}Z`;
+  const date = new Date(iso);
+  const normalized = Number.isNaN(date.getTime()) ? "" : date.toISOString().replaceAll(/[:.]/g, "-").slice(0, 19);
+  return normalized === stamp ? { stamp } : undefined;
+}
+
 /** Always excluded: host-local noise and artefacts reproducible from the repository.
  *
  *  The instance lock is here rather than in one profile's list, and that is a decision worth

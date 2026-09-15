@@ -8,7 +8,7 @@
 // So the assertions are about the shape of what reaches the target, not about the outcome
 // of a run: numeric ids, resolved before any escalation, passed as plain arguments.
 
-import { ensureLockHome } from "#framework/runtime/datadir.ts";
+import { ensureLockHome, sudoFor } from "#framework/runtime/datadir.ts";
 import { lockHome } from "#framework/runtime/instance-lock.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -138,6 +138,46 @@ async function run(ctx: Context): Promise<string> {
   check("a directory still not writable afterwards is a failure", message !== "", true);
   check("saying what it stops", message.includes("nothing that changes this deployment can run"), true);
   check("and how to prepare it by hand", message.includes("sudo install -d"), true);
+}
+
+// --- a probe the transport refuses to answer -----------------------------------------------------
+
+{
+  // exists() reports a path it was not allowed to look at by throwing, rather than calling it
+  // absent. sudoFor()'s climb was written against the old lenient answer: it walked up until
+  // something "existed" and asked `test -w` there. On a root-only data directory the very
+  // first probe now throws, and letting that escape would stop every privileged command this
+  // framework has — backup, restore, state, verify — on exactly the hosts sudo is there for.
+  //
+  // A directory we cannot even look into answers the question sudoFor asks.
+  const calls: { command: string; args: string[] }[] = [];
+  const ctx = {
+    settings: { dataDir: "/srv/clawforge" },
+    transport: {
+      async exists(path: string): Promise<boolean> {
+        throw new Error(`could not check whether ${path} exists: /srv/clawforge cannot be searched by the target user`);
+      },
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        calls.push({ command, args });
+        if (command === "test" && args[0] === "-w") return { code: 1, stdout: "", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  let prefix: unknown;
+  try {
+    prefix = await sudoFor(ctx, "/srv/clawforge/data");
+  } catch (error) {
+    prefix = `threw: ${(error as Error).message}`;
+  }
+
+  check("a directory that cannot be looked into is escalated to, not aborted on", prefix, ["sudo", "-n"]);
+  check(
+    "and writability is asked about that path, not about an ancestor",
+    calls.find((call) => call.command === "test")?.args,
+    ["-w", "/srv/clawforge/data"],
+  );
 }
 
 process.stderr.write(failed === 0 ? "all lock home checks passed\n" : `${failed} failed\n`);

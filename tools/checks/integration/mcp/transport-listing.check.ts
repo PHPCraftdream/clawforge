@@ -8,11 +8,11 @@
 // output, so it is checked against recorded output rather than a live WSL distribution or
 // server: what matters is what is made of the lines, not that find can produce them.
 
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, chmod, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { LocalTransport, SshTransport, listFilesVia } from "#framework/runtime/transport.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import { LocalTransport, SshTransport, listFilesVia, existsVia, spawnLocal } from "#framework/runtime/transport.ts";
+import type { ExecResult, ExecOptions } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 
@@ -109,7 +109,8 @@ function execReturning(result: ExecResult) {
 // the host read as "that path is not there" — and callers act on that. secrets --apply
 // rebuilt config/.env from the empty requirement list that follows and deleted the keys it
 // no longer believed were needed; restore skips moving live data aside when it believes the
-// data directory is absent.
+// data directory is absent. Trusting `test -e`'s exit 1 was the same mistake one level down:
+// that is what it reports for an existing file it was not allowed to look at.
 
 {
   const dir = await mkdtemp(join(tmpdir(), "clawforge-exists-check-"));
@@ -125,12 +126,19 @@ function execReturning(result: ExecResult) {
 }
 
 {
-  // The exec-based transports (WSL and SSH share one rule): `test -e` exits 1 and says
-  // nothing on stderr for a path that is genuinely absent. Anything else is the check
-  // failing, and a failed check must not be answered as "absent".
+  // The exec-based transports (WSL and SSH share one rule): a shell script decides, and its
+  // printed verdict is the answer. The exit code says only whether the probe ran at all,
+  // which is why an exit of 0 with nothing on stdout is a failed check rather than a present
+  // path — the script always prints one of its three verdicts when it gets to run.
+  const probeCalls: { command: string; args: string[]; options: ExecOptions }[] = [];
+
   function sshWith(result: ExecResult): SshTransport {
     const ssh = new SshTransport("example.invalid");
-    (ssh as unknown as { exec: () => Promise<ExecResult> }).exec = async () => result;
+    (ssh as unknown as { exec: (command: string, args: string[], options: ExecOptions) => Promise<ExecResult> }).exec =
+      async (command, args, options) => {
+        probeCalls.push({ command, args, options });
+        return result;
+      };
     return ssh;
   }
 
@@ -143,18 +151,110 @@ function execReturning(result: ExecResult) {
     }
   }
 
-  check("remote: exit 0 is present", await sshWith({ code: 0, stdout: "", stderr: "" }).exists("/srv/x"), true);
-  check("remote: exit 1 with nothing on stderr is absent", await sshWith({ code: 1, stdout: "", stderr: "" }).exists("/srv/x"), false);
+  check("remote: the exists verdict is present", await sshWith({ code: 0, stdout: "exists\n", stderr: "" }).exists("/srv/x"), true);
+
+  // How the probe is delivered is not a detail: wsl.exe re-parses the command line it is
+  // handed, and a multi-line script passed as an argument reached the target shell broken
+  // ("Syntax error: word unexpected"). On stdin it is data on a pipe, and the path stays an
+  // argument, so a space or a quote in it is never syntax.
+  check(
+    "remote: the path is an argument, never part of the script",
+    { command: probeCalls[0]?.command, args: probeCalls[0]?.args },
+    { command: "sh", args: ["-s", "--", "/srv/x"] },
+  );
+  check("remote: and the script itself arrives on stdin", (probeCalls[0]?.options.input ?? "").includes("blocked $parent"), true);
+  check("remote: the absent verdict is absent", await sshWith({ code: 0, stdout: "absent\n", stderr: "" }).exists("/srv/x"), false);
+
+  // The verdict this whole probe exists for: the path may well be there, and the check was
+  // simply not allowed to look. Answering "absent" here is what makes restore skip moving
+  // the live data aside and then unpack the archive over it.
+  const blocked = await refusal({ code: 0, stdout: "blocked /srv/clawforge/data\n", stderr: "" });
+  check("remote: a directory that cannot be entered is not an absent path", blocked.includes("could not check whether"), true);
+  check("remote: the refusal names the directory that blocked the walk", blocked.includes("/srv/clawforge/data cannot be searched"), true);
 
   const unreachable = await refusal({ code: 255, stdout: "", stderr: "ssh: connect to host example.invalid port 22: Network is unreachable" });
   check("remote: a connection failure is not an answer", unreachable.includes("could not check whether"), true);
   check("remote: the refusal names the path it could not check", unreachable.includes("/srv/clawforge/data/config/openclaw.json"), true);
   check("remote: and carries what the transport actually said", unreachable.includes("Network is unreachable"), true);
 
-  // Exit 1 is `test`'s own "no", but only when `test` is what answered: a transport that
-  // failed and happens to exit 1 says so on stderr.
   const brokenDistro = await refusal({ code: 1, stdout: "", stderr: "There is no distribution with the supplied name." });
-  check("remote: exit 1 WITH a diagnostic is the check failing, not an absent path", brokenDistro.includes("could not check whether"), true);
+  check("remote: a transport failure is the check failing, not an absent path", brokenDistro.includes("could not check whether"), true);
+
+  const silent = await refusal({ code: 0, stdout: "", stderr: "" });
+  check("remote: a probe that ran but said nothing is not a present path", silent.includes("could not check whether"), true);
+}
+
+// --- exists: the same question asked of a real shell and a real directory ----------------
+//
+// `test -e` reports an existing file under a directory the user cannot enter exactly as it
+// reports a missing one: exit 1, nothing on stderr. Only a real filesystem shows that, so
+// this is staged rather than stubbed — a directory with mode 000, files and symlinks around
+// it. The symlinks are the half the first fix missed: the reason a stat fails need not be
+// anywhere in the path as written.
+
+if (process.platform === "win32") {
+  process.stderr.write("  skip local-shell exists checks (POSIX permissions are not enforced here)\n");
+} else if (process.getuid?.() === 0) {
+  // root enters a directory whatever its mode, so the case cannot be staged as root.
+  process.stderr.write("  skip local-shell exists checks (running as root)\n");
+} else {
+  const dir = await mkdtemp(join(tmpdir(), "clawforge-exists-shell-"));
+  const blockedDir = resolve(dir, "blocked");
+  try {
+    await mkdir(resolve(blockedDir, "inner"), { recursive: true });
+    await writeFile(resolve(blockedDir, "inner", "openclaw.json"), "{}");
+    await writeFile(resolve(dir, "reachable.json"), "{}");
+    await chmod(blockedDir, 0o000);
+
+    // spawnLocal is what the remote transports wrap; handing it straight to existsVia runs
+    // the probe against this machine's own shell, which is all the case needs.
+    const shell = (command: string, args: string[], options: ExecOptions) => spawnLocal(command, args, options);
+
+    check("shell: a file that is there exists", await existsVia(shell, resolve(dir, "reachable.json")), true);
+    check("shell: a file that is not there does not", await existsVia(shell, resolve(dir, "absent.json")), false);
+    check("shell: a path under a missing directory does not either", await existsVia(shell, resolve(dir, "no-dir", "x.json")), false);
+
+    async function refusedBy(path: string): Promise<string> {
+      try {
+        const answer = await existsVia(shell, path);
+        return `answered ${answer}`;
+      } catch (error) {
+        return (error as Error).message;
+      }
+    }
+
+    const underBlocked = await refusedBy(resolve(blockedDir, "inner", "openclaw.json"));
+    check("shell: a file under a directory this user cannot enter is not reported absent", underBlocked.includes("could not check whether"), true);
+    check("shell: and the refusal names the directory that blocked it", underBlocked.includes(`${blockedDir} cannot be searched`), true);
+
+    // A symlink moves the question somewhere else entirely: walking the components of the
+    // path as written says nothing about what the link points at. This is the shape the
+    // deployments actually take — config/openclaw.json is often a link into a directory kept
+    // apart — and reading it as "absent" is what makes secrets --apply rewrite config/.env
+    // from an empty requirement list and drop a live key.
+    await symlink(resolve(blockedDir, "inner", "openclaw.json"), resolve(dir, "into-blocked.json"));
+    await symlink(resolve(dir, "reachable.json"), resolve(dir, "into-reachable.json"));
+    await symlink(resolve(dir, "never-existed.json"), resolve(dir, "dangling.json"));
+    await symlink(resolve(blockedDir, "inner"), resolve(dir, "blocked-dir-link"));
+    await symlink(resolve(dir, "loop-b"), resolve(dir, "loop-a"));
+    await symlink(resolve(dir, "loop-a"), resolve(dir, "loop-b"));
+
+    check("shell: a symlink to a reachable file exists", await existsVia(shell, resolve(dir, "into-reachable.json")), true);
+    check("shell: a symlink to nothing at all is absent", await existsVia(shell, resolve(dir, "dangling.json")), false);
+
+    const throughLink = await refusedBy(resolve(dir, "into-blocked.json"));
+    check("shell: a symlink into a directory this user cannot enter is not absent either", throughLink.includes("could not check whether"), true);
+    check("shell: and the refusal names the directory, not the link", throughLink.includes(`${blockedDir} cannot be searched`), true);
+
+    const throughLinkedDir = await refusedBy(resolve(dir, "blocked-dir-link", "openclaw.json"));
+    check("shell: a symlinked directory is walked like any other", throughLinkedDir.includes(`${blockedDir} cannot be searched`), true);
+
+    const loop = await refusedBy(resolve(dir, "loop-a"));
+    check("shell: a symlink loop is an error, not an absent path", loop.includes("symlink loop"), true);
+  } finally {
+    await chmod(blockedDir, 0o755).catch(() => {});
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 process.stderr.write(failed === 0 ? "all transport listing checks passed\n" : `${failed} failed\n`);

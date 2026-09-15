@@ -15,7 +15,19 @@ const SUBDIRS = ["config", "workspace", "auth-secrets"] as const;
 /** "sudo" when the path is not writable by the current user, "" otherwise. */
 export async function sudoFor(ctx: Context, path: string): Promise<string[]> {
   let probe = path;
-  while (!(await ctx.transport.exists(probe)) && probe !== "/" && probe !== "") {
+  while (probe !== "/" && probe !== "") {
+    let present: boolean;
+    try {
+      present = await ctx.transport.exists(probe);
+    } catch {
+      // The transport refuses to answer — almost always a parent this user may not enter.
+      // That is not a reason to abort here: the question this function asks is "can I write
+      // there without escalating", and a directory we cannot even look into answers it. The
+      // `test -w` below says no for the same reason, so the sudo path is chosen from the
+      // deepest path we tried rather than from an ancestor that says nothing about it.
+      break;
+    }
+    if (present) break;
     probe = probe.slice(0, Math.max(probe.lastIndexOf("/"), 1));
   }
 

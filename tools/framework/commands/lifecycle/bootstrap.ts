@@ -16,7 +16,7 @@
 
 import { log, info, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
-import { ensureDataDirs, ensureSecretsFile } from "#src/runtime/datadir.ts";
+import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
 import { ensureBaselineConfig, configureProvider } from "../management/provider.ts";
 import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
@@ -27,6 +27,21 @@ export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
   for (const arg of args) {
     if (arg !== "--no-pull") die(`unknown argument: ${arg}`);
   }
+
+  // Structurally ahead of the lock, not inside it: the lock lives in a directory of its own
+  // (instance-lock.ts's lockHome), and on a fresh host that directory's PARENT is root:root
+  // — preparing it needs the same sudo escalation ensureDataDirs uses for everything else,
+  // but that escalation cannot happen while this process is already trying to take a lock
+  // that lives inside the very directory it is escalating to create. Without this, the
+  // first bootstrap ever run on such a host failed inside guarded()'s own unprivileged mkdir,
+  // reporting "the directory is not there... ./clawforge bootstrap prepares it" — the command
+  // that was supposed to prepare it, refusing before it got the chance to.
+  //
+  // Idempotent and side-effect-free beyond permissions (no instance data touched), so running
+  // it unlocked reintroduces none of the race the lock below exists to prevent: ensureDataDirs
+  // (which calls this again, harmlessly, once already prepared) and ensureSecretsFile's actual
+  // write still run only after the lock is held.
+  await ensureLockHome(ctx);
 
   // One lock for the whole sequence, not one per sub-command: ensureDataDirs/
   // ensureSecretsFile used to run with no lock at all, and applyConfig/configureProvider

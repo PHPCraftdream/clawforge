@@ -336,11 +336,26 @@ export async function unpackArtifact(artifact: string): Promise<string> {
  *  for exactly this reason. Lives here (not apply.ts, where it originated) rather than there,
  *  so inspect.ts's own SET_REQUIREMENT_UNMET check can use it too without inspect.ts and
  *  apply.ts importing each other (apply.ts already imports gatherInspection from inspect.ts). */
-export async function runningImageDigest(ctx: Context, manifest: SetManifest): Promise<string | undefined> {
+/** One read of the runtime's own identity, shared by every caller in this module and by
+ *  gather.ts's own two uses (the SET_REQUIREMENT_UNMET match below and the displayed
+ *  observed.imageDigest) — exported so a caller needing both answers fetches this once
+ *  rather than querying the runtime (a container inspect, not a free read) twice per
+ *  inspection. */
+export async function runningDigests(ctx: Context): Promise<string[]> {
   const running = await ctx.runtime.runningImageIdentity?.();
-  const digests = running?.digests ?? [];
+  return running?.digests ?? [];
+}
+
+/** Pure: which of the already-fetched digests matches what the manifest requires, or the
+ *  first one when none does. Split out of runningImageDigest() so a caller already holding
+ *  a runningDigests() result (gather.ts) can reuse it instead of fetching again. */
+export function matchRequiredDigest(digests: string[], manifest: SetManifest): string | undefined {
   const requiredHash = manifest.requires.image.split("@").at(-1);
   return digests.find((digest) => digest.split("@").at(-1) === requiredHash) ?? digests[0];
+}
+
+export async function runningImageDigest(ctx: Context, manifest: SetManifest): Promise<string | undefined> {
+  return matchRequiredDigest(await runningDigests(ctx), manifest);
 }
 
 /** Whether this machine can install what the set requires.

@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import JSON5 from "json5";
 import { frameworkRoot } from "#src/core/env.ts";
+import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CronJob, AgentConfig } from "#src/commands/management/provision-agent/index.ts";
 import type { DeclaredState } from "#src/service/inspection.ts";
@@ -32,15 +33,28 @@ export function valueAt(config: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], config);
 }
 
+const UNSAFE_PATH_SEGMENTS = new Set(["__proto__", "constructor", "prototype"]);
+
 /** Sets a dot-path on a plain-object tree, creating intermediate objects as needed —
  *  valueAt()'s writing counterpart, and the same additive-merge semantics OpenClaw's own
  *  `config set --batch-file` applies (config.ts's applyConfig): each declared path
- *  overwrites exactly that value, nothing it does not name is ever unset. */
+ *  overwrites exactly that value, nothing it does not name is ever unset.
+ *
+ *  Rejects "__proto__"/"constructor"/"prototype" segments outright, and descends only into
+ *  a node's OWN properties: a plain `node[key]` read returns the shared, global
+ *  Object.prototype for key "__proto__" (there being no own property to shadow the
+ *  inherited accessor), which then makes the final assignment below write onto it directly
+ *  — polluting every plain object in this process, not just this one config tree. The path
+ *  here comes from config/desired-state.json, which travels inside a set artifact: an
+ *  untrusted input by the time it reaches a coder installing someone else's set. */
 function setAt(config: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split(".");
+  if (parts.some((part) => UNSAFE_PATH_SEGMENTS.has(part))) {
+    throw new Error(`refusing to apply configuration path "${path}": "__proto__", "constructor" and "prototype" are not valid segments`);
+  }
   let node = config;
   for (const key of parts.slice(0, -1)) {
-    const next = node[key];
+    const next = Object.hasOwn(node, key) ? node[key] : undefined;
     if (next !== null && typeof next === "object" && !Array.isArray(next)) {
       node = next as Record<string, unknown>;
     } else {
@@ -77,6 +91,28 @@ export async function readLiveConfigForProspective(ctx: Context): Promise<unknow
     return JSON5.parse(await ctx.transport.readFile(`${ctx.settings.dataDir}/config/openclaw.json`)) as unknown;
   } catch {
     return undefined;
+  }
+}
+
+/** The raw {path,value} declarations from config/desired-state.json, with no problem
+ *  reporting and none of declaredState()'s (observe.ts) recipe/image extras — a caller that
+ *  only wants prospectiveConfig's own input (secrets --apply's own prospective requirements,
+ *  which have no use for an inspection Problem list) reads this directly instead of pulling
+ *  in observe.ts's much heavier declaredState(). Absent or unparseable is the same answer, an
+ *  empty declaration: a caller here already has nothing better to fall back to than the live
+ *  config alone, which computing requirements from an empty declared array still gives it. */
+export async function readDeclaredConfig(): Promise<DeclaredState["config"]> {
+  let raw: string;
+  try {
+    raw = await readFile(desiredStateFile(), "utf8");
+  } catch {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as { path: string; value?: unknown }[];
+    return parsed.map((entry) => ({ path: entry.path, value: entry.value }));
+  } catch {
+    return [];
   }
 }
 

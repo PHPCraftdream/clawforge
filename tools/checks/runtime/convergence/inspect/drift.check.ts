@@ -86,6 +86,37 @@ try {
   }
 
   {
+    // A declared path through "__proto__" must never reach the shared Object.prototype —
+    // prospectiveConfig()'s own setAt() must reject it outright rather than silently
+    // descending into the prototype chain and writing onto it, which would leak into every
+    // other plain object in this process (a long-lived MCP server most of all).
+    const desiredStatePath = resolve(deployment, "config", "desired-state.json");
+    const validDesiredState = await readFile(desiredStatePath, "utf8");
+    const declaredWithPollution = JSON.parse(validDesiredState) as unknown[];
+    declaredWithPollution.push({ path: "__proto__.clawforgeReviewProbe", value: "polluted" });
+    await writeFile(desiredStatePath, JSON.stringify(declaredWithPollution));
+    try {
+      const inspection = await gatherInspection(
+        stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums }),
+      );
+      check(
+        "a declared path through __proto__ is reported as a finding, not silently applied",
+        inspection.problems.some((entry) => entry.code === "CONFIG_DRIFT" && entry.detail.includes("__proto__")),
+        true,
+      );
+      check(
+        "and Object.prototype itself is never touched",
+        (Object.prototype as Record<string, unknown>).clawforgeReviewProbe,
+        undefined,
+      );
+      check("a plain object stays free of the probe too", ({} as Record<string, unknown>).clawforgeReviewProbe, undefined);
+    } finally {
+      delete (Object.prototype as Record<string, unknown>).clawforgeReviewProbe;
+      await writeFile(desiredStatePath, validDesiredState);
+    }
+  }
+
+  {
     // The set-requirement check (readInstalledSet + requirementProblems) must compare
     // against the RUNNING CONTAINER's actual image, not ctx.runtime.imageReference() — the
     // same "stale local tag" scenario apply --set's own pre/post-checks already learned not
@@ -119,6 +150,15 @@ try {
       "a stale local tag must not fool the set-requirement check — the running container is what matters",
       codes(inspection.problems).includes("SET_REQUIREMENT_UNMET"),
       true,
+    );
+    // The same stale-tag scenario, but for the DISPLAYED digest: before the fix, this field
+    // still called ctx.runtime.imageReference() (the stale, re-pulled tag's digest, A) while
+    // the problem two lines above already knew the real running one (B) — one command
+    // reporting two different answers to "what is running" in the same JSON document.
+    check(
+      "the displayed digest is the actually-running one, not the stale configured reference",
+      inspection.observed.imageDigest,
+      actualRunningImage,
     );
   }
 

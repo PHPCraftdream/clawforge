@@ -27,9 +27,10 @@
 
 import { log, info, warn, die } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
+import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { requirementsFromConfig, statusForRequirements } from "#src/service/secrets.ts";
 import { compareLock, readLock, currentComposition } from "#src/commands/management/lock.ts";
-import { readInstalledSet, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
+import { readInstalledSet, requirementProblems, runningDigests, matchRequiredDigest } from "#src/set/artifacts/install.ts";
 import {
   problem,
   blockingProblems,
@@ -52,7 +53,19 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   // alone: a SecretRef the declaration is about to add is a real requirement before
   // CONFIG_DRIFT ever gets applied, and plan.ts's "secrets" step is gated on exactly the
   // SECRET_MISSING findings this loop produces.
-  const prospective = prospectiveConfig(await readLiveConfigForProspective(ctx), declared.config);
+  //
+  // prospectiveConfig() throws on a declared path through "__proto__"/"constructor"/
+  // "prototype" (setAt's own guard against polluting the shared Object.prototype) — caught
+  // here, not left to crash inspect entirely: a malicious or corrupted desired-state.json is
+  // exactly the kind of thing this read-only command exists to report, not to be brought
+  // down by, and the live config alone is still a safe answer to fall back to.
+  let prospective: unknown;
+  try {
+    prospective = prospectiveConfig(await readLiveConfigForProspective(ctx), declared.config);
+  } catch (error) {
+    problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} declares an unsafe configuration path: ${(error as Error).message}`));
+    prospective = await readLiveConfigForProspective(ctx);
+  }
   const secrets = await statusForRequirements(ctx, requirementsFromConfig(prospective));
   for (const secret of secrets) {
     if (secret.required && !secret.present) {
@@ -85,6 +98,11 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
 
   const live = await observeLive(ctx, declared, problems, configState.mtimeMs);
 
+  // One read of the runtime's own identity, shared below by the set-requirement match and
+  // the displayed digest: two separate live queries for one inspection asked the runtime
+  // (a container inspect, not a free read) about the same fact twice.
+  const runningDigestList = await runningDigests(ctx);
+
   // Which set is installed here, and whether this machine matches what it required. Read
   // before the lock comparison because it is the more specific answer: a lock says what the
   // composition was pinned to, a set id says what was actually installed.
@@ -94,12 +112,13 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
     problems.push(
       ...requirementProblems(
         installedManifest,
-        // runningImageDigest(), not ctx.runtime.imageReference(): the latter resolves whatever
-        // the configured image REFERENCE (typically a tag) currently points to locally, which
-        // a later `docker pull` moves even when the running container was never recreated and
-        // is still on the old digest — apply --set's own pre/post-checks (apply.ts) already
-        // learned this the hard way (task #172); this check never did.
-        { framework: await frameworkVersion(), imageDigest: await runningImageDigest(ctx, installedManifest) },
+        // matchRequiredDigest() against the already-fetched running digests, not
+        // ctx.runtime.imageReference(): the latter resolves whatever the configured image
+        // REFERENCE (typically a tag) currently points to locally, which a later `docker
+        // pull` moves even when the running container was never recreated and is still on
+        // the old digest — apply --set's own pre/post-checks (apply.ts) already learned this
+        // the hard way (task #172); this check never did.
+        { framework: await frameworkVersion(), imageDigest: matchRequiredDigest(runningDigestList, installedManifest) },
       ),
     );
   }
@@ -115,7 +134,15 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
       running: true,
       secrets,
       image: ctx.settings.image,
-      imageDigest: await ctx.runtime.imageReference(),
+      // The actually-running container's own digest (the same fetch as above, no manifest
+      // to prefer against here), not ctx.runtime.imageReference() (whatever the configured
+      // image REFERENCE currently resolves to locally) — the SET_REQUIREMENT_UNMET check
+      // above learned this the hard way (task #195): a `docker pull` moves the local tag's
+      // digest even when the running container was never recreated, and reporting THAT here
+      // contradicted the very warning this same inspection had just produced a few lines
+      // above it. Deliberately no fallback to imageReference() when nothing was found: an
+      // absent answer is more honest than one already known to sometimes be wrong.
+      imageDigest: runningDigestList[0],
       frameworkVersion: await frameworkVersion(),
       probes: live.probes ?? {},
       health: live.health,

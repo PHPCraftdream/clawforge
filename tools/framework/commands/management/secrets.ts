@@ -10,9 +10,10 @@ import { emit } from "#src/core/output.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
-import { missing, requirements, status, template } from "#src/service/secrets.ts";
+import { missing, requirements, requirementsFromConfig, status, template } from "#src/service/secrets.ts";
 import { loadSecrets } from "../lifecycle/state.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
+import { prospectiveConfig, readLiveConfigForProspective, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
 
 /** Fills the target's config/.env from a local store, refusing on incomplete input.
  *
@@ -32,7 +33,16 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   }
 
   const values = parseEnv(raw);
-  const needed = (await requirements(ctx)).filter((entry) => entry.location === "target-env");
+  // Asked of the PROSPECTIVE configuration (live + declared overlay), not the live one
+  // alone: a secret a not-yet-applied config/desired-state.json is about to need is a real
+  // requirement here too — gatherInspection (task #197) already asks the same question the
+  // same way. Without this, installing a key for a provider the declaration just added (but
+  // apply hasn't run yet) computed `needed` from the live config only, which did not know
+  // about it yet — an empty or short `needed` list then made loadSecrets() refuse with
+  // "refusing to install an empty secrets file" even though the value was sitting right
+  // there in the store file.
+  const prospective = prospectiveConfig(await readLiveConfigForProspective(ctx), await readDeclaredConfig());
+  const needed = requirementsFromConfig(prospective).filter((entry) => entry.location === "target-env");
 
   const absent = needed.filter((entry) => {
     const value = values[entry.name];

@@ -97,7 +97,10 @@ if [[ "$node_platform" == "win32" ]]; then
 fi
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL="*"
-exec "$node_bin" "$script_path" "$@"
+# Passing script_path as an argument bypasses bin.js's own shebang (its own
+# --experimental-strip-types) — needed here too, or bin.js's dynamic import of this
+# deployment's own app.ts fails on Node 22.6, this package's declared minimum.
+exec "$node_bin" --experimental-strip-types "$script_path" "$@"
 `;
 
 async function writeShim(root: string): Promise<void> {

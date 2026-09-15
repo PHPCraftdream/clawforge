@@ -13,7 +13,13 @@ import type { RunOneOffOptions } from "#framework/runtime/runtime.ts";
 const root = await mkdtemp(join(tmpdir(), "clawforge-evidence-check-"));
 const previous = (() => { try { return deploymentDir(); } catch { return undefined; } })();
 const image = `fixture@sha256:${"a".repeat(64)}`;
-let imageReads = 0;
+// Flips at the ACTUAL acceptance-check execution (the tool call carrying
+// "--experimental-strip-types", distinct from gatherInspection's own agents/cron listing
+// calls to this same runOneOff stub) — not a raw call counter. gatherInspection now also
+// reads runningImageIdentity() (for its own displayed digest, alongside evidence.ts's
+// observeRuntime()), so a counter tuned for "exactly one call per before/after snapshot"
+// broke the moment a second, unrelated caller started asking the same question.
+let containerReplaced = false;
 let replaceContainer = false;
 let toolError = false;
 const ctx = {
@@ -29,10 +35,11 @@ const ctx = {
     startedAt: async () => 1, imageReference: async () => "another-image@sha256:bbb",
     runningImageIdentity: async () => ({
       imageId: "actual-image-id", digests: [image], version: "fixture-version",
-      containerId: replaceContainer && imageReads++ % 2 === 1 ? "replacement" : "original",
+      containerId: containerReplaced ? "replacement" : "original",
     }),
     runOneOff: async (_service: string, args: string[], _options: RunOneOffOptions) => {
       if (args.includes("--experimental-strip-types")) {
+        if (replaceContainer) containerReplaced = true;
         const answer = {jsonrpc:"2.0",id:2,result:{isError:toolError,content:[{type:"text",text:toolError?"tool unavailable":"wiki-ready"}]}};
         return {code:0,stdout:JSON.stringify({jsonrpc:"2.0",id:1,result:{protocolVersion:"2025-06-18",capabilities:{},serverInfo:{name:"fixture",version:"1"}}})+"\n"+JSON.stringify(answer)+"\n",stderr:""};
       }
@@ -76,7 +83,7 @@ try {
   assert.equal(second.counts.passed,2);
   assert.notEqual(second.receiptId,first.receiptId);
 
-  replaceContainer=true; imageReads=0;
+  replaceContainer=true; containerReplaced=false;
   const changed=await run(["--set",built.artifact,"--with-model","--json"]);
   assert.equal(changed.error,undefined);
   const third=await readReceipt(built.id,changed.report.receipt!.id);

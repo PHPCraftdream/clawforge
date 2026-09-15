@@ -139,6 +139,9 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
         async imageReference(): Promise<string> {
           return "ghcr.io/openclaw/openclaw@sha256:abc";
         },
+        async runningImageIdentity(): Promise<{ imageId: string; digests: string[]; containerId: string }> {
+          return { imageId: "img", digests: ["ghcr.io/openclaw/openclaw@sha256:abc"], containerId: "container-1" };
+        },
         async startedAt(): Promise<number> {
           return spec.startedAtMs ?? 5_000_000;
         },

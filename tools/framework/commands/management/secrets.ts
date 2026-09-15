@@ -5,14 +5,14 @@
 // SecretRefResolutionError.
 
 import { writeFile, readFile, mkdir, access } from "node:fs/promises";
-import { log, info, warn, die } from "../../core/log.ts";
-import { emit } from "../../core/output.ts";
-import { parseEnv } from "../../core/env.ts";
-import { secretsTemplateFile, secretStoreFile, secretsDir } from "../../runtime/deployment.ts";
-import type { Context } from "../../core/context.ts";
-import { missing, requirements, status, template } from "../../service/secrets.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import { emit } from "#src/core/output.ts";
+import { parseEnv } from "#src/core/env.ts";
+import { secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
+import type { Context } from "#src/core/context.ts";
+import { missing, requirements, status, template } from "#src/service/secrets.ts";
 import { loadSecrets } from "../lifecycle/state.ts";
-import { guarded } from "../../runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/instance-lock.ts";
 
 /** Fills the target's config/.env from a local store, refusing on incomplete input.
  *

@@ -4,10 +4,10 @@
 // Without it the record would be a file on the target that only someone who already knew
 // where to look could find, which is not much better than no record at all.
 
-import { log, info, warn, die } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
-import { listOperations, readOperation, operationsDir } from "../../service/operations.ts";
-import type { Context } from "../../core/context.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import { emit, isCaptured } from "#src/core/output.ts";
+import { listOperations, readOperation, operationsDir } from "#src/service/operations.ts";
+import type { Context } from "#src/core/context.ts";
 
 const DEFAULT_LIMIT = 10;
 

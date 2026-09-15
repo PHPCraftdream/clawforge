@@ -11,8 +11,8 @@ import {
   blockingProblems,
   isHealthy,
   nextActions,
-} from "../../../framework/service/inspection.ts";
-import type { Inspection, ProblemCode } from "../../../framework/service/inspection.ts";
+} from "#framework/service/inspection.ts";
+import type { Inspection, ProblemCode } from "#framework/service/inspection.ts";
 
 let failed = 0;
 

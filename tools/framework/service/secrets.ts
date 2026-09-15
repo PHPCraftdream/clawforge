@@ -180,16 +180,14 @@ export function providerIsLocalEndpoint(config: unknown, providerId: string): bo
   }
 }
 
-/** Return secret names required by the target configuration. */
-export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
-  const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
-  if (!(await ctx.transport.exists(configPath))) return [];
-
-  // JSON5, not JSON: OpenClaw's own gateway config format IS JSON5 (docs.openclaw.ai/gateway/
-  // configuration — comments and trailing commas are valid), so a real target config can use
-  // syntax plain JSON.parse rejects outright, aborting this step (and the `up`/`apply` run it
-  // is part of) before the gateway ever started.
-  const config = JSON5.parse(await ctx.transport.readFile(configPath)) as unknown;
+/** Return secret names required by a configuration object — pure, no target involved.
+ *  Exported so a caller that already has (or has built) a config object other than the
+ *  live one can ask the same question: inspect's plan-relevant check asks it of the
+ *  DECLARED configuration merged over the live one, not the live one alone, since a
+ *  SecretRef a coder just added to config/desired-state.json is a real requirement
+ *  before it has ever been applied — the instance not having the config yet is not a
+ *  reason to pretend the requirement itself does not exist. */
+export function requirementsFromConfig(config: unknown): SecretRequirement[] {
   const result: SecretRequirement[] = [];
 
   // Explicit references. The gateway token is supplied by compose from the repository
@@ -238,11 +236,23 @@ export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
   return result;
 }
 
-/** Requirements plus whether each is actually satisfied. */
-/** Return requirements with presence resolved from repo and target environments. */
-export async function status(ctx: Context): Promise<SecretStatus[]> {
-  const needed = await requirements(ctx);
+/** Return secret names required by the target's LIVE configuration. */
+export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
+  const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
+  if (!(await ctx.transport.exists(configPath))) return [];
 
+  // JSON5, not JSON: OpenClaw's own gateway config format IS JSON5 (docs.openclaw.ai/gateway/
+  // configuration — comments and trailing commas are valid), so a real target config can use
+  // syntax plain JSON.parse rejects outright, aborting this step (and the `up`/`apply` run it
+  // is part of) before the gateway ever started.
+  const config = JSON5.parse(await ctx.transport.readFile(configPath)) as unknown;
+  return requirementsFromConfig(config);
+}
+
+/** Requirements plus whether each is actually satisfied, for a caller-supplied list —
+ *  exported so a caller can resolve presence for requirements computed some other way
+ *  than requirements(ctx) itself (inspect's prospective, declared-merged requirements). */
+export async function statusForRequirements(ctx: Context, needed: SecretRequirement[]): Promise<SecretStatus[]> {
   const targetPath = `${ctx.settings.dataDir}/config/.env`;
   const targetEnv = (await ctx.transport.exists(targetPath))
     ? parseEnv(await ctx.transport.readFile(targetPath))
@@ -252,6 +262,12 @@ export async function status(ctx: Context): Promise<SecretStatus[]> {
     const value = entry.location === "repo-env" ? ctx.settings.env[entry.name] : targetEnv[entry.name];
     return { ...entry, present: value !== undefined && value.trim() !== "" };
   });
+}
+
+/** Requirements plus whether each is actually satisfied. */
+/** Return requirements with presence resolved from repo and target environments. */
+export async function status(ctx: Context): Promise<SecretStatus[]> {
+  return statusForRequirements(ctx, await requirements(ctx));
 }
 
 /** Select required entries whose values are absent. */

@@ -9,17 +9,17 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { recipe } from "../../../framework/commands/management/recipe.ts";
-import { useDeployment } from "../../../framework/runtime/deployment.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
+import { recipe } from "#framework/commands/management/recipe.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { withOutputSink } from "#framework/core/output.ts";
 import {
   loadRecipe,
   listRecipes,
   projectName,
   recipesDirectory,
   useRecipesDir,
-} from "../../../framework/service/recipe.ts";
-import type { Context } from "../../../framework/core/context.ts";
+} from "#framework/service/recipe.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

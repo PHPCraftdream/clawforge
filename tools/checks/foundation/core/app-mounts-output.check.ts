@@ -3,9 +3,9 @@
 //
 // No instance and no target: these are the pure parts of the framework.
 
-import { defineApp, mcpCommands, type AppCommand, type AppDefinition } from "../../../framework/core/app.ts";
-import { mountPoints } from "../../../framework/runtime/mounts.ts";
-import { emit, isCaptured, outputSink, withOutputSink } from "../../../framework/core/output.ts";
+import { defineApp, mcpCommands, type AppCommand, type AppDefinition } from "#framework/core/app.ts";
+import { mountPoints } from "#framework/runtime/mounts.ts";
+import { emit, isCaptured, outputSink, withOutputSink } from "#framework/core/output.ts";
 
 let failed = 0;
 

@@ -7,14 +7,14 @@
 import { access } from "node:fs/promises";
 import { resolve, relative, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { log, info, die } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
-import { deploymentDir } from "../../runtime/deployment.ts";
-import type { Context } from "../../core/context.ts";
-import { HelperNotRunning } from "../../runtime/runtime.ts";
+import { log, info, die } from "#src/core/log.ts";
+import { emit, isCaptured } from "#src/core/output.ts";
+import { deploymentDir } from "#src/runtime/deployment.ts";
+import type { Context } from "#src/core/context.ts";
+import { HelperNotRunning } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "../interface/cli-helper.ts";
-import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, projectMcpEntries, setupProjectMcp } from "../../integration/mcp-project.ts";
-import type { McpClient } from "../../integration/mcp-project.ts";
+import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp-project.ts";
+import type { McpClient } from "#src/integration/mcp-project.ts";
 
 /** Client configuration belongs to the selected application in either distribution mode. */
 export async function mcpConfigFilePath(_ctx: Context): Promise<string> {

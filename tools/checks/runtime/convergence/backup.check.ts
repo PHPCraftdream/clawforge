@@ -6,11 +6,11 @@
 // No target: a stub transport drives the real rotate() end to end.
 
 import { resolve } from "node:path";
-import { rotate, createBackup } from "../../../framework/commands/lifecycle/backup.ts";
-import { useDeployment, deploymentName } from "../../../framework/runtime/deployment.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
+import { rotate, createBackup } from "#framework/commands/lifecycle/backup.ts";
+import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

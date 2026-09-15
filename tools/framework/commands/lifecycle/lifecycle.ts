@@ -3,11 +3,11 @@
 // Nothing here mentions Docker: the runtime and the
 // transport in the context decide how the instance is actually started.
 
-import { log, info, die } from "../../core/log.ts";
-import { isCaptured, emit } from "../../core/output.ts";
-import type { Context } from "../../core/context.ts";
+import { log, info, die } from "#src/core/log.ts";
+import { isCaptured, emit } from "#src/core/output.ts";
+import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "../management/secrets.ts";
-import { guarded } from "../../runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/instance-lock.ts";
 
 /** Another deployment on the same port fails deep inside compose with a bind error naming
  *  only the port. Said plainly here, before anything is started. */

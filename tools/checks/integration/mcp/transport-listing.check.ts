@@ -9,8 +9,8 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { LocalTransport, listFilesVia } from "../../../framework/runtime/transport.ts";
-import type { ExecResult } from "../../../framework/runtime/transport.ts";
+import { LocalTransport, listFilesVia } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 

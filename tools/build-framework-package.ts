@@ -44,11 +44,23 @@ async function collectTsFiles(dir: string): Promise<string[]> {
 
 /** Only rewrites the extension inside a quoted static or dynamic import/export specifier —
  *  never touches comments or unrelated string literals, which is why this is not a blanket
- *  ".ts" -> ".js" replace across the whole file. */
-function rewriteSpecifiers(code: string): string {
+ *  ".ts" -> ".js" replace across the whole file.
+ *
+ *  Also resolves "#src/..." subpath imports (tools/framework/package.json's own "imports"
+ *  map, used in the source tree for readability) down to a plain relative path. dist/ ships
+ *  with no package.json of its own, so nothing in it can rely on "#src/" resolving at
+ *  runtime — the published package must be as self-contained as the pre-alias source was. */
+function rewriteSpecifiers(code: string, fileDir: string): string {
   return code.replace(
-    /((?:from|import)\s*\(?\s*["'])(\.[^"']+)\.ts(["'])/g,
-    (_match, prefix: string, path: string, suffix: string) => `${prefix}${path}.js${suffix}`,
+    /((?:from|import)\s*\(?\s*["'])(\.[^"']+|#src\/[^"']+)\.ts(["'])/g,
+    (_match, prefix: string, path: string, suffix: string) => {
+      if (path.startsWith("#src/")) {
+        const target = resolve(frameworkDir, path.slice("#src/".length));
+        const rel = relative(fileDir, target).replaceAll("\\", "/");
+        return `${prefix}${rel.startsWith(".") ? rel : `./${rel}`}.js${suffix}`;
+      }
+      return `${prefix}${path}.js${suffix}`;
+    },
   );
 }
 
@@ -60,18 +72,21 @@ async function build(): Promise<void> {
   for (const file of files) {
     const source = await readFile(file, "utf8");
     const stripped = stripTypeScriptTypes(source, { mode: "strip" });
-    const rewritten = rewriteSpecifiers(stripped);
+    const rewritten = rewriteSpecifiers(stripped, dirname(file));
     const rel = relative(frameworkDir, file).replace(/\.ts$/, ".js");
     const outFile = resolve(distDir, rel);
     await mkdir(dirname(outFile), { recursive: true });
 
-    // The source shebang picks --experimental-strip-types for the raw-.ts case; the
-    // compiled output is plain JS and needs none of that.
-    const finalContent = rel === "entry/bin.js"
-      ? rewritten.replace(/^#!.*\n/, "#!/usr/bin/env node\n")
-      : rewritten;
-
-    await writeFile(outFile, finalContent, "utf8");
+    // The shebang travels unchanged. bin.ts's own comment says why: this compiled bin.js
+    // dynamically imports the CONSUMER's own app.ts at runtime (never compiled by this
+    // build — it is not this package's file), and Node still needs type-stripping active
+    // in the process to load it on this package's declared minimum, Node 22.6, where
+    // stripping is behind --experimental-strip-types rather than on by default. Stripping
+    // the flag here (as this used to) left a published, installed package unable to load a
+    // consumer's app.ts on exactly the oldest Node version it claims to support, with
+    // "Unknown file extension \".ts\"" — invisible on any newer Node, where stripping is
+    // already on by default regardless of the flag.
+    await writeFile(outFile, rewritten, "utf8");
   }
 
   await copyFile(resolve(frameworkDir, "docker-compose.yml"), resolve(distDir, "docker-compose.yml"));

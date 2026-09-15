@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { DockerRuntime } from "../../../framework/runtime/runtime-docker.ts";
-import { useDeployment, deploymentDir } from "../../../framework/runtime/deployment.ts";
-import type { Transport } from "../../../framework/runtime/transport.ts";
-import type { Settings } from "../../../framework/core/env.ts";
-import type { PathBridge } from "../../../framework/core/paths.ts";
+import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
+import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
+import type { Transport } from "#framework/runtime/transport.ts";
+import type { Settings } from "#framework/core/env.ts";
+import type { PathBridge } from "#framework/core/paths.ts";
 
 const previous=(()=>{try{return deploymentDir();}catch{return undefined;}})();
 useDeployment("/fixture/deployment");

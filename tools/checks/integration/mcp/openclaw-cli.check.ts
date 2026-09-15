@@ -11,9 +11,9 @@ import {
   isScopeUpgradePending,
   approveScopeUpgradeArgv,
   scopeUpgradeRequestId,
-} from "../../../framework/service/openclaw-cli.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import type { ExecResult } from "../../../framework/runtime/transport.ts";
+} from "#framework/service/openclaw-cli.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { ExecResult } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 

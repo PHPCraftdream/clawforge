@@ -15,8 +15,8 @@ import {
   normalisePosix,
   readAutomountRoot,
   toContainerPath,
-} from "../../../framework/core/paths.ts";
-import { mountPoints } from "../../../framework/runtime/mounts.ts";
+} from "#framework/core/paths.ts";
+import { mountPoints } from "#framework/runtime/mounts.ts";
 
 const DATA = "/srv/openclaw/data";
 const MOUNTS = mountPoints(DATA);

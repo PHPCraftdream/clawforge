@@ -3,9 +3,9 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { checksumOf } from "../../../framework/service/checksums.ts";
-import { listReceipts, readReceipt, writeReceipt, type WriteReceiptInput } from "../../../framework/set/artifacts/receipt.ts";
-import { canonicalJson } from "../../../framework/set/artifacts/model.ts";
+import { checksumOf } from "#framework/service/checksums.ts";
+import { listReceipts, readReceipt, writeReceipt, type WriteReceiptInput } from "#framework/set/artifacts/receipt.ts";
+import { canonicalJson } from "#framework/set/artifacts/model.ts";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown): void {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { monorepoRoot } from "../../framework/core/env.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
 
 async function inspect(dir: string): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true });

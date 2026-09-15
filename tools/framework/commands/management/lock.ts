@@ -17,15 +17,15 @@
 
 import { readFile, writeFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, die } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
-import { frameworkRoot } from "../../core/env.ts";
-import { deploymentDir, deploymentName, desiredStateFile, recipesDir } from "../../runtime/deployment.ts";
-import { requirements } from "../../service/secrets.ts";
-import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "../../service/checksums.ts";
-import { problem } from "../../service/inspection.ts";
-import type { Problem } from "../../service/inspection.ts";
-import type { Context } from "../../core/context.ts";
+import { log, info, die } from "#src/core/log.ts";
+import { emit, isCaptured } from "#src/core/output.ts";
+import { frameworkRoot } from "#src/core/env.ts";
+import { deploymentDir, deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
+import { requirements } from "#src/service/secrets.ts";
+import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
+import { problem } from "#src/service/inspection.ts";
+import type { Problem } from "#src/service/inspection.ts";
+import type { Context } from "#src/core/context.ts";
 
 export const LOCK_VERSION = 1;
 

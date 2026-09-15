@@ -19,18 +19,18 @@
 
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, warn, die } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
-import { recipesDir, deploymentName } from "../../runtime/deployment.ts";
-import { openclawCliJson } from "../../service/openclaw-cli.ts";
-import { recipeServerContainerPath, mcpServerMatches } from "../management/provision-agent.ts";
-import type { Context } from "../../core/context.ts";
-import { withUnpackedArtifact } from "../../set/artifacts/install.ts";
-import type { VerifiedArtifact } from "../../set/artifacts/install.ts";
-import { withSetSource } from "../../set/artifacts/source.ts";
-import { observeRuntime, runtimeMatches, saveEvidence } from "../../set/artifacts/evidence.ts";
-import { gatherInspection } from "./inspect.ts";
-import { isHealthy } from "../../service/inspection.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import { emit, isCaptured } from "#src/core/output.ts";
+import { recipesDir, deploymentName } from "#src/runtime/deployment.ts";
+import { openclawCliJson } from "#src/service/openclaw-cli.ts";
+import { recipeServerContainerPath, mcpServerMatches } from "../management/provision-agent/index.ts";
+import type { Context } from "#src/core/context.ts";
+import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
+import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
+import { withSetSource } from "#src/set/artifacts/source.ts";
+import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
+import { gatherInspection } from "./inspect/gather.ts";
+import { isHealthy } from "#src/service/inspection.ts";
 
 /** One declared check. `kind` selects what the framework does; everything else is that
  *  kind's own arguments, kept loose because each kind reads different ones. */

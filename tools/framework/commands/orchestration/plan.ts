@@ -16,15 +16,15 @@
 // (an MCP client owns its own processes) or performing them automatically would defeat
 // their purpose (rewriting the lock file would silently re-pin whatever just drifted).
 
-import { log, info, die } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
-import { gatherInspection } from "./inspect.ts";
+import { log, info, die } from "#src/core/log.ts";
+import { emit, isCaptured } from "#src/core/output.ts";
+import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum } from "../management/lock.ts";
-import { isHealthy } from "../../service/inspection.ts";
-import { withSetSource } from "../../set/artifacts/source.ts";
-import { withUnpackedArtifact } from "../../set/artifacts/install.ts";
-import type { Inspection, Problem, ProblemCode } from "../../service/inspection.ts";
-import type { Context } from "../../core/context.ts";
+import { isHealthy } from "#src/service/inspection.ts";
+import { withSetSource } from "#src/set/artifacts/source.ts";
+import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
+import type { Inspection, Problem, ProblemCode } from "#src/service/inspection.ts";
+import type { Context } from "#src/core/context.ts";
 
 export interface PlanAction {
   /** Stable identifier, so a report about a step can name it: "apply-config",

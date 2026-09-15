@@ -7,11 +7,11 @@
 // health rather than returning as soon as the container is told to come back.
 
 import { resolve } from "node:path";
-import { restart } from "../../../framework/commands/lifecycle/lifecycle.ts";
-import { useDeployment } from "../../../framework/runtime/deployment.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
+import { restart } from "#framework/commands/lifecycle/lifecycle.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

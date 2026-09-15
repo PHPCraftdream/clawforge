@@ -12,7 +12,7 @@
 // place, which is also the most likely way this would quietly break again (the flag being
 // dropped from the declaration, not the two-line conditional in cli.ts being touched).
 
-import { openclawCommands } from "../../../framework/commands/interface/index.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 let failed = 0;
 

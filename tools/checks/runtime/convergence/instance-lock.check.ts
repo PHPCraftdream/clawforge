@@ -16,9 +16,9 @@ import {
   lockPath,
   lockHome,
   STALE_AFTER_MS,
-} from "../../../framework/runtime/instance-lock.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
+} from "#framework/runtime/instance-lock.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

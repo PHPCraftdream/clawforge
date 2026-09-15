@@ -2,8 +2,8 @@
 //
 // No instance and no target: these are the pure parts of the contract.
 
-import { openclawCommands } from "../../../framework/commands/interface/index.ts";
-import { inputSchema, toArgv, validate } from "../../../framework/integration/mcp-server.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { inputSchema, toArgv, validate } from "#framework/integration/mcp-server.ts";
 
 let failed = 0;
 

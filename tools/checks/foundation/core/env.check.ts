@@ -5,7 +5,7 @@
 // rather than trusted. toSettings is checked for its required field and its defaults, since
 // a wrong default silently points a deployment at the wrong directory or port.
 
-import { parseEnv, toSettings } from "../../../framework/core/env.ts";
+import { parseEnv, toSettings } from "#framework/core/env.ts";
 
 let failed = 0;
 

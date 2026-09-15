@@ -8,11 +8,11 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { deploymentDir } from "../../runtime/deployment.ts";
-import { checksumOf } from "../../service/checksums.ts";
+import { deploymentDir } from "#src/runtime/deployment.ts";
+import { checksumOf } from "#src/service/checksums.ts";
 import { canonicalJson } from "./model.ts";
-import { safeName } from "../../core/names.ts";
-import type { AcceptanceStatus, AcceptanceResult } from "../../commands/orchestration/accept.ts";
+import { safeName } from "#src/core/names.ts";
+import type { AcceptanceStatus, AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 
 export const RECEIPT_VERSION = 1;
 const SET_ID = /^[0-9a-f]{64}$/;

@@ -4,10 +4,10 @@
 // crafted listing and records every command it is asked to run, so the assertion is not
 // "the check reported a failure" but "tar -xzf was never invoked".
 
-import { verifySnapshot } from "../../../framework/commands/lifecycle/verify.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import type { ExecResult } from "../../../framework/runtime/transport.ts";
+import { verifySnapshot } from "#framework/commands/lifecycle/verify.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { ExecResult } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 

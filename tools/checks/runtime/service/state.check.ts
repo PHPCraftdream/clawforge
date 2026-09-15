@@ -6,12 +6,12 @@
 // exception rather than a structural rejection. The two copies must still be removed.
 
 import { resolve } from "node:path";
-import { pull, rotateSnapshots } from "../../../framework/commands/lifecycle/state.ts";
-import { useDeployment, deploymentName } from "../../../framework/runtime/deployment.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import type { ExecResult } from "../../../framework/runtime/transport.ts";
+import { pull, rotateSnapshots } from "#framework/commands/lifecycle/state.ts";
+import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { ExecResult } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 

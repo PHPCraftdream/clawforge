@@ -5,6 +5,11 @@
   "description": "Development repository for the @clawforge/framework package.",
   "license": "(MIT OR Apache-2.0)",
   "type": "module",
+  "imports": {
+    "#framework/*": "./tools/framework/*",
+    "#checks/*": "./tools/checks/*",
+    "#tools/*": "./tools/*"
+  },
   "scripts": {
     "check": "node --experimental-strip-types tools/clawforge.ts check",
     "test": "npm run check",

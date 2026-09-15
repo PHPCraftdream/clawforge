@@ -4,13 +4,13 @@
 // already stop the gateway before touching sqlite and move existing data aside instead of
 // deleting it.
 
-import { log, info, warn, die } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
-import { guarded } from "../../runtime/instance-lock.ts";
-import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "../../runtime/datadir.ts";
-import { isProfile, listArchive, fileSize, SHARE_ALLOWED, type Profile } from "../../service/archive.ts";
-import { requirements, template } from "../../service/secrets.ts";
-import { deploymentName } from "../../runtime/deployment.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
+import { guarded } from "#src/runtime/instance-lock.ts";
+import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
+import { isProfile, listArchive, fileSize, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
+import { requirements, template } from "#src/service/secrets.ts";
+import { deploymentName } from "#src/runtime/deployment.ts";
 import { createBackup } from "./backup.ts";
 import { restoreArchive } from "./restore.ts";
 import { verifySnapshot } from "./verify.ts";

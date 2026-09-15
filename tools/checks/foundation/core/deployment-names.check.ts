@@ -24,9 +24,9 @@ import {
   composeProjectName,
   useComposeProjectOverride,
   composeProjectOverride,
-} from "../../../framework/runtime/deployment.ts";
-import { safeName } from "../../../framework/core/names.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
+} from "#framework/runtime/deployment.ts";
+import { safeName } from "#framework/core/names.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
 
 let failed = 0;
 

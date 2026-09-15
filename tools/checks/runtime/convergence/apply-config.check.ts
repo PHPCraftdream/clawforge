@@ -5,13 +5,13 @@
 // instance fail for no reason — so it must not write that shared file: a dry run concurrent
 // with a real apply would replace the payload the real one is about to hand to the CLI.
 
-import { applyConfig, stagedFileName } from "../../../framework/commands/orchestration/config.ts";
-import { useDeployment } from "../../../framework/runtime/deployment.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
+import { applyConfig, stagedFileName } from "#framework/commands/orchestration/config.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { withOutputSink } from "#framework/core/output.ts";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Context } from "../../../framework/core/context.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

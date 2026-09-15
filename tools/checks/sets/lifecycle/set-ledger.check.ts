@@ -14,15 +14,15 @@ import {
   owns,
   orphanedBy,
   foreign,
-} from "../../../framework/set/ownership/ledger.ts";
-import type { Ledger, OwnedObject, OwnedKind } from "../../../framework/set/ownership/ledger.ts";
-import { removeOwnedObject, agentsDeleteArgv, mcpUnsetArgv, cronRmArgv } from "../../../framework/commands/management/provision-agent.ts";
-import { runSteps } from "../../../framework/commands/orchestration/apply.ts";
-import { planActions } from "../../../framework/commands/orchestration/plan.ts";
-import { problem } from "../../../framework/service/inspection.ts";
-import type { Inspection, Problem } from "../../../framework/service/inspection.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
+} from "#framework/set/ownership/ledger.ts";
+import type { Ledger, OwnedObject, OwnedKind } from "#framework/set/ownership/ledger.ts";
+import { removeOwnedObject, agentsDeleteArgv, mcpUnsetArgv, cronRmArgv } from "#framework/commands/management/provision-agent/index.ts";
+import { runSteps } from "#framework/commands/orchestration/apply.ts";
+import { planActions } from "#framework/commands/orchestration/plan.ts";
+import { problem } from "#framework/service/inspection.ts";
+import type { Inspection, Problem } from "#framework/service/inspection.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

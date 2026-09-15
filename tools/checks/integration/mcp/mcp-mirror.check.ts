@@ -15,9 +15,9 @@ import { rm } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { createApp, appsDir } from "../../../framework/integration/scaffold.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
-import { MCP_EXEMPTIONS } from "../../../framework/integration/mcp-server.ts";
+import { createApp, appsDir } from "#framework/integration/scaffold.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import { MCP_EXEMPTIONS } from "#framework/integration/mcp-server.ts";
 
 let failed = 0;
 

@@ -21,6 +21,9 @@
     "directory": "tools/framework"
   },
   "type": "module",
+  "imports": {
+    "#src/*": "./*"
+  },
   "bin": {
     "clawforge": "dist/entry/bin.js"
   },

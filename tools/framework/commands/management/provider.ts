@@ -1,12 +1,12 @@
 // Configure OpenClaw provider credentials without storing key values in JSON.
 
 import JSON5 from "json5";
-import { log, info, die } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
-import { parseEnv } from "../../core/env.ts";
-import { secretsFileOnTarget } from "../../runtime/datadir.ts";
-import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "../../service/secrets.ts";
-import { guarded } from "../../runtime/instance-lock.ts";
+import { log, info, die } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
+import { parseEnv } from "#src/core/env.ts";
+import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
+import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "#src/service/secrets.ts";
+import { guarded } from "#src/runtime/instance-lock.ts";
 
 /** Gateway flags used by headless onboarding. */
 function gatewayFlags(ctx: Context): string[] {

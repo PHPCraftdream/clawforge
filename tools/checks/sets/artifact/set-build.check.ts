@@ -14,15 +14,15 @@
 import { mkdtemp, mkdir, writeFile, rm, readFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { buildSet, set, assertNoSecretValues } from "../../../framework/commands/sets/set.ts";
-import { DESIRED_STATE_PATH, setManifestId, canonicalJson } from "../../../framework/set/artifacts/model.ts";
-import type { SetManifest } from "../../../framework/set/artifacts/model.ts";
-import { checksumOf, checksumOfFileMap } from "../../../framework/service/checksums.ts";
-import { useDeployment } from "../../../framework/runtime/deployment.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
-import { spawnLocal } from "../../../framework/runtime/transport.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
+import { buildSet, set, assertNoSecretValues } from "#framework/commands/sets/set.ts";
+import { DESIRED_STATE_PATH, setManifestId, canonicalJson } from "#framework/set/artifacts/model.ts";
+import type { SetManifest } from "#framework/set/artifacts/model.ts";
+import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import { spawnLocal } from "#framework/runtime/transport.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

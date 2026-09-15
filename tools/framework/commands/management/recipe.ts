@@ -4,11 +4,11 @@
 // Building happens on the target: a Rust or Go build from scratch takes minutes, and the
 // output is streamed rather than swallowed — silent waiting looks like a hang.
 
-import { log, info, warn, die } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
-import { listRecipes, loadRecipe, projectName, type Recipe } from "../../service/recipe.ts";
-import { deploymentName } from "../../runtime/deployment.ts";
-import { isCaptured, emit } from "../../core/output.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
+import { listRecipes, loadRecipe, projectName, type Recipe } from "#src/service/recipe.ts";
+import { deploymentName } from "#src/runtime/deployment.ts";
+import { isCaptured, emit } from "#src/core/output.ts";
 import { takeTail } from "../lifecycle/lifecycle.ts";
 
 function describe(recipe: Recipe): void {

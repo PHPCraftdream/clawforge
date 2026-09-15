@@ -5,15 +5,15 @@
 // on its own: a rule that cannot fire is not a rule, and a finding that fires on a valid set
 // is worse than no finding.
 
-import { validateSet, cronProblem } from "../../../framework/set/ownership/validate.ts";
-import { defaultSetName } from "../../../framework/commands/sets/set.ts";
-import { buildSetManifest } from "../../../framework/set/artifacts/model.ts";
-import { useDeployment } from "../../../framework/runtime/deployment.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
+import { validateSet, cronProblem } from "#framework/set/ownership/validate.ts";
+import { defaultSetName } from "#framework/commands/sets/set.ts";
+import { buildSetManifest } from "#framework/set/artifacts/model.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { SetManifest } from "../../../framework/set/artifacts/model.ts";
+import type { SetManifest } from "#framework/set/artifacts/model.ts";
 
 let failed = 0;
 

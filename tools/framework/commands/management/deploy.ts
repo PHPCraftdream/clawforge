@@ -23,12 +23,12 @@
 // as a package, monorepoRoot resolves to whatever directory happens to sit two levels above
 // the package, and mirroring that with --delete would put an unrelated tree on the server.
 
-import { log, info, die } from "../../core/log.ts";
-import { monorepoRoot, isMonorepoCheckout } from "../../core/env.ts";
-import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
-import { SshTransport } from "../../runtime/transport.ts";
-import type { Context } from "../../core/context.ts";
-import type { ExecResult } from "../../runtime/transport.ts";
+import { log, info, die } from "#src/core/log.ts";
+import { monorepoRoot, isMonorepoCheckout } from "#src/core/env.ts";
+import { deploymentDir, deploymentName } from "#src/runtime/deployment.ts";
+import { SshTransport } from "#src/runtime/transport.ts";
+import type { Context } from "#src/core/context.ts";
+import type { ExecResult } from "#src/runtime/transport.ts";
 
 /** Never leaves this machine. Local state, credentials, and every deployment directory —
  *  the deployment's own files are delivered separately and by name. */

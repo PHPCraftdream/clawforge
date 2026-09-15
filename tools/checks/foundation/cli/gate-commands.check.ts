@@ -6,9 +6,9 @@
 // buys — dispatch, help, and the same schema/argv derivation the deployment's own commands
 // get, from the same functions.
 
-import { runGateCommand, gateHelpLines, gateCommandHelp, type GateCommand } from "../../../framework/integration/gate.ts";
-import { inputSchema, toArgv, validate } from "../../../framework/integration/mcp-server.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
+import { runGateCommand, gateHelpLines, gateCommandHelp, type GateCommand } from "#framework/integration/gate.ts";
+import { inputSchema, toArgv, validate } from "#framework/integration/mcp-server.ts";
+import { withOutputSink } from "#framework/core/output.ts";
 
 let failed = 0;
 

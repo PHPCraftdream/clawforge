@@ -7,8 +7,8 @@
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { initApp } from "../../framework/integration/init.ts";
-import { withOutputSink } from "../../framework/core/output.ts";
+import { initApp } from "#framework/integration/init.ts";
+import { withOutputSink } from "#framework/core/output.ts";
 
 let failed = 0;
 

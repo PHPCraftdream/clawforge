@@ -1,9 +1,9 @@
 // `./clawforge set receipts` — inspect durable acceptance evidence written for a set.
 
-import { die, info, log } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
-import { listReceipts, readReceipt, type AcceptanceReceipt } from "../../set/artifacts/receipt.ts";
-import type { Context } from "../../core/context.ts";
+import { die, info, log } from "#src/core/log.ts";
+import { emit, isCaptured } from "#src/core/output.ts";
+import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/artifacts/receipt.ts";
+import type { Context } from "#src/core/context.ts";
 
 function value(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);

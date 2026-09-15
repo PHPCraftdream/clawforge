@@ -6,14 +6,14 @@
 // No docker and no network: the transport is a stub returning canned `docker ps` output.
 
 import { resolve } from "node:path";
-import { DockerRuntime } from "../../../framework/runtime/runtime-docker.ts";
-import { useDeployment, deploymentName } from "../../../framework/runtime/deployment.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
-import { preflightPort } from "../../../framework/commands/lifecycle/lifecycle.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import type { ExecResult, Transport } from "../../../framework/runtime/transport.ts";
-import type { Settings } from "../../../framework/core/env.ts";
-import type { PathBridge } from "../../../framework/core/paths.ts";
+import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
+import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import { preflightPort } from "#framework/commands/lifecycle/lifecycle.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { ExecResult, Transport } from "#framework/runtime/transport.ts";
+import type { Settings } from "#framework/core/env.ts";
+import type { PathBridge } from "#framework/core/paths.ts";
 
 let failed = 0;
 

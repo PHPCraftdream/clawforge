@@ -33,10 +33,10 @@
 // into. A manifest that carried values would be a credential store that looks like a kit —
 // and it is meant to be committed.
 
-import { checksumOf } from "../../service/checksums.ts";
-import { safeName } from "../../core/names.ts";
-import type { AgentConfig } from "../../commands/management/provision-agent.ts";
-import type { AcceptanceCheck } from "../../commands/orchestration/accept.ts";
+import { checksumOf } from "#src/service/checksums.ts";
+import { safeName } from "#src/core/names.ts";
+import type { AgentConfig } from "#src/commands/management/provision-agent/index.ts";
+import type { AcceptanceCheck } from "#src/commands/orchestration/accept.ts";
 
 export const SET_MANIFEST_VERSION = 1;
 

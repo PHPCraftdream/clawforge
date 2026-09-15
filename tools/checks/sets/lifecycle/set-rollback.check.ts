@@ -7,14 +7,14 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { rollback } from "../../../framework/commands/orchestration/rollback.ts";
-import { recordInstalledSet } from "../../../framework/set/artifacts/install.ts";
-import { useDeployment } from "../../../framework/runtime/deployment.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import { setManifestId } from "../../../framework/set/artifacts/model.ts";
-import type { SetManifest } from "../../../framework/set/artifacts/model.ts";
+import { rollback } from "#framework/commands/orchestration/rollback.ts";
+import { recordInstalledSet } from "#framework/set/artifacts/install.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
+import { setManifestId } from "#framework/set/artifacts/model.ts";
+import type { SetManifest } from "#framework/set/artifacts/model.ts";
 
 let failed = 0;
 

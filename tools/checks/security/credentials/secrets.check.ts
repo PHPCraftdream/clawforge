@@ -3,8 +3,8 @@
 // Runs without a live instance: it spawns a command that is guaranteed to fail and carries
 // a registered secret in its arguments, then inspects the error the transport produces.
 
-import { registerSecret, maskSecrets } from "../../../framework/core/log.ts";
-import { spawnLocal } from "../../../framework/runtime/transport.ts";
+import { registerSecret, maskSecrets } from "#framework/core/log.ts";
+import { spawnLocal } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 

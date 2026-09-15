@@ -4,9 +4,9 @@
 // Assertions compare the actual returned arrays/objects/strings, not just "did not throw".
 // Provider ids are inferred at runtime; no provider-specific table belongs in the framework.
 
-import { collectSecretRefs, requirements, status, missing, template, providerEnvironmentVariable, providerSecretVariable, providerUsesNonApiKeyAuth, providerApiKeyExplicit, providerIsLocalEndpoint } from "../../../framework/service/secrets.ts";
-import type { SecretRequirement, SecretStatus } from "../../../framework/service/secrets.ts";
-import type { Context } from "../../../framework/core/context.ts";
+import { collectSecretRefs, requirements, status, missing, template, providerEnvironmentVariable, providerSecretVariable, providerUsesNonApiKeyAuth, providerApiKeyExplicit, providerIsLocalEndpoint } from "#framework/service/secrets.ts";
+import type { SecretRequirement, SecretStatus } from "#framework/service/secrets.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

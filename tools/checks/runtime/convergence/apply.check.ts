@@ -5,11 +5,11 @@
 // the sequencing around them: stop at the first failure, say where it got to, and never
 // perform an advisory step.
 
-import { runSteps, blockingRemainder } from "../../../framework/commands/orchestration/apply.ts";
-import { PROBLEM_CODES } from "../../../framework/service/inspection.ts";
-import type { PlanAction } from "../../../framework/commands/orchestration/plan.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
+import { runSteps, blockingRemainder } from "#framework/commands/orchestration/apply.ts";
+import { PROBLEM_CODES } from "#framework/service/inspection.ts";
+import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
+import type { Context } from "#framework/core/context.ts";
+import { withOutputSink } from "#framework/core/output.ts";
 
 let failed = 0;
 

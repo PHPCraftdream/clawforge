@@ -11,9 +11,9 @@
 
 import { randomBytes } from "node:crypto";
 import JSON5 from "json5";
-import { log, info, warn, die } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
-import { sudoFor } from "../../runtime/datadir.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
+import { sudoFor } from "#src/runtime/datadir.ts";
 import {
   archiveRoot,
   inspectArchive,
@@ -22,8 +22,8 @@ import {
   isProfile,
   SHARE_ALLOWED,
   type Profile,
-} from "../../service/archive.ts";
-import { parseEnv } from "../../core/env.ts";
+} from "#src/service/archive.ts";
+import { parseEnv } from "#src/core/env.ts";
 
 /** Paths a profile must not contain. */
 function forbiddenPaths(profile: Profile): string[] {

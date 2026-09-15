@@ -5,10 +5,10 @@
 //   - the archive is validated BEFORE anything is stopped or overwritten
 
 import { createInterface } from "node:readline/promises";
-import { log, info, warn, die } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
-import { guarded } from "../../runtime/instance-lock.ts";
-import { ensureDataDirs, sudoFor, runMaybePrivileged } from "../../runtime/datadir.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
+import { guarded } from "#src/runtime/instance-lock.ts";
+import { ensureDataDirs, sudoFor, runMaybePrivileged } from "#src/runtime/datadir.ts";
 import {
   archiveRoot,
   inspectArchive,
@@ -17,8 +17,8 @@ import {
   extractArchive,
   listArchive,
   listArchiveLinks,
-} from "../../service/archive.ts";
-import { deploymentName } from "../../runtime/deployment.ts";
+} from "#src/service/archive.ts";
+import { deploymentName } from "#src/runtime/deployment.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 
 export interface RestoreOptions {

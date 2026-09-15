@@ -4,12 +4,12 @@
 // OpenClaw keeps state in SQLite databases with multi-megabyte -wal files, and a copy
 // taken mid-write is not restorable. --hot skips the stop for those who accept that.
 
-import { log, info, warn, die } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
-import { sudoFor } from "../../runtime/datadir.ts";
-import { deploymentName } from "../../runtime/deployment.ts";
-import { createArchive, fileSize, isProfile, type Profile } from "../../service/archive.ts";
-import { guarded } from "../../runtime/instance-lock.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
+import { sudoFor } from "#src/runtime/datadir.ts";
+import { deploymentName } from "#src/runtime/deployment.ts";
+import { createArchive, fileSize, isProfile, type Profile } from "#src/service/archive.ts";
+import { guarded } from "#src/runtime/instance-lock.ts";
 
 export interface BackupOptions {
   hot?: boolean;

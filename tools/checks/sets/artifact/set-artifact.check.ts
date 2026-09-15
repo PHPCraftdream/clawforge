@@ -3,10 +3,10 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { checksumOf } from "../../../framework/service/checksums.ts";
-import { setManifestId } from "../../../framework/set/artifacts/model.ts";
-import { unpackArtifact, withUnpackedArtifact } from "../../../framework/set/artifacts/install.ts";
-import { spawnLocal } from "../../../framework/runtime/transport.ts";
+import { checksumOf } from "#framework/service/checksums.ts";
+import { setManifestId } from "#framework/set/artifacts/model.ts";
+import { unpackArtifact, withUnpackedArtifact } from "#framework/set/artifacts/install.ts";
+import { spawnLocal } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown): void {

@@ -15,14 +15,14 @@
 
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
-import { log, info, warn, die } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
 import { createBackup } from "./backup.ts";
 import { verifySnapshot } from "./verify.ts";
 import { applyConfig } from "../orchestration/config.ts";
-import { desiredStateFile } from "../../runtime/deployment.ts";
+import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { pull, push } from "./state.ts";
-import { sudoFor } from "../../runtime/datadir.ts";
+import { sudoFor } from "#src/runtime/datadir.ts";
 
 interface Check {
   readonly name: string;

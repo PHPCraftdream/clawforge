@@ -4,7 +4,7 @@
 // second Docker daemon in a check process would test the check's own stub, not this.
 
 import { createServer } from "node:net";
-import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem } from "../../../framework/commands/sets/set-try.ts";
+import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem } from "#framework/commands/sets/set-try.ts";
 
 let failed = 0;
 

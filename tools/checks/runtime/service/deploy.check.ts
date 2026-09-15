@@ -8,12 +8,12 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { deploy, frameworkSourceRoot } from "../../../framework/commands/management/deploy.ts";
-import { useDeployment, useComposeProjectOverride } from "../../../framework/runtime/deployment.ts";
-import { monorepoRoot, isMonorepoCheckout } from "../../../framework/core/env.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import type { ExecResult } from "../../../framework/runtime/transport.ts";
+import { deploy, frameworkSourceRoot } from "#framework/commands/management/deploy.ts";
+import { useDeployment, useComposeProjectOverride } from "#framework/runtime/deployment.ts";
+import { monorepoRoot, isMonorepoCheckout } from "#framework/core/env.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { ExecResult } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 

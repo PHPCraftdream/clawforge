@@ -5,9 +5,9 @@
 // tag that stayed the same while the image behind it moved, a framework version bump, a
 // declaration replaced wholesale, a secret the instance did not use to need.
 
-import { compareLock, LOCK_VERSION, declarationChecksum } from "../../../framework/commands/management/lock.ts";
-import { checksumOfFileMap } from "../../../framework/service/checksums.ts";
-import type { DeploymentLock } from "../../../framework/commands/management/lock.ts";
+import { compareLock, LOCK_VERSION, declarationChecksum } from "#framework/commands/management/lock.ts";
+import { checksumOfFileMap } from "#framework/service/checksums.ts";
+import type { DeploymentLock } from "#framework/commands/management/lock.ts";
 
 let failed = 0;
 

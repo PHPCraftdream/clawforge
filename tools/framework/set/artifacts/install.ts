@@ -15,18 +15,18 @@ import { copyFile, lstat, mkdir, mkdtemp, rm, readFile, rename } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { die, log } from "../../core/log.ts";
-import { spawnLocal } from "../../runtime/transport.ts";
-import { deploymentDir } from "../../runtime/deployment.ts";
-import { checksumOf, checksumOfFileMap } from "../../service/checksums.ts";
-import { parseAgentConfig } from "../../commands/management/provision-agent.ts";
-import { acceptanceSpecError } from "../../commands/orchestration/accept.ts";
-import { safeName } from "../../core/names.ts";
-import { problem } from "../../service/inspection.ts";
+import { die, log } from "#src/core/log.ts";
+import { spawnLocal } from "#src/runtime/transport.ts";
+import { deploymentDir } from "#src/runtime/deployment.ts";
+import { checksumOf, checksumOfFileMap } from "#src/service/checksums.ts";
+import { parseAgentConfig } from "#src/commands/management/provision-agent/index.ts";
+import { acceptanceSpecError } from "#src/commands/orchestration/accept.ts";
+import { safeName } from "#src/core/names.ts";
+import { problem } from "#src/service/inspection.ts";
 import { validateSet } from "../ownership/validate.ts";
 import { withSetSource } from "./source.ts";
-import type { Problem } from "../../service/inspection.ts";
-import type { Context } from "../../core/context.ts";
+import type { Problem } from "#src/service/inspection.ts";
+import type { Context } from "#src/core/context.ts";
 import { DESIRED_STATE_PATH, SET_MANIFEST_VERSION, setManifestId, canonicalJson } from "./model.ts";
 import type { SetManifest } from "./model.ts";
 
@@ -325,6 +325,22 @@ export async function unpackArtifactVerified(artifact: string): Promise<{ stagin
 
 export async function unpackArtifact(artifact: string): Promise<string> {
   return (await unpackArtifactVerified(artifact)).staging;
+}
+
+/** The digest of the image the CONTAINER actually runs, not what a tag currently resolves
+ *  to locally. ctx.runtime.imageReference() inspects the configured reference itself — after
+ *  a `docker pull` updates what a tag points to, that reports the newly-pulled digest even
+ *  when the running container was never recreated and is still on the old one. This is the
+ *  same primitive (and the same by-hash-suffix matching, since the digests array can carry
+ *  more than one repo/tag form of the same image) evidence.ts's observeRuntime() already uses
+ *  for exactly this reason. Lives here (not apply.ts, where it originated) rather than there,
+ *  so inspect.ts's own SET_REQUIREMENT_UNMET check can use it too without inspect.ts and
+ *  apply.ts importing each other (apply.ts already imports gatherInspection from inspect.ts). */
+export async function runningImageDigest(ctx: Context, manifest: SetManifest): Promise<string | undefined> {
+  const running = await ctx.runtime.runningImageIdentity?.();
+  const digests = running?.digests ?? [];
+  const requiredHash = manifest.requires.image.split("@").at(-1);
+  return digests.find((digest) => digest.split("@").at(-1) === requiredHash) ?? digests[0];
 }
 
 /** Whether this machine can install what the set requires.

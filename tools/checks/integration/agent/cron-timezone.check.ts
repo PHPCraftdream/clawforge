@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { parseAgentConfig, cronAddArgv, cronJobMatches } from "../../../framework/commands/management/provision-agent.ts";
-import { runCheck } from "../../../framework/commands/orchestration/accept.ts";
-import type { Context } from "../../../framework/core/context.ts";
+import { parseAgentConfig, cronAddArgv, cronJobMatches } from "#framework/commands/management/provision-agent/index.ts";
+import { runCheck } from "#framework/commands/orchestration/accept.ts";
+import type { Context } from "#framework/core/context.ts";
 
 const config = parseAgentConfig({ agentId: "onboarding", mcpServerName: "wiki", cronJobName: "nightly", cronSchedule: "17 3 * * *", cronTimezone: "Europe/Berlin" });
 const args = cronAddArgv(config, "refresh");

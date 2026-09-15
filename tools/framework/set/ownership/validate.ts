@@ -20,10 +20,10 @@
 import { readFile } from "node:fs/promises";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { recipesDir, desiredStateFile } from "../../runtime/deployment.ts";
-import { collectSecretRefs } from "../../service/secrets.ts";
-import { problem } from "../../service/inspection.ts";
-import type { Problem } from "../../service/inspection.ts";
+import { recipesDir, desiredStateFile } from "#src/runtime/deployment.ts";
+import { collectSecretRefs } from "#src/service/secrets.ts";
+import { problem } from "#src/service/inspection.ts";
+import type { Problem } from "#src/service/inspection.ts";
 import type { SetManifest } from "../artifacts/model.ts";
 
 async function exists(path: string): Promise<boolean> {

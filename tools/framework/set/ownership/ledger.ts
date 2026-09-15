@@ -16,7 +16,7 @@
 // would, after a restore from another host, describe objects that are not there and miss the
 // ones that are.
 
-import type { Context } from "../../core/context.ts";
+import type { Context } from "#src/core/context.ts";
 
 /** The kinds of instance object this framework creates. Cron jobs, agents and MCP server
  *  registrations are OpenClaw's own objects, created through its CLI; mirrored files are

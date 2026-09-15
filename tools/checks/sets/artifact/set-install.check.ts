@@ -6,13 +6,13 @@
 // the id must be recorded only for a run that actually finished.
 
 import { resolve } from "node:path";
-import { useDeployment, recipesDir, desiredStateFile, envFile, secretStoreFile } from "../../../framework/runtime/deployment.ts";
-import { useSetSource, clearSetSource, withSetSource, setSourceDir } from "../../../framework/set/artifacts/source.ts";
-import { requirementProblems, readInstalledSet, recordInstalledSet, installedSetFile } from "../../../framework/set/artifacts/install.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import type { SetManifest } from "../../../framework/set/artifacts/model.ts";
-import { setManifestId } from "../../../framework/set/artifacts/model.ts";
+import { useDeployment, recipesDir, desiredStateFile, envFile, secretStoreFile } from "#framework/runtime/deployment.ts";
+import { useSetSource, clearSetSource, withSetSource, setSourceDir } from "#framework/set/artifacts/source.ts";
+import { requirementProblems, readInstalledSet, recordInstalledSet, installedSetFile } from "#framework/set/artifacts/install.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { SetManifest } from "#framework/set/artifacts/model.ts";
+import { setManifestId } from "#framework/set/artifacts/model.ts";
 
 let failed = 0;
 

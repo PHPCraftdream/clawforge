@@ -4,11 +4,11 @@
 // no check — it reports success on a broken deployment. The stub stands in for the target so
 // each failure can be provoked deliberately.
 
-import { runCheck, requiresModel, summarize, acceptanceSpecError } from "../../../framework/commands/orchestration/accept.ts";
-import { mcpServerSpec } from "../../../framework/commands/management/provision-agent.ts";
-import type { AcceptanceCheck } from "../../../framework/commands/orchestration/accept.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import type { ExecResult } from "../../../framework/runtime/transport.ts";
+import { runCheck, requiresModel, summarize, acceptanceSpecError } from "#framework/commands/orchestration/accept.ts";
+import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
+import type { AcceptanceCheck } from "#framework/commands/orchestration/accept.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { ExecResult } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 

@@ -4,11 +4,11 @@
 // terminal renderer. Re-exporting the pure types and function here gives libraries a stable
 // set/ namespace without making them depend on CLI dispatch details.
 
-export { diffManifests } from "../../commands/sets/set-diff.ts";
+export { diffManifests } from "#src/commands/sets/set-diff.ts";
 export type {
   DiffSnapshot,
   SetDiffAction,
   SetDiffChange,
   SetDiffKind,
   SetDiffResult,
-} from "../../commands/sets/set-diff.ts";
+} from "#src/commands/sets/set-diff.ts";

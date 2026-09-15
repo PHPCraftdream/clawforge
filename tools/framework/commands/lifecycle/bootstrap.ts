@@ -14,12 +14,13 @@
 //   6. the provider, from the key in config/.env
 //   7. only then start and wait for /healthz
 
-import { log, info, die } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
-import { ensureDataDirs, ensureSecretsFile } from "../../runtime/datadir.ts";
+import { log, info, die } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
+import { ensureDataDirs, ensureSecretsFile } from "#src/runtime/datadir.ts";
 import { ensureBaselineConfig, configureProvider } from "../management/provider.ts";
 import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
+import { guarded } from "#src/runtime/instance-lock.ts";
 
 export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
   const noPull = args.includes("--no-pull");
@@ -27,6 +28,18 @@ export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
     if (arg !== "--no-pull") die(`unknown argument: ${arg}`);
   }
 
+  // One lock for the whole sequence, not one per sub-command: ensureDataDirs/
+  // ensureSecretsFile used to run with no lock at all, and applyConfig/configureProvider
+  // each took and released their own separately — a run refused by another operation
+  // already holding the lock still got to WRITE config/.env (ensureSecretsFile) before the
+  // refusal ever surfaced, only failing later at applyConfig's own internal takeLock().
+  // guarded() is nesting-safe (instance-lock.ts), so the inner applyConfig()/
+  // configureProvider() calls below just run inside this one outer hold instead of each
+  // acquiring their own.
+  return guarded(ctx, "bootstrap", args, () => bootstrapLocked(ctx, noPull));
+}
+
+async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
   // .env and the token exist before this runs: the CLI prepares them for commands that
   // declare preparesEnvironment, so ctx already carries the finished settings.
   const fresh = ctx.settings;

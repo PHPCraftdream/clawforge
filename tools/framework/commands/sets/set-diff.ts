@@ -7,12 +7,12 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { die, info, log } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
-import { withUnpackedArtifact } from "../../set/artifacts/install.ts";
-import { canonicalJson } from "../../set/artifacts/model.ts";
-import type { SetManifest, SetRecipe } from "../../set/artifacts/model.ts";
-import type { Context } from "../../core/context.ts";
+import { die, info, log } from "#src/core/log.ts";
+import { emit, isCaptured } from "#src/core/output.ts";
+import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
+import { canonicalJson } from "#src/set/artifacts/model.ts";
+import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
+import type { Context } from "#src/core/context.ts";
 
 export type SetDiffAction = "added" | "removed" | "changed";
 export type SetDiffKind =

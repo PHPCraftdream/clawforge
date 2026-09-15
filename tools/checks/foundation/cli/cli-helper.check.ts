@@ -7,19 +7,19 @@
 //     runOneOff only on HelperNotRunning, not on any other failure.
 
 import { resolve } from "node:path";
-import { DockerRuntime } from "../../../framework/runtime/runtime-docker.ts";
-import { HelperNotRunning } from "../../../framework/runtime/runtime.ts";
-import { useDeployment } from "../../../framework/runtime/deployment.ts";
-import { monorepoRoot } from "../../../framework/core/env.ts";
-import { cli } from "../../../framework/commands/interface/cli.ts";
-import { mcpServe } from "../../../framework/commands/management/mcp.ts";
-import { cliStart, cliStop } from "../../../framework/commands/interface/cli-helper.ts";
-import { openclawCommands } from "../../../framework/commands/interface/index.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import type { ExecResult, Transport } from "../../../framework/runtime/transport.ts";
-import type { Settings } from "../../../framework/core/env.ts";
-import type { PathBridge } from "../../../framework/core/paths.ts";
+import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
+import { HelperNotRunning } from "#framework/runtime/runtime.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import { cli } from "#framework/commands/interface/cli.ts";
+import { mcpServe } from "#framework/commands/management/mcp.ts";
+import { cliStart, cliStop } from "#framework/commands/interface/cli-helper.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { ExecResult, Transport } from "#framework/runtime/transport.ts";
+import type { Settings } from "#framework/core/env.ts";
+import type { PathBridge } from "#framework/core/paths.ts";
 
 let failed = 0;
 

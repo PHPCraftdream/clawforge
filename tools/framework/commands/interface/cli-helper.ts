@@ -2,8 +2,8 @@
 // container that `cli` and `mcp-serve` exec into when it is running, instead of paying a
 // fresh container's create/destroy cost on every call.
 
-import { log, die } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
+import { log, die } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
 
 export const CLI_HELPER_SERVICE = "cli-helper";
 export const CLI_PROFILE = "cli";

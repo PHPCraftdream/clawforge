@@ -5,9 +5,9 @@
 // on the old configuration — which is what happened by hand before this command existed.
 // So each rule is asserted as a rule, against inspections built to provoke it.
 
-import { planActions } from "../../../framework/commands/orchestration/plan.ts";
-import { problem } from "../../../framework/service/inspection.ts";
-import type { Inspection, Problem } from "../../../framework/service/inspection.ts";
+import { planActions } from "#framework/commands/orchestration/plan.ts";
+import { problem } from "#framework/service/inspection.ts";
+import type { Inspection, Problem } from "#framework/service/inspection.ts";
 
 let failed = 0;
 

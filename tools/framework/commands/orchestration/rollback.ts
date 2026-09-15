@@ -14,17 +14,17 @@
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, die } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
-import { deploymentName, deploymentDir } from "../../runtime/deployment.ts";
-import { Journal, readOperation, latestRollbackable, newOperationId } from "../../service/operations.ts";
+import { log, info, die } from "#src/core/log.ts";
+import { emit, isCaptured } from "#src/core/output.ts";
+import { deploymentName, deploymentDir } from "#src/runtime/deployment.ts";
+import { Journal, readOperation, latestRollbackable, newOperationId } from "#src/service/operations.ts";
 import { restart } from "../lifecycle/lifecycle.ts";
-import { takeLock } from "../../runtime/instance-lock.ts";
-import { readInstalledSet, withUnpackedArtifact, requirementProblems } from "../../set/artifacts/install.ts";
+import { takeLock } from "#src/runtime/instance-lock.ts";
+import { readInstalledSet, withUnpackedArtifact, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
 import { frameworkVersion } from "../management/lock.ts";
-import { apply, runningImageDigest } from "./apply.ts";
-import type { OperationRecord } from "../../service/operations.ts";
-import type { Context } from "../../core/context.ts";
+import { apply } from "./apply.ts";
+import type { OperationRecord } from "#src/service/operations.ts";
+import type { Context } from "#src/core/context.ts";
 
 /** The operation to undo, and why that one. Exported for the checks: choosing the wrong
  *  operation is the failure that matters here, and it is worth asserting without a target. */

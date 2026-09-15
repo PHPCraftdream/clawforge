@@ -25,8 +25,8 @@ import {
   ensureCronJob,
   cronJobMatches,
   cronRmArgv,
-} from "../../../framework/commands/management/provision-agent.ts";
-import type { Context } from "../../../framework/core/context.ts";
+} from "#framework/commands/management/provision-agent/index.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

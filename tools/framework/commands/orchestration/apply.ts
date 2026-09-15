@@ -11,39 +11,24 @@
 // stop the far more ordinary case of applying steps that were chosen for a different
 // version of the repository.
 
-import { log, info, warn, die } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
+import { emit, isCaptured } from "#src/core/output.ts";
 import { computePlan } from "./plan.ts";
-import { gatherInspection } from "./inspect.ts";
+import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum, frameworkVersion } from "../management/lock.ts";
-import { isHealthy, nextActions, PROBLEM_CODES } from "../../service/inspection.ts";
+import { isHealthy, nextActions, PROBLEM_CODES } from "#src/service/inspection.ts";
 import { applyConfig } from "./config.ts";
 import { secrets } from "../management/secrets.ts";
 import { up, restart } from "../lifecycle/lifecycle.ts";
-import { provisionAgent, removeOwnedObject } from "../management/provision-agent.ts";
-import type { OwnedKind } from "../../set/ownership/ledger.ts";
-import { Journal, snapshotConfig, newOperationId, readOperation } from "../../service/operations.ts";
-import { takeLock, lockHeldHere } from "../../runtime/instance-lock.ts";
-import { deploymentName } from "../../runtime/deployment.ts";
-import { withSetSource } from "../../set/artifacts/source.ts";
-import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems } from "../../set/artifacts/install.ts";
+import { provisionAgent, removeOwnedObject } from "../management/provision-agent/index.ts";
+import type { OwnedKind } from "#src/set/ownership/ledger.ts";
+import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
+import { takeLock, lockHeldHere } from "#src/runtime/instance-lock.ts";
+import { deploymentName } from "#src/runtime/deployment.ts";
+import { withSetSource } from "#src/set/artifacts/source.ts";
+import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
-import type { Context } from "../../core/context.ts";
-import type { SetManifest } from "../../set/artifacts/model.ts";
-
-/** The digest of the image the CONTAINER actually runs, not what a tag currently resolves
- *  to locally. ctx.runtime.imageReference() inspects the configured reference itself — after
- *  a `docker pull` updates what a tag points to, that reports the newly-pulled digest even
- *  when the running container was never recreated and is still on the old one. This is the
- *  same primitive (and the same by-hash-suffix matching, since the digests array can carry
- *  more than one repo/tag form of the same image) evidence.ts's observeRuntime() already uses
- *  for exactly this reason. */
-export async function runningImageDigest(ctx: Context, manifest: SetManifest): Promise<string | undefined> {
-  const running = await ctx.runtime.runningImageIdentity?.();
-  const digests = running?.digests ?? [];
-  const requiredHash = manifest.requires.image.split("@").at(-1);
-  return digests.find((digest) => digest.split("@").at(-1) === requiredHash) ?? digests[0];
-}
+import type { Context } from "#src/core/context.ts";
 
 /** Whether the container is running but its image could not be resolved to any digest at
  *  all — a container built or tagged in a way docker cannot report RepoDigests for, say.
@@ -168,12 +153,18 @@ export async function apply(ctx: Context, args: string[]): Promise<void> {
  *  having mirrored somebody's uncommitted edits. */
 async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
   const index = args.indexOf("--set");
-  if (index === -1) return applyFromSource(ctx, args);
+  if (index === -1) {
+    await applyFromSource(ctx, args);
+    return;
+  }
 
   const artifact = args[index + 1] ?? die("--set needs an artifact path");
-  return withUnpackedArtifact(artifact, (staging, verified) =>
+  await withUnpackedArtifact(artifact, (staging, verified) =>
     withSetSource(staging, async () => {
-      if (args.includes("--dry-run")) return applyFromSource(ctx, args);
+      if (args.includes("--dry-run")) {
+        await applyFromSource(ctx, args);
+        return;
+      }
 
       // Refused before anything is touched, the same way the declaration-changed check
       // below refuses before any step runs. up/restart (the only steps that touch the
@@ -203,7 +194,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
       const held = lockHeldHere() ? undefined : await takeLock(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock") });
       try {
         await storeArtifactForRollback(artifact, verified);
-        await applyFromSource(ctx, args, operationId);
+        const ranSteps = await applyFromSource(ctx, args, operationId);
 
         // applyFromSource's own "nothing to apply" fast path (0 executable actions — the
         // live config already matched what this set declares) returns WITHOUT ever opening
@@ -218,7 +209,15 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
         // needs restoring — the live config already IS what a rollback would reach. Recorded
         // after applyFromSource rather than before: this branch only runs when nothing was
         // executed, so the config here is exactly the config before this call too.
-        if ((await readOperation(ctx, operationId)) === undefined) {
+        //
+        // Decided from applyFromSource()'s OWN report of whether it ran anything, not from
+        // probing readOperation(ctx, operationId) afterward: a readOperation() failure means
+        // "could not read this record", which is also true for a REAL run whose Journal (with
+        // its correct, pre-change snapshot) exists but hit one transient read error right
+        // after — that false positive used to make this branch re-open a fresh Journal and
+        // take a NEW snapshot NOW, i.e. of the config AFTER the real steps already changed
+        // it, silently clobbering the correct pre-change snapshot rollback --set needs.
+        if (!ranSteps) {
           const noopJournal = await Journal.open(ctx, "apply", deploymentName(), operationId);
           const snapshot = await snapshotConfig(ctx, operationId);
           if (snapshot !== undefined) await noopJournal.noteSnapshot(snapshot);
@@ -259,7 +258,11 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
   );
 }
 
-async function applyFromSource(ctx: Context, args: string[], heldOperationId?: string): Promise<void> {
+/** Returns whether it actually ran executable steps (opened a Journal, took a config
+ *  snapshot, executed the plan) as opposed to a dry run or the "nothing to apply" fast
+ *  path — the one fact applyWithSource's --set branch needs to decide whether a no-op
+ *  transition still needs a snapshot taken on its behalf. */
+async function applyFromSource(ctx: Context, args: string[], heldOperationId?: string): Promise<boolean> {
   const jsonOnly = args.includes("--json");
   const dryRun = args.includes("--dry-run");
   const breakLock = args.includes("--break-lock");
@@ -299,7 +302,7 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
       log(`${plan.actions.length} step(s) would run — nothing was applied`);
       for (const action of plan.actions) info(`  ${action.advisory === true ? "(you)" : action.command}`);
     });
-    return;
+    return false;
   }
 
   const executable = plan.actions.filter((action) => action.advisory !== true);
@@ -320,7 +323,7 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
     );
     report(jsonOnly, outcome, "nothing to apply");
     failOnRemainder(blockingRemainder(outcome.problems), outcome);
-    return;
+    return false;
   }
 
   // The lock first, and the journal only once it is held. A run refused here never started,
@@ -388,6 +391,7 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
   }
 
   failOnRemainder(remaining, outcome);
+  return true;
 }
 
 /** The one place both paths end. A run that leaves the instance not doing its job is a

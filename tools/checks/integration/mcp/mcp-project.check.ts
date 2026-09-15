@@ -3,11 +3,11 @@ import { mkdtemp, mkdir, readFile, writeFile, rename, rm } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { CLAWFORGE_CONTROL_MCP_NAME, mergeClaudeConfig, mergeCodexConfig, projectMcpEntries, setupProjectMcp } from "../../../framework/integration/mcp-project.ts";
-import { initApp } from "../../../framework/integration/init.ts";
-import { createApp, appsDir } from "../../../framework/integration/scaffold.ts";
-import { spawnLocal } from "../../../framework/runtime/transport.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
+import { CLAWFORGE_CONTROL_MCP_NAME, mergeClaudeConfig, mergeCodexConfig, projectMcpEntries, setupProjectMcp } from "#framework/integration/mcp-project.ts";
+import { initApp } from "#framework/integration/init.ts";
+import { createApp, appsDir } from "#framework/integration/scaffold.ts";
+import { spawnLocal } from "#framework/runtime/transport.ts";
+import { withOutputSink } from "#framework/core/output.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-project-"));
 let monorepoApp: string | undefined;

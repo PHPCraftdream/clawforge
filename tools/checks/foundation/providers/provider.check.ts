@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { configureProvider } from "../../../framework/commands/management/provider.ts";
-import type { Context } from "../../../framework/core/context.ts";
+import { configureProvider } from "#framework/commands/management/provider.ts";
+import type { Context } from "#framework/core/context.ts";
 
 const calls: string[][] = [];
 // configure-provider now takes the instance lock (#186) — a plain mkdir is the atomic claim

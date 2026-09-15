@@ -1,11 +1,11 @@
-import { frameworkVersion } from "../../commands/management/lock.ts";
-import { maskSecrets } from "../../core/log.ts";
+import { frameworkVersion } from "#src/commands/management/lock.ts";
+import { maskSecrets } from "#src/core/log.ts";
 import { writeReceipt } from "./receipt.ts";
 import type { ReceiptObservations, AcceptanceReceipt, ReceiptCheckInput, ReceiptSource } from "./receipt.ts";
 import type { SetManifest } from "./model.ts";
 import type { VerifiedArtifact } from "./install.ts";
-import type { Context } from "../../core/context.ts";
-import type { AcceptanceResult } from "../../commands/orchestration/accept.ts";
+import type { Context } from "#src/core/context.ts";
+import type { AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 
 export interface ObservedRuntime {
   readonly observations: ReceiptObservations;

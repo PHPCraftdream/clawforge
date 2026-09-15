@@ -4,8 +4,8 @@
 // an unfinished one does. A run killed between two steps has to leave everything up to that
 // point on disk, because that is the run whose record anyone will actually need.
 
-import { Journal, snapshotConfig, listOperations, readOperation, latestRollbackable, newOperationId } from "../../../framework/service/operations.ts";
-import type { Context } from "../../../framework/core/context.ts";
+import { Journal, snapshotConfig, listOperations, readOperation, latestRollbackable, newOperationId } from "#framework/service/operations.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

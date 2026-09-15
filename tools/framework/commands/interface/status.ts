@@ -5,8 +5,8 @@
 // disagree — an image whose healthcheck binary is missing reports "unhealthy" forever
 // while the gateway serves traffic.
 
-import { log, info } from "../../core/log.ts";
-import type { Context } from "../../core/context.ts";
+import { log, info } from "#src/core/log.ts";
+import type { Context } from "#src/core/context.ts";
 
 export async function status(ctx: Context, _args: string[]): Promise<void> {
   info(`target: ${ctx.transport.description} / runtime: ${ctx.runtime.description}`);

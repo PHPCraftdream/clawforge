@@ -2,11 +2,11 @@
 // network namespace and data mounts.
 //
 
-import { die } from "../../core/log.ts";
-import { isCaptured, emit } from "../../core/output.ts";
-import type { Context } from "../../core/context.ts";
-import type { ExecResult } from "../../runtime/transport.ts";
-import { HelperNotRunning } from "../../runtime/runtime.ts";
+import { die } from "#src/core/log.ts";
+import { isCaptured, emit } from "#src/core/output.ts";
+import type { Context } from "#src/core/context.ts";
+import type { ExecResult } from "#src/runtime/transport.ts";
+import { HelperNotRunning } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "./cli-helper.ts";
 
 export async function cli(ctx: Context, args: string[]): Promise<void> {

@@ -6,10 +6,10 @@
 
 import { readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { log, info, die } from "../../core/log.ts";
-import { desiredStateFile } from "../../runtime/deployment.ts";
-import type { Context } from "../../core/context.ts";
-import { guarded } from "../../runtime/instance-lock.ts";
+import { log, info, die } from "#src/core/log.ts";
+import { desiredStateFile } from "#src/runtime/deployment.ts";
+import type { Context } from "#src/core/context.ts";
+import { guarded } from "#src/runtime/instance-lock.ts";
 
 
 

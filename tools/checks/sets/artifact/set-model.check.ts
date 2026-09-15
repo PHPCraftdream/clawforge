@@ -12,9 +12,9 @@ import {
   setManifestId,
   SET_MANIFEST_VERSION,
   DESIRED_STATE_PATH,
-} from "../../../framework/set/artifacts/model.ts";
-import { checksumOfFileMap } from "../../../framework/service/checksums.ts";
-import type { SetManifest, SetManifestInput, SetRecipe } from "../../../framework/set/artifacts/model.ts";
+} from "#framework/set/artifacts/model.ts";
+import { checksumOfFileMap } from "#framework/service/checksums.ts";
+import type { SetManifest, SetManifestInput, SetRecipe } from "#framework/set/artifacts/model.ts";
 
 let failed = 0;
 

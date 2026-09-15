@@ -4,10 +4,10 @@
 // the failure worth guarding. Every refusal below exists because the alternative is putting
 // an unrelated configuration onto a working instance and reporting success.
 
-import { operationToRollback } from "../../../framework/commands/orchestration/rollback.ts";
-import { Journal } from "../../../framework/service/operations.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
+import { operationToRollback } from "#framework/commands/orchestration/rollback.ts";
+import { Journal } from "#framework/service/operations.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

@@ -1,54 +1,28 @@
-// `./clawforge inspect [--json]` — what this deployment declares, what the instance actually is,
-// and where the two disagree. `./clawforge doctor` lives here too: it is the same inspection read
-// for its problems rather than its inventory, and a second gatherer would eventually give a
-// second answer to one question.
-//
-// The information already existed, spread across `status` (containers and probes),
-// `secrets` (what is missing), `provision-agent` (what a recipe expects) and a few CLI
-// calls nobody should have to remember. Spread out, it is only useful to someone who
-// already knows which question to ask. Gathered, it answers the one question a coder
-// actually has — is this instance what the repository says it is — in a form an agent can
-// branch on rather than read.
-//
-// Read-only, deliberately and completely: nothing here writes, starts, restarts or
-// registers anything. That is what makes it safe to call before deciding to act, which is
-// the whole point of having it. `plan` turns its findings into actions; `apply` executes
-// them.
-//
-// Cost: the live agent/MCP/cron lists come from OpenClaw's own CLI, which is a container
-// per call. `./clawforge cli-start` makes those execs instead, and the difference is several
-// seconds per inspect.
+// What `./clawforge inspect` reads: the declared state (from disk) and the observed state
+// (from the target). Split out of inspect.ts; see helpers.ts (this same directory) for
+// the pure pieces these use, and gather.ts for gatherInspection/inspect/doctor/renderJson/
+// renderText.
 
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import JSON5 from "json5";
-import { log, info, warn, die } from "../../core/log.ts";
-import { emit, isCaptured } from "../../core/output.ts";
-import { frameworkRoot } from "../../core/env.ts";
-import { deploymentName, desiredStateFile, recipesDir } from "../../runtime/deployment.ts";
-import { status as secretStatus } from "../../service/secrets.ts";
-import { openclawCliJson, openclawCli } from "../../service/openclaw-cli.ts";
-import { recipeFileChecksums, agentBundleChecksums } from "../../service/checksums.ts";
-import { compareLock, readLock, currentComposition } from "../management/lock.ts";
-import { readInstalledSet, requirementProblems } from "../../set/artifacts/install.ts";
-import { readLedger, orphanedBy, foreign } from "../../set/ownership/ledger.ts";
-import type { DeclaredOwnership } from "../../set/ownership/ledger.ts";
+import { deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
+import { openclawCliJson, openclawCli } from "#src/service/openclaw-cli.ts";
+import { recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
+import { readLedger, orphanedBy, foreign } from "#src/set/ownership/ledger.ts";
+import type { DeclaredOwnership } from "#src/set/ownership/ledger.ts";
 import {
   recipeMirrorTargetDir,
   agentWorkspaceTargetDir,
   loadRecipeAgentBundle,
   cronJobMatches,
   mcpServerMatches,
-} from "../management/provision-agent.ts";
-import type { RecipeAgentBundle, AgentConfig, CronJob } from "../management/provision-agent.ts";
-import {
-  problem,
-  blockingProblems,
-  isHealthy,
-  nextActions,
-} from "../../service/inspection.ts";
-import type { Problem, Inspection, DeclaredState, ObservedState } from "../../service/inspection.ts";
-import type { Context } from "../../core/context.ts";
+} from "#src/commands/management/provision-agent/index.ts";
+import type { RecipeAgentBundle, CronJob } from "#src/commands/management/provision-agent/index.ts";
+import { problem } from "#src/service/inspection.ts";
+import type { Problem, DeclaredState, ObservedState } from "#src/service/inspection.ts";
+import { valueAt, cronDifferences } from "./helpers.ts";
+import type { Context } from "#src/core/context.ts";
 
 const PROBE_ENDPOINTS = ["healthz", "startupz", "readyz"];
 
@@ -105,42 +79,7 @@ async function targetFileChecksums(ctx: Context, dir: string): Promise<Record<st
   return checksums;
 }
 
-/** Field by field, so the reader is not left to diff a cron job themselves. Mirrors exactly
- *  what cronJobMatches compares — it decides, this only explains its verdict. */
-function cronDifferences(job: CronJob, config: AgentConfig, cronMessage: string): string[] {
-  const differences: string[] = [];
-  if (job.enabled === false) differences.push("the job is disabled");
-  if (job.agentId !== config.agentId) differences.push(`agent is ${job.agentId ?? "(none)"}, declared ${config.agentId}`);
-  if (job.schedule?.expr !== config.cronSchedule) differences.push(`runs at ${job.schedule?.expr ?? "(none)"}, declared ${config.cronSchedule}`);
-  if (config.cronTimezone !== undefined && job.schedule?.tz !== config.cronTimezone) differences.push(`timezone is ${job.schedule?.tz ?? "(host default)"}, declared ${config.cronTimezone}`);
-  if (job.sessionTarget !== "isolated") differences.push(`session is ${job.sessionTarget ?? "(none)"}, declared isolated`);
-  if (job.payload?.message !== cronMessage) differences.push("the message differs from agent/cron-message.txt");
-  if (job.payload?.timeoutSeconds !== config.cronTimeoutSeconds) {
-    differences.push(`timeout is ${job.payload?.timeoutSeconds ?? "(none)"}s, declared ${config.cronTimeoutSeconds}s`);
-  }
-  if (job.delivery?.mode !== "none") differences.push(`delivery is ${job.delivery?.mode ?? "(none)"}, declared none`);
-  return differences;
-}
-
-function valueAt(config: unknown, path: string): unknown {
-  return path.split(".").reduce<unknown>((node, key) => (node as Record<string, unknown> | undefined)?.[key], config);
-}
-
-async function frameworkVersion(): Promise<string | undefined> {
-  // Source mode puts package.json next to this file's directory; the built package puts it
-  // one level up from dist/. Asked for rather than assumed, same reasoning as clientEntry().
-  for (const candidate of [resolve(frameworkRoot, "package.json"), resolve(frameworkRoot, "..", "package.json")]) {
-    try {
-      const parsed = JSON.parse(await readFile(candidate, "utf8")) as { name?: string; version?: string };
-      if (parsed.name === "@clawforge/framework") return parsed.version;
-    } catch {
-      // Try the next one.
-    }
-  }
-  return undefined;
-}
-
-async function declaredState(ctx: Context, problems: Problem[]): Promise<DeclaredState> {
+export async function declaredState(ctx: Context, problems: Problem[]): Promise<DeclaredState> {
   let config: { path: string; value: unknown }[] = [];
   let raw: string | undefined;
   try {
@@ -187,7 +126,7 @@ async function declaredState(ctx: Context, problems: Problem[]): Promise<Declare
  *  configuration nobody had applied. The command reported success, the journal said
  *  succeeded, and the declaration was not in force. A comparison that works without the
  *  gateway must not be gated on the gateway. */
-async function observeConfig(
+export async function observeConfig(
   ctx: Context,
   declared: DeclaredState,
   problems: Problem[],
@@ -227,7 +166,7 @@ async function observeConfig(
   return { config, mtimeMs };
 }
 
-async function observeLive(
+export async function observeLive(
   ctx: Context,
   declared: DeclaredState,
   problems: Problem[],
@@ -442,200 +381,5 @@ async function listOrEmpty<T>(ctx: Context, args: string[], extract: (parsed: un
     return extract(await openclawCliJson<unknown>(ctx, args));
   } catch {
     return [];
-  }
-}
-
-/** The whole picture. Exported because doctor, plan and apply all read it rather than
- *  gathering their own — three gatherers would be three answers to one question. */
-export async function gatherInspection(ctx: Context): Promise<Inspection> {
-  const problems: Problem[] = [];
-  const declared = await declaredState(ctx, problems);
-
-  const running = await ctx.runtime.isRunning();
-  const secrets = await secretStatus(ctx);
-  for (const secret of secrets) {
-    if (secret.required && !secret.present) {
-      problems.push(problem("SECRET_MISSING", `${secret.name} (${secret.usedBy}) is not set in ${secret.location === "repo-env" ? ".env" : "<data>/config/.env"}`));
-    }
-  }
-
-  // Read whether or not anything is serving: the declaration is compared against a file on
-  // the target, and a stopped instance is exactly when someone is about to start one.
-  const configState = await observeConfig(ctx, declared, problems);
-
-  if (!running) {
-    problems.push(problem("GATEWAY_DOWN", `no running container for deployment "${declared.deployment}"`));
-    return {
-      declared,
-      observed: {
-        running: false,
-        probes: {},
-        config: configState.config,
-        secrets,
-        agents: [],
-        mcpServers: [],
-        cronJobs: [],
-        foreignObjects: [],
-        frameworkVersion: await frameworkVersion(),
-      },
-      problems,
-    };
-  }
-
-  const live = await observeLive(ctx, declared, problems, configState.mtimeMs);
-
-  // Which set is installed here, and whether this machine matches what it required. Read
-  // before the lock comparison because it is the more specific answer: a lock says what the
-  // composition was pinned to, a set id says what was actually installed.
-  const installed = await readInstalledSet(ctx);
-  if (installed !== undefined) {
-    problems.push(
-      ...requirementProblems(
-        { requires: installed.requires } as never,
-        { framework: await frameworkVersion(), imageDigest: await ctx.runtime.imageReference() },
-      ),
-    );
-  }
-
-  // Last, and only when the instance is up: the lock pins the image digest, which cannot be
-  // read from a stopped instance, and a lock comparison against half an observation would
-  // report differences that are only missing information.
-  problems.push(...compareLock(await readLock(), await currentComposition(ctx)));
-
-  return {
-    declared,
-    observed: {
-      running: true,
-      secrets,
-      image: ctx.settings.image,
-      imageDigest: await ctx.runtime.imageReference(),
-      frameworkVersion: await frameworkVersion(),
-      probes: live.probes ?? {},
-      health: live.health,
-      config: configState.config,
-      agents: live.agents ?? [],
-      mcpServers: live.mcpServers ?? [],
-      cronJobs: live.cronJobs ?? [],
-      foreignObjects: live.foreignObjects ?? [],
-      openclawVersion: live.openclawVersion,
-    },
-    problems,
-  };
-}
-
-export async function inspect(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  for (const arg of args) {
-    if (arg !== "--json") die(`unknown argument: ${arg}`);
-  }
-
-  const inspection = await gatherInspection(ctx);
-
-  if (jsonOnly || isCaptured()) {
-    emit(`${JSON.stringify(renderJson(inspection), null, 2)}\n`);
-    return;
-  }
-
-  renderText(inspection);
-}
-
-/** The machine-readable answer. Its own shape rather than the Inspection struct verbatim:
- *  what a caller needs first is the verdict and what to do about it, and burying those under
- *  the raw observation would make every consumer compute them again — differently. */
-export function renderJson(inspection: Inspection): Record<string, unknown> {
-  return {
-    deployment: inspection.declared.deployment,
-    healthy: isHealthy(inspection),
-    problems: inspection.problems,
-    nextActions: nextActions(inspection.problems),
-    declared: inspection.declared,
-    observed: inspection.observed,
-  };
-}
-
-/** `./clawforge doctor` — the same inspection, answered as "is anything wrong, and what do I run".
- *
- *  Exits non-zero when something blocking was found, because that is the only part of the
- *  answer a script or a CI step can act on without reading the text. Warnings do not fail
- *  it: an instance with no lock file works, and a command that fails on everything it has
- *  an opinion about stops being consulted. */
-export async function doctor(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  for (const arg of args) {
-    if (arg !== "--json") die(`unknown argument: ${arg}`);
-  }
-
-  const inspection = await gatherInspection(ctx);
-  const blocking = blockingProblems(inspection.problems);
-  const warnings = inspection.problems.filter((entry) => entry.severity === "warning");
-
-  if (jsonOnly || isCaptured()) {
-    emit(
-      `${JSON.stringify(
-        {
-          deployment: inspection.declared.deployment,
-          healthy: isHealthy(inspection),
-          problems: inspection.problems,
-          nextActions: nextActions(inspection.problems),
-        },
-        null,
-        2,
-      )}\n`,
-    );
-  } else if (inspection.problems.length === 0) {
-    log(`${inspection.declared.deployment} is what this repository declares`);
-    info(`state  running (${inspection.observed.health ?? "unknown"})`);
-  } else {
-    // Reported before the failure below, not instead of it: a reader who only sees "3
-    // problems" learns nothing, and the whole point of the codes is that they travel.
-    log(`${inspection.declared.deployment}: ${blocking.length} blocking, ${warnings.length} warning(s)`);
-    for (const entry of inspection.problems) {
-      warn(`${entry.code}  ${entry.detail}`);
-      info(`  → ${entry.nextAction}`);
-    }
-    if (blocking.length === 0) info("nothing blocking — the instance is doing its job");
-  }
-
-  if (blocking.length > 0) {
-    throw new Error(
-      `${blocking.length} blocking problem(s): ${blocking.map((entry) => entry.code).join(", ")}. ` +
-        `Next: ${nextActions(blocking).join(", ")}`,
-    );
-  }
-}
-
-function renderText(inspection: Inspection): void {
-  const { declared, observed, problems } = inspection;
-
-  log(`deployment ${declared.deployment}`);
-  info(`state      ${observed.running ? `running (${observed.health ?? "unknown"})` : "not running"}`);
-  if (observed.image !== undefined) info(`image      ${observed.image}`);
-  if (observed.imageDigest !== undefined) info(`digest     ${observed.imageDigest}`);
-  if (observed.frameworkVersion !== undefined) info(`framework  ${observed.frameworkVersion}`);
-  if (observed.openclawVersion !== undefined) info(`openclaw   ${observed.openclawVersion}`);
-  if (Object.keys(observed.probes).length > 0) {
-    info(`probes     ${Object.entries(observed.probes).map(([name, code]) => `${name} ${code}`).join("  ")}`);
-  }
-
-  log("declared vs live");
-  info(`config     ${declared.config.length} declared setting(s), ${problems.filter((entry) => entry.code === "CONFIG_DRIFT").length} drifted`);
-  info(`secrets    ${observed.secrets.filter((entry) => entry.present).length}/${observed.secrets.length} present`);
-  info(`recipes    ${declared.recipes.length === 0 ? "(none)" : declared.recipes.join(", ")}`);
-  if (observed.agents.length > 0) info(`agents     ${observed.agents.join(", ")}`);
-  if (observed.mcpServers.length > 0) info(`mcp        ${observed.mcpServers.join(", ")}`);
-  if (observed.cronJobs.length > 0) info(`cron       ${observed.cronJobs.join(", ")}`);
-  if (observed.foreignObjects.length > 0) {
-    info(`foreign    ${observed.foreignObjects.map((entry) => `${entry.kind}:${entry.name}`).join(", ")} (not created by this framework — never touched)`);
-  }
-
-  if (problems.length === 0) {
-    log("no problems found");
-    return;
-  }
-
-  log(`${problems.length} problem(s), ${blockingProblems(problems).length} blocking`);
-  for (const entry of problems) {
-    warn(`${entry.code}  ${entry.detail}`);
-    info(`  → ${entry.nextAction}`);
   }
 }

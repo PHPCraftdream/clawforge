@@ -8,11 +8,11 @@
 // So the assertions are about the shape of what reaches the target, not about the outcome
 // of a run: numeric ids, resolved before any escalation, passed as plain arguments.
 
-import { ensureLockHome } from "../../../framework/runtime/datadir.ts";
-import { lockHome } from "../../../framework/runtime/instance-lock.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import type { Context } from "../../../framework/core/context.ts";
-import type { ExecResult } from "../../../framework/runtime/transport.ts";
+import { ensureLockHome } from "#framework/runtime/datadir.ts";
+import { lockHome } from "#framework/runtime/instance-lock.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { ExecResult } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 

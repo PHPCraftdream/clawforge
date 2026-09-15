@@ -20,7 +20,7 @@
 // rather than corrupting the protocol stream.
 
 import { createInterface } from "node:readline";
-import { mcpCommands, type AppCommand, type AppDefinition, type CommandArgument } from "../core/app.ts";
+import { mcpCommands, type AppCommand, type AppDefinition } from "../core/app.ts";
 import type { GateCommand } from "./gate.ts";
 import { createContext } from "../core/context.ts";
 import { useRecipesDir } from "../service/recipe.ts";
@@ -28,6 +28,9 @@ import { recipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "./provision.ts";
 import { UserError } from "../core/log.ts";
 import { withOutputSink } from "../core/output.ts";
+import { structuredResult, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./mcp-schema.ts";
+
+export * from "./mcp-schema.ts";
 
 const PROTOCOL_VERSION = "2025-06-18";
 
@@ -50,210 +53,6 @@ interface JsonRpcRequest {
   id?: number | string;
   method: string;
   params?: Record<string, unknown>;
-}
-
-/** What the four functions below need from a command, and all they need: the description a
- *  client reads, and the arguments the schema, the validation and the argv are derived from.
- *  Both an AppCommand and a GateCommand satisfy it — which is the point, since a client is
- *  offered one surface and should not be able to tell which of the two it is calling. */
-type Declared = {
-  readonly summary: string;
-  readonly details?: string;
-  readonly destructive?: boolean;
-  readonly arguments?: CommandArgument[];
-  readonly structured?: boolean;
-  readonly readOnly?: boolean;
-};
-
-/** The envelope every structured tool result carries.
- *
- *  A text log is written for a person: to act on it, an agent has to read prose and guess
- *  whether anything changed and what to do next — and it guesses differently each time. The
- *  fields below are the questions it actually has, answered once, in the same shape for
- *  every command that produces them.
- *
- *  Only what is known is filled in. A command that does not report whether the instance is
- *  healthy leaves `healthy` absent rather than claiming something; the alternative — a
- *  default that looks like an answer — is worse than a gap, because a gap can be seen. */
-interface StructuredResult {
-  /** Distinguishes two calls of the same tool in a log. Not persisted anywhere: it names
-   *  this call, so a report about it can be matched to it. */
-  readonly operationId: string;
-  readonly changed: boolean;
-  readonly healthy?: boolean;
-  readonly problems: unknown[];
-  readonly warnings: unknown[];
-  readonly nextActions: string[];
-  /** The command's own JSON, whole and unaltered — the envelope adds to it, never replaces
-   *  it, so a caller that wants a field the envelope does not name still has it. */
-  readonly result: unknown;
-}
-
-/** Declared to clients so the shape above is known before a call rather than discovered
- *  from one. The same for every structured command, because the envelope is. */
-const STRUCTURED_OUTPUT_SCHEMA = {
-  type: "object",
-  properties: {
-    operationId: { type: "string", description: "Identifies this call" },
-    changed: { type: "boolean", description: "Whether the call may have changed the instance" },
-    healthy: { type: "boolean", description: "Whether the instance is doing its job, when the command knows" },
-    problems: { type: "array", description: "Findings, each with a stable code, severity, detail and nextAction" },
-    warnings: { type: "array", description: "The subset of problems that are not blocking" },
-    nextActions: { type: "array", items: { type: "string" }, description: "Commands that resolve the findings" },
-    result: { description: "The command's own JSON output, unaltered" },
-  },
-  required: ["operationId", "changed", "problems", "warnings", "nextActions", "result"],
-} as const;
-
-function isWarning(problem: unknown): boolean {
-  return (problem as { severity?: unknown } | null)?.severity === "warning";
-}
-
-/** Builds the envelope from what a structured command emitted.
- *
- *  Returns undefined when the output is not the single JSON document the command promised —
- *  the text result still stands, so a broken promise degrades to what every other tool
- *  returns instead of turning a working call into an error. */
-export function structuredResult(command: Declared, output: string, operationId: string): StructuredResult | undefined {
-  let payload: unknown;
-  try {
-    payload = JSON.parse(output);
-  } catch {
-    return undefined;
-  }
-  if (payload === null || typeof payload !== "object") return undefined;
-
-  const fields = payload as { healthy?: unknown; problems?: unknown; nextActions?: unknown; changed?: unknown };
-  const problems = Array.isArray(fields.problems) ? fields.problems : [];
-
-  return {
-    operationId,
-    // A read-only command changes nothing by declaration. Anything else is asked, and when
-    // it does not say, taken to have changed something: an agent that re-checks
-    // unnecessarily loses a call, one that skips a check it needed loses the thread.
-    changed: command.readOnly === true ? false : (typeof fields.changed === "boolean" ? fields.changed : true),
-    healthy: typeof fields.healthy === "boolean" ? fields.healthy : undefined,
-    problems,
-    warnings: problems.filter(isWarning),
-    nextActions: Array.isArray(fields.nextActions) ? fields.nextActions.filter((entry): entry is string => typeof entry === "string") : [],
-    result: payload,
-  };
-}
-
-/** What a chat client sees for a tool. `details` — the same text `./clawforge help <command>`
- *  prints — is folded in here too: a client picking a tool by name alone is exactly the
- *  situation the longer explanation exists for. */
-function toolDescription(command: Declared): string {
-  const parts = [command.summary];
-  if (command.details !== undefined) parts.push(command.details);
-  if (command.destructive === true) parts.push("Destructive: requires confirm: true.");
-  return parts.join("\n\n");
-}
-
-/** JSON Schema for a command, derived from its declared arguments. */
-export function inputSchema(command: Declared): Record<string, unknown> {
-  const properties: Record<string, unknown> = {};
-  const required: string[] = [];
-
-  for (const argument of command.arguments ?? []) {
-    properties[argument.name] = argument.kind === "variadic"
-      ? { type: "array", items: { type: "string" }, description: argument.description }
-      : {
-        type: argument.kind === "flag" ? "boolean" : "string",
-        description: argument.description,
-        ...(argument.choices === undefined ? {} : { enum: [...argument.choices] }),
-      };
-    if (argument.required === true) required.push(argument.name);
-  }
-
-  // A destructive command needs an explicit confirmation: a tool call is far easier to
-  // trigger by accident than a typed command line.
-  if (command.destructive === true) {
-    properties.confirm = {
-      type: "boolean",
-      description: "Must be true: this command replaces or destroys state",
-    };
-    required.push("confirm");
-  }
-
-  return { type: "object", properties, required };
-}
-
-/** Checks tool arguments against the declaration. The client's schema is a courtesy, not a
- *  guarantee: anything may arrive on this stream, and a command's own parser sees argv, not
- *  types. Returns the problems, empty when the call is acceptable. */
-export function validate(command: Declared, args: Record<string, unknown>): string[] {
-  const declared = new Map((command.arguments ?? []).map((argument) => [argument.name, argument]));
-  const problems: string[] = [];
-
-  for (const [name, value] of Object.entries(args)) {
-    if (name === "confirm") continue;
-
-    const argument = declared.get(name);
-    if (argument === undefined) {
-      problems.push(`unknown argument: ${name}`);
-      continue;
-    }
-    if (argument.kind === "flag") {
-      if (typeof value !== "boolean") problems.push(`${name} takes true or false`);
-      continue;
-    }
-    if (argument.kind === "variadic") {
-      if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry === "")) {
-        problems.push(`${name} takes a list of non-empty strings`);
-      }
-      continue;
-    }
-    if (typeof value !== "string") {
-      problems.push(`${name} takes a string`);
-      continue;
-    }
-    if (argument.choices !== undefined && !argument.choices.includes(value)) {
-      problems.push(`${name} must be one of: ${argument.choices.join(", ")}`);
-    }
-  }
-
-  for (const argument of declared.values()) {
-    if (argument.required !== true) continue;
-    const value = args[argument.name];
-    if (value === undefined || value === "") problems.push(`${argument.name} is required`);
-  }
-
-  return problems;
-}
-
-/** Turns tool arguments back into the argv the command already knows how to parse.
- *
- *  Positionals come first and in declaration order, because that is how the parsers read
- *  them; options keep their name, which is what used to be lost — `--profile share` arrived
- *  as a bare `share` and was taken for a file name. */
-export function toArgv(command: Declared, args: Record<string, unknown>): string[] {
-  const declared = command.arguments ?? [];
-  const positional: string[] = [];
-  const named: string[] = [];
-  // Appended after everything else: these are the arguments of another program, and
-  // anything of ours mixed in among them would be read as theirs.
-  const trailing: string[] = [];
-
-  for (const argument of declared) {
-    const value = args[argument.name];
-    if (value === undefined || value === false || value === "") continue;
-
-    if (argument.kind === "variadic") {
-      if (Array.isArray(value)) trailing.push(...value.map(String));
-    } else if (argument.kind === "positional") positional.push(String(value));
-    else if (argument.kind === "flag") named.push(`--${argument.name}`);
-    else named.push(`--${argument.name}`, String(value));
-  }
-
-  // A destructive command asks for confirmation on a terminal; over MCP the confirmation is
-  // the tool argument, so the prompt has to be waived here rather than by a second flag the
-  // caller has to know about.
-  if (command.destructive === true && declared.some((argument) => argument.name === "force")) {
-    if (!named.includes("--force")) named.push("--force");
-  }
-
-  return [...positional, ...named, ...trailing];
 }
 
 /** Runs a command with its output captured, so the caller sees it as the tool result and

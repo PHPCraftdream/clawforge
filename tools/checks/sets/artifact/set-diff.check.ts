@@ -5,13 +5,13 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checksumOf, checksumOfFileMap } from "../../../framework/service/checksums.ts";
-import type { SetManifest } from "../../../framework/set/artifacts/model.ts";
-import { setDiff } from "../../../framework/commands/sets/set-diff.ts";
-import { diffManifests } from "../../../framework/set/artifacts/diff.ts";
-import { withOutputSink } from "../../../framework/core/output.ts";
-import { spawnLocal } from "../../../framework/runtime/transport.ts";
-import type { Context } from "../../../framework/core/context.ts";
+import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
+import type { SetManifest } from "#framework/set/artifacts/model.ts";
+import { setDiff } from "#framework/commands/sets/set-diff.ts";
+import { diffManifests } from "#framework/set/artifacts/diff.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import { spawnLocal } from "#framework/runtime/transport.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown): void {
@@ -125,7 +125,7 @@ try {
 
   let verifiedManifest: SetManifest | undefined;
   await withOutputSink(() => {}, async () => {
-    const { unpackArtifactVerified } = await import("../../../framework/set/artifacts/install.ts");
+    const { unpackArtifactVerified } = await import("#framework/set/artifacts/install.ts");
     const verified = await unpackArtifactVerified(first);
     verifiedManifest = verified.verified.manifest;
     await rm(verified.staging, { recursive: true, force: true });

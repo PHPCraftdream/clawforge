@@ -9,8 +9,8 @@ import {
   excludesFor,
   SHARE_ALLOWED,
   type ArchiveLink,
-} from "../../../framework/service/archive.ts";
-import type { Context } from "../../../framework/core/context.ts";
+} from "#framework/service/archive.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 

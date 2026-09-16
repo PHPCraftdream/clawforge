@@ -1,7 +1,7 @@
 # ClawForge for OpenClaw
 
 [![CI](https://github.com/PHPCraftdream/clawforge/actions/workflows/ci.yml/badge.svg)](https://github.com/PHPCraftdream/clawforge/actions/workflows/ci.yml)
-[![Node.js >=22.6](https://img.shields.io/badge/node.js-%3E%3D22.6-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js >=24](https://img.shields.io/badge/node.js-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE)
 [![npm package](https://img.shields.io/npm/v/%40clawforge%2Fframework?logo=npm)](https://www.npmjs.com/package/@clawforge/framework)
 
@@ -15,7 +15,7 @@ official `ghcr.io/openclaw/openclaw` image and adds a thin layer of tooling arou
 ## Requirements
 
 * **Docker Engine + Compose v2** — on the machine where the instance lives
-* **Node 22.6 or newer** — for the tooling itself
+* **Node 24 or newer** — for the tooling itself
 * `curl`, `tar`; `ssh` and `rsync` — for a remote server
 
 The tooling installs nothing: when a dependency is missing it stops and says what is
@@ -225,7 +225,7 @@ leaves room for a native installation, but no such setup exists.
 | Combination | `OC_TARGET_LOCATION` | Status |
 | --- | --- | --- |
 | WSL + Docker | `auto` (from Windows) or `wsl` | **Verified live 2026-09-08**: smoke 8/8, a round trip with matching checksums, a second deployment with its own port and token |
-| Local + Docker | `local` | **Unverified**: needs Node 22.6+ inside WSL, where there is none |
+| Local + Docker | `local` | **Unverified**: needs Node 24+ inside WSL, where there is none |
 | SSH + Docker | `ssh` + `OC_SSH_HOST` | **Unverified**: needs a server. Delivery contents are checked against a recording transport (`./clawforge check`); there has been no live run |
 
 What is unverified says so on purpose: the code is written and covered by checks, which is
@@ -834,7 +834,7 @@ integration with partial and unavailable checks, and running-image identity test
 
 | Symptom | Cause and cure |
 | --- | --- |
-| `node not found` / too old | Node 22.6+ is required. Inside WSL the Windows Node is visible through `/mnt/c` — it will not see `/srv` or Docker in WSL |
+| `node not found` / too old | Node 24+ is required. Inside WSL the Windows Node is visible through `/mnt/c` — it will not see `/srv` or Docker in WSL |
 | `permission denied` on `/home/node/.openclaw` | The bind mount is not owned by uid 1000: `sudo chown -R 1000:1000 /srv/openclaw/data` |
 | The gateway does not come up | `./clawforge logs`; the healthz/startupz/readyz probes and Docker's verdict are in `./clawforge status` |
 | The container is forever `unhealthy` while the service answers | The healthcheck points at a file that does not exist; image 2026.6.34 needs `curl -fsS /healthz` |

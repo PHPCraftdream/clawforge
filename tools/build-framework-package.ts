@@ -126,13 +126,10 @@ async function build(): Promise<void> {
 
     // The shebang travels unchanged. bin.ts's own comment says why: this compiled bin.js
     // dynamically imports the CONSUMER's own app.ts at runtime (never compiled by this
-    // build — it is not this package's file), and Node still needs type-stripping active
-    // in the process to load it on this package's declared minimum, Node 22.6, where
-    // stripping is behind --experimental-strip-types rather than on by default. Stripping
-    // the flag here (as this used to) left a published, installed package unable to load a
-    // consumer's app.ts on exactly the oldest Node version it claims to support, with
-    // "Unknown file extension \".ts\"" — invisible on any newer Node, where stripping is
-    // already on by default regardless of the flag.
+    // build — it is not this package's file), and the explicit type-stripping flag keeps
+    // loading deterministic across supported Node 24 releases. Omitting the flag leaves a
+    // published package unable to load a consumer's app.ts when that consumer disables
+    // stripping, with "Unknown file extension \".ts\"".
     await writeFile(outFile, rewritten, "utf8");
   }
 

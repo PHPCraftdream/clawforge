@@ -12,7 +12,7 @@ npx clawforge init
 ./clawforge bootstrap
 ```
 
-The package requires Node.js 22.6 or newer. `clawforge init` writes an application
+The package requires Node.js 24 or newer. `clawforge init` writes an application
 declaration, host-specific environment template, a `clawforge` launcher, and project-local
 MCP configuration for Claude Code and Codex. It never edits global client settings.
 

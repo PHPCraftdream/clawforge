@@ -2,7 +2,7 @@
 //
 // Two ways to get this wrong, and this package has had both. Dropping the type-stripping
 // concern entirely leaves the installed package failing with `Unknown file extension ".ts"`
-// on Node 22.6-22.17, because bin.js dynamically imports the CONSUMER's own app.ts — a real,
+// because bin.js dynamically imports the CONSUMER's own app.ts — a real,
 // uncompiled TypeScript file this build never touches. Carrying the flag in the shebang
 // instead (`#!/usr/bin/env -S node --experimental-strip-types`) fixes that on GNU coreutils
 // and breaks the package outright on busybox, whose `env` has no -S — Alpine is the most

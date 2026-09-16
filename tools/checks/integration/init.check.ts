@@ -109,9 +109,8 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
     // The shim invokes node with script_path as an ARGUMENT ("node dist/entry/bin.js"),
     // which bypasses bin.js's own shebang entirely — Node reads a shebang line only when the
     // OS resolves the file as an executable, not when it is handed a path to run. Without
-    // the flag repeated here, this package's declared minimum (Node 22.6, where type
-    // stripping is not on by default) fails with "Unknown file extension \".ts\"" the moment
-    // bin.js dynamically imports this deployment's own, never-compiled app.ts.
+    // the flag repeated here, a consumer that disables type stripping fails with "Unknown
+    // file extension \".ts\"" when bin.js dynamically imports this deployment's app.ts.
     const shim = await readFile(resolve(root, "clawforge"), "utf8");
     check("the shim passes --experimental-strip-types when invoking node directly", shim.includes("--experimental-strip-types"), true);
   } finally {

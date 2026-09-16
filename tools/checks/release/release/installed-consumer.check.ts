@@ -174,8 +174,8 @@ void summaryTypeGuard;
     if (helped.code !== 0) process.stderr.write(`    ${helped.output.trim().split("\n").slice(0, 5).join("\n    ")}\n`);
 
     // What the npm-linked bin actually gets: a plain `#!/usr/bin/env node`, because busybox
-    // `env` has no -S to carry a flag. On Node 22.6-22.17 that Node cannot read app.ts at
-    // all, and bin.js has to notice and re-execute itself with --experimental-strip-types.
+    // `env` has no -S to carry a flag. With type stripping disabled, bin.js must notice and
+    // re-execute itself with --experimental-strip-types before loading the consumer app.ts.
     // --no-experimental-strip-types reproduces that here on any Node.
     const stripless = await run(process.execPath, ["--no-experimental-strip-types", entry, "help"], consumer);
     check("and runs on a Node that does not strip types until asked", stripless.code, 0);

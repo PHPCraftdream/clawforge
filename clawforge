@@ -35,7 +35,7 @@ for candidate in node /usr/local/bin/node "/c/Program Files/nodejs/node.exe" "/m
 done
 
 if [[ -z "$node_bin" ]]; then
-  fail "node not found (Node 22.6 or newer is required)."
+  fail "node not found (Node 24 or newer is required)."
   printf '\n%s\n' "${C_YELLOW}Install Node, then run this again.${C_OFF}" >&2
   hint "Without sudo:  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && nvm install 24"
   hint "With sudo:     curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt-get install -y nodejs"
@@ -45,17 +45,11 @@ fi
 
 node_version="$("$node_bin" -e 'process.stdout.write(process.versions.node)' 2>/dev/null || echo 0.0.0)"
 node_major="${node_version%%.*}"
-node_minor="$(printf '%s' "$node_version" | cut -d. -f2)"
 
-# TypeScript is executed directly (type stripping): 22.6+ behind a flag, 23+ by default.
-if (( node_major < 22 || (node_major == 22 && node_minor < 6) )); then
-  fail "node $node_version is too old — 22.6 or newer is required to run TypeScript directly."
+# TypeScript is executed directly with Node 24's built-in type stripping.
+if (( node_major < 24 )); then
+  fail "node $node_version is too old — 24 or newer is required to run TypeScript directly."
   exit 1
-fi
-
-node_args=()
-if (( node_major == 22 )); then
-  node_args+=(--experimental-strip-types)
 fi
 
 script_path="$REPO_ROOT/tools/clawforge.ts"
@@ -77,4 +71,4 @@ fi
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL="*"
 
-exec "$node_bin" "${node_args[@]}" "$script_path" "$@"
+exec "$node_bin" "$script_path" "$@"

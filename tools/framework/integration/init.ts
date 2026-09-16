@@ -80,7 +80,7 @@ for candidate in node node.exe /usr/local/bin/node "/c/Program Files/nodejs/node
   fi
 done
 if [[ -z "$node_bin" ]]; then
-  echo "error: Node not found — install Node 22.6 or newer first" >&2
+  echo "error: Node not found — install Node 24 or newer first" >&2
   exit 1
 fi
 script_path="$DIR/node_modules/@clawforge/framework/dist/entry/bin.js"
@@ -100,7 +100,7 @@ export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL="*"
 # Passing script_path as an argument bypasses bin.js's own shebang (its own
 # --experimental-strip-types) — needed here too, or bin.js's dynamic import of this
-# deployment's own app.ts fails on Node 22.6, this package's declared minimum.
+# deployment's own app.ts fails on the package's declared minimum.
 exec "$node_bin" --experimental-strip-types "$script_path" "$@"
 `;
 

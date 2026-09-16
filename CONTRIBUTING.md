@@ -5,7 +5,7 @@ should keep the framework independent from any one deployment's business content
 
 ## Development setup
 
-Use Node.js 22.6 or newer. From the repository root:
+Use Node.js 24 or newer. From the repository root:
 
 ```bash
 npm install

@@ -8,7 +8,7 @@
 // selection, no apps/<name> nesting — those exist in the monorepo gate to let several
 // deployments share one checkout, which is not what an installed dependency is for.
 //
-// The shebang is a plain `#!/usr/bin/env node`, and the flag Node 22.6-22.17 needs to load
+// The shebang is a plain `#!/usr/bin/env node`, and the flag is kept explicit when loading
 // the consumer's app.ts is added by re-executing this file (see below) rather than carried
 // there. `#!/usr/bin/env -S node --experimental-strip-types` looks tidier and does work with
 // GNU coreutils, but busybox `env` has no -S at all — on an Alpine image, the most common
@@ -68,10 +68,10 @@ useDeployment(appRoot);
 /** This file again, with type stripping switched on.
  *
  *  app.ts belongs to the consumer and is never compiled by anything here, so loading it needs
- *  a Node that strips types — on by default since 22.18, behind --experimental-strip-types
- *  before that. The flag cannot ride in the shebang (busybox `env` has no -S), and guessing
- *  from process.version or process.features would have to be right about every release; the
- *  import failing with "Unknown file extension" is the capability itself answering.
+ *  a consumer's app.ts. The flag cannot ride in the shebang (busybox `env` has no -S), and
+ *  guessing from process.version or process.features would have to be right about every
+ *  release; the import failing with "Unknown file extension" is the capability itself
+ *  answering.
  *
  *  Only that one flag is passed on: whatever disabled stripping in this process (an explicit
  *  --no-experimental-strip-types, an old default) must not be inherited by the retry. */
@@ -95,7 +95,7 @@ try {
 
   reportError(`cannot load ${appFile}: ${message}`);
   if (cannotReadTypeScript) {
-    reportError("this Node cannot execute TypeScript even with --experimental-strip-types — Node 22.6 or newer is required");
+    reportError("this Node cannot execute TypeScript even with --experimental-strip-types — Node 24 or newer is required");
   }
   process.exit(1);
 }

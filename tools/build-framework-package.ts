@@ -7,18 +7,14 @@
 // installing the raw .ts sources and watching that error come back. There is no flag to
 // turn it off.
 //
-// So packaging needs an actual build, but not a real compiler: `node:module`'s own
-// `stripTypeScriptTypes` is the exact same mechanism Node already applies at runtime
-// everywhere else in this project, run here instead at pack time, outside node_modules,
-// where it is still allowed. The only manual step beyond that is rewriting the `.ts`
-// extensions this codebase's imports use explicitly (e.g. `from "./env.ts"`) to `.js`,
-// since the emitted files are `.js` and nothing here uses bundler-style extensionless
-// resolution.
+// Node strips types for the JavaScript build; tsgo emits the declaration graph.
+// Both outputs use published .js import paths.
 //
 // Output goes to tools/framework/dist/ — git-ignored, regenerated on demand by this
 // script, never hand-edited, never the source of truth.
 
 import { readdir, readFile, writeFile, mkdir, rm, copyFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripTypeScriptTypes } from "node:module";
@@ -26,6 +22,8 @@ import { stripTypeScriptTypes } from "node:module";
 const toolsDir = dirname(fileURLToPath(import.meta.url));
 const frameworkDir = resolve(toolsDir, "framework");
 const distDir = resolve(frameworkDir, "dist");
+const declarationConfig = resolve(frameworkDir, "tsconfig.declaration.json");
+const tsgo = resolve(frameworkDir, "../../node_modules/@typescript/native-preview/bin/tsgo");
 
 async function collectTsFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -50,12 +48,12 @@ async function collectTsFiles(dir: string): Promise<string[]> {
  *  map, used in the source tree for readability) down to a plain relative path. dist/ ships
  *  with no package.json of its own, so nothing in it can rely on "#src/" resolving at
  *  runtime — the published package must be as self-contained as the pre-alias source was. */
-function rewriteSpecifiers(code: string, fileDir: string): string {
+function rewriteSpecifiers(code: string, fileDir: string, sourceRoot = frameworkDir): string {
   return code.replace(
     /((?:from|import)\s*\(?\s*["'])(\.[^"']+|#src\/[^"']+)\.ts(["'])/g,
     (_match, prefix: string, path: string, suffix: string) => {
       if (path.startsWith("#src/")) {
-        const target = resolve(frameworkDir, path.slice("#src/".length));
+        const target = resolve(sourceRoot, path.slice("#src/".length));
         const rel = relative(fileDir, target).replaceAll("\\", "/");
         return `${prefix}${rel.startsWith(".") ? rel : `./${rel}`}.js${suffix}`;
       }
@@ -64,9 +62,58 @@ function rewriteSpecifiers(code: string, fileDir: string): string {
   );
 }
 
+/** Rewrites generated declaration imports to published JavaScript paths. */
+function rewriteDeclarationSpecifiers(code: string, fileDir: string): string {
+  return rewriteSpecifiers(code, fileDir, distDir);
+}
+
+/** Runs the repository's existing tsgo to emit the declaration graph. */
+function emitDeclarations(): void {
+  const result = spawnSync(process.execPath, [tsgo, "--project", declarationConfig], {
+    cwd: resolve(frameworkDir, "../.."),
+    encoding: "utf8",
+  });
+  if (result.error !== undefined || result.status !== 0) {
+    const stdout = result.stdout?.toString() ?? "";
+    const stderr = result.stderr?.toString() ?? "";
+    if (stdout !== "") process.stderr.write(stdout);
+    if (stderr !== "") process.stderr.write(stderr);
+    const detail = result.error?.message ??
+      (result.status === null ? "the process did not exit normally" : `exit code ${result.status}`);
+    throw new Error(`tsgo declaration build failed: ${detail}`);
+  }
+}
+
+/** Applies publication path rewrites to every emitted declaration. */
+async function rewriteDeclarations(): Promise<void> {
+  const files = await collectFiles(distDir, ".d.ts");
+  for (const file of files) {
+    const source = await readFile(file, "utf8");
+    await writeFile(file, rewriteDeclarationSpecifiers(source, dirname(file)), "utf8");
+  }
+}
+
+/** Collects files ending in `suffix` below `dir`. */
+async function collectFiles(dir: string, suffix: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await collectFiles(full, suffix)));
+    } else if (entry.name.endsWith(suffix)) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
 async function build(): Promise<void> {
   await rm(distDir, { recursive: true, force: true });
   await mkdir(distDir, { recursive: true });
+
+  emitDeclarations();
+  await rewriteDeclarations();
 
   const files = await collectTsFiles(frameworkDir);
   for (const file of files) {

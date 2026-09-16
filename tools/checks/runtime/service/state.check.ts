@@ -367,7 +367,7 @@ check("both the backup and the share copy were removed", removed.length, 2);
 // Publication failures must leave neither a discoverable partial snapshot nor a held lock.
 // The fake is deliberately small but models the target filesystem, mv --no-clobber and the
 // commands needed by createBackup/pull so each failure is exercised through the real command.
-type PullFailure = "template" | "secrets" | "verify" | "archive" | "collision" | "dangling" | "missing-secrets";
+type PullFailure = "template" | "secrets" | "verify" | "archive" | "archive-after-move" | "archive-lost-ack" | "template-lost-ack" | "collision" | "dangling" | "missing-secrets";
 
 function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<string, string>; events: string[]; lock: () => boolean } {
   const dataDir = "/srv/openclaw/data";
@@ -375,6 +375,7 @@ function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<string,
   const files = new Map<string, string>();
   const events: string[] = [];
   let lockExists = false;
+  let archiveMoved = false;
   const oldSnapshot = `${snapshotDir}/${deploymentName()}-state-2020-01-01T00-00-00.tar.gz`;
   files.set(oldSnapshot, "previous\n");
 
@@ -414,6 +415,10 @@ function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<string,
         if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-e") {
           const path = args[1] ?? "";
+          if (failure === "archive-after-move" && archiveMoved) {
+            archiveMoved = false;
+            throw new Error("publication confirmation failed");
+          }
           return { code: path === dataDir || path === snapshotDir || files.has(path) || (failure === "collision" && path.includes("-state-") && path.endsWith(".tar.gz")) ? 0 : 1, stdout: "", stderr: "" };
         }
         if (command === "cp") {
@@ -435,6 +440,11 @@ function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<string,
           if (failure === "collision" && files.has(destination)) return { code: 0, stdout: "", stderr: "" };
           files.set(destination, files.get(source) ?? "");
           files.delete(source);
+          if (failure === "archive-after-move" && destination.includes("-state-") && destination.endsWith(".tar.gz")) archiveMoved = true;
+          if (
+            (failure === "archive-lost-ack" && destination.includes("-state-") && destination.endsWith(".tar.gz")) ||
+            (failure === "template-lost-ack" && destination.endsWith(".template.env"))
+          ) throw new Error("publication acknowledgement lost");
           return { code: 0, stdout: "", stderr: "" };
         }
         if (command === "rm") {
@@ -465,7 +475,7 @@ function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<string,
   return { ctx, files, events, lock: () => lockExists };
 }
 
-for (const failure of ["template", "secrets", "verify", "archive", "collision", "dangling", "missing-secrets"] as PullFailure[]) {
+for (const failure of ["template", "secrets", "verify", "archive", "archive-after-move", "archive-lost-ack", "template-lost-ack", "collision", "dangling", "missing-secrets"] as PullFailure[]) {
   const scenario = pullScenario(failure);
   let threw = false;
   try {
@@ -477,9 +487,28 @@ for (const failure of ["template", "secrets", "verify", "archive", "collision", 
   check(`pull ${failure} failure is reported`, threw, true);
   check(`pull ${failure} failure releases its lock`, scenario.lock(), false);
   check(`pull ${failure} failure leaves the previous snapshot intact`, scenario.files.get(`${"/srv/openclaw/snapshots"}/${deploymentName()}-state-2020-01-01T00-00-00.tar.gz`), "previous\n");
-  check(`pull ${failure} failure publishes no new archive`, snapshots.length, 1);
+  check(
+    `pull ${failure} failure leaves no incomplete archive`,
+    snapshots.length,
+    failure === "archive-after-move" || failure === "archive-lost-ack" ? 2 : 1,
+  );
   if (failure === "archive") {
     check("archive publication failure removes its already moved template", [...scenario.files.keys()].some((path) => path.endsWith(".template.env") && path.includes("-state-")), false);
+  }
+  if (failure === "archive-after-move") {
+    const published = snapshots.find((path) => !path.endsWith("2020-01-01T00-00-00.tar.gz"));
+    check("uncertain archive publication retains the archive", published !== undefined, true);
+    check("uncertain archive publication retains the template", published === undefined ? false : scenario.files.has(`${published}.template.env`), true);
+    check("uncertain archive publication retains the secrets", published === undefined ? false : scenario.files.has(`${published}.secrets.env`), true);
+  }
+  if (failure === "archive-lost-ack") {
+    const published = snapshots.find((path) => !path.endsWith("2020-01-01T00-00-00.tar.gz"));
+    check("lost archive acknowledgement retains the archive", published !== undefined, true);
+    check("lost archive acknowledgement retains the template", published === undefined ? false : scenario.files.has(`${published}.template.env`), true);
+    check("lost archive acknowledgement retains the secrets", published === undefined ? false : scenario.files.has(`${published}.secrets.env`), true);
+  }
+  if (failure === "template-lost-ack") {
+    check("lost sidecar acknowledgement removes the uncertain sidecar", [...scenario.files.keys()].some((path) => path.endsWith(".template.env") && path.includes("-state-")), false);
   }
 }
 

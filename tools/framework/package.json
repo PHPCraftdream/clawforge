@@ -28,9 +28,18 @@
     "clawforge": "dist/entry/bin.js"
   },
   "exports": {
-    "./app": "./dist/core/app.js",
-    "./mounts": "./dist/runtime/mounts.js",
-    "./commands": "./dist/commands/interface/index.js"
+    "./app": {
+      "types": "./dist/core/app.d.ts",
+      "default": "./dist/core/app.js"
+    },
+    "./mounts": {
+      "types": "./dist/runtime/mounts.d.ts",
+      "default": "./dist/runtime/mounts.js"
+    },
+    "./commands": {
+      "types": "./dist/commands/interface/index.d.ts",
+      "default": "./dist/commands/interface/index.js"
+    }
   },
   "files": [
     "dist",

@@ -60,6 +60,29 @@ function check(name: string, actual: unknown, expected: unknown): void {
 
 // --- remote: what is made of find's output --------------------------------------------
 
+{
+  const bytes = Uint8Array.from([0xff, 0x00, 0x80, 0xc3, 0x28]);
+  const result = await spawnLocal(
+    process.execPath,
+    ["-e", "process.stdin.on('data', chunk => process.stdout.write(chunk.toString('hex')))"],
+    { input: bytes },
+  );
+  check("local exec delivers binary stdin without UTF-8 conversion", result.stdout, Buffer.from(bytes).toString("hex"));
+}
+
+{
+  const bytes = Uint8Array.from([0xff, 0x00, 0x80]);
+  let delivered: string | Uint8Array | undefined;
+  const ssh = new SshTransport("example.invalid");
+  (ssh as unknown as { exec: (command: string, args: string[], options: ExecOptions) => Promise<ExecResult> }).exec =
+    async (_command, _args, options) => {
+      delivered = options.input;
+      return { code: 0, stdout: "", stderr: "" };
+    };
+  await ssh.writeFile("/tmp/binary", bytes);
+  check("ssh file writes forward binary stdin unchanged", delivered instanceof Uint8Array ? [...delivered] : delivered, [...bytes]);
+}
+
 function execReturning(result: ExecResult) {
   const calls: { command: string; args: string[] }[] = [];
   return {
@@ -162,7 +185,8 @@ function execReturning(result: ExecResult) {
     { command: probeCalls[0]?.command, args: probeCalls[0]?.args },
     { command: "sh", args: ["-s", "--", "/srv/x"] },
   );
-  check("remote: and the script itself arrives on stdin", (probeCalls[0]?.options.input ?? "").includes("blocked $parent"), true);
+  const probeInput = probeCalls[0]?.options.input;
+  check("remote: and the script itself arrives on stdin", typeof probeInput === "string" && probeInput.includes("blocked $parent"), true);
   check("remote: the absent verdict is absent", await sshWith({ code: 0, stdout: "absent\n", stderr: "" }).exists("/srv/x"), false);
 
   // The verdict this whole probe exists for: the path may well be there, and the check was

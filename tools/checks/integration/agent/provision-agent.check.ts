@@ -5,7 +5,7 @@
 //     decisions, argv, and the scope-upgrade self-heal retry) against a stubbed Context —
 //     same idiom as tools/checks/cli-helper.check.ts.
 
-import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile as readBytes, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import {
@@ -27,6 +27,8 @@ import {
   cronRmArgv,
 } from "#framework/commands/management/provision-agent/index.ts";
 import type { Context } from "#framework/core/context.ts";
+import { LocalTransport } from "#framework/runtime/transport.ts";
+import { checksumOf } from "#framework/service/checksums.ts";
 
 let failed = 0;
 
@@ -118,6 +120,37 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
     check("collects runtime files at any depth, any extension, excludes agent/ entirely", found, ["data/page.md", "data/sub/nested.md", "server.ts"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+}
+
+// Mirroring is byte preserving: recipe assets may be PNG, WASM or another format that is
+// not valid UTF-8. Root-level names also must not turn into directories (server.ts and
+// server.tsx are both ordinary files).
+{
+  const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-binary-check-"));
+  const targetData = resolve(root, "target-data");
+  const recipeDir = resolve(root, "recipe");
+  try {
+    await mkdir(resolve(recipeDir, "assets"), { recursive: true });
+    const binary = Buffer.from([0xff, 0x00, 0x80, 0xc3, 0x28, 0x0a]);
+    await writeFile(resolve(recipeDir, "server.ts"), "export default 1;\n");
+    await writeFile(resolve(recipeDir, "server.tsx"), "export default 2;\n");
+    await writeFile(resolve(recipeDir, "assets", "logo.bin"), binary);
+
+    const ctx = {
+      settings: { dataDir: targetData },
+      transport: new LocalTransport(),
+    } as unknown as Context;
+    await syncRecipeFiles(ctx, "binary-recipe", recipeDir);
+
+    const mirror = recipeMirrorTargetDir(targetData, "binary-recipe");
+    const copied = await readBytes(resolve(mirror, "assets", "logo.bin"));
+    check("recipe mirror preserves non-UTF-8 bytes and NULs", [...copied], [...binary]);
+    check("recipe mirror preserves the source checksum", checksumOf(copied), checksumOf(binary));
+    check("root-level colliding filenames remain files", (await ctx.transport.listFiles(mirror)).sort(), ["assets/logo.bin", "server.ts", "server.tsx"]);
+    check("root-level filenames do not create a truncated directory", await ctx.transport.exists(resolve(mirror, "server.t")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 }
 

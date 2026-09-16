@@ -17,7 +17,8 @@ import { die, maskSecrets } from "../core/log.ts";
 import { outputSink } from "../core/output.ts";
 
 export interface ExecOptions {
-  input?: string;
+  /** Bytes are passed through unchanged; strings retain the existing UTF-8 behavior. */
+  input?: string | Uint8Array;
   /** Stream output live; capture it when input or an output sink requires pipes. */
   stream?: boolean;
   env?: Record<string, string>;
@@ -56,7 +57,8 @@ export interface Transport {
   readonly description: string;
   exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
   readFile(path: string): Promise<string>;
-  writeFile(path: string, content: string, mode?: string): Promise<void>;
+  /** Writes text as UTF-8 or byte content without a decoding round trip. */
+  writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   mkdirp(path: string): Promise<void>;
   remove(path: string): Promise<void>;
@@ -306,8 +308,8 @@ export class LocalTransport implements Transport {
     return readFile(path, "utf8");
   }
 
-  async writeFile(path: string, content: string, mode?: string): Promise<void> {
-    await writeFile(path, content, "utf8");
+  async writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void> {
+    await writeFile(path, content);
     if (mode !== undefined) await chmod(path, Number.parseInt(mode, 8));
   }
 
@@ -395,7 +397,7 @@ export class WslTransport implements Transport {
     return result.stdout;
   }
 
-  async writeFile(path: string, content: string, mode?: string): Promise<void> {
+  async writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void> {
     // `tee` rather than a redirect: no shell means no quoting hazards.
     await this.exec("tee", [path], { input: content });
     if (mode !== undefined) await this.exec("chmod", [mode, path]);
@@ -463,7 +465,7 @@ export class SshTransport implements Transport {
     return result.stdout;
   }
 
-  async writeFile(path: string, content: string, mode?: string): Promise<void> {
+  async writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void> {
     await this.exec("tee", [path], { input: content });
     if (mode !== undefined) await this.exec("chmod", [mode, path]);
   }

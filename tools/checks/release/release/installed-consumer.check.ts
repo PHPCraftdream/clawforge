@@ -86,8 +86,8 @@ try {
   const tarballs = packed.code === 0 ? (await readdir(base)).filter((entry) => entry.endsWith(".tgz")) : [];
 
   if (tarballs.length === 0) {
-    // npm missing, or a pack failure this check cannot attribute: say so rather than pass.
-    process.stderr.write(`  skip installed-consumer check (npm pack did not produce a tarball)\n    ${packed.output.trim().split("\n").slice(-3).join("\n    ")}\n`);
+    failed += 1;
+    process.stderr.write(`  FAIL npm pack produced no tarball\n    ${packed.output.trim().split("\n").slice(-3).join("\n    ")}\n`);
   } else {
     const extracted = join(base, "extracted");
     await mkdir(extracted, { recursive: true });
@@ -115,6 +115,56 @@ try {
     check("and leaves the directory loadable as ESM", consumerPackage.type, "module");
     check("app.ts is written", await access(resolve(consumer, "app.ts")).then(() => true, () => false), true);
     check("and so is the ./clawforge shim", await access(resolve(consumer, "clawforge")).then(() => true, () => false), true);
+
+    // The generated declaration is also the public API's compile-time contract. Assert a
+    // concrete callback type and reject `any`, so a present-but-empty declaration cannot pass.
+    await writeFile(resolve(consumer, "typecheck.ts"), `import app from "./app.ts";
+import { defineApp, type AppDefinition } from "@clawforge/framework/app";
+
+type IsAny<T> = 0 extends (1 & T) ? true : false;
+type AssertFalse<T extends false> = T;
+type SummaryIsTyped = AssertFalse<IsAny<typeof app.commands.bootstrap.summary>>;
+const typedApp: AppDefinition = defineApp({
+  name: "typed-consumer",
+  description: "type check",
+  commands: {
+    ping: {
+      summary: "ping",
+      run: async (ctx, args) => {
+        type ContextIsTyped = AssertFalse<IsAny<typeof ctx>>;
+        type ArgsIsTyped = AssertFalse<IsAny<typeof args>>;
+        const code: number = (await ctx.transport.exec("true", [])).code;
+        const first: string | undefined = args[0];
+        const contextTypeGuard: ContextIsTyped = false;
+        const argsTypeGuard: ArgsIsTyped = false;
+        void code;
+        void first;
+        void contextTypeGuard;
+        void argsTypeGuard;
+      },
+    },
+  },
+});
+void typedApp;
+const summaryTypeGuard: SummaryIsTyped = false;
+void summaryTypeGuard;
+`, "utf8");
+    await writeFile(resolve(consumer, "tsconfig.json"), `${JSON.stringify({
+      compilerOptions: {
+        target: "ES2022",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        allowImportingTsExtensions: true,
+        strict: true,
+        skipLibCheck: false,
+        noEmit: true,
+      },
+      include: ["app.ts", "typecheck.ts"],
+    }, undefined, 2)}\n`, "utf8");
+    const tsgo = join(monorepoRoot, "node_modules", "@typescript", "native-preview", "bin", "tsgo");
+    const typed = await run(process.execPath, ["--experimental-strip-types", tsgo, "--project", "tsconfig.json"], consumer);
+    check("generated app.ts typechecks against the public API", typed.code, 0);
+    if (typed.code !== 0) process.stderr.write(`    ${typed.output.trim().split("\n").slice(0, 8).join("\n    ")}\n`);
 
     // The decisive one: bin.js dynamically imports the deployment's own app.ts, which is what
     // the consumer's package.json decides how to read.

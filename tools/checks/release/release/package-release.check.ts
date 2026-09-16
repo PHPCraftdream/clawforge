@@ -13,7 +13,7 @@ const manifest = JSON.parse(await readFile(resolve(packageRoot, "package.json"),
   repository?: { type?: string; url?: string; directory?: string };
   bin?: Record<string, string>;
   main?: string;
-  exports?: Record<string, string>;
+  exports?: Record<string, string | { types?: string; default?: string }>;
   files?: string[];
   publishConfig?: { access?: string };
 };
@@ -27,7 +27,13 @@ if (!manifest.homepage || !manifest.bugs?.url || manifest.repository?.type !== "
   throw new Error("the package must declare repository, homepage and issue metadata");
 }
 if (manifest.bin?.clawforge !== "dist/entry/bin.js") throw new Error("the package bin must be clawforge -> dist/entry/bin.js");
-if (manifest.exports?.["./app"] !== "./dist/core/app.js" || manifest.exports?.["./mounts"] !== "./dist/runtime/mounts.js" || manifest.exports?.["./commands"] !== "./dist/commands/interface/index.js") {
+const exported = (name: string, types: string, runtime: string): boolean => {
+  const entry = manifest.exports?.[name];
+  return typeof entry === "object" && entry !== null && entry.types === types && entry.default === runtime;
+};
+if (!exported("./app", "./dist/core/app.d.ts", "./dist/core/app.js") ||
+    !exported("./mounts", "./dist/runtime/mounts.d.ts", "./dist/runtime/mounts.js") ||
+    !exported("./commands", "./dist/commands/interface/index.d.ts", "./dist/commands/interface/index.js")) {
   throw new Error("the package exports must follow the source layout");
 }
 // "main": "index.js" sat here naming a file the package does not ship and never did. Nothing

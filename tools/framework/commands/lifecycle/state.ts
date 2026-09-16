@@ -75,19 +75,64 @@ async function snapshotExists(ctx: Context, path: string): Promise<boolean> {
   throw new Error(`could not check snapshot path ${path} (exit ${result.code})`);
 }
 
+/** A move whose final state could not be observed safely. */
+class SnapshotMoveUncertainError extends Error {
+  readonly sourceAbsent: boolean | undefined;
+
+  constructor(destination: string, cause: unknown, sourceAbsent: boolean | undefined) {
+    super(`could not confirm publication of ${destination}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = "SnapshotMoveUncertainError";
+    this.sourceAbsent = sourceAbsent;
+  }
+}
+
 /** Publishes one file without replacing an existing path. */
 async function moveSnapshotFile(ctx: Context, source: string, destination: string): Promise<void> {
   const prefix = await sudoFor(ctx, destination);
   const [head, ...rest] = [...prefix, "mv", "-nT", "--", source, destination];
-  const result = await ctx.transport.exec(head, rest, { allowFailure: true });
-  if (result.code !== 0) {
-    throw new Error(`could not publish ${destination}: ${result.stderr.trim() || `mv exited ${result.code}`}`);
+  let result: Awaited<ReturnType<Context["transport"]["exec"]>>;
+  try {
+    result = await ctx.transport.exec(head, rest, { allowFailure: true });
+  } catch (error) {
+    let sourceAbsent: boolean | undefined;
+    try {
+      sourceAbsent = !(await snapshotExists(ctx, source));
+    } catch {
+      // The move and its acknowledgement are both unavailable; preserve any final
+      // sidecar because removing a possible publication could destroy prior data.
+    }
+    if (sourceAbsent !== false) throw new SnapshotMoveUncertainError(destination, error, sourceAbsent);
+    throw error;
   }
-  if (await snapshotExists(ctx, source)) {
+  if (result.code !== 0) {
+    const failure = new Error(`could not publish ${destination}: ${result.stderr.trim() || `mv exited ${result.code}`}`);
+    let sourceAbsent: boolean | undefined;
+    try {
+      sourceAbsent = !(await snapshotExists(ctx, source));
+    } catch {
+      // A failed probe leaves the move outcome unknown, so the caller must retain
+      // sidecars until it can establish whether the archive was committed.
+    }
+    if (sourceAbsent !== false) throw new SnapshotMoveUncertainError(destination, failure, sourceAbsent);
+    throw failure;
+  }
+  let sourcePresent: boolean;
+  try {
+    sourcePresent = await snapshotExists(ctx, source);
+  } catch (error) {
+    throw new SnapshotMoveUncertainError(destination, error, undefined);
+  }
+  if (sourcePresent) {
     throw new Error(`snapshot path already exists: ${destination}`);
   }
-  if (!(await snapshotExists(ctx, destination))) {
-    throw new Error(`could not publish ${destination}: mv did not create the destination`);
+  let destinationPresent: boolean;
+  try {
+    destinationPresent = await snapshotExists(ctx, destination);
+  } catch (error) {
+    throw new SnapshotMoveUncertainError(destination, error, true);
+  }
+  if (!destinationPresent) {
+    throw new SnapshotMoveUncertainError(destination, new Error("mv did not create the destination"), true);
   }
 }
 
@@ -213,8 +258,10 @@ async function pullLocked(ctx: Context, profile: Profile, hot: boolean): Promise
   const stagedTemplate = `${staged}.template.env`;
   const stagedSecrets = `${staged}${SECRETS_SUFFIX}`;
   const publishedSidecars: string[] = [];
+  const uncertainSidecars: string[] = [];
   let hasStagedSecrets = false;
   let publishedArchive = false;
+  let archivePublicationUncertain = false;
   let stagingCreated = false;
 
   if (await snapshotExists(ctx, snapshot) || await snapshotExists(ctx, snapshotTemplate) || await snapshotExists(ctx, snapshotSecrets)) {
@@ -272,13 +319,30 @@ async function pullLocked(ctx: Context, profile: Profile, hot: boolean): Promise
     const size = await fileSize(ctx, staged);
 
     // Refuse collisions without replacing a previous complete snapshot.
-    await moveSnapshotFile(ctx, stagedTemplate, snapshotTemplate);
+    try {
+      await moveSnapshotFile(ctx, stagedTemplate, snapshotTemplate);
+    } catch (error) {
+      if (error instanceof SnapshotMoveUncertainError && error.sourceAbsent === true) uncertainSidecars.push(snapshotTemplate);
+      throw error;
+    }
     publishedSidecars.push(snapshotTemplate);
     if (hasStagedSecrets) {
-      await moveSnapshotFile(ctx, stagedSecrets, snapshotSecrets);
+      try {
+        await moveSnapshotFile(ctx, stagedSecrets, snapshotSecrets);
+      } catch (error) {
+        if (error instanceof SnapshotMoveUncertainError && error.sourceAbsent === true) uncertainSidecars.push(snapshotSecrets);
+        throw error;
+      }
       publishedSidecars.push(snapshotSecrets);
     }
-    await moveSnapshotFile(ctx, staged, snapshot);
+    try {
+      await moveSnapshotFile(ctx, staged, snapshot);
+    } catch (error) {
+      // The archive is the commit point. If its move succeeded but the confirmation
+      // failed, retain both sidecars: deleting them could expose an incomplete archive.
+      archivePublicationUncertain = error instanceof SnapshotMoveUncertainError;
+      throw error;
+    }
     publishedArchive = true;
 
     log(`pulled ${entries.length} entries (${size}), profile: ${profile}`);
@@ -291,8 +355,8 @@ async function pullLocked(ctx: Context, profile: Profile, hot: boolean): Promise
     await rotateSnapshots(ctx, snapshotDir);
   } catch (error) {
     // A failure before archive publication must not leave a discoverable partial snapshot.
-    if (!publishedArchive) {
-      await removeSnapshotFiles(ctx, publishedSidecars);
+    if (!publishedArchive && !archivePublicationUncertain) {
+      await removeSnapshotFiles(ctx, [...publishedSidecars, ...uncertainSidecars]);
     }
     throw error;
   } finally {

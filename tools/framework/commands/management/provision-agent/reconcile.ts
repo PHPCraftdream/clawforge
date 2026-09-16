@@ -56,11 +56,18 @@ export async function syncRecipeFiles(
   // the same, but this way the listing is of the state the previous run actually left.
   const alreadyThere = await ctx.transport.listFiles(targetDir);
 
-  const dirs = new Set(relPaths.map((rel) => rel.slice(0, rel.lastIndexOf("/"))).filter((dir) => dir !== ""));
+  const dirs = new Set(
+    relPaths
+      .map((rel) => {
+        const slash = rel.lastIndexOf("/");
+        return slash === -1 ? "" : rel.slice(0, slash);
+      })
+      .filter((dir) => dir !== ""),
+  );
   await ctx.transport.mkdirp(targetDir);
   for (const dir of dirs) await ctx.transport.mkdirp(`${targetDir}/${dir}`);
   for (const rel of relPaths) {
-    const content = await readFile(resolve(recipeDir, ...rel.split("/")), "utf8");
+    const content = await readFile(resolve(recipeDir, ...rel.split("/")));
     await ctx.transport.writeFile(`${targetDir}/${rel}`, content);
   }
 

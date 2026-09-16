@@ -34,6 +34,25 @@ function forbiddenPaths(profile: Profile): string[] {
   return [];
 }
 
+/** Creates a private directory, preserving compatibility with older transports. */
+async function mkdirPrivate(ctx: Context, path: string): Promise<void> {
+  if (typeof ctx.transport.mkdirPrivate === "function") {
+    await ctx.transport.mkdirPrivate(path);
+    return;
+  }
+  await ctx.transport.exec("mkdir", ["-m", "700", path]);
+}
+
+/** Writes secrets to a newly-created private file without a permissive intermediate mode. */
+async function writePrivateFile(ctx: Context, path: string, content: string): Promise<void> {
+  if (typeof ctx.transport.writePrivateFile === "function") {
+    await ctx.transport.writePrivateFile(path, content);
+    return;
+  }
+  const quotedPath = `'${path.replaceAll("'", `'\\''`)}'`;
+  await ctx.transport.exec("sh", ["-c", `umask 077; set -C; cat > ${quotedPath}`], { input: content });
+}
+
 async function collectSecrets(ctx: Context): Promise<{ critical: string[]; identity: string[] }> {
   const critical: string[] = [];
   const identity: string[] = [];
@@ -90,13 +109,12 @@ async function collectSecrets(ctx: Context): Promise<{ critical: string[]; ident
 }
 
 /** Greps an unpacked tree for any of the given values, binary files included. */
-async function findSecrets(ctx: Context, directory: string, values: string[]): Promise<string[]> {
+async function findSecrets(ctx: Context, directory: string, values: string[], patternFile: string): Promise<string[]> {
   if (values.length === 0) return [];
 
-  // The pattern file holds the secret values themselves: owner-only, and removed even when
-  // the scan throws.
-  const patternFile = `${directory}.patterns`;
-  await ctx.transport.writeFile(patternFile, `${values.join("\n")}\n`, "600");
+  // The private session directory is created first, so this file is owner-only before its
+  // first secret byte is written. Its path stays outside the extracted tree.
+  await writePrivateFile(ctx, patternFile, `${values.join("\n")}\n`);
 
   try {
     // -a: treat binaries as text, so a key inside a sqlite page is still caught.
@@ -184,14 +202,19 @@ export async function verifySnapshot(
   }
 
   // Content scan.
-  const workdir = `/tmp/clawforge-verify-${randomBytes(6).toString("hex")}`;
-  await ctx.transport.mkdirp(workdir);
+  const session = `/tmp/clawforge-verify-${randomBytes(6).toString("hex")}`;
+  const workdir = `${session}/tree`;
+  const patternFile = `${session}/patterns`;
   // Resolved before the try so the cleanup below can use it too: tar preserves ownership and
   // mode, so an archive extracted with sudo leaves root-owned directories (auth-secrets is
   // 700) that an unprivileged `rm -rf` cannot descend into. Cleaning up with anything less
   // than what unpacked it turns a verdict about the archive into an error about /tmp.
   const prefix = await sudoFor(ctx, archive);
+  let sessionCreated = false;
   try {
+    await mkdirPrivate(ctx, session);
+    sessionCreated = true;
+    await mkdirPrivate(ctx, workdir);
     const [head, ...rest] = [...prefix, "tar", "-xzf", archive, "-C", workdir];
     await ctx.transport.exec(head, rest);
 
@@ -220,9 +243,10 @@ export async function verifySnapshot(
           })
           .map(([id]) => id);
         if (embeddedKeys.length > 0) {
-          warn("the archive's own openclaw.json embeds a plain-string provider apiKey:");
+          const report = profile === "full" ? info : warn;
+          report("the archive's own openclaw.json embeds a plain-string provider apiKey:");
           for (const id of embeddedKeys) info(`provider ${id}`);
-          failures += 1;
+          if (profile !== "full") failures += 1;
         }
       } catch (error) {
         warn(`the archive's own openclaw.json could not be parsed, so it could not be checked for an embedded key: ${(error as Error).message}`);
@@ -230,14 +254,15 @@ export async function verifySnapshot(
       }
     }
 
-    const criticalHits = await findSecrets(ctx, workdir, secrets.critical);
+    const criticalHits = await findSecrets(ctx, workdir, secrets.critical, patternFile);
     if (criticalHits.length > 0) {
-      warn("provider/gateway credentials found inside the archive:");
+      const report = profile === "full" ? info : warn;
+      report("provider/gateway credentials found inside the archive:");
       for (const hit of criticalHits) info(hit);
-      failures += 1;
+      if (profile !== "full") failures += 1;
     }
 
-    const identityHits = await findSecrets(ctx, workdir, secrets.identity);
+    const identityHits = await findSecrets(ctx, workdir, secrets.identity, patternFile);
     if (identityHits.length > 0) {
       if (profile === "share") {
         warn("instance identity tokens found inside the archive:");
@@ -250,8 +275,10 @@ export async function verifySnapshot(
   } finally {
     // allowFailure: a scan that finished has an answer, and a leftover directory in /tmp is
     // not a reason to throw it away.
-    const [rmHead, ...rmRest] = [...prefix, "rm", "-rf", workdir];
-    await ctx.transport.exec(rmHead, rmRest, { allowFailure: true });
+    if (sessionCreated) {
+      const [rmHead, ...rmRest] = [...prefix, "rm", "-rf", session];
+      await ctx.transport.exec(rmHead, rmRest, { allowFailure: true });
+    }
   }
 
   if (failures > 0) {
@@ -286,6 +313,6 @@ export async function verify(ctx: Context, args: string[]): Promise<void> {
   if (profile === "full") warn("profile 'full' is credential-complete by design — never share it");
 
   if (!(await verifySnapshot(ctx, archive, profile))) {
-    die("snapshot is not safe to share");
+    die(`snapshot failed the '${profile}' profile check`);
   }
 }

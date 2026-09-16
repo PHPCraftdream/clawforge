@@ -9,7 +9,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { deploy, frameworkSourceRoot } from "#framework/commands/management/deploy.ts";
-import { useDeployment, useComposeProjectOverride } from "#framework/runtime/deployment.ts";
+import { useDeployment, useComposeProjectOverride, useApplicationRecipesDir } from "#framework/runtime/deployment.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -236,6 +236,77 @@ check(
 
 check("this checkout is recognized as one", await isMonorepoCheckout(), true);
 check("the framework sync above used the checkout root", rsyncs[0].args.some((arg) => arg.startsWith(monorepoRoot.replaceAll("\\", "/"))), true);
+
+// --- an application recipe root follows the declaration --------------------
+
+{
+  useApplicationRecipesDir("custom recipes");
+  const customCalls: { command: string; args: string[] }[] = [];
+  const customCtx = {
+    ...ctx,
+    transport: {
+      description: "stub",
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        customCalls.push({ command, args });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+  try {
+    await withOutputSink(() => {}, () => deploy(customCtx, ["deployer@server", "--no-bootstrap"]));
+  } finally {
+    useApplicationRecipesDir(undefined);
+  }
+
+  const customRsync = customCalls.find((call) => call.command === "rsync" && call.args.some((arg) => arg.includes("custom recipes")));
+  const customRemote = customRsync?.args.at(-1) ?? "";
+  check("relative recipesDir is sent to its matching remote directory", customRemote.includes("/apps/example app/custom recipes/"), true);
+  const customMkdir = customCalls.find((call) => call.command === "ssh" && call.args.at(-1)?.includes("mkdir -p") && call.args.at(-1)?.includes("custom recipes"));
+  check("relative recipesDir is created under the remote app", customMkdir?.args.at(-1)?.includes("custom recipes"), true);
+  check("relative recipesDir does not also write the default root", customRemote.includes("/apps/example app/recipes/"), false);
+}
+
+// Absolute roots are local machine paths. Refuse before any remote command so deploying one
+// can never create or overwrite an unrelated absolute path on the target host.
+{
+  useApplicationRecipesDir(resolve(tmpdir(), "external recipes"));
+  const absoluteCalls: { command: string; args: string[] }[] = [];
+  const absoluteCtx = {
+    ...ctx,
+    transport: {
+      description: "stub",
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        absoluteCalls.push({ command, args });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+  let refusal = "";
+  try {
+    await withOutputSink(() => {}, () => deploy(absoluteCtx, ["deployer@server"]));
+  } catch (error) {
+    refusal = (error as Error).message;
+  } finally {
+    useApplicationRecipesDir(undefined);
+  }
+  check("absolute recipesDir is refused with an actionable error", refusal.includes("absolute recipesDir"), true);
+  check("absolute recipesDir is refused before remote mutation", absoluteCalls, []);
+}
+
+// A relative path that escapes the deployment is equally unsafe: its apparent remote
+// destination would otherwise be outside apps/<name> and --delete could erase it.
+{
+  useApplicationRecipesDir("../outside recipes");
+  let refusal = "";
+  try {
+    await withOutputSink(() => {}, () => deploy(ctx, ["deployer@server"]));
+  } catch (error) {
+    refusal = (error as Error).message;
+  } finally {
+    useApplicationRecipesDir(undefined);
+  }
+  check("escaping recipesDir is refused", refusal.includes("outside the deployment"), true);
+}
 
 process.stderr.write(failed === 0 ? "all deploy checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

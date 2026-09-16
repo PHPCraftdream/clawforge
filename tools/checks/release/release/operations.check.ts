@@ -5,6 +5,10 @@
 // point on disk, because that is the run whose record anyone will actually need.
 
 import { Journal, snapshotConfig, listOperations, readOperation, latestRollbackable, newOperationId } from "#framework/service/operations.ts";
+import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { LocalTransport } from "#framework/runtime/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
@@ -39,6 +43,14 @@ function stubContext(seed: Record<string, string> = {}) {
       async writeFile(path: string, content: string): Promise<void> {
         files.set(path, content);
         writes.push(path);
+      },
+      async writePrivateFile(path: string, content: string): Promise<void> {
+        if (files.has(path)) throw new Error("EEXIST: file exists");
+        files.set(path, content);
+        writes.push(path);
+      },
+      async remove(path: string): Promise<void> {
+        files.delete(path);
       },
       async listFiles(dir: string): Promise<string[]> {
         return [...files.keys()].filter((path) => path.startsWith(`${dir}/`)).map((path) => path.slice(dir.length + 1));
@@ -133,6 +145,94 @@ function stubContext(seed: Record<string, string> = {}) {
   const where = await snapshotConfig(ctx, "apply-1");
   check("the live configuration is copied aside", where, "/srv/clawforge/clawforge-operations/apply-1.openclaw.json");
   check("byte for byte", files.get(where!), '{"gateway":{"mode":"local"}}');
+}
+
+{
+  const { ctx, files } = stubContext({ "/srv/clawforge/config/openclaw.json": '{"gateway":{"token":"secret"}}' });
+  const destination = "/srv/clawforge/clawforge-operations/apply-1.openclaw.json";
+  files.set(destination, "existing snapshot");
+  check("a colliding snapshot is refused", await snapshotConfig(ctx, "apply-1"), undefined);
+  check("a colliding snapshot remains unchanged", files.get(destination), "existing snapshot");
+}
+
+{
+  const root = await mkdtemp(join(tmpdir(), "clawforge-operation-snapshot-"));
+  const live = join(root, "config", "openclaw.json");
+  try {
+    await mkdir(join(root, "config"));
+    await writeFile(live, '{"gateway":{"token":"secret"}}', { mode: 0o600 });
+    const ctx = { settings: { dataDir: root }, transport: new LocalTransport() } as unknown as Context;
+    const where = await snapshotConfig(ctx, "private");
+    check("a local snapshot keeps exact data", await ctx.transport.readFile(where!), '{"gateway":{"token":"secret"}}');
+    check("a local snapshot is private from creation", (await stat(where!)).mode & 0o777, process.platform === "win32" ? 0o666 : 0o600);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+{
+  const destination = "/srv/clawforge/clawforge-operations/failing.openclaw.json";
+  const files = new Map([["/srv/clawforge/config/openclaw.json", "secret"]]);
+  const ctx = {
+    settings: { dataDir: "/srv/clawforge" },
+    transport: {
+      async exists(path: string): Promise<boolean> { return files.has(path); },
+      async readFile(path: string): Promise<string> { return files.get(path)!; },
+      async mkdirp(): Promise<void> {},
+      async writePrivateFile(path: string): Promise<void> {
+        files.set(path, "partial");
+        files.delete(path);
+        throw new Error("disk failure");
+      },
+      async writeFile(): Promise<void> {},
+      async remove(path: string): Promise<void> { files.delete(path); },
+    },
+  } as unknown as Context;
+  check("a failed snapshot is not claimed", await snapshotConfig(ctx, "failing"), undefined);
+  check("a failed private write is cleaned up", files.has(destination), false);
+}
+
+{
+  const destination = "/srv/clawforge/clawforge-operations/existing.openclaw.json";
+  const files = new Map([
+    ["/srv/clawforge/config/openclaw.json", "secret"],
+    [destination, "do not erase"],
+  ]);
+  const ctx = {
+    settings: { dataDir: "/srv/clawforge" },
+    transport: {
+      async exists(path: string): Promise<boolean> {
+        if (path === destination) throw new Error("temporary stat failure");
+        return files.has(path);
+      },
+      async readFile(): Promise<string> { throw new Error("source read failure"); },
+      async mkdirp(): Promise<void> {},
+      async writePrivateFile(): Promise<void> { throw new Error("must not write"); },
+      async remove(path: string): Promise<void> { files.delete(path); },
+    },
+  } as unknown as Context;
+  check("a destination check failure is not claimed", await snapshotConfig(ctx, "existing"), undefined);
+  check("a destination check failure does not erase existing data", files.get(destination), "do not erase");
+}
+
+{
+  const destination = "/srv/clawforge/clawforge-operations/read-failure.openclaw.json";
+  const files = new Map([
+    ["/srv/clawforge/config/openclaw.json", "secret"],
+    [destination, "keep this snapshot"],
+  ]);
+  const ctx = {
+    settings: { dataDir: "/srv/clawforge" },
+    transport: {
+      async exists(path: string): Promise<boolean> { return path !== destination && files.has(path); },
+      async readFile(): Promise<string> { throw new Error("source read failure"); },
+      async mkdirp(): Promise<void> {},
+      async writePrivateFile(): Promise<void> { throw new Error("must not write"); },
+      async remove(path: string): Promise<void> { files.delete(path); },
+    },
+  } as unknown as Context;
+  check("a source read failure is not claimed", await snapshotConfig(ctx, "read-failure"), undefined);
+  check("a source read failure does not erase an existing path", files.get(destination), "keep this snapshot");
 }
 
 {

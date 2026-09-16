@@ -18,7 +18,7 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createApp, appsDir } from "#framework/integration/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { MCP_EXEMPTIONS, structuredResult, toArgv } from "#framework/integration/mcp-server.ts";
+import { MCP_EXEMPTIONS, inputSchema, structuredResult, toArgv, toolDescription } from "#framework/integration/mcp-server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 let failed = 0;
@@ -118,6 +118,46 @@ try {
   check("nor does a gate command", byName.get("check")?.outputSchema, undefined);
 } finally {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
+}
+
+// A command group containing a destructive subcommand is gated as a whole. This keeps the
+// MCP contract safe when a caller selects `recipe remove --volumes`; the list form remains
+// callable after the same explicit confirmation, without starting Docker.
+{
+  const recipeDeployment = `mcp-check-recipe-${randomBytes(4).toString("hex")}`;
+  const recipeLines = [
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recipe", arguments: { action: "remove", name: "demo", volumes: true } } },
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "recipe", arguments: { action: "remove", name: "demo", volumes: true, confirm: false } } },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "recipe", arguments: { action: "list", confirm: true } } },
+    { jsonrpc: "2.0", id: 4, method: "tools/list" },
+  ].map((request) => JSON.stringify(request)).join("\n");
+
+  try {
+    await createApp(recipeDeployment);
+    const result = await runServer(recipeDeployment, recipeLines);
+    const responses = result.stdout
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const byId = new Map(responses.map((response) => [response.id, response]));
+    const textOf = (id: number): string => String(((byId.get(id)?.result as { content?: Array<{ text?: string }> } | undefined)?.content ?? [])[0]?.text ?? "");
+
+    check("recipe MCP calls keep the server alive", result.code, 0);
+    check("recipe remove without confirm is rejected", textOf(1).includes("pass confirm: true"), true);
+    check("recipe remove with confirm false is rejected", textOf(2).includes("pass confirm: true"), true);
+    check("confirmed recipe list remains available", textOf(3).includes("no recipes yet"), true);
+
+    const recipeTool = (((byId.get(4)?.result as { tools?: Array<{ name: string; description?: string; inputSchema?: { properties?: Record<string, unknown>; required?: string[] } }> } | undefined)?.tools ?? [])
+      .find((tool) => tool.name === "recipe"));
+    check("recipe MCP schema requires confirmation", recipeTool?.inputSchema?.required?.includes("confirm"), true);
+    check("recipe MCP schema exposes confirmation", recipeTool?.inputSchema?.properties?.confirm !== undefined, true);
+    check("recipe MCP description states confirmation", recipeTool?.description?.includes("Destructive: requires confirm: true."), true);
+    check("declaration and generated description agree", toolDescription(openclawCommands.recipe!).includes("Destructive: requires confirm: true."), true);
+    const required = (inputSchema(openclawCommands.recipe!).required as string[] | undefined) ?? [];
+    check("declaration and generated schema agree", required.includes("confirm"), true);
+  } finally {
+    await rm(resolve(appsDir, recipeDeployment), { recursive: true, force: true });
+  }
 }
 
 // --- a malformed tools/call params.name must not crash the process ------------------------

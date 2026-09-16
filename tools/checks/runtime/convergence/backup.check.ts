@@ -5,12 +5,15 @@
 //
 // No target: a stub transport drives the real rotate() end to end.
 
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { access, mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { rotate, createBackup } from "#framework/commands/lifecycle/backup.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
+import { LocalTransport } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 
@@ -299,6 +302,40 @@ function rotationContext(listing: string[], keep: string): { ctx: Context; execC
   check("a collision leaves one existing archive", [...files].filter((path) => path.endsWith(".tar.gz")).length, 1);
   check("a collision preserves the existing archive", [...contents.values()].filter((value) => value === "old archive").length, 1);
   check("a publication failure restarts the gateway", calls.includes("start") && calls.includes("waitForHealth"), true);
+}
+
+// A backup directory is a target-side path, so the shell used for listing it must quote the
+// literal prefix while leaving the archive wildcard expandable. This exercises the complete
+// rotate path with a POSIX shell and metacharacters that would execute if quoting regressed.
+if (process.platform !== "win32") {
+  const root = await mkdtemp(join(tmpdir(), "clawforge-backup-quote-check-"));
+  const marker = join(root, "shell-injected");
+  const backupDir = join(root, `backup files '$(touch ${marker})' ; echo hacked`);
+  try {
+    await mkdir(backupDir, { recursive: true });
+    const oldArchive = join(backupDir, `${deploymentName()}-20260101-000000.tar.gz`);
+    const newArchive = join(backupDir, `${deploymentName()}-20260102-000000.tar.gz`);
+    await writeFile(oldArchive, "old");
+    await writeFile(newArchive, "new");
+    await utimes(oldArchive, new Date("2026-01-01T00:00:00Z"), new Date("2026-01-01T00:00:00Z"));
+    await utimes(newArchive, new Date("2026-01-02T00:00:00Z"), new Date("2026-01-02T00:00:00Z"));
+    const ctx = {
+      settings: { env: { OC_BACKUP_KEEP: "1" } },
+      transport: new LocalTransport(),
+    } as unknown as Context;
+    await withOutputSink(() => {}, () => rotate(ctx, backupDir));
+    let newPresent = true;
+    try { await access(newArchive); } catch { newPresent = false; }
+    let oldPresent = true;
+    try { await access(oldArchive); } catch { oldPresent = false; }
+    let markerPresent = true;
+    try { await access(marker); } catch { markerPresent = false; }
+    check("rotation finds archives below a quoted path", oldPresent, false);
+    check("rotation keeps the newest archive below that path", newPresent, true);
+    check("rotation does not execute path metacharacters", markerPresent, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 process.stderr.write(failed === 0 ? "all backup checks passed\n" : `${failed} failed\n`);

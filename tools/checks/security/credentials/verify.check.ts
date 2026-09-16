@@ -7,7 +7,10 @@
 import { verifySnapshot } from "#framework/commands/lifecycle/verify.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import { LocalTransport, SshTransport, WslTransport, type ExecResult } from "#framework/runtime/transport.ts";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 let failed = 0;
 
@@ -66,6 +69,12 @@ const evilPassed = await withOutputSink(
 
 check("a fatal archive is rejected", evilPassed, false);
 check("a fatal archive is never unpacked", evil.calls.some((call) => call.args.includes("-xzf")), false);
+
+const evilFullPassed = await withOutputSink(
+  () => {},
+  () => verifySnapshot(evil.ctx, ARCHIVE, "full"),
+);
+check("a full archive with an unsafe path is still rejected", evilFullPassed, false);
 
 // --- an ordinary archive is still unpacked and scanned -------------------------
 
@@ -143,6 +152,16 @@ function makeCtxWithConfig(configApiKey: string | undefined): { ctx: Context; ca
   check("it was actually scanned for (grep ran)", calls.some((call) => call.command === "grep"), true);
 }
 {
+  const { ctx } = makeCtxWithConfig("a-plain-string-provider-key-12345");
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "full"));
+  check("a full archive accepts its provider apiKey", passed, true);
+}
+{
+  const { ctx } = makeCtxWithConfig("a-plain-string-provider-key-12345");
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "migrate"));
+  check("a migrate archive refuses its provider apiKey", passed, false);
+}
+{
   const { ctx } = makeCtxWithConfig(undefined);
   const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "share"));
   check("with no plain-string apiKey at all, the share check still passes", passed, true);
@@ -205,6 +224,11 @@ function makeCtxWithArchivedKey(liveApiKey: string | undefined, archivedApiKey: 
   const { ctx } = makeCtxWithArchivedKey("current-live-key-999999", "old-rotated-out-key-000");
   const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "share"));
   check("an archive whose own embedded key differs from the current live one still fails", passed, false);
+}
+{
+  const { ctx } = makeCtxWithArchivedKey("current-live-key-999999", "old-rotated-out-key-000");
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "full"));
+  check("a full archive accepts its embedded provider apiKey", passed, true);
 }
 {
   const { ctx } = makeCtxWithArchivedKey(undefined, undefined);
@@ -273,6 +297,11 @@ function makeCtxWithRawArchivedConfig(rawBody: string): { ctx: Context } {
   check("a config that cannot be parsed at all fails the check rather than passing silently", passed, false);
 }
 {
+  const { ctx } = makeCtxWithRawArchivedConfig("{ this is not valid JSON5 either :::");
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "full"));
+  check("a full archive with an unparseable config still fails closed", passed, false);
+}
+{
   // Plain JSON is valid JSON5 too — the switch to JSON5.parse must not regress the ordinary case.
   const { ctx } = makeCtxWithRawArchivedConfig(JSON.stringify({ models: { providers: {} } }));
   const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "share"));
@@ -331,6 +360,141 @@ function makeCtxWithRawLiveConfig(rawBody: string): { ctx: Context; calls: { com
   const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "share"));
   check("a JSON5 live config (trailing comma) with an embedded key still fails", passed, false);
   check("it was actually scanned for (grep ran)", calls.some((call) => call.command === "grep"), true);
+}
+
+// --- private temporary files are private before their first secret byte ---------------------
+
+type SecurityEvent = {
+  kind: "mkdir" | "write" | "exec" | "remove";
+  path?: string;
+  content?: string;
+  command?: string;
+  args?: string[];
+};
+
+function privateScanContext(options: { failMkdir?: boolean; failWrite?: boolean; failTar?: boolean; failGrep?: boolean } = {}) {
+  const events: SecurityEvent[] = [];
+  const configPath = "/srv/openclaw/data/config/.env";
+  const listing = "data/\ndata/workspace/SOUL.md\n";
+  const verboseListing =
+    "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n" +
+    "-rw-r--r-- user/group 0 2026-01-01 00:00 data/workspace/SOUL.md\n";
+  const ctx = {
+    settings: { dataDir: "/srv/openclaw/data", env: {} },
+    transport: {
+      description: "private-test",
+      async exists(path: string): Promise<boolean> {
+        return path === ARCHIVE || path === configPath;
+      },
+      async readFile(path: string): Promise<string> {
+        return path === configPath ? "PROVIDER_API_KEY=synthetic-secret-value\n" : "";
+      },
+      async writePrivateFile(path: string, content: string): Promise<void> {
+        events.push({ kind: "write", path, content });
+        if (options.failWrite) throw new Error("private write failed");
+      },
+      async mkdirPrivate(path: string): Promise<void> {
+        events.push({ kind: "mkdir", path });
+        if (options.failMkdir) throw new Error("private mkdir collision");
+      },
+      async remove(path: string): Promise<void> {
+        events.push({ kind: "remove", path });
+      },
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        events.push({ kind: "exec", command, args });
+        if (args.includes("-tzf")) return { code: 0, stdout: listing, stderr: "" };
+        if (args.includes("-tvzf")) return { code: 0, stdout: verboseListing, stderr: "" };
+        if (args.includes("-xzf")) {
+          if (options.failTar) throw new Error("tar failed");
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "grep" && options.failGrep) return { code: 2, stdout: "", stderr: "grep failed" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+  return { ctx, events };
+}
+
+async function rejected(call: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await call();
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+{
+  const { ctx, events } = privateScanContext();
+  check("a private session and tree are created before secrets are written", await verifySnapshot(ctx, ARCHIVE, "share"), true);
+  const firstWrite = events.findIndex((event) => event.kind === "write");
+  check("the session and extracted tree precede the pattern write", events.slice(0, firstWrite).filter((event) => event.kind === "mkdir").length, 2);
+  check("the pattern is outside the scanned tree", events.find((event) => event.kind === "write")?.path?.endsWith("/patterns"), true);
+  const grep = events.find((event) => event.kind === "exec" && event.command === "grep");
+  const pattern = events.find((event) => event.kind === "write")?.path;
+  const tree = events.find((event) => event.kind === "mkdir" && event.path?.endsWith("/tree"))?.path;
+  check("grep receives a pattern path outside the tree", grep?.args?.includes(pattern ?? "") && !pattern!.startsWith(`${tree}/`), true);
+  check("the private session is cleaned after a successful scan", events.some((event) => event.kind === "exec" && event.command === "rm" && event.args?.includes(events.find((entry) => entry.kind === "mkdir")?.path ?? "")), true);
+}
+
+{
+  const { ctx, events } = privateScanContext({ failWrite: true });
+  check("a pattern write failure is reported", await rejected(() => verifySnapshot(ctx, ARCHIVE, "share")), true);
+  check("a pattern write failure still cleans the private session", events.some((event) => event.kind === "exec" && event.command === "rm"), true);
+}
+{
+  const { ctx, events } = privateScanContext({ failGrep: true });
+  check("a grep failure is reported", await rejected(() => verifySnapshot(ctx, ARCHIVE, "share")), true);
+  check("a grep failure still cleans the private session", events.some((event) => event.kind === "exec" && event.command === "rm"), true);
+}
+{
+  const { ctx, events } = privateScanContext({ failTar: true });
+  check("a tar failure is reported", await rejected(() => verifySnapshot(ctx, ARCHIVE, "share")), true);
+  check("a tar failure still cleans the private session", events.some((event) => event.kind === "exec" && event.command === "rm"), true);
+}
+{
+  const { ctx, events } = privateScanContext({ failMkdir: true });
+  check("an existing private session is never reused", await rejected(() => verifySnapshot(ctx, ARCHIVE, "share")), true);
+  check("a colliding session is never removed", events.some((event) => event.kind === "exec" && event.command === "rm"), false);
+}
+
+// The transport implementations keep the secure protocol on the target side. This pins the
+// ordering that matters: umask and noclobber precede exclusive staging, for both remote transports.
+for (const transport of [new WslTransport("test-distro"), new SshTransport("test-host")]) {
+  const calls: { command: string; args: string[]; input?: string | Uint8Array }[] = [];
+  (transport as unknown as { exec: (command: string, args: string[], options?: { input?: string | Uint8Array }) => Promise<ExecResult> }).exec =
+    async (command, args, options) => {
+      calls.push({ command, args, input: options?.input });
+      return { code: 0, stdout: "", stderr: "" };
+    };
+  await transport.mkdirPrivate("/tmp/session");
+  check(`${transport.description} creates an exclusive 700 directory`, calls[0].command === "mkdir" && calls[0].args.join(" ") === "-m 700 /tmp/session", true);
+  await transport.writePrivateFile("/tmp/patterns", "secret");
+  check(`${transport.description} applies umask before exclusive private staging`, calls[1].args[1].indexOf("umask 077; set -C;") === 0, true);
+  check(`${transport.description} stages and publishes without overwriting`, calls[1].args[1].includes("cat >> \"$temporary\" && ln -T -- \"$temporary\""), true);
+  check(`${transport.description} cleans private staging on every result`, calls[1].args[1].includes("trap 'rm -f -- \"$temporary\"' EXIT"), true);
+  check(`${transport.description} sends the secret as stdin`, calls[1].input, "secret");
+}
+
+{
+  const root = await mkdtemp(join(tmpdir(), "clawforge-local-private-"));
+  const directory = join(root, "private");
+  const path = join(directory, "patterns");
+  const local = new LocalTransport();
+  try {
+    await local.mkdirPrivate(directory);
+    await local.writePrivateFile(path, "secret");
+    const directoryMode = (await stat(directory)).mode & 0o777;
+    const mode = (await stat(path)).mode & 0o777;
+    check("LocalTransport creates an exclusive 700 directory", process.platform === "win32" || directoryMode === 0o700, true);
+    check("LocalTransport creates a private file", process.platform === "win32" || mode === 0o600, true);
+    check("LocalTransport writes the exact secret", await readFile(path, "utf8"), "secret");
+    check("LocalTransport refuses a colliding private file", await rejected(() => local.writePrivateFile(path, "changed")), true);
+    check("the colliding file remains unchanged", await readFile(path, "utf8"), "secret");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 process.stderr.write(failed === 0 ? "all verify checks passed\n" : `${failed} failed\n`);

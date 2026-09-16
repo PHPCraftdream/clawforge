@@ -25,10 +25,11 @@
 
 import { log, info, die } from "#src/core/log.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#src/core/env.ts";
-import { deploymentDir, deploymentName } from "#src/runtime/deployment.ts";
+import { deploymentDir, deploymentName, recipesDir, applicationRecipesSetting } from "#src/runtime/deployment.ts";
 import { SshTransport } from "#src/runtime/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport.ts";
+import { isAbsolute, relative, sep, win32 } from "node:path";
 
 /** Never leaves this machine. Local state, credentials, and every deployment directory —
  *  the deployment's own files are delivered separately and by name. */
@@ -97,6 +98,38 @@ export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<
   return root;
 }
 
+/** Maps the local recipe root to the remote deployment without escaping its directory. */
+export function remoteRecipesPath(remoteApp: string): string {
+  const setting = applicationRecipesSetting();
+  if (setting === undefined) return `${remoteApp}/recipes`;
+
+  if (isAbsolute(setting) || win32.isAbsolute(setting)) {
+    die(
+      `deploy cannot send an absolute recipesDir (${setting}) safely: it is local to this machine. ` +
+        "Use a path relative to the deployment, or copy the recipes into that deployment first.",
+    );
+  }
+
+  const local = recipesDir();
+  const fromDeployment = relative(deploymentDir(), local);
+  if (
+    fromDeployment === "" ||
+    fromDeployment === ".." ||
+    fromDeployment.startsWith(`..${sep}`) ||
+    fromDeployment.startsWith(`..${win32.sep}`) ||
+    isAbsolute(fromDeployment) ||
+    win32.isAbsolute(fromDeployment)
+  ) {
+    die(
+      `deploy cannot send recipesDir (${setting}) because it resolves outside the deployment. ` +
+        "Use a path inside the deployment, or copy the recipes into that deployment first.",
+    );
+  }
+
+  const remoteRelative = fromDeployment.replaceAll("\\", "/");
+  return `${remoteApp}/${remoteRelative}`;
+}
+
 export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // Before the arguments: no set of them makes this command work in the wrong mode, and a
   // usage error would send the reader off to fix the wrong thing.
@@ -124,6 +157,10 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
 
   const name = deploymentName();
   const remoteApp = `${remotePath}/apps/${name}`;
+  // Resolve this before checking tools, connecting, or writing anything remotely. An
+  // absolute declaration names a path on this machine and cannot be copied to the same
+  // path on another host without risking an unrelated remote tree.
+  const remoteRecipes = remoteRecipesPath(remoteApp);
 
   for (const tool of ["ssh", "rsync"]) {
     const found = await ctx.transport.exec("sh", ["-c", `command -v ${tool}`], { allowFailure: true });
@@ -197,7 +234,7 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   const local = await ctx.paths.toTarget(deploymentDir());
   log(`syncing the ${name} deployment (declaration, desired state, recipes)`);
   // No secrets directory: the server creates its own when keys are installed there.
-  await runRemote(ctx, target, `mkdir -p ${quoted(`${remoteApp}/config`)} ${quoted(`${remoteApp}/recipes`)}`);
+  await runRemote(ctx, target, `mkdir -p ${quoted(`${remoteApp}/config`)} ${quoted(remoteRecipes)}`);
   await ctx.transport.exec("rsync", ["-az", `${local}/app.ts`, `${target}:${remoteApp}/`]);
 
   // Same exclusions as the framework sync: a recipe's own compose project can pick up a
@@ -207,6 +244,7 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // that happens to be excluded, since it only mirrors what it was actually sent — with
   // them, the exclusion is symmetric between what is sent and what --delete may touch.
   const deploymentExcludes = EXCLUDES.flatMap((pattern) => ["--exclude", pattern]);
+  const localRecipes = await ctx.paths.toTarget(recipesDir());
   await ctx.transport.exec("rsync", [
     "-az",
     "--delete",
@@ -218,8 +256,8 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
     "-az",
     "--delete",
     ...deploymentExcludes,
-    `${local}/recipes/`,
-    `${target}:${remoteApp}/recipes/`,
+    `${localRecipes}/`,
+    `${target}:${remoteRecipes}/`,
   ]);
 
   // rsync from a Windows-mounted filesystem loses the executable bit.

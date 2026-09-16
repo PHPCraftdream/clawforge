@@ -154,16 +154,28 @@ export class Journal {
  *  file that `rollback` would later restore over a working one. */
 export async function snapshotConfig(ctx: Context, operationId: string): Promise<string | undefined> {
   const live = `${ctx.settings.dataDir}/config/openclaw.json`;
-  if (!(await ctx.transport.exists(live))) return undefined;
+  try { if (!(await ctx.transport.exists(live))) return undefined; } catch { return undefined; }
 
   const destination = `${operationsDir(ctx)}/${operationId}.openclaw.json`;
+  // A recovery point must be private from the first byte. A transport without the secure
+  // primitive cannot satisfy that guarantee, so the snapshot is intentionally skipped.
+  if (ctx.transport.writePrivateFile === undefined) return undefined;
+
+  // Keep all checks that do not create the destination outside the writer's failure path:
+  // an unreadable source or a pre-existing collision must never trigger cleanup of a file
+  // we do not own.
+  try { await ctx.transport.mkdirp(operationsDir(ctx)); } catch { return undefined; }
+  try { if (await ctx.transport.exists(destination)) return undefined; } catch { return undefined; }
+  let content: string;
+  try { content = await ctx.transport.readFile(live); } catch { return undefined; }
   try {
-    await ctx.transport.mkdirp(operationsDir(ctx));
-    await ctx.transport.writeFile(destination, await ctx.transport.readFile(live));
+    // Built-in secure writers create exclusively, use 0600 from the first byte, and clean
+    // their own temporary/partial file when writing fails.
+    await ctx.transport.writePrivateFile(destination, content);
     return destination;
   } catch {
-    // A snapshot that could not be taken must not stop the operation — but it must not be
-    // claimed either, or rollback would offer to restore a file that is not there.
+    // The writer owns cleanup because only it can distinguish its partial file from a race
+    // that created a colliding destination. Never remove the path here.
     return undefined;
   }
 }

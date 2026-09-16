@@ -11,7 +11,7 @@
 import { mkdtemp, mkdir, writeFile, rm, chmod, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { LocalTransport, SshTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix } from "#framework/runtime/transport.ts";
+import { LocalTransport, SshTransport, WslTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix } from "#framework/runtime/transport.ts";
 import type { ExecResult, ExecOptions } from "#framework/runtime/transport.ts";
 
 let failed = 0;
@@ -81,6 +81,24 @@ function check(name: string, actual: unknown, expected: unknown): void {
     };
   await ssh.writeFile("/tmp/binary", bytes);
   check("ssh file writes forward binary stdin unchanged", delivered instanceof Uint8Array ? [...delivered] : delivered, [...bytes]);
+}
+
+// WSL's `--` mode feeds the command line through the distro's default shell. That silently
+// evaluates `$()`, backticks and `$NAME` inside a path or other argv value. `--exec` preserves
+// the argument vector while retaining the normal env wrapper used by the transport.
+const integrationDistro = process.env.CLAWFORGE_TEST_WSL_DISTRO;
+if (process.platform === "win32" && integrationDistro !== undefined) {
+  const wsl = new WslTransport(integrationDistro);
+  const literal = "backup ' quoted $literal ; `printf expanded` $(printf expanded)";
+  const result = await wsl.exec("printf", ["%s", literal], { allowFailure: true });
+  check("wsl preserves shell metacharacters in literal argv", result.code, 0);
+  check("wsl does not evaluate shell metacharacters", result.stdout, literal);
+  const envResult = await wsl.exec("sh", ["-c", "printf '%s' \"$CLAWFORGE_ARG\""], {
+    allowFailure: true,
+    env: { CLAWFORGE_ARG: literal },
+  });
+  check("wsl still passes target environment through argv", envResult.code, 0);
+  check("wsl environment values remain literal", envResult.stdout, literal);
 }
 
 function execReturning(result: ExecResult) {

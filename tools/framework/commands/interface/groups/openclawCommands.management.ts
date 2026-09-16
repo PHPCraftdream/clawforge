@@ -140,6 +140,9 @@ export const managementCommands: Record<string, AppCommand> = {
   recipe: {
     summary: "Deploy services next to the instance (list, install, remove, status, logs)",
     run: recipe,
+    // The group includes `remove --volumes`, which can delete a recipe's persistent data.
+    // MCP confirmation is group-level, so read-only actions ask for the same explicit gate.
+    destructive: true,
     details:
       "A recipe is a third-party service living beside the instance — its own directory " +
       "under the deployment's recipes/, its own compose project, its own lifecycle.\n" +
@@ -199,6 +202,8 @@ export const managementCommands: Record<string, AppCommand> = {
       "This deployment (config) is sent by name and by file: only its declaration, " +
       "desired state and recipes; its own .env, secret stores and snapshots never leave " +
       "this machine.\n" +
+      "A custom recipesDir must be relative and stay inside the deployment; absolute " +
+      "or external recipe roots are refused before connecting.\n" +
       "The server generates its own gateway token, so a leaked local one cannot unlock " +
       "it, and provider keys are never copied — put them in <data>/config/.env there, " +
       "same as locally.\n" +

@@ -135,8 +135,8 @@ export function defaultSetName(deployment: string): string {
 }
 
 export async function buildSet(ctx: Context, setName: string): Promise<SetBuild> {
-  const { root, manifest } = await collectManifest(ctx, setName);
-  return writeArtifact(root, setName, manifest);
+  const { root, recipeRoot, desiredStateSource, manifest } = await collectManifest(ctx, setName);
+  return writeArtifact(root, recipeRoot, desiredStateSource, setName, manifest);
 }
 
 /** The manifest a build would write, without writing anything.
@@ -144,10 +144,19 @@ export async function buildSet(ctx: Context, setName: string): Promise<SetBuild>
  *  Split out so `validate` asks exactly the question `build` answers: a set that validates
  *  and a set that builds must be the same set, and two collectors would eventually make them
  *  different ones. */
-export async function collectManifest(ctx: Context, setName: string): Promise<{ root: string; manifest: SetManifest }> {
+export async function collectManifest(ctx: Context, setName: string): Promise<{
+  root: string;
+  recipeRoot: string;
+  desiredStateSource: string;
+  manifest: SetManifest;
+}> {
   // The name becomes a file name under sets/ before buildSetManifest validates it.
   safeName("set", setName);
   const root = deploymentDir();
+  // The application may keep recipes outside the deployment directory. The manifest uses
+  // portable `recipes/...` keys, so retain the actual source root for the copy phase.
+  const recipeRoot = recipesDir();
+  const desiredStateSource = desiredStateFile();
 
   // The declaration is required, same refusal apply-config makes: a set without it would
   // install recipes against an unconfigured instance — a kit missing its centrepiece.
@@ -212,7 +221,7 @@ export async function collectManifest(ctx: Context, setName: string): Promise<{ 
 
   assertNoSecretValues(manifest, await localSecretValues());
 
-  return { root, manifest };
+  return { root, recipeRoot, desiredStateSource, manifest };
 }
 
 /** Writes the artifact: the manifest as set.json plus every file it inventories, archived
@@ -228,7 +237,13 @@ export async function collectManifest(ctx: Context, setName: string): Promise<{ 
  *  platform ordering, so byte-identical archives are a rabbit hole nobody should enter; two
  *  builds of an unchanged tree give the same id and two archives that mean the same thing.
  *  The id is the identity; the file is only how the content travels. */
-async function writeArtifact(root: string, setName: string, manifest: SetManifest): Promise<SetBuild> {
+async function writeArtifact(
+  root: string,
+  recipeRoot: string,
+  desiredStateSource: string,
+  setName: string,
+  manifest: SetManifest,
+): Promise<SetBuild> {
   const id = setManifestId(manifest);
   const secretValues = await localSecretValues();
   const staging = await mkdtemp(join(tmpdir(), "clawforge-set-"));
@@ -238,7 +253,12 @@ async function writeArtifact(root: string, setName: string, manifest: SetManifes
     await writeFile(resolve(staging, "set.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
     for (const [rel, sum] of Object.entries(manifest.files)) {
-      const bytes = await readFile(resolve(root, ...rel.split("/")));
+      const source = rel === DESIRED_STATE_PATH
+        ? desiredStateSource
+        : rel.startsWith("recipes/")
+          ? resolve(recipeRoot, ...rel.slice("recipes/".length).split("/"))
+          : resolve(root, ...rel.split("/"));
+      const bytes = await readFile(source);
       for (const { name, value } of secretValues) {
         if (value.length >= MIN_VALUE_LENGTH && bytes.includes(value)) {
           die(`refusing to write the set: ${rel} contains the value of ${name}`);

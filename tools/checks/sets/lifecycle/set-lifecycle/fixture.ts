@@ -70,6 +70,10 @@ export async function createFixture(): Promise<LifecycleFixture> {
     writeFile: async (path: string, content: string) => {
       files.set(path, content);
     },
+    writePrivateFile: async (path: string, content: string) => {
+      if (files.has(path)) throw new Error("EEXIST: file exists");
+      files.set(path, content);
+    },
     mkdirp: async (path: string) => {
       mkdirp(path);
     },

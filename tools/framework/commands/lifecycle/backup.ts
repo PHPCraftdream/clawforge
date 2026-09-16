@@ -11,6 +11,7 @@ import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { createArchive, fileSize, isProfile, backupArchiveName, parseBackupArchive, type Profile } from "#src/service/archive.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
+import { SshTransport } from "#src/runtime/transport.ts";
 
 export interface BackupOptions {
   hot?: boolean;
@@ -42,7 +43,7 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
     ...prefix,
     "sh",
     "-c",
-    `ls -1t ${backupDir}/${deploymentName()}-*.tar.gz 2>/dev/null`,
+    `ls -1t ${SshTransport.quote(`${backupDir}/${deploymentName()}-`)}*.tar.gz 2>/dev/null`,
   ];
   const listing = await ctx.transport.exec(head, rest, { allowFailure: true });
   const archives = listing.stdout.split("\n").filter((line) => line.trim() !== "");

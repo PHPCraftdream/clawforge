@@ -6,12 +6,14 @@
 // end to end with a restored config that references a variable nothing supplies.
 
 import { resolve } from "node:path";
+import { access, mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { restoreArchive, newestArchive } from "#framework/commands/lifecycle/restore.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import { LocalTransport, type ExecResult } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 
@@ -167,6 +169,31 @@ const NAME = deploymentName();
   const picked = await newestArchive(listingContext([`${BACKUP_DIR}/${NAME}-20260103-000000-share.tar.gz`]), BACKUP_DIR);
   check("a directory holding only profile archives offers nothing to restore", picked.archive, undefined);
   check("and says which ones it passed over", picked.skipped.length, 1);
+}
+
+// The automatic restore selector uses the same target-side glob as backup rotation. Keep the
+// literal path quoted through a real POSIX shell so spaces, quotes and shell metacharacters stay
+// data and cannot change which archive is selected.
+if (process.platform !== "win32") {
+  const root = await mkdtemp(`${tmpdir()}/clawforge-restore-quote-check-`);
+  const marker = `${root}/shell-injected`;
+  const directory = `${root}/backup files '$(touch ${marker})' ; echo hacked`;
+  try {
+    await mkdir(directory, { recursive: true });
+    const archive = `${directory}/${NAME}-20260103-000000.tar.gz`;
+    await writeFile(archive, "archive");
+    await utimes(archive, new Date("2026-01-03T00:00:00Z"), new Date("2026-01-03T00:00:00Z"));
+    const picked = await newestArchive(
+      { settings: { backupDir: directory }, transport: new LocalTransport() } as unknown as Context,
+      directory,
+    );
+    let markerPresent = true;
+    try { await access(marker); } catch { markerPresent = false; }
+    check("restore selects an archive below a quoted path", picked.archive, archive);
+    check("restore does not execute path metacharacters", markerPresent, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 process.stderr.write(failed === 0 ? "all restore checks passed\n" : `${failed} failed\n`);

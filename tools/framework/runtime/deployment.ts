@@ -30,7 +30,7 @@ import { setSourceDir } from "../set/artifacts/source.ts";
 
 let activeDir: string | undefined;
 let composeOverride: string | undefined;
-let applicationRecipes: { deployment: string; directory: string } | undefined;
+let applicationRecipes: { deployment: string; directory: string; setting: string } | undefined;
 
 export function useDeployment(directory: string): void {
   activeDir = directory;
@@ -43,7 +43,14 @@ export function useApplicationRecipesDir(directory: string | undefined): void {
     return;
   }
   const deployment = deploymentDir();
-  applicationRecipes = { deployment, directory: resolve(deployment, directory) };
+  applicationRecipes = { deployment, directory: resolve(deployment, directory), setting: directory };
+}
+
+/** The application's declared recipe root, retained for deployment mapping. */
+export function applicationRecipesSetting(): string | undefined {
+  const configured = applicationRecipes;
+  if (configured === undefined || configured.deployment !== activeDir) return undefined;
+  return configured.setting;
 }
 
 /** The deployment's own identity — the directory it lives in, always. Everything that

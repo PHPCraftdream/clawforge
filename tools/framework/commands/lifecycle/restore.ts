@@ -20,6 +20,7 @@ import {
   parseBackupArchive,
 } from "#src/service/archive.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
+import { SshTransport } from "#src/runtime/transport.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 
 export interface RestoreOptions {
@@ -51,7 +52,7 @@ export async function newestArchive(
     ...prefix,
     "sh",
     "-c",
-    `ls -1t ${directory}/${deploymentName()}-*.tar.gz 2>/dev/null`,
+    `ls -1t ${SshTransport.quote(`${directory}/${deploymentName()}-`)}*.tar.gz 2>/dev/null`,
   ];
   const result = await ctx.transport.exec(head, rest, { allowFailure: true });
 

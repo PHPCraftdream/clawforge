@@ -10,8 +10,9 @@
 //
 // All operations are async by design — no *Sync calls anywhere.
 
+import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { readFile, writeFile, chmod, mkdir, rm, rmdir, access, readdir, lstat } from "node:fs/promises";
+import { readFile, writeFile, chmod, mkdir, rm, rmdir, access, readdir, lstat, open } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { die, maskSecrets } from "../core/log.ts";
 import { outputSink } from "../core/output.ts";
@@ -36,6 +37,26 @@ export interface ExecResult {
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** Quotes one value for a POSIX shell command. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/** Builds an exclusive, owner-only remote write with cleanup owned by the writer. */
+function privateWriteCommand(path: string): [string, string[]] {
+  const temporary = `${path}.clawforge-private-${randomBytes(8).toString("hex")}`;
+  const target = shellQuote(path);
+  const staging = shellQuote(temporary);
+  const script =
+    `umask 077; set -C; temporary=${staging}; ` +
+    `if : > "$temporary" 2>/dev/null; then ` +
+    `trap 'rm -f -- "$temporary"' EXIT; ` +
+    `cat >> "$temporary" && ln -T -- "$temporary" ${target}; status=$?; ` +
+    `trap - EXIT; rm -f -- "$temporary"; exit $status; ` +
+    `else exit 1; fi`;
+  return ["sh", ["-c", script]];
+}
+
 function validateEnvNames(names: string[]): void {
   const invalid = names.filter((name) => !ENV_NAME.test(name));
   if (invalid.length > 0) throw new Error(`invalid environment variable name: ${invalid.join(", ")}`);
@@ -59,6 +80,10 @@ export interface Transport {
   readFile(path: string): Promise<string>;
   /** Writes text as UTF-8 or byte content without a decoding round trip. */
   writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void>;
+  /** Creates a new owner-only file without exposing its contents during the write. */
+  readonly writePrivateFile?: (path: string, content: string | Uint8Array) => Promise<void>;
+  /** Creates a new owner-only directory and refuses an existing path. */
+  readonly mkdirPrivate?: (path: string) => Promise<void>;
   exists(path: string): Promise<boolean>;
   mkdirp(path: string): Promise<void>;
   remove(path: string): Promise<void>;
@@ -315,6 +340,22 @@ export class LocalTransport implements Transport {
     if (mode !== undefined) await chmod(path, Number.parseInt(mode, 8));
   }
 
+  async writePrivateFile(path: string, content: string | Uint8Array): Promise<void> {
+    const handle = await open(path, "wx", 0o600);
+    try {
+      await handle.writeFile(content);
+      await handle.close();
+    } catch (error) {
+      await handle.close().catch(() => {});
+      await rm(path, { force: true }).catch(() => {});
+      throw error;
+    }
+  }
+
+  mkdirPrivate(path: string): Promise<void> {
+    return mkdir(path, { mode: 0o700 });
+  }
+
   /** Same distinction existsVia() makes for the exec-based transports: ENOENT (and ENOTDIR,
    *  which also means the path genuinely is not there) is an answer; any other errno —
    *  EACCES on a parent, an I/O error — is the check failing, not "absent". */
@@ -397,8 +438,10 @@ export async function listFilesVia(
 }
 
 /** Target lives in a WSL distribution while the tooling runs on Windows Node.
- *  Every call is wrapped in `wsl.exe -d <distro> -- …`; file access goes through the same
- *  channel, because the Windows side cannot rely on \\wsl$ paths behaving like POSIX. */
+ *  Every call is wrapped in `wsl.exe -d <distro> --exec …`; file access goes through the same
+ *  channel, because the Windows side cannot rely on \\wsl$ paths behaving like POSIX. `--exec`
+ *  is required here: the plain `--` form sends the command line through the distribution's
+ *  default shell, which expands literal `$()` and backticks in otherwise safe argv values. */
 export class WslTransport implements Transport {
   readonly description: string;
   // Native private field, not a TypeScript `private` parameter property: Node executes
@@ -413,7 +456,7 @@ export class WslTransport implements Transport {
 
   exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
     const [head, rest] = withEnvPrefix(command, args, options.env, options.unsetEnv);
-    return spawnLocal("wsl.exe", ["-d", this.#distro, "--", head, ...rest], options);
+    return spawnLocal("wsl.exe", ["-d", this.#distro, "--exec", head, ...rest], options);
   }
 
   async readFile(path: string): Promise<string> {
@@ -425,6 +468,15 @@ export class WslTransport implements Transport {
     // `tee` rather than a redirect: no shell means no quoting hazards.
     await this.exec("tee", [path], { input: content });
     if (mode !== undefined) await this.exec("chmod", [mode, path]);
+  }
+
+  writePrivateFile(path: string, content: string | Uint8Array): Promise<void> {
+    const [command, args] = privateWriteCommand(path);
+    return this.exec(command, args, { input: content }).then(() => undefined);
+  }
+
+  mkdirPrivate(path: string): Promise<void> {
+    return this.exec("mkdir", ["-m", "700", path]).then(() => undefined);
   }
 
   exists(path: string): Promise<boolean> {
@@ -499,6 +551,15 @@ export class SshTransport implements Transport {
   async writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void> {
     await this.exec("tee", [path], { input: content });
     if (mode !== undefined) await this.exec("chmod", [mode, path]);
+  }
+
+  writePrivateFile(path: string, content: string | Uint8Array): Promise<void> {
+    const [command, args] = privateWriteCommand(path);
+    return this.exec(command, args, { input: content }).then(() => undefined);
+  }
+
+  mkdirPrivate(path: string): Promise<void> {
+    return this.exec("mkdir", ["-m", "700", path]).then(() => undefined);
   }
 
   exists(path: string): Promise<boolean> {

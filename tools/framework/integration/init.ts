@@ -17,6 +17,7 @@ import { log, info, die } from "../core/log.ts";
 import { frameworkRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { setupProjectMcp } from "./mcp-project.ts";
+import { createPrivateFile } from "../security/private-file.ts";
 
 const DEFAULT_PORT = 18789;
 
@@ -291,7 +292,7 @@ export async function initApp(root: string): Promise<void> {
   await applyModuleType(root, moduleType);
   await writeFile(appFile, DECLARATION, "utf8");
   await writeFile(resolve(root, "config", "desired-state.json"), DESIRED_STATE, "utf8");
-  await writeFile(resolve(root, ".env"), await deploymentEnv(base), "utf8");
+  await createPrivateFile(resolve(root, ".env"), await deploymentEnv(base));
   await updateGitignore(root);
   await writeShim(root);
   await setupProjectMcp(root, "installed");

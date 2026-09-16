@@ -90,7 +90,7 @@ export async function createFixture(): Promise<LifecycleFixture> {
         if (!args.includes("-p") && dirs.has(path)) code = 1;
         else mkdirp(path);
       } else if (command === "test" && args[0] === "-d") code = dirs.has(args[1]) ? 0 : 1;
-      else if (command === "stat") stdout = args.includes("%Y") ? "0" : args.includes("%a") ? "700" : "1000:1000";
+      else if (command === "stat") stdout = args.includes("%Y") ? "0" : args.includes("%y") ? "1970-01-01 00:00:00.000000000 +0000" : args.includes("%a") ? "700" : "1000:1000";
       else if (command === "rm") await transport.remove(args.at(-1)!);
       if (code !== 0 && !options.allowFailure) throw new Error(`${command} failed`);
       return { code, stdout, stderr: "" };

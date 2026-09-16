@@ -265,6 +265,21 @@ function stubContext(seed: Record<string, string> = {}) {
 }
 
 {
+  const legacy = {
+    id: "legacy-apply",
+    command: "apply",
+    deployment: "example",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    steps: [],
+  };
+  const { ctx, files } = stubContext({ "/srv/clawforge/oc-operations/legacy-apply.json": JSON.stringify(legacy) });
+  check("the old oc operation directory remains listed", await listOperations(ctx), ["legacy-apply"]);
+  check("an old oc operation remains readable", (await readOperation(ctx, "legacy-apply"))?.id, "legacy-apply");
+  files.set("/srv/clawforge/clawforge-operations/legacy-apply.json", JSON.stringify({ ...legacy, command: "current" }));
+  check("the current operation directory wins a collision", (await readOperation(ctx, "legacy-apply"))?.command, "current");
+}
+
+{
   const { ctx } = stubContext();
   const only = await Journal.open(ctx, "apply", "example");
   await only.close("succeeded");

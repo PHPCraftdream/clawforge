@@ -5,7 +5,7 @@
 // the sequencing around them: stop at the first failure, say where it got to, and never
 // perform an advisory step.
 
-import { runSteps, blockingRemainder } from "#framework/commands/orchestration/apply.ts";
+import { runSteps, blockingRemainder, isApplyDryRun } from "#framework/commands/orchestration/apply.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -25,6 +25,11 @@ function check(name: string, actual: unknown, expected: unknown): void {
 }
 
 const ctx = {} as unknown as Context;
+
+check("apply recognizes a standalone dry-run flag", isApplyDryRun(["--dry-run"]), true);
+check("apply does not treat --expect's value as a dry-run flag", isApplyDryRun(["--expect", "--dry-run"]), false);
+check("apply does not treat --set's value as a dry-run flag", isApplyDryRun(["--set", "--dry-run"]), false);
+check("apply still recognizes dry-run after an option value", isApplyDryRun(["--expect", "checksum", "--dry-run"]), true);
 
 function action(id: string, advisory = false): PlanAction {
   return { id, summary: id, command: `./clawforge ${id}`, because: [], ...(advisory ? { advisory: true } : {}) };

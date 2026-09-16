@@ -161,7 +161,12 @@ export async function runApp(
   if (command.preparesEnvironment === true) await ensureEnvironment();
 
   // Built here, not by the command: an application never constructs a transport itself.
-  const ctx = await createContext({ mounts: app.mounts, service: app.service });
+  const ctx = await createContext({
+    mounts: app.mounts,
+    service: app.service,
+    settings: app.settings,
+    secrets: app.secrets,
+  });
 
   await command.run(ctx, args);
   return 0;

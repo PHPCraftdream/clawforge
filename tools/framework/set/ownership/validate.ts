@@ -72,6 +72,7 @@ export function desiredStateShapeError(value: unknown): string | undefined {
     if (typeof (entry as { path?: unknown }).path !== "string" || (entry as { path: string }).path === "") {
       return `entry ${index} has no non-empty string "path"`;
     }
+    if (!Object.hasOwn(entry, "value")) return `entry ${index} has no "value"`;
   }
   return undefined;
 }

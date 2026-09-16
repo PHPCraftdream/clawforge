@@ -61,17 +61,37 @@ export function installedSetFile(ctx: Context): string {
 }
 
 function legacyInstalledSetFile(ctx: Context): string {
-  return `${ctx.settings.dataDir}/${["c", "f"].join("")}-installed-set.json`;
+  return `${ctx.settings.dataDir}/cf-installed-set.json`;
 }
 
-export async function readInstalledSet(ctx: Context): Promise<InstalledSet | undefined> {
-  let text: string;
-  try {
-    text = await ctx.transport.readFile(installedSetFile(ctx));
-  } catch {
-    try { text = await ctx.transport.readFile(legacyInstalledSetFile(ctx)); }
-    catch { return undefined; }
+function legacyInstalledSetFiles(ctx: Context): string[] {
+  return [
+    `${ctx.settings.dataDir}/oc-installed-set.json`,
+    legacyInstalledSetFile(ctx),
+  ];
+}
+
+async function readInstalledSetCandidate(ctx: Context, path: string): Promise<{ present: boolean; text?: string }> {
+  if (typeof ctx.transport.exists === "function") {
+    let present: boolean;
+    try { present = await ctx.transport.exists(path); }
+    catch { return { present: true }; }
+    if (!present) {
+      // A lightweight adapter may implement exists() without exposing every readable file.
+      // Confirm a missing probe through the primary read so compatibility never hides a
+      // current marker that the adapter can still return.
+      try { return { present: true, text: await ctx.transport.readFile(path) }; }
+      catch { return { present: false }; }
+    }
+    try { return { present: true, text: await ctx.transport.readFile(path) }; }
+    catch { return { present: true }; }
   }
+  try { return { present: true, text: await ctx.transport.readFile(path) }; }
+  catch { return { present: false }; }
+}
+
+function parseInstalledSet(text: string | undefined): InstalledSet | undefined {
+  if (text === undefined) return undefined;
   try {
     const parsed = JSON.parse(text) as InstalledSet;
     if (!isSetId(parsed.id) || typeof parsed.name !== "string") return undefined;
@@ -82,6 +102,16 @@ export async function readInstalledSet(ctx: Context): Promise<InstalledSet | und
   } catch {
     return undefined;
   }
+}
+
+export async function readInstalledSet(ctx: Context): Promise<InstalledSet | undefined> {
+  const primary = await readInstalledSetCandidate(ctx, installedSetFile(ctx));
+  if (primary.present) return parseInstalledSet(primary.text);
+  for (const path of legacyInstalledSetFiles(ctx)) {
+    const candidate = await readInstalledSetCandidate(ctx, path);
+    if (candidate.present) return parseInstalledSet(candidate.text);
+  }
+  return undefined;
 }
 
 function isSetId(value: unknown): value is string {

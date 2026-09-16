@@ -90,6 +90,19 @@ export interface ApplyOutcome {
   readonly nextActions: string[];
 }
 
+/** Returns whether argv contains the apply dry-run flag rather than an option value. */
+export function isApplyDryRun(args: readonly string[]): boolean {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--set" || arg === "--expect") {
+      index += 1;
+      continue;
+    }
+    if (arg === "--dry-run") return true;
+  }
+  return false;
+}
+
 /** Runs the executable steps in order, stopping at the first failure.
  *
  *  Stopping is the point. The steps depend on each other — a restart after a configuration
@@ -161,7 +174,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
   const artifact = args[index + 1] ?? die("--set needs an artifact path");
   await withUnpackedArtifact(artifact, (staging, verified) =>
     withSetSource(staging, async () => {
-      if (args.includes("--dry-run")) {
+      if (isApplyDryRun(args)) {
         await applyFromSource(ctx, args);
         return;
       }
@@ -264,7 +277,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
  *  transition still needs a snapshot taken on its behalf. */
 async function applyFromSource(ctx: Context, args: string[], heldOperationId?: string): Promise<boolean> {
   const jsonOnly = args.includes("--json");
-  const dryRun = args.includes("--dry-run");
+  const dryRun = isApplyDryRun(args);
   const breakLock = args.includes("--break-lock");
   let expected: string | undefined;
 

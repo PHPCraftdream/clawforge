@@ -28,7 +28,7 @@
 import { log, info, warn, die } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
-import { requirementsFromConfig, statusForRequirements } from "#src/service/secrets.ts";
+import { requirementsForConfig, statusForRequirements } from "#src/service/secrets.ts";
 import { compareLock, readLock, currentComposition } from "#src/commands/management/lock.ts";
 import { readInstalledSet, requirementProblems, runningDigests, matchRequiredDigest } from "#src/set/artifacts/install.ts";
 import {
@@ -66,7 +66,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
     problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} declares an unsafe configuration path: ${(error as Error).message}`));
     prospective = await readLiveConfigForProspective(ctx);
   }
-  const secrets = await statusForRequirements(ctx, requirementsFromConfig(prospective));
+  const secrets = await statusForRequirements(ctx, await requirementsForConfig(ctx, prospective));
   for (const secret of secrets) {
     if (secret.required && !secret.present) {
       problems.push(problem("SECRET_MISSING", `${secret.name} (${secret.usedBy}) is not set in ${secret.location === "repo-env" ? ".env" : "<data>/config/.env"}`));

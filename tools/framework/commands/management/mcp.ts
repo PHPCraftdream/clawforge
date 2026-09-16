@@ -38,6 +38,10 @@ export async function mcpServe(ctx: Context, args: string[]): Promise<void> {
   if (!(await ctx.runtime.isRunning())) {
     die("the gateway is not running. Start it with ./clawforge up");
   }
+  // The container can be running while the gateway is still warming up. Wait before handing
+  // over stdio so the first JSON-RPC request cannot race the service startup. This bounded
+  // wait never starts or stops anything and keeps the input stream untouched.
+  await ctx.runtime.waitForHealth(30);
   await ctx.runtime.runOneOff("cli", ["mcp", "serve", ...args], { profile: "cli" });
 }
 

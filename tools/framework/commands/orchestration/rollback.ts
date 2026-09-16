@@ -51,17 +51,67 @@ export async function operationToRollback(ctx: Context, wanted?: string): Promis
   return latest;
 }
 
-/** `./clawforge rollback --set` — reinstall the set that was in force before the current one, through
- *  the exact same path `./clawforge apply --set <artifact>` already uses.
- *
- *  Sets are immutable, content-addressed artifacts kept in the deployment's own sets/
- *  directory, so going back to one is a reinstall, not a new mechanism — what had to be
- *  built was knowing which one, and keeping its artifact reachable. What this does NOT do is
- *  the single-file path above's job: an agent's own memory, and anything else written to the
- *  data directory since, is state, not configuration, and reinstalling an older set neither
- *  touches it nor is allowed to. Wanting that gone too is a separate, more destructive step —
- *  a data restore (./clawforge push), never implied by a rollback. */
-async function rollbackSet(ctx: Context, args: string[]): Promise<void> {
+/** Options validated before a rollback can touch the target. */
+interface RollbackOptions {
+  readonly set: boolean;
+  readonly jsonOnly: boolean;
+  readonly breakLock: boolean;
+  readonly restartAfter: boolean;
+  readonly operation?: string;
+  readonly applyArgs: string[];
+}
+
+/** Parse every rollback argument before reading or changing instance state. */
+export function parseRollbackArgs(args: string[]): RollbackOptions {
+  let set = false;
+  let jsonOnly = false;
+  let breakLock = false;
+  let restartAfter = true;
+  let operation: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--set") {
+      set = true;
+      continue;
+    }
+    if (arg === "--json") {
+      jsonOnly = true;
+      continue;
+    }
+    if (arg === "--break-lock") {
+      breakLock = true;
+      continue;
+    }
+    if (arg === "--no-restart") {
+      restartAfter = false;
+      continue;
+    }
+    if (arg === "--operation") {
+      const value = args[index + 1];
+      if (value === undefined || value.length === 0 || value.startsWith("-")) {
+        die("--operation needs an operation id");
+      }
+      if (operation !== undefined) die("--operation may only be specified once");
+      operation = value;
+      index += 1;
+      continue;
+    }
+    die(`unknown argument: ${arg}`);
+  }
+
+  if (set && (operation !== undefined || !restartAfter)) {
+    die("--set rolls back the whole set through ./clawforge apply — --operation and --no-restart belong to the single-file path only");
+  }
+
+  const applyArgs: string[] = [];
+  if (jsonOnly) applyArgs.push("--json");
+  if (breakLock) applyArgs.push("--break-lock");
+  return { set, jsonOnly, breakLock, restartAfter, operation, applyArgs };
+}
+
+/** Reinstalls the previous set through apply, preserving instance data. */
+async function rollbackSet(ctx: Context, options: RollbackOptions): Promise<void> {
   const installed = await readInstalledSet(ctx);
   if (installed?.previous === undefined) {
     die(
@@ -118,7 +168,7 @@ async function rollbackSet(ctx: Context, args: string[]): Promise<void> {
     // (apply.ts) is nesting-safe the same way provision-agent's already is: it skips
     // acquiring when this outer one is already held.
     const operationId = newOperationId("rollback");
-    const held = await takeLock(ctx, `rollback --set to ${previous.id}`, operationId, { breakLock: args.includes("--break-lock") });
+    const held = await takeLock(ctx, `rollback --set to ${previous.id}`, operationId, { breakLock: options.breakLock });
     try {
       // Re-verified under the lock: which set is installed (and therefore which "previous"
       // is the correct rollback target) could have changed in the window between the
@@ -173,7 +223,7 @@ async function rollbackSet(ctx: Context, args: string[]): Promise<void> {
         // Reinstalls recipes/agents/MCP/cron and reapplies the previous set's own declared
         // config on top — a no-op for anything the restore above already put back correctly,
         // a real fix for anything that had drifted independently of the set boundary.
-        await apply(ctx, [...args, "--set", artifact]);
+        await apply(ctx, [...options.applyArgs, "--set", artifact]);
         await journal.close("succeeded", `rolled back to "${previous.name}" (${previous.id})`);
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
@@ -187,34 +237,10 @@ async function rollbackSet(ctx: Context, args: string[]): Promise<void> {
 }
 
 export async function rollback(ctx: Context, args: string[]): Promise<void> {
-  if (args.includes("--set")) {
-    if (args.includes("--operation") || args.includes("--no-restart")) {
-      die("--set rolls back the whole set through ./clawforge apply — --operation and --no-restart belong to the single-file path only");
-    }
-    return rollbackSet(ctx, args.filter((arg) => arg !== "--set"));
-  }
+  const options = parseRollbackArgs(args);
+  if (options.set) return rollbackSet(ctx, options);
 
-  const jsonOnly = args.includes("--json");
-  const breakLock = args.includes("--break-lock");
-  let wanted: string | undefined;
-  let restartAfter = true;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--json" || arg === "--break-lock") continue;
-    if (arg === "--no-restart") {
-      restartAfter = false;
-      continue;
-    }
-    if (arg === "--operation") {
-      wanted = args[index + 1] ?? die("--operation needs an operation id");
-      index += 1;
-      continue;
-    }
-    die(`unknown argument: ${arg}`);
-  }
-
-  const target = await operationToRollback(ctx, wanted);
+  const target = await operationToRollback(ctx, options.operation);
   const snapshot = target.configSnapshot!;
 
   if (!(await ctx.transport.exists(snapshot))) {
@@ -226,13 +252,13 @@ export async function rollback(ctx: Context, args: string[]): Promise<void> {
   const journal = await Journal.open(ctx, "rollback", deploymentName());
   const live = `${ctx.settings.dataDir}/config/openclaw.json`;
 
-  const held = await takeLock(ctx, `rollback of ${target.id}`, journal.id, { breakLock });
+  const held = await takeLock(ctx, `rollback of ${target.id}`, journal.id, { breakLock: options.breakLock });
   try {
     log(`putting back the configuration from before ${target.id}`);
     await ctx.transport.writeFile(live, await ctx.transport.readFile(snapshot));
     await journal.step("restore-config", "done", `from ${snapshot}`);
 
-    if (restartAfter) {
+    if (options.restartAfter) {
       // A configuration the instance has not read is not in force.
       await restart(ctx, []);
       await journal.step("restart", "done");
@@ -258,16 +284,16 @@ export async function rollback(ctx: Context, args: string[]): Promise<void> {
     changed: true,
     rolledBack: target.id,
     restored: snapshot,
-    restarted: restartAfter,
+    restarted: options.restartAfter,
   };
 
-  if (jsonOnly || isCaptured()) {
+  if (options.jsonOnly || isCaptured()) {
     emit(`${JSON.stringify(answer, null, 2)}\n`);
     return;
   }
 
   log(`rolled back ${target.id}`);
   info(`configuration restored from ${snapshot}`);
-  if (!restartAfter) info("not restarted (--no-restart): the instance is still running what this replaced");
+  if (!options.restartAfter) info("not restarted (--no-restart): the instance is still running what this replaced");
   info(`this rollback is itself recorded: ./clawforge operations ${journal.id}`);
 }

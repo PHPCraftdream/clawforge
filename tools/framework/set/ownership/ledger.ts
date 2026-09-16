@@ -46,23 +46,40 @@ export interface Ledger {
 export const LEDGER_VERSION = 1;
 
 const OWNED_KINDS: readonly OwnedKind[] = ["agent", "mcp-server", "cron-job"];
+const LEGACY_NAMESPACES = ["oc", "cf"] as const;
 
 export function ledgerFile(ctx: Context): string {
   return `${ctx.settings.dataDir}/clawforge-managed.json`;
 }
 
-function legacyLedgerFile(ctx: Context): string {
-  return `${ctx.settings.dataDir}/${["c", "f"].join("")}-managed.json`;
+function legacyLedgerFiles(ctx: Context): string[] {
+  return LEGACY_NAMESPACES.map((namespace) => `${ctx.settings.dataDir}/${namespace}-managed.json`);
 }
 
-export async function readLedger(ctx: Context): Promise<Ledger> {
-  let text: string;
-  try {
-    text = await ctx.transport.readFile(ledgerFile(ctx));
-  } catch {
-    try { text = await ctx.transport.readFile(legacyLedgerFile(ctx)); }
-    catch { return { version: LEDGER_VERSION, objects: [] }; }
+async function readCandidate(ctx: Context, path: string): Promise<{ present: boolean; text?: string }> {
+  // `exists` distinguishes a missing primary from an unreadable/corrupt one. That distinction
+  // makes the current name authoritative: a bad current ledger must never silently fall back
+  // to an older file and turn an ownership refusal into an adoption.
+  if (typeof ctx.transport.exists === "function") {
+    let present: boolean;
+    try { present = await ctx.transport.exists(path); }
+    catch { return { present: true }; }
+    if (!present) {
+      // Some transports expose an existence probe backed by a narrower view than readFile
+      // (notably test/remote adapters). Confirm the answer through the primary read before
+      // permitting a legacy fallback; a successful read still makes the current name win.
+      try { return { present: true, text: await ctx.transport.readFile(path) }; }
+      catch { return { present: false }; }
+    }
+    try { return { present: true, text: await ctx.transport.readFile(path) }; }
+    catch { return { present: true }; }
   }
+  try { return { present: true, text: await ctx.transport.readFile(path) }; }
+  catch { return { present: false }; }
+}
+
+function parseLedger(text: string | undefined): Ledger {
+  if (text === undefined) return { version: LEDGER_VERSION, objects: [] };
   try {
     const parsed = JSON.parse(text) as Ledger;
     if (parsed === null || typeof parsed !== "object" || parsed.version !== LEDGER_VERSION || !Array.isArray(parsed.objects)) {
@@ -94,6 +111,16 @@ export async function readLedger(ctx: Context): Promise<Ledger> {
     // will not remove anything it cannot show it created.
     return { version: LEDGER_VERSION, objects: [] };
   }
+}
+
+export async function readLedger(ctx: Context): Promise<Ledger> {
+  const primary = await readCandidate(ctx, ledgerFile(ctx));
+  if (primary.present) return parseLedger(primary.text);
+  for (const path of legacyLedgerFiles(ctx)) {
+    const candidate = await readCandidate(ctx, path);
+    if (candidate.present) return parseLedger(candidate.text);
+  }
+  return { version: LEDGER_VERSION, objects: [] };
 }
 
 async function writeLedger(ctx: Context, ledger: Ledger): Promise<void> {

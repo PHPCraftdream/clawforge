@@ -26,6 +26,33 @@ import type { Context } from "#src/core/context.ts";
 
 const PROBE_ENDPOINTS = ["healthz", "startupz", "readyz"];
 
+/** Parses GNU stat's fractional, timezone-qualified `%y` timestamp. */
+function parseStatTimestamp(raw: string): number | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))? ([+-]\d{2}:?\d{2})$/.exec(raw.trim());
+  if (match === null) return undefined;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = "", zone] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const zoneDigits = zone.replace(":", "");
+  const zoneHour = Number(zoneDigits.slice(1, 3));
+  const zoneMinute = Number(zoneDigits.slice(3, 5));
+  if (
+    month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate() ||
+    hour > 23 || minute > 59 || second > 59 || zoneHour > 23 || zoneMinute > 59
+  ) return undefined;
+
+  const milliseconds = fraction.slice(0, 3).padEnd(3, "0");
+  const parsed = Date.parse(`${yearText}-${monthText}-${dayText}T${hourText}:${minuteText}:${secondText}.${milliseconds}${zone}`);
+  if (Number.isNaN(parsed)) return undefined;
+  // Runtime.startedAt() is exposed in milliseconds and Date.parse truncates finer Docker
+  // precision too. Keep both sides at that same resolution to avoid false restarts.
+  return parsed;
+}
+
 /** A recipe's agent bundle, in the fields inspect compares against the instance. Parsed
  *  loosely on purpose: this is reading someone else's declaration to report on it, not
  *  validating it — provision-agent owns the validation and says so properly. */
@@ -158,10 +185,9 @@ export async function observeConfig(
         );
       }
     }
-    const stamp = await ctx.transport.exec("stat", ["-c", "%Y", configFile], { allowFailure: true });
+    const stamp = await ctx.transport.exec("stat", ["-c", "%y", configFile], { allowFailure: true });
     if (stamp.code === 0) {
-      const seconds = Number.parseInt(stamp.stdout.trim(), 10);
-      if (!Number.isNaN(seconds)) mtimeMs = seconds * 1000;
+      mtimeMs = parseStatTimestamp(stamp.stdout);
     }
   } catch {
     // A deployment that has never been bootstrapped has no configuration at all, which is

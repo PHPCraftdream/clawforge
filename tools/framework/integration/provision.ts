@@ -10,10 +10,11 @@
 // file. Commands opt in by declaring preparesEnvironment.
 
 import { randomBytes } from "node:crypto";
-import { readFile, writeFile, access, chmod } from "node:fs/promises";
+import { readFile, access } from "node:fs/promises";
 import { log, registerSecret } from "../core/log.ts";
 import { envFile, deploymentName } from "../runtime/deployment.ts";
 import { deploymentEnv } from "./scaffold.ts";
+import { createPrivateFile, protectPrivateFile, replacePrivateFile } from "../security/private-file.ts";
 
 /** Creates .env on first run, with this deployment's own paths and port rather than the
  *  template's — a copied template would put two deployments on the same data directory. */
@@ -22,11 +23,18 @@ async function ensureEnvFile(): Promise<void> {
     () => true,
     () => false,
   );
-  if (exists) return;
+  if (exists) {
+    await protectPrivateFile(envFile());
+    return;
+  }
 
   log(`creating ${envFile()}`);
-  await writeFile(envFile(), await deploymentEnv(deploymentName()), "utf8");
-  await chmod(envFile(), 0o600);
+  try {
+    await createPrivateFile(envFile(), await deploymentEnv(deploymentName()));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    await protectPrivateFile(envFile());
+  }
 }
 
 /** Generates the gateway token once and keeps it: regenerating would break every client
@@ -42,7 +50,7 @@ async function ensureToken(): Promise<string> {
     current === null
       ? `${content.trimEnd()}\nOPENCLAW_GATEWAY_TOKEN=${token}\n`
       : content.replace(/^OPENCLAW_GATEWAY_TOKEN=.*$/m, `OPENCLAW_GATEWAY_TOKEN=${token}`);
-  await writeFile(envFile(), updated, "utf8");
+  await replacePrivateFile(envFile(), updated);
   return token;
 }
 

@@ -47,6 +47,26 @@ try {
   const second = await fixture.captured(() => apply(ctx, ["--set", next.artifact, "--json"]));
   assert.equal(second.error, undefined, second.error?.message);
   assert.equal((await readInstalledSet(ctx))?.previous?.id, built.id);
+
+  // Rollback must reject its complete argv before reading or changing the instance. In
+  // particular, --dry-run is not a rollback option, and a flag after --operation is not an
+  // operation id. The live config, installed marker, journals and lock must all stay put.
+  {
+    const beforeFiles = JSON.stringify([...files]);
+    const beforeInstalled = JSON.stringify(await readInstalledSet(ctx));
+    const refused = [
+      ["--set", "--dry-run", "--json"],
+      ["--set", "--operation", "--no-restart"],
+      ["--set", "--json", "--unknown"],
+    ];
+    for (const invalid of refused) {
+      const result = await fixture.captured(() => rollback(ctx, invalid));
+      assert.notEqual(result.error, undefined, `invalid rollback argv must be refused: ${invalid.join(" ")}`);
+      assert.equal(JSON.stringify([...files]), beforeFiles, `refused rollback must not write files: ${invalid.join(" ")}`);
+      assert.equal(JSON.stringify(await readInstalledSet(ctx)), beforeInstalled, `refused rollback must preserve installed marker: ${invalid.join(" ")}`);
+    }
+  }
+
   const rolledBack = await fixture.captured(() => rollback(ctx, ["--set", "--json"]));
   assert.equal(rolledBack.error, undefined, rolledBack.error?.message);
   assert.equal((await readInstalledSet(ctx))?.id, built.id);

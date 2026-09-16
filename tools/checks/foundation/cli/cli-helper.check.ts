@@ -194,6 +194,7 @@ function runtimeStub(overrides: {
   execInHelper?: () => Promise<ExecResult>;
   isRunning?: () => Promise<boolean>;
   runOneOff?: (service: string, args: string[]) => Promise<ExecResult>;
+  waitForHealth?: (timeoutSeconds?: number) => Promise<void>;
   helperRunning?: () => Promise<boolean>;
   startHelper?: () => Promise<void>;
   stopHelper?: () => Promise<void>;
@@ -204,6 +205,7 @@ function runtimeStub(overrides: {
       throw new HelperNotRunning("cli-helper");
     }),
     runOneOff: overrides.runOneOff ?? (async () => ({ code: 0, stdout: "", stderr: "" })),
+    waitForHealth: overrides.waitForHealth ?? (async () => {}),
     helperRunning: overrides.helperRunning ?? (async () => false),
     startHelper: overrides.startHelper ?? (async () => {}),
     stopHelper: overrides.stopHelper ?? (async () => {}),
@@ -371,8 +373,12 @@ check("cli is no longer kept out of MCP", openclawCommands.cli.consoleOnly, unde
 
 {
   let runOneOffArgs: string[] | undefined;
+  let readinessWait: number | undefined;
   const ctx = {
     runtime: runtimeStub({
+      waitForHealth: async (timeoutSeconds) => {
+        readinessWait = timeoutSeconds;
+      },
       runOneOff: async (_service, args) => {
         runOneOffArgs = args;
         return { code: 0, stdout: "", stderr: "" };
@@ -382,6 +388,7 @@ check("cli is no longer kept out of MCP", openclawCommands.cli.consoleOnly, unde
 
   await mcpServe(ctx, []);
   check("mcpServe() falls back to runOneOff with mcp serve args", runOneOffArgs, ["mcp", "serve"]);
+  check("mcpServe() waits for gateway readiness before handing over stdio", readinessWait, 30);
 }
 
 // --- cliStart() / cliStop() ---------------------------------------------------------------

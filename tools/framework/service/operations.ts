@@ -69,7 +69,14 @@ export function operationsDir(ctx: Context): string {
 }
 
 function legacyOperationsDir(ctx: Context): string {
-  return `${ctx.settings.dataDir}/${["c", "f"].join("")}-operations`;
+  return `${ctx.settings.dataDir}/cf-operations`;
+}
+
+function legacyOperationsDirs(ctx: Context): string[] {
+  return [
+    `${ctx.settings.dataDir}/oc-operations`,
+    legacyOperationsDir(ctx),
+  ];
 }
 
 export function operationFile(ctx: Context, id: string): string {
@@ -183,7 +190,7 @@ export async function snapshotConfig(ctx: Context, operationId: string): Promise
 /** Every recorded operation, newest first. Ids begin with the command and carry a sortable
  *  timestamp, so the file names alone give the order — no need to read each one to sort. */
 export async function listOperations(ctx: Context): Promise<string[]> {
-  const files = (await Promise.all([operationsDir(ctx), legacyOperationsDir(ctx)].map((directory) =>
+  const files = (await Promise.all([operationsDir(ctx), ...legacyOperationsDirs(ctx)].map((directory) =>
     ctx.transport.listFiles(directory).catch(() => [] as string[]),
   ))).flat();
   return [...new Set(files)]
@@ -196,7 +203,7 @@ export async function listOperations(ctx: Context): Promise<string[]> {
 }
 
 export async function readOperation(ctx: Context, id: string): Promise<OperationRecord | undefined> {
-  for (const path of [operationFile(ctx, id), `${legacyOperationsDir(ctx)}/${id}.json`]) {
+  for (const path of [operationFile(ctx, id), ...legacyOperationsDirs(ctx).map((directory) => `${directory}/${id}.json`)]) {
     try { return JSON.parse(await ctx.transport.readFile(path)) as OperationRecord; }
     catch { /* try the legacy location before giving up */ }
   }

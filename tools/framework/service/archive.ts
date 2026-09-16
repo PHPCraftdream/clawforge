@@ -11,7 +11,7 @@
 import type { Context } from "../core/context.ts";
 import { sudoFor } from "../runtime/datadir.ts";
 
-const LEGACY_PREFIX = ["c", "f"].join("");
+const LEGACY_PREFIXES = ["oc", "cf"] as const;
 
 /** How much of the instance travels with an archive. */
 export type Profile = "full" | "migrate" | "share";
@@ -52,9 +52,17 @@ export function parseBackupArchive(fileName: string, deployment: string): { stam
 }
 
 /** Parses the exact snapshot name produced by `pull`. */
+export function snapshotDeploymentNames(deployment: string): string[] {
+  return deployment === "openclaw" ? [deployment, "open_claw"] : [deployment];
+}
+
 export function parseSnapshotArchive(fileName: string, deployment: string): { stamp: string } | undefined {
-  const escaped = deployment.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-  const match = new RegExp(`^${escaped}-state-(\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2})\\.tar\\.gz$`).exec(fileName);
+  // The first release used the repository's historical `open_claw` name while the current
+  // deployment identity is `openclaw`. Keep that one explicit compatibility alias; accepting
+  // arbitrary spelling variants would let a sibling deployment's snapshots be restored.
+  const names = snapshotDeploymentNames(deployment);
+  const escaped = names.map((name) => name.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)).join("|");
+  const match = new RegExp(`^(?:${escaped})-state-(\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2})\\.tar\\.gz$`).exec(fileName);
   if (match === null) return undefined;
   const stamp = match[1];
   const iso = `${stamp.slice(0, 10)}T${stamp.slice(11).replaceAll("-", ":")}Z`;
@@ -76,8 +84,10 @@ function baseExcludes(dataName: string): string[] {
     `${dataName}/config/openclaw.json.last-good`,
     `${dataName}/config/clawforge-desired.json`,
     `${dataName}/clawforge-operation.lock`,
-    `${dataName}/config/${LEGACY_PREFIX}-desired.json`,
-    `${dataName}/${LEGACY_PREFIX}-operation.lock`,
+    ...LEGACY_PREFIXES.flatMap((prefix) => [
+      `${dataName}/config/${prefix}-desired.json`,
+      `${dataName}/${prefix}-operation.lock`,
+    ]),
   ];
 }
 
@@ -89,7 +99,7 @@ export function excludesFor(profile: Profile, dataName: string): string[] {
     excludes.push(
       `${dataName}/config/.env`,
       `${dataName}/clawforge-operations`,
-      `${dataName}/${LEGACY_PREFIX}-operations`,
+      ...LEGACY_PREFIXES.map((prefix) => `${dataName}/${prefix}-operations`),
     );
   }
 
@@ -108,9 +118,11 @@ export function excludesFor(profile: Profile, dataName: string): string[] {
       `${dataName}/clawforge-operations`,
       `${dataName}/clawforge-managed.json`,
       `${dataName}/clawforge-installed-set.json`,
-      `${dataName}/${LEGACY_PREFIX}-operations`,
-      `${dataName}/${LEGACY_PREFIX}-managed.json`,
-      `${dataName}/${LEGACY_PREFIX}-installed-set.json`,
+      ...LEGACY_PREFIXES.flatMap((prefix) => [
+        `${dataName}/${prefix}-operations`,
+        `${dataName}/${prefix}-managed.json`,
+        `${dataName}/${prefix}-installed-set.json`,
+      ]),
     );
   }
 

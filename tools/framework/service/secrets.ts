@@ -17,6 +17,7 @@
 
 import JSON5 from "json5";
 import type { Context } from "../core/context.ts";
+import type { AppSecret } from "../core/app.ts";
 import { parseEnv } from "../core/env.ts";
 
 /** Where a variable is expected to be defined. */
@@ -236,17 +237,79 @@ export function requirementsFromConfig(config: unknown): SecretRequirement[] {
   return result;
 }
 
+/** Add application-owned requirements to framework requirements without weakening either. */
+function withApplicationRequirements(
+  base: SecretRequirement[],
+  application: readonly AppSecret[],
+): SecretRequirement[] {
+  const result = [...base];
+  for (const entry of application) {
+    const required = entry.required !== false;
+    const existing = result.find((candidate) => candidate.name === entry.name);
+    if (existing !== undefined) {
+      if (existing.location !== entry.location) {
+        throw new Error(
+          `application secret ${entry.name} conflicts with an existing ${existing.location} requirement`,
+        );
+      }
+      if (required && !existing.required) {
+        const index = result.indexOf(existing);
+        result[index] = { ...existing, required: true };
+      }
+      continue;
+    }
+    result.push({
+      name: entry.name,
+      location: entry.location,
+      usedBy: entry.usedBy,
+      required,
+    });
+  }
+  return result;
+}
+
+/** Validates requirements returned by the application's hook. */
+async function applicationRequirements(ctx: Context): Promise<AppSecret[]> {
+  if (ctx.applicationSecrets === undefined) return [];
+  const entries = await ctx.applicationSecrets();
+  if (!Array.isArray(entries)) throw new Error("application secrets must be an array");
+  for (const entry of entries) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("application secret declarations must be objects");
+    }
+    if (typeof entry.name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.name)) {
+      throw new Error(`application secret name must be a valid environment variable: ${String(entry.name)}`);
+    }
+    if (entry.location !== "repo-env" && entry.location !== "target-env") {
+      throw new Error(`application secret ${entry.name} has an invalid location`);
+    }
+    if (typeof entry.usedBy !== "string" || entry.usedBy.trim() === "") {
+      throw new Error(`application secret ${entry.name} needs usedBy`);
+    }
+    if (entry.required !== undefined && typeof entry.required !== "boolean") {
+      throw new Error(`application secret ${entry.name} has an invalid required flag`);
+    }
+  }
+  return entries;
+}
+
+/** Resolve requirements for a supplied configuration and this application's live hook. */
+export async function requirementsForConfig(ctx: Context, config: unknown): Promise<SecretRequirement[]> {
+  const application = await applicationRequirements(ctx);
+  return withApplicationRequirements(requirementsFromConfig(config), application);
+}
+
 /** Return secret names required by the target's LIVE configuration. */
 export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
   const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
-  if (!(await ctx.transport.exists(configPath))) return [];
+  if (!(await ctx.transport.exists(configPath))) return requirementsForConfig(ctx, {});
 
   // JSON5, not JSON: OpenClaw's own gateway config format IS JSON5 (docs.openclaw.ai/gateway/
   // configuration — comments and trailing commas are valid), so a real target config can use
   // syntax plain JSON.parse rejects outright, aborting this step (and the `up`/`apply` run it
   // is part of) before the gateway ever started.
   const config = JSON5.parse(await ctx.transport.readFile(configPath)) as unknown;
-  return requirementsFromConfig(config);
+  return requirementsForConfig(ctx, config);
 }
 
 /** Requirements plus whether each is actually satisfied, for a caller-supplied list —

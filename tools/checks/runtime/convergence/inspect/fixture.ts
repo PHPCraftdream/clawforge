@@ -33,6 +33,7 @@ export interface TargetSpec {
   liveConfig?: Record<string, unknown>;
   targetEnv?: string;
   configMtimeSeconds?: number;
+  configMtimeOutput?: string;
   startedAtMs?: number;
   agents?: string[];
   /** Registered under a command/args matching mcpServerSpec("demo") — the recipe this whole
@@ -113,7 +114,8 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
         async exec(command: string, args: string[]): Promise<ExecResult> {
           if (command === "stat") {
             const seconds = spec.configMtimeSeconds ?? 1_000;
-            return { code: 0, stdout: `${seconds}\n`, stderr: "" };
+            const output = spec.configMtimeOutput ?? new Date(seconds * 1000).toISOString().replace("T", " ").replace("Z", " +0000");
+            return { code: 0, stdout: `${output}\n`, stderr: "" };
           }
           if (command === "sh" && args[1]?.includes("sha256sum")) {
             // Two trees are asked for now: the recipe's mirror and the agent's workspace.

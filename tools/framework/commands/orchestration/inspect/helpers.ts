@@ -6,6 +6,7 @@ import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CronJob, AgentConfig } from "#src/commands/management/provision-agent/index.ts";
 import type { DeclaredState } from "#src/service/inspection.ts";
+import { desiredStateShapeError } from "#src/set/ownership/validate.ts";
 
 /** Field by field, so the reader is not left to diff a cron job themselves. Mirrors exactly
  *  what cronJobMatches compares — it decides, this only explains its verdict. */
@@ -260,22 +261,26 @@ export async function readLiveConfigOrThrow(ctx: Context): Promise<unknown> {
  *  reporting and none of declaredState()'s (observe.ts) recipe/image extras — a caller that
  *  only wants prospectiveConfig's own input (secrets --apply's own prospective requirements,
  *  which have no use for an inspection Problem list) reads this directly instead of pulling
- *  in observe.ts's much heavier declaredState(). Absent or unparseable is the same answer, an
- *  empty declaration: a caller here already has nothing better to fall back to than the live
- *  config alone, which computing requirements from an empty declared array still gives it. */
+ *  in observe.ts's much heavier declaredState(). Absence is a legitimate empty declaration;
+ *  any other read or shape failure aborts the write. */
 export async function readDeclaredConfig(): Promise<DeclaredState["config"]> {
+  const path = desiredStateFile();
   let raw: string;
   try {
-    raw = await readFile(desiredStateFile(), "utf8");
-  } catch {
-    return [];
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw new Error(`${path} exists but could not be read: ${(error as Error).message}`);
   }
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(raw) as { path: string; value?: unknown }[];
-    return parsed.map((entry) => ({ path: entry.path, value: entry.value }));
-  } catch {
-    return [];
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${path} exists but is not valid JSON: ${(error as Error).message}`);
   }
+  const shapeError = desiredStateShapeError(parsed);
+  if (shapeError !== undefined) throw new Error(`${path} is not a valid desired-state declaration: ${shapeError}`);
+  return (parsed as { path: string; value: unknown }[]).map((entry) => ({ path: entry.path, value: entry.value }));
 }
 
 // Re-exported rather than reimplemented: this used to be a second copy of lock.ts's version,

@@ -52,6 +52,14 @@ function stubContext() {
             dirs.add(target);
             return { code: 0, stdout: "", stderr: "" };
           }
+          if (command === "rmdir") {
+            const target = args[args.length - 1];
+            const hasFile = [...files.keys()].some((entry) => entry.startsWith(`${target}/`));
+            const hasChild = [...dirs].some((entry) => entry.startsWith(`${target}/`));
+            if (hasFile || hasChild) return { code: 1, stdout: "", stderr: "Directory not empty" };
+            dirs.delete(target);
+            return { code: 0, stdout: "", stderr: "" };
+          }
           return { code: 0, stdout: "", stderr: "" };
         },
         async readFile(path: string): Promise<string> {
@@ -68,6 +76,20 @@ function stubContext() {
           for (const key of files.keys()) {
             if (key.startsWith(`${path}/`)) files.delete(key);
           }
+        },
+        async removeEmptyTree(path: string): Promise<boolean> {
+          for (const dir of [...dirs].filter((entry) => entry.startsWith(`${path}/`)).sort((a, b) => b.length - a.length)) {
+            const hasFile = [...files.keys()].some((entry) => entry.startsWith(`${dir}/`));
+            const hasChild = [...dirs].some((entry) => entry.startsWith(`${dir}/`));
+            if (!hasFile && !hasChild) dirs.delete(dir);
+          }
+          const hasFile = [...files.keys()].some((entry) => entry.startsWith(`${path}/`));
+          const hasChild = [...dirs].some((entry) => entry.startsWith(`${path}/`));
+          if (!hasFile && !hasChild) {
+            dirs.delete(path);
+            return true;
+          }
+          return false;
         },
       },
     } as unknown as Context,
@@ -133,6 +155,147 @@ async function refused(body: () => Promise<unknown>): Promise<string> {
   // A failed operation that kept the lock would block the very command someone runs next to
   // fix it.
   check("a lock is released even when the operation throws", await readLockHolder(ctx), undefined);
+}
+
+// --- a failed holder write must not strand a fresh claim ------------------------------------
+
+{
+  const { ctx, dirs } = stubContext();
+  const originalWrite = ctx.transport.writeFile;
+  let fail = true;
+  ctx.transport.writeFile = async (path: string, content: string) => {
+    if (fail) {
+      fail = false;
+      throw new Error("holder write failed");
+    }
+    await originalWrite(path, content);
+  };
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-write-fails"));
+  check("the original holder write failure is reported", message, "holder write failed");
+  check("a failed fresh claim is cleaned up", dirs.has(lockPath(ctx)), false);
+
+  const retry = await takeLock(ctx, "apply", "op-retry");
+  check("the next operation can retry after a failed holder write", (await readLockHolder(ctx))?.operationId, "op-retry");
+  await retry.release();
+}
+
+{
+  const { ctx, files, dirs } = stubContext();
+  ctx.transport.writeFile = async (path: string, content: string) => {
+    files.set(path, content.slice(0, 24));
+    throw new Error("partial holder write");
+  };
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-partial"));
+  check("a partial holder write reports its own failure", message, "partial holder write");
+  check("a partial fresh claim is cleaned up", dirs.has(lockPath(ctx)), false);
+}
+
+for (const mode of ["throw", "nonzero"] as const) {
+  const { ctx, dirs } = stubContext();
+  const originalExec = ctx.transport.exec;
+  ctx.transport.exec = async (command: string, args: string[]) => {
+    if (command === "mkdir" && args[0] === "-m") {
+      if (mode === "throw") throw new Error("marker transport failed");
+      return { code: 1, stdout: "", stderr: "marker mkdir failed" };
+    }
+    return originalExec(command, args);
+  };
+
+  const message = await refused(() => takeLock(ctx, "apply", `op-marker-${mode}`));
+  check(`marker ${mode} failure is reported`, message.includes(mode === "throw" ? "marker transport failed" : "marker mkdir failed"), true);
+  check(`marker ${mode} failure removes the empty fresh claim`, dirs.has(lockPath(ctx)), false);
+
+  ctx.transport.exec = originalExec;
+  const retry = await takeLock(ctx, "apply", `op-marker-${mode}-retry`);
+  check(`retry succeeds after marker ${mode} failure`, (await readLockHolder(ctx))?.operationId, `op-marker-${mode}-retry`);
+  await retry.release();
+}
+
+// The marker command can have created our marker before its result was lost. Cleanup must
+// remove that exact marker and then the empty lock root, while leaving an unrelated marker.
+{
+  const { ctx, dirs } = stubContext();
+  const originalExec = ctx.transport.exec;
+  ctx.transport.exec = async (command: string, args: string[]) => {
+    if (command === "mkdir" && args[0] === "-m") {
+      dirs.add(args[args.length - 1]);
+      return { code: 1, stdout: "", stderr: "marker result lost" };
+    }
+    return originalExec(command, args);
+  };
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-lost-marker"));
+  check("lost marker acknowledgement is reported", message.includes("marker result lost"), true);
+  check("lost marker acknowledgement does not strand the fresh claim", dirs.has(lockPath(ctx)), false);
+}
+
+{
+  const { ctx, dirs } = stubContext();
+  const originalExec = ctx.transport.exec;
+  ctx.transport.exec = async (command: string, args: string[]) => {
+    if (command === "mkdir" && args[0] === "-m") {
+      dirs.add(`${lockPath(ctx)}/claim-op-foreign`);
+      return { code: 1, stdout: "", stderr: "foreign marker appeared" };
+    }
+    return originalExec(command, args);
+  };
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-foreign-marker"));
+  check("a foreign marker failure is reported", message.includes("foreign marker appeared"), true);
+  check("a foreign marker prevents root cleanup", dirs.has(lockPath(ctx)), true);
+  await ctx.transport.remove(lockPath(ctx));
+}
+
+// A failed takeover did not create the directory. It must leave both an old holder and a
+// holder written by a concurrent takeover untouched, even when writing the requested holder
+// throws after changing the file.
+{
+  const { ctx, files, dirs } = stubContext();
+  const holderPath = `${lockPath(ctx)}/holder.json`;
+  const oldHolder = JSON.stringify({ operationId: "op-old", what: "apply", by: "old", takenAt: new Date().toISOString() });
+  dirs.add(lockPath(ctx));
+  files.set(holderPath, oldHolder);
+  ctx.transport.writeFile = async (path: string, content: string) => {
+    files.set(path, content);
+    throw new Error("takeover write failed");
+  };
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-takeover", { breakLock: true }));
+  check("a failed takeover reports its write failure", message, "takeover write failed");
+  check("a failed takeover preserves the newer holder", (await readLockHolder(ctx))?.operationId, "op-takeover");
+}
+
+{
+  const { ctx, files, dirs } = stubContext();
+  ctx.transport.writeFile = async (path: string, _content: string) => {
+    files.set(path, JSON.stringify({ operationId: "op-new", what: "apply", by: "new", takenAt: new Date().toISOString() }));
+    throw new Error("fresh holder write failed");
+  };
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-fresh"));
+  check("a fresh write failure reports its error when another holder appears", message, "fresh holder write failed");
+  check("a newer holder is never removed by fresh-claim cleanup", dirs.has(lockPath(ctx)), true);
+  check("the newer holder remains recorded", (await readLockHolder(ctx))?.operationId, "op-new");
+  await ctx.transport.remove(lockPath(ctx));
+}
+
+{
+  const { ctx, dirs } = stubContext();
+  const originalRemove = ctx.transport.remove;
+  ctx.transport.writeFile = async () => {
+    throw new Error("holder write is the useful failure");
+  };
+  ctx.transport.remove = async () => {
+    throw new Error("cleanup failed");
+  };
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-cleanup"));
+  check("cleanup failure does not hide the holder write failure", message, "holder write is the useful failure");
+  check("the lock remains observable when cleanup itself fails", dirs.has(lockPath(ctx)), true);
+  ctx.transport.remove = originalRemove;
+  await ctx.transport.remove(lockPath(ctx));
 }
 
 // --- stale locks are described, not stolen ------------------------------------------------------

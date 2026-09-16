@@ -77,6 +77,28 @@ function holderPath(ctx: Context): string {
   return `${lockPath(ctx)}/holder.json`;
 }
 
+/** A directory marker that proves this process won the lock directory. */
+function claimMarkerPath(ctx: Context, operationId: string): string {
+  return `${lockPath(ctx)}/claim-${encodeURIComponent(operationId)}`;
+}
+
+/** Removes only an empty directory; another owner's contents must survive. */
+async function removeEmptyDirectory(ctx: Context, path: string): Promise<void> {
+  if (ctx.transport.removeEmptyDir !== undefined) {
+    await ctx.transport.removeEmptyDir(path).catch(() => {});
+    return;
+  }
+  await ctx.transport.exec("rmdir", [path], { allowFailure: true });
+}
+
+/** Cleans an uncommitted claim without traversing another owner's marker. */
+async function removeFailedMarkerClaim(ctx: Context, operationId: string): Promise<void> {
+  // The marker command may have created its directory before losing the acknowledgement.
+  // Remove only that exact marker, then the lock root only if it is still empty.
+  await removeEmptyDirectory(ctx, claimMarkerPath(ctx, operationId));
+  await removeEmptyDirectory(ctx, lockPath(ctx));
+}
+
 export async function readLockHolder(ctx: Context): Promise<LockHolder | undefined> {
   try {
     const raw = await ctx.transport.readFile(holderPath(ctx));
@@ -220,7 +242,53 @@ export async function takeLock(
     by: `${process.env.USERNAME ?? process.env.USER ?? "unknown"}@${process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? "unknown"} pid ${process.pid}`,
     takenAt: new Date().toISOString(),
   };
-  await ctx.transport.writeFile(holderPath(ctx), `${JSON.stringify(holder, null, 2)}\n`);
+
+  // A fresh mkdir proves this process created the lock, but that proof is otherwise lost if
+  // writing holder.json fails. Keep an owner marker inside the directory so cleanup can still
+  // distinguish our incomplete claim from a lock that another process took over meanwhile.
+  const freshClaim = claim.won;
+  let markerCreated = false;
+  if (freshClaim) {
+    let marker;
+    try {
+      marker = await ctx.transport.exec("mkdir", ["-m", "700", claimMarkerPath(ctx, operationId)], { allowFailure: true });
+    } catch (error) {
+      await removeFailedMarkerClaim(ctx, operationId).catch(() => {});
+      throw error;
+    }
+    if (marker.code !== 0) {
+      const detail = (marker.stderr || marker.stdout).trim();
+      await removeFailedMarkerClaim(ctx, operationId).catch(() => {});
+      throw new Error(`could not record instance lock ownership${detail === "" ? "" : `: ${detail}`}`);
+    }
+    markerCreated = marker.code === 0;
+  } else {
+    // A takeover reuses the existing directory. Remove the previous fresh-claim marker when
+    // its owner is known, so a failed takeover cannot be mistaken for that old claim later.
+    const previous = await readLockHolder(ctx);
+    if (previous !== undefined) {
+      await ctx.transport.remove(claimMarkerPath(ctx, previous.operationId)).catch(() => {});
+    }
+  }
+
+  try {
+    await ctx.transport.writeFile(holderPath(ctx), `${JSON.stringify(holder, null, 2)}\n`);
+  } catch (error) {
+    if (freshClaim && markerCreated) {
+      try {
+        const marker = await ctx.transport.exec("test", ["-d", claimMarkerPath(ctx, operationId)], { allowFailure: true });
+        if (marker.code === 0) {
+          const current = await readLockHolder(ctx);
+          if (current === undefined || current.operationId === operationId) {
+            await ctx.transport.remove(lockPath(ctx));
+          }
+        }
+      } catch {
+        // Preserve the write failure. A cleanup error must not hide the useful cause.
+      }
+    }
+    throw error;
+  }
   heldHere += 1;
 
   let released = false;

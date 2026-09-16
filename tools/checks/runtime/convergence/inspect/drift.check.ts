@@ -457,6 +457,74 @@ try {
     check("the remedy is restart, not up", inspection.problems[0]?.nextAction, "./clawforge restart");
   }
   {
+    const startedAtMs = Date.parse("2026-09-16T12:00:00.100Z");
+    const inspection = await gatherInspection(stubContext({
+      targetEnv: "ZAI_API_KEY=k\n",
+      mirrorChecksums: goodChecksums,
+      startedAtMs,
+      configMtimeOutput: "2026-09-16 12:00:00.900000000 +0000",
+    }));
+    check("fractional mtime after startup in the same second requires restart", codes(inspection.problems), ["RESTART_REQUIRED"]);
+    check("the plan includes restart for a fractional mtime", planActions(inspection).map((action) => action.id), ["restart"]);
+  }
+  {
+    const startedAtMs = Date.parse("2026-09-16T12:00:00.900Z");
+    const inspection = await gatherInspection(stubContext({
+      targetEnv: "ZAI_API_KEY=k\n",
+      mirrorChecksums: goodChecksums,
+      startedAtMs,
+      configMtimeOutput: "2026-09-16 12:00:00.100000000 +0000",
+    }));
+    check("fractional mtime before startup in the same second is already in force", codes(inspection.problems), []);
+  }
+  {
+    const startedAtMs = Date.parse("2026-09-16T12:00:00.900Z");
+    const inspection = await gatherInspection(stubContext({
+      targetEnv: "ZAI_API_KEY=k\n",
+      mirrorChecksums: goodChecksums,
+      startedAtMs,
+      configMtimeOutput: "2026-09-16 12:00:00.900000000 +0000",
+    }));
+    check("equal fractional mtime and startup time does not require restart", codes(inspection.problems), []);
+  }
+  {
+    const startedAtMs = Date.parse("2026-09-16T10:00:00.500Z");
+    const inspection = await gatherInspection(stubContext({
+      targetEnv: "ZAI_API_KEY=k\n",
+      mirrorChecksums: goodChecksums,
+      startedAtMs,
+      configMtimeOutput: "2026-09-16 12:00:00.600000000 +0200",
+    }));
+    check("fractional mtime honors its explicit timezone", codes(inspection.problems), ["RESTART_REQUIRED"]);
+  }
+  {
+    const inspection = await gatherInspection(stubContext({
+      targetEnv: "ZAI_API_KEY=k\n",
+      mirrorChecksums: goodChecksums,
+      startedAtMs: Date.parse("2026-09-16T12:00:00.100Z"),
+      configMtimeOutput: "not a stat timestamp",
+    }));
+    check("malformed mtime fails safe without a false restart", codes(inspection.problems), []);
+  }
+  {
+    const inspection = await gatherInspection(stubContext({
+      targetEnv: "ZAI_API_KEY=k\n",
+      mirrorChecksums: goodChecksums,
+      startedAtMs: Date.parse("2026-09-16T12:00:00.100900Z"),
+      configMtimeOutput: "2026-09-16 12:00:00.100500000 +0000",
+    }));
+    check("sub-millisecond tails use the runtime's millisecond precision", codes(inspection.problems), []);
+  }
+  {
+    const inspection = await gatherInspection(stubContext({
+      targetEnv: "ZAI_API_KEY=k\n",
+      mirrorChecksums: goodChecksums,
+      startedAtMs: Date.parse("2026-09-16T12:00:00.100Z"),
+      configMtimeOutput: "2026-02-31 12:00:00.900000000 +0000",
+    }));
+    check("invalid calendar mtime fails safe without a false restart", codes(inspection.problems), []);
+  }
+  {
     // Top-level state and a user note are not owned prompts. They must not create a
     // permanent drift finding when provisioning intentionally preserves them.
     const inspection = await gatherInspection(

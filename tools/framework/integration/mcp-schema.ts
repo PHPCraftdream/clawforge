@@ -17,6 +17,7 @@ export type Declared = {
   readonly arguments?: CommandArgument[];
   readonly structured?: boolean;
   readonly readOnly?: boolean;
+  readonly readOnlyWhen?: (args: string[]) => boolean;
 };
 
 /** The envelope every structured tool result carries.
@@ -100,7 +101,11 @@ export function structuredResult(command: Declared, output: string, operationId:
 export function toolDescription(command: Declared): string {
   const parts = [command.summary];
   if (command.details !== undefined) parts.push(command.details);
-  if (command.destructive === true) parts.push("Destructive: requires confirm: true.");
+  if (command.destructive === true) {
+    parts.push(command.readOnlyWhen === undefined
+      ? "Destructive: requires confirm: true."
+      : "Destructive actions require confirm: true; read-only actions do not.");
+  }
   return parts.join("\n\n");
 }
 
@@ -125,9 +130,11 @@ export function inputSchema(command: Declared): Record<string, unknown> {
   if (command.destructive === true) {
     properties.confirm = {
       type: "boolean",
-      description: "Must be true: this command replaces or destroys state",
+      description: command.readOnlyWhen === undefined
+        ? "Must be true: this command replaces or destroys state"
+        : "Must be true when the selected action replaces or destroys state",
     };
-    required.push("confirm");
+    if (command.readOnlyWhen === undefined) required.push("confirm");
   }
 
   return { type: "object", properties, required };

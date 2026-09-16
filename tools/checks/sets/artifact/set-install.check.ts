@@ -137,6 +137,17 @@ function check(name: string, actual: unknown, expected: unknown): void {
 
   files.set(installedSetFile(ctx), "not json at all");
   check("an unreadable record reads as none rather than throwing", await readInstalledSet(ctx), undefined);
+
+  files.clear();
+  files.set("/srv/clawforge/oc-installed-set.json", JSON.stringify({
+    id: "a".repeat(64),
+    name: "legacy",
+    installedAt: "2026-01-01T00:00:00.000Z",
+    requires: manifest.requires,
+  }));
+  check("the old oc installed-set marker remains readable", (await readInstalledSet(ctx))?.name, "legacy");
+  files.set(installedSetFile(ctx), "not json at all");
+  check("a malformed current installed-set marker is authoritative", await readInstalledSet(ctx), undefined);
 }
 
 // --- what was installed before travels forward, so a rollback has somewhere to go ---------

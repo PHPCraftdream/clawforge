@@ -7,7 +7,7 @@ import type { AppCommand } from "#src/core/app.ts";
 import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { inspect, doctor } from "#src/commands/orchestration/inspect/gather.ts";
 import { plan } from "#src/commands/orchestration/plan.ts";
-import { apply } from "#src/commands/orchestration/apply.ts";
+import { apply, isApplyDryRun } from "#src/commands/orchestration/apply.ts";
 import { operations } from "#src/commands/orchestration/operations.ts";
 import { rollback } from "#src/commands/orchestration/rollback.ts";
 import { accept } from "#src/commands/orchestration/accept.ts";
@@ -91,6 +91,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
     ],
     structured: true,
+    readOnlyWhen: isApplyDryRun,
   },
   accept: {
     summary: "Run the acceptance checks this deployment's recipes declare",

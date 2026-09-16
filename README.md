@@ -241,6 +241,7 @@ near their theme without creating a flat catalogue.
 - `tools/framework/core`: shared types, environment, paths and output
 - `tools/framework/runtime`: deployment, transport, runtime and lock handling
 - `tools/framework/service`: archives, inspection, OpenClaw integration and secrets
+- `tools/framework/security`: private credential files and platform access protection
 - `tools/framework/integration`: gates, scaffolding and MCP setup
 - `tools/framework/commands`: lifecycle, orchestration, management, sets and interface
 - `tools/framework/set`: artifact and ownership concerns

@@ -20,6 +20,7 @@ import { log, info, die } from "../core/log.ts";
 import { monorepoRoot, frameworkRoot, parseEnv } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { setupProjectMcp } from "./mcp-project.ts";
+import { createPrivateFile } from "../security/private-file.ts";
 
 export const appsDir = resolve(monorepoRoot, "apps");
 
@@ -126,7 +127,7 @@ export async function createApp(name: string): Promise<void> {
 
   await writeFile(resolve(directory, "app.ts"), declarationFor(name), "utf8");
   await writeFile(resolve(directory, "config", "desired-state.json"), DESIRED_STATE, "utf8");
-  await writeFile(resolve(directory, ".env"), await deploymentEnv(name), "utf8");
+  await createPrivateFile(resolve(directory, ".env"), await deploymentEnv(name));
   await setupProjectMcp(directory, "monorepo");
 
   log(`created ${directory}`);

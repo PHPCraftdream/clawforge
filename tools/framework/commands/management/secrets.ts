@@ -10,7 +10,7 @@ import { emit } from "#src/core/output.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
-import { missing, requirements, requirementsFromConfig, status, template } from "#src/service/secrets.ts";
+import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
 import { loadSecrets, dumpSecrets } from "../lifecycle/state.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
@@ -50,15 +50,25 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   // list and loadSecrets() would then overwrite config/.env down to just that list, deleting
   // every secret the missed requirement was for while reporting success.
   const prospective = prospectiveConfig(await readLiveConfigOrThrow(ctx), await readDeclaredConfig());
-  const needed = requirementsFromConfig(prospective).filter((entry) => entry.location === "target-env");
+  const needed = (await requirementsForConfig(ctx, prospective)).filter((entry) => entry.location === "target-env");
 
   const absent = needed.filter((entry) => {
+    if (!entry.required) return false;
     const value = values[entry.name];
     return value === undefined || value.trim() === "";
   });
   if (absent.length > 0) {
     for (const entry of absent) warn(`${path} has no value for ${entry.name} (${entry.usedBy})`);
     die(`${absent.length} value(s) missing in ${path}`);
+  }
+
+  const supplied = needed.filter((entry) => {
+    const value = values[entry.name];
+    return value !== undefined && value.trim() !== "";
+  });
+  if (supplied.length === 0) {
+    log(`no target secrets to apply from ${path}`);
+    return;
   }
 
   // config/.env is REPLACED by what follows, not merged into: the required list is the whole
@@ -69,18 +79,18 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   // are the secrets themselves.
   const current = await dumpSecrets(ctx);
   if (current !== undefined) {
-    const keep = new Set(needed.map((entry) => entry.name));
+    const keep = new Set(supplied.map((entry) => entry.name));
     const dropped = Object.keys(parseEnv(current)).filter((name) => !keep.has(name));
     if (dropped.length > 0) {
-      warn(`${secretsFileOnTarget(ctx)} also holds ${dropped.length} variable(s) nothing requires, which this replaces:`);
+      warn(`${secretsFileOnTarget(ctx)} also holds ${dropped.length} variable(s) not supplied by ${path}, which this replaces:`);
       for (const name of dropped) info(name);
       info(`add them to ${path} if the instance needs them`);
     }
   }
 
-  const content = needed.map((entry) => `${entry.name}=${values[entry.name]}`).join("\n");
+  const content = supplied.map((entry) => `${entry.name}=${values[entry.name]}`).join("\n");
   await loadSecrets(ctx, `${content}\n`);
-  log(`applied ${needed.length} value(s) from ${path}`);
+  log(`applied ${supplied.length} value(s) from ${path}`);
   info("restart to pick them up: ./clawforge up");
 }
 

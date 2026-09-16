@@ -37,6 +37,11 @@ check("sibling deployment snapshot is rejected", parseSnapshotArchive(snapshotNa
 check("snapshot with a non-pull suffix is rejected", parseSnapshotArchive("example app-state-2026-01-12T03-04-05-share.tar.gz", "example app"), undefined);
 check("snapshot with an impossible timestamp is rejected", parseSnapshotArchive(snapshotName("example app", "2026-02-30T03-04-05"), "example app"), undefined);
 check(
+  "historical open_claw snapshots remain selectable for openclaw",
+  selectSnapshotPaths("/srv/snapshots/open_claw-state-2026-01-12T03-04-05.tar.gz\n", "openclaw")[0],
+  "/srv/snapshots/open_claw-state-2026-01-12T03-04-05.tar.gz",
+);
+check(
   "newest selection preserves listing order and excludes siblings",
   selectSnapshotPaths(
     "/srv/snapshots/example app-state-state-2026-01-12T03-04-06.tar.gz\n/srv/snapshots/example app-state-2026-01-12T03-04-05.tar.gz",

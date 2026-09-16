@@ -47,6 +47,7 @@ export const managementCommands: Record<string, AppCommand> = {
       { name: "json", description: "Emit the lock, or the differences, as JSON", kind: "flag" },
     ],
     structured: true,
+    readOnlyWhen: (args) => args.includes("--check"),
   },
   cli: {
     summary: "Run the OpenClaw CLI in a throwaway container",
@@ -140,9 +141,9 @@ export const managementCommands: Record<string, AppCommand> = {
   recipe: {
     summary: "Deploy services next to the instance (list, install, remove, status, logs)",
     run: recipe,
-    // The group includes `remove --volumes`, which can delete a recipe's persistent data.
-    // MCP confirmation is group-level, so read-only actions ask for the same explicit gate.
+    // Only lifecycle changes need confirmation; list/status/logs are safe to inspect.
     destructive: true,
+    readOnlyWhen: (args) => ["list", "status", "logs"].includes(args[0] ?? ""),
     details:
       "A recipe is a third-party service living beside the instance — its own directory " +
       "under the deployment's recipes/, its own compose project, its own lifecycle.\n" +

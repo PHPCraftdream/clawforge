@@ -7,6 +7,7 @@ import {
   inspectArchive,
   listArchiveLinks,
   excludesFor,
+  parseSnapshotArchive,
   SHARE_ALLOWED,
   type ArchiveLink,
 } from "#framework/service/archive.ts";
@@ -143,6 +144,17 @@ check("a hard link is parsed", parsedHardlink?.kind, "hardlink");
 check("a hard link target is parsed", parsedHardlink?.target, "data/a hardlink");
 check("a plain file produces no link entry", hardlink.has("data/a hardlink"), false);
 
+check(
+  "the historical open_claw snapshot name remains selectable for openclaw",
+  parseSnapshotArchive("open_claw-state-2026-01-12T03-04-05.tar.gz", "openclaw")?.stamp,
+  "2026-01-12T03-04-05",
+);
+check(
+  "a historical snapshot name is not accepted for another deployment",
+  parseSnapshotArchive("open_claw-state-2026-01-12T03-04-05.tar.gz", "other"),
+  undefined,
+);
+
 // The two lists must not contradict each other: nothing the share profile excludes may
 // appear in what it allows.
 const shareExcludes = excludesFor("share", "data").map((pattern) => pattern.replace(/^data\//, ""));
@@ -177,6 +189,8 @@ check("share allow-list does not contradict its exclusions", contradiction, unde
   check("the journal is kept in a full backup", excludesFor("full", "data").includes("data/clawforge-operations"), false);
   check("but not handed to another host", excludesFor("migrate", "data").includes("data/clawforge-operations"), true);
   check("nor to someone the agent is shared with", excludesFor("share", "data").includes("data/clawforge-operations"), true);
+  check("the old oc journal is excluded from migration", excludesFor("migrate", "data").includes("data/oc-operations"), true);
+  check("the old oc ownership files are excluded from sharing", excludesFor("share", "data").includes("data/oc-managed.json"), true);
 
   // The allow-list is what turns a new directory into a report rather than a silent
   // shipment; a share archive must now pass it with the journal on disk.

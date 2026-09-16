@@ -233,22 +233,24 @@ async function runLockChecks(): Promise<void> {
     check("secrets --apply refuses when another operation already holds the instance lock", refused.includes("another operation is changing this instance"), true);
 
     let unlockedMessage = "";
+    let unlockedOutput = "";
+    let targetWrites = 0;
+    const unlocked = stubCtx(false);
+    unlocked.transport.writeFile = async (path: string): Promise<void> => {
+      if (path.endsWith("/config/.env")) targetWrites += 1;
+    };
     try {
       await withOutputSink(
-        () => {},
-        () => secrets(stubCtx(false), ["--apply", "--store", storeName]),
+        (chunk) => { unlockedOutput += chunk; },
+        () => secrets(unlocked, ["--apply", "--store", storeName]),
       );
     } catch (error) {
       unlockedMessage = error instanceof Error ? error.message : String(error);
     }
-    // requirements() short-circuits to [] (no config), so applyStore() proceeds through the
-    // lock and only fails later, at loadSecrets()'s own "empty content" guard — a DIFFERENT
-    // failure than the lock refusal above, which is exactly what proves it got past the lock.
-    check(
-      "with no competing lock, secrets --apply gets past the lock check (fails later, for an unrelated reason)",
-      unlockedMessage.includes("refusing to install an empty secrets file"),
-      true,
-    );
+    // With no requirements, an empty store completes without replacing target secrets.
+    check("with no competing lock, an empty secret apply completes", unlockedMessage, "");
+    check("the unlocked command reaches the no-op result", unlockedOutput.includes("no target secrets to apply"), true);
+    check("an empty secret apply leaves the target file untouched", targetWrites, 0);
   } finally {
     await rm(deployDir, { recursive: true, force: true });
   }
@@ -440,6 +442,78 @@ async function runReadErrorAbortsChecks(): Promise<void> {
 
     check("a failed existence check aborts secrets --apply too", checkFailure.includes("could not check whether"), true);
     check("and config/.env is left alone", checkFailureWrites["/srv/clawforge/data/config/.env"], undefined);
+  } finally {
+    await rm(deployDir, { recursive: true, force: true });
+  }
+}
+
+// A declaration used to compute requirements is input to a destructive replacement. Any
+// present but unreadable or malformed file must therefore stop before config/.env is touched.
+async function runDeclaredConfigValidationChecks(): Promise<void> {
+  const deployDir = await mkdtemp(resolve(tmpdir(), "clawforge-secrets-declaration-check-"));
+  try {
+    await mkdir(resolve(deployDir, "config"), { recursive: true });
+    await mkdir(resolve(deployDir, "secrets"), { recursive: true });
+    useDeployment(deployDir);
+    const storeName = "declaration-store";
+    await writeFile(resolve(deployDir, "secrets", `${storeName}.env`), "ZAI_API_KEY=zai-value\n", "utf8");
+    const targetEnv = "/srv/clawforge/data/config/.env";
+
+    for (const scenario of [
+      ["invalid JSON", "{"],
+      ["wrong shape", JSON.stringify({ gateway: { mode: "local" } })],
+      ["missing path", JSON.stringify([{ value: {} }])],
+      ["missing value", JSON.stringify([{ path: "models.providers.zai" }])],
+    ] as const) {
+      await writeFile(resolve(deployDir, "config", "desired-state.json"), scenario[1], "utf8");
+      const writes: Record<string, string> = {};
+      const ctx = {
+        settings: { dataDir: "/srv/clawforge/data", env: {} },
+        transport: {
+          description: "stub",
+          async exists(path: string): Promise<boolean> { return !path.endsWith("openclaw.json"); },
+          async readFile(): Promise<string> { return ""; },
+          async writeFile(path: string, content: string): Promise<void> { writes[path] = content; },
+          async remove(): Promise<void> {},
+          async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
+            return { code: 0, stdout: "", stderr: "" };
+          },
+        },
+      } as unknown as Context;
+      let thrown = "";
+      try {
+        await withOutputSink(() => {}, () => secrets(ctx, ["--apply", "--store", storeName]));
+      } catch (error) {
+        thrown = error instanceof Error ? error.message : String(error);
+      }
+      check(`${scenario[0]} declaration aborts secrets --apply`, thrown !== "", true);
+      check(`${scenario[0]} declaration leaves target secrets untouched`, writes[targetEnv], undefined);
+    }
+
+    await rm(resolve(deployDir, "config", "desired-state.json"), { force: true });
+    await mkdir(resolve(deployDir, "config", "desired-state.json"));
+    const writes: Record<string, string> = {};
+    const ctx = {
+      settings: { dataDir: "/srv/clawforge/data", env: {} },
+      transport: {
+        description: "stub",
+        async exists(path: string): Promise<boolean> { return !path.endsWith("openclaw.json"); },
+        async readFile(): Promise<string> { return ""; },
+        async writeFile(path: string, content: string): Promise<void> { writes[path] = content; },
+        async remove(): Promise<void> {},
+        async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      },
+    } as unknown as Context;
+    let thrown = "";
+    try {
+      await withOutputSink(() => {}, () => secrets(ctx, ["--apply", "--store", storeName]));
+    } catch (error) {
+      thrown = error instanceof Error ? error.message : String(error);
+    }
+    check("unreadable declaration aborts secrets --apply", thrown.includes("could not be read"), true);
+    check("unreadable declaration leaves target secrets untouched", writes[targetEnv], undefined);
   } finally {
     await rm(deployDir, { recursive: true, force: true });
   }
@@ -665,6 +739,7 @@ await runSecretsChecks();
 await runLockChecks();
 await runProspectiveApplyChecks();
 await runReadErrorAbortsChecks();
+await runDeclaredConfigValidationChecks();
 await runDroppedVariableChecks();
 await runMcpChecks();
 

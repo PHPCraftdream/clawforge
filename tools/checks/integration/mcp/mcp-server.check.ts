@@ -120,15 +120,14 @@ try {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
 }
 
-// A command group containing a destructive subcommand is gated as a whole. This keeps the
-// MCP contract safe when a caller selects `recipe remove --volumes`; the list form remains
-// callable after the same explicit confirmation, without starting Docker.
+// Mixed command groups gate only mutating actions. This keeps the MCP contract safe when a
+// caller selects `recipe remove --volumes`, while list remains callable without a confirmation.
 {
   const recipeDeployment = `mcp-check-recipe-${randomBytes(4).toString("hex")}`;
   const recipeLines = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recipe", arguments: { action: "remove", name: "demo", volumes: true } } },
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "recipe", arguments: { action: "remove", name: "demo", volumes: true, confirm: false } } },
-    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "recipe", arguments: { action: "list", confirm: true } } },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "recipe", arguments: { action: "list" } } },
     { jsonrpc: "2.0", id: 4, method: "tools/list" },
   ].map((request) => JSON.stringify(request)).join("\n");
 
@@ -145,18 +144,55 @@ try {
     check("recipe MCP calls keep the server alive", result.code, 0);
     check("recipe remove without confirm is rejected", textOf(1).includes("pass confirm: true"), true);
     check("recipe remove with confirm false is rejected", textOf(2).includes("pass confirm: true"), true);
-    check("confirmed recipe list remains available", textOf(3).includes("no recipes yet"), true);
+    check("read-only recipe list remains available without confirmation", textOf(3).includes("no recipes yet"), true);
 
     const recipeTool = (((byId.get(4)?.result as { tools?: Array<{ name: string; description?: string; inputSchema?: { properties?: Record<string, unknown>; required?: string[] } }> } | undefined)?.tools ?? [])
       .find((tool) => tool.name === "recipe"));
-    check("recipe MCP schema requires confirmation", recipeTool?.inputSchema?.required?.includes("confirm"), true);
+    check("recipe MCP schema leaves conditional confirmation optional", recipeTool?.inputSchema?.required?.includes("confirm"), false);
     check("recipe MCP schema exposes confirmation", recipeTool?.inputSchema?.properties?.confirm !== undefined, true);
-    check("recipe MCP description states confirmation", recipeTool?.description?.includes("Destructive: requires confirm: true."), true);
-    check("declaration and generated description agree", toolDescription(openclawCommands.recipe!).includes("Destructive: requires confirm: true."), true);
+    check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes("read-only actions do not"), true);
+    check("declaration and generated description agree", toolDescription(openclawCommands.recipe!).includes("read-only actions do not"), true);
     const required = (inputSchema(openclawCommands.recipe!).required as string[] | undefined) ?? [];
-    check("declaration and generated schema agree", required.includes("confirm"), true);
+    check("declaration and generated schema agree", required.includes("confirm"), false);
+
+    const setSchema = inputSchema(openclawCommands.set!);
+    check("set MCP schema leaves conditional confirmation optional", (setSchema.required as string[]).includes("confirm"), false);
+    check("set MCP description explains conditional confirmation", toolDescription(openclawCommands.set!).includes("read-only actions do not"), true);
+    check("set build is read-only for MCP gating", openclawCommands.set!.readOnlyWhen?.(["build"]), true);
+    check("set try remains destructive for MCP gating", openclawCommands.set!.readOnlyWhen?.(["try"]), false);
+    check("lock check is read-only for MCP gating", openclawCommands.lock!.readOnlyWhen?.(["--check"]), true);
+    check("lock write remains mutable for MCP gating", openclawCommands.lock!.readOnlyWhen?.([]), false);
   } finally {
     await rm(resolve(appsDir, recipeDeployment), { recursive: true, force: true });
+  }
+}
+
+// A structured read-only command reports changed:false, while the corresponding write remains
+// gated and reports changed:true after an explicit confirmation.
+{
+  const lockDeployment = `mcp-check-lock-${randomBytes(4).toString("hex")}`;
+  const lockLines = [
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "lock", arguments: { check: true, json: true } } },
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "lock", arguments: { json: true, confirm: true } } },
+  ].map((request) => JSON.stringify(request)).join("\n");
+
+  try {
+    await createApp(lockDeployment);
+    const result = await runServer(lockDeployment, lockLines);
+    const responses = result.stdout
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const byId = new Map(responses.map((response) => [response.id, response]));
+    const structured = (id: number): { changed?: boolean } | undefined =>
+      (byId.get(id)?.result as { structuredContent?: { changed?: boolean } } | undefined)?.structuredContent;
+
+    check("lock check is callable without confirmation", byId.get(1)?.error, undefined);
+    check("lock check reports changed false", structured(1)?.changed, false);
+    check("confirmed lock write succeeds", byId.get(2)?.error, undefined);
+    check("lock write reports changed true", structured(2)?.changed, true);
+  } finally {
+    await rm(resolve(appsDir, lockDeployment), { recursive: true, force: true });
   }
 }
 

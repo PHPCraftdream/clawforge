@@ -81,7 +81,12 @@ async function captureRun(
         clearRecipesDir();
         if (command.preparesEnvironment === true) await ensureEnvironment();
 
-        const ctx = await createContext({ mounts: app.mounts, service: app.service });
+        const ctx = await createContext({
+          mounts: app.mounts,
+          service: app.service,
+          settings: app.settings,
+          secrets: app.secrets,
+        });
         await command.run(ctx, argv);
         return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined };
       } catch (error) {
@@ -253,7 +258,9 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           break;
         }
 
-        if (command.destructive === true && args.confirm !== true) {
+        const argv = toArgv(command, args);
+        const readOnly = command.readOnly === true || command.readOnlyWhen?.(argv) === true;
+        if (command.destructive === true && !readOnly && args.confirm !== true) {
           reply(request.id, {
             isError: true,
             content: [{ type: "text", text: `${name} replaces or destroys state — pass confirm: true` }],
@@ -262,9 +269,8 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
         }
 
         try {
-          const argv = toArgv(command, args);
           const { output, machineOutput, failure } = await captureRun(app, command, argv);
-          const effectiveCommand = { ...command, readOnly: command.readOnly === true || command.readOnlyWhen?.(argv) === true };
+          const effectiveCommand = { ...command, readOnly };
           // Built from the output alone, never from the output plus the failure text: a
           // command that reports findings and then fails on them — doctor is the one that
           // does — still emitted a valid document, and that is what the caller needs most

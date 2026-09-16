@@ -107,6 +107,7 @@ export interface AppSecret {
   readonly name: string;
   readonly location: "repo-env" | "target-env";
   readonly usedBy: string;
+  /** Required unless explicitly false. */
   readonly required?: boolean;
 }
 
@@ -114,8 +115,9 @@ export interface AppDefinition {
   /** Short identifier, used in messages. */
   readonly name: string;
   readonly description: string;
-  /** Extra settings the application reads from the environment. Optional: most read what
-   *  the framework already parsed. */
+  /** Extra environment defaults for the application. The hook receives a copy of the parsed
+   *  `.env`; values it returns are available in `ctx.settings.env`. Explicit `.env` values
+   *  win, and framework derived settings are rebuilt from the merged environment. */
   readonly settings?: (env: Env) => Record<string, string>;
   /** Secrets required before the service can start. Returned dynamically because the list
    *  usually depends on what is configured on the target. */

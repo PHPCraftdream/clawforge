@@ -107,6 +107,12 @@ function fakeCtx(files: Map<string, string>, calls: string[][], cronJobs: { id: 
   // candidate — including when the proof itself cannot be read.
   files.set("/srv/clawforge/clawforge-managed.json", "not json at all");
   check("a corrupt ledger reads as empty rather than throwing", await readLedger(ctx), { version: LEDGER_VERSION, objects: [] });
+
+  files.clear();
+  files.set("/srv/clawforge/oc-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("agent", "legacy-agent", "legacy")] }));
+  check("the old oc ledger remains readable", (await readLedger(ctx)).objects[0]?.name, "legacy-agent");
+  files.set("/srv/clawforge/clawforge-managed.json", "not json at all");
+  check("a malformed current ledger is authoritative over the legacy ledger", (await readLedger(ctx)).objects, []);
 }
 
 // --- orphanedBy: a recipe dropped, a recipe renaming what it declares, a recipe unchanged --

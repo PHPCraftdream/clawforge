@@ -10,7 +10,7 @@ import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
-import { isProfile, listArchive, fileSize, parseSnapshotArchive, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
+import { isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
 import { requirements, template } from "#src/service/secrets.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { createBackup } from "./backup.ts";
@@ -42,7 +42,9 @@ function shellQuote(value: string): string {
 }
 
 function snapshotGlob(directory: string): string {
-  return `${shellQuote(`${directory}/${deploymentName()}-state-`)}*.tar.gz`;
+  return snapshotDeploymentNames(deploymentName())
+    .map((name) => `${shellQuote(`${directory}/${name}-state-`)}*.tar.gz`)
+    .join(" ");
 }
 
 /** Writes a staged sidecar, escalating when its directory requires it. */

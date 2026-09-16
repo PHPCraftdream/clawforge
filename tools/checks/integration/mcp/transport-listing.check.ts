@@ -37,6 +37,11 @@ function check(name: string, actual: unknown, expected: unknown): void {
     check("a directory that does not exist lists nothing", await local.listFiles(resolve(dir, "absent")), []);
     check("an empty directory lists nothing", await local.listFiles(dir), []);
 
+    const empty = resolve(dir, "empty");
+    await mkdir(empty);
+    await local.removeEmptyDir(empty);
+    check("single-directory removal removes an empty directory", await local.exists(empty), false);
+
     await writeFile(resolve(dir, "server.ts"), "// server");
     await mkdir(resolve(dir, "data", "sub"), { recursive: true });
     await writeFile(resolve(dir, "data", "page.md"), "# page");
@@ -53,6 +58,10 @@ function check(name: string, actual: unknown, expected: unknown): void {
     // Directories are not files: a mirror that tried to `rm` one of these as a stale file
     // would either fail or take its contents with it.
     check("directories themselves are not listed", found.includes("data"), false);
+    let nonemptyRefused = false;
+    try { await local.removeEmptyDir(resolve(dir, "data")); } catch { nonemptyRefused = true; }
+    check("single-directory removal refuses nonempty directories", nonemptyRefused, true);
+    check("refused removal preserves nested files", await local.exists(resolve(dir, "data", "sub", "nested.md")), true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

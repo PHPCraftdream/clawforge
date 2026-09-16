@@ -87,6 +87,8 @@ export interface Transport {
   exists(path: string): Promise<boolean>;
   mkdirp(path: string): Promise<void>;
   remove(path: string): Promise<void>;
+  /** Removes one empty directory, preserving any contents on failure. */
+  readonly removeEmptyDir?: (path: string) => Promise<void>;
   /** Removes only empty directories below path; returns whether path itself was removed. */
   readonly removeEmptyTree?: (path: string) => Promise<boolean>;
   /** Every regular file under `dir`, recursively, as POSIX-style paths relative to it.
@@ -378,6 +380,10 @@ export class LocalTransport implements Transport {
     await rm(path, { recursive: true, force: true });
   }
 
+  async removeEmptyDir(path: string): Promise<void> {
+    await rmdir(path);
+  }
+
   async removeEmptyTree(path: string): Promise<boolean> {
     let info;
     try {
@@ -491,6 +497,10 @@ export class WslTransport implements Transport {
     await this.exec("rm", ["-rf", path]);
   }
 
+  async removeEmptyDir(path: string): Promise<void> {
+    await this.exec("rmdir", ["--", path]);
+  }
+
   async removeEmptyTree(path: string): Promise<boolean> {
     if (!(await this.exists(path))) return false;
     const result = await this.exec("find", [path, "-depth", "-type", "d", "-empty", "-delete"]);
@@ -572,6 +582,10 @@ export class SshTransport implements Transport {
 
   async remove(path: string): Promise<void> {
     await this.exec("rm", ["-rf", path]);
+  }
+
+  async removeEmptyDir(path: string): Promise<void> {
+    await this.exec("rmdir", ["--", path]);
   }
 
   async removeEmptyTree(path: string): Promise<boolean> {

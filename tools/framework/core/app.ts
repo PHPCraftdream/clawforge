@@ -120,9 +120,7 @@ export interface AppDefinition {
   /** Secrets required before the service can start. Returned dynamically because the list
    *  usually depends on what is configured on the target. */
   readonly secrets?: (ctx: Context) => Promise<AppSecret[]>;
-  /** Where this application keeps its recipes. The recipe mechanism belongs to the
-   *  framework; the recipes themselves are the application's data, so their location is
-   *  declared here rather than assumed to be <repo>/recipes. */
+  /** Recipe root, relative to the deployment or absolute. An active set source takes priority. */
   readonly recipesDir?: string;
   /** How the data directory appears inside the container. The framework translates paths
    *  but does not know what the image looks like inside, so the map comes from here. */

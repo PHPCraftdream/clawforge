@@ -6,7 +6,8 @@
 
 import { log, info, warn, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
-import { sudoFor } from "#src/runtime/datadir.ts";
+import { randomUUID } from "node:crypto";
+import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { createArchive, fileSize, isProfile, backupArchiveName, parseBackupArchive, type Profile } from "#src/service/archive.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
@@ -102,6 +103,10 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   await ctx.transport.exec(mkHead, mkRest);
 
   const archive = `${backupDir}/${backupArchiveName(deploymentName(), timestamp(), profile)}`;
+  // Keep the archive in a private directory until it is complete. The final name must only
+  // appear after tar and chmod succeed, so a failed tar cannot become the newest backup.
+  const stagingDir = `${backupDir}/.clawforge-backup-${randomUUID()}`;
+  const stagingArchive = `${stagingDir}/archive.tar.gz`;
   const wasRunning = await ctx.runtime.isRunning();
 
   if (options.hot === true) {
@@ -111,14 +116,47 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     await ctx.runtime.pause();
   }
 
+  let stagingCreated = false;
   try {
     log(`writing ${archive}`);
-    await createArchive(ctx, { archive, profile });
+    const mkdirStagePrefix = await sudoFor(ctx, backupDir);
+    const [mkdirStageHead, ...mkdirStageRest] = [
+      ...mkdirStagePrefix,
+      "mkdir",
+      "-m",
+      "700",
+      "--",
+      stagingDir,
+    ];
+    await ctx.transport.exec(mkdirStageHead, mkdirStageRest);
+    stagingCreated = true;
 
-    const chmodPrefix = await sudoFor(ctx, archive);
-    const [chHead, ...chRest] = [...chmodPrefix, "chmod", "600", archive];
+    await createArchive(ctx, { archive: stagingArchive, profile });
+
+    const chmodPrefix = await sudoFor(ctx, stagingArchive);
+    const [chHead, ...chRest] = [...chmodPrefix, "chmod", "600", stagingArchive];
     await ctx.transport.exec(chHead, chRest);
+
+    const movePrefix = await sudoFor(ctx, archive);
+    const [moveHead, ...moveRest] = [...movePrefix, "mv", "-nT", "--", stagingArchive, archive];
+    const moved = await ctx.transport.exec(moveHead, moveRest, { allowFailure: true });
+    if (moved.code !== 0) {
+      throw new Error(`could not publish ${archive}: ${moved.stderr.trim() || `mv exited ${moved.code}`}`);
+    }
+
+    const remaining = await targetExists(ctx, stagingArchive);
+    if (remaining) throw new Error(`backup path already exists: ${archive}`);
+    if (!(await targetExists(ctx, archive))) {
+      throw new Error(`could not confirm publication of ${archive}`);
+    }
   } finally {
+    if (stagingCreated) {
+      try {
+        await runMaybePrivileged(ctx, stagingDir, "rm", ["-rf", "--", stagingDir]);
+      } catch {
+        warn(`could not remove backup staging directory ${stagingDir}`);
+      }
+    }
     // Bring the gateway back even if tar failed. Waited for, not just started: up(),
     // push() and restore() all confirm health before returning — this used to be the one
     // command that handed control back while the container was still merely "Starting",
@@ -135,6 +173,16 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   log(`backup done: ${archive} (${await fileSize(ctx, archive)}, profile: ${profile})`);
   await rotate(ctx, backupDir);
   return archive;
+}
+
+/** Checks a target path with the privileges used for the backup operation. */
+async function targetExists(ctx: Context, path: string): Promise<boolean> {
+  const prefix = await sudoFor(ctx, path);
+  const [head, ...rest] = [...prefix, "test", "-e", path];
+  const result = await ctx.transport.exec(head, rest, { allowFailure: true });
+  if (result.code === 0) return true;
+  if (result.code === 1) return false;
+  throw new Error(`could not check backup path ${path} (exit ${result.code})`);
 }
 
 export async function backup(ctx: Context, args: string[]): Promise<void> {

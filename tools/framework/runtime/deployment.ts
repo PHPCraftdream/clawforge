@@ -30,9 +30,20 @@ import { setSourceDir } from "../set/artifacts/source.ts";
 
 let activeDir: string | undefined;
 let composeOverride: string | undefined;
+let applicationRecipes: { deployment: string; directory: string } | undefined;
 
 export function useDeployment(directory: string): void {
   activeDir = directory;
+}
+
+/** Selects an application's recipe root for the active deployment. */
+export function useApplicationRecipesDir(directory: string | undefined): void {
+  if (directory === undefined) {
+    applicationRecipes = undefined;
+    return;
+  }
+  const deployment = deploymentDir();
+  applicationRecipes = { deployment, directory: resolve(deployment, directory) };
 }
 
 /** The deployment's own identity — the directory it lives in, always. Everything that
@@ -125,5 +136,10 @@ export function secretsDir(): string {
 /** Recipes belonging to this deployment — set-owned, so it follows the set source for the
  *  same reason desiredStateFile does. */
 export function recipesDir(): string {
-  return resolve(setSourceDir() ?? deploymentDir(), "recipes");
+  const source = setSourceDir();
+  if (source !== undefined) return resolve(source, "recipes");
+  const deployment = deploymentDir();
+  return applicationRecipes?.deployment === deployment
+    ? applicationRecipes.directory
+    : resolve(deployment, "recipes");
 }

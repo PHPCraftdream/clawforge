@@ -6,8 +6,8 @@
 
 import { reportError, UserError, log, info } from "../core/log.ts";
 import { createContext } from "../core/context.ts";
-import { useRecipesDir } from "../service/recipe.ts";
-import { recipesDir } from "../runtime/deployment.ts";
+import { clearRecipesDir } from "../service/recipe.ts";
+import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "../integration/provision.ts";
 import { serveMcp } from "../integration/mcp-server.ts";
 import { gateCommandHelp, type GateCommand } from "../integration/gate.ts";
@@ -152,8 +152,9 @@ export async function runApp(
     return 0;
   }
 
-  // Recipes belong to the deployment, next to its configuration.
-  useRecipesDir(recipesDir());
+  // Configure this before building the context; set sources still take precedence in recipesDir().
+  useApplicationRecipesDir(app.recipesDir);
+  clearRecipesDir();
 
   // Before the context: it parses .env and builds the runtime around it, so a command that
   // is supposed to create that file cannot be the one to run afterwards.

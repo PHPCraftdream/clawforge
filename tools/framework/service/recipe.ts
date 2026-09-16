@@ -19,18 +19,25 @@ import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { monorepoRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
+import { recipesDir } from "../runtime/deployment.ts";
 
 /** Default location. An application declares its own via AppDefinition.recipesDir: the
  *  mechanism is the framework's, the recipes are the application's data. */
 export const defaultRecipesDir = resolve(monorepoRoot, "recipes");
-let activeRecipesDir = defaultRecipesDir;
+let explicitRecipesDir: string | undefined;
 
+/** Overrides the deployment recipe root for low-level callers and checks. */
 export function useRecipesDir(directory: string): void {
-  activeRecipesDir = directory;
+  explicitRecipesDir = directory;
+}
+
+/** Returns recipe lookup to the deployment and set source. */
+export function clearRecipesDir(): void {
+  explicitRecipesDir = undefined;
 }
 
 export function recipesDirectory(): string {
-  return activeRecipesDir;
+  return explicitRecipesDir ?? recipesDir();
 }
 
 export interface RecipePort {

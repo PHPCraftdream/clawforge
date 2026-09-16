@@ -154,6 +154,82 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
   }
 }
 
+// A mirror must converge when a recipe changes a path's shape. Stale files are removed
+// before their desired child paths are created; stale directories are emptied and removed
+// with a non-recursive rmdir so unknown target contents are never swept away.
+{
+  const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-shape-check-"));
+  const targetData = resolve(root, "target-data");
+  const recipeDir = resolve(root, "recipe");
+  const binary = Buffer.from([0xff, 0x00, 0x80, 0xc3]);
+  try {
+    await mkdir(recipeDir, { recursive: true });
+    await writeFile(resolve(recipeDir, "assets"), binary);
+    const ctx = { settings: { dataDir: targetData }, transport: new LocalTransport() } as unknown as Context;
+    const mirror = recipeMirrorTargetDir(targetData, "shape-recipe");
+
+    await syncRecipeFiles(ctx, "shape-recipe", recipeDir);
+    await rm(resolve(recipeDir, "assets"));
+    await mkdir(resolve(recipeDir, "assets", "nested"), { recursive: true });
+    await writeFile(resolve(recipeDir, "assets", "nested", "new.bin"), binary);
+    await syncRecipeFiles(ctx, "shape-recipe", recipeDir);
+    check("file-to-directory transition removes the blocking file", (await ctx.transport.listFiles(mirror)).sort(), ["assets/nested/new.bin"]);
+    check("file-to-directory transition preserves bytes", [...await readBytes(resolve(mirror, "assets", "nested", "new.bin"))], [...binary]);
+
+    await rm(resolve(recipeDir, "assets"), { recursive: true, force: true });
+    await writeFile(resolve(recipeDir, "assets"), binary);
+    await syncRecipeFiles(ctx, "shape-recipe", recipeDir);
+    check("directory-to-file transition removes the old directory", (await ctx.transport.listFiles(mirror)).sort(), ["assets"]);
+    check("directory-to-file transition preserves bytes", [...await readBytes(resolve(mirror, "assets"))], [...binary]);
+
+    const repeated = await syncRecipeFiles(ctx, "shape-recipe", recipeDir);
+    check("shape convergence is idempotent", repeated, { written: 1, removed: [] });
+
+    await rm(resolve(mirror, "assets"));
+    await mkdir(resolve(mirror, "assets"), { recursive: true });
+    const emptyDirResult = await syncRecipeFiles(ctx, "shape-recipe", recipeDir);
+    check("an empty directory also changes to a desired file", emptyDirResult.removed, []);
+    check("empty directory transition writes the desired file", [...await readBytes(resolve(mirror, "assets"))], [...binary]);
+
+    await rm(resolve(mirror, "assets"));
+    await mkdir(resolve(mirror, "assets", "empty", "nested"), { recursive: true });
+    await writeFile(resolve(mirror, "assets", "old.txt"), "stale");
+    const emptyBranchResult = await syncRecipeFiles(ctx, "shape-recipe", recipeDir);
+    check("shape replacement removes empty directory branches", emptyBranchResult.removed, ["assets/old.txt"]);
+    check("shape replacement survives empty branches", [...await readBytes(resolve(mirror, "assets"))], [...binary]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+// A transport can return an incomplete listing. Empty-tree cleanup must then preserve an
+// unlisted file and refuse the shape change instead of recursively deleting it.
+{
+  const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-incomplete-listing-check-"));
+  const targetData = resolve(root, "target-data");
+  const recipeDir = resolve(root, "recipe");
+  try {
+    await mkdir(recipeDir, { recursive: true });
+    await writeFile(resolve(recipeDir, "assets"), "desired");
+    const local = new LocalTransport();
+    const incomplete = { ...local, async listFiles(): Promise<string[]> { return []; } } as unknown as typeof local;
+    const ctx = { settings: { dataDir: targetData }, transport: incomplete } as unknown as Context;
+    const mirror = recipeMirrorTargetDir(targetData, "incomplete-recipe");
+    await mkdir(resolve(mirror, "assets"), { recursive: true });
+    await writeFile(resolve(mirror, "assets", "unknown.txt"), "keep me");
+    let failedShapeChange = false;
+    try {
+      await syncRecipeFiles(ctx, "incomplete-recipe", recipeDir);
+    } catch {
+      failedShapeChange = true;
+    }
+    check("incomplete listing refuses an unsafe directory-to-file transition", failedShapeChange, true);
+    check("incomplete listing preserves the unknown file", await readBytes(resolve(mirror, "assets", "unknown.txt")), Buffer.from("keep me"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
 // --- the recipe mirror is a mirror: what the recipe dropped is dropped on the target ------
 //
 // Copying without deleting leaves a withdrawn page on the target, where the recipe's MCP

@@ -23,8 +23,8 @@ import { createInterface } from "node:readline";
 import { mcpCommands, type AppCommand, type AppDefinition } from "../core/app.ts";
 import type { GateCommand } from "./gate.ts";
 import { createContext } from "../core/context.ts";
-import { useRecipesDir } from "../service/recipe.ts";
-import { recipesDir } from "../runtime/deployment.ts";
+import { clearRecipesDir } from "../service/recipe.ts";
+import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "./provision.ts";
 import { UserError } from "../core/log.ts";
 import { withOutputSink } from "../core/output.ts";
@@ -77,7 +77,8 @@ async function captureRun(
       try {
         // Same order as the console path: the environment is completed before the context is
         // built from it, and the deployment's own recipes are the ones in scope.
-        useRecipesDir(recipesDir());
+        useApplicationRecipesDir(app.recipesDir);
+        clearRecipesDir();
         if (command.preparesEnvironment === true) await ensureEnvironment();
 
         const ctx = await createContext({ mounts: app.mounts, service: app.service });

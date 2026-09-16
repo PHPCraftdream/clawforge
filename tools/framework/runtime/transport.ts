@@ -11,7 +11,7 @@
 // All operations are async by design — no *Sync calls anywhere.
 
 import { spawn } from "node:child_process";
-import { readFile, writeFile, chmod, mkdir, rm, access, readdir } from "node:fs/promises";
+import { readFile, writeFile, chmod, mkdir, rm, rmdir, access, readdir, lstat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { die, maskSecrets } from "../core/log.ts";
 import { outputSink } from "../core/output.ts";
@@ -62,6 +62,8 @@ export interface Transport {
   exists(path: string): Promise<boolean>;
   mkdirp(path: string): Promise<void>;
   remove(path: string): Promise<void>;
+  /** Removes only empty directories below path; returns whether path itself was removed. */
+  readonly removeEmptyTree?: (path: string) => Promise<boolean>;
   /** Every regular file under `dir`, recursively, as POSIX-style paths relative to it.
    *  A directory that does not exist is an empty list, not an error — the caller is usually
    *  asking "what is there now" before putting something there.
@@ -335,6 +337,28 @@ export class LocalTransport implements Transport {
     await rm(path, { recursive: true, force: true });
   }
 
+  async removeEmptyTree(path: string): Promise<boolean> {
+    let info;
+    try {
+      info = await lstat(path);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return false;
+      throw error;
+    }
+    if (!info.isDirectory()) return false;
+    for (const entry of await readdir(path, { withFileTypes: true })) {
+      if (entry.isDirectory()) await this.removeEmptyTree(join(path, entry.name));
+    }
+    try {
+      await rmdir(path);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOTEMPTY") return false;
+      throw error;
+    }
+  }
+
   async listFiles(dir: string): Promise<string[]> {
     let entries;
     try {
@@ -415,6 +439,13 @@ export class WslTransport implements Transport {
     await this.exec("rm", ["-rf", path]);
   }
 
+  async removeEmptyTree(path: string): Promise<boolean> {
+    if (!(await this.exists(path))) return false;
+    const result = await this.exec("find", [path, "-depth", "-type", "d", "-empty", "-delete"]);
+    if (result.code !== 0) throw new Error(`could not remove empty directories under ${path}: ${result.stderr.trim()}`);
+    return !(await this.exists(path));
+  }
+
   listFiles(dir: string): Promise<string[]> {
     return listFilesVia((command, args, options) => this.exec(command, args, options), dir);
   }
@@ -480,6 +511,13 @@ export class SshTransport implements Transport {
 
   async remove(path: string): Promise<void> {
     await this.exec("rm", ["-rf", path]);
+  }
+
+  async removeEmptyTree(path: string): Promise<boolean> {
+    if (!(await this.exists(path))) return false;
+    const result = await this.exec("find", [path, "-depth", "-type", "d", "-empty", "-delete"]);
+    if (result.code !== 0) throw new Error(`could not remove empty directories under ${path}: ${result.stderr.trim()}`);
+    return !(await this.exists(path));
   }
 
   listFiles(dir: string): Promise<string[]> {

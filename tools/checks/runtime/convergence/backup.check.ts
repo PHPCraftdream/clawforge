@@ -85,8 +85,13 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
 // instance. This simulates a lock already held by another operation (the same mkdir-based
 // claim takeLock itself uses) and asserts backup refuses before ever touching the gateway.
 
-function stubBackupCtx(lockAlreadyHeld: boolean): { ctx: Context; calls: string[] } {
+function stubBackupCtx(
+  lockAlreadyHeld: boolean,
+  options: { tarFailure?: boolean; publishCollision?: boolean } = {},
+): { ctx: Context; calls: string[]; files: Set<string>; contents: Map<string, string> } {
   const calls: string[] = [];
+  const files = new Set(["/srv/clawforge/data"]);
+  const contents = new Map<string, string>();
   const holder = JSON.stringify({
     operationId: "op-holder", what: "apply", by: "someone@host pid 1", takenAt: new Date().toISOString(),
   });
@@ -101,8 +106,46 @@ function stubBackupCtx(lockAlreadyHeld: boolean): { ctx: Context; calls: string[
         calls.push(`exec ${command} ${args.join(" ")}`);
         // The lock directory itself: a plain `mkdir` (no -p) is the atomic claim takeLock
         // makes; `test -d` is how it tells "someone holds it" from "mkdir just failed".
-        if (command === "mkdir" && args[0] !== "-p") return { code: lockAlreadyHeld ? 1 : 0, stdout: "", stderr: "" };
+        if (command === "mkdir" && args.length === 1) return { code: lockAlreadyHeld ? 1 : 0, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-d") return { code: lockAlreadyHeld ? 0 : 1, stdout: "", stderr: "" };
+        if (command === "test" && args[0] === "-e") {
+          return { code: files.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
+        }
+        if (command === "mkdir" && args.includes("-m")) {
+          files.add(args.at(-1) ?? "");
+        }
+        if (command === "tar") {
+          const index = args.indexOf("-czf");
+          const archive = args[index + 1] ?? "";
+          if (index !== -1) {
+            files.add(archive);
+            contents.set(archive, "new archive");
+          }
+          if (options.tarFailure === true) throw new Error("tar failed after creating its output");
+        }
+        if (command === "mv") {
+          const source = args.at(-2) ?? "";
+          const destination = args.at(-1) ?? "";
+          if (options.publishCollision === true) {
+            files.add(destination);
+            contents.set(destination, "old archive");
+          }
+          if (!files.has(destination)) {
+            files.delete(source);
+            files.add(destination);
+            contents.set(destination, contents.get(source) ?? "");
+            contents.delete(source);
+          }
+        }
+        if (command === "rm") {
+          const target = args.at(-1) ?? "";
+          for (const file of files) {
+            if (file === target || (args.includes("-rf") && file.startsWith(`${target}/`))) {
+              files.delete(file);
+              contents.delete(file);
+            }
+          }
+        }
         return { code: 0, stdout: "", stderr: "" };
       },
       async readFile(path: string): Promise<string> {
@@ -119,7 +162,7 @@ function stubBackupCtx(lockAlreadyHeld: boolean): { ctx: Context; calls: string[
       async waitForHealth(): Promise<void> { calls.push("waitForHealth"); },
     },
   } as unknown as Context;
-  return { ctx, calls };
+  return { ctx, calls, files, contents };
 }
 
 {
@@ -220,10 +263,42 @@ function rotationContext(listing: string[], keep: string): { ctx: Context; execC
 }
 
 {
-  const { ctx } = stubBackupCtx(false);
+  const { ctx, files } = stubBackupCtx(false);
   const archive = await withOutputSink(() => {}, () => createBackup(ctx, {}));
   // Unchanged on purpose: a backup directory written before this still reads correctly.
   check("a full backup keeps the plain name", /-\d{8}-\d{6}\.tar\.gz$/.test(archive), true);
+  check("a successful backup removes its staging directory", [...files].some((path) => path.includes(".clawforge-backup-")), false);
+}
+
+// A failed tar must never expose a partial archive under the name restore/rotation discovers.
+{
+  const { ctx, calls, files } = stubBackupCtx(false, { tarFailure: true });
+  let message = "";
+  await withOutputSink(
+    () => {},
+    async () => {
+      try { await createBackup(ctx, {}); } catch (error) { message = (error as Error).message; }
+    },
+  );
+  check("a failed tar is reported", message.includes("tar failed"), true);
+  check("a failed tar leaves no archive", [...files].every((path) => !path.endsWith(".tar.gz")), true);
+  check("a failed tar restarts the gateway", calls.includes("start") && calls.includes("waitForHealth"), true);
+}
+
+// Publication refuses a same-name collision and leaves the existing archive untouched.
+{
+  const { ctx, calls, files, contents } = stubBackupCtx(false, { publishCollision: true });
+  let message = "";
+  await withOutputSink(
+    () => {},
+    async () => {
+      try { await createBackup(ctx, {}); } catch (error) { message = (error as Error).message; }
+    },
+  );
+  check("a backup filename collision is reported", message.includes("backup path already exists"), true);
+  check("a collision leaves one existing archive", [...files].filter((path) => path.endsWith(".tar.gz")).length, 1);
+  check("a collision preserves the existing archive", [...contents.values()].filter((value) => value === "old archive").length, 1);
+  check("a publication failure restarts the gateway", calls.includes("start") && calls.includes("waitForHealth"), true);
 }
 
 process.stderr.write(failed === 0 ? "all backup checks passed\n" : `${failed} failed\n`);

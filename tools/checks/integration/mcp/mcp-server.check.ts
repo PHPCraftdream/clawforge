@@ -300,6 +300,15 @@ function deep(name: string, actual: unknown, expected: unknown): void {
 }
 
 {
+  const envelope = structuredResult(
+    { summary: "s", structured: true },
+    JSON.stringify({ operationId: "journal-op", changed: true, problems: [], nextActions: [] }),
+    "tool-call-id",
+  );
+  check("a command operation id is promoted to the envelope", envelope?.operationId, "journal-op");
+}
+
+{
   // A command that may change things and does not say: taken to have changed something. An
   // agent that re-checks needlessly loses a call; one that skips a check it needed loses
   // the thread.

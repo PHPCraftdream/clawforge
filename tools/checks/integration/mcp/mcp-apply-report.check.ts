@@ -11,7 +11,8 @@ import { spawnLocal } from "#framework/runtime/transport.ts";
 const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-apply-report-"));
 try {
   await mkdir(join(root, "config"));
-  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\n`);
+  const token = "synthetic-mcp-failure-token";
+  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_TOKEN=${token}\n`);
   const moduleUrl = (path: string): string => new URL(`../../../framework/${path}.ts`, import.meta.url).href;
   const script = `
     const {serveMcp}=await import(${JSON.stringify(moduleUrl("integration/mcp-server"))});
@@ -28,12 +29,14 @@ try {
       emit(JSON.stringify({deployment:"fixture",operationId:"fixture",changed:true,target,healthy:true,problems:[],nextActions:[]})+"\\n");
     }};
     useDeployment(${JSON.stringify(root)});
-    await serveMcp({name:"fixture",commands:{apply}});
+    const explode={summary:"fixture failure",run:async(ctx)=>{throw new Error("failure "+ctx.settings.env.OPENCLAW_GATEWAY_TOKEN)}};
+    await serveMcp({name:"fixture",commands:{apply,explode}});
   `;
   const requests = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "apply", arguments: { confirm: true, "dry-run": true, json: true } } },
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "apply", arguments: { confirm: true, json: true } } },
     { jsonrpc: "2.0", id: 3, method: "tools/list" },
+    { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "explode", arguments: {} } },
   ].map((request) => JSON.stringify(request)).join("\n");
 
   const result = await spawnLocal(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
@@ -44,16 +47,20 @@ try {
   const responses = result.stdout
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line) as { id: number; result?: { structuredContent?: Record<string, unknown> } });
+    .map((line) => JSON.parse(line) as { id: number; result?: { isError?: boolean; structuredContent?: Record<string, unknown> } });
   const byId = new Map(responses.map((response) => [response.id, response]));
   const dryRun = byId.get(1)?.result?.structuredContent;
   const ordinary = byId.get(2)?.result?.structuredContent;
   const listed = byId.get(3)?.result;
+  const failed = byId.get(4)?.result;
 
   assert.equal(dryRun?.changed, false, "MCP apply --dry-run must be reported as read-only");
   assert.equal((dryRun?.result as { target?: number } | undefined)?.target, 0, "dry-run must leave the target unchanged");
   assert.equal(ordinary?.changed, true, "ordinary MCP apply remains mutating");
+  assert.equal(ordinary?.operationId, "fixture", "MCP envelope reuses the command operation id");
   assert.equal((ordinary?.result as { target?: number } | undefined)?.target, 1, "ordinary apply must update the target");
+  assert.equal(failed?.isError, true, "failed MCP commands report an error");
+  assert.equal(JSON.stringify(failed).includes(token), false, "MCP failures mask registered secrets");
   const tool = ((listed as { tools?: Array<{ name: string; outputSchema?: unknown }> } | undefined)?.tools ?? [])
     .find((entry) => entry.name === "apply");
   assert.notEqual(tool?.outputSchema, undefined, "apply keeps its structured output schema");

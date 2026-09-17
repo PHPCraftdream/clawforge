@@ -26,7 +26,7 @@ import { createContext } from "../core/context.ts";
 import { clearRecipesDir } from "../service/recipe.ts";
 import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "./provision.ts";
-import { UserError } from "../core/log.ts";
+import { maskSecrets, UserError } from "../core/log.ts";
 import { withOutputSink } from "../core/output.ts";
 import { structuredResult, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./mcp-schema.ts";
 
@@ -90,9 +90,9 @@ async function captureRun(
         await command.run(ctx, argv);
         return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined };
       } catch (error) {
-        const failure = error instanceof UserError || error instanceof Error
+        const failure = maskSecrets(error instanceof UserError || error instanceof Error
           ? error.message
-          : String(error);
+          : String(error));
         return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined, failure };
       }
     },
@@ -119,9 +119,9 @@ async function captureGateRun(
         const output = chunks.join("").trim();
         return code === 0 ? { output } : { output, failure: `${command.name} failed (exit ${code})` };
       } catch (error) {
-        const failure = error instanceof UserError || error instanceof Error
+        const failure = maskSecrets(error instanceof UserError || error instanceof Error
           ? error.message
-          : String(error);
+          : String(error));
         return { output: chunks.join("").trim(), failure };
       }
     },
@@ -139,7 +139,7 @@ function reply(id: number | string | undefined, result: unknown): void {
 
 function replyError(id: number | string | undefined, code: number, message: string): void {
   if (id === undefined) return;
-  send({ jsonrpc: "2.0", id, error: { code, message } });
+  send({ jsonrpc: "2.0", id, error: { code, message: maskSecrets(message) } });
 }
 
 export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] = []): Promise<void> {
@@ -227,7 +227,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
             if (problems.length > 0) {
               reply(request.id, {
                 isError: true,
-                content: [{ type: "text", text: `${name}: ${problems.join("; ")}` }],
+                content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
               });
               break;
             }
@@ -238,7 +238,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
                 type: "text",
                 text: failure === undefined
                   ? (output === "" ? "(no output)" : output)
-                  : (output === "" ? failure : `${output}\n\n${failure}`),
+                  : maskSecrets(output === "" ? failure : `${output}\n\n${failure}`),
               }],
             });
             break;
@@ -253,7 +253,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
         if (problems.length > 0) {
           reply(request.id, {
             isError: true,
-            content: [{ type: "text", text: `${name}: ${problems.join("; ")}` }],
+            content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
           });
           break;
         }
@@ -263,7 +263,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
         if (command.destructive === true && !readOnly && args.confirm !== true) {
           reply(request.id, {
             isError: true,
-            content: [{ type: "text", text: `${name} replaces or destroys state — pass confirm: true` }],
+            content: [{ type: "text", text: maskSecrets(`${name} replaces or destroys state — pass confirm: true`) }],
           });
           break;
         }
@@ -291,14 +291,14 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           // them in, and the order that reads as an explanation rather than a bare verdict.
           reply(request.id, {
             isError: true,
-            content: [{ type: "text", text: output === "" ? failure : `${output}\n\n${failure}` }],
+            content: [{ type: "text", text: maskSecrets(output === "" ? failure : `${output}\n\n${failure}`) }],
             ...(structured === undefined ? {} : { structuredContent: structured }),
           });
         } catch (error) {
           // Left for what captureRun cannot catch: a failure while building the sink itself.
-          const message = error instanceof UserError || error instanceof Error
+          const message = maskSecrets(error instanceof UserError || error instanceof Error
             ? error.message
-            : String(error);
+            : String(error));
           reply(request.id, { isError: true, content: [{ type: "text", text: message }] });
         }
         break;

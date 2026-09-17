@@ -31,8 +31,7 @@ export type Declared = {
  *  healthy leaves `healthy` absent rather than claiming something; the alternative — a
  *  default that looks like an answer — is worse than a gap, because a gap can be seen. */
 export interface StructuredResult {
-  /** Distinguishes two calls of the same tool in a log. Not persisted anywhere: it names
-   *  this call, so a report about it can be matched to it. */
+  /** Command operation id when the command reports one; otherwise a transient tool-call id. */
   readonly operationId: string;
   readonly changed: boolean;
   readonly healthy?: boolean;
@@ -49,7 +48,7 @@ export interface StructuredResult {
 export const STRUCTURED_OUTPUT_SCHEMA = {
   type: "object",
   properties: {
-    operationId: { type: "string", description: "Identifies this call" },
+    operationId: { type: "string", description: "Command operation id when available; otherwise this tool call id" },
     changed: { type: "boolean", description: "Whether the call may have changed the instance" },
     healthy: { type: "boolean", description: "Whether the instance is doing its job, when the command knows" },
     problems: { type: "array", description: "Findings, each with a stable code, severity, detail and nextAction" },
@@ -78,11 +77,14 @@ export function structuredResult(command: Declared, output: string, operationId:
   }
   if (payload === null || typeof payload !== "object") return undefined;
 
-  const fields = payload as { healthy?: unknown; problems?: unknown; nextActions?: unknown; changed?: unknown };
+  const fields = payload as { operationId?: unknown; healthy?: unknown; problems?: unknown; nextActions?: unknown; changed?: unknown };
   const problems = Array.isArray(fields.problems) ? fields.problems : [];
+  const commandOperationId = typeof fields.operationId === "string" && fields.operationId !== ""
+    ? fields.operationId
+    : operationId;
 
   return {
-    operationId,
+    operationId: commandOperationId,
     // A read-only command changes nothing by declaration. Anything else is asked, and when
     // it does not say, taken to have changed something: an agent that re-checks
     // unnecessarily loses a call, one that skips a check it needed loses the thread.

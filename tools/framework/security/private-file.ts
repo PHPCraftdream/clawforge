@@ -36,15 +36,42 @@ function filesystemAdvice(file: string): string {
     : "check the filesystem and its ownership before retrying";
 }
 
-/** Runs one local support tool and hands the result back as data: every caller here decides
- *  for itself what a nonzero exit or a timeout means. */
-async function runTool(command: string, args: string[], timeoutMs: number): Promise<{ code: number; output: string }> {
+/** What it takes to run one local support tool and hand the result back as data: every
+ *  caller decides for itself what a nonzero exit or a timeout means. */
+export type ToolRunner = (
+  command: string,
+  args: string[],
+  timeoutMs: number,
+) => Promise<{ code: number; output: string }>;
+
+const spawnTool: ToolRunner = async (command, args, timeoutMs) => {
   try {
     const result = await spawnLocal(command, args, { allowFailure: true, timeoutMs });
     return { code: result.code, output: `${result.stdout}${result.stderr}` };
   } catch (error) {
     return { code: -1, output: (error as Error).message };
   }
+};
+
+// A module-level runner rather than a parameter, like the output sink: the callers that must
+// be swappable are arbitrarily deep. Checks script the Windows and WSL support tools through
+// this one seam — the probe's argv shape and its verdicts are verified on machines that have
+// neither — while production code never enters the swap and always reaches the real tools.
+let toolRunner: ToolRunner = spawnTool;
+
+/** Runs `body` with support tools answered by `substitute` instead of executed. */
+export async function withToolRunner<T>(substitute: ToolRunner, body: () => Promise<T>): Promise<T> {
+  const previous = toolRunner;
+  toolRunner = substitute;
+  try {
+    return await body();
+  } finally {
+    toolRunner = previous;
+  }
+}
+
+async function runTool(command: string, args: string[], timeoutMs: number): Promise<{ code: number; output: string }> {
+  return toolRunner(command, args, timeoutMs);
 }
 
 async function windowsOwnerSid(file: string): Promise<string> {
@@ -56,23 +83,36 @@ async function windowsOwnerSid(file: string): Promise<string> {
   return sid;
 }
 
-/** Builds the DACL from nothing rather than patching it: /reset drops every explicit ACE (a
- *  /grant:r over the old ACL would leave foreign trustees standing), /inheritance:r keeps the
- *  parent's entries from coming back, and the grant names the complete allowed set by SID.
- *  Returns the owner SID so the result can be verified against it. */
+/** Builds the DACL from nothing rather than patching it, in one icacls invocation: drop
+ *  inheritance, remove every foreign trustee the /save readback just named, grant the closed
+ *  SID set. No /reset runs in front of it — /reset restored the parent's inheritable access
+ *  onto a file that already held its secret, and a failure in the grant that followed left
+ *  exactly that widened ACL behind. Every step of this call can only narrow, or grant within
+ *  the closed set, so a failure leaves the file no wider than it arrived. Returns the owner
+ *  SID so the result can be verified against it. */
 async function grantWindowsAcl(file: string): Promise<string> {
   const owner = await windowsOwnerSid(file);
-  const reset = await runTool(systemTool("icacls.exe"), [file, "/reset"], 15_000);
-  if (reset.code !== 0) {
-    throw new Error(`icacls /reset failed for ${file} (exit ${reset.code}): ${reset.output.trim() || "no details"}`);
-  }
+  const foreign = new Set(
+    (await savedAces(file)).aces
+      .filter((ace) => !ace.flags.includes("ID"))
+      .map((ace) => ace.trustee)
+      .filter((trustee) => ![owner, SYSTEM_SID, ADMINISTRATORS_SID].includes(trusteeSid(trustee))),
+  );
   const grant = await runTool(
     systemTool("icacls.exe"),
-    [file, "/inheritance:r", "/grant:r", `*${owner}:F`, `*${SYSTEM_SID}:F`, `*${ADMINISTRATORS_SID}:F`],
+    [
+      file,
+      "/inheritance:r",
+      ...[...foreign].flatMap((trustee) => ["/remove", `*${trustee}`]),
+      "/grant:r",
+      `*${owner}:F`,
+      `*${SYSTEM_SID}:F`,
+      `*${ADMINISTRATORS_SID}:F`,
+    ],
     15_000,
   );
   if (grant.code !== 0) {
-    throw new Error(`icacls /grant failed for ${file} (exit ${grant.code}): ${grant.output.trim() || "no details"}`);
+    throw new Error(`icacls failed for ${file} (exit ${grant.code}): ${grant.output.trim() || "no details"}`);
   }
   return owner;
 }
@@ -166,41 +206,44 @@ async function automountedPath(distro: string, file: string): Promise<string | u
   }
 }
 
-/** Asks one distribution whether an unprivileged user can open the file — runuser to nobody,
- *  `head -c 0` so the open itself is the answer and no content is read or printed. OPEN and
- *  DENIED are verdicts; anything else means the probe itself did not work. */
-async function probeWslOpenUncached(distro: string, targetPath: string): Promise<string> {
-  const quoted = `'${targetPath.replaceAll("'", `'\\''`)}'`;
+/** The verdict the unprivileged side prints. The path arrives as "$1" and is never pasted
+ *  into this string: a file name is data, and every shell between here and the open must
+ *  keep it that way. A probe that cannot see its argument says NOPROBE rather than guessing. */
+const PROBE_SCRIPT =
+  'if [ "${1+set}" = set ] && [ -n "$1" ]; then ' +
+  'if head -c 0 -- "$1" >/dev/null 2>&1; then echo OPEN; else echo DENIED; fi; ' +
+  "else echo NOPROBE; fi";
+
+/** Asks one distribution whether an unprivileged user can open the file. The path travels
+ *  as a positional parameter at every shell — wsl.exe hands it to the outer sh as "$1", and
+ *  runuser or su passes it on to the inner sh the same way — so no metacharacter in a file
+ *  or directory name can become shell code at the root shell this runs under. `head -c 0`
+ *  makes the open itself the answer; no content is read or printed. Probed per file, never
+ *  cached per drive: reachability depends on the file's own mode, DrvFs metadata and parent
+ *  directories, and a stale verdict would silence a warning that still holds. Exported for
+ *  the checks, which drive it with a scripted runner. */
+export async function probeWslOpen(distro: string, targetPath: string): Promise<string> {
   const script =
     "if command -v runuser >/dev/null 2>&1; then " +
-    `runuser -u nobody -- sh -c 'head -c 0 ${quoted} >/dev/null 2>&1 && echo OPEN || echo DENIED'; ` +
+    `runuser -u nobody -- sh -c '${PROBE_SCRIPT}' sh "$1"; ` +
     "elif command -v su >/dev/null 2>&1; then " +
-    `su -s /bin/sh -c "head -c 0 ${quoted} >/dev/null 2>&1 && echo OPEN || echo DENIED" nobody; ` +
+    `su -s /bin/sh -c '${PROBE_SCRIPT}' nobody sh "$1"; ` +
     "else echo NOPROBE; fi";
-  const result = await runTool(systemTool("wsl.exe"), ["-d", distro, "-u", "root", "--exec", "sh", "-c", script], 15_000);
+  const result = await runTool(
+    systemTool("wsl.exe"),
+    ["-d", distro, "-u", "root", "--exec", "sh", "-c", script, "sh", targetPath],
+    15_000,
+  );
   const verdict = result.output.replaceAll("\0", "").trim();
   if (verdict === "OPEN" || verdict === "DENIED") return verdict;
   return `no verdict (exit ${result.code})`;
-}
-
-// One probe per distribution and drive per process: the verdict is a property of the mount,
-// not of the individual file, and this sits on a path every command walks.
-const wslProbeVerdicts = new Map<string, string>();
-
-async function probeWslOpen(distro: string, targetPath: string): Promise<string> {
-  const mount = `${distro}|${targetPath.split("/").slice(0, 3).join("/")}`;
-  const cached = wslProbeVerdicts.get(mount);
-  if (cached !== undefined) return cached;
-  const verdict = await probeWslOpenUncached(distro, targetPath);
-  wslProbeVerdicts.set(mount, verdict);
-  return verdict;
 }
 
 /** The Windows half is only half the protection when WSL is installed: every drive is
  *  automounted into every distribution, and across that boundary a Windows ACL carries no
  *  weight between Linux users. Where the deployment sits is the operator's decision, not a
  *  fault of this call, so the boundary is reported rather than enforced: each installed
- *  distribution is probed once per drive, and whatever it can open — or whatever this probe
+ *  distribution is probed about the file itself, and whatever it can open — or whatever this probe
  *  could not answer — is said out loud instead of silently claimed as owner-only. */
 async function reportWslBoundary(file: string): Promise<void> {
   const distros = await installedWslDistros();

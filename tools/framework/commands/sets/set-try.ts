@@ -30,6 +30,7 @@ import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { down } from "../lifecycle/lifecycle.ts";
 import { loadSecrets } from "../lifecycle/state.ts";
+import { createPrivateFile, protectPrivateDirectory } from "#src/security/private-file.ts";
 import { provisionAgent } from "../management/provision-agent/index.ts";
 import { runCheck, requiresModel, summarize, acceptanceSpecError } from "../orchestration/accept.ts";
 import { withModelApproval } from "#src/service/openclaw-cli.ts";
@@ -135,6 +136,8 @@ export async function teardownTry(
 export async function setTry(ctx: Context, args: string[], dependencies: {
   createContext?: typeof createContext;
   findFreePort?: typeof findFreePort;
+  protectPrivateDirectory?: typeof protectPrivateDirectory;
+  createPrivateFile?: typeof createPrivateFile;
 } = {}): Promise<void> {
   const options = parseSetTryArgs(args);
   return withModelApproval(options.withModel, () => setTryInScope(ctx, options, dependencies));
@@ -143,6 +146,8 @@ export async function setTry(ctx: Context, args: string[], dependencies: {
 async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies: {
   createContext?: typeof createContext;
   findFreePort?: typeof findFreePort;
+  protectPrivateDirectory?: typeof protectPrivateDirectory;
+  createPrivateFile?: typeof createPrivateFile;
 } = {}): Promise<void> {
   const startedAt = new Date().toISOString();
   const { artifact, withModel, keep, jsonOnly } = options;
@@ -199,6 +204,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
     await mkdir(dirname(tempDir), { recursive: true });
     await mkdir(tempDir);
     tempDirCreated = true;
+    await (dependencies.protectPrivateDirectory ?? protectPrivateDirectory)(tempDir);
     await cp(staging, tempDir, { recursive: true });
 
     const { manifest, id } = unpacked.verified;
@@ -253,7 +259,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
       `import { mountPoints } from ${JSON.stringify(modulePath("mounts"))};\n` +
       `import { openclawCommands } from ${JSON.stringify(modulePath("commands/index"))};\n` +
       `export default defineApp({name:${JSON.stringify(tryName)},description:"temporary set instance",service:{name:"gateway"},mounts:mountPoints,commands:openclawCommands});\n`);
-    await writeFile(
+    await (dependencies.createPrivateFile ?? createPrivateFile)(
       join(tempDir, ".env"),
       buildEnv({ port, token, image: manifest.requires.image, dataRoot, copiedFrom: realEnv }),
     );

@@ -29,9 +29,18 @@ files.set(`${sourceData}/config/.env`, `WIKI_TOKEN=${secretValue}\n`);
 
 try {
   const built = await buildSet(ctx, "lifecycle-try");
+  const privateDirectories: string[] = [];
+  const privateFiles: string[] = [];
 
   const dependencies = {
     findFreePort: async () => 24567,
+    protectPrivateDirectory: async (path: string) => {
+      privateDirectories.push(path);
+    },
+    createPrivateFile: async (path: string, content: string) => {
+      privateFiles.push(path);
+      await writeFile(path, content, { encoding: "utf8", mode: 0o600 });
+    },
     createContext: async () => {
       fixture.state.lastTryDir = deploymentDir();
       return fixture.context(parseEnv(await readFile(envFile(), "utf8")));
@@ -45,6 +54,9 @@ try {
   assert.equal(await access(fixture.state.lastTryDir).then(() => true, () => false), false);
   assert.equal(deploymentDir(), root);
   assert.equal(setSourceDir(), undefined);
+  assert.equal(privateDirectories.length, 1, "the throwaway deployment directory is protected before it is retained");
+  assert.equal(privateFiles.length, 1, "the throwaway environment is created through the private-file contract");
+  assert.ok(/[\\/]\.env$/.test(privateFiles[0] ?? ""), "the protected file is the throwaway environment");
 
   // How the values arrive is the contract: never a direct write of key values into the
   // throwaway's config/.env — that file exists at the process umask until a follow-up
@@ -89,6 +101,8 @@ try {
   assert.equal(keptApp.default.service.name, "gateway");
   assert.equal(deploymentDir(), root);
   assert.equal(setSourceDir(), undefined);
+  assert.equal(privateDirectories.length, 4, "every throwaway deployment directory is protected");
+  assert.equal(privateFiles.length, 4, "every throwaway environment uses private creation");
   const evidence = await listReceipts(built.id);
   assert.equal(evidence.length, 4, "success, startup failure, teardown failure and kept trials each leave evidence");
   assert.ok(evidence.every((receipt) => receipt.verdict === "not-verified"), "empty acceptance never certifies a set");

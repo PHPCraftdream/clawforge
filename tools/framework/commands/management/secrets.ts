@@ -4,7 +4,7 @@
 // start when a referenced variable is missing, and the reason is buried in its log as
 // SecretRefResolutionError.
 
-import { writeFile, readFile, mkdir, access } from "node:fs/promises";
+import { writeFile, readFile, access } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/log.ts";
 import { emit } from "#src/core/output.ts";
 import { parseEnv } from "#src/core/env.ts";
@@ -13,6 +13,7 @@ import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
 import { loadSecrets, dumpSecrets } from "../lifecycle/state.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
+import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replacePrivateFile, unprotectedPrivateFile } from "#src/security/private-file.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
 
@@ -31,6 +32,16 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
       `${path} not found — create it with ./clawforge secrets --init-store --store ${storeName}, ` +
         "or pass a different --store <name>",
     );
+  }
+
+  // Reported, not refused, and not rewritten behind the operator's back: reading a store
+  // neither causes nor deepens an exposure, and this repository's contract for what it
+  // cannot guarantee is to say so and go on — the same decision private-file.ts makes at
+  // the Windows/WSL boundary. Refusing would leave the keys uninstallable through the
+  // tool, while the fix (tightening the file) stays a manual step either way.
+  const exposure = await unprotectedPrivateFile(path);
+  if (exposure !== undefined) {
+    warn(`${path} is not owner-only (${exposure}) — anyone this machine's ACLs allow can read the keys in it`);
   }
 
   const values = parseEnv(raw);
@@ -91,7 +102,16 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   const content = supplied.map((entry) => `${entry.name}=${values[entry.name]}`).join("\n");
   await loadSecrets(ctx, `${content}\n`);
   log(`applied ${supplied.length} value(s) from ${path}`);
-  info("restart to pick them up: ./clawforge up");
+  // The values are on the target but nothing running has READ them: config/.env is a file
+  // inside a bind mount, not an env_file declaration, so `up` converges on the healthy
+  // container that is already running and leaves the old process environment live — the
+  // contract config.ts and provider.ts already state for their own writes.
+  const target = secretsFileOnTarget(ctx);
+  if (await ctx.runtime.isRunning()) {
+    info(`${target} holds the new values, but the running instance has not read them — restart to pick them up: ./clawforge restart`);
+  } else {
+    info(`${target} holds the new values, and the instance is stopped — the next start reads them: ./clawforge up`);
+  }
 }
 
 export async function secrets(ctx: Context, args: string[]): Promise<void> {
@@ -128,9 +148,29 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
       die(`${path} already exists — pass --force to replace it with an empty template`);
     }
 
-    await mkdir(secretsDir(), { recursive: true });
+    // secrets/ is part of the same contract, not a mere container: an editor that saves
+    // through atomic replacement creates its temporary file in this directory and renames
+    // it over the store, and that temporary takes the DIRECTORY's inheritable access. A
+    // sealed directory has none to give — on Windows such a file falls back to the
+    // creator's own default DACL, which is narrow — so the wide inherited entry this
+    // guards against cannot reach the replacement.
+    await protectPrivateDirectory(secretsDir());
     const needed = (await requirements(ctx)).filter((entry) => entry.location === "target-env");
-    await writeFile(path, template(needed), { encoding: "utf8", mode: 0o600 });
+    if (exists) {
+      // Atomic replacement, not an in-place write: the old store stays whole and
+      // owner-only until the rename, so a failure anywhere before it leaves the previous
+      // keys exactly as they were, and the replacement is owner-only from its first byte.
+      await replacePrivateFile(path, template(needed));
+    } else {
+      try {
+        await createPrivateFile(path, template(needed));
+      } catch (error) {
+        // Lost a creation race with a concurrent --init-store: protect what appeared,
+        // the same answer provision.ts's ensureEnvFile gives the same race about .env.
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        await protectPrivateFile(path);
+      }
+    }
     log(`wrote ${path}`);
     info("fill in the values, then: ./clawforge secrets --apply --store " + store);
     return;
@@ -171,7 +211,13 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   if (absent.length > 0) {
     warn(`${absent.length} secret(s) missing — the gateway will refuse to start`);
     info("repo-env   → add to .env next to the repository");
-    info("target-env → add to <data>/config/.env on the target, then ./clawforge up");
+    // The same contract as --apply's hint: which command applies the change depends on
+    // whether an instance is there to restart.
+    info(
+      `target-env → add to <data>/config/.env on the target, then ${
+        (await ctx.runtime.isRunning()) ? "./clawforge restart" : "./clawforge up"
+      }`,
+    );
     throw new Error(`missing: ${absent.map((entry) => entry.name).join(", ")}`);
   }
 

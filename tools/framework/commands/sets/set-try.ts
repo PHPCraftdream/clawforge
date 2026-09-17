@@ -29,6 +29,7 @@ import { ensureBaselineConfig, configureProvider } from "../management/provider.
 import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { down } from "../lifecycle/lifecycle.ts";
+import { loadSecrets } from "../lifecycle/state.ts";
 import { provisionAgent } from "../management/provision-agent/index.ts";
 import { runCheck, requiresModel, summarize, acceptanceSpecError } from "../orchestration/accept.ts";
 import { withModelApproval } from "#src/service/openclaw-cli.ts";
@@ -288,7 +289,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
         .filter((name) => name !== "OPENCLAW_GATEWAY_TOKEN" && secretValues[name] !== undefined)
         .map((name) => `${name}=${secretValues[name]}`);
       if (targetLines.length > 0) {
-        await tryCtx.transport.writeFile(secretsFileOnTarget(tryCtx), `${targetLines.join("\n")}\n`, "600");
+        await loadSecrets(tryCtx, `${targetLines.join("\n")}\n`);
       }
 
       await tryCtx.runtime.pullImage();

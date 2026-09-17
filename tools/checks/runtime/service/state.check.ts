@@ -6,7 +6,7 @@
 // exception rather than a structural rejection. The two copies must still be removed.
 
 import { resolve } from "node:path";
-import { pull, rotateSnapshots, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
+import { loadSecrets, pull, rotateSnapshots, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
 import { parseSnapshotArchive } from "#framework/service/archive.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { takeLock } from "#framework/runtime/instance-lock.ts";
@@ -515,6 +515,160 @@ for (const failure of ["template", "secrets", "verify", "archive", "archive-afte
   if (failure === "template-lost-ack") {
     check("lost sidecar acknowledgement removes the uncertain sidecar", [...scenario.files.keys()].some((path) => path.endsWith(".template.env") && path.includes("-state-")), false);
   }
+}
+
+// --- loadSecrets: keys private from the first byte, published by one rename ---------------
+//
+// A model of the target filesystem rather than command echoes: the contract is about what is
+// true on the target between two commands — content at the final path under a mode other
+// than 600, a staging file left behind — and only a model can observe that.
+
+type SecretFailure = "write" | "chown" | "mv";
+
+const SECRETS_FINAL = "/srv/openclaw/data/config/.env";
+const SECRETS_PREVIOUS = "ANTHROPIC_API_KEY=previous-key-value-0123456789\n";
+const SECRETS_UPDATED = "ANTHROPIC_API_KEY=updated-key-value-0123456789\nOPENAI_API_KEY=second-key-value-0123456789\n";
+
+function secretsScenario(options: { privateFile?: boolean; fail?: SecretFailure }): {
+  ctx: Context;
+  files: Map<string, { content: string; mode: string; owner: string }>;
+  events: string[];
+  output: string[];
+} {
+  const files = new Map<string, { content: string; mode: string; owner: string }>();
+  const events: string[] = [];
+  const output: string[] = [];
+  files.set(SECRETS_FINAL, { content: SECRETS_PREVIOUS, mode: "600", owner: "1000:1000" });
+
+  // Both private-write shapes create at 0600 (umask 077, exclusive) — recorded as such, so a
+  // later chmod-down from a permissive mode cannot masquerade as created-private.
+  const stage = (target: string, content: string): void => {
+    events.push(`stage:0600:${target}`);
+    if (options.fail === "write") throw new Error("staging write failed");
+    files.set(target, { content, mode: "600", owner: "runner" });
+  };
+
+  const ctx = {
+    settings: { dataDir: "/srv/openclaw/data", backupDir: "/srv/openclaw/backups", snapshotDir: "/srv/openclaw/snapshots", env: {} },
+    transport: {
+      description: "secrets-stub",
+      async exists(path: string): Promise<boolean> {
+        return files.has(path) || path === "/srv/openclaw/data" || path === "/srv/openclaw/data/config";
+      },
+      async readFile(path: string): Promise<string> {
+        return files.get(path)?.content ?? "";
+      },
+      // The non-private write, as the real transports behave: content lands at the process
+      // umask and the chmod follows. The failure models an interrupted tee — the half file
+      // an in-place update leaves behind as the only copy of the keys.
+      async writeFile(path: string, content: string, mode?: string): Promise<void> {
+        events.push(`write:${path}`);
+        files.set(path, {
+          content: options.fail === "write" ? content.slice(0, Math.ceil(content.length / 2)) : content,
+          mode: "644",
+          owner: "runner",
+        });
+        if (mode !== undefined) {
+          events.push(`chmod:${path}:${mode}`);
+          const entry = files.get(path);
+          if (entry !== undefined) entry.mode = mode;
+        }
+        if (options.fail === "write") throw new Error("tee interrupted");
+      },
+      ...(options.privateFile === false
+        ? {}
+        : {
+            async writePrivateFile(path: string, content: string): Promise<void> {
+              stage(path, content);
+            },
+          }),
+      async exec(command: string, args: string[], execOptions?: { input?: string | Uint8Array; allowFailure?: boolean }): Promise<ExecResult> {
+        const finish = (result: ExecResult): ExecResult => {
+          if (result.code !== 0 && execOptions?.allowFailure !== true) throw new Error(`${command} exited ${result.code}: ${result.stderr.trim()}`);
+          return result;
+        };
+        if (command === "test") return { code: 0, stdout: "", stderr: "" };
+        // The fallback private write; `set -C` is the exclusivity this scenario depends on.
+        if (command === "sh" && args[0] === "-c") {
+          if (!args[1]?.includes("umask 077") || !args[1]?.includes("set -C")) throw new Error("fallback staging write is not private and exclusive");
+          stage(args[1].split("'")[1] ?? "", typeof execOptions?.input === "string" ? execOptions.input : "");
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "chown") {
+          const owner = args[0] ?? "";
+          const target = args[1] ?? "";
+          events.push(`chown:${owner}:${target}`);
+          if (options.fail === "chown") return finish({ code: 1, stdout: "", stderr: "chown: operation not permitted" });
+          const entry = files.get(target);
+          if (entry !== undefined) entry.owner = owner;
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "mv") {
+          const source = args[args.length - 2] ?? "";
+          const destination = args[args.length - 1] ?? "";
+          events.push(`mv:${source}=>${destination}`);
+          if (options.fail === "mv") return finish({ code: 1, stdout: "", stderr: "mv: cannot move" });
+          const entry = files.get(source);
+          if (entry !== undefined) {
+            files.set(destination, entry);
+            files.delete(source);
+          }
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "rm") {
+          files.delete(args[args.length - 1] ?? "");
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+    runtime: { async isRunning(): Promise<boolean> { return false; } },
+  } as unknown as Context;
+  return { ctx, files, events, output };
+}
+
+async function runLoadSecrets(scenario: ReturnType<typeof secretsScenario>): Promise<boolean> {
+  let threw = false;
+  try {
+    await withOutputSink((line) => scenario.output.push(line), () => loadSecrets(scenario.ctx, SECRETS_UPDATED));
+  } catch {
+    threw = true;
+  }
+  return threw;
+}
+
+for (const privateFile of [true, false]) {
+  const label = privateFile ? "capability" : "fallback";
+  const scenario = secretsScenario({ privateFile });
+  const threw = await runLoadSecrets(scenario);
+  const stageEvent = scenario.events.find((event) => event.startsWith("stage:0600:")) ?? "";
+  const stagedPath = stageEvent.slice("stage:0600:".length);
+  const mvEvents = scenario.events.filter((event) => event.startsWith("mv:"));
+  // Exact equality: the staging path has the final path as a prefix, so startsWith
+  // would count the staging write itself as a direct write to the final path.
+  const directWrites = scenario.events.filter((event) => event === `write:${SECRETS_FINAL}` || event === `stage:0600:${SECRETS_FINAL}`);
+  const chownIndex = scenario.events.indexOf(`chown:1000:1000:${stagedPath}`);
+  const mvIndex = scenario.events.indexOf(`mv:${stagedPath}=>${SECRETS_FINAL}`);
+  check(`secrets (${label}) install without failing`, threw, false);
+  check(`secrets (${label}) stage the content once, owner-only from creation`, stageEvent.startsWith("stage:0600:"), true);
+  check(`secrets (${label}) reach the final path only by rename, never a direct write`, directWrites.length, 0);
+  check(`secrets (${label}) publish with a single rename onto the final path`, mvEvents.length === 1 && mvEvents[0] === `mv:${stagedPath}=>${SECRETS_FINAL}`, true);
+  check(`secrets (${label}) never chmod the staging path down from 600`, scenario.events.some((event) => event === `chmod:${stagedPath}:600`), false);
+  check(`secrets (${label}) set owner 1000:1000 on the staging file before publication`, chownIndex > -1 && chownIndex < mvIndex, true);
+  check(`secrets (${label}) install the updated content at the final path`, scenario.files.get(SECRETS_FINAL)?.content, SECRETS_UPDATED);
+  check(`secrets (${label}) publish owner-only and owned by the gateway user`, `${scenario.files.get(SECRETS_FINAL)?.mode} ${scenario.files.get(SECRETS_FINAL)?.owner}`, "600 1000:1000");
+  check(`secrets (${label}) leave no staging file behind`, [...scenario.files.keys()].filter((path) => path !== SECRETS_FINAL).length, 0);
+  check(`secrets (${label}) still report the variable count`, scenario.output.join("").includes(`installed ${SECRETS_FINAL} (2 variable(s))`), true);
+}
+
+for (const fail of ["write", "chown", "mv"] as SecretFailure[]) {
+  const scenario = secretsScenario({ fail });
+  const threw = await runLoadSecrets(scenario);
+  const previous = JSON.stringify({ content: SECRETS_PREVIOUS, mode: "600", owner: "1000:1000" });
+  check(`secrets (${fail} failure) propagate the failure`, threw, true);
+  check(`secrets (${fail} failure) leave the previous keys byte-for-byte intact`, JSON.stringify(scenario.files.get(SECRETS_FINAL)), previous);
+  check(`secrets (${fail} failure) leave no file at the final path that is not the previous one`, [...scenario.files.keys()].filter((path) => path !== SECRETS_FINAL).length, 0);
+  check(`secrets (${fail} failure) leave no staging file behind`, [...scenario.files.keys()].length, 1);
 }
 
 process.stderr.write(failed === 0 ? "all state checks passed\n" : `${failed} failed\n`);

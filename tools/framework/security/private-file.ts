@@ -1,4 +1,4 @@
-import { chmod, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -7,6 +7,8 @@ import { createPathBridge } from "../core/paths.ts";
 import { info, warn } from "../core/log.ts";
 
 const PRIVATE_MODE = 0o600;
+// A private directory, unlike a file, needs the owner's execute bit to stay enterable.
+const DIRECTORY_MODE = 0o700;
 
 // The only trustees a credential file may carry: its owner plus LOCAL SYSTEM and the local
 // Administrators group, by SID. icacls's display names are localized, so trustee names must
@@ -340,6 +342,71 @@ export async function protectPrivateFile(file: string): Promise<void> {
       : `chmod failed: ${(chmodError as Error).message}; mode is ${mode.toString(8)}`;
     throw new Error(`cannot protect private file ${file}: ${detail}; ${filesystemAdvice(file)}`);
   }
+}
+
+/** Seals a directory that holds private files: 700 where POSIX modes apply — execute
+ *  included, since a directory the owner cannot enter protects nothing — and on Windows
+ *  the same closed SID-exact DACL a credential file gets. The directory is sealed, not
+ *  just the files inside it, because an editor that saves through atomic replacement
+ *  creates its temporary file in this directory and renames it over the store: that
+ *  temporary inherits the DIRECTORY's access, so a wide directory hands the file back
+ *  wide no matter how carefully the file itself was protected. No WSL boundary probe
+ *  here, unlike a file: what that probe decides is whether another system's user can read
+ *  a file, and it is reported where files are protected. */
+export async function protectPrivateDirectory(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: DIRECTORY_MODE });
+  if (process.platform === "win32") {
+    const owner = await grantWindowsAcl(dir);
+    await assertDaclOwnerOnly(dir, owner);
+    return;
+  }
+
+  let chmodError: unknown;
+  try {
+    await chmod(dir, DIRECTORY_MODE);
+  } catch (error) {
+    // Remembered rather than fatal: on a filesystem that refuses mode changes the state
+    // decides, exactly as protectPrivateFile's does.
+    chmodError = error;
+  }
+
+  let mode: number;
+  try {
+    mode = (await stat(dir)).mode & 0o777;
+  } catch (error) {
+    throw new Error(`cannot verify private directory ${dir}: ${(error as Error).message}`);
+  }
+
+  if ((mode & 0o077) !== 0) {
+    const detail = chmodError === undefined
+      ? `mode is ${mode.toString(8)}, expected 700`
+      : `chmod failed: ${(chmodError as Error).message}; mode is ${mode.toString(8)}`;
+    throw new Error(`cannot protect private directory ${dir}: ${detail}; ${filesystemAdvice(dir)}`);
+  }
+}
+
+/** What is wrong with `file`'s owner-only protection on this machine, or undefined when
+ *  it holds as far as this side can see. Read-only on purpose, unlike protectPrivateFile:
+ *  the caller that asks (secrets --apply) reads the file without rewriting it, so an
+ *  operator's own ACL state is reported rather than silently corrected behind their back.
+ *  The WSL boundary is not probed here either — that report belongs to protection, which
+ *  is where a file gets (re)sealed, not to every read. */
+export async function unprotectedPrivateFile(file: string): Promise<string | undefined> {
+  if (process.platform === "win32") {
+    try {
+      await assertDaclOwnerOnly(file, await windowsOwnerSid(file));
+      return undefined;
+    } catch (error) {
+      return (error as Error).message;
+    }
+  }
+  let mode: number;
+  try {
+    mode = (await stat(file)).mode & 0o777;
+  } catch (error) {
+    return `its mode could not be read: ${(error as Error).message}`;
+  }
+  return (mode & 0o077) === 0 ? undefined : `mode is ${mode.toString(8)}, expected 600`;
 }
 
 /** Creates a private file without exposing its first byte under the process umask. */

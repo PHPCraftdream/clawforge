@@ -23,9 +23,25 @@ class MemoryTransport implements Transport {
   readonly description = "memory";
   readonly files = new Map<string, string>();
 
-  async exec(command: string, args: string[], _options?: ExecOptions): Promise<ExecResult> {
+  async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
     if (command === "mkdir") return { code: 0, stdout: "", stderr: "" };
     if (command === "rm" && args[0] === "-rf") this.files.delete(args[1]);
+    // Provider keys are staged privately and published by rename (loadSecrets), so a model
+    // that only knows writeFile never sees them arrive.
+    if (command === "sh" && args[0] === "-c" && args[1]?.includes("umask 077") === true) {
+      const staging = args[1].split("'")[1] ?? "";
+      const input = options?.input ?? "";
+      this.files.set(staging, typeof input === "string" ? input : new TextDecoder().decode(input));
+    }
+    if (command === "mv") {
+      const source = args[args.length - 2] ?? "";
+      const destination = args[args.length - 1] ?? "";
+      const staged = this.files.get(source);
+      if (staged !== undefined) {
+        this.files.set(destination, staged);
+        this.files.delete(source);
+      }
+    }
     return { code: 0, stdout: "", stderr: "" };
   }
   async readFile(path: string): Promise<string> {
@@ -185,6 +201,7 @@ OPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token
   memory.files.set(`${dataDir}/config/.env`, "OLD_SECRET=old\n");
   const applyContext = {
     settings: { dataDir, env: {} },
+    runtime: { async isRunning(): Promise<boolean> { return false; } },
     transport: memory,
     applicationSecrets: async () => [
       { name: "APP_SECRET", location: "target-env" as const, usedBy: "fixture" },

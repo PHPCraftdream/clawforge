@@ -5,7 +5,7 @@
 // care about the artifact's specific declared content, only that it is a valid set.
 
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildSet } from "#framework/commands/sets/set.ts";
@@ -17,8 +17,15 @@ import { parseEnv } from "#framework/core/env.ts";
 import { createFixture } from "./fixture.ts";
 
 const fixture = await createFixture();
-const { root, sourceData, files, ctx } = fixture;
+const { root, sourceData, files, events, writeContents, ctx } = fixture;
 const { report } = fixture;
+
+// A set that declares one secret name, and its value on "this machine" — the real
+// target's config/.env in the model, which is the live half of the merge setTry() feeds
+// from. The name travels in the artifact; the value must never.
+const secretValue = "try-fixture-wiki-token";
+await writeFile(join(root, "config", "secrets.template.env"), "WIKI_TOKEN=\n");
+files.set(`${sourceData}/config/.env`, `WIKI_TOKEN=${secretValue}\n`);
 
 try {
   const built = await buildSet(ctx, "lifecycle-try");
@@ -38,6 +45,25 @@ try {
   assert.equal(await access(fixture.state.lastTryDir).then(() => true, () => false), false);
   assert.equal(deploymentDir(), root);
   assert.equal(setSourceDir(), undefined);
+
+  // How the values arrive is the contract: never a direct write of key values into the
+  // throwaway's config/.env — that file exists at the process umask until a follow-up
+  // chmod lands, and an interrupted write leaves the half file as the only copy.
+  // loadSecrets stages privately and publishes by one rename; these hold that shape. The
+  // arrival is read from the recorded events, not the model: the try's own teardown
+  // removes the data root before any assertion could inspect the final file.
+  const directValueWrite = [...writeContents].some(([path, content]) => path.endsWith("config/.env") && content.includes(secretValue));
+  assert.equal(directValueWrite, false, "key values must never be written directly into config/.env");
+  const stagedPath = [...writeContents].find(([path, content]) => !path.endsWith("config/.env") && content.includes(secretValue))?.[0] ?? "";
+  assert.notEqual(stagedPath, "", "the key values are staged privately before publication");
+  assert.ok(
+    events.some((event) => {
+      if (!event.startsWith("mv:")) return false;
+      const [source, destination] = event.slice(3).split("=>");
+      return source === stagedPath && destination.endsWith("config/.env");
+    }),
+    "key values must arrive at config/.env by a rename from their staging path",
+  );
 
   fixture.state.failPull = true;
   const failedTry = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));

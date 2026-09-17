@@ -7,13 +7,23 @@
 // --template, which writes a values-free listing under config/, not the per-target store
 // under secrets/ that --apply actually reads.
 //
+// The store also follows the deployment .env's safe-creation contract: owner-only from
+// the first byte, on Windows a closed DACL (the POSIX mode argument Windows ignores
+// protects nobody), secrets/ itself sealed so an editor's atomic replacement hands the
+// file back no wider than the directory, --apply reporting a store whose protection has
+// slipped — and the hint after applying names the action that really applies the values:
+// restart for a running instance, up only for a stopped one.
+//
 // Split out of secrets-command.check.ts; see fixture.ts for the shared deployment and
 // the sibling *.check.ts files for the rest.
 
-import { readFile, writeFile, stat, access } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readFile, writeFile, stat, access, chmod, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { randomBytes } from "node:crypto";
+import { tmpdir } from "node:os";
 import { secrets } from "#framework/commands/management/secrets.ts";
 import { withOutputSink } from "#framework/core/output.ts";
+import { spawnLocal } from "#framework/runtime/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "./fixture.ts";
 
@@ -28,6 +38,52 @@ function check(name: string, actual: unknown, expected: unknown): void {
   process.stderr.write(
     `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
   );
+}
+
+function skip(reason: string): void {
+  process.stderr.write(`  skip ${reason}\n`);
+}
+
+// The private-file.check.ts idiom, copied rather than imported: check files run for their
+// side effects (tools/checks/run.ts imports them all into one process), so nothing may be
+// imported from one. The DACL is read back through the real icacls /save — SDDL, trustee
+// SIDs, no localized display names — so the store's protection is proven, not trusted.
+const systemTool = (name: string): string => join(process.env.SystemRoot ?? "C:\\Windows", "System32", name);
+
+const icacls = (args: string[]): Promise<{ code: number; stdout: string; stderr: string }> =>
+  spawnLocal(systemTool("icacls.exe"), args, { allowFailure: true, timeoutMs: 60_000 });
+
+async function windowsOwnerSid(): Promise<string> {
+  const result = await spawnLocal(systemTool("whoami.exe"), ["/user", "/fo", "csv", "/nh"], { allowFailure: true });
+  return /S-1-\d+(?:-\d+)+/.exec(result.stdout)?.[0] ?? "";
+}
+
+async function savedAces(file: string): Promise<{ daclProtected: boolean; aces: { type: string; flags: string; rights: string; trustee: string }[] }> {
+  const saved = join(tmpdir(), `clawforge-store-check-dacl-${randomBytes(6).toString("hex")}.txt`);
+  const result = await icacls([file, "/save", saved]);
+  if (result.code !== 0) throw new Error(`icacls /save failed: ${result.stdout.trim()}`);
+  try {
+    const text = await readFile(saved, "utf16le");
+    const line = text.split(/\r?\n/).map((entry) => entry.trim()).find((entry) => entry.startsWith("D:"));
+    const aces = [...(line ?? "").matchAll(/\(([^()]*)\)/g)].map((match) => {
+      const [type = "", flags = "", rights = "", , , trustee = ""] = match[1].split(";");
+      return { type, flags, rights, trustee };
+    });
+    return { daclProtected: /^D:([A-Z]*)/.exec(line ?? "")?.[1]?.includes("P") === true, aces };
+  } finally {
+    await rm(saved, { force: true }).catch(() => {});
+  }
+}
+
+/** Plants the reviewer's scenario on the directory: an inheritable Guests ACE on Windows,
+ *  world access on POSIX — whatever a fresh store inside it must not end up with. */
+async function widenForReview(directory: string): Promise<void> {
+  if (process.platform === "win32") {
+    const planted = await icacls([directory, "/grant", "*S-1-5-32-546:(OI)(CI)R"]);
+    if (planted.code !== 0) throw new Error(`could not plant the Guests ACE: ${planted.stdout.trim()}`);
+    return;
+  }
+  await chmod(directory, 0o777);
 }
 
 const deployDir = await setupDeployment("store");
@@ -159,6 +215,221 @@ try {
   check("applying a missing store is refused", applyMessage !== "", true);
   check("the refusal names the correct fix", applyMessage.includes("--init-store --store missing-store"), true);
   check("the refusal does not point at --template", applyMessage.includes("--template"), false);
+
+  // The apply-side stub: like the one above it states only what its cases need, but the
+  // hint under test is decided by the instance state, so this one carries a runtime whose
+  // isRunning() the cases control. The live config exists and declares provider zai, so
+  // ZAI_API_KEY is genuinely required both by --apply's prospective list and by the
+  // status listing.
+  const targetEnv = "/srv/clawforge/data/config/.env";
+  let targetEnvContent = "";
+  // What the private staging write is holding until the rename publishes it.
+  let staged: string | undefined;
+  let running = false;
+  const applyCtx = {
+    settings: { dataDir: "/srv/clawforge/data", env: {} },
+    runtime: {
+      async isRunning(): Promise<boolean> {
+        return running;
+      },
+    },
+    transport: {
+      description: "stub",
+      async exists(_path: string): Promise<boolean> {
+        // The live config exists: the status listing needs a requirement it can name as
+        // missing, and --apply's prospective list merges this same config.
+        return true;
+      },
+      async readFile(path: string): Promise<string> {
+        if (path.endsWith("openclaw.json")) return '{"models":{"providers":{"zai":{}}}}';
+        if (path === targetEnv) return targetEnvContent;
+        return "";
+      },
+      async writeFile(path: string, content: string): Promise<void> {
+        if (path === targetEnv) targetEnvContent = content;
+      },
+      async exec(
+        command: string,
+        args: string[],
+        options?: { input?: string | Uint8Array },
+      ): Promise<{ code: number; stdout: string; stderr: string }> {
+        if (command === "mkdir" && args[0] !== "-p") return { code: 0, stdout: "", stderr: "" };
+        if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
+        // loadSecrets stages the keys privately and publishes them with one rename, so the
+        // target's config/.env is reached by mv, never by a direct write.
+        if (command === "sh" && args[0] === "-c" && args[1]?.includes("umask 077") === true) {
+          const input = options?.input ?? "";
+          staged = typeof input === "string" ? input : new TextDecoder().decode(input);
+        }
+        if (command === "mv" && args[args.length - 1] === targetEnv && staged !== undefined) {
+          targetEnvContent = staged;
+          staged = undefined;
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  // --- P2-01: after applying, the operator must be told the action that actually applies
+  // the change — restart for a running instance, up only for a stopped one — and that the
+  // file is already written while the running instance has NOT read it. `up` runs compose
+  // up --detach, which leaves an already-running gateway alone, so the old wording
+  // promised a restart it never performed. ----------------------------------------------
+  await writeFile(
+    resolve(deployDir, "config", "desired-state.json"),
+    JSON.stringify([{ path: "models.providers.zai", value: {} }]),
+    "utf8",
+  );
+
+  await withOutputSink(
+    () => {},
+    () => secrets(applyCtx, ["--init-store", "--store", "hint"]),
+  );
+  const hintStore = resolve(deployDir, "secrets", "hint.env");
+  await writeFile(hintStore, "ZAI_API_KEY=zai-value\n", "utf8");
+
+  running = true;
+  let runningOutput = "";
+  await withOutputSink(
+    (chunk) => {
+      runningOutput += chunk;
+    },
+    () => secrets(applyCtx, ["--apply", "--store", "hint"]),
+  );
+  check("a running instance is told to restart, not to run up", runningOutput.includes("./clawforge restart"), true);
+  check("the running hint does not name ./clawforge up", runningOutput.includes("./clawforge up"), false);
+  check("the running hint says the file is written but has not been read", runningOutput.includes("has not read"), true);
+  check("the values were installed before the hint is given", targetEnvContent, "ZAI_API_KEY=zai-value\n");
+
+  running = false;
+  let stoppedOutput = "";
+  await withOutputSink(
+    (chunk) => {
+      stoppedOutput += chunk;
+    },
+    () => secrets(applyCtx, ["--apply", "--store", "hint"]),
+  );
+  check("a stopped instance is told to start, not to restart", stoppedOutput.includes("./clawforge up"), true);
+  check("the stopped hint does not name ./clawforge restart", stoppedOutput.includes("./clawforge restart"), false);
+
+  // The same contract on the status listing's own hint (the missing-secrets branch):
+  // which command applies the change depends on whether an instance is running at all.
+  targetEnvContent = "";
+  running = true;
+  let statusRunningOutput = "";
+  try {
+    await withOutputSink(
+      (chunk) => {
+        statusRunningOutput += chunk;
+      },
+      () => secrets(applyCtx, []),
+    );
+  } catch {
+    // The missing-secrets listing ends in a deliberate throw; the hint is what matters.
+  }
+  check("the status hint names restart for a running instance", statusRunningOutput.includes("then ./clawforge restart"), true);
+  check("the status hint for a running instance does not name up", statusRunningOutput.includes("./clawforge up"), false);
+
+  running = false;
+  let statusStoppedOutput = "";
+  try {
+    await withOutputSink(
+      (chunk) => {
+        statusStoppedOutput += chunk;
+      },
+      () => secrets(applyCtx, []),
+    );
+  } catch {
+    // Deliberate throw, as above.
+  }
+  check("the status hint names up for a stopped instance", statusStoppedOutput.includes("then ./clawforge up"), true);
+  check("the status hint for a stopped instance does not name restart", statusStoppedOutput.includes("./clawforge restart"), false);
+
+  // --- P1-02: the store follows the deployment .env's safe-creation contract — owner-only
+  // from the first byte, on Windows a closed DACL rather than the POSIX mode argument
+  // Windows ignores — secrets/ itself is sealed so an editor's atomic replacement does not
+  // hand the file back wide inherited permissions, and --apply reports a store whose
+  // protection has slipped. The honest proof on Windows is the real DACL; the POSIX mode
+  // assertions skip there because chmod bits mean nothing on Windows filesystems. -------
+  const secretsDirectory = resolve(deployDir, "secrets");
+
+  {
+    await widenForReview(secretsDirectory);
+    await withOutputSink(
+      () => {},
+      () => secrets(applyCtx, ["--init-store", "--store", "sealed"]),
+    );
+    const sealedStore = resolve(secretsDirectory, "sealed.env");
+    const sealedContent = await readFile(sealedStore, "utf8");
+    check("the review store is created with an empty template", /=\S/.test(sealedContent), false);
+    if (process.platform === "win32") {
+      skip("POSIX mode assertions on Windows (ACLs are authoritative)");
+      const owner = await windowsOwnerSid();
+      const allowed = [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"];
+      const storeDacl = await savedAces(sealedStore);
+      check("the fresh store's DACL is sealed against inheritance", storeDacl.daclProtected && storeDacl.aces.every((ace) => !ace.flags.includes("ID")), true);
+      check("the fresh store names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ace.trustee)), true);
+      check("the fresh store gives the owner full access", storeDacl.aces.some((ace) => ace.trustee === owner && /^FA$/i.test(ace.rights)), true);
+      const dirDacl = await savedAces(secretsDirectory);
+      check("secrets/ itself is sealed against inheritance", dirDacl.daclProtected && dirDacl.aces.every((ace) => !ace.flags.includes("ID")), true);
+      check("secrets/ no longer grants the planted Guests access", dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)), true);
+    } else {
+      skip("Windows DACL assertions on POSIX (no DACL to read)");
+      check("secrets/ itself is owner-only (700, execute included)", (await stat(secretsDirectory)).mode & 0o777, 0o700);
+      check("the fresh store file is owner-only", (await stat(sealedStore)).mode & 0o777, 0o600);
+    }
+  }
+
+  {
+    const sealedStore = resolve(secretsDirectory, "sealed.env");
+    await writeFile(sealedStore, "SOME_KEY=leftover-value\n", "utf8");
+    await widenForReview(secretsDirectory);
+    await withOutputSink(
+      () => {},
+      () => secrets(applyCtx, ["--init-store", "--store", "sealed", "--force"]),
+    );
+    const afterForce = await readFile(sealedStore, "utf8");
+    check("--force replaces a filled store with the empty template", afterForce.includes("leftover-value"), false);
+    if (process.platform === "win32") {
+      skip("POSIX mode assertions on Windows (ACLs are authoritative)");
+      const owner = await windowsOwnerSid();
+      const allowed = [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"];
+      const storeDacl = await savedAces(sealedStore);
+      check("--force's replacement keeps the DACL sealed against inheritance", storeDacl.daclProtected && storeDacl.aces.every((ace) => !ace.flags.includes("ID")), true);
+      check("--force's replacement names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ace.trustee)), true);
+      const dirDacl = await savedAces(secretsDirectory);
+      check("--force seals secrets/ again despite the planted Guests ACE", dirDacl.daclProtected && dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)), true);
+    } else {
+      skip("Windows DACL assertions on POSIX (no DACL to read)");
+      check("--force keeps secrets/ owner-only", (await stat(secretsDirectory)).mode & 0o777, 0o700);
+      check("--force keeps the replacement owner-only", (await stat(sealedStore)).mode & 0o777, 0o600);
+    }
+  }
+
+  {
+    // Using a store whose protection has slipped must be said out loud. The slipped
+    // protection itself is planted the way it would really arrive: an explicit Guests
+    // grant on Windows, world-read on POSIX.
+    const sealedStore = resolve(secretsDirectory, "sealed.env");
+    await writeFile(sealedStore, "ZAI_API_KEY=zai-value\n", "utf8");
+    if (process.platform === "win32") {
+      const planted = await icacls([sealedStore, "/grant", "*S-1-5-32-546:R"]);
+      if (planted.code !== 0) throw new Error(`could not plant the Guests ACE: ${planted.stdout.trim()}`);
+    } else {
+      await chmod(sealedStore, 0o644);
+    }
+    targetEnvContent = "";
+    let exposedOutput = "";
+    await withOutputSink(
+      (chunk) => {
+        exposedOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--apply", "--store", "sealed"]),
+    );
+    check("applying a store that is not owner-only says so, naming the file", exposedOutput.includes(sealedStore) && exposedOutput.includes("not owner-only"), true);
+    check("the exposure report never carries the value", exposedOutput.includes("zai-value"), false);
+    check("the report is a warning, not a refusal — the values are still installed", targetEnvContent, "ZAI_API_KEY=zai-value\n");
+  }
 } finally {
   await teardownDeployment(deployDir);
 }

@@ -32,6 +32,11 @@ export interface LifecycleFixture {
   readonly root: string;
   readonly sourceData: string;
   readonly files: Map<string, string>;
+  /** How content reached the model: `write:<path>` (direct), `stage:<path>` (private
+   *  staging), `mv:<source>=><destination>` through exec, plus the content each write
+   *  carried — so a check can observe the route secret values take, not just the result. */
+  readonly events: string[];
+  readonly writeContents: Map<string, string>;
   readonly baseEnv: Record<string, string>;
   readonly ctx: Context;
   readonly state: LifecycleFixtureState;
@@ -54,6 +59,8 @@ export async function createFixture(): Promise<LifecycleFixture> {
   const files = new Map<string, string>([[`${sourceData}/config/openclaw.json`, "{}"], [`${sourceData}/workspace/MEMORY.md`, "keep me"]]);
   const dirs = new Set<string>(["/", "/tmp", "/tmp/set-lifecycle-real", sourceData, `${sourceData}/config`]);
   const state: LifecycleFixtureState = { running: false, failPull: false, failStop: false, stopped: 0, lastTryDir: "" };
+  const events: string[] = [];
+  const writeContents = new Map<string, string>();
 
   function mkdirp(path: string): void {
     const parts = path.split("/").filter(Boolean);
@@ -68,10 +75,14 @@ export async function createFixture(): Promise<LifecycleFixture> {
       return files.get(path)!;
     },
     writeFile: async (path: string, content: string) => {
+      events.push(`write:${path}`);
+      writeContents.set(path, content);
       files.set(path, content);
     },
     writePrivateFile: async (path: string, content: string) => {
       if (files.has(path)) throw new Error("EEXIST: file exists");
+      events.push(`stage:${path}`);
+      writeContents.set(path, content);
       files.set(path, content);
     },
     mkdirp: async (path: string) => {
@@ -90,6 +101,16 @@ export async function createFixture(): Promise<LifecycleFixture> {
         if (!args.includes("-p") && dirs.has(path)) code = 1;
         else mkdirp(path);
       } else if (command === "test" && args[0] === "-d") code = dirs.has(args[1]) ? 0 : 1;
+      else if (command === "mv") {
+        const source = args.at(-2)!;
+        const destination = args.at(-1)!;
+        events.push(`mv:${source}=>${destination}`);
+        const content = files.get(source);
+        if (content !== undefined) {
+          files.set(destination, content);
+          files.delete(source);
+        }
+      }
       else if (command === "stat") stdout = args.includes("%Y") ? "0" : args.includes("%y") ? "1970-01-01 00:00:00.000000000 +0000" : args.includes("%a") ? "700" : "1000:1000";
       else if (command === "rm") await transport.remove(args.at(-1)!);
       if (code !== 0 && !options.allowFailure) throw new Error(`${command} failed`);
@@ -162,5 +183,5 @@ export async function createFixture(): Promise<LifecycleFixture> {
     await rm(root, { recursive: true, force: true });
   }
 
-  return { root, sourceData, files, baseEnv, ctx, state, context, captured, report, teardown };
+  return { root, sourceData, files, events, writeContents, baseEnv, ctx, state, context, captured, report, teardown };
 }

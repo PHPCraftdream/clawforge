@@ -214,13 +214,47 @@ export async function dumpSecrets(ctx: Context): Promise<string | undefined> {
   return ctx.transport.readFile(path);
 }
 
+/** Creates a new file whose contents are private from the first byte, with an exclusive
+ *  umask-077 write for transports without the capability (the shape verify.ts uses for
+ *  its scan files). */
+async function writePrivate(ctx: Context, path: string, content: string): Promise<void> {
+  if (typeof ctx.transport.writePrivateFile === "function") {
+    await ctx.transport.writePrivateFile(path, content);
+    return;
+  }
+  const quoted = `'${path.replaceAll("'", `'\\''`)}'`;
+  await ctx.transport.exec("sh", ["-c", `umask 077; set -C; cat > ${quoted}`], { input: content });
+}
+
 /** Installs provider keys on the target with mode 600 and owner 1000:1000 — OpenClaw runs
- *  as uid 1000 and refuses to read a root-owned env file. */
+ *  as uid 1000 and refuses to read a root-owned env file.
+ *
+ *  The keys are staged beside their final path and published with one rename, never
+ *  written in place: an in-place write exists at the process umask until the chmod lands,
+ *  and one interrupted mid-flight leaves the half file as the only copy of the keys.
+ *  Beside the final path means the same filesystem, so the rename is atomic and replaces
+ *  the previous file wholesale — a failed update cannot touch it. */
 export async function loadSecrets(ctx: Context, content: string): Promise<void> {
   if (content.trim() === "") die("refusing to install an empty secrets file");
   const path = secretsFileOnTarget(ctx);
-  await ctx.transport.writeFile(path, content, "600");
-  await runMaybePrivileged(ctx, path, "chown", ["1000:1000", path]);
+  // A random suffix, not a fixed staging name: set -C refuses to create over a staging
+  // file a previous crash left behind, which would break every later install until
+  // someone removed it by hand.
+  const staging = `${path}.clawforge-${randomBytes(8).toString("hex")}`;
+  try {
+    await writePrivate(ctx, staging, content);
+    // Owner before publication: the gateway user must be able to read the keys the moment
+    // they appear at the final path, not after a follow-up chown gets around to it.
+    await runMaybePrivileged(ctx, staging, "chown", ["1000:1000", staging]);
+    // Probed against the staging path so sudoFor asks about the directory the rename
+    // actually needs, not the file being replaced.
+    await runMaybePrivileged(ctx, staging, "mv", ["-fT", "--", staging, path]);
+  } catch (error) {
+    // Best effort: a staging file that cannot be removed is a cosmetic leak next to the
+    // intact keys the rename never touched.
+    await runMaybePrivileged(ctx, staging, "rm", ["-f", "--", staging]).catch(() => {});
+    throw error;
+  }
   const count = content.split("\n").filter((line) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(line)).length;
   log(`installed ${path} (${count} variable(s))`);
 }

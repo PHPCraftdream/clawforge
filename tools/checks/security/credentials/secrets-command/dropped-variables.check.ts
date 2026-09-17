@@ -42,6 +42,11 @@ try {
   const writes: Record<string, string> = {};
   const ctx = {
     settings: { dataDir: "/srv/clawforge/data", env: {} },
+    runtime: {
+      async isRunning(): Promise<boolean> {
+        return false;
+      },
+    },
     transport: {
       description: "stub",
       async exists(path: string): Promise<boolean> {
@@ -57,9 +62,28 @@ try {
       async writeFile(path: string, content: string): Promise<void> {
         writes[path] = content;
       },
-      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+      async exec(
+        command: string,
+        args: string[],
+        options?: { input?: string | Uint8Array },
+      ): Promise<{ code: number; stdout: string; stderr: string }> {
         if (command === "mkdir" && args[0] !== "-p") return { code: 0, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
+        // loadSecrets stages the keys privately and publishes them with one rename; both
+        // steps have to land here or nothing ever reaches config/.env in this model.
+        if (command === "sh" && args[0] === "-c" && args[1]?.includes("umask 077") === true) {
+          const staging = args[1].split("'")[1] ?? "";
+          const input = options?.input ?? "";
+          writes[staging] = typeof input === "string" ? input : new TextDecoder().decode(input);
+        }
+        if (command === "mv") {
+          const source = args[args.length - 2] ?? "";
+          const destination = args[args.length - 1] ?? "";
+          if (writes[source] !== undefined) {
+            writes[destination] = writes[source];
+            delete writes[source];
+          }
+        }
         return { code: 0, stdout: "", stderr: "" };
       },
     },

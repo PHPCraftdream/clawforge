@@ -37,19 +37,21 @@ function filesystemAdvice(file: string): string {
 }
 
 /** What it takes to run one local support tool and hand the result back as data: every
- *  caller decides for itself what a nonzero exit or a timeout means. */
+ *  caller decides for itself what a nonzero exit or a timeout means. `errno` carries the
+ *  spawn failure's own cause, so a caller can tell "the tool is not on this machine"
+ *  (ENOENT) from any other failure to run it. */
 export type ToolRunner = (
   command: string,
   args: string[],
   timeoutMs: number,
-) => Promise<{ code: number; output: string }>;
+) => Promise<{ code: number; errno?: string; output: string }>;
 
 const spawnTool: ToolRunner = async (command, args, timeoutMs) => {
   try {
     const result = await spawnLocal(command, args, { allowFailure: true, timeoutMs });
     return { code: result.code, output: `${result.stdout}${result.stderr}` };
   } catch (error) {
-    return { code: -1, output: (error as Error).message };
+    return { code: -1, errno: (error as NodeJS.ErrnoException).code, output: (error as Error).message };
   }
 };
 
@@ -70,7 +72,7 @@ export async function withToolRunner<T>(substitute: ToolRunner, body: () => Prom
   }
 }
 
-async function runTool(command: string, args: string[], timeoutMs: number): Promise<{ code: number; output: string }> {
+async function runTool(command: string, args: string[], timeoutMs: number): Promise<{ code: number; errno?: string; output: string }> {
   return toolRunner(command, args, timeoutMs);
 }
 
@@ -171,18 +173,38 @@ async function assertDaclOwnerOnly(file: string, owner: string): Promise<void> {
   }
 }
 
-/** The WSL distributions this machine can run. Every failure — wsl.exe missing, WSL not
- *  installed, no distribution, unreadable listing — means there is no Linux side that can
- *  reach the file, so there is no boundary to verify. The listing arrives as UTF-16. */
-export async function installedWslDistros(): Promise<string[]> {
-  if (process.platform !== "win32") return [];
+/** What the attempt to list this machine's WSL distributions found. `absent` means there is
+ *  genuinely no Linux side that could reach the file; `listed` carries the distributions to
+ *  probe; `unlisted` means the enumeration itself failed — the check did not happen, and a
+ *  failed enumeration is not evidence that there is no Linux side. */
+export type WslListing =
+  | { state: "absent" }
+  | { state: "listed"; distros: string[] }
+  | { state: "unlisted"; reason: string };
+
+/** The WSL distributions this machine can run, as far as they could be listed. Only wsl.exe
+ *  missing outright (spawn ENOENT), a clean empty listing, and the "no installed
+ *  distributions" answer count as absent; a timeout or any other failed listing is
+ *  `unlisted` and must be reported, never read as "no WSL". The listing arrives as UTF-16. */
+export async function installedWslDistros(): Promise<WslListing> {
+  if (process.platform !== "win32") return { state: "absent" };
   const result = await runTool(systemTool("wsl.exe"), ["-l", "-q"], 15_000);
-  if (result.code !== 0) return [];
-  return result.output
-    .replaceAll("\0", "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line !== "");
+  const text = result.output.replaceAll("\0", "");
+  if (result.code === 0) {
+    const distros = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
+    return distros.length === 0 ? { state: "absent" } : { state: "listed", distros };
+  }
+  // The "no installed distributions" wording is localized, so matching it is text-sensitive.
+  // Accepted here and only here because the miss direction is safe: a localized message that
+  // does not match falls into the reported branch, and an honest false alarm beats a silent
+  // gap. A spawn failure with ENOENT is wsl.exe itself missing — genuinely no WSL.
+  if (result.errno === "ENOENT" || /no installed distributions/i.test(text)) return { state: "absent" };
+  return {
+    state: "unlisted",
+    reason: result.code < 0
+      ? `wsl.exe could not be run: ${text.trim() || `code ${result.code}`}`
+      : `wsl.exe -l -q exited ${result.code}: ${text.trim() || "no output"}`,
+  };
 }
 
 /** The file's path inside a distribution, via the same bridge the transports use — the
@@ -244,13 +266,17 @@ export async function probeWslOpen(distro: string, targetPath: string): Promise<
  *  weight between Linux users. Where the deployment sits is the operator's decision, not a
  *  fault of this call, so the boundary is reported rather than enforced: each installed
  *  distribution is probed about the file itself, and whatever it can open — or whatever this probe
- *  could not answer — is said out loud instead of silently claimed as owner-only. */
+ *  could not answer, up to and including a distribution listing that failed outright — is said
+ *  out loud instead of silently claimed as owner-only. */
 async function reportWslBoundary(file: string): Promise<void> {
-  const distros = await installedWslDistros();
-  if (distros.length === 0) return;
+  const listing = await installedWslDistros();
+  if (listing.state === "absent") return;
   const unverified: string[] = [];
+  if (listing.state === "unlisted") {
+    unverified.push(`the installed distributions could not be listed (${listing.reason})`);
+  }
   let exposed = false;
-  for (const distro of distros) {
+  for (const distro of listing.state === "listed" ? listing.distros : []) {
     const targetPath = await automountedPath(distro, file);
     if (targetPath === undefined) {
       unverified.push(`"${distro}" has no path for it (the file is not on a Windows drive)`);

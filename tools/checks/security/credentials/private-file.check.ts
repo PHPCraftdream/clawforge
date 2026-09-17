@@ -314,7 +314,101 @@ async function hostileNameChecks(root: string, distros: string[]): Promise<void>
   }
 }
 
-async function windowsChecks(root: string, distros: string[]): Promise<void> {
+/** The listing itself is a seam with two different honest answers: "there is genuinely no
+ *  Linux side" (silent) and "the distributions could not be listed" (reported through the
+ *  same unverified-boundary warning a file that could not be probed gets). Only wsl.exe
+ *  missing outright, a clean empty listing, and the "no installed distributions" answer
+ *  count as absent; a timeout, a failed run, or any other nonzero exit must be warned about
+ *  by file name and reason, with protection still succeeding. Windows only: the boundary
+ *  report only runs there. */
+async function wslListingContractChecks(root: string): Promise<void> {
+  const file = join(root, "listing.env");
+  await writeFile(file, "OPENCLAW_GATEWAY_TOKEN=listing-contract\n");
+  // wsl.exe writes UTF-16LE; the byte-wise capture leaves a null after every character,
+  // which the product strips before parsing or matching — the seam mimics that shape.
+  const utf16ish = (text: string): string => text.split("").join("\0");
+
+  /** Runs one real protection with only the WSL listing scripted to `listing`; other wsl.exe
+   *  calls answer `probe` per distribution, and everything else reaches the real tools. */
+  const protectWithListing = async (
+    listing: { code: number; errno?: string; output: string },
+    probe?: (distro: string) => { code: number; output: string },
+  ): Promise<{ refusal: string | null; captured: string; listings: number; probes: string[][] }> => {
+    let refusal: string | null = null;
+    let captured = "";
+    let listings = 0;
+    const probes: string[][] = [];
+    await withToolRunner(async (command, args, timeoutMs) => {
+      if (command.endsWith("wsl.exe")) {
+        if (args[0] === "-l") {
+          listings += 1;
+          return { code: listing.code, errno: listing.errno, output: listing.output };
+        }
+        if (args[5] === "cat") return { code: 1, output: "cat: /etc/wsl.conf: No such file or directory" };
+        if (args[5] === "sh") {
+          probes.push(args);
+          return probe?.(args[1] ?? "") ?? { code: 0, output: "DENIED\n" };
+        }
+      }
+      const result = await spawnLocal(command, args, { allowFailure: true, timeoutMs });
+      return { code: result.code, output: `${result.stdout}${result.stderr}` };
+    }, async () => {
+      try {
+        await withOutputSink((chunk) => {
+          captured += chunk;
+        }, () => protectPrivateFile(file));
+      } catch (error) {
+        refusal = error instanceof Error ? error.message : String(error);
+      }
+    });
+    return { refusal, captured, listings, probes };
+  };
+
+  {
+    const run = await protectWithListing({ code: -1, output: "simulated timeout" });
+    check("a timed-out WSL listing still protects the file", run.refusal, null);
+    check("a timed-out WSL listing is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes("could not be listed") && run.captured.includes("simulated timeout"), true);
+    check("a timed-out WSL listing consults the listing exactly once", run.listings, 1);
+  }
+
+  {
+    const run = await protectWithListing({ code: 1, output: "wsl.exe: unexpected failure" });
+    check("a WSL listing that exits nonzero with unrelated output still protects the file", run.refusal, null);
+    check("a WSL listing that exits nonzero with unrelated output is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes("could not be listed") && run.captured.includes("unexpected failure"), true);
+  }
+
+  {
+    const run = await protectWithListing({ code: -1, errno: "ENOENT", output: "spawn wsl.exe ENOENT" });
+    check("protection succeeds when wsl.exe is missing outright", run.refusal, null);
+    check("a missing wsl.exe stays silent — there is no Linux side and no boundary to report", run.captured.includes("Windows/WSL boundary"), false);
+  }
+
+  {
+    const run = await protectWithListing({ code: 0, output: "" });
+    check("protection succeeds on a clean empty WSL listing", run.refusal, null);
+    check("a clean empty WSL listing stays silent", run.captured.includes("Windows/WSL boundary"), false);
+  }
+
+  {
+    const run = await protectWithListing({ code: 1, output: utf16ish("There are no installed distributions.") });
+    check("protection succeeds when WSL answers that nothing is installed", run.refusal, null);
+    check("the no-installed-distributions answer stays silent", run.captured.includes("Windows/WSL boundary"), false);
+  }
+
+  {
+    const run = await protectWithListing(
+      { code: 0, output: utf16ish("Ubuntu-24.04\r\nDebian-12\r\n") },
+      (distro) => ({ code: 0, output: distro === "Ubuntu-24.04" ? "DENIED\n" : "OPEN\n" }),
+    );
+    check("a successful listing probes each listed distribution about the file", run.probes.length, 2);
+    check("each probe carries its own distribution", run.probes.map((args) => args[1]), ["Ubuntu-24.04", "Debian-12"]);
+    check("each probe keeps the wsl exec shape", run.probes.map((args) => args.slice(2, 6)), [["-u", "root", "--exec", "sh"], ["-u", "root", "--exec", "sh"]]);
+    check("each probe targets the file's automounted path", run.probes.map((args) => (args[args.length - 1] ?? "").startsWith("/mnt/") && (args[args.length - 1] ?? "").endsWith("listing.env")), [true, true]);
+    check("only the distribution that can open the file is warned about", run.captured.includes('"Debian-12" opens') && !run.captured.includes('"Ubuntu-24.04"'), true);
+  }
+}
+
+async function windowsChecks(root: string, distros: string[], listingFailure?: string): Promise<void> {
   skip("POSIX mode assertions on Windows (ACLs are authoritative)");
   await hostileNameChecks(root, distros);
   const secret = "OPENCLAW_GATEWAY_TOKEN=tok-check-synthetic-1\n";
@@ -352,7 +446,12 @@ async function windowsChecks(root: string, distros: string[]): Promise<void> {
   // --- the WSL boundary is reported, never silently assumed -----------------------------------
   if (distros.length === 0) {
     skip("WSL boundary assertions (no WSL distribution installed)");
-    check("with no WSL installed, protection succeeds without a boundary warning", refusal === null && !captured.includes("Windows/WSL boundary"), true);
+    if (listingFailure === undefined) {
+      check("with no WSL installed, protection succeeds without a boundary warning", refusal === null && !captured.includes("Windows/WSL boundary"), true);
+    } else {
+      check("protection succeeds even when the WSL listing itself fails", refusal, null);
+      check("a failed real WSL listing is reported with its reason", captured.includes("could not be listed") && captured.includes(listingFailure), true);
+    }
   } else {
     const target = automountGuess(file);
     let probe = "DENIED";
@@ -374,6 +473,8 @@ async function windowsChecks(root: string, distros: string[]): Promise<void> {
     }
   }
 
+  await wslListingContractChecks(root);
+
   {
     // Creation goes through the same protection: it must succeed and report the same gap.
     let created = false;
@@ -389,7 +490,11 @@ async function windowsChecks(root: string, distros: string[]): Promise<void> {
     check("creation succeeds on a Windows drive", created, true);
     check("creation writes the complete value", created ? await readFile(join(root, "fresh.env"), "utf8") : "", secret);
     if (distros.length === 0) {
-      check("creation warns nothing when there is no WSL to reach the file", freshCaptured.includes("Windows/WSL boundary"), false);
+      if (listingFailure === undefined) {
+        check("creation warns nothing when there is no WSL to reach the file", freshCaptured.includes("Windows/WSL boundary"), false);
+      } else {
+        check("creation reports the failed WSL listing too", freshCaptured.includes("could not be listed"), true);
+      }
     } else {
       check("creation reports the same boundary gap", distros.some((distro) => freshCaptured.includes(`"${distro}"`)), true);
     }
@@ -401,8 +506,10 @@ async function windowsChecks(root: string, distros: string[]): Promise<void> {
 const root = await mkdtemp(join(tmpdir(), "clawforge-private-file-check-"));
 try {
   await probeContractChecks();
-  const distros = process.platform === "win32" ? await installedWslDistros() : [];
-  if (process.platform === "win32") await windowsChecks(root, distros);
+  const listing = process.platform === "win32" ? await installedWslDistros() : { state: "absent" as const };
+  const distros = listing.state === "listed" ? listing.distros : [];
+  const listingFailure = listing.state === "unlisted" ? listing.reason : undefined;
+  if (process.platform === "win32") await windowsChecks(root, distros, listingFailure);
   else await posixChecks(root);
   await plantedTemporarySurvives(root);
 } finally {

@@ -11,10 +11,10 @@
 // and no reachable target, and a stub that politely answers would let that rule erode
 // silently.
 
-import { mkdtemp, mkdir, writeFile, rm, rmdir, readFile, access } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, writeFile, rm, rmdir, readFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { buildSet, set, assertNoSecretValues } from "#framework/commands/sets/set.ts";
+import { join, resolve, sep } from "node:path";
+import { absentRecipesSource, buildSet, set, assertNoSecretValues, withTarRunner } from "#framework/commands/sets/set.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { withSetSource } from "#framework/set/artifacts/source.ts";
 import { DESIRED_STATE_PATH, setManifestId, canonicalJson } from "#framework/set/artifacts/model.ts";
@@ -23,6 +23,7 @@ import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
 import { useApplicationRecipesDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { spawnLocal } from "#framework/runtime/transport.ts";
+import type { ExecOptions, ExecResult } from "#framework/runtime/transport.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
@@ -435,6 +436,149 @@ try {
       await writeFile(storePath, originalStore);
     }
   }
+
+  // --- a failed rebuild must not destroy the artifact already there -------------------------
+  //
+  // writeArtifact used to point tar straight at sets/<name>-<id>.tar.gz. Two builds of
+  // unchanged content land on the same path, so a rebuild truncated the completed artifact
+  // before tar had produced anything, and the --force-local fallback was a second write to
+  // that same path. The substitute below is tar as the reviewer saw it: it writes a few
+  // partial bytes to whatever -f names, then fails; the unflagged fallback fails the same
+  // way, which is what a real spawnLocal does with a failing tar.
+  {
+    const setsDir = resolve(deployment, "sets");
+    const before = await readFile(changed.artifact);
+    const targets: string[] = [];
+    let attempts = 0;
+    const partialThenFail = async (_command: string, args: string[], options?: ExecOptions): Promise<ExecResult> => {
+      attempts += 1;
+      // tar is invoked with the combined short flag -czf; the archive path follows it.
+      const target = args[args.indexOf("-czf") + 1]!;
+      if (target === undefined || target.startsWith("-")) {
+        throw new Error(`substitute found no archive path in: tar ${args.join(" ")}`);
+      }
+      targets.push(target);
+      await writeFile(target, "a truncated archive, not a real one\n");
+      if (options?.allowFailure === true) return { code: 1, stdout: "", stderr: "tar: simulated failure mid-write\n" };
+      throw new Error("tar: simulated failure mid-write");
+    };
+    let refusal = "";
+    try {
+      await withTarRunner(partialThenFail, () => buildSet(ctx, "demo-set"));
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error);
+    }
+    check("a failed rebuild refuses instead of reporting success", refusal !== "", true);
+    check("both tar attempts were made, flagged then plain", attempts, 2);
+    check(
+      "neither tar attempt writes the final artifact name",
+      targets.every((target) => target !== changed.artifact),
+      true,
+    );
+    check(
+      "every attempt writes inside sets/, so publishing stays one rename",
+      targets.every((target) => target.startsWith(`${setsDir}${sep}`)),
+      true,
+    );
+    check("the failed rebuild leaves the previous artifact byte-for-byte unchanged", (await readFile(changed.artifact)).equals(before), true);
+    let stillListable = false;
+    try {
+      stillListable = (await tarList(changed.artifact)).includes("set.json");
+    } catch {
+      // A corrupt archive must be caught here, not fatal to the checks: proving the
+      // artifact cannot be listed is part of what failure looks like.
+      stillListable = false;
+    }
+    check("the surviving artifact still lists as a real archive", stillListable, true);
+    check(
+      "the failed rebuild leaves no temporary file behind",
+      (await readdir(setsDir)).filter((entry) => !entry.endsWith(".tar.gz")),
+      [],
+    );
+
+    let firstBuildRefusal = "";
+    try {
+      await withTarRunner(partialThenFail, () => buildSet(ctx, "fresh-set"));
+    } catch (error) {
+      firstBuildRefusal = error instanceof Error ? error.message : String(error);
+    }
+    check("a first build that fails refuses too", firstBuildRefusal !== "", true);
+    check(
+      "a failed first build leaves nothing at the final path",
+      (await readdir(setsDir)).filter((entry) => entry.startsWith("fresh-set-")),
+      [],
+    );
+
+    // The default path runs the real tar end to end: the same command line as ever, and the
+    // completed archive renamed over the artifact that is already there.
+    const rebuilt = await buildSet(ctx, "demo-set");
+    check("a real rebuild still lands a complete archive", (await tarList(rebuilt.artifact)).includes("set.json"), true);
+    check(
+      "the real rebuild leaves only archives in sets/",
+      (await readdir(setsDir)).filter((entry) => !entry.endsWith(".tar.gz")),
+      [],
+    );
+  }
+
+  // --- an unreadable recipes source must not become a valid empty set -----------------------
+  //
+  // recipeNames used to swallow every readdir error, so a plain file sitting where the
+  // recipes directory belongs came back as an empty inventory and a perfectly valid set —
+  // a read failure published as the deliberate removal of every recipe, which plan and the
+  // ownership ledger then turn into removals of owned servers and cron jobs. Only ENOENT
+  // is absence; validateAction goes through collectManifest, so one refusal covers
+  // `set build` and `set validate` alike.
+  {
+    const notADirectory = await mkdtemp(join(tmpdir(), "clawforge-set-recipes-file-"));
+    const recipesFile = resolve(notADirectory, "recipes");
+    await writeFile(recipesFile, "a plain file where the recipes directory belongs\n");
+    try {
+      useApplicationRecipesDir(recipesFile);
+      let buildRefusal = "";
+      try {
+        await buildSet(ctx, "demo-set");
+      } catch (error) {
+        buildRefusal = error instanceof Error ? error.message : String(error);
+      }
+      check("set build refuses when the recipes source is a plain file", buildRefusal.includes("ENOTDIR"), true);
+      check("the refusal names the recipes path", buildRefusal.includes(recipesFile), true);
+      let validateRefusal = "";
+      try {
+        await withOutputSink(() => {}, () => set(ctx, ["validate", "--name", "demo-set", "--json"]));
+      } catch (error) {
+        validateRefusal = error instanceof Error ? error.message : String(error);
+      }
+      check("set validate refuses on the same unreadable source", validateRefusal.includes("ENOTDIR"), true);
+      check(
+        "nothing new was written into sets/ while refusing",
+        (await readdir(resolve(deployment, "sets"))).filter((entry) => !entry.endsWith(".tar.gz")),
+        [],
+      );
+    } finally {
+      useApplicationRecipesDir(undefined);
+      await rm(notADirectory, { recursive: true, force: true });
+    }
+  }
+
+  // ENOENT — no recipes directory at all — stays the empty answer it has always been.
+  {
+    const absent = resolve(deployment, "recipes-absent-elsewhere");
+    useApplicationRecipesDir(absent);
+    try {
+      const empty = await buildSet(ctx, "no-recipes-set");
+      check("a missing recipes source still builds an empty set", Object.keys(empty.manifest.recipes), []);
+    } finally {
+      useApplicationRecipesDir(undefined);
+    }
+  }
+
+  // The errno dispatch itself, over errnos this machine cannot be made to produce on demand
+  // (EACCES is not reliably reproducible on Windows).
+  check("the classifier treats ENOENT as a legitimately absent source", absentRecipesSource(Object.assign(new Error("gone"), { code: "ENOENT" })), true);
+  for (const code of ["ENOTDIR", "EACCES", "EIO", "EPERM"]) {
+    check(`the classifier refuses to bless ${code} as absence`, absentRecipesSource(Object.assign(new Error(code), { code })), false);
+  }
+  check("a non-errno error is not absence either", absentRecipesSource(new Error("no code at all")), false);
 
   // --- the group does not pretend validate exists ----------------------------------------------------
 

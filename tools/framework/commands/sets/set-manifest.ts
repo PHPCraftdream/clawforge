@@ -14,7 +14,8 @@
 // parameter exists because the command surface hands one to every command, and only
 // ctx.settings (the deployment's declared image) is read.
 
-import { mkdtemp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { mkdtemp, mkdir, readdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { die } from "#src/core/log.ts";
@@ -103,14 +104,29 @@ async function agentDeclaration(recipe: string): Promise<AgentConfig> {
 /** Recipe directory names, sorted: readdir order differs between machines and the id must
  *  not notice. Same rule as the lock's recipeNames. */
 async function recipeNames(): Promise<string[]> {
+  const dir = recipesDir();
   try {
-    return (await readdir(recipesDir(), { withFileTypes: true }))
+    return (await readdir(dir, { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-  } catch {
-    return [];
+  } catch (error) {
+    // ENOENT is a deployment with no recipes at all; anything else is a source that exists
+    // and cannot be read, and calling that an empty inventory would publish a read failure
+    // as the removal of every recipe — which plan and the ownership ledger would then act
+    // on as real removals.
+    if (absentRecipesSource(error)) return [];
+    const code = (error as NodeJS.ErrnoException).code;
+    die(`cannot read the recipes source at ${dir}: ${code ?? (error as Error).message}`);
   }
+}
+
+/** True when a readdir error says only that there is no recipes directory at all — how a
+ *  deployment with no recipes legitimately reads. Every other errno (ENOTDIR, EACCES, EIO,
+ *  ...) means a source that exists and cannot be read, which must never pass for an empty
+ *  inventory. */
+export function absentRecipesSource(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 }
 
 /** A set name derived from the deployment's, because that is the sensible default and the
@@ -224,6 +240,26 @@ export async function collectManifest(ctx: Context, setName: string): Promise<{
   return { root, recipeRoot, desiredStateSource, manifest };
 }
 
+/** What executes the archiver. A seam, for the same reason private-file.ts's toolRunner is
+ *  one: checks must make tar fail mid-write on demand, and spawnLocal spawns without a
+ *  shell, so a PATH shim cannot intercept it — on Windows tar resolves to System32's own
+ *  bsdtar. Production never enters a substitute; the default is the spawnLocal call this
+ *  always was. */
+type TarRunner = typeof spawnLocal;
+
+let tarRunner: TarRunner = spawnLocal;
+
+/** Runs `body` with the archiver answered by `substitute` instead of executed. */
+export async function withTarRunner<T>(substitute: TarRunner, body: () => Promise<T>): Promise<T> {
+  const previous = tarRunner;
+  tarRunner = substitute;
+  try {
+    return await body();
+  } finally {
+    tarRunner = previous;
+  }
+}
+
 /** Writes the artifact: the manifest as set.json plus every file it inventories, archived
  *  with tar into sets/<name>-<id>.tar.gz.
  *
@@ -275,19 +311,32 @@ async function writeArtifact(
     const setsDir = resolve(root, "sets");
     await mkdir(setsDir, { recursive: true });
     const artifact = resolve(setsDir, `${setName}-${id}.tar.gz`);
-    // spawnLocal rather than the transport, and the distinction is easy backwards: the
-    // transport interface reaches the TARGET the instance lives on, while a set is
-    // assembled from files on THIS machine. Building a set through the transport would make
-    // it depend on a target being reachable — the dependency this command must not have.
-    // On Windows some tars (GNU tar from Git) read the drive letter in an absolute `-f`
-    // path as a remote host spec; `--force-local` stops that, but the stock bsdtar does
-    // not know the flag. Try the flag where it can be needed, and fall back without it.
-    const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
-    let result = await spawnLocal("tar", [...forceLocal, "-czf", artifact, "-C", staging, "."], { allowFailure: true });
-    if (result.code !== 0) {
-      // Either the flag was unknown to this tar, or the tar failed for real: run once more
-      // without the flag and let spawnLocal surface any failure the usual way.
-      await spawnLocal("tar", ["-czf", artifact, "-C", staging, "."]);
+    // tar writes a unique file in sets/ itself — the same directory, so publishing is a
+    // rename on one filesystem — and the final name is only ever replaced by a complete
+    // archive: two unchanged builds land on the same path, and a tar that dies mid-write
+    // must leave the artifact that was already there byte-for-byte intact, never truncated
+    // under its name. Same shape as install.ts's storeArtifactForRollback.
+    const temporary = resolve(setsDir, `.clawforge-build-${randomBytes(8).toString("hex")}.tmp`);
+    try {
+      // spawnLocal rather than the transport, and the distinction is easy backwards: the
+      // transport interface reaches the TARGET the instance lives on, while a set is
+      // assembled from files on THIS machine. Building a set through the transport would make
+      // it depend on a target being reachable — the dependency this command must not have.
+      // On Windows some tars (GNU tar from Git) read the drive letter in an absolute `-f`
+      // path as a remote host spec; `--force-local` stops that, but the stock bsdtar does
+      // not know the flag. Try the flag where it can be needed, and fall back without it.
+      const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
+      let result = await tarRunner("tar", [...forceLocal, "-czf", temporary, "-C", staging, "."], { allowFailure: true });
+      if (result.code !== 0) {
+        // Either the flag was unknown to this tar, or the tar failed for real: drop
+        // whatever bytes the failed attempt left, so the retry starts from nothing, and
+        // let spawnLocal surface any failure the usual way.
+        await rm(temporary, { force: true });
+        await tarRunner("tar", ["-czf", temporary, "-C", staging, "."]);
+      }
+      await rename(temporary, artifact);
+    } finally {
+      await rm(temporary, { force: true });
     }
     return { name: setName, id, artifact, manifest };
   } finally {

@@ -75,6 +75,11 @@ export function lockPath(ctx: Context): string {
   return `${lockHome(ctx)}/operation.lock`;
 }
 
+/** Stable resource identity for reentrancy: equal paths on different transports are different targets. */
+function lockResource(ctx: Context): string {
+  return `${ctx.transport.description}\u0000${lockPath(ctx)}`;
+}
+
 function holderPath(ctx: Context): string {
   return `${lockPath(ctx)}/holder.json`;
 }
@@ -189,6 +194,7 @@ export interface HeldLock {
   readonly holder: LockHolder;
   /** The resource this lock is on — what reentrancy is recognised by. */
   readonly path: string;
+  readonly resource: string;
   release(): Promise<void>;
 }
 
@@ -206,11 +212,17 @@ export interface HeldLock {
  *  alternative — passing a "nested" flag down through every runner — spreads a fact about
  *  this process across the signatures of commands that otherwise have nothing to do with
  *  locking. */
-const chainLocks = new AsyncLocalStorage<Set<string>>();
+interface LockLease {
+  released: boolean;
+}
+
+const chainLocks = new AsyncLocalStorage<Map<string, LockLease>>();
+const heldScopes = new WeakMap<HeldLock, { scope: Map<string, LockLease>; lease: LockLease }>();
 
 /** Whether the current asynchronous chain already holds this instance's lock. */
 export function lockHeldHere(ctx: Context): boolean {
-  return chainLocks.getStore()?.has(lockPath(ctx)) ?? false;
+  const lease = chainLocks.getStore()?.get(lockResource(ctx));
+  return lease !== undefined && lease.released !== true;
 }
 
 /** Takes the lock for the duration of an operation, or refuses. */
@@ -302,12 +314,22 @@ export async function takeLock(
     throw error;
   }
   let released = false;
-  return {
+  const resource = lockResource(ctx);
+  let handle: HeldLock;
+  handle = {
     holder,
     path: lockPath(ctx),
+    resource,
     async release(): Promise<void> {
       if (released) return;
       released = true;
+
+      const binding = heldScopes.get(handle);
+      if (binding !== undefined) {
+        binding.lease.released = true;
+        if (binding.scope.get(resource) === binding.lease) binding.scope.delete(resource);
+        heldScopes.delete(handle);
+      }
 
       // Only ours. A run that overran and had its lock taken over by --break-lock must not remove
       // the new holder's lock on its way out — that would hand the instance to a third run
@@ -322,6 +344,7 @@ export async function takeLock(
       }
     },
   };
+  return handle;
 }
 
 /** Runs `body` holding the lock, and releases it whatever happens — including when the body
@@ -349,7 +372,17 @@ export async function withInstanceLock<T>(
  *  inside the owning operation's scope, so there is nothing to register. */
 export async function runOwning<T>(held: HeldLock | undefined, body: () => Promise<T>): Promise<T> {
   if (held === undefined) return body();
-  return chainLocks.run(new Set([...(chainLocks.getStore() ?? []), held.path]), body);
+  const scope = new Map(chainLocks.getStore() ?? []);
+  const lease: LockLease = { released: false };
+  scope.set(held.resource, lease);
+  heldScopes.set(held, { scope, lease });
+  try {
+    return await chainLocks.run(scope, body);
+  } finally {
+    lease.released = true;
+    if (scope.get(held.resource) === lease) scope.delete(held.resource);
+    if (heldScopes.get(held)?.scope === scope) heldScopes.delete(held);
+  }
 }
 
 /** The command-level shape: hold the lock for the duration of `body` unless the calling

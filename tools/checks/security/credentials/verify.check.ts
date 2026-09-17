@@ -76,6 +76,18 @@ const evilFullPassed = await withOutputSink(
 );
 check("a full archive with an unsafe path is still rejected", evilFullPassed, false);
 
+const interruptedSecret = makeCtx(
+  "data/\ndata/config/.env.clawforge-interrupted\n",
+  "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n" +
+    "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/.env.clawforge-interrupted\n",
+);
+const interruptedSecretPassed = await withOutputSink(
+  () => {},
+  () => verifySnapshot(interruptedSecret.ctx, ARCHIVE, "migrate"),
+);
+check("a leftover provider staging file fails the migrate check", interruptedSecretPassed, false);
+check("the staging-file refusal still runs the private scan", interruptedSecret.calls.some((call) => call.args.includes("-xzf")), true);
+
 // --- an ordinary archive is still unpacked and scanned -------------------------
 
 const clean = makeCtx(

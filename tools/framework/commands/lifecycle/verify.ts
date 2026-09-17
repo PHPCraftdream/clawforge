@@ -29,9 +29,9 @@ import { collectSecretRefs } from "#src/service/secrets.ts";
 /** Paths a profile must not contain. */
 function forbiddenPaths(profile: Profile): string[] {
   if (profile === "share") {
-    return ["config/.env", "config/identity/", "config/devices/", "config/state/", "config/agents/"];
+    return ["config/.env", "config/.env.clawforge-", "config/identity/", "config/devices/", "config/state/", "config/agents/"];
   }
-  if (profile === "migrate") return ["config/.env"];
+  if (profile === "migrate") return ["config/.env", "config/.env.clawforge-"];
   return [];
 }
 

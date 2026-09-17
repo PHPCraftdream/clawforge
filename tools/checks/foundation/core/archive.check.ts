@@ -182,6 +182,11 @@ check("share allow-list does not contradict its exclusions", contradiction, unde
       excludesFor(profile, "data").includes("data/clawforge-operation.lock"),
       true,
     );
+    check(
+      `credential staging never travels in ${profile}`,
+      excludesFor(profile, "data").includes("data/config/.env.clawforge-*"),
+      true,
+    );
   }
 
   // The journal is this host's history and its snapshots are copies of THIS host's

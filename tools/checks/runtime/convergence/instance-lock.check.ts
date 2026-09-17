@@ -471,6 +471,62 @@ for (const mode of ["throw", "nonzero"] as const) {
   check("neither lock directory survives", first.dirs.has(lockPath(first.ctx)) || first.dirs.has(lockPath(other)), false);
 }
 
+// The same path on a different transport is a different target. Reentrancy must not use the
+// path alone, or a nested local call could wave an SSH call through without taking its lock.
+{
+  const first = stubContext();
+  const second = stubContext();
+  const secondCtx = {
+    ...second.ctx,
+    settings: { dataDir: first.ctx.settings.dataDir },
+    transport: { ...second.ctx.transport, description: "ssh:other-target" },
+  } as unknown as Context;
+  let innerRan = false;
+
+  await withInstanceLock(first.ctx, "local", "op-local", {}, async () => {
+    await guarded(secondCtx, "remote", [], async () => {
+      innerRan = true;
+      check("same path on another transport takes its own lock", second.dirs.has(lockPath(secondCtx)), true);
+    });
+  });
+  check("the different transport operation ran", innerRan, true);
+  check("the different transport lock was released", second.dirs.has(lockPath(secondCtx)), false);
+}
+
+// Async descendants created by an owning operation must not retain its lease after release.
+{
+  const { ctx, dirs } = stubContext();
+  let releaseParent!: () => void;
+  const parentGate = new Promise<void>((resolve) => { releaseParent = resolve; });
+  let releaseLate!: () => void;
+  const lateGate = new Promise<void>((resolve) => { releaseLate = resolve; });
+  let late!: Promise<void>;
+  let lateEntered = false;
+
+  const parent = guarded(ctx, "parent", [], async () => {
+    late = lateGate.then(async () => {
+      await guarded(ctx, "late", [], async () => {
+        lateEntered = true;
+        throw new Error("late operation entered after release");
+      });
+    });
+    await parentGate;
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  check("parent owns the lock before release", dirs.has(lockPath(ctx)), true);
+  releaseParent();
+  await parent;
+
+  const competing = await takeLock(ctx, "competing", "op-competing");
+  releaseLate();
+  let lateError: Error | undefined;
+  await late.then(() => undefined, (error: Error) => { lateError = error; });
+  check("a released descendant does not enter while another operation owns the lock", lateError !== undefined, true);
+  check("the released descendant body was not waved through", lateEntered, false);
+  check("the competing operation remains the holder", (await readLockHolder(ctx))?.operationId, "op-competing");
+  await competing.release();
+}
+
 // --- the message itself ----------------------------------------------------------------------------
 
 {

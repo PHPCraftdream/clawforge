@@ -235,7 +235,7 @@ not the same thing as a scenario that has run.
 ### Source layout
 
 The TypeScript source is grouped by responsibility. Each source directory has at most
-seven direct entries; checks are grouped the same way, so a module and its regressions stay
+seven direct entries, and no source file exceeds 700 lines; checks are grouped the same way, so a module and its regressions stay
 near their theme without creating a flat catalogue.
 
 - `tools/framework/core`: shared types, environment, paths and output
@@ -279,7 +279,7 @@ more of them than fit here:
 | `app-mounts-output.check.ts` | `defineApp`/`mcpCommands`, the bind-mount map, nested `withOutputSink` |
 | `requirements.check.ts` | collecting `SecretRef`s from the config, deduplicating provider vs explicit reference, rendering the template |
 | `recipe.check.ts` | parsing `recipe.json`, `install` refusing a disabled recipe without `--force-disabled` |
-| `secrets-command.check.ts` | `--init-store` refusing to overwrite a filled store; `--apply` aborting on a live config it could not read and naming the variables it replaces; `mcp-setup` merging `.mcp.json` |
+| `security/credentials/secrets-command/*.check.ts` | `--init-store` refusing to overwrite a filled store; `--apply` aborting on a live config it could not read and naming the variables it replaces; `mcp-setup` merging `.mcp.json` |
 | `runtime-port.check.ts` | parsing `docker ps` through `.Label` (not `.Labels`), `preflightPort` |
 | `cli-help.check.ts` | `--help` for `control-mcp`/`new-app`/`help` neither hangs nor stays silent; `help` works before any deployment exists |
 | `passthrough-help.check.ts` | `cli` is marked `passesThroughHelp` — `--help` reaches OpenClaw instead of being intercepted here |

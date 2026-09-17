@@ -8,6 +8,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { initApp } from "#framework/integration/init.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 
@@ -38,6 +39,10 @@ async function run(root: string): Promise<string | undefined> {
   );
   return message;
 }
+
+/** A host can force colour on children (FORCE_COLOR), and console.log of a non-string is
+ *  inspect-formatted, so a number arrives ANSI-wrapped; compare the value, not the wrapping. */
+const plain = (output: string): string => stripVTControlCharacters(output).trim();
 
 async function runNode(root: string, file: string): Promise<{ code: number | null; output: string }> {
   return await new Promise((resolve) => {
@@ -162,7 +167,7 @@ async function packageJsonOf(root: string): Promise<Record<string, unknown>> {
 
     const before = await runNode(root, legacy);
     check("CommonJS code without package.json runs before init", before.code, 0);
-    check("CommonJS code without package.json exports before init", before.output.trim(), "1");
+    check("CommonJS code without package.json exports before init", plain(before.output), "1");
 
     const message = await run(root);
     check("init refuses existing code without package.json", message?.includes("package.json does not exist") && message.includes("legacy.js"), true);
@@ -171,7 +176,7 @@ async function packageJsonOf(root: string): Promise<Record<string, unknown>> {
 
     const after = await runNode(root, legacy);
     check("CommonJS code without package.json runs after refused init", after.code, 0);
-    check("CommonJS code without package.json exports after refused init", after.output.trim(), "1");
+    check("CommonJS code without package.json exports after refused init", plain(after.output), "1");
   } finally {
     await rm(base, { recursive: true, force: true });
   }
@@ -245,7 +250,7 @@ async function packageJsonOf(root: string): Promise<Record<string, unknown>> {
 
     const before = await runNode(root, legacy);
     check("typeless CommonJS code runs before init", before.code, 0);
-    check("typeless CommonJS code exports before init", before.output.trim(), "1");
+    check("typeless CommonJS code exports before init", plain(before.output), "1");
 
     const message = await run(root);
     check("init refuses typeless CommonJS code", message?.includes("does not declare a \"type\"") && message.includes("legacy.js"), true);
@@ -254,7 +259,7 @@ async function packageJsonOf(root: string): Promise<Record<string, unknown>> {
 
     const after = await runNode(root, legacy);
     check("typeless CommonJS code runs after refused init", after.code, 0);
-    check("typeless CommonJS code exports after refused init", after.output.trim(), "1");
+    check("typeless CommonJS code exports after refused init", plain(after.output), "1");
   } finally {
     await rm(base, { recursive: true, force: true });
   }

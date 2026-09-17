@@ -11,6 +11,7 @@
 import { mkdtemp, mkdir, writeFile, rm, chmod, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { LocalTransport, SshTransport, WslTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix } from "#framework/runtime/transport.ts";
 import type { ExecResult, ExecOptions } from "#framework/runtime/transport.ts";
 
@@ -327,7 +328,10 @@ if (process.platform === "win32") {
       ["-p", `JSON.stringify(process.env.${mixedName})`],
       { unsetEnv: [name] },
     );
-    check("local: unsetEnv follows platform case rules", mixed.stdout.trim(), process.platform === "win32" ? "undefined" : '"host-value"');
+    // A host can force colour on children (FORCE_COLOR), and node -p's inspect output picks
+    // it up even into a pipe; compare the value, not the wrapping.
+    const answer = stripVTControlCharacters(mixed.stdout).trim();
+    check("local: unsetEnv follows platform case rules", answer, process.platform === "win32" ? "undefined" : '"host-value"');
   } finally {
     if (previousMixed === undefined) delete process.env[mixedName];
     else process.env[mixedName] = previousMixed;

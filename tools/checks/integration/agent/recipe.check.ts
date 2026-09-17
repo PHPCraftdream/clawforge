@@ -13,6 +13,7 @@ import { recipe } from "#framework/commands/management/recipe.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import {
+  listAgentBundleRecipes,
   loadRecipe,
   listRecipes,
   projectName,
@@ -104,6 +105,14 @@ try {
   });
   await writeRecipe("empty-description", { description: "" });
   await mkdir(resolve(scratch, "no-recipe-json"), { recursive: true });
+  // A directory with an agent bundle and no service definition: inspect knows it, install
+  // does not, and it is what `recipe list` used to answer "no recipes yet" over.
+  await mkdir(resolve(scratch, "bundle-only", "agent"), { recursive: true });
+  await writeFile(
+    resolve(scratch, "bundle-only", "agent", "config.json"),
+    JSON.stringify({ agentId: "bundle-agent", mcpServerName: "bundle-mcp" }),
+    "utf8",
+  );
   await writeRecipe("needs-var", {
     description: "Needs a variable that is not set",
     variables: { API_KEY: "required by the upstream service" },
@@ -167,6 +176,49 @@ try {
     names,
     ["disabled", "needs-var", "plain", "with-extras"],
   );
+
+  check("bundle recipes are named separately from service recipes", await listAgentBundleRecipes(), ["bundle-only"]);
+
+  // --- recipe list accounts for what it does not install --------------------------------------
+
+  {
+    const { ctx } = stubContext({});
+    let listed = "";
+    await withOutputSink((chunk) => {
+      listed += chunk;
+    }, () => recipe(ctx, ["list"]));
+    check("the list still names the service recipes", listed.includes("with-extras") && listed.includes("plain"), true);
+    check("the list names agent/MCP bundle recipes too", listed.includes("bundle-only"), true);
+    check("the list points at where bundles are visible", listed.includes("inspect"), true);
+    check("a deployment with recipes never says it has none", listed.includes("no recipes yet"), false);
+  }
+
+  // A bundle-only recipes directory is not "no recipes yet": the bundles are named, the
+  // missing kind is named, and neither is confused with the other.
+  {
+    const bundleScratch = resolve(tmpdir(), `clawforge-recipe-bundles-${Date.now()}`);
+    try {
+      await mkdir(resolve(bundleScratch, "onboarding", "agent"), { recursive: true });
+      await writeFile(
+        resolve(bundleScratch, "onboarding", "agent", "config.json"),
+        JSON.stringify({ agentId: "onboarding", mcpServerName: "onboarding-mcp" }),
+        "utf8",
+      );
+      useRecipesDir(bundleScratch);
+      const { ctx } = stubContext({});
+      let listed = "";
+      await withOutputSink((chunk) => {
+        listed += chunk;
+      }, () => recipe(ctx, ["list"]));
+      check("a bundle-only deployment does not claim to have no recipes", listed.includes("no recipes yet"), false);
+      check("the bundle-only list names the bundle", listed.includes("onboarding"), true);
+      check("the bundle-only list says what is missing is service recipes", listed.includes("no service recipes yet"), true);
+      check("the bundle-only list points at inspect", listed.includes("inspect"), true);
+    } finally {
+      useRecipesDir(scratch);
+      await rm(bundleScratch, { recursive: true, force: true });
+    }
+  }
 
   // --- projectName ---------------------------------------------------------------------
 

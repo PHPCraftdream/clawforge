@@ -47,14 +47,32 @@ jobs:
       - name: Verify package contents
         run: npm run pack:check
 
+      # The publish jobs receive this tarball rather than rebuilding from a fresh checkout:
+      # prepack needs the repository's dev-installed tsgo, and neither node_modules nor dist
+      # travels between runners, so a rebuild there would fail. Packing once also means the
+      # published bytes are exactly the ones this job built and checked.
+      - name: Pack the release tarball
+        working-directory: tools/framework
+        run: npm pack
+
+      - name: Upload the release tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tarball
+          path: tools/framework/clawforge-framework-*.tgz
+          if-no-files-found: error
+
   publish-token:
     needs: verify
     if: ${{ inputs.publish_mode == 'token' }}
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - name: Check out the selected release ref
-        uses: actions/checkout@v4
+      - name: Download the tarball verify built
+        uses: actions/download-artifact@v4
+        with:
+          name: release-tarball
+          path: release
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -62,11 +80,13 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
+      # A tarball argument is published as-is: npm runs no prepack, so no build or
+      # node_modules is needed on this runner.
       - name: Publish with the NPM_TOKEN secret
-        working-directory: tools/framework
+        working-directory: release
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+        run: npm publish --access public clawforge-framework-*.tgz
 
   publish-trusted-publisher:
     needs: verify
@@ -74,8 +94,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - name: Check out the selected release ref
-        uses: actions/checkout@v4
+      - name: Download the tarball verify built
+        uses: actions/download-artifact@v4
+        with:
+          name: release-tarball
+          path: release
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -84,5 +107,5 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Publish with npm Trusted Publisher
-        working-directory: tools/framework
-        run: npm publish --provenance --access public
+        working-directory: release
+        run: npm publish --provenance --access public clawforge-framework-*.tgz

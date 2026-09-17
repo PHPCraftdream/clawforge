@@ -4,6 +4,7 @@
 // is called from (collectManifest, writeArtifact).
 
 import { readFile, readdir } from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { die } from "#src/core/log.ts";
 import { parseEnv } from "#src/core/env.ts";
@@ -65,18 +66,49 @@ export async function localSecretValues(): Promise<{ name: string; value: string
       if (value !== "") found.push({ name: `${key} (${source})`, value });
     }
   };
+  const env = await readSecretSource(envFile());
+  if (env !== undefined) collect(".env", env);
+  let entries: Dirent[];
   try {
-    collect(".env", parseEnv(await readFile(envFile(), "utf8")));
-  } catch {
-    // A deployment before its first bootstrap has no .env yet — and no values to guard with.
-  }
-  try {
-    for (const entry of await readdir(secretsDir(), { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".env")) continue;
-      collect(`secrets/${entry.name}`, parseEnv(await readFile(resolve(secretsDir(), entry.name), "utf8")));
+    entries = await readdir(secretsDir(), { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") entries = [];
+    else {
+      die(
+        `cannot list ${secretsDir()} for the secret-value scan: ${(error as Error).message} — ` +
+          "the scan would run without the values kept in the stores there",
+      );
     }
-  } catch {
-    // No secret stores yet either.
+  }
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".env")) continue;
+    // A store that is not a regular file cannot be read, and skipping it would shrink the
+    // scan in exactly the way this guard exists to make impossible: stop and name it.
+    if (!entry.isFile()) {
+      die(
+        `cannot read ${resolve(secretsDir(), entry.name)} for the secret-value scan: it is not a regular file — ` +
+          "the scan would run without the values stored there",
+      );
+    }
+    const store = await readSecretSource(resolve(secretsDir(), entry.name));
+    if (store !== undefined) collect(`secrets/${entry.name}`, store);
   }
   return found;
+}
+
+/** Reads one secret source for the scan. Only a missing file is tolerable — a deployment
+ *  before its first bootstrap has no .env and no stores yet. Any other read error would
+ *  silently shrink the scan, and a store this call could not read is exactly where a value
+ *  destined for the manifest would sit, so it stops instead — naming the source, never a
+ *  value. */
+async function readSecretSource(source: string): Promise<Record<string, string> | undefined> {
+  try {
+    return parseEnv(await readFile(source, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    die(
+      `cannot read ${source} for the secret-value scan: ${(error as Error).message} — ` +
+        "the scan would run without the values stored there",
+    );
+  }
 }

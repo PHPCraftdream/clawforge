@@ -15,7 +15,8 @@
 //
 // The build runs on the target, so recipe paths are translated by the path bridge.
 
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, access } from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { monorepoRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
@@ -135,4 +136,29 @@ export async function listRecipes(): Promise<Recipe[]> {
     }
   }
   return recipes;
+}
+
+/** Directories that hold an agent/MCP bundle but no service definition: provisioned and
+ *  inspected rather than installed, which is why listRecipes drops them. Named so `recipe
+ *  list` can account for what it does not list instead of answering "no recipes yet" over a
+ *  deployment that plainly has recipes. */
+export async function listAgentBundleRecipes(): Promise<string[]> {
+  let entries: Dirent[];
+  try {
+    entries = await readdir(recipesDirectory(), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
+  const bundles: string[] = [];
+  for (const name of entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()) {
+    const directory = resolve(recipesDirectory(), name);
+    const [hasService, hasBundle] = await Promise.all([
+      exists(resolve(directory, "recipe.json")),
+      exists(resolve(directory, "agent", "config.json")),
+    ]);
+    if (hasBundle && !hasService) bundles.push(name);
+  }
+  return bundles;
 }

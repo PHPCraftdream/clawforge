@@ -6,7 +6,7 @@
 
 import { log, info, warn, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
-import { listRecipes, loadRecipe, projectName, type Recipe } from "#src/service/recipe.ts";
+import { listAgentBundleRecipes, listRecipes, loadRecipe, projectName, type Recipe } from "#src/service/recipe.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { isCaptured, emit } from "#src/core/output.ts";
 import { takeTail } from "../lifecycle/lifecycle.ts";
@@ -34,14 +34,25 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
 
   if (action === undefined || action === "list") {
     const recipes = await listRecipes();
-    if (recipes.length === 0) {
+    // A recipe directory can also be an agent/MCP bundle — no recipe.json, so listRecipes
+    // drops it and inspect reports it. Answering "no recipes yet" over one sent an operator
+    // reading code to explain a discrepancy their own deployment showed.
+    const bundles = await listAgentBundleRecipes();
+    if (recipes.length === 0 && bundles.length === 0) {
       info("no recipes yet — add one under recipes/<name>/");
       return;
     }
-    log("available recipes");
-    for (const entry of recipes) describe(entry);
-    info("");
-    info("install with: ./clawforge recipe install <name>");
+    if (recipes.length === 0) {
+      info("no service recipes yet — `recipe install` needs a recipes/<name>/recipe.json");
+    } else {
+      log("available recipes");
+      for (const entry of recipes) describe(entry);
+      info("");
+      info("install with: ./clawforge recipe install <name>");
+    }
+    for (const name of bundles) {
+      info(`${name.padEnd(16)} agent/MCP bundle — not installable; visible with ./clawforge inspect, provisioned with ./clawforge provision-agent`);
+    }
     return;
   }
 

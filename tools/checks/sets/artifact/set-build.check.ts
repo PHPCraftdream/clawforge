@@ -11,7 +11,7 @@
 // and no reachable target, and a stub that politely answers would let that rule erode
 // silently.
 
-import { mkdtemp, mkdir, writeFile, rm, readFile, access } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, rmdir, readFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildSet, set, assertNoSecretValues } from "#framework/commands/sets/set.ts";
@@ -388,6 +388,51 @@ try {
       check("the refusal names desired-state.json", refused.includes("desired-state.json"), true);
     } finally {
       await writeFile(desiredStatePath, validDesiredState);
+    }
+  }
+
+  // --- an unreadable secret source aborts the build instead of shrinking the scan ------------
+  //
+  // localSecretValues used to treat every read error as "no store yet": with a directory
+  // sitting where .env belongs, the scan quietly ran over an empty list and the build still
+  // reported success. Only a missing source is tolerable — anything else must name the
+  // source and stop, so no artifact is written whose value scan was silently incomplete.
+  {
+    const envPath = resolve(deployment, ".env");
+    const originalEnv = await readFile(envPath, "utf8");
+    await rm(envPath);
+    await mkdir(envPath);
+    try {
+      let refusal = "";
+      try {
+        await buildSet(ctx, "demo-set");
+      } catch (error) {
+        refusal = error instanceof Error ? error.message : String(error);
+      }
+      check("set build refuses when the .env secret source cannot be read", refusal.includes(".env"), true);
+      check("the refusal names the source, never a stored value", refusal.includes(TOKEN), false);
+    } finally {
+      await rmdir(envPath);
+      await writeFile(envPath, originalEnv);
+    }
+  }
+  {
+    const storePath = resolve(deployment, "secrets", "prod.env");
+    const originalStore = await readFile(storePath, "utf8");
+    await rm(storePath);
+    await mkdir(storePath);
+    try {
+      let refusal = "";
+      try {
+        await buildSet(ctx, "demo-set");
+      } catch (error) {
+        refusal = error instanceof Error ? error.message : String(error);
+      }
+      check("set build refuses when a secret store cannot be read", refusal.includes("prod.env"), true);
+      check("the store refusal names no value either", refusal.includes(STORE_KEY), false);
+    } finally {
+      await rmdir(storePath);
+      await writeFile(storePath, originalStore);
     }
   }
 

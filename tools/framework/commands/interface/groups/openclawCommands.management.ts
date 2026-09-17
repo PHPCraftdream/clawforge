@@ -12,7 +12,7 @@ import { mcpServe, mcpSetup, mcpCreds } from "#src/commands/management/mcp.ts";
 import { deploy } from "#src/commands/management/deploy.ts";
 import { lock } from "#src/commands/management/lock.ts";
 import { secrets } from "#src/commands/management/secrets.ts";
-import { recipe } from "#src/commands/management/recipe.ts";
+import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe.ts";
 import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
 
 export const managementCommands: Record<string, AppCommand> = {
@@ -141,9 +141,10 @@ export const managementCommands: Record<string, AppCommand> = {
   recipe: {
     summary: "Deploy services next to the instance (list, install, remove, status, logs)",
     run: recipe,
-    // Only lifecycle changes need confirmation; list/status/logs are safe to inspect.
+    // Only lifecycle changes need confirmation; the read-only set is defined once, beside
+    // the dispatcher, so the gate and the command cannot drift apart again.
     destructive: true,
-    readOnlyWhen: (args) => ["list", "status", "logs"].includes(args[0] ?? ""),
+    readOnlyWhen: recipeActionIsReadOnly,
     details:
       "A recipe is a third-party service living beside the instance — its own directory " +
       "under the deployment's recipes/, its own compose project, its own lifecycle.\n" +

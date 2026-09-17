@@ -92,17 +92,32 @@ async function recipeExpectations(): Promise<RecipeExpectation[]> {
   return found;
 }
 
+// The target directory travels as a positional parameter and is never pasted into this
+// text: JSON.stringify's double quotes do not make a path safe — inside them a POSIX shell
+// still runs $(…), backticks and $VAR, which let a hostile directory name execute as the
+// transport user during this read-only call, and the failed cd then checksummed whatever
+// tree the shell landed in. The path is data at every shell — same shape as PROBE_SCRIPT in
+// security/private-file.ts. Without its argument the script fails instead of checksumming a
+// guessed directory.
+const CHECKSUM_SCRIPT =
+  'if [ "${1+set}" = set ] && [ -n "$1" ]; then ' +
+  'cd -- "$1" && find . -type f -exec sha256sum {} +; ' +
+  "else echo NOCHECKSUMDIR >&2; exit 64; fi";
+
 /** The same checksums for what is actually on the target, computed there — one command for
- *  the whole tree rather than reading every file back over the transport. */
+ *  the whole tree rather than reading every file back over the transport.
+ *
+ *  A tree that lists as empty is answered before any command runs, so a nonzero exit here
+ *  can only mean a tree that listed as non-empty whose checksums could not be computed. {}
+ *  then reads as drift in both callers — every declared file differs or is missing — which
+ *  is loud, where an agreement would have been silent. */
 async function targetFileChecksums(ctx: Context, dir: string): Promise<Record<string, string>> {
   const listed = await ctx.transport.listFiles(dir);
   if (listed.length === 0) return {};
 
-  const result = await ctx.transport.exec(
-    "sh",
-    ["-c", `cd ${JSON.stringify(dir)} && find . -type f -exec sha256sum {} +`],
-    { allowFailure: true },
-  );
+  const result = await ctx.transport.exec("sh", ["-c", CHECKSUM_SCRIPT, "sh", dir], {
+    allowFailure: true,
+  });
   if (result.code !== 0) return {};
 
   const checksums: Record<string, string> = {};

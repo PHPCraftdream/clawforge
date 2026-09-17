@@ -47,6 +47,9 @@ export interface TargetSpec {
   workspaceChecksums?: Record<string, string>;
   /** Prompt files the ownership ledger says this agent previously installed. */
   managedPromptFiles?: string[];
+  /** Overrides the deployment's data directory — for checks that need a hostile (shell-
+   *  metacharacter) name inside the paths the target commands are built from. */
+  dataDir?: string;
 }
 
 /** The cron job as the declaration below would have created it — every field the
@@ -76,6 +79,13 @@ export function codes(problems: readonly { code: string }[]): string[] {
  *  what a case that says nothing about the workspace checksums falls back to. */
 function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec) => Context {
   return function stubContext(spec: TargetSpec): Context {
+    // Every path below derives from the case's own data directory, so a hostile override
+    // stays consistent with what the code under test derives from ctx.settings.dataDir.
+    const dataDir = spec.dataDir ?? DATA;
+    const configFile = `${dataDir}/config/openclaw.json`;
+    const envFile = `${dataDir}/config/.env`;
+    const ledgerFile = `${dataDir}/clawforge-managed.json`;
+    const mirrorDir = `${dataDir}/workspace/mcp-demo`;
     // Matches the declaration written below, so a case that says nothing about the config
     // provokes no drift and every finding in it is the one that case is about.
     const liveConfig = {
@@ -87,20 +97,20 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
 
     return {
       settings: {
-        dataDir: DATA,
+        dataDir,
         image: "ghcr.io/openclaw/openclaw:extended-stable",
         env: { OPENCLAW_GATEWAY_TOKEN: "a-token-value" },
       },
       transport: {
         async exists(path: string): Promise<boolean> {
-          if (path === CONFIG_FILE) return true;
-          if (path === `${DATA}/config/.env`) return spec.targetEnv !== undefined;
+          if (path === configFile) return true;
+          if (path === envFile) return spec.targetEnv !== undefined;
           return false;
         },
         async readFile(path: string): Promise<string> {
-          if (path === CONFIG_FILE) return JSON.stringify(liveConfig);
-          if (path === `${DATA}/config/.env`) return spec.targetEnv ?? "";
-          if (path === `${DATA}/clawforge-managed.json` && spec.managedPromptFiles !== undefined) {
+          if (path === configFile) return JSON.stringify(liveConfig);
+          if (path === envFile) return spec.targetEnv ?? "";
+          if (path === ledgerFile && spec.managedPromptFiles !== undefined) {
             return JSON.stringify({
               version: 1,
               objects: [{ kind: "agent", name: "onboarding", recipe: "demo", promptFiles: spec.managedPromptFiles, createdAt: "2026-01-01T00:00:00.000Z" }],
@@ -109,7 +119,7 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
           throw new Error(`unexpected read: ${path}`);
         },
         async listFiles(dir: string): Promise<string[]> {
-          return dir === MIRROR ? Object.keys(spec.mirrorChecksums ?? {}) : Object.keys(spec.workspaceChecksums ?? goodPrompts);
+          return dir === mirrorDir ? Object.keys(spec.mirrorChecksums ?? {}) : Object.keys(spec.workspaceChecksums ?? goodPrompts);
         },
         async exec(command: string, args: string[]): Promise<ExecResult> {
           if (command === "stat") {
@@ -121,7 +131,9 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
             // Two trees are asked for now: the recipe's mirror and the agent's workspace.
             // Defaults to the recipe's own prompts, so a case that says nothing about them
             // provokes no prompt drift — same reasoning as the live configuration above.
-            const wanted = args[1].includes(MIRROR) ? spec.mirrorChecksums : (spec.workspaceChecksums ?? goodPrompts);
+            // The directory arrives as the positional parameter (args[3]); the program text
+            // (args[1]) is a constant and must not be searched for the path.
+            const wanted = args[3] === mirrorDir ? spec.mirrorChecksums : (spec.workspaceChecksums ?? goodPrompts);
             const lines = Object.entries(wanted ?? {}).map(([rel, sum]) => `${sum}  ./${rel}`);
             return { code: 0, stdout: `${lines.join("\n")}\n`, stderr: "" };
           }

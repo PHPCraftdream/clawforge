@@ -11,6 +11,19 @@ import { deploymentName } from "#src/runtime/deployment.ts";
 import { isCaptured, emit } from "#src/core/output.ts";
 import { takeTail } from "../lifecycle/lifecycle.ts";
 
+/** The action a bare `recipe` runs. */
+export const RECIPE_DEFAULT_ACTION = "list";
+
+/** Actions that only report. One definition for the dispatcher below and the MCP gate's
+ *  readOnlyWhen — which is asked from built argv, where an omitted action is no longer
+ *  visibly the default — so the two cannot disagree about bare `recipe` again: the gate
+ *  once demanded a confirmation the console would never have asked for. */
+const RECIPE_READ_ONLY_ACTIONS: readonly string[] = [RECIPE_DEFAULT_ACTION, "status", "logs"];
+
+export function recipeActionIsReadOnly(argv: string[]): boolean {
+  return RECIPE_READ_ONLY_ACTIONS.includes(argv[0] ?? RECIPE_DEFAULT_ACTION);
+}
+
 function describe(recipe: Recipe): void {
   const state = recipe.enabled ? "" : "  [disabled]";
   info(`${recipe.name.padEnd(16)} ${recipe.description}${state}`);
@@ -32,7 +45,7 @@ async function stackFor(ctx: Context, name: string) {
 export async function recipe(ctx: Context, args: string[]): Promise<void> {
   const [action, name, ...rest] = args;
 
-  if (action === undefined || action === "list") {
+  if (action === undefined || action === RECIPE_DEFAULT_ACTION) {
     const recipes = await listRecipes();
     // A recipe directory can also be an agent/MCP bundle — no recipe.json, so listRecipes
     // drops it and inspect reports it. Answering "no recipes yet" over one sent an operator

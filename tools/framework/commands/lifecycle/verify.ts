@@ -24,6 +24,7 @@ import {
   type Profile,
 } from "#src/service/archive.ts";
 import { parseEnv } from "#src/core/env.ts";
+import { collectSecretRefs } from "#src/service/secrets.ts";
 
 /** Paths a profile must not contain. */
 function forbiddenPaths(profile: Profile): string[] {
@@ -51,6 +52,12 @@ async function writePrivateFile(ctx: Context, path: string, content: string): Pr
   }
   const quotedPath = `'${path.replaceAll("'", `'\\''`)}'`;
   await ctx.transport.exec("sh", ["-c", `umask 077; set -C; cat > ${quotedPath}`], { input: content });
+}
+
+/** A supported secret reference ({"source":"env","id":"VAR"} — collectSecretRefs' own
+ *  definition) travels by name; a literal string IS the secret. */
+function isLiteralSecret(value: unknown): value is string {
+  return collectSecretRefs(value).length === 0 && typeof value === "string" && value.length > 0;
 }
 
 async function collectSecrets(ctx: Context): Promise<{ critical: string[]; identity: string[] }> {
@@ -85,11 +92,16 @@ async function collectSecrets(ctx: Context): Promise<{ critical: string[]; ident
       // to find.
       const config = JSON5.parse(await ctx.transport.readFile(configPath)) as {
         models?: { providers?: Record<string, unknown> };
+        gateway?: { auth?: { token?: unknown } };
       };
       for (const provider of Object.values(config.models?.providers ?? {})) {
         const apiKey = (provider as { apiKey?: unknown } | null)?.apiKey;
         if (typeof apiKey === "string" && apiKey.length >= 12) critical.push(apiKey);
       }
+      // The gateway token, symmetric with the provider keys: a literal in the live config
+      // ships with the archive just the same. A reference is a name, not a value to grep for.
+      const gatewayToken = config.gateway?.auth?.token;
+      if (isLiteralSecret(gatewayToken) && gatewayToken.length >= 12) critical.push(gatewayToken);
     } catch {
       // A config that cannot be parsed is reported elsewhere (inspect/doctor); this scan
       // just has nothing to add from it.
@@ -235,6 +247,7 @@ export async function verifySnapshot(
       try {
         const archivedConfig = JSON5.parse(await ctx.transport.readFile(archivedConfigPath)) as {
           models?: { providers?: Record<string, unknown> };
+          gateway?: { auth?: { token?: unknown } };
         };
         const embeddedKeys = Object.entries(archivedConfig.models?.providers ?? {})
           .filter(([, provider]) => {
@@ -242,10 +255,19 @@ export async function verifySnapshot(
             return typeof apiKey === "string" && apiKey.length >= 12;
           })
           .map(([id]) => id);
-        if (embeddedKeys.length > 0) {
+        // The gateway token, judged on the same evidence: an archive from another instance,
+        // or taken before a rotation, carries a token the live value never names — so the
+        // archive's own gateway.auth.token is read directly, not searched for.
+        const embeddedToken = isLiteralSecret(archivedConfig.gateway?.auth?.token);
+        if (embeddedKeys.length > 0 || embeddedToken) {
           const report = profile === "full" ? info : warn;
-          report("the archive's own openclaw.json embeds a plain-string provider apiKey:");
-          for (const id of embeddedKeys) info(`provider ${id}`);
+          if (embeddedKeys.length > 0) {
+            report("the archive's own openclaw.json embeds a plain-string provider apiKey:");
+            for (const id of embeddedKeys) info(`provider ${id}`);
+          }
+          if (embeddedToken) {
+            report("the archive's own openclaw.json embeds a literal gateway.auth.token");
+          }
           if (profile !== "full") failures += 1;
         }
       } catch (error) {

@@ -128,6 +128,7 @@ try {
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recipe", arguments: { action: "remove", name: "demo", volumes: true } } },
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "recipe", arguments: { action: "remove", name: "demo", volumes: true, confirm: false } } },
     { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "recipe", arguments: { action: "list" } } },
+    { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "recipe", arguments: {} } },
     { jsonrpc: "2.0", id: 4, method: "tools/list" },
   ].map((request) => JSON.stringify(request)).join("\n");
 
@@ -145,6 +146,7 @@ try {
     check("recipe remove without confirm is rejected", textOf(1).includes("pass confirm: true"), true);
     check("recipe remove with confirm false is rejected", textOf(2).includes("pass confirm: true"), true);
     check("read-only recipe list remains available without confirmation", textOf(3).includes("no recipes yet"), true);
+    check("bare recipe with no action runs the list default instead of demanding confirmation", textOf(5).includes("no recipes yet"), true);
 
     const recipeTool = (((byId.get(4)?.result as { tools?: Array<{ name: string; description?: string; inputSchema?: { properties?: Record<string, unknown>; required?: string[] } }> } | undefined)?.tools ?? [])
       .find((tool) => tool.name === "recipe"));
@@ -154,6 +156,12 @@ try {
     check("declaration and generated description agree", toolDescription(openclawCommands.recipe!).includes("read-only actions do not"), true);
     const required = (inputSchema(openclawCommands.recipe!).required as string[] | undefined) ?? [];
     check("declaration and generated schema agree", required.includes("confirm"), false);
+    check("bare recipe arguments are read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.([]), true);
+    check("recipe list remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["list"]), true);
+    check("recipe status remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["status"]), true);
+    check("recipe logs remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["logs"]), true);
+    check("recipe install remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["install"]), false);
+    check("recipe remove remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["remove"]), false);
 
     const setSchema = inputSchema(openclawCommands.set!);
     check("set MCP schema leaves conditional confirmation optional", (setSchema.required as string[]).includes("confirm"), false);

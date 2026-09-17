@@ -236,6 +236,93 @@ function makeCtxWithArchivedKey(liveApiKey: string | undefined, archivedApiKey: 
   check("with no plain-string apiKey anywhere, the share check still passes", passed, true);
 }
 
+// --- the archive's own gateway.auth.token must be judged on its own evidence ---------------
+//
+// The gateway token reached the scan only as a search PATTERN derived from the CURRENT env
+// value, and the archive-embedded config scan looked only at models.providers.*.apiKey — an
+// archive from another instance, or from before a rotation, carries an explicitly named
+// gateway.auth.token that nothing here ever judged. A literal string is a finding; a
+// supported secret reference ({"source":"env","id":"VAR"}) is not.
+
+function makeCtxWithArchivedGatewayToken(archivedToken: unknown, currentToken: string | undefined): { ctx: Context } {
+  const archivedConfigBody = JSON.stringify({ gateway: { auth: { mode: "token", token: archivedToken } } });
+  const listing = "data/\ndata/config/openclaw.json\n";
+  const verboseListing =
+    "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n" +
+    "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/openclaw.json\n";
+  let workdir: string | undefined;
+  const archivedConfigPath = (): string | undefined => (workdir === undefined ? undefined : `${workdir}/data/config/openclaw.json`);
+
+  const ctx = {
+    settings: { dataDir: "/srv/openclaw/data", env: currentToken === undefined ? {} : { OPENCLAW_GATEWAY_TOKEN: currentToken } },
+    transport: {
+      description: "stub",
+      async exists(path: string): Promise<boolean> {
+        return path === ARCHIVE || path === archivedConfigPath();
+      },
+      async readFile(path: string): Promise<string> {
+        return path === archivedConfigPath() ? archivedConfigBody : "";
+      },
+      async writeFile(): Promise<void> {},
+      async remove(): Promise<void> {},
+      async mkdirp(): Promise<void> {},
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (args.includes("-tzf")) return { code: 0, stdout: listing, stderr: "" };
+        if (args.includes("-tvzf")) return { code: 0, stdout: verboseListing, stderr: "" };
+        if (args.includes("-xzf")) {
+          workdir = args[args.indexOf("-C") + 1];
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        // grep never reports a hit: the assertion is about the archive's own config, not the
+        // live-value-derived pattern scan.
+        if (command === "grep") return { code: 1, stdout: "", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  return { ctx };
+}
+
+const ARCHIVED_GATEWAY_TOKEN = "archived-literal-token-0123456789";
+const CURRENT_GATEWAY_TOKEN = "current-live-token-9876543210";
+
+{
+  const { ctx } = makeCtxWithArchivedGatewayToken(ARCHIVED_GATEWAY_TOKEN, CURRENT_GATEWAY_TOKEN);
+  const output: string[] = [];
+  const passed = await withOutputSink((chunk) => output.push(chunk), () => verifySnapshot(ctx, ARCHIVE, "share"));
+  check("an archived literal gateway.auth.token fails the share check despite a different current token", passed, false);
+  check("the finding names the field, never the value", output.join("").includes(ARCHIVED_GATEWAY_TOKEN), false);
+  check("the finding is reported by name", output.join("").includes("gateway.auth.token"), true);
+}
+{
+  const { ctx } = makeCtxWithArchivedGatewayToken(ARCHIVED_GATEWAY_TOKEN, CURRENT_GATEWAY_TOKEN);
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "migrate"));
+  check("an archived literal gateway.auth.token fails the migrate check too", passed, false);
+}
+{
+  const { ctx } = makeCtxWithArchivedGatewayToken(ARCHIVED_GATEWAY_TOKEN, CURRENT_GATEWAY_TOKEN);
+  const output: string[] = [];
+  const passed = await withOutputSink((chunk) => output.push(chunk), () => verifySnapshot(ctx, ARCHIVE, "full"));
+  check("a full archive accepts its literal gateway.auth.token", passed, true);
+  check("under full it is still reported, by name", output.join("").includes("gateway.auth.token"), true);
+}
+{
+  const { ctx } = makeCtxWithArchivedGatewayToken({ source: "env", id: "OPENCLAW_GATEWAY_TOKEN" }, CURRENT_GATEWAY_TOKEN);
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "share"));
+  check("a secret reference in gateway.auth.token passes the share check", passed, true);
+}
+{
+  const { ctx } = makeCtxWithArchivedGatewayToken({ source: "env", id: "OPENCLAW_GATEWAY_TOKEN" }, CURRENT_GATEWAY_TOKEN);
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "migrate"));
+  check("a secret reference in gateway.auth.token passes the migrate check", passed, true);
+}
+{
+  const { ctx } = makeCtxWithArchivedGatewayToken({ source: "env", id: "OPENCLAW_GATEWAY_TOKEN" }, CURRENT_GATEWAY_TOKEN);
+  const passed = await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "full"));
+  check("a secret reference in gateway.auth.token passes the full check", passed, true);
+}
+
 // --- the archive's embedded config must be parsed as JSON5, and a parse failure must refuse
 // rather than silently skip -----------------------------------------------------------------
 //

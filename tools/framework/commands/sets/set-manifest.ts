@@ -76,11 +76,25 @@ async function desiredSecretNames(desiredState: unknown): Promise<string[]> {
  *  runtime.imageReference() would re-resolve it by asking the target's docker — a machine
  *  query, and one that needs a working setup. The proven digest is already recorded on this
  *  machine: config/deployment.lock.json pins it at `./clawforge lock` time. An OPENCLAW_IMAGE that
- *  is already a digest reference is honoured directly — the operator pinned it by hand. */
+ *  is already a digest reference is honoured directly — the operator pinned it by hand.
+ *
+ *  A recorded digest answers only for the reference it was proven under, and the reference is
+ *  the one thing comparable offline: a lock left over from a previous OPENCLAW_IMAGE must not
+ *  pin this build with the previous image's digest, and what a different tag means cannot be
+ *  resolved without a network this command is defined not to need. */
 async function requiredImage(image: string): Promise<string> {
   if (image.includes("@sha256:")) return image;
   const lock = await readLock();
-  if (lock?.image.digest !== undefined) return lock.image.digest;
+  if (lock?.image.digest !== undefined) {
+    if (lock.image.reference !== image) {
+      die(
+        `the lock's digest does not belong to ${image} — it was recorded for ${lock.image.reference}, ` +
+          "and pinning it here would put the previous image's runtime under a declaration that no longer names it.\n" +
+          "Run ./clawforge lock to record the digest for the image now declared, or set OPENCLAW_IMAGE to a @sha256 reference.",
+      );
+    }
+    return lock.image.digest;
+  }
   die(
     `no image digest to pin the set to — ${image} is a tag, and a set that names a tag ` +
       "would install whatever that tag means on the day it is installed.\n" +

@@ -23,6 +23,8 @@
 // was holding: two different permissions collapsed into one, and the more dangerous one
 // granted by default.
 
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { locksDir } from "../core/env.ts";
 import { log, die } from "../core/log.ts";
 import { newOperationId } from "../service/operations.ts";
@@ -185,20 +187,30 @@ export function unreadableLockMessage(ctx: Context): string {
 
 export interface HeldLock {
   readonly holder: LockHolder;
+  /** The resource this lock is on — what reentrancy is recognised by. */
+  readonly path: string;
   release(): Promise<void>;
 }
 
-/** How many locks this process is holding right now.
+/** Which lock paths the current asynchronous chain holds.
  *
  *  `apply` runs `provision-agent` as one of its steps, and that command takes the lock when
- *  invoked on its own. Without this, an apply would be refused by its own lock, at its own
- *  fourth step, with a message accusing itself. The alternative — passing a "nested" flag
- *  down through every runner — spreads a fact about this process across the signatures of
- *  commands that otherwise have nothing to do with locking. */
-let heldHere = 0;
+ *  invoked on its own. Without reentrancy recognition, an apply would be refused by its own
+ *  lock, at its own fourth step, with a message accusing itself. The old answer was a
+ *  process-global counter, and the counter knew too little: it could not tell a nested call
+ *  of the current operation from an independent asynchronous chain that happens to run in
+ *  the same process, and it was not tied to the instance being locked — the commands `set
+ *  try` runs against its throwaway instance rode the outer operation's count and ran
+ *  unlocked. What nests is the chain: an operation's body runs inside the chain scope
+ *  runOwning() gives it, and only a call about the same instance reads as reentrant. The
+ *  alternative — passing a "nested" flag down through every runner — spreads a fact about
+ *  this process across the signatures of commands that otherwise have nothing to do with
+ *  locking. */
+const chainLocks = new AsyncLocalStorage<Set<string>>();
 
-export function lockHeldHere(): boolean {
-  return heldHere > 0;
+/** Whether the current asynchronous chain already holds this instance's lock. */
+export function lockHeldHere(ctx: Context): boolean {
+  return chainLocks.getStore()?.has(lockPath(ctx)) ?? false;
 }
 
 /** Takes the lock for the duration of an operation, or refuses. */
@@ -289,15 +301,13 @@ export async function takeLock(
     }
     throw error;
   }
-  heldHere += 1;
-
   let released = false;
   return {
     holder,
+    path: lockPath(ctx),
     async release(): Promise<void> {
       if (released) return;
       released = true;
-      heldHere -= 1;
 
       // Only ours. A run that overran and had its lock taken over by --break-lock must not remove
       // the new holder's lock on its way out — that would hand the instance to a third run
@@ -326,7 +336,37 @@ export async function withInstanceLock<T>(
 ): Promise<T> {
   const held = await takeLock(ctx, what, operationId, options);
   try {
-    return await body();
+    return await runOwning(held, body);
+  } finally {
+    await held.release();
+  }
+}
+
+/** Runs `body` as the chain that owns `held`'s lock: everything `body` calls recognises the
+ *  hold, and the recognition ends when `body` settles. Releasing stays where it already was
+ *  — the caller's own finally — so the paths in and out of `body` are exactly the paths the
+ *  caller wrote. `held === undefined` is the nested shape: the calling chain is already
+ *  inside the owning operation's scope, so there is nothing to register. */
+export async function runOwning<T>(held: HeldLock | undefined, body: () => Promise<T>): Promise<T> {
+  if (held === undefined) return body();
+  return chainLocks.run(new Set([...(chainLocks.getStore() ?? []), held.path]), body);
+}
+
+/** The command-level shape: hold the lock for the duration of `body` unless the calling
+ *  chain already does. `provision-agent` under `apply`, `apply --set` under `rollback
+ *  --set`, `set forget` under `apply` — each takes the lock when someone invoked it
+ *  directly and rides its caller's when it runs as a step. */
+export async function withLockUnlessHeld<T>(
+  ctx: Context,
+  what: string,
+  operationId: string,
+  options: { breakLock?: boolean },
+  body: () => Promise<T>,
+): Promise<T> {
+  if (lockHeldHere(ctx)) return body();
+  const held = await takeLock(ctx, what, operationId, options);
+  try {
+    return await runOwning(held, body);
   } finally {
     await held.release();
   }
@@ -342,6 +382,5 @@ export async function withInstanceLock<T>(
  *  Nested calls are a no-op: `apply` runs several of these commands as its steps and is
  *  already holding the lock, so acquiring again would refuse the run that started them. */
 export async function guarded<T>(ctx: Context, what: string, args: string[], body: () => Promise<T>): Promise<T> {
-  if (lockHeldHere()) return body();
-  return withInstanceLock(ctx, what, newOperationId(what), { breakLock: args.includes("--break-lock") }, body);
+  return withLockUnlessHeld(ctx, what, newOperationId(what), { breakLock: args.includes("--break-lock") }, body);
 }

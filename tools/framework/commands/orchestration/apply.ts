@@ -23,7 +23,7 @@ import { up, restart } from "../lifecycle/lifecycle.ts";
 import { provisionAgent, removeOwnedObject } from "../management/provision-agent/index.ts";
 import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
-import { takeLock, lockHeldHere } from "#src/runtime/instance-lock.ts";
+import { runOwning, takeLock, withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
@@ -204,8 +204,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
       // Nesting-safe, the same way provisionAgent()'s own lock-taking already is: a caller
       // (rollback --set) that already holds the instance lock for the whole operation must
       // not have this acquire refuse itself as "another operation changing this instance".
-      const held = lockHeldHere() ? undefined : await takeLock(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock") });
-      try {
+      await withLockUnlessHeld(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock") }, async () => {
         await storeArtifactForRollback(artifact, verified);
         const ranSteps = await applyFromSource(ctx, args, operationId);
 
@@ -264,9 +263,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
         }
 
         await recordInstalledSet(ctx, verified.manifest, verified.id, operationId);
-      } finally {
-        await held?.release();
-      }
+      });
     }),
   );
 }
@@ -350,42 +347,46 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
   const operationId = heldOperationId ?? newOperationId("apply");
   const held = heldOperationId === undefined ? await takeLock(ctx, "apply", operationId, { breakLock }) : undefined;
 
-  let journal: Journal;
+  // journal and outcome are assigned in the runOwning callback below; the code after the
+  // finally runs only when that callback completed, because a throw inside it propagates.
+  let journal!: Journal;
   let steps: StepOutcome[];
-  let outcome: ApplyOutcome;
+  let outcome!: ApplyOutcome;
   let failedStep: StepOutcome | undefined;
   let snapshot: string | undefined;
   let remaining: readonly { readonly code: string; readonly detail: string }[] = [];
 
   try {
-    if (declarationChecksum(await currentComposition(ctx)) !== plan.declarationChecksum) {
-      die("the declaration changed while preparing this apply — compute a new plan");
-    }
-    journal = await Journal.open(ctx, "apply", plan.deployment, operationId);
-    // Before the first mutating step, not after one fails: a copy taken afterwards would be
-    // a copy of the damage.
-    snapshot = await snapshotConfig(ctx, journal.id);
-    if (snapshot !== undefined) await journal.noteSnapshot(snapshot);
+    await runOwning(held, async () => {
+      if (declarationChecksum(await currentComposition(ctx)) !== plan.declarationChecksum) {
+        die("the declaration changed while preparing this apply — compute a new plan");
+      }
+      journal = await Journal.open(ctx, "apply", plan.deployment, operationId);
+      // Before the first mutating step, not after one fails: a copy taken afterwards would be
+      // a copy of the damage.
+      snapshot = await snapshotConfig(ctx, journal.id);
+      if (snapshot !== undefined) await journal.noteSnapshot(snapshot);
 
-    steps = await runSteps(ctx, plan.actions, journal);
-    failedStep = steps.find((step) => step.status === "failed");
-    outcome = await confirm(ctx, plan, steps, steps.some((step) => step.status === "done"), journal.id);
+      steps = await runSteps(ctx, plan.actions, journal);
+      failedStep = steps.find((step) => step.status === "failed");
+      outcome = await confirm(ctx, plan, steps, steps.some((step) => step.status === "done"), journal.id);
 
-    // Every step succeeding is not the claim this command makes. What it promises is that
-    // the instance is now what the repository declares — so the confirming inspection has
-    // the last word, and a run that ends with something blocking is a failed run whatever
-    // its steps returned. Recorded that way too: a journal entry reading "succeeded" beside
-    // an instance running an unapplied declaration is worse than no entry.
-    remaining = blockingRemainder(outcome.problems);
+      // Every step succeeding is not the claim this command makes. What it promises is that
+      // the instance is now what the repository declares — so the confirming inspection has
+      // the last word, and a run that ends with something blocking is a failed run whatever
+      // its steps returned. Recorded that way too: a journal entry reading "succeeded" beside
+      // an instance running an unapplied declaration is worse than no entry.
+      remaining = blockingRemainder(outcome.problems);
 
-    await journal.close(
-      failedStep === undefined && remaining.length === 0 ? "succeeded" : "failed",
-      failedStep !== undefined
-        ? `stopped at "${failedStep.id}": ${failedStep.detail ?? "no detail"}`
-        : remaining.length === 0
-          ? undefined
-          : `every step ran, but the instance still reports ${remaining.map((entry) => entry.code).join(", ")}`,
-    );
+      await journal.close(
+        failedStep === undefined && remaining.length === 0 ? "succeeded" : "failed",
+        failedStep !== undefined
+          ? `stopped at "${failedStep.id}": ${failedStep.detail ?? "no detail"}`
+          : remaining.length === 0
+            ? undefined
+            : `every step ran, but the instance still reports ${remaining.map((entry) => entry.code).join(", ")}`,
+      );
+    });
   } finally {
     await held?.release();
   }

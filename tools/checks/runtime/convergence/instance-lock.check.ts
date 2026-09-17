@@ -9,6 +9,7 @@
 import {
   takeLock,
   withInstanceLock,
+  guarded,
   readLockHolder,
   refusalMessage,
   isStale,
@@ -335,19 +336,139 @@ for (const mode of ["throw", "nonzero"] as const) {
 }
 
 // --- nesting -------------------------------------------------------------------------------------
+//
+// `apply` runs `provision-agent` as one of its steps, and that command takes the lock when
+// invoked on its own. Without reentrancy recognition, an apply would be refused by its own
+// lock at its own fourth step, with a message accusing itself. What makes the step nested —
+// rather than a second operation that happens to run in this process — is that it runs
+// inside the lock-holding operation's asynchronous chain, against the SAME instance. The
+// chain scope the lock module hands the operation's body is how that is known.
 
 {
-  const { ctx } = stubContext();
-  check("nothing is held to begin with", lockHeldHere(), false);
+  const { ctx, dirs } = stubContext();
+  const originalExec = ctx.transport.exec;
+  let lockClaims = 0;
+  ctx.transport.exec = async (command: string, args: string[]) => {
+    if (command === "mkdir" && args[0] === lockPath(ctx)) lockClaims += 1;
+    return originalExec(command, args);
+  };
+
+  check("nothing is held to begin with", lockHeldHere(ctx), false);
 
   await withInstanceLock(ctx, "apply", "op-1", {}, async () => {
-    // apply runs provision-agent as a step, and that command takes the lock when invoked on
-    // its own. Without this, an apply would be refused by its own lock at its own fourth
-    // step, with a message accusing itself.
-    check("while an operation runs, this process knows it holds the lock", lockHeldHere(), true);
+    check("while an operation runs, its own chain knows it holds this instance's lock", lockHeldHere(ctx), true);
+
+    // The step shape: a command that takes the lock when invoked on its own, called from
+    // inside the operation that already holds it.
+    let stepRan = false;
+    await guarded(ctx, "provision-agent demo", [], async () => {
+      stepRan = true;
+    });
+    check("a genuinely nested call runs without refusing", stepRan, true);
+    check("without taking a second lock", lockClaims, 1);
   });
 
-  check("and stops knowing it afterwards", lockHeldHere(), false);
+  check("and stops knowing it afterwards", lockHeldHere(ctx), false);
+  check("and the lock directory is gone", dirs.has(lockPath(ctx)), false);
+}
+
+// --- an independent operation in the same process is a stranger, not a nested call ---------------
+//
+// Reentrancy replaced a process-global counter, which knew only "some lock is held in this
+// process": a second operation started beside a running one slipped past acquisition
+// entirely and changed the instance unlocked. Chains, not processes, are what nest — so the
+// second operation goes through normal acquisition and is refused exactly the way another
+// process is refused. No queue, no wait, no second chance.
+
+{
+  const { ctx, dirs } = stubContext();
+  const originalRemove = ctx.transport.remove;
+  let lockRemovals = 0;
+  ctx.transport.remove = async (path: string) => {
+    if (path === lockPath(ctx)) lockRemovals += 1;
+    return originalRemove(path);
+  };
+
+  let releaseFirst!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  let firstStarted!: () => void;
+  const started = new Promise<void>((resolve) => { firstStarted = resolve; });
+
+  let firstRan = false;
+  let firstChainKnows = false;
+  let secondRan = false;
+  const first = guarded(ctx, "apply", [], async () => {
+    firstRan = true;
+    firstChainKnows = lockHeldHere(ctx);
+    firstStarted();
+    await gate;
+  });
+  await started;
+
+  check("the first operation holds the lock while it runs", dirs.has(lockPath(ctx)), true);
+  check("the chain running the operation knows it holds the lock", firstChainKnows, true);
+  check("a chain outside the operation does not inherit the hold", lockHeldHere(ctx), false);
+
+  // Started from outside the first operation's callback: no ancestry, no reentrancy.
+  const holder = (await readLockHolder(ctx))!;
+  let secondError: Error | undefined;
+  await guarded(ctx, "restart", [], async () => {
+    secondRan = true;
+  }).then(() => undefined, (error: Error) => { secondError = error; });
+
+  check("an independent operation does not enter its body while the first holds the lock", secondRan, false);
+  check("it is refused, not queued or waved through", secondError !== undefined, true);
+  check("with the same refusal another process gets", secondError?.message, refusalMessage(holder));
+  check("naming what holds it", secondError?.message.includes("apply"), true);
+
+  releaseFirst();
+  await first;
+  check("the first operation still ran to completion", firstRan, true);
+  check("its lock was removed exactly once", lockRemovals, 1);
+  check("the lock directory is gone afterwards", dirs.has(lockPath(ctx)), false);
+  check("and this chain no longer knows the lock", lockHeldHere(ctx), false);
+
+  const next = await takeLock(ctx, "apply", "op-after");
+  check("the lock it freed can be won again", (await readLockHolder(ctx))?.operationId, "op-after");
+  await next.release();
+  check("and gone again after that run too", dirs.has(lockPath(ctx)), false);
+}
+
+// --- a nested call about a DIFFERENT instance is not this lock ------------------------------------
+//
+// `set try` is the live case: its throwaway instance has its own data directory and its own
+// lock, and the commands it runs against the throwaway must take THAT lock — a "nested"
+// flag that waved anything through would have left the whole trial running unlocked beside
+// the outer operation. Different resource means normal acquisition, whatever the ancestry.
+
+{
+  const first = stubContext();
+  const other = { ...first.ctx, settings: { dataDir: "/srv/other" } } as unknown as Context;
+
+  let releaseOuter!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseOuter = resolve; });
+  let outerStarted!: () => void;
+  const started = new Promise<void>((resolve) => { outerStarted = resolve; });
+
+  let innerRan = false;
+  const outer = guarded(first.ctx, "apply", [], async () => {
+    outerStarted();
+    await guarded(other, "provision-agent demo", [], async () => {
+      innerRan = true;
+      // Observed from inside the inner body: it really won the other instance's lock.
+      check("the nested different-instance call took its own lock", first.dirs.has(lockPath(other)), true);
+      check("which records what it is doing", (await readLockHolder(other))?.what, "provision-agent demo");
+      check("while the outer instance's lock stays in place", first.dirs.has(lockPath(first.ctx)), true);
+      check("and the outer chain still knows its own hold", lockHeldHere(first.ctx), true);
+    });
+    check("the inner lock is released once the inner call is done", first.dirs.has(lockPath(other)), false);
+    await gate;
+  });
+  await started;
+  releaseOuter();
+  await outer;
+  check("the nested different-instance call ran", innerRan, true);
+  check("neither lock directory survives", first.dirs.has(lockPath(first.ctx)) || first.dirs.has(lockPath(other)), false);
 }
 
 // --- the message itself ----------------------------------------------------------------------------

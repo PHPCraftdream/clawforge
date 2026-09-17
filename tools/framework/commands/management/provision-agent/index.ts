@@ -37,7 +37,7 @@
 import { log, info, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { safeName } from "#src/core/names.ts";
-import { takeLock, lockHeldHere } from "#src/runtime/instance-lock.ts";
+import { withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
 import { readLedger, recordOwned, ownerOf, updateOwnedPromptFiles } from "#src/set/ownership/ledger.ts";
 import {
@@ -73,13 +73,11 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
   // `apply` calls this as one of its steps and is already holding the lock; nested, the
   // second acquire would refuse the run its own caller started. Taken only when this is the
   // command someone invoked directly.
-  const held = lockHeldHere() ? undefined : await takeLock(ctx, `provision-agent ${recipeName}`, newOperationId("provision-agent"), { breakLock });
-
-  try {
+  await withLockUnlessHeld(ctx, `provision-agent ${recipeName}`, newOperationId("provision-agent"), { breakLock }, async () => {
     // Read once per run: the set installed here, if any, so every object this run creates
     // records which set asked for it. Existing objects are never adopted into the ledger.
-    // Keep these reads inside the finally scope: a target read failure must still release the
-    // lock acquired immediately above.
+    // Keep these reads inside the locked scope: a target read failure must still release the
+    // lock on the way out.
     const ledger = await readLedger(ctx);
     const setId = await activeSetId(ctx);
     await assertObjectNamesAvailable(ctx, recipeName, bundle, ledger);
@@ -110,9 +108,7 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
       await recordOwned(ctx, { kind: "cron-job", name: bundle.config.cronJobName!, recipe: recipeName, setId });
     }
     reportProvisioned(ctx, bundle, recipeName, mirror, agentCreated, mcpState, cronState);
-  } finally {
-    await held?.release();
-  }
+  });
 }
 
 function reportProvisioned(

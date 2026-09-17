@@ -392,6 +392,95 @@ try {
     }
   }
 
+  // --- the lock's digest is used only when the lock is about this image ----------------------
+  //
+  // requiredImage used to return the lock's digest without asking whether the lock was
+  // written for the reference now declared: after OPENCLAW_IMAGE moved to another repository
+  // or tag, a stale lock still answered, and the set was pinned to the previous image's
+  // digest — the artifact named a runtime the operator's declaration does not, and `set try`
+  // installs from the manifest. What a tag means cannot be checked offline, so the reference
+  // itself is the comparison: only the identical string lets a recorded digest answer.
+  {
+    const lockPath = resolve(deployment, "config", "deployment.lock.json");
+    const originalLock = await readFile(lockPath, "utf8");
+    const writeLock = async (reference: string, digest: string): Promise<void> => {
+      await writeFile(
+        lockPath,
+        JSON.stringify({
+          version: 1,
+          deployment: "set-build-check",
+          generatedAt: "2026-01-01T00:00:00.000Z",
+          image: { reference, digest },
+          recipes: {},
+          secrets: [],
+        }),
+      );
+    };
+    const buildRefusal = async (): Promise<string> => {
+      try {
+        await buildSet(ctx, "demo-set");
+        return "";
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    };
+    const declared = "ghcr.io/openclaw/openclaw:extended-stable";
+    try {
+      const otherRepo = "old.example/old-image:stable";
+      await writeLock(otherRepo, `old.example/old-image@sha256:${"a".repeat(64)}`);
+      let refusal = await buildRefusal();
+      check(
+        "a lock for another repository does not answer for the declared image",
+        refusal.includes(otherRepo) && refusal.includes(declared),
+        true,
+      );
+      check("that refusal says how to record the right digest", refusal.includes("./clawforge lock") && refusal.includes("@sha256"), true);
+      const otherTag = "ghcr.io/openclaw/openclaw:older-stable";
+      await writeLock(otherTag, `ghcr.io/openclaw/openclaw@sha256:${"b".repeat(64)}`);
+      refusal = await buildRefusal();
+      check("a lock for another tag of the same repository is refused too", refusal.includes(otherTag) && refusal.includes(declared), true);
+      // The chosen rule, stated by this case: a digest reference in the lock is the same
+      // repository but not the declared tag, and no offline check can tell what the tag
+      // means — so the recorded digest is not taken on faith either.
+      const digestRef = `ghcr.io/openclaw/openclaw@sha256:${"c".repeat(64)}`;
+      await writeLock(digestRef, digestRef);
+      refusal = await buildRefusal();
+      check("a lock whose reference is a digest does not answer for a tag of that repository", refusal.includes(digestRef) && refusal.includes(declared), true);
+    } finally {
+      await writeFile(lockPath, originalLock);
+    }
+
+    // The legitimate case, re-asserted in place: the declared tag IS the lock's reference,
+    // and its recorded digest pins even though the tag may have moved since — exactly what
+    // the lock exists to record.
+    await writeLock(declared, DIGEST);
+    try {
+      check("the lock's digest still pins when the lock names the declared reference", (await buildSet(ctx, "demo-set")).manifest.requires.image, DIGEST);
+    } finally {
+      await writeFile(lockPath, originalLock);
+    }
+
+    // An OPENCLAW_IMAGE that is already a digest reference is pinned by hand and never
+    // reaches the lock: even with no lock file at all it pins, exactly as given.
+    const handPinned = `ghcr.io/openclaw/openclaw@sha256:${"d".repeat(64)}`;
+    const digestCtx = { ...ctx, settings: { ...ctx.settings, image: handPinned } } as unknown as Context;
+    await rm(lockPath);
+    try {
+      check("a @sha256 OPENCLAW_IMAGE pins as given, without consulting the lock", (await buildSet(digestCtx, "digest-set")).manifest.requires.image, handPinned);
+    } finally {
+      await writeFile(lockPath, originalLock);
+    }
+
+    // No lock at all keeps the existing refusal: a tag with nothing proven to pin it to.
+    await rm(lockPath);
+    try {
+      const none = await buildRefusal();
+      check("no lock at all keeps the no-digest refusal", none.includes("no image digest to pin the set to") && none.includes(declared), true);
+    } finally {
+      await writeFile(lockPath, originalLock);
+    }
+  }
+
   // --- an unreadable secret source aborts the build instead of shrinking the scan ------------
   //
   // localSecretValues used to treat every read error as "no store yet": with a directory

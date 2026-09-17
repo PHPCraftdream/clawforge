@@ -17,7 +17,7 @@ import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { validateSet } from "#src/set/ownership/validate.ts";
 import { removeOwnedObject } from "../management/provision-agent/index.ts";
-import { takeLock, lockHeldHere } from "#src/runtime/instance-lock.ts";
+import { withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
 import { setTry } from "./set-try.ts";
 import { setDiff } from "./set-diff.ts";
@@ -126,12 +126,9 @@ async function forgetAction(ctx: Context, kindRaw: string | undefined, name: str
 
   // `apply` calls this indirectly while already holding the lock; nested, the second acquire
   // would refuse the run its own caller started. Taken only when this is invoked directly.
-  const held = lockHeldHere() ? undefined : await takeLock(ctx, `set forget ${kindRaw} ${name}`, newOperationId("set-forget"), { breakLock });
-  try {
+  await withLockUnlessHeld(ctx, `set forget ${kindRaw} ${name}`, newOperationId("set-forget"), { breakLock }, async () => {
     await removeOwnedObject(ctx, kindRaw, name);
-  } finally {
-    await held?.release();
-  }
+  });
   log(`${kindRaw} "${name}" removed and no longer tracked as owned`);
 }
 

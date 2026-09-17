@@ -19,7 +19,7 @@ import { emit, isCaptured } from "#src/core/output.ts";
 import { deploymentName, deploymentDir } from "#src/runtime/deployment.ts";
 import { Journal, readOperation, latestRollbackable, newOperationId } from "#src/service/operations.ts";
 import { restart } from "../lifecycle/lifecycle.ts";
-import { takeLock } from "#src/runtime/instance-lock.ts";
+import { runOwning, takeLock } from "#src/runtime/instance-lock.ts";
 import { readInstalledSet, withUnpackedArtifact, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
 import { frameworkVersion } from "../management/lock.ts";
 import { apply } from "./apply.ts";
@@ -170,66 +170,68 @@ async function rollbackSet(ctx: Context, options: RollbackOptions): Promise<void
     const operationId = newOperationId("rollback");
     const held = await takeLock(ctx, `rollback --set to ${previous.id}`, operationId, { breakLock: options.breakLock });
     try {
-      // Re-verified under the lock: which set is installed (and therefore which "previous"
-      // is the correct rollback target) could have changed in the window between the
-      // initial read above and taking this lock — another apply --set may have completed
-      // installing a newer one in it. Acting on the stale read would silently overwrite that
-      // later install with the wrong transition entirely (B -> A instead of the actual C -> B).
-      const stillInstalled = await readInstalledSet(ctx);
-      if (stillInstalled?.id !== installed.id) {
-        die(
-          `the installed set changed while this rollback was preparing (was "${installed.name}" (${installed.id}), ` +
-            `is now ${stillInstalled === undefined ? "nothing recorded" : `"${stillInstalled.name}" (${stillInstalled.id})`}) — ` +
-            "re-run ./clawforge rollback --set against the current state.",
-        );
-      }
-
-      const journal = await Journal.open(ctx, "rollback", deploymentName(), operationId);
-      try {
-        // The EXACT operation that installed the set currently in force — its own
-        // configSnapshot is the configuration exactly as the previous set left it, before
-        // that apply's config step ever ran. latestRollbackable() (the newest operation with
-        // ANY snapshot) is the wrong thing here: an ordinary apply run after the current set
-        // was installed takes its own snapshot too, and restoring that one would restore to a
-        // config that already includes whatever the current set added — installed.operationId
-        // names the one apply that actually matters, regardless of what ran since.
-        const installingOperation = installed.operationId === undefined
-          ? undefined
-          : await readOperation(ctx, installed.operationId);
-        if (installingOperation?.configSnapshot !== undefined && (await ctx.transport.exists(installingOperation.configSnapshot))) {
-          const live = `${ctx.settings.dataDir}/config/openclaw.json`;
-          log(`putting back the configuration from before ${installingOperation.id}, so nothing the current set added is left behind`);
-          await ctx.transport.writeFile(live, await ctx.transport.readFile(installingOperation.configSnapshot));
-          await journal.step("restore-config", "done", `from ${installingOperation.configSnapshot}`);
-        } else {
-          // Without this snapshot there is no way to prove a setting the current set added
-          // (but the previous one never declared) gets undone — reinstalling the previous
-          // set alone only ever SETS its own declared paths, it never unsets anything.
-          // Silently skipping this step and reporting the reinstall a success would be
-          // exactly the false "succeeded" this whole mechanism exists to prevent.
-          await journal.step("restore-config", "failed", "no recorded snapshot for the operation that installed the current set");
+      await runOwning(held, async () => {
+        // Re-verified under the lock: which set is installed (and therefore which "previous"
+        // is the correct rollback target) could have changed in the window between the
+        // initial read above and taking this lock — another apply --set may have completed
+        // installing a newer one in it. Acting on the stale read would silently overwrite that
+        // later install with the wrong transition entirely (B -> A instead of the actual C -> B).
+        const stillInstalled = await readInstalledSet(ctx);
+        if (stillInstalled?.id !== installed.id) {
           die(
-            `cannot roll back "${installed.name}" (${installed.id}) to "${previous.name}" (${previous.id}): ` +
-              "no configuration snapshot is available for the operation that installed the current set" +
-              (installed.operationId === undefined
-                ? " (none was ever recorded for it)"
-                : ` (operation ${installed.operationId} recorded none, or its snapshot file is gone)`) +
-              ".\nWithout it, a setting the current set added but the previous one never declared cannot be " +
-              "proven undone. Put the configuration back by hand, or restore data from a snapshot instead: " +
-              "./clawforge push.",
+            `the installed set changed while this rollback was preparing (was "${installed.name}" (${installed.id}), ` +
+              `is now ${stillInstalled === undefined ? "nothing recorded" : `"${stillInstalled.name}" (${stillInstalled.id})`}) — ` +
+              "re-run ./clawforge rollback --set against the current state.",
           );
         }
 
-        // Reinstalls recipes/agents/MCP/cron and reapplies the previous set's own declared
-        // config on top — a no-op for anything the restore above already put back correctly,
-        // a real fix for anything that had drifted independently of the set boundary.
-        await apply(ctx, [...options.applyArgs, "--set", artifact]);
-        await journal.close("succeeded", `rolled back to "${previous.name}" (${previous.id})`);
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        await journal.close("failed", detail);
-        throw error;
-      }
+        const journal = await Journal.open(ctx, "rollback", deploymentName(), operationId);
+        try {
+          // The EXACT operation that installed the set currently in force — its own
+          // configSnapshot is the configuration exactly as the previous set left it, before
+          // that apply's config step ever ran. latestRollbackable() (the newest operation with
+          // ANY snapshot) is the wrong thing here: an ordinary apply run after the current set
+          // was installed takes its own snapshot too, and restoring that one would restore to a
+          // config that already includes whatever the current set added — installed.operationId
+          // names the one apply that actually matters, regardless of what ran since.
+          const installingOperation = installed.operationId === undefined
+            ? undefined
+            : await readOperation(ctx, installed.operationId);
+          if (installingOperation?.configSnapshot !== undefined && (await ctx.transport.exists(installingOperation.configSnapshot))) {
+            const live = `${ctx.settings.dataDir}/config/openclaw.json`;
+            log(`putting back the configuration from before ${installingOperation.id}, so nothing the current set added is left behind`);
+            await ctx.transport.writeFile(live, await ctx.transport.readFile(installingOperation.configSnapshot));
+            await journal.step("restore-config", "done", `from ${installingOperation.configSnapshot}`);
+          } else {
+            // Without this snapshot there is no way to prove a setting the current set added
+            // (but the previous one never declared) gets undone — reinstalling the previous
+            // set alone only ever SETS its own declared paths, it never unsets anything.
+            // Silently skipping this step and reporting the reinstall a success would be
+            // exactly the false "succeeded" this whole mechanism exists to prevent.
+            await journal.step("restore-config", "failed", "no recorded snapshot for the operation that installed the current set");
+            die(
+              `cannot roll back "${installed.name}" (${installed.id}) to "${previous.name}" (${previous.id}): ` +
+                "no configuration snapshot is available for the operation that installed the current set" +
+                (installed.operationId === undefined
+                  ? " (none was ever recorded for it)"
+                  : ` (operation ${installed.operationId} recorded none, or its snapshot file is gone)`) +
+                ".\nWithout it, a setting the current set added but the previous one never declared cannot be " +
+                "proven undone. Put the configuration back by hand, or restore data from a snapshot instead: " +
+                "./clawforge push.",
+            );
+          }
+
+          // Reinstalls recipes/agents/MCP/cron and reapplies the previous set's own declared
+          // config on top — a no-op for anything the restore above already put back correctly,
+          // a real fix for anything that had drifted independently of the set boundary.
+          await apply(ctx, [...options.applyArgs, "--set", artifact]);
+          await journal.close("succeeded", `rolled back to "${previous.name}" (${previous.id})`);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          await journal.close("failed", detail);
+          throw error;
+        }
+      });
     } finally {
       await held.release();
     }
@@ -254,19 +256,21 @@ export async function rollback(ctx: Context, args: string[]): Promise<void> {
 
   const held = await takeLock(ctx, `rollback of ${target.id}`, journal.id, { breakLock: options.breakLock });
   try {
-    log(`putting back the configuration from before ${target.id}`);
-    await ctx.transport.writeFile(live, await ctx.transport.readFile(snapshot));
-    await journal.step("restore-config", "done", `from ${snapshot}`);
+    await runOwning(held, async () => {
+      log(`putting back the configuration from before ${target.id}`);
+      await ctx.transport.writeFile(live, await ctx.transport.readFile(snapshot));
+      await journal.step("restore-config", "done", `from ${snapshot}`);
 
-    if (options.restartAfter) {
-      // A configuration the instance has not read is not in force.
-      await restart(ctx, []);
-      await journal.step("restart", "done");
-    } else {
-      await journal.step("restart", "skipped", "--no-restart: the instance is still running the configuration this replaced");
-    }
+      if (options.restartAfter) {
+        // A configuration the instance has not read is not in force.
+        await restart(ctx, []);
+        await journal.step("restart", "done");
+      } else {
+        await journal.step("restart", "skipped", "--no-restart: the instance is still running the configuration this replaced");
+      }
 
-    await journal.close("succeeded", `rolled back ${target.id}`);
+      await journal.close("succeeded", `rolled back ${target.id}`);
+    });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     await journal.step("rollback", "failed", detail);

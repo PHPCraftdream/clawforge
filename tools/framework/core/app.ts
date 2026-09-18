@@ -94,6 +94,8 @@ export interface AppCommand {
    *  flag says the output can be trusted to parse, and nothing more — an output that turns
    *  out not to parse is returned as text, not as an error. */
   readonly structured?: boolean;
+  /** Refines structured output for command groups with mixed subcommands. */
+  readonly structuredWhen?: (args: string[]) => boolean;
   /** The command observes and never changes anything. Lets a tool result state `changed:
    *  false` as a fact rather than as an assumption, which is what makes it safe for an
    *  agent to call between steps. */

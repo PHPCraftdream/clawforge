@@ -17,6 +17,7 @@ export type Declared = {
   readonly destructive?: boolean;
   readonly arguments?: CommandArgument[];
   readonly structured?: boolean;
+  readonly structuredWhen?: (args: string[]) => boolean;
   readonly readOnly?: boolean;
   readonly readOnlyWhen?: (args: string[]) => boolean;
 };

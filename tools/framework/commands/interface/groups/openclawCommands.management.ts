@@ -145,6 +145,7 @@ export const managementCommands: Record<string, AppCommand> = {
     // the dispatcher, so the gate and the command cannot drift apart again.
     destructive: true,
     readOnlyWhen: recipeActionIsReadOnly,
+    structuredWhen: (args) => args[0] === "verify" || args[0] === "onboard",
     details:
       "A recipe is a third-party service living beside the instance — its own directory " +
       "under the deployment's recipes/, its own compose project, its own lifecycle.\n" +

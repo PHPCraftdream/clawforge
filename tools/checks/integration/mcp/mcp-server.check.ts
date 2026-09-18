@@ -115,6 +115,7 @@ try {
   // The other twenty tools are unchanged: adding an envelope to the two that produce one
   // must not quietly promise a shape the rest do not return.
   check("a command that returns a log does not claim one", byName.get("status")?.outputSchema, undefined);
+  check("a mixed recipe command advertises conditional structured output", byName.get("recipe")?.outputSchema !== undefined, true);
   check("nor does a gate command", byName.get("check")?.outputSchema, undefined);
 } finally {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });

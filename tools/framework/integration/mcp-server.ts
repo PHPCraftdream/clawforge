@@ -198,7 +198,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
               name,
               description: toolDescription(command),
               inputSchema: inputSchema(command),
-              ...(command.structured === true ? { outputSchema: STRUCTURED_OUTPUT_SCHEMA } : {}),
+              ...(command.structured === true || command.structuredWhen?.(["verify"]) === true ? { outputSchema: STRUCTURED_OUTPUT_SCHEMA } : {}),
             })),
             ...gateTools.map((command) => ({
               name: command.name,
@@ -275,7 +275,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           // command that reports findings and then fails on them — doctor is the one that
           // does — still emitted a valid document, and that is what the caller needs most
           // in exactly that case.
-          const structured = command.structured === true
+          const structured = (command.structured === true || command.structuredWhen?.(argv) === true)
             ? structuredResult(effectiveCommand, machineOutput ?? output, `${name}-${Date.now().toString(36)}`)
             : undefined;
           const responseStructured = failure === undefined || structured === undefined

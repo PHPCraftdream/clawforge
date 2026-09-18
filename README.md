@@ -463,6 +463,10 @@ MCP, while each hook owns its domain-specific config and checks. Use the public
 `@clawforge/framework/private-config` helpers for generated credentials, atomic owner-only files,
 env updates and checksums; the framework never prints the values.
 
+Mixed command groups may declare structured output only for selected actions. The recipe tool
+therefore keeps install/list/status as human progress while verify/onboard can return a stable
+machine-readable result beside the text.
+
 `recipe import <source> [name]` copies an app-owned recipe into a deployment, refuses to
 overwrite an existing recipe, and excludes `.env`, `secrets/`, token files, user registries and
 generated credential files. This keeps domain-specific sidecars outside the framework core while

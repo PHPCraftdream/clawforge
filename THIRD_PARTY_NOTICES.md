@@ -15,8 +15,8 @@ The adapted file is `tools/framework/docker-compose.yml` in source form and
 `dist/docker-compose.yml` in the npm package. Changes made by ClawForge include the image-only
 workflow, explicit host bind mounts, loopback-by-default port publishing, and the healthcheck.
 
-## Recipe sources
+## App-owned recipe sources
 
-The optional `tor-socks5` recipe in the deployment example clones its own upstream source at
-build time. It is disabled by default and is not part of the `@clawforge/framework` npm
-package. Review that project's license before enabling or redistributing the recipe.
+Recipes are application-owned and may clone or build their own upstream sources at build time.
+They are not part of the `@clawforge/framework` npm package; review each recipe's source,
+license and pin before enabling or redistributing it.

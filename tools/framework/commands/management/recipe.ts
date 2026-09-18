@@ -4,9 +4,13 @@
 // Building happens on the target: a Rust or Go build from scratch takes minutes, and the
 // output is streamed rather than swallowed — silent waiting looks like a hang.
 
+import { cp, access } from "node:fs/promises";
+import { basename, relative, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/log.ts";
+import { pathToFileURL } from "node:url";
 import type { Context } from "#src/core/context.ts";
-import { listAgentBundleRecipes, listRecipes, loadRecipe, projectName, type Recipe } from "#src/service/recipe.ts";
+import { listAgentBundleRecipes, listRecipes, loadRecipe, projectName, recipesDirectory, type Recipe } from "#src/service/recipe.ts";
+import { safeName } from "#src/core/names.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { isCaptured, emit } from "#src/core/output.ts";
 import { takeTail } from "../lifecycle/lifecycle.ts";
@@ -18,7 +22,7 @@ export const RECIPE_DEFAULT_ACTION = "list";
  *  readOnlyWhen — which is asked from built argv, where an omitted action is no longer
  *  visibly the default — so the two cannot disagree about bare `recipe` again: the gate
  *  once demanded a confirmation the console would never have asked for. */
-const RECIPE_READ_ONLY_ACTIONS: readonly string[] = [RECIPE_DEFAULT_ACTION, "status", "logs"];
+const RECIPE_READ_ONLY_ACTIONS: readonly string[] = [RECIPE_DEFAULT_ACTION, "status", "logs", "verify"];
 
 export function recipeActionIsReadOnly(argv: string[]): boolean {
   return RECIPE_READ_ONLY_ACTIONS.includes(argv[0] ?? RECIPE_DEFAULT_ACTION);
@@ -40,6 +44,34 @@ function describe(recipe: Recipe): void {
 async function stackFor(ctx: Context, name: string) {
   const recipe = await loadRecipe(name);
   return { recipe, stack: ctx.runtime.stack(projectName(deploymentName(), name), recipe.definitionPath) };
+}
+
+/** Loads app-owned hooks without teaching the framework what the recipe means. */
+async function loadRecipeHooks(spec: Recipe): Promise<Record<string, unknown>> {
+  if (spec.preparePath === undefined) return {};
+  return (await import(pathToFileURL(spec.preparePath).href)) as Record<string, unknown>;
+}
+
+async function prepareRecipe(ctx: Context, spec: Recipe): Promise<Record<string, unknown>> {
+  const loaded = await loadRecipeHooks(spec);
+  const prepare = loaded.prepare ?? loaded.default;
+  if (spec.preparePath !== undefined && typeof prepare !== "function") {
+    die(`recipe "${spec.name}" prepare.ts must export prepare(ctx, recipe)`);
+  }
+  if (typeof prepare === "function") await prepare(ctx, spec);
+  return loaded;
+}
+
+async function runRecipeHook(ctx: Context, spec: Recipe, kind: "verify" | "onboard"): Promise<void> {
+  const path = kind === "verify" ? spec.verifyPath : spec.onboardPath;
+  if (path === undefined) die(`recipe "${spec.name}" has no ${kind}.ts hook`);
+  const loaded = (await import(pathToFileURL(path).href)) as Record<string, unknown>;
+  const hook = loaded[kind] ?? loaded.default;
+  if (typeof hook !== "function") die(`recipe "${spec.name}" ${kind}.ts must export ${kind}(ctx, recipe)`);
+  const result = await hook(ctx, spec);
+  const payload = result === undefined ? { ok: true } : result;
+  if (isCaptured()) emit(`${JSON.stringify(payload)}\n`);
+  else log(`${spec.name} ${kind}: ${JSON.stringify(payload)}`);
 }
 
 export async function recipe(ctx: Context, args: string[]): Promise<void> {
@@ -72,6 +104,44 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
   if (name === undefined) die(`usage: ./clawforge recipe ${action} <name>`);
 
   switch (action) {
+    case "import": {
+      const source = resolve(name);
+      const importedName = rest[0] ?? basename(source);
+      if (rest.length > 1) die(`unknown argument: ${rest[1]}`);
+      safeName("recipe", importedName);
+      try { await access(resolve(source, "recipe.json")); } catch { die(`recipe source has no recipe.json: ${source}`); }
+      const destination = resolve(recipesDirectory(), importedName);
+      try {
+        await access(destination);
+        die(`recipe "${importedName}" already exists at ${destination}`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      const sensitive = /(^|[\\/])(?:\.env(?:\..*)?|secrets(?:[\\/]|$)|.*\.token$|.*\.secrets\.env$|proxy-credentials\.env$|.*\.users\.ktav$)/i;
+      await cp(source, destination, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+        filter: (entry) => !sensitive.test(relative(source, entry).replaceAll("\\", "/")),
+      });
+      log(`imported recipe "${importedName}"`);
+      info(`source: ${source}`);
+      info(`destination: ${destination}`);
+      return;
+    }
+
+    case "verify": {
+      const { recipe: spec } = await stackFor(ctx, name);
+      await runRecipeHook(ctx, spec, "verify");
+      return;
+    }
+
+    case "onboard": {
+      const { recipe: spec } = await stackFor(ctx, name);
+      await runRecipeHook(ctx, spec, "onboard");
+      return;
+    }
+
     case "install": {
       const { recipe: spec, stack } = await stackFor(ctx, name);
 
@@ -95,10 +165,13 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
         die(`add the missing variable(s) to .env, then run this again`);
       }
 
+      const hooks = await prepareRecipe(ctx, spec);
+
       log(`building ${spec.name} (this compiles from source and can take minutes)`);
       await stack.build();
       log(`starting ${spec.name}`);
       await stack.up();
+      if (typeof hooks.afterStart === "function") await hooks.afterStart(ctx, spec);
       log(`${spec.name} is running`);
       for (const port of spec.ports ?? []) {
         info(`port ${port.host} -> ${port.container}${port.description ? ` (${port.description})` : ""}`);

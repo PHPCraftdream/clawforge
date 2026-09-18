@@ -39,6 +39,10 @@
     "./commands": {
       "types": "./dist/commands/interface/index.d.ts",
       "default": "./dist/commands/interface/index.js"
+    },
+    "./private-config": {
+      "types": "./dist/security/private-config.d.ts",
+      "default": "./dist/security/private-config.js"
     }
   },
   "files": [

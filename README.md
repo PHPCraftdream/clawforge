@@ -438,8 +438,11 @@ comes in two flavours, and a recipe may be either or both.
 
 ```bash
 ./clawforge recipe list
+./clawforge recipe import <source> [name]
 ./clawforge recipe install <name>
 ./clawforge recipe status <name>
+./clawforge recipe verify <name>
+./clawforge recipe onboard <name>
 ./clawforge recipe remove <name> [--volumes]
 ```
 
@@ -454,9 +457,16 @@ a first install on a server takes as long as the build.
 A recipe can sit in the repository switched off — `"enabled": false` in `recipe.json`.
 `install` then refuses and points at `--force-disabled`.
 
-> The `tor-socks5` recipe (SOCKS5 over Tor, Rust) is currently **disabled**: the build takes
-> minutes. It is written and ready, but has **not been verified live** — neither the proxy
-> itself nor its autostart.
+An app-owned recipe may also contain `prepare.ts`, `verify.ts` and `onboard.ts`. The framework
+runs these hooks around the service lifecycle and exposes `recipe verify`/`recipe onboard` over
+MCP, while each hook owns its domain-specific config and checks. Use the public
+`@clawforge/framework/private-config` helpers for generated credentials, atomic owner-only files,
+env updates and checksums; the framework never prints the values.
+
+`recipe import <source> [name]` copies an app-owned recipe into a deployment, refuses to
+overwrite an existing recipe, and excludes `.env`, `secrets/`, token files, user registries and
+generated credential files. This keeps domain-specific sidecars outside the framework core while
+giving every application the same safe lifecycle and MCP surface.
 
 **An MCP server plus an agent to use it**: `server.ts` (a stdio MCP server) and an `agent/`
 directory.

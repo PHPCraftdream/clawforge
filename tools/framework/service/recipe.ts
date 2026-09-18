@@ -4,6 +4,9 @@
 //
 //   recipe.json    metadata — description, published ports, required variables
 //   compose.yml    the service definition, with restart: unless-stopped
+//   prepare.ts    optional app-owned preparation/afterStart hooks around build/up
+//   verify.ts     optional app-owned read-only verification hook
+//   onboard.ts    optional app-owned onboarding hook
 //   Dockerfile     multi-stage build: cloning and compiling happen in the build stage,
 //                  so git, toolchains and sources never reach the host or the final image
 //
@@ -64,6 +67,10 @@ export interface Recipe {
   /** The stack definition inside it. Part of the recipe format, so applications do not
    *  hardcode the file name. */
   readonly definitionPath: string;
+  /** Optional app-owned preparation hook file, run before build and after start. */
+  readonly preparePath?: string;
+  readonly verifyPath?: string;
+  readonly onboardPath?: string;
   /** A recipe can be kept in the repository without being installable — useful when its
    *  build is expensive and nobody needs the service yet. Defaults to enabled. */
   readonly enabled: boolean;
@@ -113,6 +120,9 @@ export async function loadRecipe(name: string): Promise<Recipe> {
       : undefined,
     directory,
     definitionPath: resolve(directory, "compose.yml"),
+    preparePath: await access(resolve(directory, "prepare.ts")).then(() => resolve(directory, "prepare.ts"), () => undefined),
+    verifyPath: await access(resolve(directory, "verify.ts")).then(() => resolve(directory, "verify.ts"), () => undefined),
+    onboardPath: await access(resolve(directory, "onboard.ts")).then(() => resolve(directory, "onboard.ts"), () => undefined),
   };
 }
 

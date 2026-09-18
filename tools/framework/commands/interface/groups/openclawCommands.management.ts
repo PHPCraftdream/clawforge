@@ -152,15 +152,20 @@ export const managementCommands: Record<string, AppCommand> = {
       "or volumes.\n" +
       "Building happens on the target (a fresh Rust or Go build takes minutes and streams " +
       "rather than hangs silently); a recipe kept in the repository but marked disabled " +
-      "refuses `install` unless --force-disabled is given.",
+      "refuses `install` unless --force-disabled is given. An optional recipes/<name>/prepare.ts " +
+      "hook belongs to the application and may generate private target config before build or " +
+      "reconcile the running service afterwards; " +
+      "verify.ts and onboard.ts hooks expose app-owned checks and onboarding through MCP; " +
+      "recipe import copies an app-owned recipe without overwriting an existing one; the " +
+      "framework does not interpret domain-specific fields.",
     arguments: [
       {
         name: "action",
         description: "What to do with the recipe",
         kind: "positional",
-        choices: ["list", "install", "remove", "status", "logs"],
+        choices: ["list", "import", "install", "remove", "status", "logs", "verify", "onboard"],
       },
-      { name: "name", description: "Recipe name", kind: "positional" },
+      { name: "name", description: "Recipe name, or destination name for import", kind: "positional" },
       { name: "volumes", description: "With remove: delete its volumes too", kind: "flag" },
       { name: "tail", description: "With logs: lines to return when reading rather than following", kind: "option" },
       {

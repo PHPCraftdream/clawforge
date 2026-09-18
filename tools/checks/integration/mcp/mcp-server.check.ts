@@ -159,7 +159,13 @@ try {
     check("bare recipe arguments are read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.([]), true);
     check("recipe list remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["list"]), true);
     check("recipe status remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["status"]), true);
-    check("recipe logs remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["logs"]), true);
+  check("recipe logs remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["logs"]), true);
+  check("recipe verify remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["verify"]), true);
+  check("recipe onboard is mutating for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["onboard"]), false);
+  const recipeProperties = inputSchema(openclawCommands.recipe!).properties as Record<string, { enum?: string[] }> | undefined;
+  const recipeActionSchema = recipeProperties?.action;
+  deep("recipe MCP schema documents import/verify/onboard actions", recipeActionSchema?.enum, ["list", "import", "install", "remove", "status", "logs", "verify", "onboard"]);
+  check("recipe help explains app-owned hooks", toolDescription(openclawCommands.recipe!).includes("prepare.ts"), true);
     check("recipe install remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["install"]), false);
     check("recipe remove remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["remove"]), false);
 

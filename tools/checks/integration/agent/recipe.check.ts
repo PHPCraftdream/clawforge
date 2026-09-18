@@ -6,7 +6,7 @@
 // actual disk I/O rather than a mock of node:fs. The scratch directory is removed in a
 // finally block so a failed assertion does not leave litter.
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { recipe } from "#framework/commands/management/recipe.ts";
@@ -117,6 +117,15 @@ try {
     description: "Needs a variable that is not set",
     variables: { API_KEY: "required by the upstream service" },
   });
+  await writeRecipe("prepared", { description: "Prepared recipe" });
+  await writeFile(
+    resolve(scratch, "prepared", "prepare.ts"),
+    "export async function prepare(ctx) { if (ctx.settings.env.PREPARE_TEST !== \"yes\") throw new Error(\"prepare hook did not receive the context\"); }\n" +
+      "export async function afterStart(ctx) { if (ctx.settings.env.PREPARE_TEST !== \"yes\") throw new Error(\"afterStart hook did not receive the context\"); }\n",
+    "utf8",
+  );
+  await writeFile(resolve(scratch, "prepared", "verify.ts"), "export async function verify() { return { ok: true, kind: \"verify\" }; }\n", "utf8");
+  await writeFile(resolve(scratch, "prepared", "onboard.ts"), "export async function onboard() { return { ok: true, kind: \"onboard\" }; }\n", "utf8");
 
   // --- safeName runs before any file is touched -----------------------------------
 
@@ -166,6 +175,9 @@ try {
   check("ports pass through as-is", withExtras.ports, [{ container: 80, host: 8080, description: "web" }]);
   check("variables pass through as-is", withExtras.variables, { FOO: "needed for the web UI" });
   check("source passes through", withExtras.source, "https://example.com/with-extras");
+  check("recipe preparation hook is discovered", (await loadRecipe("prepared")).preparePath?.endsWith("prepare.ts"), true);
+  check("recipe verification hook is discovered", (await loadRecipe("prepared")).verifyPath?.endsWith("verify.ts"), true);
+  check("recipe onboarding hook is discovered", (await loadRecipe("prepared")).onboardPath?.endsWith("onboard.ts"), true);
 
   // --- listRecipes skips broken directories without aborting the scan ----------------
 
@@ -174,7 +186,7 @@ try {
   check(
     "listRecipes returns every loadable recipe and silently skips the broken ones",
     names,
-    ["disabled", "needs-var", "plain", "with-extras"],
+    ["disabled", "needs-var", "plain", "prepared", "with-extras"],
   );
 
   check("bundle recipes are named separately from service recipes", await listAgentBundleRecipes(), ["bundle-only"]);
@@ -268,6 +280,46 @@ try {
     const { ctx, calls } = stubContext({ API_KEY: "secret" });
     await withOutputSink(() => {}, () => recipe(ctx, ["install", "needs-var"]));
     check("build then up are called once every guard is satisfied", calls, ["build", "up"]);
+  }
+
+  {
+    const { ctx, calls } = stubContext({ PREPARE_TEST: "yes" });
+    await withOutputSink(() => {}, () => recipe(ctx, ["install", "prepared"]));
+    check("an app-owned preparation hook runs before the sidecar build", calls, ["build", "up"]);
+  }
+
+  {
+    const { ctx } = stubContext({});
+    let output = "";
+    await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["verify", "prepared"]));
+    check("recipe verify exposes the app-owned machine result", output.includes('"kind":"verify"'), true);
+    output = "";
+    await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["onboard", "prepared"]));
+    check("recipe onboard exposes the app-owned machine result", output.includes('"kind":"onboard"'), true);
+  }
+
+  {
+    const importedRoot = resolve(tmpdir(), `clawforge-recipe-import-${Date.now()}`);
+    const importedSource = resolve(importedRoot, "source-recipe");
+    try {
+      await mkdir(importedSource, { recursive: true });
+      await writeFile(resolve(importedSource, "recipe.json"), JSON.stringify({ description: "Imported" }), "utf8");
+      await writeFile(resolve(importedSource, ".env"), "SECRET=must-not-copy\n", "utf8");
+      await mkdir(resolve(importedSource, "secrets"), { recursive: true });
+      await writeFile(resolve(importedSource, "secrets", "local.env"), "SECRET=must-not-copy\n", "utf8");
+      useRecipesDir(resolve(importedRoot, "target-recipes"));
+      await mkdir(resolve(importedRoot, "target-recipes"), { recursive: true });
+      const { ctx } = stubContext({});
+      await withOutputSink(() => {}, () => recipe(ctx, ["import", importedSource, "imported"]));
+      check("recipe import copies an app-owned recipe", await access(resolve(importedRoot, "target-recipes", "imported", "recipe.json")).then(() => true, () => false), true);
+      check("recipe import excludes .env", await access(resolve(importedRoot, "target-recipes", "imported", ".env")).then(() => false, () => true), true);
+      check("recipe import excludes secrets directory", await access(resolve(importedRoot, "target-recipes", "imported", "secrets")).then(() => false, () => true), true);
+      const message = await messageOf("recipe import refuses overwrite", () => recipe(ctx, ["import", importedSource, "imported"]));
+      check("recipe import names the existing destination", message.includes("already exists"), true);
+    } finally {
+      useRecipesDir(scratch);
+      await rm(importedRoot, { recursive: true, force: true });
+    }
   }
 } finally {
   await rm(scratch, { recursive: true, force: true });

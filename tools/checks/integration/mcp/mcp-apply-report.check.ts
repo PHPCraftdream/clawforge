@@ -11,7 +11,7 @@ import { spawnLocal } from "#framework/runtime/transport.ts";
 const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-apply-report-"));
 try {
   await mkdir(join(root, "config"));
-  const token = "synthetic-mcp-failure-token";
+  const token = 'synthetic-mcp-"failure' + String.fromCharCode(92) + "token";
   await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_TOKEN=${token}\n`);
   const moduleUrl = (path: string): string => new URL(`../../../framework/${path}.ts`, import.meta.url).href;
   const script = `
@@ -29,7 +29,11 @@ try {
       emit(JSON.stringify({deployment:"fixture",operationId:"fixture",changed:true,target,healthy:true,problems:[],nextActions:[]})+"\\n");
     }};
     useDeployment(${JSON.stringify(root)});
-    const explode={summary:"fixture failure",run:async(ctx)=>{throw new Error("failure "+ctx.settings.env.OPENCLAW_GATEWAY_TOKEN)}};
+    const explode={summary:"fixture failure",structured:true,run:async(ctx)=>{
+      const token=ctx.settings.env.OPENCLAW_GATEWAY_TOKEN;
+      emit(JSON.stringify({operationId:"explode",changed:true,problems:[{detail:token}],warnings:[token],nextActions:[token],result:{detail:token,[token]:token}})+"\\n");
+      throw new Error("failure "+token);
+    }};
     await serveMcp({name:"fixture",commands:{apply,explode}});
   `;
   const requests = [
@@ -47,12 +51,24 @@ try {
   const responses = result.stdout
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line) as { id: number; result?: { isError?: boolean; structuredContent?: Record<string, unknown> } });
+    .map((line) => JSON.parse(line) as {
+      id: number;
+      result?: {
+        isError?: boolean;
+        content?: Array<{ type?: string; text?: string }>;
+        structuredContent?: Record<string, unknown>;
+      };
+    });
   const byId = new Map(responses.map((response) => [response.id, response]));
   const dryRun = byId.get(1)?.result?.structuredContent;
   const ordinary = byId.get(2)?.result?.structuredContent;
   const listed = byId.get(3)?.result;
   const failed = byId.get(4)?.result;
+  const escapedToken = JSON.stringify(token).slice(1, -1);
+  const failedText = (failed?.content ?? [])
+    .filter((entry) => entry.type === "text")
+    .map((entry) => entry.text ?? "")
+    .join("\n");
 
   assert.equal(dryRun?.changed, false, "MCP apply --dry-run must be reported as read-only");
   assert.equal((dryRun?.result as { target?: number } | undefined)?.target, 0, "dry-run must leave the target unchanged");
@@ -61,6 +77,8 @@ try {
   assert.equal((ordinary?.result as { target?: number } | undefined)?.target, 1, "ordinary apply must update the target");
   assert.equal(failed?.isError, true, "failed MCP commands report an error");
   assert.equal(JSON.stringify(failed).includes(token), false, "MCP failures mask registered secrets");
+  assert.equal(failedText.includes(escapedToken), false, "MCP text failures mask JSON-escaped registered secrets");
+  assert.equal(JSON.stringify(failed?.structuredContent).includes(escapedToken), false, "structured MCP failures mask JSON-escaped registered secrets in values and keys");
   const tool = ((listed as { tools?: Array<{ name: string; outputSchema?: unknown }> } | undefined)?.tools ?? [])
     .find((entry) => entry.name === "apply");
   assert.notEqual(tool?.outputSchema, undefined, "apply keeps its structured output schema");

@@ -34,10 +34,16 @@ export function registerSecret(value: string | undefined): void {
   secrets.add(trimmed);
 }
 
-/** Replaces every registered secret with a marker. */
+/** Replaces every registered secret and its JSON-escaped form with a marker. */
 export function maskSecrets(text: string): string {
   let masked = text;
-  for (const secret of secrets) masked = masked.split(secret).join("***");
+  for (const secret of secrets) {
+    masked = masked.split(secret).join("***");
+    // JSON escapes quotes and backslashes before a structured payload is printed. Mask the
+    // escaped body too, while keeping its surrounding quotes so the output stays readable.
+    const encoded = JSON.stringify(secret);
+    if (encoded !== undefined) masked = masked.split(encoded.slice(1, -1)).join("***");
+  }
   return masked;
 }
 

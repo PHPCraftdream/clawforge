@@ -154,14 +154,15 @@ export function planActions(inspection: Inspection): PlanAction[] {
       command: "./clawforge up",
       because: found(problems, "GATEWAY_DOWN"),
     });
-  } else if (has(problems, "RESTART_REQUIRED", "CONFIG_DRIFT")) {
-    // CONFIG_DRIFT counts here even when the instance has not been told yet: the step above
-    // is about to write a configuration it will not read until it restarts.
+  } else if (has(problems, "RESTART_REQUIRED", "CONFIG_DRIFT") ||
+    (inspection.observed.running && has(problems, "SECRET_MISSING"))) {
+    // Drift and newly installed secrets are read only at startup. A stopped instance takes
+    // the `up` branch above, so only a running one needs this restart.
     actions.push({
       id: "restart",
       summary: "restart so the instance reads the configuration on disk",
       command: "./clawforge restart",
-      because: found(problems, "RESTART_REQUIRED", "CONFIG_DRIFT"),
+      because: found(problems, "RESTART_REQUIRED", "CONFIG_DRIFT", "SECRET_MISSING"),
     });
   }
 

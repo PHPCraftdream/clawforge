@@ -28,7 +28,7 @@ import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "./provision.ts";
 import { maskSecrets, UserError } from "../core/log.ts";
 import { withOutputSink } from "../core/output.ts";
-import { structuredResult, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./mcp-schema.ts";
+import { maskStructuredResult, structuredResult, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./mcp-schema.ts";
 
 export * from "./mcp-schema.ts";
 
@@ -278,6 +278,9 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           const structured = command.structured === true
             ? structuredResult(effectiveCommand, machineOutput ?? output, `${name}-${Date.now().toString(36)}`)
             : undefined;
+          const responseStructured = failure === undefined || structured === undefined
+            ? structured
+            : maskStructuredResult(structured);
 
           if (failure === undefined) {
             reply(request.id, {
@@ -292,7 +295,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           reply(request.id, {
             isError: true,
             content: [{ type: "text", text: maskSecrets(output === "" ? failure : `${output}\n\n${failure}`) }],
-            ...(structured === undefined ? {} : { structuredContent: structured }),
+            ...(responseStructured === undefined ? {} : { structuredContent: responseStructured }),
           });
         } catch (error) {
           // Left for what captureRun cannot catch: a failure while building the sink itself.

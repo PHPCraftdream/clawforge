@@ -71,6 +71,9 @@ check("a clean inspection produces an empty plan", ids([]), []);
 // up may be attempted first.
 check("secrets come before anything that needs the instance", ids([problem("SECRET_MISSING", "x"), problem("CONFIG_DRIFT", "y")]).slice(0, 2), ["secrets", "apply-config"]);
 
+check("a missing secret on a running instance is followed by a restart", ids([problem("SECRET_MISSING", "x")]), ["secrets", "restart"]);
+check("a missing secret on a stopped instance is handled by its start", ids([problem("GATEWAY_DOWN", "not running"), problem("SECRET_MISSING", "x")], false), ["secrets", "up"]);
+
 // Configuration is read at startup. Applied after the restart, it would need a second one —
 // which is exactly the mistake this order exists to prevent.
 check("configuration is applied before the restart that reads it", ids([problem("CONFIG_DRIFT", "y")]), ["apply-config", "restart"]);

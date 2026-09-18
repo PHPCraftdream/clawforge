@@ -5,6 +5,7 @@
 // its own name, so every external importer keeps importing from "./mcp-server.ts" unchanged.
 
 import type { CommandArgument } from "../core/app.ts";
+import { maskSecrets } from "../core/log.ts";
 
 /** What the functions below need from a command, and all they need: the description a
  *  client reads, and the arguments the schema, the validation and the argv are derived from.
@@ -97,9 +98,22 @@ export function structuredResult(command: Declared, output: string, operationId:
   };
 }
 
-/** What a chat client sees for a tool. `details` — the same text `./clawforge help <command>`
- *  prints — is folded in here too: a client picking a tool by name alone is exactly the
- *  situation the longer explanation exists for. */
+/** Masks credential values in a structured error without changing its shape. */
+function maskStructuredValue(value: unknown): unknown {
+  if (typeof value === "string") return maskSecrets(value);
+  if (Array.isArray(value)) return value.map(maskStructuredValue);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [maskSecrets(key), maskStructuredValue(entry)]));
+  }
+  return value;
+}
+
+/** Masks all nested credential values and keys in a structured error. */
+export function maskStructuredResult(result: StructuredResult): StructuredResult {
+  return maskStructuredValue(result) as StructuredResult;
+}
+
+/** Builds the description a chat client sees for a tool. */
 export function toolDescription(command: Declared): string {
   const parts = [command.summary];
   if (command.details !== undefined) parts.push(command.details);

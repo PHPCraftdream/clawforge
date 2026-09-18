@@ -28,7 +28,7 @@ import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "./provision.ts";
 import { maskSecrets, UserError } from "../core/log.ts";
 import { withOutputSink } from "../core/output.ts";
-import { maskStructuredResult, structuredResult, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./mcp-schema.ts";
+import { maskStructuredOutput, maskStructuredResult, structuredResult, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./mcp-schema.ts";
 
 export * from "./mcp-schema.ts";
 
@@ -292,9 +292,13 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
 
           // The command's own output first, then why it stopped — the order a console shows
           // them in, and the order that reads as an explanation rather than a bare verdict.
+          const failureOutput = structured === undefined ? output : maskStructuredOutput(output, machineOutput, structured);
           reply(request.id, {
             isError: true,
-            content: [{ type: "text", text: maskSecrets(output === "" ? failure : `${output}\n\n${failure}`) }],
+            content: [{
+              type: "text",
+              text: maskSecrets(failureOutput === "" ? failure : `${failureOutput}\n\n${failure}`),
+            }],
             ...(responseStructured === undefined ? {} : { structuredContent: responseStructured }),
           });
         } catch (error) {

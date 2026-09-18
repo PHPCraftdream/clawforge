@@ -39,12 +39,32 @@ export function maskSecrets(text: string): string {
   let masked = text;
   for (const secret of secrets) {
     masked = masked.split(secret).join("***");
-    // JSON escapes quotes and backslashes before a structured payload is printed. Mask the
-    // escaped body too, while keeping its surrounding quotes so the output stays readable.
-    const encoded = JSON.stringify(secret);
-    if (encoded !== undefined) masked = masked.split(encoded.slice(1, -1)).join("***");
+    // JSON permits each character to use a short escape or a Unicode escape. Match those
+    // spellings too, so a client cannot decode an otherwise masked error response.
+    masked = masked.replace(secretPattern(secret), "***");
   }
   return masked;
+}
+
+function regexEscape(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function unicodeEscape(code: number): string {
+  const hex = code.toString(16).padStart(4, "0");
+  const digits = [...hex].map((digit) => /[a-f]/i.test(digit) ? `[${digit.toLowerCase()}${digit.toUpperCase()}]` : digit).join("");
+  return `\\\\[uU]${digits}`;
+}
+
+function secretPattern(secret: string): RegExp {
+  const pieces = [...secret].map((character) => {
+    const json = JSON.stringify(character);
+    const jsonBody = json === undefined ? character : json.slice(1, -1);
+    const escaped = Array.from({ length: character.length }, (_, index) => unicodeEscape(character.charCodeAt(index))).join("");
+    const variants = [regexEscape(character), regexEscape(jsonBody), escaped];
+    return `(?:${variants.filter((entry, index, all) => all.indexOf(entry) === index).join("|")})`;
+  });
+  return new RegExp(pieces.join(""), "g");
 }
 
 /** Progress line. Goes to stderr so stdout stays usable for machine-readable output.

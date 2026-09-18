@@ -23,6 +23,7 @@ registerSecret("short");
 
 check("secret is replaced", maskSecrets(`key=${SECRET}`), "key=***");
 check("every occurrence is replaced", maskSecrets(`${SECRET} ${SECRET}`), "*** ***");
+check("Unicode-escaped JSON text is replaced", maskSecrets(`{"secret":"\\u0073k-test-0123456789abcdef"}`), '{"secret":"***"}');
 check("short values are not registered", maskSecrets("short"), "short");
 check("unrelated text is untouched", maskSecrets("nothing to hide"), "nothing to hide");
 

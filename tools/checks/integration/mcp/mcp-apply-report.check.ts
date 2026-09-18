@@ -19,6 +19,7 @@ try {
     const {useDeployment}=await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
     const {openclawCommands}=await import(${JSON.stringify(moduleUrl("commands/interface/index"))});
     const {emit}=await import(${JSON.stringify(moduleUrl("core/output"))});
+    const {registerSecret}=await import(${JSON.stringify(moduleUrl("core/log"))});
     let target=0;
     const apply={...openclawCommands.apply,run:async(_ctx,args)=>{
       if (args.includes("--dry-run")) {
@@ -31,8 +32,11 @@ try {
     useDeployment(${JSON.stringify(root)});
     const explode={summary:"fixture failure",structured:true,run:async(ctx)=>{
       const token=ctx.settings.env.OPENCLAW_GATEWAY_TOKEN;
-      emit(JSON.stringify({operationId:"explode",changed:true,problems:[{detail:token}],warnings:[token],nextActions:[token],result:{detail:token,[token]:token}})+"\\n");
-      throw new Error("failure "+token);
+      const secondToken="synthetic-mcp-unicode-token";
+      registerSecret(secondToken);
+      const payload=JSON.stringify({operationId:"explode",changed:true,problems:[{detail:token}],warnings:[token,secondToken],nextActions:[token],result:{detail:token,diagnostics:{[token]:"first",[secondToken]:"second","***":"third"}}});
+      emit(payload.replace(secondToken,String.fromCharCode(92)+"u0073"+secondToken.slice(1))+"\\n");
+      throw new Error("failure "+token+" "+secondToken);
     }};
     await serveMcp({name:"fixture",commands:{apply,explode}});
   `;
@@ -65,10 +69,12 @@ try {
   const listed = byId.get(3)?.result;
   const failed = byId.get(4)?.result;
   const escapedToken = JSON.stringify(token).slice(1, -1);
+  const escapedUnicodeToken = String.fromCharCode(92) + "u0073" + "synthetic-mcp-unicode-token".slice(1);
   const failedText = (failed?.content ?? [])
     .filter((entry) => entry.type === "text")
     .map((entry) => entry.text ?? "")
     .join("\n");
+  const failedPayload = JSON.parse(failedText.split("\n\n")[0]) as { result?: { diagnostics?: Record<string, unknown> } };
 
   assert.equal(dryRun?.changed, false, "MCP apply --dry-run must be reported as read-only");
   assert.equal((dryRun?.result as { target?: number } | undefined)?.target, 0, "dry-run must leave the target unchanged");
@@ -78,7 +84,14 @@ try {
   assert.equal(failed?.isError, true, "failed MCP commands report an error");
   assert.equal(JSON.stringify(failed).includes(token), false, "MCP failures mask registered secrets");
   assert.equal(failedText.includes(escapedToken), false, "MCP text failures mask JSON-escaped registered secrets");
+  assert.equal(failedText.includes(escapedUnicodeToken), false, "MCP text failures mask Unicode-escaped registered secrets");
   assert.equal(JSON.stringify(failed?.structuredContent).includes(escapedToken), false, "structured MCP failures mask JSON-escaped registered secrets in values and keys");
+  const diagnostics = ((failed?.structuredContent?.result as { result?: { diagnostics?: Record<string, unknown> } } | undefined)?.result?.diagnostics) ?? {};
+  assert.equal(Object.keys(diagnostics).length, 3, "masked diagnostic keys remain unique");
+  assert.deepEqual(new Set(Object.values(diagnostics)), new Set(["first", "second", "third"]), "masked diagnostics preserve every value");
+  const textDiagnostics = failedPayload.result?.diagnostics ?? {};
+  assert.equal(Object.keys(textDiagnostics).length, 3, "masked text diagnostic keys remain unique");
+  assert.deepEqual(new Set(Object.values(textDiagnostics)), new Set(["first", "second", "third"]), "masked text diagnostics preserve every value");
   const tool = ((listed as { tools?: Array<{ name: string; outputSchema?: unknown }> } | undefined)?.tools ?? [])
     .find((entry) => entry.name === "apply");
   assert.notEqual(tool?.outputSchema, undefined, "apply keeps its structured output schema");

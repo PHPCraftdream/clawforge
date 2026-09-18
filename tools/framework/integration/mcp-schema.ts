@@ -103,7 +103,17 @@ function maskStructuredValue(value: unknown): unknown {
   if (typeof value === "string") return maskSecrets(value);
   if (Array.isArray(value)) return value.map(maskStructuredValue);
   if (value !== null && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [maskSecrets(key), maskStructuredValue(entry)]));
+    const result: Record<string, unknown> = {};
+    const used = new Set<string>();
+    for (const [key, entry] of Object.entries(value)) {
+      const base = maskSecrets(key);
+      let maskedKey = base;
+      let suffix = 2;
+      while (used.has(maskedKey)) maskedKey = `${base}#${suffix++}`;
+      used.add(maskedKey);
+      result[maskedKey] = maskStructuredValue(entry);
+    }
+    return result;
   }
   return value;
 }
@@ -111,6 +121,15 @@ function maskStructuredValue(value: unknown): unknown {
 /** Masks all nested credential values and keys in a structured error. */
 export function maskStructuredResult(result: StructuredResult): StructuredResult {
   return maskStructuredValue(result) as StructuredResult;
+}
+
+/** Replaces the command's machine JSON inside captured progress text with its masked form. */
+export function maskStructuredOutput(output: string, machineOutput: string | undefined, result: StructuredResult): string {
+  if (machineOutput === undefined) return maskSecrets(output);
+  const safePayload = JSON.stringify(maskStructuredValue(result.result));
+  if (safePayload === undefined) return maskSecrets(output);
+  if (!output.includes(machineOutput)) return maskSecrets(output);
+  return maskSecrets(output.split(machineOutput).join(safePayload));
 }
 
 /** Builds the description a chat client sees for a tool. */

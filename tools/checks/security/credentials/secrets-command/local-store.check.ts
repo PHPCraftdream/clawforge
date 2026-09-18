@@ -228,6 +228,12 @@ try {
   let running = false;
   const applyCtx = {
     settings: { dataDir: "/srv/clawforge/data", env: {} },
+    applicationSecrets: async () => [{
+      name: "REPO_SECRET",
+      location: "repo-env" as const,
+      usedBy: "local-store check",
+      required: false,
+    }],
     runtime: {
       async isRunning(): Promise<boolean> {
         return running;
@@ -286,6 +292,8 @@ try {
     () => secrets(applyCtx, ["--init-store", "--store", "hint"]),
   );
   const hintStore = resolve(deployDir, "secrets", "hint.env");
+  const hintTemplate = await readFile(hintStore, "utf8");
+  check("a central store template includes repository requirements", hintTemplate.includes("REPO_SECRET="), true);
   await writeFile(hintStore, "ZAI_API_KEY=zai-value\n", "utf8");
 
   running = true;
@@ -429,6 +437,27 @@ try {
     check("applying a store that is not owner-only says so, naming the file", exposedOutput.includes(sealedStore) && exposedOutput.includes("not owner-only"), true);
     check("the exposure report never carries the value", exposedOutput.includes("zai-value"), false);
     check("the report is a warning, not a refusal — the values are still installed", targetEnvContent, "ZAI_API_KEY=zai-value\n");
+  }
+  {
+    // One local store can feed both runtime locations while preserving unrelated settings.
+    const repositoryEnv = resolve(deployDir, ".env");
+    const repositoryStore = resolve(secretsDirectory, "repo.env");
+    await writeFile(repositoryEnv, "KEEP_SETTING=keep\n", "utf8");
+    await writeFile(repositoryStore, "ZAI_API_KEY=zai-value\nREPO_SECRET=repo-value\n", "utf8");
+    targetEnvContent = "";
+
+    let repositoryOutput = "";
+    await withOutputSink(
+      (chunk) => {
+        repositoryOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--apply", "--store", "repo"]),
+    );
+    const deliveredRepositoryEnv = await readFile(repositoryEnv, "utf8");
+    check("one store delivers target values", targetEnvContent, "ZAI_API_KEY=zai-value\n");
+    check("one store delivers repository values", deliveredRepositoryEnv.includes("REPO_SECRET=repo-value"), true);
+    check("repository settings survive delivery", deliveredRepositoryEnv.includes("KEEP_SETTING=keep"), true);
+    check("delivery output never carries repository secret values", repositoryOutput.includes("repo-value"), false);
   }
 } finally {
   await teardownDeployment(deployDir);

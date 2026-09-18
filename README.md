@@ -183,7 +183,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `pull` | `[--profile ...] [--share] [--with-secrets] [--hot]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
 | `push` | `[<snapshot>] [--force] [--fresh-identity] [--break-lock]` | Push a snapshot back: restore → install keys if any travelled with it → check → start |
 | `verify` | `<archive> [--profile ...]` | Check an archive for credentials before sharing it — what `pull --share` does on its own |
-| `recipe` | `<list\|install\|remove\|status\|logs> [<name>] [--volumes] [--tail <n>] [--force-disabled]` | Third-party services beside the instance, each its own compose project |
+| `recipe` | `<list\|import\|install\|remove\|status\|logs\|verify\|onboard> [<name>] [--volumes] [--tail <n>] [--force-disabled]` | App-owned services beside the instance, each its own compose project and optional lifecycle hooks |
 | `provision-agent` | `<recipe> [--break-lock]` | Wire a recipe's MCP server to a dedicated agent: agent, workspace prompt files, MCP registration and an optional cron job |
 | `deploy` | `<user@host> [--path <dir>] [--no-bootstrap]` | Deploy to a server: the code is mirrored whole, the deployment by name and by file, credentials never leave this machine. Only from a checkout — installed as a package it refuses, since there is no checkout to mirror |
 | `mcp-serve` | — | stdio bridge to OpenClaw's channels — what a client from `.mcp.json` starts, not something to run by hand; execs into the persistent CLI container when it is up |
@@ -472,6 +472,13 @@ overwrite an existing recipe, and excludes `.env`, `secrets/`, token files, user
 generated credential files. This keeps domain-specific sidecars outside the framework core while
 giving every application the same safe lifecycle and MCP surface.
 
+Keep recipe code easy to maintain: use small typed modules with one responsibility, named
+constants for paths and protocol values, pure renderers for generated files, and thin lifecycle
+hooks that orchestrate those functions. Validate inputs at the boundary, keep secrets inside
+private-file helpers, return safe structured results, and document only the decisions a future
+maintainer cannot infer from the code. Run the repository typecheck, linter and recipe checks
+before shipping a recipe.
+
 **An MCP server plus an agent to use it**: `server.ts` (a stdio MCP server) and an `agent/`
 directory.
 
@@ -606,17 +613,21 @@ exactly one SecretRef (`OPENCLAW_GATEWAY_TOKEN`), while the provider key is neve
 there — OpenClaw resolves it by convention from the auth profile. Scanning the config alone
 is not enough.
 
-The variables live in two places that are not interchangeable:
+The runtime reads variables from two places, while the local store remains the single source of
+truth:
 
 | Location | Where | What |
 | --- | --- | --- |
-| `repo-env` | `.env` next to the repository | The gateway token (passed through compose) |
-| `target-env` | `<data>/config/.env` on the target | Provider keys (read by OpenClaw itself) |
+| `repo-env` | `.env` next to the repository | Values passed through compose |
+| `target-env` | `<data>/config/.env` on the target | Values read by OpenClaw itself |
 
 Per-target values live in `apps/<deployment>/secrets/<name>.env` — the deployment directory
 never enters the repository. One snapshot can be rolled out to different machines with
 different keys. Re-running `--init-store` against an existing file refuses: the values it
 would destroy exist nowhere else, and replacing them needs `--force`.
+
+The store is the source of truth: `secrets --apply` delivers each declared value to its
+runtime location, including the repository `.env` when a requirement belongs to `repo-env`.
 
 `./clawforge up` and `./clawforge bootstrap` refuse to start when something is missing: a refusal with a
 list beats a gateway crash-looping on `SecretRefResolutionError`.

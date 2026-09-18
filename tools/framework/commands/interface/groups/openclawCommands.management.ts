@@ -117,16 +117,17 @@ export const managementCommands: Record<string, AppCommand> = {
       "The manifest comes from two sources, not one: explicit SecretRefs in openclaw.json,\n" +
       "plus the conventional key each configured provider expects but never references " +
       "directly (scanning the config alone misses the provider key entirely).\n" +
-      "Each variable lives in exactly one of two places — repo-env (.env next to the " +
-      "repository, for the gateway token) or target-env (<data>/config/.env on the " +
-      "target, for provider keys) — and they are not interchangeable.\n" +
+      "Each variable is delivered to one of two runtime locations — repo-env (.env next to " +
+      "the repository) or target-env (<data>/config/.env on the target). The local store " +
+      "under secrets/ is the source of truth and --apply delivers each value to its declared " +
+      "location.\n" +
       "--template writes config/secrets.template.env (safe to commit: names only, no " +
       "values).\n" +
       "--init-store --store <name> creates apps/<deployment>/secrets/<name>.env to fill " +
       "in by hand —\n" +
       "it refuses to overwrite an existing store unless --force is given, since the " +
       "values it would destroy exist nowhere else.\n" +
-      "--apply --store <name> installs that store's values onto the target.\n" +
+      "--apply --store <name> installs that store's values into both runtime locations.\n" +
       "up/bootstrap refuse to start when something required is missing, rather than let " +
       "the gateway crash-loop.",
     arguments: [
@@ -139,7 +140,7 @@ export const managementCommands: Record<string, AppCommand> = {
     ],
   },
   recipe: {
-    summary: "Deploy services next to the instance (list, install, remove, status, logs)",
+    summary: "Deploy services next to the instance (list, import, install, remove, status, logs, verify, onboard)",
     run: recipe,
     // Only lifecycle changes need confirmation; the read-only set is defined once, beside
     // the dispatcher, so the gate and the command cannot drift apart again.

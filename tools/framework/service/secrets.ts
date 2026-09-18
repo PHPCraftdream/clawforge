@@ -11,7 +11,7 @@
 //  2. The variables live in two different places, and confusing them produces a gateway
 //     that starts and then fails to authenticate:
 //       repo-env    .env next to this checkout, injected into the container by compose.
-//                   This is where the gateway token belongs.
+//                   This is where compose-owned values belong.
 //       target-env  <data>/config/.env on the target, read by OpenClaw itself as its
 //                   trusted global environment. This is where provider keys belong.
 

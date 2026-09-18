@@ -8,19 +8,17 @@ import { writeFile, readFile, access } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/log.ts";
 import { emit } from "#src/core/output.ts";
 import { parseEnv } from "#src/core/env.ts";
-import { secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
+import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
 import { loadSecrets, dumpSecrets } from "../lifecycle/state.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replacePrivateFile, unprotectedPrivateFile } from "#src/security/private-file.ts";
+import { upsertEnvValue } from "#src/security/private-config.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
 
-/** Fills the target's config/.env from a local store, refusing on incomplete input.
- *
- *  Only target-env variables travel: the gateway token is generated locally by bootstrap
- *  and injected through compose, so copying it here would be wrong. */
+/** Delivers a local store to each declared secret location, refusing incomplete input. */
 async function applyStore(ctx: Context, storeName: string): Promise<void> {
   const path = secretStoreFile(storeName);
 
@@ -61,7 +59,7 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   // list and loadSecrets() would then overwrite config/.env down to just that list, deleting
   // every secret the missed requirement was for while reporting success.
   const prospective = prospectiveConfig(await readLiveConfigOrThrow(ctx), await readDeclaredConfig());
-  const needed = (await requirementsForConfig(ctx, prospective)).filter((entry) => entry.location === "target-env");
+  const needed = await requirementsForConfig(ctx, prospective);
 
   const absent = needed.filter((entry) => {
     if (!entry.required) return false;
@@ -77,7 +75,9 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
     const value = values[entry.name];
     return value !== undefined && value.trim() !== "";
   });
-  if (supplied.length === 0) {
+  const targetSupplied = supplied.filter((entry) => entry.location === "target-env");
+  const repoSupplied = supplied.filter((entry) => entry.location === "repo-env");
+  if (targetSupplied.length === 0 && repoSupplied.length === 0) {
     log(`no target secrets to apply from ${path}`);
     return;
   }
@@ -88,9 +88,9 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   // (the file is derived from the requirements), but it used to happen without a word, and a
   // variable that vanishes silently is one nobody thinks to put back. Names only: the values
   // are the secrets themselves.
-  const current = await dumpSecrets(ctx);
+  const current = targetSupplied.length > 0 ? await dumpSecrets(ctx) : undefined;
   if (current !== undefined) {
-    const keep = new Set(supplied.map((entry) => entry.name));
+    const keep = new Set(targetSupplied.map((entry) => entry.name));
     const dropped = Object.keys(parseEnv(current)).filter((name) => !keep.has(name));
     if (dropped.length > 0) {
       warn(`${secretsFileOnTarget(ctx)} also holds ${dropped.length} variable(s) not supplied by ${path}, which this replaces:`);
@@ -99,18 +99,30 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
     }
   }
 
-  const content = supplied.map((entry) => `${entry.name}=${values[entry.name]}`).join("\n");
-  await loadSecrets(ctx, `${content}\n`);
-  log(`applied ${supplied.length} value(s) from ${path}`);
-  // The values are on the target but nothing running has READ them: config/.env is a file
-  // inside a bind mount, not an env_file declaration, so `up` converges on the healthy
-  // container that is already running and leaves the old process environment live — the
-  // contract config.ts and provider.ts already state for their own writes.
-  const target = secretsFileOnTarget(ctx);
-  if (await ctx.runtime.isRunning()) {
-    info(`${target} holds the new values, but the running instance has not read them — restart to pick them up: ./clawforge restart`);
-  } else {
-    info(`${target} holds the new values, and the instance is stopped — the next start reads them: ./clawforge up`);
+  if (targetSupplied.length > 0) {
+    const content = targetSupplied.map((entry) => `${entry.name}=${values[entry.name] ?? ""}`).join("\n");
+    await loadSecrets(ctx, `${content}\n`);
+    log(`applied ${targetSupplied.length} target value(s) from ${path}`);
+    // Target values are on disk but nothing running has READ them: config/.env is a file
+    // inside a bind mount, not an env_file declaration, so `up` converges on the healthy
+    // container that is already running and leaves the old process environment live — the
+    // contract config.ts and provider.ts already state for their own writes.
+    const target = secretsFileOnTarget(ctx);
+    if (await ctx.runtime.isRunning()) {
+      info(`${target} holds the new values, but the running instance has not read them — restart to pick them up: ./clawforge restart`);
+    } else {
+      info(`${target} holds the new values, and the instance is stopped — the next start reads them: ./clawforge up`);
+    }
+  }
+
+  if (repoSupplied.length > 0) {
+    let content = await readFile(envFile(), "utf8");
+    for (const entry of repoSupplied) {
+      content = upsertEnvValue(content, entry.name, values[entry.name] ?? "");
+    }
+    await replacePrivateFile(envFile(), content);
+    log(`applied ${repoSupplied.length} repository value(s) from ${path}`);
+    info(`${envFile()} holds the new repository values; restart the gateway to reload them`);
   }
 }
 
@@ -155,7 +167,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
     // creator's own default DACL, which is narrow — so the wide inherited entry this
     // guards against cannot reach the replacement.
     await protectPrivateDirectory(secretsDir());
-    const needed = (await requirements(ctx)).filter((entry) => entry.location === "target-env");
+    const needed = await requirements(ctx);
     if (exists) {
       // Atomic replacement, not an in-place write: the old store stays whole and
       // owner-only until the rename, so a failure anywhere before it leaves the previous

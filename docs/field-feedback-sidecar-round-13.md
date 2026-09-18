@@ -12,6 +12,8 @@ The framework owns lifecycle and transport primitives:
 - `verify.ts` and `onboard.ts` are exposed through `recipe verify` and `recipe onboard`;
 - `security/private-config.ts` generates secrets, replaces target files atomically, preserves
   unrelated env entries and returns checksums;
+- `secrets/<name>.env` is the deployment-owned source of truth; `secrets --apply` delivers
+  declared values to both repository and target runtime environments without printing them;
 - `recipe import <source> [name]` copies an app-owned recipe without overwriting an existing
   destination and filters common credential files;
 - MCP schemas and confirmation rules cover the same lifecycle actions as the CLI.
@@ -57,5 +59,6 @@ These are deliberately recipe acceptance checks, not framework assumptions.
 
 - [x] Generic recipe preparation, verification, onboarding hooks.
 - [x] Private target configuration primitives and safe recipe import.
-- [ ] Application-owned sidecar recipe with its immutable source and private config.
-- [ ] Application-owned external API probe and onboarding run on the target.
+- [x] One deployment-local secret store delivers values to every declared runtime location.
+- [x] Application-owned sidecar recipe with its immutable source, private config and healthy listener.
+- [~] Application-owned external API probe passes through the authenticated sidecar; onboarding still needs the application's account credential.

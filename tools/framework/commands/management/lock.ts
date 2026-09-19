@@ -23,7 +23,7 @@ import { frameworkRoot } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
 import { requirements } from "#src/service/secrets.ts";
 import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
-import { problem } from "#src/service/inspection.ts";
+import { nextActions, problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 
@@ -255,7 +255,7 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
   if (checkOnly) {
     const problems = compareLock(await readLock(), current);
     if (jsonOnly || isCaptured()) {
-      emit(`${JSON.stringify({ deployment: current.deployment, problems, nextActions: problems.length === 0 ? [] : ["./clawforge lock"] }, null, 2)}\n`);
+      emit(`${JSON.stringify({ deployment: current.deployment, problems, nextActions: nextActions(problems) }, null, 2)}\n`);
       return;
     }
     if (problems.length === 0) {

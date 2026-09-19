@@ -207,5 +207,18 @@ check("share allow-list does not contradict its exclusions", contradiction, unde
   check("and the two lists still agree", stillContradicts, undefined);
 }
 
+// --- a recipe's declared private paths -------------------------------------------------------
+//
+// One declaration (recipe.json privatePaths), three readers: the tar exclusion here, the
+// share allow-list pass-through (an excluded path is simply never in the listing), and
+// verify's refusal of archives that already carry it. full is credential-complete by
+// design — a restored full backup must restore the sidecar's working state — so the
+// recipe's generated credentials stay in full and in full only.
+
+check("a recipe's private path is excluded from migrate", excludesFor("migrate", "data", ["sidecar-private"]).includes("data/sidecar-private"), true);
+check("a recipe's private path is excluded from share", excludesFor("share", "data", ["sidecar-private"]).includes("data/sidecar-private"), true);
+check("a recipe's private path stays in full", excludesFor("full", "data", ["sidecar-private"]).includes("data/sidecar-private"), false);
+check("without declarations the exclude lists are unchanged", excludesFor("migrate", "data").includes("data/sidecar-private"), false);
+
 process.stderr.write(failed === 0 ? "all archive checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

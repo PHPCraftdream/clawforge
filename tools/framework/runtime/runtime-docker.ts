@@ -270,6 +270,38 @@ export class DockerRuntime implements Runtime {
     return { imageId: state.Image, digests, containerId, ...(typeof version === "string" ? { version } : {}) };
   }
 
+  /** Reads the container's OWN environment back from Docker rather than from any file this
+   *  machine keeps — the container already has it, set once at creation from whatever .env
+   *  compose read that day, and it lives on inside the container across restarts of THIS
+   *  method's own caller even if the operator's copy is later lost. `docker inspect` is the
+   *  same introspection imageReference()/runningImageIdentity() already use; nothing here
+   *  reads more than an operator who can already reach this target could read directly. */
+  async runningEnvironment(): Promise<Record<string, string> | undefined> {
+    const containerId = await this.#containerId();
+    if (containerId === undefined) return undefined;
+    const result = await this.#transport.exec(
+      "docker",
+      ["inspect", "--format", "{{json .Config.Env}}", containerId],
+      { allowFailure: true },
+    );
+    if (result.code !== 0) return undefined;
+    let entries: unknown;
+    try {
+      entries = JSON.parse(result.stdout);
+    } catch {
+      return undefined;
+    }
+    if (!Array.isArray(entries)) return undefined;
+    const env: Record<string, string> = {};
+    for (const entry of entries) {
+      if (typeof entry !== "string") continue;
+      const split = entry.indexOf("=");
+      if (split <= 0) continue;
+      env[entry.slice(0, split)] = entry.slice(split + 1);
+    }
+    return env;
+  }
+
   async startedAt(): Promise<number | undefined> {
     const id = await this.#containerId();
     if (id === undefined) return undefined;
@@ -303,15 +335,12 @@ export class DockerRuntime implements Runtime {
 
   /** `-i` keeps stdin open — required for the MCP stdio bridge, harmless otherwise. `-t` is
    *  added only on a real terminal, mirroring the `-T` compose gets from `runOneOff`: a PTY
-   *  does not survive the trip through wsl.exe.
-   *
-   *  "node dist/index.js" is hardcoded rather than taken from options: it is the `cli`
-   *  service's own entrypoint (see docker-compose.yml), which `docker exec` does not apply
-   *  on its own the way `compose run` does. */
-  async execInHelper(
+   *  does not survive the trip through wsl.exe. */
+  async #execInContainer(
     service: string,
+    command: string,
     args: string[],
-    options: { input?: string; allowFailure?: boolean } = {},
+    options: { input?: string; allowFailure?: boolean },
   ): Promise<ExecResult> {
     const result = await this.#compose(["ps", "--quiet", service], false, true);
     const id = result.stdout.trim().split("\n")[0]?.trim();
@@ -321,11 +350,32 @@ export class DockerRuntime implements Runtime {
 
     const execArgs = ["exec", "-i"];
     if (process.stdout.isTTY === true) execArgs.push("-t");
-    return this.#transport.exec("docker", [...execArgs, id, "node", "dist/index.js", ...args], {
+    return this.#transport.exec("docker", [...execArgs, id, command, ...args], {
       stream: options.input === undefined,
       input: options.input,
       allowFailure: options.allowFailure,
     });
+  }
+
+  /** "node dist/index.js" is hardcoded rather than taken from options: it is the `cli`
+   *  service's own entrypoint (see docker-compose.yml), which `docker exec` does not apply
+   *  on its own the way `compose run` does. execCommand below is the same call with the
+   *  entrypoint left to the caller, for everything that is not the app's own CLI. */
+  async execInHelper(
+    service: string,
+    args: string[],
+    options: { input?: string; allowFailure?: boolean } = {},
+  ): Promise<ExecResult> {
+    return this.#execInContainer(service, "node", ["dist/index.js", ...args], options);
+  }
+
+  async execCommand(
+    service: string,
+    command: string,
+    args: string[],
+    options: { input?: string; allowFailure?: boolean } = {},
+  ): Promise<ExecResult> {
+    return this.#execInContainer(service, command, args, options);
   }
 
   /** `-T` is added whenever our stdout is not a terminal: compose otherwise allocates a

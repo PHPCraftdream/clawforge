@@ -461,7 +461,9 @@ An app-owned recipe may also contain `prepare.ts`, `verify.ts` and `onboard.ts`.
 runs these hooks around the service lifecycle and exposes `recipe verify`/`recipe onboard` over
 MCP, while each hook owns its domain-specific config and checks. Use the public
 `@clawforge/framework/private-config` helpers for generated credentials, atomic owner-only files,
-env updates and checksums; the framework never prints the values.
+env updates and checksums; the framework never prints the values. A secret is never a
+command-line argument — use `execWithSecrets` (or the private-file helpers) instead of putting
+a credential in `args`.
 
 Mixed command groups may declare structured output only for selected actions. The recipe tool
 therefore keeps install/list/status as human progress while verify/onboard can return a stable

@@ -12,7 +12,7 @@ import type { Context } from "#src/core/context.ts";
 import { listAgentBundleRecipes, listRecipes, loadRecipe, projectName, recipesDirectory, type Recipe } from "#src/service/recipe.ts";
 import { safeName } from "#src/core/names.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { isCaptured, emit } from "#src/core/output.ts";
+import { isCaptured, shouldFollow, emit } from "#src/core/output.ts";
 import { takeTail } from "../lifecycle/lifecycle.ts";
 
 /** The action a bare `recipe` runs. */
@@ -21,8 +21,15 @@ export const RECIPE_DEFAULT_ACTION = "list";
 /** Actions that only report. One definition for the dispatcher below and the MCP gate's
  *  readOnlyWhen — which is asked from built argv, where an omitted action is no longer
  *  visibly the default — so the two cannot disagree about bare `recipe` again: the gate
- *  once demanded a confirmation the console would never have asked for. */
-const RECIPE_READ_ONLY_ACTIONS: readonly string[] = [RECIPE_DEFAULT_ACTION, "status", "logs", "verify"];
+ *  once demanded a confirmation the console would never have asked for.
+ *
+ *  verify is deliberately absent, though the action is usually a probe: it runs the recipe's
+ *  own verify.ts with the same Context prepare.ts gets, and prepare may mutate the target,
+ *  so the framework has no way to know a given hook is read-only. Listing it here let an
+ *  unconfirmed verify reach the target AND be reported as changed:false on the strength of
+ *  its name alone. It gates like onboard, and its envelope only says changed:false when the
+ *  hook's own JSON says so. */
+const RECIPE_READ_ONLY_ACTIONS: readonly string[] = [RECIPE_DEFAULT_ACTION, "status", "logs"];
 
 export function recipeActionIsReadOnly(argv: string[]): boolean {
   return RECIPE_READ_ONLY_ACTIONS.includes(argv[0] ?? RECIPE_DEFAULT_ACTION);
@@ -62,14 +69,27 @@ async function prepareRecipe(ctx: Context, spec: Recipe): Promise<Record<string,
   return loaded;
 }
 
-async function runRecipeHook(ctx: Context, spec: Recipe, kind: "verify" | "onboard"): Promise<void> {
+/** Loads and runs one of the recipe's own hooks, returning its JSON payload rather than
+ *  printing it — the part runRecipeHook and diagnose's verify probe both need, without
+ *  diagnose inheriting runRecipeHook's die()-on-failure (a broken verify.ts is itself
+ *  diagnostic information, not a reason to refuse the rest of the report). */
+async function loadHookResult(ctx: Context, spec: Recipe, kind: "verify" | "onboard"): Promise<unknown> {
   const path = kind === "verify" ? spec.verifyPath : spec.onboardPath;
-  if (path === undefined) die(`recipe "${spec.name}" has no ${kind}.ts hook`);
+  if (path === undefined) throw new Error(`recipe "${spec.name}" has no ${kind}.ts hook`);
   const loaded = (await import(pathToFileURL(path).href)) as Record<string, unknown>;
   const hook = loaded[kind] ?? loaded.default;
-  if (typeof hook !== "function") die(`recipe "${spec.name}" ${kind}.ts must export ${kind}(ctx, recipe)`);
+  if (typeof hook !== "function") throw new Error(`recipe "${spec.name}" ${kind}.ts must export ${kind}(ctx, recipe)`);
   const result = await hook(ctx, spec);
-  const payload = result === undefined ? { ok: true } : result;
+  return result === undefined ? { ok: true } : result;
+}
+
+async function runRecipeHook(ctx: Context, spec: Recipe, kind: "verify" | "onboard"): Promise<void> {
+  let payload: unknown;
+  try {
+    payload = await loadHookResult(ctx, spec, kind);
+  } catch (error) {
+    die(error instanceof Error ? error.message : String(error));
+  }
   if (isCaptured()) emit(`${JSON.stringify(payload)}\n`);
   else log(`${spec.name} ${kind}: ${JSON.stringify(payload)}`);
 }
@@ -142,6 +162,44 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
       return;
     }
 
+    // Not in RECIPE_READ_ONLY_ACTIONS, for the same reason "verify" itself is not: it runs
+    // the recipe's own verify.ts, which the framework cannot know is actually read-only.
+    case "diagnose": {
+      const { recipe: spec, stack } = await stackFor(ctx, name);
+      const running = await stack.isRunning();
+      // Every service in the recipe's own compose project, not just one — a multi-container
+      // recipe (a sidecar in front of another sidecar, say) needs all of them in one place to
+      // correlate a failure that spans the two, the way cross-referencing separate `docker
+      // logs` calls by hand does today.
+      const logs = await stack.readLogs(takeTail(rest).tail ?? "50");
+
+      let verify: unknown;
+      let verifyError: string | undefined;
+      if (spec.verifyPath === undefined) {
+        verifyError = "no verify.ts hook";
+      } else {
+        try {
+          verify = await loadHookResult(ctx, spec, "verify");
+        } catch (error) {
+          verifyError = error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      const report = { recipe: name, enabled: spec.enabled, running, verify, verifyError, logs };
+      if (isCaptured()) {
+        emit(`${JSON.stringify(report)}\n`);
+        return;
+      }
+      log(`${name} diagnose`);
+      info(`enabled: ${spec.enabled}`);
+      info(`running: ${running}`);
+      if (verifyError !== undefined) warn(`verify: ${verifyError}`);
+      else info(`verify: ${JSON.stringify(verify)}`);
+      info("recent logs (every service in the recipe's own stack):");
+      info(logs);
+      return;
+    }
+
     case "install": {
       const { recipe: spec, stack } = await stackFor(ctx, name);
 
@@ -197,10 +255,11 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
 
     case "logs": {
       const { stack } = await stackFor(ctx, name);
-      // Following runs until interrupted, which a tool call cannot do: it owes its client
-      // one result. Same capability either way — a terminal watches the stream, a captured
-      // caller gets a bounded tail. See lifecycle.ts's logs, which makes the same choice.
-      if (isCaptured()) {
+      // Following runs until interrupted, which nothing but an attended terminal can do:
+      // an MCP tool call owes its client one result, and a script or agent shell tool has
+      // nothing to interrupt it either. See output.ts's shouldFollow() and lifecycle.ts's
+      // logs, which makes the same choice.
+      if (!shouldFollow()) {
         emit(await stack.readLogs(takeTail(rest).tail ?? "100"));
         return;
       }
@@ -209,6 +268,6 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
     }
 
     default:
-      die(`unknown action: ${action} (expected list, install, remove, status or logs)`);
+      die(`unknown action: ${action} (expected list, import, verify, onboard, diagnose, install, remove, status or logs)`);
   }
 }

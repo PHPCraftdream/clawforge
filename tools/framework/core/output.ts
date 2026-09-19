@@ -39,6 +39,16 @@ export function isCaptured(): boolean {
   return sink !== undefined;
 }
 
+/** True only when a human is actually watching a real terminal right now — not merely
+ *  "not the MCP server". A follow-forever call read through a plain pipe or subprocess
+ *  (a script, an agent's shell tool, `... | less`) has no MCP sink either, so isCaptured()
+ *  alone would still say "follow", and a caller that owes its invoker a return — the same
+ *  reason the MCP path needs a bounded read — would hang until something outside kills it.
+ *  stdout.isTTY is undefined (not false) off a terminal, hence the explicit === true. */
+export function shouldFollow(): boolean {
+  return !isCaptured() && process.stdout.isTTY === true;
+}
+
 /** Machine-readable output: JSON, a token, a path. Goes to stdout on a terminal so it can
  *  be piped, and into the sink when captured. */
 export function emit(text: string): void {

@@ -238,6 +238,9 @@ try {
       async isRunning(): Promise<boolean> {
         return running;
       },
+      // --dump's repo-env recovery: absent by default (simulates a runtime that cannot
+      // introspect its container at all); the dump test block below replaces this per case.
+      runningEnvironment: undefined as (() => Promise<Record<string, string> | undefined>) | undefined,
     },
     transport: {
       description: "stub",
@@ -294,6 +297,10 @@ try {
   const hintStore = resolve(deployDir, "secrets", "hint.env");
   const hintTemplate = await readFile(hintStore, "utf8");
   check("a central store template includes repository requirements", hintTemplate.includes("REPO_SECRET="), true);
+  check("the repo-env section tells the operator to copy the existing value", hintTemplate.includes("already exists in the repository's own .env"), true);
+  // firstContent above was built with no repo-env requirement present, so pinning the hint's
+  // absence there proves it is section-scoped, not part of the template's legend.
+  check("the copy hint appears only when a repo-env entry exists", firstContent.includes("already exists in the repository's own .env"), false);
   await writeFile(hintStore, "ZAI_API_KEY=zai-value\n", "utf8");
 
   running = true;
@@ -352,6 +359,44 @@ try {
   }
   check("the status hint names up for a stopped instance", statusStoppedOutput.includes("then ./clawforge up"), true);
   check("the status hint for a stopped instance does not name restart", statusStoppedOutput.includes("./clawforge restart"), false);
+
+  // --- P3-03: the status listing mixes optional requirements in with required ones, and an
+  // optional secret that is simply not set yet is not missing anything the gateway needs —
+  // printing it as MISSING under a "required secrets" heading left the summary line ("all
+  // required secrets are present") and the listing contradicting each other. The mark is
+  // display only: missing() still gates the throw. --------------------------------------
+  targetEnvContent = "";
+  running = false;
+  let optionalAbsentOutput = "";
+  let optionalAbsentError = "";
+  try {
+    await withOutputSink(
+      (chunk) => {
+        optionalAbsentOutput += chunk;
+      },
+      () => secrets(applyCtx, []),
+    );
+  } catch (error) {
+    optionalAbsentError = error instanceof Error ? error.message : String(error);
+  }
+  check("the required-absent entry is still reported missing", optionalAbsentOutput.includes("MISSING ZAI_API_KEY"), true);
+  check("the optional-absent entry is not reported as missing", optionalAbsentOutput.includes("MISSING REPO_SECRET"), false);
+  check("the optional-absent entry is marked as optional", optionalAbsentOutput.includes("optional REPO_SECRET"), true);
+  check("the missing-required throw still happened", optionalAbsentError !== "", true);
+
+  // The success path: with the required value in place the run completes, and no MISSING
+  // mark may appear anywhere — the optional entry is merely not set yet.
+  targetEnvContent = "ZAI_API_KEY=zai-value\n";
+  let successOutput = "";
+  await withOutputSink(
+    (chunk) => {
+      successOutput += chunk;
+    },
+    () => secrets(applyCtx, []),
+  );
+  check("the success run reaches the all-present summary", successOutput.includes("all required secrets are present"), true);
+  check("no MISSING mark appears when only an optional entry is absent", successOutput.includes("MISSING"), false);
+  check("the optional entry is marked optional on the success path too", successOutput.includes("optional REPO_SECRET"), true);
 
   // --- P1-02: the store follows the deployment .env's safe-creation contract — owner-only
   // from the first byte, on Windows a closed DACL rather than the POSIX mode argument
@@ -458,6 +503,78 @@ try {
     check("one store delivers repository values", deliveredRepositoryEnv.includes("REPO_SECRET=repo-value"), true);
     check("repository settings survive delivery", deliveredRepositoryEnv.includes("KEEP_SETTING=keep"), true);
     check("delivery output never carries repository secret values", repositoryOutput.includes("repo-value"), false);
+  }
+  {
+    // --dump: the reverse of --apply. target-env is read straight from the target's own
+    // config/.env (the exact file --apply writes and status/dumpSecrets already read);
+    // repo-env (REPO_SECRET here) is read from the running container's own environment,
+    // since it was never written to the target's filesystem at all.
+    const recoveredStore = resolve(secretsDirectory, "recovered.env");
+    targetEnvContent = "ZAI_API_KEY=live-zai-value\n";
+    applyCtx.runtime.runningEnvironment = async () => ({ REPO_SECRET: "live-repo-value" });
+
+    let dumpOutput = "";
+    await withOutputSink(
+      (chunk) => {
+        dumpOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--dump", "--store", "recovered"]),
+    );
+    const recoveredContent = await readFile(recoveredStore, "utf8");
+    check("a target-env value is recovered from the target's own config/.env", recoveredContent.includes("ZAI_API_KEY=live-zai-value"), true);
+    check("a repo-env value is recovered from the running container's own environment", recoveredContent.includes("REPO_SECRET=live-repo-value"), true);
+    check("the dump report never carries a recovered value", dumpOutput.includes("live-zai-value") || dumpOutput.includes("live-repo-value"), false);
+
+    // Re-running without --force must refuse and leave the recovered store untouched — the
+    // same contract --init-store already has, reused rather than invented a second time.
+    let dumpRefusal = "";
+    try {
+      await withOutputSink(
+        () => {},
+        () => secrets(applyCtx, ["--dump", "--store", "recovered"]),
+      );
+    } catch (error) {
+      dumpRefusal = error instanceof Error ? error.message : String(error);
+    }
+    check("re-running --dump without --force throws", dumpRefusal !== "", true);
+    check("the refusal mentions --force", dumpRefusal.includes("--force"), true);
+
+    // A name recovery cannot reach is left blank and named, never guessed or silently
+    // dropped — the runtime here answers, but does not know REPO_SECRET this time.
+    applyCtx.runtime.runningEnvironment = async () => ({});
+    let partialOutput = "";
+    await withOutputSink(
+      (chunk) => {
+        partialOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--dump", "--store", "recovered", "--force"]),
+    );
+    const partialContent = await readFile(recoveredStore, "utf8");
+    check("an unrecovered repo-env name is left blank", /^REPO_SECRET=$/m.test(partialContent), true);
+    check("an unrecovered name is reported by name", partialOutput.includes("REPO_SECRET"), true);
+    check("a running instance that answers empty is not reported as not running", partialOutput.includes("not running"), false);
+
+    // The runtime cannot introspect its container at all (the default stub above).
+    applyCtx.runtime.runningEnvironment = undefined;
+    let noCapabilityOutput = "";
+    await withOutputSink(
+      (chunk) => {
+        noCapabilityOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--dump", "--store", "recovered", "--force"]),
+    );
+    check("a runtime without the capability says so", noCapabilityOutput.includes("cannot read a running container's own environment"), true);
+
+    // The runtime has the capability but reports the instance unreachable/not running.
+    applyCtx.runtime.runningEnvironment = async () => undefined;
+    let notRunningOutput = "";
+    await withOutputSink(
+      (chunk) => {
+        notRunningOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--dump", "--store", "recovered", "--force"]),
+    );
+    check("an unreachable running instance is reported as such", notRunningOutput.includes("the instance is not running"), true);
   }
 } finally {
   await teardownDeployment(deployDir);

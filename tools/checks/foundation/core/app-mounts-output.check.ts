@@ -5,7 +5,7 @@
 
 import { defineApp, mcpCommands, type AppCommand, type AppDefinition } from "#framework/core/app.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
-import { emit, isCaptured, outputSink, withOutputSink } from "#framework/core/output.ts";
+import { emit, isCaptured, outputSink, shouldFollow, withOutputSink } from "#framework/core/output.ts";
 
 let failed = 0;
 
@@ -164,6 +164,32 @@ try {
   check("with a sink active, emit hands the text to the sink", collected, ["to the sink"]);
 } finally {
   process.stdout.write = originalWrite;
+}
+
+// --- shouldFollow --------------------------------------------------------------
+
+{
+  const originalIsTTY = process.stdout.isTTY;
+  const setTTY = (value: boolean | undefined): void => {
+    Object.defineProperty(process.stdout, "isTTY", { value, configurable: true });
+  };
+  try {
+    setTTY(true);
+    check("a real terminal, not captured: follows", shouldFollow(), true);
+
+    setTTY(undefined);
+    check("piped/redirected, not captured: does not follow (the incident this guards against)", shouldFollow(), false);
+
+    setTTY(false);
+    check("explicitly not a terminal, not captured: does not follow", shouldFollow(), false);
+
+    setTTY(true);
+    await withOutputSink(() => {}, async () => {
+      check("captured, even with a real terminal underneath: does not follow", shouldFollow(), false);
+    });
+  } finally {
+    setTTY(originalIsTTY);
+  }
 }
 
 process.stderr.write(failed === 0 ? "all app/mounts/output checks passed\n" : `${failed} failed\n`);

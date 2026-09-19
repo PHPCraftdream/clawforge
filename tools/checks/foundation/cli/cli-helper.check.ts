@@ -12,6 +12,7 @@ import { HelperNotRunning } from "#framework/runtime/runtime.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { cli } from "#framework/commands/interface/cli.ts";
+import { exec } from "#framework/commands/interface/exec.ts";
 import { mcpServe } from "#framework/commands/management/mcp.ts";
 import { cliStart, cliStop } from "#framework/commands/interface/cli-helper.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
@@ -188,12 +189,56 @@ function withFileOps(transport: Transport): Transport {
   );
 }
 
+// --- DockerRuntime: execCommand — execInHelper's general form ---------------------------
+
+{
+  // Same container resolution as execInHelper: no container, no execCommand.
+  const transport = {
+    description: "stub",
+    async exec(): Promise<ExecResult> {
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  } as unknown as Transport;
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
+  let threw: unknown;
+  try {
+    await runtime.execCommand!("cli-helper", "curl", ["-fsS", "http://127.0.0.1:18789/healthz"]);
+  } catch (error) {
+    threw = error;
+  }
+  check("execCommand throws HelperNotRunning when no container exists", threw instanceof HelperNotRunning, true);
+}
+
+{
+  const calls: string[][] = [];
+  const transport = {
+    description: "stub",
+    async exec(command: string, args: string[]): Promise<ExecResult> {
+      calls.push([command, ...args]);
+      if (args[0] === "compose") return { code: 0, stdout: "abc123\n", stderr: "" };
+      return { code: 0, stdout: "ok\n", stderr: "" };
+    },
+  } as unknown as Transport;
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
+
+  await runtime.execCommand!("cli-helper", "curl", ["-fsS", "http://127.0.0.1:18789/healthz"]);
+  const execCall = calls.at(-1) ?? [];
+  check("execCommand runs docker exec -i", execCall.slice(0, 3), ["docker", "exec", "-i"]);
+  check("execCommand targets the container id", execCall.includes("abc123"), true);
+  check(
+    "execCommand runs the given command as-is, not node dist/index.js",
+    execCall.slice(-3),
+    ["curl", "-fsS", "http://127.0.0.1:18789/healthz"],
+  );
+}
+
 // --- cli(): tries the helper first, falls back only on HelperNotRunning -----------------
 
 function runtimeStub(overrides: {
   execInHelper?: () => Promise<ExecResult>;
+  execCommand?: (service: string, command: string, args: string[]) => Promise<ExecResult>;
   isRunning?: () => Promise<boolean>;
-  runOneOff?: (service: string, args: string[]) => Promise<ExecResult>;
+  runOneOff?: (service: string, args: string[], options?: Record<string, unknown>) => Promise<ExecResult>;
   waitForHealth?: (timeoutSeconds?: number) => Promise<void>;
   helperRunning?: () => Promise<boolean>;
   startHelper?: () => Promise<void>;
@@ -202,6 +247,9 @@ function runtimeStub(overrides: {
   return {
     isRunning: overrides.isRunning ?? (async () => true),
     execInHelper: overrides.execInHelper ?? (async () => {
+      throw new HelperNotRunning("cli-helper");
+    }),
+    execCommand: overrides.execCommand ?? (async () => {
       throw new HelperNotRunning("cli-helper");
     }),
     runOneOff: overrides.runOneOff ?? (async () => ({ code: 0, stdout: "", stderr: "" })),
@@ -352,6 +400,73 @@ function runtimeStub(overrides: {
 
 check("cli is declared destructive, so MCP requires a confirmation", openclawCommands.cli.destructive, true);
 check("cli is no longer kept out of MCP", openclawCommands.cli.consoleOnly, undefined);
+
+// --- exec(): the same fallback contract as cli(), but any command ------------------------
+
+{
+  let runOneOffCalled = false;
+  const ctx = {
+    runtime: runtimeStub({
+      execCommand: async () => ({ code: 0, stdout: "ok\n", stderr: "" }),
+      runOneOff: async () => {
+        runOneOffCalled = true;
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    }),
+  } as unknown as Context;
+
+  await exec(ctx, ["curl", "-fsS", "http://127.0.0.1:18789/healthz"]);
+  check("exec() does not fall back when the helper answers", runOneOffCalled, false);
+}
+
+{
+  let seen: { service?: string; args?: string[]; options?: Record<string, unknown> } = {};
+  const ctx = {
+    runtime: runtimeStub({
+      runOneOff: async (service, args, options) => {
+        seen = { service, args, options };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    }),
+  } as unknown as Context;
+
+  await exec(ctx, ["curl", "-fsS", "http://127.0.0.1:18789/healthz"]);
+  check("exec() falls back to runOneOff on the cli service", seen.service, "cli");
+  check("exec() passes the command's own arguments, not the command itself", seen.args, ["-fsS", "http://127.0.0.1:18789/healthz"]);
+  check("exec() overrides the entrypoint with the command", seen.options?.entrypoint, "curl");
+}
+
+{
+  const ctx = {
+    runtime: runtimeStub({ isRunning: async () => false }),
+  } as unknown as Context;
+
+  let message: string | undefined;
+  try {
+    await exec(ctx, ["curl", "http://example.test"]);
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check("exec() dies when the gateway is not running and the helper is not up", message?.includes("./clawforge up"), true);
+}
+
+{
+  const ctx = {
+    runtime: runtimeStub({}),
+  } as unknown as Context;
+  delete (ctx.runtime as unknown as Record<string, unknown>).execCommand;
+
+  let message: string | undefined;
+  try {
+    await exec(ctx, ["curl", "http://example.test"]);
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check("exec() refuses cleanly when the runtime has no execCommand", message?.includes("does not support"), true);
+}
+
+check("exec is declared destructive, so MCP requires a confirmation", openclawCommands.exec.destructive, true);
+check("exec is no longer kept out of MCP", openclawCommands.exec.consoleOnly, undefined);
 
 // --- mcpServe(): same fallback contract --------------------------------------------------
 

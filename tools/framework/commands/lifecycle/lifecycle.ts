@@ -4,7 +4,7 @@
 // transport in the context decide how the instance is actually started.
 
 import { log, info, die } from "#src/core/log.ts";
-import { isCaptured, emit } from "#src/core/output.ts";
+import { shouldFollow, emit } from "#src/core/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
@@ -74,9 +74,10 @@ export async function down(ctx: Context, args: string[]): Promise<void> {
 }
 
 /** One capability, two shapes. On a terminal this follows the log until interrupted, which
- *  is what someone watching a start-up wants. Under an output sink — an MCP tool call, which
- *  owes its client exactly one result — following would never return, so the same command
- *  reads a bounded tail instead and hands it back.
+ *  is what someone watching a start-up wants. Anywhere else — an MCP tool call, a script, an
+ *  agent's shell tool, a redirect — following would never return, so the same command reads
+ *  a bounded tail instead and hands it back. See shouldFollow() for why that is not simply
+ *  "not captured".
  *
  *  The switch is on how the output is being consumed rather than on a separate command
  *  name: it is one capability, and the mirror is meant to expose it, not a second spelling
@@ -84,7 +85,7 @@ export async function down(ctx: Context, args: string[]): Promise<void> {
 export async function logs(ctx: Context, args: string[]): Promise<void> {
   const { tail, rest } = takeTail(args);
 
-  if (!isCaptured()) {
+  if (shouldFollow()) {
     await ctx.runtime.followLogs(rest);
     return;
   }

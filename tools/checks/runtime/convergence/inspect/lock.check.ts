@@ -12,7 +12,9 @@ import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { gatherInspection, renderJson, doctor } from "#framework/commands/orchestration/inspect/gather.ts";
 import { recipeFileChecksums } from "#framework/service/checksums.ts";
-import { currentComposition, lockFile } from "#framework/commands/management/lock.ts";
+import { nextActions } from "#framework/service/inspection.ts";
+import type { Problem } from "#framework/service/inspection.ts";
+import { currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "./fixture.ts";
 import type { TargetSpec } from "./fixture.ts";
@@ -119,6 +121,26 @@ try {
     const drift = inspection.problems.find((entry) => entry.code === "LOCK_DRIFT");
     check("a recipe edited since the lock is drift from it", drift !== undefined, true);
     check("and the differing file is named", drift?.detail.includes("data/page.md"), true);
+  }
+
+  {
+    // The lock file on disk now predates the page.md edit, so `lock --check --json` sees the
+    // same drift without further setup. What it must answer with is each problem's own
+    // remedy, through the same nextActions() aggregator inspect uses — so the two commands
+    // cannot disagree about what to do next for the same drift. The old code hardcoded
+    // ["./clawforge lock"], regardless of what each problem said.
+    let output = "";
+    await withOutputSink(
+      (chunk) => {
+        output += chunk;
+      },
+      () => lock(stubContext({ targetEnv: "ZAI_API_KEY=k\n" }), ["--check", "--json"]),
+    );
+    const payload = JSON.parse(output) as { problems: Problem[]; nextActions: string[] };
+    check("lock --check reports the drift the inspection saw", payload.problems.map((entry) => entry.code), ["LOCK_DRIFT"]);
+    check("its next actions are the problems' own remedies", payload.nextActions, nextActions(payload.problems));
+    check("and they are the drift's real remedy", payload.nextActions, ["./clawforge plan"]);
+    check("not the old blanket answer", payload.nextActions.includes("./clawforge lock"), false);
   }
 
   {

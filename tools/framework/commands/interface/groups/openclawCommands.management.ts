@@ -6,6 +6,7 @@ import type { AppCommand } from "#src/core/app.ts";
 
 import { status } from "../status.ts";
 import { cli } from "../cli.ts";
+import { exec } from "../exec.ts";
 import { cliStart, cliStop } from "../cli-helper.ts";
 import { configureProvider } from "#src/commands/management/provider.ts";
 import { mcpServe, mcpSetup, mcpCreds } from "#src/commands/management/mcp.ts";
@@ -77,6 +78,26 @@ export const managementCommands: Record<string, AppCommand> = {
       },
     ],
   },
+  exec: {
+    summary: "Run an arbitrary command in the same sidecar as ./clawforge cli",
+    run: exec,
+    details:
+      "Unlike `cli`, which always runs OpenClaw's own CLI entrypoint, this runs whatever " +
+      "command you give it, e.g. `./clawforge exec curl -fsS http://127.0.0.1:18789/healthz` " +
+      "or `./clawforge exec cat /app/docs/channels/telegram.md`.\n" +
+      "Same container as `cli`: the OpenClaw image, the gateway's network namespace, the " +
+      "same data mounts, the same one-off-vs-helper choice.",
+    // Same reasoning as `cli`: it can run anything, so it gets the same MCP confirmation.
+    destructive: true,
+    arguments: [
+      {
+        name: "args",
+        description: "Command and arguments to run, e.g. [\"curl\", \"-fsS\", \"http://127.0.0.1:18789/healthz\"]",
+        kind: "variadic",
+        required: true,
+      },
+    ],
+  },
   "cli-start": {
     summary: "Start the persistent CLI helper (removes cli/mcp-serve container overhead)",
     run: cliStart,
@@ -128,6 +149,12 @@ export const managementCommands: Record<string, AppCommand> = {
       "it refuses to overwrite an existing store unless --force is given, since the " +
       "values it would destroy exist nowhere else.\n" +
       "--apply --store <name> installs that store's values into both runtime locations.\n" +
+      "--dump --store <name> is the reverse: recovers what an already-running instance " +
+      "actually holds — target-env from the target's own config/.env, repo-env (the " +
+      "gateway token) from the running container's own environment, since it is never " +
+      "written to the target's filesystem at all — into a local store, for when the " +
+      "operator side's own copy was lost while the instance kept running. A name it " +
+      "cannot recover is left blank and named in the report, never guessed.\n" +
       "up/bootstrap refuse to start when something required is missing, rather than let " +
       "the gateway crash-loop.",
     arguments: [
@@ -135,18 +162,19 @@ export const managementCommands: Record<string, AppCommand> = {
       { name: "print-template", description: "Print the template instead of writing it", kind: "flag" },
       { name: "init-store", description: "Create an empty store to fill in", kind: "flag" },
       { name: "apply", description: "Fill the target from a local store", kind: "flag" },
+      { name: "dump", description: "Recover a local store from the running instance", kind: "flag" },
       { name: "store", description: "Store name, e.g. local or prod", kind: "option" },
-      { name: "force", description: "Replace an existing store (with --init-store)", kind: "flag" },
+      { name: "force", description: "Replace an existing store (with --init-store or --dump)", kind: "flag" },
     ],
   },
   recipe: {
-    summary: "Deploy services next to the instance (list, import, install, remove, status, logs, verify, onboard)",
+    summary: "Deploy services next to the instance (list, import, install, remove, status, logs, verify, onboard, diagnose)",
     run: recipe,
     // Only lifecycle changes need confirmation; the read-only set is defined once, beside
     // the dispatcher, so the gate and the command cannot drift apart again.
     destructive: true,
     readOnlyWhen: recipeActionIsReadOnly,
-    structuredWhen: (args) => args[0] === "verify" || args[0] === "onboard",
+    structuredWhen: (args) => args[0] === "verify" || args[0] === "onboard" || args[0] === "diagnose",
     details:
       "A recipe is a third-party service living beside the instance — its own directory " +
       "under the deployment's recipes/, its own compose project, its own lifecycle.\n" +
@@ -159,17 +187,21 @@ export const managementCommands: Record<string, AppCommand> = {
       "reconcile the running service afterwards; " +
       "verify.ts and onboard.ts hooks expose app-owned checks and onboarding through MCP; " +
       "recipe import copies an app-owned recipe without overwriting an existing one; the " +
-      "framework does not interpret domain-specific fields.",
+      "framework does not interpret domain-specific fields.\n" +
+      "diagnose bundles one report instead of several manual round trips: whether the " +
+      "recipe's stack is running, a bounded tail of every service in it (not just one), " +
+      "and the verify.ts hook's own result if it has one — gated like verify itself, since " +
+      "it runs that same hook and the framework cannot know it is read-only.",
     arguments: [
       {
         name: "action",
         description: "What to do with the recipe",
         kind: "positional",
-        choices: ["list", "import", "install", "remove", "status", "logs", "verify", "onboard"],
+        choices: ["list", "import", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
       },
       { name: "name", description: "Recipe name, or destination name for import", kind: "positional" },
       { name: "volumes", description: "With remove: delete its volumes too", kind: "flag" },
-      { name: "tail", description: "With logs: lines to return when reading rather than following", kind: "option" },
+      { name: "tail", description: "With logs/diagnose: lines to return per service", kind: "option" },
       {
         name: "force-disabled",
         description: "With install: build a recipe marked disabled",

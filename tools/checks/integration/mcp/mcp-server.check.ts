@@ -12,7 +12,7 @@
 // that would need a bootstrapped instance), and the check must not depend on whichever
 // deployment happens to already be on this machine.
 
-import { rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -161,11 +161,16 @@ try {
     check("recipe list remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["list"]), true);
     check("recipe status remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["status"]), true);
   check("recipe logs remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["logs"]), true);
-  check("recipe verify remains read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["verify"]), true);
+  check("recipe verify is mutating for MCP gating like onboard", openclawCommands.recipe!.readOnlyWhen?.(["verify"]), false);
   check("recipe onboard is mutating for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["onboard"]), false);
+  check("recipe diagnose is mutating for MCP gating, same reason as verify", openclawCommands.recipe!.readOnlyWhen?.(["diagnose"]), false);
   const recipeProperties = inputSchema(openclawCommands.recipe!).properties as Record<string, { enum?: string[] }> | undefined;
   const recipeActionSchema = recipeProperties?.action;
-  deep("recipe MCP schema documents import/verify/onboard actions", recipeActionSchema?.enum, ["list", "import", "install", "remove", "status", "logs", "verify", "onboard"]);
+  deep(
+    "recipe MCP schema documents import/verify/onboard/diagnose actions",
+    recipeActionSchema?.enum,
+    ["list", "import", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
+  );
   check("recipe help explains app-owned hooks", toolDescription(openclawCommands.recipe!).includes("prepare.ts"), true);
     check("recipe install remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["install"]), false);
     check("recipe remove remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["remove"]), false);
@@ -208,6 +213,46 @@ try {
     check("lock write reports changed true", structured(2)?.changed, true);
   } finally {
     await rm(resolve(appsDir, lockDeployment), { recursive: true, force: true });
+  }
+}
+
+// --- app-owned verify runs recipe code, so it is gated like onboard -----------------------
+//
+// verify.ts is an app-owned hook invoked with the full Context — the same access prepare.ts
+// gets, and prepare may mutate the target. Being named "verify" is not evidence it is
+// read-only, so until something the framework itself verified says otherwise, the call
+// demands confirm: true like onboard does, and the envelope may not report changed:false on
+// the strength of the action's name alone.
+{
+  const verifyDeployment = `mcp-check-verify-${randomBytes(4).toString("hex")}`;
+  const recipeDir = resolve(appsDir, verifyDeployment, "recipes", "probe");
+  const verifyLines = [
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recipe", arguments: { action: "verify", name: "probe" } } },
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "recipe", arguments: { action: "verify", name: "probe", confirm: true } } },
+  ].map((request) => JSON.stringify(request)).join("\n");
+
+  try {
+    await createApp(verifyDeployment);
+    await mkdir(recipeDir, { recursive: true });
+    await writeFile(resolve(recipeDir, "recipe.json"), JSON.stringify({ description: "Verify gating probe" }), "utf8");
+    await writeFile(resolve(recipeDir, "verify.ts"), "export async function verify() { return { ok: true, problems: [] }; }\n", "utf8");
+    const result = await runServer(verifyDeployment, verifyLines);
+    const responses = result.stdout
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const byId = new Map(responses.map((response) => [response.id, response]));
+    const textOf = (id: number): string => String(((byId.get(id)?.result as { content?: Array<{ text?: string }> } | undefined)?.content ?? [])[0]?.text ?? "");
+
+    check("recipe verify without confirm is refused like onboard", textOf(1).includes("pass confirm: true"), true);
+    check("the refusal is a tool error reply", (byId.get(1)?.result as { isError?: boolean } | undefined)?.isError, true);
+    check("confirmed recipe verify succeeds", byId.get(2)?.error, undefined);
+    const structured = (byId.get(2)?.result as { structuredContent?: { changed?: boolean } } | undefined)?.structuredContent;
+    // The hook's own JSON says nothing about changed, so the envelope must fall back to
+    // "assume it changed something" — never to changed:false, which nothing here can back.
+    check("a confirmed verify is not reported as changed:false", structured?.changed, true);
+  } finally {
+    await rm(resolve(appsDir, verifyDeployment), { recursive: true, force: true });
   }
 }
 

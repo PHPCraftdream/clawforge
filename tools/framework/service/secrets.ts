@@ -355,6 +355,12 @@ export function template(entries: SecretRequirement[]): string {
     const group = entries.filter((entry) => entry.location === location);
     if (group.length === 0) continue;
     lines.push(`# --- ${location} ---`);
+    // A repo-env value is owned by the repository's own .env (compose/bootstrap wrote it
+    // once) — an operator who invents a fresh one here produces a value nothing running
+    // agrees with.
+    if (location === "repo-env") {
+      lines.push("# a repo-env value usually already exists in the repository's own .env — copy it here, do not invent a new one");
+    }
     for (const entry of group) {
       lines.push(`# used by: ${entry.usedBy}`);
       lines.push(`${entry.name}=`);

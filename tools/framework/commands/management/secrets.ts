@@ -11,6 +11,7 @@ import { parseEnv } from "#src/core/env.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
+import type { SecretLocation, SecretRequirement } from "#src/service/secrets.ts";
 import { loadSecrets, dumpSecrets } from "../lifecycle/state.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replacePrivateFile, unprotectedPrivateFile } from "#src/security/private-file.ts";
@@ -126,12 +127,104 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   }
 }
 
+/** Renders a store file with recovered values filled in where known — the same section/
+ *  comment shape template() writes, so a store this produces reads like one a human filled
+ *  in by hand, and a name recovery could not reach is left blank exactly like an unfilled
+ *  template entry rather than looking any different from one. */
+function renderRecoveredStore(entries: SecretRequirement[], values: Record<string, string | undefined>): string {
+  const lines = [
+    "# Secrets recovered from the running instance.",
+    "# A blank value means recovery could not reach it — fill it in by hand.",
+    "",
+  ];
+  for (const location of ["repo-env", "target-env"] as SecretLocation[]) {
+    const group = entries.filter((entry) => entry.location === location);
+    if (group.length === 0) continue;
+    lines.push(`# --- ${location} ---`);
+    for (const entry of group) {
+      lines.push(`# used by: ${entry.usedBy}`);
+      lines.push(`${entry.name}=${values[entry.name] ?? ""}`);
+    }
+    lines.push("");
+  }
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+/** The reverse of --apply: recovers what a reachable, already-running instance actually
+ *  holds into a local store, for when the operator side's own copy was lost while the
+ *  instance kept running. target-env values are read straight from the target's own
+ *  config/.env (the same file dumpSecrets() already knows how to read); repo-env values (the
+ *  gateway token) are NOT stored on the target's filesystem at all — they only ever existed
+ *  as the process environment compose gave the container at creation time — so they are read
+ *  back from the running container's own environment instead, which is the one place they
+ *  still exist once the operator's .env is gone. A name recovery cannot reach is left blank
+ *  and named in the report; this never refuses on partial recovery, since a partial store is
+ *  still strictly more than none. */
+async function dumpToStore(ctx: Context, storeName: string, force: boolean): Promise<void> {
+  const path = secretStoreFile(storeName);
+
+  const exists = await access(path).then(
+    () => true,
+    () => false,
+  );
+  if (exists && !force) {
+    die(`${path} already exists — pass --force to overwrite it with recovered values`);
+  }
+
+  const needed = await requirements(ctx);
+  const targetEntries = needed.filter((entry) => entry.location === "target-env");
+  const repoEntries = needed.filter((entry) => entry.location === "repo-env");
+
+  const targetRaw = targetEntries.length > 0 ? await dumpSecrets(ctx) : undefined;
+  const targetValues = targetRaw !== undefined ? parseEnv(targetRaw) : {};
+
+  const canReadRunningEnvironment = typeof ctx.runtime.runningEnvironment === "function";
+  const runningEnvironment = repoEntries.length > 0 && canReadRunningEnvironment
+    ? await ctx.runtime.runningEnvironment!()
+    : undefined;
+
+  const values: Record<string, string | undefined> = {};
+  const unrecovered: string[] = [];
+  for (const entry of needed) {
+    const value = entry.location === "target-env" ? targetValues[entry.name] : runningEnvironment?.[entry.name];
+    if (value === undefined || value === "") unrecovered.push(entry.name);
+    else values[entry.name] = value;
+  }
+
+  await protectPrivateDirectory(secretsDir());
+  const content = renderRecoveredStore(needed, values);
+  if (exists) {
+    await replacePrivateFile(path, content);
+  } else {
+    try {
+      await createPrivateFile(path, content);
+    } catch (error) {
+      // Lost a creation race with a concurrent --dump/--init-store: protect what appeared,
+      // the same answer provision.ts's ensureEnvFile gives the same race about .env.
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      await protectPrivateFile(path);
+    }
+  }
+
+  log(`recovered ${needed.length - unrecovered.length} of ${needed.length} value(s) into ${path}`);
+  if (unrecovered.length > 0) {
+    warn(`could not recover ${unrecovered.length} value(s) — left blank in ${path}, fill in by hand:`);
+    for (const name of unrecovered) info(name);
+    if (repoEntries.length > 0 && !canReadRunningEnvironment) {
+      info(`${ctx.runtime.description} cannot read a running container's own environment, so repo-env values were not attempted`);
+    } else if (repoEntries.length > 0 && runningEnvironment === undefined) {
+      info("the instance is not running (or could not be inspected) — repo-env values cannot be recovered while it is stopped");
+    }
+  }
+}
+
 export async function secrets(ctx: Context, args: string[]): Promise<void> {
   let writeTemplate = false;
   let printTemplate = false;
   let apply = false;
   let store = "local";
   let initStore = false;
+  let dump = false;
   let force = false;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -140,6 +233,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
     else if (arg === "--print-template") printTemplate = true;
     else if (arg === "--apply") apply = true;
     else if (arg === "--init-store") initStore = true;
+    else if (arg === "--dump") dump = true;
     else if (arg === "--force") force = true;
     else if (arg === "--store") {
       store = args[index + 1] ?? die("--store needs a name, e.g. local or prod");
@@ -188,6 +282,14 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
+  if (dump) {
+    // Read-only against the target and the running container, and the store file it writes
+    // locally is the same one --init-store writes without taking the instance lock either —
+    // nothing here mutates the instance, so there is nothing for the lock to serialize.
+    await dumpToStore(ctx, store, force);
+    return;
+  }
+
   if (apply) {
     // Writes config/.env on the target — the same class of mutation apply/restore/rollback
     // guard against each other for, and this used to bypass entirely.
@@ -215,7 +317,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
 
   log("required secrets");
   for (const entry of entries) {
-    const mark = entry.present ? "ok     " : "MISSING";
+    const mark = entry.present ? "ok     " : entry.required ? "MISSING" : "optional";
     info(`${mark} ${entry.name.padEnd(24)} ${entry.location.padEnd(11)} ${entry.usedBy}`);
   }
 

@@ -71,6 +71,12 @@ export interface Runtime {
   imageReference(): Promise<string | undefined>;
   /** The running container's image, independent of the configured tag. */
   runningImageIdentity?(): Promise<{ imageId: string; digests: string[]; version?: string; containerId: string } | undefined>;
+  /** The running container's own environment — what it actually started with, not what this
+   *  machine's .env currently says. A repo-env value (the gateway token) is injected once at
+   *  container-creation time and lives on inside the container from then on; if the operator
+   *  side's own copy is later lost, this is the one place it still exists. Undefined when the
+   *  instance is not running or this runtime cannot introspect it. */
+  runningEnvironment?(): Promise<Record<string, string> | undefined>;
   /** When the running instance started, as epoch milliseconds, or undefined when it is not
    *  running.
    *
@@ -94,6 +100,17 @@ export interface Runtime {
   /** Runs a command inside the already-running helper container for `service`. */
   execInHelper(
     service: string,
+    args: string[],
+    options?: { input?: string; allowFailure?: boolean },
+  ): Promise<ExecResult>;
+  /** The general form of execInHelper: any command, not just the app's own CLI entrypoint —
+   *  for ad hoc diagnostics execInHelper cannot reach (reading a file bundled in the image, a
+   *  curl probe against something only reachable from inside the container's own network
+   *  namespace). Same container, same failure mode: throws HelperNotRunning when it is not
+   *  up, so callers can fall back the same way execInHelper's callers already do. */
+  execCommand?(
+    service: string,
+    command: string,
     args: string[],
     options?: { input?: string; allowFailure?: boolean },
   ): Promise<ExecResult>;

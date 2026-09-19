@@ -62,6 +62,12 @@ export interface Recipe {
   readonly ports?: RecipePort[];
   /** Variables the recipe expects, with a short explanation each. */
   readonly variables?: Record<string, string>;
+  /** Data-relative paths (from the data directory root) this recipe keeps its generated
+   *  credentials under, e.g. ["tor-socks5"]. One declaration, three readers: archive.ts
+   *  excludes these from migrate and share snapshots, verify.ts refuses archives that
+   *  already carry them, and private-config.ts refuses private writes anywhere else.
+   *  full deliberately still contains them — it is credential-complete by design. */
+  readonly privatePaths?: string[];
   /** Absolute path of the recipe directory on our side. */
   readonly directory: string;
   /** The stack definition inside it. Part of the recipe format, so applications do not
@@ -87,6 +93,31 @@ function assertShape(value: unknown, name: string): asserts value is Partial<Rec
   if (value === null || typeof value !== "object") {
     throw new Error(`recipes/${name}/recipe.json must contain an object`);
   }
+}
+
+/** Validates one declared private path: non-empty, data-relative, no climbing, no absolute
+ *  form — the care safeName takes with the recipe's own name, applied to a path. The
+ *  declaration drives what snapshots exclude and what private-config refuses, so a sloppy
+ *  entry is rejected at load rather than silently excluding nothing. */
+function privatePath(recipe: string, value: string): string {
+  if (value === "") throw new Error(`recipes/${recipe}/recipe.json: privatePaths entries must be non-empty`);
+  const segments = value.split("/");
+  if (segments[0] === "" || segments.at(-1) === "") {
+    throw new Error(`recipes/${recipe}/recipe.json: privatePaths entries must be relative to the data directory: ${value}`);
+  }
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    throw new Error(`recipes/${recipe}/recipe.json: privatePaths entries must stay inside the data directory: ${value}`);
+  }
+  return value;
+}
+
+function parsePrivatePaths(recipe: string, value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error(`recipes/${recipe}/recipe.json: privatePaths must be an array of data-relative paths`);
+  return value.map((entry) => {
+    if (typeof entry !== "string") throw new Error(`recipes/${recipe}/recipe.json: privatePaths entries must be strings`);
+    return privatePath(recipe, entry);
+  });
 }
 
 export async function loadRecipe(name: string): Promise<Recipe> {
@@ -118,6 +149,7 @@ export async function loadRecipe(name: string): Promise<Recipe> {
     variables: typeof parsed.variables === "object" && parsed.variables !== null
       ? (parsed.variables as Record<string, string>)
       : undefined,
+    privatePaths: parsePrivatePaths(name, parsed.privatePaths),
     directory,
     definitionPath: resolve(directory, "compose.yml"),
     preparePath: await access(resolve(directory, "prepare.ts")).then(() => resolve(directory, "prepare.ts"), () => undefined),
@@ -146,6 +178,23 @@ export async function listRecipes(): Promise<Recipe[]> {
     }
   }
   return recipes;
+}
+
+/** Every installed recipe's declared private paths, data-relative and deduplicated.
+ *
+ *  The single declaration (recipe.json privatePaths) turned into the list the snapshot
+ *  rules consume: archive.ts excludes these from migrate and share, verify.ts refuses
+ *  archives that already carry them. Best-effort by the same rule as listRecipes: recipes
+ *  that cannot be enumerated (no deployment selected, an unreadable root) contribute
+ *  nothing rather than breaking snapshotting. */
+export async function installedRecipePrivatePaths(): Promise<string[]> {
+  let recipes: Recipe[];
+  try {
+    recipes = await listRecipes();
+  } catch {
+    return [];
+  }
+  return [...new Set(recipes.flatMap((recipe) => recipe.privatePaths ?? []))];
 }
 
 /** Directories that hold an agent/MCP bundle but no service definition: provisioned and

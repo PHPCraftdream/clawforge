@@ -33,6 +33,13 @@ function check(name: string, actual: unknown, expected: unknown): void {
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
+// "On a terminal" below means shouldFollow()'s actual terminal case: not captured AND a real
+// TTY. This check process itself has no TTY (it runs under the check runner), so that has to
+// be simulated explicitly — see output.ts's shouldFollow() for why isCaptured() alone is not
+// the same question.
+const originalIsTTY = process.stdout.isTTY;
+Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+
 // --- takeTail: the parser side of the declared --tail option --------------------------------
 
 check("no --tail leaves the arguments alone", takeTail(["--since", "1h"]), { rest: ["--since", "1h"] });
@@ -152,6 +159,29 @@ function recipeCtx(seen: Seen): Context {
 }
 
 await rm(scratch, { recursive: true, force: true });
+Object.defineProperty(process.stdout, "isTTY", { value: originalIsTTY, configurable: true });
+
+// Piped/redirected (no sink, no TTY — a script or an agent's shell tool) must not follow
+// either: that gap is exactly what shouldFollow() exists to close over plain isCaptured().
+Object.defineProperty(process.stdout, "isTTY", { value: undefined, configurable: true });
+{
+  const seen: Seen = { followed: false };
+  const written: string[] = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stdout.write as any) = (chunk: string): boolean => {
+    written.push(chunk);
+    return true;
+  };
+  try {
+    await logs(ctxWith(seen), []);
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  check("piped/redirected (no TTY, no sink) reads bounded instead of following", seen.followed, false);
+  check("and still hands back the lines, to stdout rather than a sink", written.join(""), "line one\nline two\n");
+}
+Object.defineProperty(process.stdout, "isTTY", { value: originalIsTTY, configurable: true });
 
 process.stderr.write(failed === 0 ? "all logs-bounded checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

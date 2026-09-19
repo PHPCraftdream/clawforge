@@ -353,6 +353,7 @@ const expectedTemplate =
   "# target-env  -> <data>/config/.env on the target (read by OpenClaw itself)\n" +
   "\n" +
   "# --- repo-env ---\n" +
+  "# a repo-env value usually already exists in the repository's own .env — copy it here, do not invent a new one\n" +
   "# used by: gateway.auth.token\n" +
   "OPENCLAW_GATEWAY_TOKEN=\n" +
   "\n" +

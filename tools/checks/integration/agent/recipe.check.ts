@@ -9,7 +9,7 @@
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { recipe } from "#framework/commands/management/recipe.ts";
+import { recipe, recipeActionIsReadOnly } from "#framework/commands/management/recipe.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import {
@@ -65,6 +65,9 @@ function stubContext(env: Record<string, string>): { ctx: Context; calls: string
           async down() {},
           async status() {},
           async followLogs() {},
+          async readLogs(tail: string) {
+            return `stubbed log tail=${tail}\n`;
+          },
           async isRunning() {
             return false;
           },
@@ -297,6 +300,43 @@ try {
     await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["onboard", "prepared"]));
     check("recipe onboard exposes the app-owned machine result", output.includes('"kind":"onboard"'), true);
   }
+
+  // --- diagnose: bundles isRunning + readLogs + the verify.ts result in one report --------
+
+  {
+    const { ctx } = stubContext({});
+    let output = "";
+    await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["diagnose", "prepared"]));
+    const report = JSON.parse(output) as Record<string, unknown>;
+    check("diagnose reports whether the stack is running", report.running, false);
+    check("diagnose carries the verify.ts hook's own result", report.verify, { ok: true, kind: "verify" });
+    check("diagnose has no verifyError when the hook succeeds", report.verifyError, undefined);
+    check("diagnose defaults --tail to 50", report.logs, "stubbed log tail=50\n");
+  }
+
+  {
+    const { ctx } = stubContext({});
+    let output = "";
+    await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["diagnose", "prepared", "--tail", "5"]));
+    const report = JSON.parse(output) as Record<string, unknown>;
+    check("diagnose honours --tail", report.logs, "stubbed log tail=5\n");
+  }
+
+  {
+    // "plain" has no verify.ts at all — diagnose must still report the rest, not die.
+    const { ctx } = stubContext({});
+    let output = "";
+    await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["diagnose", "plain"]));
+    const report = JSON.parse(output) as Record<string, unknown>;
+    check("diagnose reports a missing verify.ts as data, not a thrown error", report.verifyError, "no verify.ts hook");
+    check("diagnose still reports running/logs when there is no verify.ts", report.running, false);
+  }
+
+  check(
+    "diagnose is not read-only: it runs verify.ts, the same reason verify itself is not",
+    recipeActionIsReadOnly(["diagnose", "prepared"]),
+    false,
+  );
 
   {
     const importedRoot = resolve(tmpdir(), `clawforge-recipe-import-${Date.now()}`);

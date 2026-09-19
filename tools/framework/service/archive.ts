@@ -10,6 +10,7 @@
 
 import type { Context } from "../core/context.ts";
 import { sudoFor } from "../runtime/datadir.ts";
+import { installedRecipePrivatePaths } from "./recipe.ts";
 
 const LEGACY_PREFIXES = ["oc", "cf"] as const;
 
@@ -94,8 +95,19 @@ function baseExcludes(dataName: string): string[] {
   ];
 }
 
-export function excludesFor(profile: Profile, dataName: string): string[] {
+/** The tar exclusion list for one profile.
+ *
+ *  recipePrivatePaths carries the recipes' own declared private paths (installedRecipePrivatePaths,
+ *  data-relative). Those files are generated credentials, not instance state: migrate and share
+ *  must leave them out, while full — credential-complete by design, so restoring it restores the
+ *  sidecar's working state — keeps them. The parameter defaults to empty, so callers without
+ *  recipe context get exactly the lists they always got. */
+export function excludesFor(profile: Profile, dataName: string, recipePrivatePaths: readonly string[] = []): string[] {
   const excludes = baseExcludes(dataName);
+
+  if (profile !== "full" && recipePrivatePaths.length > 0) {
+    excludes.push(...recipePrivatePaths.map((path) => `${dataName}/${path}`));
+  }
 
   if (profile === "migrate") {
     // Same instance, different host: keep identity, hand the keys over separately.
@@ -325,7 +337,9 @@ export async function createArchive(
   const name = dataDirName(dataDir);
   const parent = dataDirParent(dataDir);
 
-  const excludeArgs = excludesFor(options.profile, name).map((pattern) => `--exclude=${pattern}`);
+  // Read from the recipes' own privatePaths declaration before the command is built: the
+  // recipes live on this side, the archive on the target.
+  const excludeArgs = excludesFor(options.profile, name, await installedRecipePrivatePaths()).map((pattern) => `--exclude=${pattern}`);
   const prefix = await sudoFor(ctx, options.archive);
 
   // --numeric-owner keeps uid/gid 1000 meaningful on a host with different user names.

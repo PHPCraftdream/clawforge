@@ -25,13 +25,17 @@ import {
 } from "#src/service/archive.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
+import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 
-/** Paths a profile must not contain. */
-function forbiddenPaths(profile: Profile): string[] {
+/** Paths a profile must not contain. The recipe-declared private paths arrive from the same
+ *  installedRecipePrivatePaths() enumeration archive.ts excludes by — passed in so this stays
+ *  pure — and are checked here, not just excluded there, because an archive already taken
+ *  before that exclusion existed still carries them and verify is what must refuse it. */
+function forbiddenPaths(profile: Profile, recipePrivatePaths: readonly string[]): string[] {
   if (profile === "share") {
-    return ["config/.env", "config/.env.clawforge-", "config/identity/", "config/devices/", "config/state/", "config/agents/"];
+    return [...recipePrivatePaths, "config/.env", "config/.env.clawforge-", "config/identity/", "config/devices/", "config/state/", "config/agents/"];
   }
-  if (profile === "migrate") return ["config/.env", "config/.env.clawforge-"];
+  if (profile === "migrate") return [...recipePrivatePaths, "config/.env", "config/.env.clawforge-"];
   return [];
 }
 
@@ -159,6 +163,9 @@ export async function verifySnapshot(
   if (!(await ctx.transport.exists(archive))) die(`archive not found: ${archive}`);
 
   const secrets = await collectSecrets(ctx);
+  // The same enumeration archive.ts excludes by: this check is what refuses an archive that
+  // was already taken before that exclusion existed.
+  const recipePrivatePaths = await installedRecipePrivatePaths();
   log(
     `checking against ${secrets.critical.length} provider/gateway and ${secrets.identity.length} identity secret(s)`,
   );
@@ -187,7 +194,7 @@ export async function verifySnapshot(
   const root = archiveRoot(entries);
   const relative = entries.map((entry) => entry.replace(/^\.\//, "").slice(root.length + 1));
 
-  for (const path of forbiddenPaths(profile)) {
+  for (const path of forbiddenPaths(profile, recipePrivatePaths)) {
     if (relative.some((entry) => entry.startsWith(path))) {
       warn(`archive contains ${path}, which the '${profile}' profile must exclude`);
       failures += 1;

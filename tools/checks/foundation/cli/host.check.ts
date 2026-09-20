@@ -1,0 +1,359 @@
+// `./clawforge host <context> -- <command> [args...]` runs one ad hoc command against the
+// operator's own machine layers — the deployment's transport (target), wherever the container
+// engine actually executes (engine), or the bare machine (local) — instead of the deployment's
+// containers. Everything here is hermetic: contexts are resolved against an injected
+// HostEnvironment, execution is recorded by a stub transport, and the one real process this file
+// spawns is `node -e` on the machine running the check. Covers:
+//   - parseHostArgs: where host's own flags stop and the command's verbatim tail begins, with
+//     and without the bare `--` the shell needs but MCP never sends;
+//   - the root gate: --root and --confirm-root each refuse to act alone;
+//   - resolveHostContext per platform against a fake environment — target passthrough, engine
+//     onto docker-desktop's WSL distro on Windows and onto local everywhere else, local with no
+//     root to elevate to on Windows — plus the pure wsl.exe/sudo command builders and wsl.exe's
+//     UTF-16 distro listing;
+//   - the streaming-vs-captured split in all three output worlds: a real terminal, a sink, a
+//     plain pipe;
+//   - the MCP schema/argv contract, including the toArgv -> parseHostArgs round trip;
+//   - full dispatch through a recording transport, and one real bare-machine run.
+
+import { host, parseHostArgs, rootElevationRequested } from "#framework/commands/interface/host/index.ts";
+import { parseWslDistroListing, resolveHostContext, sudoCommand, wslEngineCommand } from "#framework/commands/interface/host/contexts.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp-server.ts";
+import { withOutputSink } from "#framework/core/output.ts";
+import type { Context } from "#framework/core/context.ts";
+
+let failed = 0;
+
+function check(name: string, actual: unknown, expected: unknown): void {
+  const same = JSON.stringify(actual) === JSON.stringify(expected);
+  if (same) {
+    process.stderr.write(`  ok   ${name}\n`);
+    return;
+  }
+  failed += 1;
+  process.stderr.write(
+    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
+  );
+}
+
+// die() throws rather than exiting, so the message is the observable.
+async function deathOf(run: () => unknown): Promise<string> {
+  try {
+    await run();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return "";
+}
+
+// A transport that only records: nothing here spawns, so every dispatch case can assert the
+// exact command, arguments and options the host command chose — including the case where it
+// must not have run at all.
+interface RecordedCall {
+  command: string;
+  args: string[];
+  options?: Record<string, unknown>;
+}
+
+function recordingTransport(code = 0, stdout = "ok\n", stderr = "") {
+  const calls: RecordedCall[] = [];
+  const transport = {
+    description: "wsl:Ubuntu-24.04",
+    async exec(command: string, args: string[], options?: Record<string, unknown>) {
+      calls.push({ command, args, options });
+      return { code, stdout, stderr };
+    },
+  };
+  return { calls, transport };
+}
+
+function ctxWith(transport: unknown): Context {
+  return { transport, runtime: {} } as unknown as Context;
+}
+
+// --- parseHostArgs: our flags end where the command begins -----------------------------------
+
+{
+  check("a bare -- marks the boundary and is dropped", parseHostArgs(["local", "--", "echo", "hi"]), {
+    context: "local",
+    root: false,
+    confirmRoot: false,
+    command: ["echo", "hi"],
+  });
+  check("without -- the command starts at the first non-flag token", parseHostArgs(["target", "curl", "-fsS", "http://x/healthz"]), {
+    context: "target",
+    root: false,
+    confirmRoot: false,
+    command: ["curl", "-fsS", "http://x/healthz"],
+  });
+  const withBoundary = parseHostArgs(["engine", "--root", "--confirm-root", "--", "whoami"]);
+  check("--root and --confirm-root are taken before the boundary", withBoundary, {
+    context: "engine",
+    root: true,
+    confirmRoot: true,
+    command: ["whoami"],
+  });
+  // The MCP path never sends `--` (toArgv emits context, then --flags, then the variadic
+  // command), so both shapes must parse identically.
+  check("the MCP shape parses identically (toArgv never emits --)", parseHostArgs(["engine", "--root", "--confirm-root", "whoami"]), withBoundary);
+  check("a --root after the command starts is the command's own", parseHostArgs(["local", "--", "docker", "--root"]), {
+    context: "local",
+    root: false,
+    confirmRoot: false,
+    command: ["docker", "--root"],
+  });
+}
+
+{
+  check("no context at all is a usage error", (await deathOf(() => parseHostArgs([]))).includes("usage:"), true);
+  check("an unknown context is refused by name", (await deathOf(() => parseHostArgs(["vm", "whoami"]))).includes("unknown context: vm"), true);
+  check("and the refusal names the three valid contexts", (await deathOf(() => parseHostArgs(["vm", "whoami"]))).includes("target, engine or local"), true);
+  check("a context with nothing after it is a usage error", (await deathOf(() => parseHostArgs(["local"]))).includes("usage:"), true);
+}
+
+// --- the root gate: either flag alone is a refusal, not a silent downgrade --------------------
+
+check("--root alone refuses to elevate, naming the missing consent", (await deathOf(() => rootElevationRequested(true, false))).includes("--confirm-root"), true);
+check("--confirm-root alone refuses too, naming the missing request", (await deathOf(() => rootElevationRequested(false, true))).includes("--root"), true);
+check("neither flag elevates nobody", rootElevationRequested(false, false), false);
+check("both flags together are consent", rootElevationRequested(true, true), true);
+
+{
+  const stub = recordingTransport();
+  check("host refuses --root alone before anything runs", (await deathOf(() => host(ctxWith(stub.transport), ["target", "--root", "--", "whoami"]))).includes("--confirm-root"), true);
+  check("and nothing reached the transport", stub.calls.length, 0);
+  check("host refuses --confirm-root alone just as loudly", (await deathOf(() => host(ctxWith(stub.transport), ["target", "--confirm-root", "--", "whoami"]))).includes("--root"), true);
+}
+
+{
+  const stub = recordingTransport();
+  const written: string[] = [];
+  await withOutputSink((chunk) => written.push(chunk), async () => {
+    await host(ctxWith(stub.transport), ["target", "--root", "--confirm-root", "--", "whoami"]);
+  });
+  const call = stub.calls.at(-1) ?? { command: "", args: [] };
+  check("--root --confirm-root elevates through the target as sudo -n", { command: call.command, args: call.args }, { command: "sudo", args: ["-n", "whoami"] });
+}
+
+{
+  const stub = recordingTransport();
+  await withOutputSink(() => {}, async () => {
+    await host(ctxWith(stub.transport), ["target", "--", "whoami"]);
+  });
+  const call = stub.calls.at(-1) ?? { command: "", args: [] };
+  check("without the flags the command runs exactly as written", { command: call.command, args: call.args }, { command: "whoami", args: [] });
+}
+
+// --- resolveHostContext: roles resolved against an injected environment -----------------------
+// The environment is always explicit below — the default is the real machine, and this check
+// must never ask the real one whether docker-desktop exists. exec/elevate are only invoked on
+// the one resolution that cannot spawn (the refusal); the wsl.exe shapes are covered by the
+// pure builders underneath.
+
+{
+  const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "target");
+  check("target is the deployment transport, named as it names itself", execution.description, "wsl:Ubuntu-24.04");
+  check("target is exactly what it says it is", execution.note, undefined);
+}
+
+{
+  const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "engine", {
+    platform: "linux",
+    listWslDistros: async () => {
+      throw new Error("must not be called off windows");
+    },
+  });
+  check("off windows engine collapses onto local", execution.description, "local");
+  check("and says the two are the same machine", execution.note?.includes("same machine"), true);
+}
+
+{
+  const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "engine", {
+    platform: "win32",
+    listWslDistros: async () => ["Ubuntu-24.04"],
+  });
+  check("on windows without docker-desktop engine collapses onto local too", execution.description, "local");
+  check("and names the distro it looked for", execution.note?.includes("same machine") === true && execution.note?.includes("docker-desktop"), true);
+}
+
+{
+  const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "engine", {
+    platform: "win32",
+    listWslDistros: async () => ["Ubuntu-24.04", "docker-desktop"],
+  });
+  check("with docker-desktop present engine is its WSL distro", execution.description, "wsl:docker-desktop");
+  check("and says where the engine really runs", execution.note?.includes("docker-desktop"), true);
+}
+
+{
+  const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "local", {
+    platform: "win32",
+    listWslDistros: async () => [],
+  });
+  check("local on windows refuses elevation outright", (await deathOf(() => execution.elevate("whoami", [], {}))).includes("no root"), true);
+}
+
+check("--exec hands the command line over verbatim, unparsed by any shell", wslEngineCommand("docker-desktop", "cat", ["/etc/resolv.conf"], false), {
+  command: "wsl.exe",
+  args: ["-d", "docker-desktop", "--exec", "cat", "/etc/resolv.conf"],
+});
+check("root rides in front as -u root", wslEngineCommand("docker-desktop", "whoami", [], true), {
+  command: "wsl.exe",
+  args: ["-u", "root", "-d", "docker-desktop", "--exec", "whoami"],
+});
+check("sudo elevation is non-interactive", sudoCommand("whoami", []), { command: "sudo", args: ["-n", "whoami"] });
+
+check("wsl.exe's UTF-16 listing survives its NUL-mangled decoding", parseWslDistroListing(
+  "d\u0000o\u0000c\u0000k\u0000e\u0000r\u0000-\u0000d\u0000e\u0000s\u0000k\u0000t\u0000o\u0000p\u0000\r\u0000\n\u0000U\u0000b\u0000u\u0000n\u0000t\u0000u\u0000-\u00002\u00004\u0000.\u00000\u00004\u0000\r\u0000\n\u0000",
+), ["docker-desktop", "Ubuntu-24.04"]);
+check("a plain listing parses the same way", parseWslDistroListing("docker-desktop\n"), ["docker-desktop"]);
+check("no distros is an empty list, not an error", parseWslDistroListing(""), []);
+
+// --- one capability, two shapes: streaming on a terminal, captured otherwise ------------------
+// "On a terminal" below is shouldFollow()'s actual terminal case, simulated the way
+// logs-bounded.check.ts does it: the check process has no TTY of its own, and this suite
+// shares one process with every other check file, so the flag is set, exercised and restored
+// where a throw cannot skip the restore.
+
+const originalIsTTY = process.stdout.isTTY;
+try {
+  Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+
+  {
+    const stub = recordingTransport();
+    await host(ctxWith(stub.transport), ["target", "--", "cat", "/etc/resolv.conf"]);
+    check("on a terminal the child streams instead of being captured", stub.calls.at(-1)?.options, { stream: true });
+  }
+
+  {
+    const stub = recordingTransport();
+    const written: string[] = [];
+    await withOutputSink((chunk) => written.push(chunk), async () => {
+      await host(ctxWith(stub.transport), ["target", "--", "cat", "/etc/resolv.conf"]);
+    });
+    check("under a sink the child is captured, not streamed", stub.calls.at(-1)?.options, { input: "", allowFailure: true });
+    check("and its output is handed to the sink", written.join(""), "ok\n");
+  }
+
+  Object.defineProperty(process.stdout, "isTTY", { value: undefined, configurable: true });
+
+  {
+    // The gap shouldFollow() exists to close: piped output (a script, an agent's shell tool)
+    // has neither a sink nor a TTY, and must not follow either. The transport records the
+    // options, so nothing here needs a real stdout — but the lines do land on it.
+    const stub = recordingTransport();
+    const piped: string[] = [];
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stdout.write as any) = (chunk: string): boolean => {
+      piped.push(chunk);
+      return true;
+    };
+    try {
+      await host(ctxWith(stub.transport), ["target", "--", "cat", "/etc/resolv.conf"]);
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+    check("piped with no sink captures too, rather than following", stub.calls.at(-1)?.options, { input: "", allowFailure: true });
+    check("and hands the lines back on plain stdout", piped.join(""), "ok\n");
+  }
+
+  {
+    const stub = recordingTransport();
+    const written: string[] = [];
+    await withOutputSink((chunk) => written.push(chunk), async () => {
+      await host(ctxWith(stub.transport), ["target", "--", "cat", "/etc/resolv.conf"]);
+    });
+    check("under a sink the piped shape and the terminal shape agree", stub.calls.at(-1)?.options, { input: "", allowFailure: true });
+  }
+
+  {
+    // A failure must reach the caller as a failure carrying its own output — the exit code,
+    // the partial stdout, and the stderr that is the actual reason.
+    const stub = recordingTransport(3, "partial answer\n", "the real reason\n");
+    const written: string[] = [];
+    let message: string | undefined;
+    await withOutputSink((chunk) => written.push(chunk), async () => {
+      try {
+        await host(ctxWith(stub.transport), ["target", "--", "cat", "/etc/resolv.conf"]);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+    });
+    check("a failing command reports its exit code", message?.includes("exit 3"), true);
+    check("its stdout is still handed back", written.join("").includes("partial answer"), true);
+    check("and its stderr, which on a failure is the reason", written.join("").includes("the real reason"), true);
+  }
+} finally {
+  Object.defineProperty(process.stdout, "isTTY", { value: originalIsTTY, configurable: true });
+}
+
+// --- the MCP contract: schema, argv, and the round trip between them --------------------------
+
+// Same reasoning as cli/exec: host can run anything the targeted machine allows, so it is
+// declared destructive and MCP demands confirm: true rather than a second mechanism.
+check("host is declared destructive, so MCP requires a confirmation", openclawCommands.host.destructive, true);
+
+{
+  const schema = inputSchema(openclawCommands.host);
+  const properties = schema.properties as Record<string, { type?: string; description?: string; enum?: string[]; items?: { type?: string } } | undefined>;
+  const required = (schema.required as string[]) ?? [];
+
+  check("context is a plain string argument", properties.context?.type, "string");
+  check("context exposes exactly the three contexts", properties.context?.enum, ["target", "engine", "local"]);
+  check("root is a boolean flag", properties.root?.type, "boolean");
+  check("confirm-root is a boolean flag", properties["confirm-root"]?.type, "boolean");
+  check("args is the command list", properties.args?.type, "array");
+  check("args entries are strings", properties.args?.items?.type, "string");
+  check("the schema requires context and args", required.includes("context") && required.includes("args"), true);
+  check("the command's own elevation flags are not schema-required", required.includes("confirm-root"), false);
+  check("destructive with no read-only mode requires confirm", required.includes("confirm"), true);
+
+  check("toArgv emits context, then flags, then the command", toArgv(openclawCommands.host, { context: "engine", root: true, "confirm-root": true, args: ["resolvectl", "status"] }), ["engine", "--root", "--confirm-root", "resolvectl", "status"]);
+
+  // The round trip the interface/index.ts header demands: what an MCP client sends must be
+  // exactly what the command's own parser accepts — one declaration, two consumers.
+  check("toArgv's argv parses back to the same invocation", parseHostArgs(toArgv(openclawCommands.host, { context: "engine", root: true, "confirm-root": true, args: ["resolvectl", "status"] })), {
+    context: "engine",
+    root: true,
+    confirmRoot: true,
+    command: ["resolvectl", "status"],
+  });
+
+  check("validate names the contexts for a bad one", validate(openclawCommands.host, { context: "vm" }).join("; ").includes("target, engine, local"), true);
+  const missing = validate(openclawCommands.host, {});
+  check("validate reports both required arguments", missing.includes("context is required") && missing.includes("args is required"), true);
+  check("the tool description shows the client the contexts", toolDescription(openclawCommands.host).includes("target") && toolDescription(openclawCommands.host).includes("engine") && toolDescription(openclawCommands.host).includes("local"), true);
+  check("and the root gate", toolDescription(openclawCommands.host).includes("--confirm-root"), true);
+}
+
+// --- as e2e as this gets without a machine fleet ----------------------------------------------
+
+{
+  // Real parsing, real resolution branching, fake execution: the target context must reach the
+  // deployment's transport with the command and nothing of ours mixed in.
+  const stub = recordingTransport();
+  const written: string[] = [];
+  await withOutputSink((chunk) => written.push(chunk), async () => {
+    await host(ctxWith(stub.transport), ["target", "--", "cat", "/etc/resolv.conf"]);
+  });
+  const call = stub.calls.at(-1) ?? { command: "", args: [], options: undefined };
+  check("a real parse and resolution reaches the transport with the command alone", { command: call.command, args: call.args }, { command: "cat", args: ["/etc/resolv.conf"] });
+  check("captured, it runs to a result rather than streaming", call.options, { input: "", allowFailure: true });
+  check("and the answer is the sink's problem now", written.join(""), "ok\n");
+}
+
+{
+  // The one case that runs a real child process on the operator's machine: local never touches
+  // the deployment's transport, and `node -e` is harmless by construction on every OS — no WSL,
+  // no docker, no network.
+  const written: string[] = [];
+  await withOutputSink((chunk) => written.push(chunk), async () => {
+    await host(ctxWith({}), ["local", "--", process.execPath, "-e", "console.log('clawforge host local e2e')"]);
+  });
+  check("local runs the command on this machine, unwrapped", written.join(""), "clawforge host local e2e\n");
+}
+
+process.stderr.write(failed === 0 ? "all host checks passed\n" : `${failed} failed\n`);
+process.exitCode = failed === 0 ? 0 : 1;

@@ -7,6 +7,7 @@ import type { AppCommand } from "#src/core/app.ts";
 import { status } from "../status.ts";
 import { cli } from "../cli.ts";
 import { exec } from "../exec.ts";
+import { host } from "../host/index.ts";
 import { cliStart, cliStop } from "../cli-helper.ts";
 import { configureProvider } from "#src/commands/management/provider.ts";
 import { mcpServe, mcpSetup, mcpCreds } from "#src/commands/management/mcp.ts";
@@ -93,6 +94,46 @@ export const managementCommands: Record<string, AppCommand> = {
       {
         name: "args",
         description: "Command and arguments to run, e.g. [\"curl\", \"-fsS\", \"http://127.0.0.1:18789/healthz\"]",
+        kind: "variadic",
+        required: true,
+      },
+    ],
+  },
+  host: {
+    summary: "Run one command on the operator's own machine — the target's transport, the engine's VM, or bare local",
+    run: host,
+    details:
+      "Unlike exec/cli, which run inside the deployment's own containers, this reaches the " +
+      "machine-side layers: a WSL distro's resolv.conf, Docker Desktop's own settings, the bare host.\n" +
+      "The context is a role, resolved per platform:\n" +
+      "  target  the deployment's own transport (local/wsl/ssh), the same one every other command uses;\n" +
+      "  engine  wherever the container engine actually executes — Docker Desktop's docker-desktop " +
+      "WSL2 distro on Windows. Where no separate engine exists (native Linux dockerd, or no backend " +
+      "yet for this platform), it says so and runs in the same place as local;\n" +
+      "  local   this machine, unwrapped.\n" +
+      "Root is never implicit: --root alone does nothing, and neither does --confirm-root — both " +
+      "together elevate (wsl -u root in the engine distro, where WSL grants it without a password; " +
+      "sudo -n elsewhere, so a required password fails fast instead of hanging; refused outright " +
+      "where there is no root concept).\n" +
+      "Everything from the first non-flag argument on (optionally after a bare --) is the command, " +
+      "verbatim — over MCP pass it as the args list, no leading --.",
+    // Same reasoning as cli/exec: it can run anything the targeted machine allows, so it gets
+    // the same MCP confirmation. --help shows this command's own help rather than passing
+    // through, the same tradeoff exec makes.
+    destructive: true,
+    arguments: [
+      {
+        name: "context",
+        description: "Where to run: target (the deployment's transport), engine (the container engine's machine), local (this machine)",
+        kind: "positional",
+        required: true,
+        choices: ["target", "engine", "local"],
+      },
+      { name: "root", description: "Request root. Does nothing without --confirm-root", kind: "flag" },
+      { name: "confirm-root", description: "Second consent for --root; both flags together are required", kind: "flag" },
+      {
+        name: "args",
+        description: "Command and arguments to run, e.g. [\"resolvectl\", \"status\"]",
         kind: "variadic",
         required: true,
       },

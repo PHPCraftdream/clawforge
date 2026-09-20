@@ -8,7 +8,7 @@
 import { applyConfig, stagedFileName } from "#framework/commands/orchestration/config.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/output.ts";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Context } from "#framework/core/context.ts";
@@ -87,6 +87,107 @@ check("and stays a .json file", dry.endsWith(".json"), true);
 
     check("a rejected payload still fails the command", threw, true);
     check("and leaves no staged file behind", [...written], []);
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+  }
+}
+
+// --- --dump: the reverse run, rebuilding the declaration from the instance's own config -------
+//
+// When the operator's copy of desired-state.json is lost, the live openclaw.json is the only
+// place the values still exist. Only the target's config file is read and only the local
+// declaration is written, so the stub context answers for the transport alone.
+
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-apply-config-dump-check-"));
+  try {
+    await mkdir(resolve(deployment, "config"), { recursive: true });
+    useDeployment(deployment);
+
+    // Mutable so each case can bend what the target answers with — that is the whole point of
+    // stubbing the transport rather than building a real one.
+    let liveConfig = `{
+  // The live config is OpenClaw's own JSON5 format — a comment or trailing comma is
+  // legitimate there (readLiveConfigOrThrow parses it as JSON5 for exactly this reason),
+  // so the fixture is one: parsing it as plain JSON would throw.
+  "gateway": { "mode": "local", "bind": "0.0.0.0", "extra": "not ours to declare" },
+  "agents": { "defaults": { "model": { "primary": "openai/gpt-5" } } },
+}`;
+    let targetHasConfig = true;
+    const ctx = {
+      settings: { dataDir: "/srv/clawforge" },
+      transport: {
+        async exists(path: string): Promise<boolean> {
+          return targetHasConfig && path.endsWith("openclaw.json");
+        },
+        async readFile(): Promise<string> {
+          return liveConfig;
+        },
+      },
+    } as unknown as Context;
+
+    const desiredState = resolve(deployment, "config", "desired-state.json");
+    const dump = async (...args: string[]): Promise<string> => {
+      let output = "";
+      await withOutputSink(
+        (chunk: string) => {
+          output += chunk;
+        },
+        async () => {
+          await applyConfig(ctx, args);
+        },
+      );
+      return output;
+    };
+
+    await dump("--dump");
+    const recovered = await readFile(desiredState, "utf8");
+    check("a dump recovers exactly the curated paths from the live config", JSON.parse(recovered) as unknown[], [
+      { path: "gateway.mode", value: "local" },
+      { path: "gateway.bind", value: "0.0.0.0" },
+      { path: "agents.defaults.model.primary", value: "openai/gpt-5" },
+    ]);
+    check("and a live key outside the curated set does not leak in", recovered.includes("not ours to declare"), false);
+
+    let refusal = "";
+    try {
+      await dump("--dump");
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    check("a dump onto an existing declaration is refused", refusal.includes("already exists"), true);
+    check("and the refusal names the way past it", refusal.includes("--force"), true);
+    check("and the refused attempt leaves the file byte-identical", await readFile(desiredState, "utf8"), recovered);
+
+    liveConfig = liveConfig.replace(`"mode": "local"`, `"mode": "remote"`);
+    await dump("--dump", "--force");
+    const overwritten = JSON.parse(await readFile(desiredState, "utf8")) as { path: string; value: unknown }[];
+    check("--force overwrites, so a changed live value is recovered", overwritten.find((entry) => entry.path === "gateway.mode")?.value, "remote");
+
+    // A target that only ever set one of the curated paths must yield exactly that one — the
+    // other two have no value to recover, and guessing one would fabricate a declaration.
+    liveConfig = `{ "gateway": { "mode": "local" } }`;
+    const partial = await dump("--dump", "--force");
+    const partialContent = await readFile(desiredState, "utf8");
+    check("a live config missing two of the paths yields only what exists", JSON.parse(partialContent) as unknown[], [
+      { path: "gateway.mode", value: "local" },
+    ]);
+    check("and the omitted ones are not emitted as null", partialContent.includes("null"), false);
+    check("nor as undefined", partialContent.includes("undefined"), false);
+    check("each omission is named in the output", partial.includes("gateway.bind"), true);
+    check("beside the note that recovered values are not the original declaration", partial.includes("not the original declaration"), true);
+    check("and that recipes are not part of the file", partial.includes("recipes"), true);
+
+    targetHasConfig = false;
+    const beforeMissing = await readFile(desiredState, "utf8");
+    let missing = "";
+    try {
+      await dump("--dump", "--force");
+    } catch (error) {
+      missing = (error as Error).message;
+    }
+    check("a target with no live config is refused even under --force", missing.includes("not found"), true);
+    check("and the declaration survives the refused dump", await readFile(desiredState, "utf8"), beforeMissing);
   } finally {
     await rm(deployment, { recursive: true, force: true });
   }

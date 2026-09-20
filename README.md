@@ -175,9 +175,10 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `cli …` | arbitrary | OpenClaw's own CLI, e.g. `./clawforge cli config get gateway.mode`; a one-off container by default, but execs into the persistent one when `cli-start` is running. As a tool it takes the arguments as a list and needs `confirm: true` — it can run anything that CLI can |
 | `cli-start` | — | Start the persistent CLI container: `cli`/`mcp-serve` then exec into it instead of paying create/destroy per call |
 | `cli-stop` | — | Stop and remove the persistent CLI container |
-| `apply-config` | `[--dry-run] [--break-lock]` | Apply `config/desired-state.json`, overwriting hand edits to `openclaw.json` |
+| `apply-config` | `[--dry-run] [--dump] [--force] [--break-lock]` | Apply `config/desired-state.json`, overwriting hand edits to `openclaw.json`; `--dump` reconstructs a lost declaration from the live instance's own config — commonly declared paths only |
 | `configure-provider` | `[--provider <id>] [--env <VAR>] [--force]` | Configure any provider from a target-side SecretRef; key values never enter `openclaw.json` |
-| `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--store <name>] [--force]` | The manifest of required secrets, the template, the local store of values |
+| `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force]` | The manifest of required secrets, the template, the local store of values; `--dump` recovers a lost store from a running instance |
+| `recover-env` | `[--dry-run]` | Repair `.env`'s four connection facts from the running container; a wholly absent `.env` is not repairable — reaching the target already requires it |
 | `backup` | `[--profile full\|migrate\|share] [--hot]` | Snapshot the data directory; the gateway is stopped for the duration by default |
 | `restore` | `[<archive>] [--force] [--fresh-identity] [--no-start] [--break-lock]` | Restore an archive; the structural check runs before anything is stopped, the secrets check before anything is started |
 | `pull` | `[--profile ...] [--share] [--with-secrets] [--hot]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
@@ -298,7 +299,7 @@ more of them than fit here:
 | `apply.check.ts` | stopping at the first failure, reporting what did not run as skipped, and never performing an advisory step |
 | `operations.check.ts` | the journal is on disk before the next step starts, an unfinished run keeps every step it managed and gains no invented outcome, and a target that cannot be written to does not fail the run it is recording |
 | `rollback.check.ts` | choosing what to undo: the newest run that took a snapshot, never one that took none, and every refusal saying where to look instead |
-| `apply-config.check.ts` | a dry run does not stage under the shared file name a real run writes, and two dry runs do not collide |
+| `apply-config.check.ts` | a dry run does not stage under the shared file name a real run writes, and two dry runs do not collide; `--dump` recovers exactly the curated paths from a stubbed JSON5 live config, refuses an existing declaration without `--force`, omits paths the live config never set rather than emitting nulls, and says plainly that recovered values are not the original declaration |
 | `instance-lock.check.ts` | a second operation is refused with the holder named, a failed run releases the lock, a stale one is described rather than stolen, and a run that lost its lock to `--break-lock` does not remove the new holder's, and a claim against an existing directory is refused |
 | `accept.check.ts` | every declared check kind in both directions, and that an unknown kind fails rather than passing quietly |
 
@@ -538,6 +539,7 @@ a ready payload for OpenClaw's own `openclaw config set --batch-file`.
 ```bash
 ./clawforge apply-config              # apply
 ./clawforge apply-config --dry-run    # validate without writing anything
+./clawforge apply-config --dump       # lost the file? recover the commonly declared paths from the live instance
 ./clawforge restart                   # the instance reads this file only at startup
 ```
 
@@ -705,6 +707,57 @@ Keys are installed **before** the gateway's first start. Otherwise it reads a co
 referencing variables that do not exist, fails with `SecretRefResolutionError` and
 crash-loops. That is why `push` uses `restore --no-start`, installs the keys and only then
 brings it up.
+
+## Recovering a lost operator-side deployment folder
+
+The deployment directory — `.env`, `config/desired-state.json`, the stores under `secrets/`,
+the `recipes/` beside them — lives on the operator side, and no snapshot in the previous
+section covers it: `backup` and `pull` archive the instance's data directory, not the
+operator's own configuration of the instance. When that folder is lost — disk failure, a
+wrong `rm` — the instance keeps running, and three commands read the operator side back from
+it, in the order a replacement deployment needs them:
+
+```bash
+./clawforge recover-env                    # the connection facts in .env, from the running container
+./clawforge secrets --dump --store prod    # secret values, from the target's config/.env and the container's environment
+./clawforge apply-config --dump            # the commonly declared paths of desired-state.json, from the live config
+```
+
+`recover-env` comes first because its limit is inherent: it repairs a stale or half-filled
+`.env` by merging back the four connection facts compose resolved from it at container
+creation — `OC_DATA_DIR`, `OPENCLAW_GATEWAY_PORT`, `OC_COMPOSE_PROJECT`, `OPENCLAW_IMAGE` —
+one `docker inspect` of the running container reads the answers back, a value already correct
+is untouched, and a fact Docker's answer does not carry is named rather than guessed. A wholly
+absent `.env` cannot be repaired here, because reaching the target to inspect anything
+already requires the `.env` that names the target and its transport; `bootstrap` creates it,
+and everything below presumes it exists.
+
+`secrets --dump --store <name>` is the reverse of `secrets --apply`: target-env values from
+the target's own `config/.env`, repo-env (the gateway token) from the running container's own
+environment, since it is never written to the target's filesystem at all — into a local store.
+A name it cannot recover is left blank and named in the report, never guessed; `--force`
+replaces an existing store. What it reads is what the target holds now, not history.
+
+`apply-config --dump` reconstructs `config/desired-state.json` from the live instance's own
+`openclaw.json` — the small, fixed set of commonly declared paths (`gateway.mode`,
+`gateway.bind`, `agents.defaults.model.primary`), a path the live config never set omitted
+rather than emitted with a guessed value. The reconstruction is not the original authoring:
+the live config shows the outcome of applying the declaration, not the declaration itself, so
+a value OpenClaw defaults to is indistinguishable from a declared one once the declaration is
+gone. Recipes have no part in it: `desired-state.json` is a `{path, value}` batch payload,
+with no established way to declare an installed-recipe list — there is nothing to recover
+them into.
+
+One loss no command undoes: a secret whose only copy was the lost `.env` or store, and whose
+target-env copy has been overwritten or rotated since. `secrets --dump` reads what the target
+holds now; what it held before the loss is nowhere.
+
+The three commands recover the deployment's own connection to an instance still running
+elsewhere. The instance's own state — workspace, memory, conversations, plugins,
+`config/.env` included — is what `./clawforge pull --with-secrets` (or an ordinary `pull`
+plus its sidecar `.secrets.env`) archives whole: the complement, not a substitute, and the
+way to end up running the instance from a new operator machine rather than merely reaching
+it.
 
 ## Deploying to a server
 

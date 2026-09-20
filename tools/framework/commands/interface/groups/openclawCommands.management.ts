@@ -14,6 +14,7 @@ import { mcpServe, mcpSetup, mcpCreds } from "#src/commands/management/mcp.ts";
 import { deploy } from "#src/commands/management/deploy.ts";
 import { lock } from "#src/commands/management/lock.ts";
 import { secrets } from "#src/commands/management/secrets.ts";
+import { recoverEnv } from "#src/commands/recover-env/index.ts";
 import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe.ts";
 import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
 
@@ -207,6 +208,28 @@ export const managementCommands: Record<string, AppCommand> = {
       { name: "store", description: "Store name, e.g. local or prod", kind: "option" },
       { name: "force", description: "Replace an existing store (with --init-store or --dump)", kind: "flag" },
     ],
+  },
+  "recover-env": {
+    summary: "Repair .env's connection facts from the running instance",
+    run: recoverEnv,
+    details:
+      "OC_DATA_DIR, OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT and OPENCLAW_IMAGE are plumbing, not " +
+      "secrets, and compose resolved them from this same .env at container-creation time, so one " +
+      "docker inspect of the running container reads the answers back.\n" +
+      "Each recovered value is merged into the existing .env — already-correct values are " +
+      "untouched, and a fact Docker's answer does not carry is named and left as it is, never " +
+      "guessed.\n" +
+      "For a stale or half-filled .env — a wholly absent one is not repairable here, because " +
+      "reaching the target to inspect anything already requires the .env that names the target " +
+      "and its transport (bootstrap creates it).\n" +
+      "The file is rewritten with the same owner-only protection secrets --apply uses, because " +
+      "OPENCLAW_GATEWAY_TOKEN lives beside these lines and protection is per-file; unrelated " +
+      "lines pass through untouched.\n" +
+      "--dry-run prints what would change and writes nothing.",
+    arguments: [
+      { name: "dry-run", description: "Print what would change without writing", kind: "flag" },
+    ],
+    readOnlyWhen: (args) => args.includes("--dry-run"),
   },
   recipe: {
     summary: "Deploy services next to the instance (list, import, install, remove, status, logs, verify, onboard, diagnose)",

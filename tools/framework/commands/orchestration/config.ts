@@ -4,12 +4,13 @@
 // truth: editing openclaw.json on a host makes that host diverge, re-applying brings it
 // back. The file is a native `openclaw config set --batch-file` payload.
 
-import { readFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { log, info, die } from "#src/core/log.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
+import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
 
 
 
@@ -28,8 +29,19 @@ export function stagedFileName(dryRun: boolean): string {
 
 export async function applyConfig(ctx: Context, args: string[]): Promise<void> {
   const dryRun = args.includes("--dry-run");
+  const dump = args.includes("--dump");
+  const force = args.includes("--force");
   for (const arg of args) {
-    if (arg !== "--dry-run" && arg !== "--break-lock") die(`unknown argument: ${arg}`);
+    if (arg !== "--dry-run" && arg !== "--break-lock" && arg !== "--dump" && arg !== "--force") die(`unknown argument: ${arg}`);
+  }
+
+  if (dump) {
+    // Read-only against the target and the running container — the only write is the local
+    // declaration file itself, and nothing here mutates the instance, so there is nothing
+    // for the lock to serialize. The same reading secrets --dump already established for
+    // its own store write.
+    await dumpDesiredState(ctx, force);
+    return;
   }
 
   // A dry run writes nothing, so it needs no lock — and taking one would make an inspection
@@ -89,4 +101,65 @@ async function writeDesiredState(ctx: Context, dryRun: boolean): Promise<void> {
     log("desired state applied — restart to pick it up: ./clawforge restart");
     info(`source: ${desiredStateFile()}`);
   }
+}
+
+/** The paths a dump attempts to recover: the fixed, small set this framework itself treats
+ *  as commonly declared. The live config cannot say which of its values were once declared
+ *  and which are OpenClaw's own defaults — that distinction lived in the file being
+ *  recovered — so anything outside this list is not attempted rather than guessed. The
+ *  first two are what a fresh deployment's own scaffold seeds (integration/init.ts); the
+ *  third is the model default a real declaration usually carries. */
+const RECOVERABLE_PATHS = [
+  "gateway.mode",
+  "gateway.bind",
+  "agents.defaults.model.primary",
+];
+
+/** The reverse of the real apply: reconstructs config/desired-state.json from a live
+ *  instance's own openclaw.json, for when the operator's copy of the declaration was lost
+ *  while the instance kept running.
+ *
+ *  Explicit limit, reported rather than hidden: the live config shows the OUTCOME of
+ *  applying the declaration, not the declaration itself — a value OpenClaw defaults to is
+ *  indistinguishable from one the operator declared once the declaration is gone. So only
+ *  RECOVERABLE_PATHS is attempted, a path the live config never set is omitted rather than
+ *  emitted with a guessed value, and recipes are not attempted at all: desired-state.json
+ *  is a `config set --batch-file` payload of {path, value} operations, so it has no way to
+ *  declare a recipe list to recover into.
+ *
+ *  readLiveConfigOrThrow(), not a degrade-to-undefined read: this is about to WRITE the
+ *  recovered declaration, so a live config that genuinely exists but failed to read must
+ *  abort the whole operation rather than silently produce an empty one — the same reasoning
+ *  secrets --apply applies through this same helper. */
+async function dumpDesiredState(ctx: Context, force: boolean): Promise<void> {
+  const path = desiredStateFile();
+
+  const exists = await access(path).then(
+    () => true,
+    () => false,
+  );
+  if (exists && !force) {
+    die(`${path} already exists — pass --force to overwrite it with recovered values`);
+  }
+
+  const live = await readLiveConfigOrThrow(ctx);
+  if (live === undefined) {
+    die(`${ctx.settings.dataDir}/config/openclaw.json not found on the target — nothing to recover from`);
+  }
+
+  const recovered: { path: string; value: unknown }[] = [];
+  const omitted: string[] = [];
+  for (const declaredPath of RECOVERABLE_PATHS) {
+    const value = valueAt(live, declaredPath);
+    if (value === undefined) omitted.push(declaredPath);
+    else recovered.push({ path: declaredPath, value });
+  }
+
+  await writeFile(path, `${JSON.stringify(recovered, null, 2)}\n`, "utf8");
+
+  log(`recovered ${recovered.length} of ${RECOVERABLE_PATHS.length} known path(s) into ${path}`);
+  for (const declaredPath of omitted) info(`${declaredPath} has no value in the live config — omitted, not guessed`);
+  if (recovered.length === 0) warn("nothing was recoverable — the file was written as an empty declaration");
+  info("recovered values are what the live config holds now, not the original declaration — a value OpenClaw defaults to is indistinguishable from a declared one once the declaration is gone");
+  info("recipes are not part of desired-state.json (it is a config set --batch-file payload), so there is nothing to recover them into");
 }

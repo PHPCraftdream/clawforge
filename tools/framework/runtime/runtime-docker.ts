@@ -302,6 +302,59 @@ export class DockerRuntime implements Runtime {
     return env;
   }
 
+  /** Reads the connection facts the running instance is actually reachable through. Compose
+   *  resolved all of these from .env at container-creation time, so the values Docker holds
+   *  are what reach the instance however stale the operator's own copy has become. One
+   *  whole-object inspect, the same call runningImageIdentity() already makes; each field
+   *  keeps its provenance: the config bind mount strips to the data dir, the published
+   *  18789/tcp gives the port, Docker's own compose label — which portConflict() already
+   *  reads — gives the project, and .Config.Image keeps the original tag where the top-level
+   *  .Image is the resolved ID and would pin .env to a digest it never wrote. */
+  async runningConnectionFacts(): Promise<
+    { dataDir?: string; port?: string; composeProject?: string; image?: string } | undefined
+  > {
+    const containerId = await this.#containerId();
+    if (containerId === undefined) return undefined;
+    const result = await this.#transport.exec("docker", ["inspect", "--format", "{{json .}}", containerId], { allowFailure: true });
+    if (result.code !== 0) return undefined;
+    let parsed: {
+      State?: { Running?: boolean };
+      Mounts?: unknown;
+      NetworkSettings?: { Ports?: Record<string, unknown> };
+      Config?: { Labels?: Record<string, string>; Image?: unknown };
+    };
+    try {
+      parsed = JSON.parse(result.stdout);
+    } catch {
+      return undefined;
+    }
+    if (parsed?.State?.Running !== true) return undefined;
+    const facts: { dataDir?: string; port?: string; composeProject?: string; image?: string } = {};
+    if (Array.isArray(parsed.Mounts)) {
+      const mount = parsed.Mounts.find(
+        (entry) =>
+          typeof entry === "object" && entry !== null &&
+          (entry as { Destination?: unknown }).Destination === "/home/node/.openclaw",
+      );
+      const source = typeof mount === "object" && mount !== null ? (mount as { Source?: unknown }).Source : undefined;
+      // The config bind mount is "<dataDir>/config"; only a Source carrying that exact suffix
+      // yields the data dir — any other shape stays absent rather than guessed.
+      if (typeof source === "string" && source.endsWith("/config") && source.length > "/config".length) {
+        facts.dataDir = source.slice(0, -"/config".length);
+      }
+    }
+    const ports = parsed.NetworkSettings?.Ports?.["18789/tcp"];
+    if (Array.isArray(ports)) {
+      const hostPort = (ports[0] as { HostPort?: unknown } | undefined)?.HostPort;
+      if (typeof hostPort === "string" && hostPort !== "") facts.port = hostPort;
+    }
+    const project = parsed.Config?.Labels?.["com.docker.compose.project"];
+    if (typeof project === "string" && project !== "") facts.composeProject = project;
+    const image = parsed.Config?.Image;
+    if (typeof image === "string" && image !== "") facts.image = image;
+    return facts;
+  }
+
   async startedAt(): Promise<number | undefined> {
     const id = await this.#containerId();
     if (id === undefined) return undefined;

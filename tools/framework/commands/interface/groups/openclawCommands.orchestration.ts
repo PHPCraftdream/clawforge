@@ -74,7 +74,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
     details:
       "Runs exactly the steps `./clawforge plan` lists, in that order, and stops at the first " +
       "failure — the steps depend on each other, so continuing would report success for an " +
-      "instance nobody has. What did not run is reported as skipped rather than left out.\n" +
+      "instance nobody has. What did not run is reported as advisory or blocked rather than left out.\n" +
       "Then it inspects again and reports what it found. \"Applied\" and \"working\" are " +
       "different claims and this command makes the stronger one: every step can succeed and " +
       "the instance still be broken for a reason no step was looking at.\n" +
@@ -107,7 +107,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "cron_matches, agent_answers); no code travels from a deployment into the framework.\n" +
       "Checks marked usesModel are never run without --with-model: they cost tokens and take " +
       "an agent turn, which writes to that agent's own workspace. They are always reported " +
-      "as skipped and counted — a suite that silently drops what it did not run reads as " +
+      "as \"not-checked\" and counted — a suite that silently drops what it did not run reads as " +
       "coverage it does not have.\n" +
       "Exits non-zero when a check fails.",
     arguments: [
@@ -176,9 +176,18 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "overwriting whatever was set by hand.\n" +
       "That is the point — drift back to the declared state, not a merge.\n" +
       "bootstrap calls this itself, so a fresh deployment and an existing one end up with " +
-      "the same settings.",
+      "the same settings.\n" +
+      "--dump is the reverse: reconstructs a lost desired-state.json from the live instance's " +
+      "own openclaw.json. Recovery is honestly limited — the live config shows the outcome of " +
+      "the declaration, not the declaration itself — so only a fixed set of commonly declared " +
+      "paths is recovered (a value OpenClaw defaults to cannot be told apart from a declared " +
+      "one), paths the live config never set are omitted rather than guessed, and recipes are " +
+      "not part of this file at all. Refuses to overwrite an existing declaration unless " +
+      "--force is given.",
     arguments: [
       { name: "dry-run", description: "Validate without writing", kind: "flag" },
+      { name: "dump", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
+      { name: "force", description: "Overwrite an existing desired-state.json (with --dump)", kind: "flag" },
       { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
     ],
   },

@@ -17,7 +17,17 @@
 import { randomBytes } from "node:crypto";
 import type { Context } from "../core/context.ts";
 
-export type StepStatus = "done" | "failed" | "skipped";
+/** Four outcomes, not three-collapsed-into-one. "skipped" used to mean three different
+ *  things — "never this command's job" (advisory), "never got the chance" (an earlier step
+ *  already failed) and "this plan names an action nobody implemented" — and a reader needs
+ *  a different reaction to each. One label for all three is how an implementation gap hides
+ *  inside a routine report.
+ *
+ *   advisory  structural: not this command's job, on every run
+ *   blocked   would have run, but an earlier step already failed
+ *   failed    attempted and threw — or the plan names a step with no runner at all
+ *   done      ran to completion */
+export type StepStatus = "done" | "failed" | "advisory" | "blocked";
 
 export interface JournalStep {
   readonly id: string;

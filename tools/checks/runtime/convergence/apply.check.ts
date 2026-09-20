@@ -36,10 +36,10 @@ function action(id: string, advisory = false): PlanAction {
 }
 
 /** runSteps dispatches by step id to the real commands, so a check cannot substitute its
- *  own runners. What it can do is choose ids: an id with no runner is reported as skipped,
- *  which is the same path an unknown step takes, and lets the sequencing be observed
+ *  own runners. What it can do is choose ids: an id with no runner is reported as failed,
+ *  which is how an unimplemented step surfaces, and lets the sequencing be observed
  *  without a live instance. */
-async function outcomes(actions: PlanAction[]): Promise<{ id: string; status: string }[]> {
+async function outcomes(actions: PlanAction[]): Promise<{ id: string; status: string; detail?: string }[]> {
   let result: { id: string; status: string; detail?: string }[] = [];
   await withOutputSink(
     () => {},
@@ -47,26 +47,30 @@ async function outcomes(actions: PlanAction[]): Promise<{ id: string; status: st
       result = await runSteps(ctx, actions);
     },
   );
-  return result.map((entry) => ({ id: entry.id, status: entry.status }));
+  return result.map((entry) => ({ id: entry.id, status: entry.status, ...(entry.detail === undefined ? {} : { detail: entry.detail }) }));
 }
 
 // --- advisory steps are never performed ----------------------------------------------------
 
 {
   const result = await outcomes([action("reconnect-mcp", true), action("lock", true)]);
-  check("advisory steps are skipped, not run", result, [
-    { id: "reconnect-mcp", status: "skipped" },
-    { id: "lock", status: "skipped" },
+  check("advisory steps are reported advisory, not run", result, [
+    { id: "reconnect-mcp", status: "advisory", detail: "advisory: for you to do, not this command" },
+    { id: "lock", status: "advisory", detail: "advisory: for you to do, not this command" },
   ]);
 }
 
-// --- a step with no runner is reported, not silently dropped -------------------------------
+// --- a step with no runner is a failure, not a flavor of skip -------------------------------
 
 {
   const result = await outcomes([action("something-nobody-implemented")]);
-  check("an unrunnable step is reported as skipped", result, [{ id: "something-nobody-implemented", status: "skipped" }]);
+  check("an unrunnable step is reported as failed", result, [
+    { id: "something-nobody-implemented", status: "failed", detail: "no runner for this step" },
+  ]);
   // Reported rather than omitted: a list of steps that quietly loses one describes a run
-  // that did not happen.
+  // that did not happen. Failed rather than skipped: a plan naming an action nobody
+  // implemented is a plan and its runner table drifting apart, and reporting it like a
+  // routine "chose not to run" hides the defect from whoever reads the journal.
   check("and it still appears in the outcome", result.length, 1);
 }
 
@@ -75,7 +79,7 @@ async function outcomes(actions: PlanAction[]): Promise<{ id: string; status: st
 {
   const result = await outcomes([action("reconnect-mcp", true), action("unknown-a"), action("unknown-b")]);
   check("every planned step appears in the outcome", result.map((entry) => entry.id), ["reconnect-mcp", "unknown-a", "unknown-b"]);
-  check("in the order the plan gave them", result.map((entry) => entry.status), ["skipped", "skipped", "skipped"]);
+  check("advisory, then the no-runner failure, then blocked — three different facts", result.map((entry) => entry.status), ["advisory", "failed", "blocked"]);
 }
 
 // --- stopping at the first failure ---------------------------------------------------------
@@ -86,15 +90,29 @@ async function outcomes(actions: PlanAction[]): Promise<{ id: string; status: st
 
 {
   const result = await outcomes([action("up"), action("apply-config"), action("restart")]);
-  check("the failing step is recorded as failed", result[0], { id: "up", status: "failed" });
-  check("and everything after it is skipped rather than attempted", result.slice(1), [
-    { id: "apply-config", status: "skipped" },
-    { id: "restart", status: "skipped" },
+  check("the failing step is recorded as failed", result.map((entry) => ({ id: entry.id, status: entry.status }))[0], { id: "up", status: "failed" });
+  check("and everything after it is blocked rather than attempted", result.slice(1).map((entry) => ({ id: entry.id, status: entry.status })), [
+    { id: "apply-config", status: "blocked" },
+    { id: "restart", status: "blocked" },
   ]);
   // A restart after a configuration that never applied would put the instance back on
   // exactly what it was already running, and reporting those steps as done would describe
   // an instance nobody has.
   check("no step after a failure reports success", result.some((entry) => entry.status === "done"), false);
+}
+
+// --- the statuses are different facts, not one label with three moods -------------------------
+//
+// The whole reason "skipped" was split is that a reader needs a different reaction to each.
+// One plan therefore has to produce advisory, failed and blocked side by side and mean
+// something different by each. "done" is the one status this harness cannot reach — every
+// real runner needs a live instance to succeed — so its place in the vocabulary is pinned
+// at the journal seam (release/operations.check.ts), where all four round-trip through disk.
+
+{
+  const result = await outcomes([action("lock", true), action("reconnect-mcp", true), action("unknown-a"), action("up"), action("restart")]);
+  check("one plan, no label doing double duty", result.map((entry) => entry.status), ["advisory", "advisory", "failed", "blocked", "blocked"]);
+  check("the step that could not run at all is not mislabeled as blocked", [result[2].status, result[2].detail], ["failed", "no runner for this step"]);
 }
 
 // --- the confirming inspection has the last word ----------------------------------------------

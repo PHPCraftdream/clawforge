@@ -266,7 +266,7 @@ export async function rollback(ctx: Context, args: string[]): Promise<void> {
         await restart(ctx, []);
         await journal.step("restart", "done");
       } else {
-        await journal.step("restart", "skipped", "--no-restart: the instance is still running the configuration this replaced");
+        await journal.step("restart", "advisory", "--no-restart: the instance is still running the configuration this replaced");
       }
 
       await journal.close("succeeded", `rolled back ${target.id}`);

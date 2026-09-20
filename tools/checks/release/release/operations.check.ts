@@ -5,6 +5,7 @@
 // point on disk, because that is the run whose record anyone will actually need.
 
 import { Journal, snapshotConfig, listOperations, readOperation, latestRollbackable, newOperationId } from "#framework/service/operations.ts";
+import { operations } from "#framework/commands/orchestration/operations.ts";
 import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -279,6 +280,47 @@ function stubContext(seed: Record<string, string> = {}) {
   check("the current operation directory wins a collision", (await readOperation(ctx, "legacy-apply"))?.command, "current");
 }
 
+// --- statuses written by an older framework still read ---------------------------------------
+
+{
+  // StepStatus no longer lists "skipped", but journals written before the split carry it.
+  // Reading must stay a plain cast and plain string handling: the moment a read validates
+  // the union, an old file becomes unreadable exactly when it is needed most — after a run
+  // went wrong.
+  const legacy = {
+    id: "old-apply",
+    command: "apply",
+    deployment: "example",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    steps: [
+      { id: "secrets", status: "done", at: "2026-01-01T00:00:01.000Z" },
+      { id: "restart", status: "skipped", detail: "advisory: for you to do, not this command", at: "2026-01-01T00:00:02.000Z" },
+    ],
+  };
+  const { ctx } = stubContext({ "/srv/clawforge/clawforge-operations/old-apply.json": JSON.stringify(legacy) });
+  const record = await readOperation(ctx, "old-apply");
+  check("an old journal with a skipped step still reads back", record?.steps.map((step) => step.status), ["done", "skipped"]);
+  check("with its detail intact", record?.steps[1].detail, "advisory: for you to do, not this command");
+  // How the operations listing counts trouble in such a record: "skipped" never meant
+  // "failed" and must not start counting as one.
+  check("an old skipped step does not count as a failure", record?.steps.filter((step) => step.status === "failed").length, 0);
+  check("and the old file is still listed", (await listOperations(ctx)).includes("old-apply"), true);
+}
+
+{
+  // The four statuses are four different values end to end: each round-trips through the
+  // journal as itself and only as itself — the property that makes a report readable at a
+  // glance and machine-checkable at once.
+  const { ctx } = stubContext();
+  const journal = await Journal.open(ctx, "apply", "example");
+  await journal.step("a", "done");
+  await journal.step("b", "failed", "x");
+  await journal.step("c", "advisory", "y");
+  await journal.step("d", "blocked", "z");
+  const record = await readOperation(ctx, journal.id);
+  check("all four statuses round-trip through disk, distinct", record?.steps.map((step) => step.status), ["done", "failed", "advisory", "blocked"]);
+}
+
 {
   const { ctx } = stubContext();
   const only = await Journal.open(ctx, "apply", "example");
@@ -302,6 +344,106 @@ function stubContext(seed: Record<string, string> = {}) {
   const snapshot = await snapshotConfig(ctx, chosen);
   check("and the snapshot is keyed by the same one", snapshot?.includes(chosen), true);
   check("so the record reads back under it", (await readOperation(ctx, chosen))?.id, chosen);
+}
+
+// --- the CLI command's own report: what a reader actually sees --------------------------------
+//
+// listOperations()/readOperation() already prove the data on disk is right; this proves the
+// *command* computes the same facts from it. Found missing during #152's own verification —
+// mutating the real command's failed-count filter to also match a legacy "skipped" status went
+// uncaught by every check in this file, because none of them called the command itself.
+
+/** Captures everything operations() prints, without routing through withOutputSink(): that
+ *  helper makes isCaptured() true, and operations() branches on isCaptured() to choose between
+ *  prose and JSON — capturing that way would silently skip the prose path (and the failed-count
+ *  line inside it) on every call. Patching the raw writers keeps isCaptured() false instead, so
+ *  a call with no "--json" takes the same branch a real terminal run would. */
+async function captureCli(body: () => Promise<void>): Promise<string> {
+  const originalErr = process.stderr.write.bind(process.stderr);
+  const originalOut = process.stdout.write.bind(process.stdout);
+  let out = "";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stderr.write as any) = (chunk: string): boolean => {
+    out += chunk;
+    return true;
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stdout.write as any) = (chunk: string): boolean => {
+    out += chunk;
+    return true;
+  };
+  try {
+    await body();
+  } finally {
+    process.stderr.write = originalErr;
+    process.stdout.write = originalOut;
+  }
+  return out;
+}
+
+{
+  const { ctx } = stubContext();
+  const journal = await Journal.open(ctx, "apply", "example");
+  await journal.step("secrets", "done");
+  await journal.step("up", "failed", "boom");
+  await journal.step("apply-config", "blocked", "an earlier step failed");
+  await journal.step("restart", "advisory", "advisory: for you to do, not this command");
+
+  const listing = await captureCli(() => operations(ctx, []));
+  check("the list view counts exactly the failed step(s), not the blocked or advisory ones", listing.includes(`${journal.id}  unfinished, 1 failed step(s)`), true);
+
+  const detail = await captureCli(() => operations(ctx, [journal.id]));
+  check("the detail view lists every step, whatever its status", ["secrets", "up", "apply-config", "restart"].every((id) => detail.includes(id)), true);
+  check("the detail view carries the failure's own detail", detail.includes("boom"), true);
+}
+
+{
+  // The exact regression this section exists to catch: an old journal's "skipped" step must
+  // read as zero failed step(s) through the real command a reader actually runs, not only
+  // through a hand-rolled filter written straight into a test.
+  const legacy = {
+    id: "old-cli-apply",
+    command: "apply",
+    deployment: "example",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    steps: [
+      { id: "secrets", status: "done", at: "2026-01-01T00:00:01.000Z" },
+      { id: "restart", status: "skipped", detail: "advisory: for you to do, not this command", at: "2026-01-01T00:00:02.000Z" },
+    ],
+  };
+  const { ctx } = stubContext({ "/srv/clawforge/clawforge-operations/old-cli-apply.json": JSON.stringify(legacy) });
+  const listing = await captureCli(() => operations(ctx, []));
+  check("an old skipped step is never reported as a failed step by the real command", listing.includes("failed step"), false);
+  check("the operation itself is still listed", listing.includes("old-cli-apply"), true);
+}
+
+{
+  // --json bypasses the prose branch entirely (isCaptured() and --json both route to emit()),
+  // so it needs its own case: the raw record, not the computed count, is what travels.
+  const { ctx } = stubContext();
+  const journal = await Journal.open(ctx, "apply", "example");
+  await journal.step("secrets", "failed", "boom");
+  await journal.close("failed");
+
+  const listingJson = await captureCli(() => operations(ctx, ["--json"]));
+  const parsedList = JSON.parse(listingJson) as { operations: { id: string }[] };
+  check("--json on the list view emits the raw records", parsedList.operations.some((entry) => entry.id === journal.id), true);
+
+  const detailJson = await captureCli(() => operations(ctx, [journal.id, "--json"]));
+  const parsedDetail = JSON.parse(detailJson) as { id: string; steps: { status: string }[] };
+  check("--json on the detail view emits the record itself", parsedDetail.id, journal.id);
+  check("with its steps intact", parsedDetail.steps.map((step) => step.status), ["failed"]);
+}
+
+{
+  const { ctx } = stubContext();
+  let message = "";
+  try {
+    await captureCli(() => operations(ctx, ["no-such-id"]));
+  } catch (caught) {
+    message = caught instanceof Error ? caught.message : String(caught);
+  }
+  check("asking for an operation id nothing recorded refuses", message.includes("no operation"), true);
 }
 
 process.stderr.write(failed === 0 ? "all operation journal checks passed\n" : `${failed} failed\n`);

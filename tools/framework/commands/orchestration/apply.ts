@@ -23,6 +23,7 @@ import { up, restart } from "../lifecycle/lifecycle.ts";
 import { provisionAgent, removeOwnedObject } from "../management/provision-agent/index.ts";
 import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
+import type { StepStatus } from "#src/service/operations.ts";
 import { runOwning, takeLock, withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
@@ -74,7 +75,7 @@ function runnerFor(action: PlanAction): ((ctx: Context, action: PlanAction) => P
 
 export interface StepOutcome {
   readonly id: string;
-  readonly status: "done" | "failed" | "skipped";
+  readonly status: StepStatus;
   readonly detail?: string;
 }
 
@@ -108,8 +109,9 @@ export function isApplyDryRun(args: readonly string[]): boolean {
  *  Stopping is the point. The steps depend on each other — a restart after a configuration
  *  that failed to apply would put the instance back on exactly what it was already running,
  *  and reporting the later steps as successful would describe an instance nobody has. What
- *  did not run is reported as skipped rather than omitted, so the answer says where it got
- *  to. */
+ *  did not run is reported rather than omitted, with its own status — advisory when it was
+ *  never this command's job, blocked when an earlier step failed first — so the answer says
+ *  where it got to. */
 export async function runSteps(
   ctx: Context,
   actions: readonly PlanAction[],
@@ -128,17 +130,22 @@ export async function runSteps(
 
   for (const action of actions) {
     if (action.advisory === true) {
-      await record({ id: action.id, status: "skipped", detail: "advisory: for you to do, not this command" });
+      await record({ id: action.id, status: "advisory", detail: "advisory: for you to do, not this command" });
       continue;
     }
     if (stopped) {
-      await record({ id: action.id, status: "skipped", detail: "an earlier step failed" });
+      await record({ id: action.id, status: "blocked", detail: "an earlier step failed" });
       continue;
     }
 
     const runner = runnerFor(action);
     if (runner === undefined) {
-      await record({ id: action.id, status: "skipped", detail: "no runner for this step" });
+      // A plan naming an action with no runner is a plan and its runner table drifting
+      // apart — an implementation gap, not an outcome anyone chose. Reported as the failure
+      // it is, and treated like one: the steps after it were ordered around a step that
+      // cannot run, so continuing would guess at an ordering nobody wrote.
+      stopped = true;
+      await record({ id: action.id, status: "failed", detail: "no runner for this step" });
       continue;
     }
 
@@ -327,7 +334,7 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
     const outcome = await confirm(
       ctx,
       plan,
-      plan.actions.map((action) => ({ id: action.id, status: "skipped" as const, detail: "advisory" })),
+      plan.actions.map((action) => ({ id: action.id, status: "advisory" as const, detail: "advisory" })),
       false,
       "(none)",
     );
@@ -471,7 +478,7 @@ function report(jsonOnly: boolean, outcome: ApplyOutcome, headline: string | und
     for (const step of outcome.steps) {
       if (step.status === "done") info(`done     ${step.id}`);
       else if (step.status === "failed") warn(`failed   ${step.id}: ${step.detail ?? ""}`);
-      else info(`skipped  ${step.id}${step.detail === undefined ? "" : ` (${step.detail})`}`);
+      else info(`${step.status.padEnd(8)} ${step.id}${step.detail === undefined ? "" : ` (${step.detail})`}`);
     }
 
     // What the instance is now, not what the steps returned.

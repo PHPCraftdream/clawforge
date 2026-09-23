@@ -131,10 +131,10 @@ interface ImportSpan { readonly start: number; readonly end: number; readonly sp
  *  file. Deliberately loose regex matching rather than a full parse: this only needs the
  *  specifier text, and hook files are small, framework-authored TypeScript. */
 function relativeImportSpans(source: string): ImportSpan[] {
-  const pattern = /\bfrom\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\bimport\s+["']([^"']+)["']/gd;
+  const pattern = /\bfrom\s*["']([^"']+)["']|\bimport\s*\(\s*(?:["']([^"']+)["']|`([^`$]+)`\s*)\)|\bimport\s+["']([^"']+)["']/gd;
   const spans: ImportSpan[] = [];
   for (const match of source.matchAll(pattern)) {
-    const groupIndex = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : match[3] !== undefined ? 3 : undefined;
+    const groupIndex = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : match[3] !== undefined ? 3 : match[4] !== undefined ? 4 : undefined;
     if (groupIndex === undefined) continue;
     const specifier = match[groupIndex] as string;
     if (!specifier.startsWith(".")) continue;
@@ -144,6 +144,19 @@ function relativeImportSpans(source: string): ImportSpan[] {
     spans.push({ start: span[0], end: span[1], specifier });
   }
   return spans;
+}
+
+/** Computed dynamic imports cannot be included in a static checksum graph. Reject them
+ *  explicitly rather than silently caching a hook whose runtime dependency can go stale. */
+function assertVersionableDynamicImports(source: string): void {
+  const dynamic = /\bimport\s*\(\s*([^)]*?)\s*\)/g;
+  for (const match of source.matchAll(dynamic)) {
+    const expression = match[1]?.trim() ?? "";
+    const literal = /^(?:"[^"\n]*"|'[^'\n]*'|`[^`$\n]*`)$/;
+    if (!literal.test(expression)) {
+      throw new Error("recipe hook uses a computed dynamic import; use a string literal so its dependency can be versioned");
+    }
+  }
 }
 
 /** One checksum over the hook file and every file it transitively reaches through relative
@@ -166,9 +179,10 @@ async function dependencyGraphChecksum(entryPath: string): Promise<string> {
     } catch {
       continue;
     }
+    assertVersionableDynamicImports(content);
     files.set(current, content);
     for (const span of relativeImportSpans(content)) {
-      const dependency = resolve(dirname(current), span.specifier);
+      const dependency = resolve(dirname(current), span.specifier.split(/[?#]/, 1)[0] as string);
       if (!files.has(dependency)) queue.push(dependency);
     }
   }

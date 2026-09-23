@@ -50,7 +50,7 @@ jobs:
     #   integration/agent/recipe-hook-freshness-server.check.ts drive the real gate with
     #   OC_TARGET_LOCATION=auto, which resolves to WslTransport and takes the instance
     #   lock through wsl.exe — no availability probe, no skip.
-    # - Probe-gated (12 of the included): foundation/cli/host,
+    # - Probe-gated (13 of the included): foundation/cli/host,
     #   runtime/convergence/backup, runtime/convergence/inspect/checksums,
     #   runtime/lifecycle/private-declaration-lifetime,
     #   runtime/lifecycle/private-paths-prefix-boundary,
@@ -58,7 +58,8 @@ jobs:
     #   runtime/service/runtime-image-identity, security/credentials/private-config,
     #   security/credentials/private-file,
     #   security/credentials/recipe-private-snapshot/snapshot,
-    #   security/credentials/ssh-quoting — each probes wsl.exe/docker/sh with
+    #   security/credentials/ssh-quoting, security/private-paths-ledger/reconcile-history —
+    #   each probes wsl.exe/docker/sh with
     #   allowFailure and skips only its tool-dependent assertion groups when the tool is
     #   absent, so it passes on a bare runner and asserts fully on WSL/Docker-equipped
     #   dev machines.
@@ -109,6 +110,7 @@ jobs:
             tools/checks/foundation/core/env.check.ts
             tools/checks/foundation/core/paths.check.ts
             tools/checks/foundation/core/requirements.check.ts
+            tools/checks/foundation/docs-private-content.check.ts
             tools/checks/foundation/layout.check.ts
             tools/checks/foundation/packaging/build-output.check.ts
             tools/checks/foundation/providers/provider.check.ts
@@ -118,6 +120,7 @@ jobs:
             tools/checks/integration/agent/recipe-hook-freshness.check.ts
             tools/checks/integration/agent/recipe-readiness.check.ts
             tools/checks/integration/agent/recipe.check.ts
+            tools/checks/integration/recipe/recipe-lifecycle-hooks.check.ts
             tools/checks/integration/app-hooks.check.ts
             tools/checks/integration/app-recipes-dir.check.ts
             tools/checks/integration/init.check.ts
@@ -148,6 +151,7 @@ jobs:
             tools/checks/sets/lifecycle/set-validate.check.ts
             tools/checks/runtime/connection-facts/operator-edit.check.ts
             tools/checks/runtime/connection-facts/recover-env-command.check.ts
+            tools/checks/runtime/connection-facts/recover-env-dispatch.check.ts
             tools/checks/runtime/connection-facts/runtime-connection-facts.check.ts
             tools/checks/runtime/convergence/apply-config.check.ts
             tools/checks/runtime/convergence/apply.check.ts
@@ -197,6 +201,7 @@ jobs:
             tools/checks/security/credentials/ssh-quoting.check.ts
             tools/checks/security/credentials/verify.check.ts
             tools/checks/security/private-paths-ledger/serialization.check.ts
+            tools/checks/security/private-paths-ledger/reconcile-history.check.ts
           )
           for check in "${checks[@]}"; do
             echo "::group::${check}"

@@ -65,23 +65,30 @@ export async function runningConnectionFactsWithoutContext(options: {
   } catch {
     return undefined;
   }
-  const containerId = listed.code === 0 ? (listed.stdout.trim().split("\n")[0]?.trim() ?? "") : "";
-  if (containerId === "") return undefined;
+  if (listed.code !== 0) return undefined;
+  const containerIds = listed.stdout.split(/\r?\n/).map((id) => id.trim()).filter((id) => id !== "");
 
-  let inspected: { code: number; stdout: string };
-  try {
-    inspected = await options.transport.exec(
-      "docker",
-      ["inspect", "--format", "{{json .}}", containerId],
-      { allowFailure: true },
-    );
-  } catch {
-    return undefined;
+  // `docker ps --all` puts stopped instances in this result too. A stale stopped
+  // container can precede the current one, so inspect every match until a running
+  // container supplies the facts; an inspect failure for one old ID does not hide it.
+  for (const containerId of containerIds) {
+    let inspected: { code: number; stdout: string };
+    try {
+      inspected = await options.transport.exec(
+        "docker",
+        ["inspect", "--format", "{{json .}}", containerId],
+        { allowFailure: true },
+      );
+    } catch {
+      continue;
+    }
+    if (inspected.code !== 0) continue;
+    try {
+      const facts = connectionFactsFromInspect(JSON.parse(inspected.stdout));
+      if (facts !== undefined) return facts;
+    } catch {
+      // A malformed or stale match does not prevent trying the remaining containers.
+    }
   }
-  if (inspected.code !== 0) return undefined;
-  try {
-    return connectionFactsFromInspect(JSON.parse(inspected.stdout));
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }

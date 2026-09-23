@@ -1,8 +1,7 @@
 // Checks the P2-12 recipe lifecycle hooks: a recipe that declares quiesce.ts/resume.ts is
 // quiesced for exactly the window backup pauses the gateway for, and resumed on every exit
-// path; a recipe that declares nothing is unaffected — named by the same warning as before
-// this mechanism existed; a failing or hung hook degrades to that same warning instead of
-// failing the backup; and the two caller-owned modes (--hot, leaveStopped) call nothing.
+// path; an uncovered or failed hook refuses the snapshot and still compensates; and the two
+// caller-owned modes (--hot, leaveStopped) call nothing.
 //
 // No target and no real recipe services: a stub transport drives the real createBackup(),
 // and the hooks are real .ts files under a fixture recipes directory, imported through the
@@ -49,7 +48,7 @@ interface Stub {
  *  runningRecipeStacks() makes. The archive step and the runtime transitions record into
  *  `events` — the same array the fixture hooks push to — so hook ordering against
  *  pause/tar/start is assertable as one sequence. */
-function stub(): Stub {
+function stub(failProbe = false): Stub {
   const events: string[] = [];
   const probed: string[] = [];
   const files = new Set<string>([dataDir]);
@@ -121,6 +120,7 @@ function stub(): Stub {
         probed.push(project);
         return {
           async isRunning(): Promise<boolean> {
+            if (failProbe) throw new Error("simulated stack probe failure");
             return true;
           },
         };
@@ -139,6 +139,8 @@ const HOOKS: Record<string, string> = {
   "hung/quiesce.ts": `export function quiesce() { globalThis.${HOOK_LOG}.push("quiesce:hung"); return new Promise(() => {}); }\n`,
   "hung/resume.ts": `export function resume() { globalThis.${HOOK_LOG}.push("resume:hung"); }\n`,
   "no-resume/quiesce.ts": `export function quiesce() { globalThis.${HOOK_LOG}.push("quiesce:no-resume"); }\n`,
+  "resume-fails/quiesce.ts": `export function quiesce() { globalThis.${HOOK_LOG}.push("quiesce:resume-fails"); }\n`,
+  "resume-fails/resume.ts": `export function resume() { globalThis.${HOOK_LOG}.push("resume:resume-fails"); throw new Error("resume refused"); }\n`,
 };
 
 /** Writes a fixture recipes root with the named recipes; hook files only for the ones that
@@ -157,10 +159,10 @@ async function recipesWith(names: string[]): Promise<string> {
   return root;
 }
 
-async function run(name: string, options: BackupOptions, recipeNames: string[]): Promise<{ archive: string | undefined; output: string; events: string[]; probed: string[] }> {
+async function run(name: string, options: BackupOptions, recipeNames: string[], failProbe = false): Promise<{ archive: string | undefined; output: string; events: string[]; probed: string[] }> {
   const root = await recipesWith(recipeNames);
   useRecipesDir(root);
-  const stubbed = stub();
+  const stubbed = stub(failProbe);
   (globalThis as unknown as Record<string, unknown>)[HOOK_LOG] = stubbed.events;
   let output = "";
   let archive: string | undefined;
@@ -173,16 +175,29 @@ async function run(name: string, options: BackupOptions, recipeNames: string[]):
     delete (globalThis as unknown as Record<string, unknown>)[HOOK_LOG];
     await rm(root, { recursive: true, force: true });
   }
-  check(`[fixture] ${name}: no thrown error`, output.includes("THROWN:"), false);
   return { archive, output, events: stubbed.events, probed: stubbed.probed };
 }
 
-// (1) A recipe that declares the hooks gets them at the right points: quiesce inside the
-// gateway's pause window and before tar, resume only after the gateway is healthy again.
-// A recipe that declares nothing runs through unchanged: still probed, still named by the
-// pre-existing warning, never called.
+// A failed resume is a failed compensation, never a successful backup result.
 {
-  const result = await run("declared hooks bracket the archive", {}, ["hooked", "quiet"]);
+  const result = await run("a failed resume is reported", {}, ["resume-fails"]);
+  check("the failed compensation turns the operation into an error", result.archive, undefined);
+  check("the result explains that the recipe may remain stopped", result.output.includes("service may still be quiesced") && result.output.includes("resume refused"), true);
+  check("backup and resume were both attempted in order", result.events, ["pause", "quiesce:resume-fails", "tar", "start", "waitForHealth", "resume:resume-fails"]);
+}
+
+// Discovery happens after pause and can fail too; the gateway still returns to its prior
+// running state, and the original probe error remains visible.
+{
+  const result = await run("a failed sidecar probe restarts the gateway", {}, ["hooked"], true);
+  check("the probe failure aborts the backup", result.archive, undefined);
+  check("the probe failure is reported", result.output.includes("simulated stack probe failure"), true);
+  check("gateway compensation follows the failed probe", result.events, ["pause", "start", "waitForHealth"]);
+}
+
+// (1) A paired recipe hook brackets the archive.
+{
+  const result = await run("declared hooks bracket the archive", {}, ["hooked"]);
   check("the backup succeeds", typeof result.archive === "string", true);
   check(
     "quiesce runs between pause and tar, resume after the gateway is healthy",
@@ -192,46 +207,42 @@ async function run(name: string, options: BackupOptions, recipeNames: string[]):
   check(
     "both stacks are probed through their own compose projects",
     [...result.probed].sort(),
-    [projectName(deploymentName(), "hooked"), projectName(deploymentName(), "quiet")].sort(),
+    [projectName(deploymentName(), "hooked")],
   );
-  check("the undeclared recipe is named by the pre-existing warning", result.output.includes("not quiesced for this backup: quiet"), true);
   check("the declared recipe is not named as uncovered", result.output.includes("not quiesced for this backup: hooked"), false);
   check("the successful quiesce is announced", result.output.includes("hooked: quiesced for the snapshot"), true);
 }
 
-// (2) A failing quiesce hook degrades to the warning: the backup completes, the recipe is
-// named as uncovered, and no resume is attempted for a quiesce that never completed.
+// (2) A failed hook refuses the snapshot and runs resume because quiesce may have partially
+// stopped its service.
 {
-  const result = await run("a failing quiesce hook degrades to the warning", {}, ["failing"]);
-  check("the backup still succeeds", typeof result.archive === "string", true);
-  check("the hook failure is reported with its message", result.output.includes("quiesce hook failed") && result.output.includes("refuses to pause today"), true);
-  check("the recipe stays in the uncovered warning", result.output.includes("not quiesced for this backup: failing"), true);
-  check("no resume runs for a quiesce that never completed", result.events, ["pause", "quiesce:failing", "tar", "start", "waitForHealth"]);
+  const result = await run("a failing quiesce hook aborts and compensates", {}, ["failing"]);
+  check("the backup refuses the incomplete snapshot", result.archive, undefined);
+  check("the hook failure and refusal are reported", result.output.includes("quiesce hook failed") && result.output.includes("backup refused") && result.output.includes("refuses to pause today"), true);
+  check("resume runs after gateway restart", result.events, ["pause", "quiesce:failing", "start", "waitForHealth", "resume:failing"]);
 }
 
-// (3) A hung quiesce hook is bounded by the deadline (CLAWFORGE_RECIPE_HOOK_TIMEOUT_MS,
-// the same escape hatch pattern as the import timeout), same degradation as a failure.
+// (3) A hung quiesce is bounded, refuses the snapshot and receives resume compensation.
 {
   process.env.CLAWFORGE_RECIPE_HOOK_TIMEOUT_MS = "250";
   try {
-    const result = await run("a hung quiesce hook is bounded by the deadline", {}, ["hung"]);
-    check("the backup still succeeds", typeof result.archive === "string", true);
+    const result = await run("a hung quiesce aborts and compensates", {}, ["hung"]);
+    check("the backup refuses the incomplete snapshot", result.archive, undefined);
     check("the deadline is reported", result.output.includes("timed out after 250ms"), true);
-    check("the recipe stays in the uncovered warning", result.output.includes("not quiesced for this backup: hung"), true);
-    check("no resume runs for a timed-out quiesce", result.events, ["pause", "quiesce:hung", "tar", "start", "waitForHealth"]);
+    check("the timeout refuses publication", result.output.includes("backup refused because recipe stack(s) could not be quiesced: hung"), true);
+    check("resume runs after gateway restart", result.events, ["pause", "quiesce:hung", "start", "waitForHealth", "resume:hung"]);
   } finally {
     delete process.env.CLAWFORGE_RECIPE_HOOK_TIMEOUT_MS;
   }
 }
 
-// (4) A quiesce whose resume is not declared is named: the framework called quiesce, the
-// recipe may have stopped its service, and only the hook's author can bring it back.
+// (4) A quiesce without resume is rejected before the hook can stop the service.
 {
-  const result = await run("a quiesce without resume.ts is named", {}, ["no-resume"]);
-  check("the quiesce ran", result.events.includes("quiesce:no-resume"), true);
-  check("the missing resume is warned about", result.output.includes("stays quiesced") && result.output.includes("no resume.ts"), true);
-  check("the covered recipe is NOT in the uncovered warning", result.output.includes("not quiesced for this backup: no-resume"), false);
+  const result = await run("a quiesce without resume.ts is refused", {}, ["no-resume"]);
+  check("the quiesce never runs", result.events.includes("quiesce:no-resume"), false);
+  check("the missing resume and refused backup are reported", result.output.includes("without resume.ts") && result.output.includes("backup refused"), true);
   check("no resume event is recorded", result.events.filter((entry) => entry.startsWith("resume:")), []);
+  check("the gateway restarts after preflight rejection", result.events, ["pause", "start", "waitForHealth"]);
 }
 
 // (5) leaveStopped: the caller (pull, smoke's round trip) owns the transaction that
@@ -240,14 +251,14 @@ async function run(name: string, options: BackupOptions, recipeNames: string[]):
   const result = await run("leaveStopped owns the transaction and calls no hooks", { leaveStopped: true }, ["hooked"]);
   check("no hook runs when the caller owns the transaction", result.events, ["pause", "tar"]);
   check("the gateway stays stopped for the caller", result.output.includes("leaving the gateway stopped"), true);
-  check("the undeclared window keeps its warning", result.output.includes("not quiesced for this backup: hooked"), true);
+  check("the caller is told sidecars remain running", result.output.includes("remain running during this transaction"), true);
 }
 
 // (6) --hot accepts a torn snapshot by definition: no pause, no hooks, warning kept.
 {
   const result = await run("a hot backup calls no hooks either", { hot: true }, ["hooked"]);
   check("a hot backup pauses nothing and calls no hooks", result.events, ["tar"]);
-  check("a hot backup still names the running stack", result.output.includes("not quiesced for this backup: hooked"), true);
+  check("a hot backup names the running stack", result.output.includes("remain running during this transaction"), true);
 }
 
 process.stderr.write(failed === 0 ? "all recipe lifecycle hook checks passed\n" : `${failed} failed\n`);

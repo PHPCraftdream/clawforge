@@ -33,6 +33,8 @@ try {
   await writeFile(storePath, "", "utf8");
 
   function stubCtx(lockAlreadyHeld: boolean): Context {
+    const lockHome = "/does/not/exist-locks";
+    let mutationGuardHeld = false;
     const holder = JSON.stringify({
       operationId: "op-holder", what: "apply", by: "someone@host pid 1", takenAt: new Date().toISOString(),
     });
@@ -49,8 +51,23 @@ try {
         async writeFile(): Promise<void> {},
         async remove(): Promise<void> {},
         async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-          if (command === "mkdir" && args[0] !== "-p") return { code: lockAlreadyHeld ? 1 : 0, stdout: "", stderr: "" };
-          if (command === "test" && args[0] === "-d") return { code: lockAlreadyHeld ? 0 : 1, stdout: "", stderr: "" };
+          if (command === "mkdir" && args[0] === `${lockHome}/operation.mutation`) {
+            if (mutationGuardHeld) return { code: 1, stdout: "", stderr: "File exists" };
+            mutationGuardHeld = true;
+            return { code: 0, stdout: "", stderr: "" };
+          }
+          if (command === "mkdir" && args[0] === `${lockHome}/operation.lock`) {
+            return { code: lockAlreadyHeld ? 1 : 0, stdout: "", stderr: "" };
+          }
+          if (command === "test" && args[0] === "-d") {
+            const path = args[1];
+            return {
+              code: path === `${lockHome}/operation.lock` && lockAlreadyHeld || path === `${lockHome}/operation.mutation` && mutationGuardHeld ? 0 : 1,
+              stdout: "",
+              stderr: "",
+            };
+          }
+          if (command === "rmdir" && args[0] === `${lockHome}/operation.mutation`) mutationGuardHeld = false;
           return { code: 0, stdout: "", stderr: "" };
         },
       },

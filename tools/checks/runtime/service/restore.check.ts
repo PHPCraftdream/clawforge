@@ -30,6 +30,11 @@ function check(name: string, actual: unknown, expected: unknown): void {
   );
 }
 
+async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefined> {
+  try { await run(); } catch (error) { return (error as Error).message; }
+  return undefined;
+}
+
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
 const CONFIG_PATH = "/srv/openclaw/data/config/openclaw.json";
@@ -41,6 +46,7 @@ const ARCHIVE = "/srv/openclaw/backups/openclaw-x.tar.gz";
 let startCalled = false;
 
 function makeCtx(): Context {
+  let running = true;
   return {
     settings: { dataDir: "/srv/openclaw/data", env: {} },
     transport: {
@@ -74,8 +80,10 @@ function makeCtx(): Context {
       },
     },
     runtime: {
-      async stop(): Promise<void> {},
+      async isRunning(): Promise<boolean> { return running; },
+      async stop(): Promise<void> { running = false; },
       async start(): Promise<void> {
+        running = true;
         startCalled = true;
       },
       async waitForHealth(): Promise<void> {},
@@ -95,6 +103,50 @@ try {
 
 check("restoring a config missing its secrets does not throw", threw, false);
 check("the gateway is never started when a required secret is missing", startCalled, false);
+
+// A redirected parent must be rejected before restore stops the running gateway or moves data.
+{
+  const ctx = makeCtx();
+  let stopCalled = false;
+  let destructiveCalls = 0;
+  (ctx.runtime as unknown as { stop: () => Promise<void> }).stop = async () => { stopCalled = true; };
+  const transport = ctx.transport as unknown as { exec: (command: string, args: string[]) => Promise<ExecResult> };
+  const originalExec = transport.exec.bind(ctx.transport);
+  transport.exec = async (command: string, args: string[]) => {
+    if (command === "readlink" && args[0] === "-f" && args[1] === DATA_DIR) {
+      return { code: 0, stdout: "/redirected/data", stderr: "" };
+    }
+    if (command === "mv" || command === "mkdir" || command === "tar" && args.includes("-xzf")) destructiveCalls += 1;
+    return originalExec(command, args);
+  };
+  let failure: unknown;
+  await withOutputSink(() => {}, async () => {
+    try { await restoreArchive(ctx, ARCHIVE, { force: true }); } catch (error) { failure = error; }
+  });
+  check("restore refuses redirected data ancestry", failure instanceof UserError, true);
+  check("ancestry refusal happens before stopping gateway", stopCalled, false);
+  check("ancestry refusal happens before move, mkdir, or extraction", destructiveCalls, 0);
+}
+
+// If extraction fails after the old tree is moved aside, restore both data and the original
+// running gateway state before returning the error.
+{
+  const ctx = makeCtx();
+  let running = true;
+  let restarted = false;
+  (ctx.runtime as unknown as { isRunning: () => Promise<boolean>; stop: () => Promise<void>; start: () => Promise<void> }).isRunning = async () => running;
+  (ctx.runtime as unknown as { stop: () => Promise<void> }).stop = async () => { running = false; };
+  (ctx.runtime as unknown as { start: () => Promise<void> }).start = async () => { restarted = true; running = true; };
+  const transport = ctx.transport as unknown as { exec: (command: string, args: string[]) => Promise<ExecResult> };
+  const originalExec = transport.exec.bind(ctx.transport);
+  transport.exec = async (command: string, args: string[]) => {
+    if (command === "tar" && args.includes("-xzf")) throw new Error("extract fixture failure");
+    return originalExec(command, args);
+  };
+  const failure = await rejectionOf(() => withOutputSink(() => {}, () => restoreArchive(ctx, ARCHIVE, { force: true })));
+  check("failed restore preserves its primary error", failure, "extract fixture failure");
+  check("failed restore restarts a gateway that was running before it", restarted, true);
+}
 
 // A different failure entirely — the restored config itself does not parse — must not be
 // read as "just missing secrets" and reported as a successful restore. preflightSecrets()
@@ -368,6 +420,7 @@ function deniedContext(
       },
     },
     runtime: {
+      async isRunning(): Promise<boolean> { return true; },
       async stop(): Promise<void> {},
       async start(): Promise<void> {
         // Nothing here reaches the gateway — every restore here ends on the missing-secrets

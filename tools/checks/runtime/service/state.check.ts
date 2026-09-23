@@ -29,6 +29,27 @@ function check(name: string, actual: unknown, expected: unknown): void {
   );
 }
 
+function modelMutationGuard(ctx: Context): void {
+  const exec = ctx.transport.exec.bind(ctx.transport);
+  let held = false;
+  ctx.transport.exec = async (command, args, options) => {
+    const target = command === "test" && args[0] === "-d" ? args[1] ?? "" : args[0] ?? "";
+    if (command === "mkdir" && target.endsWith("/operation.mutation")) {
+      if (held) return { code: 1, stdout: "", stderr: "File exists" };
+      held = true;
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (command === "test" && args[0] === "-d" && target.endsWith("/operation.mutation")) {
+      return { code: held ? 0 : 1, stdout: "", stderr: "" };
+    }
+    if (command === "rmdir" && target.endsWith("/operation.mutation")) {
+      held = false;
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    return exec(command, args, options);
+  };
+}
+
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
 const snapshotName = (name: string, stamp: string): string => `${name}-state-${stamp}.tar.gz`;
@@ -131,6 +152,7 @@ const ctx = {
     },
   },
 } as unknown as Context;
+modelMutationGuard(ctx);
 
 let threw = false;
 try {
@@ -319,6 +341,7 @@ check("both the backup and the share copy were removed", removed.length, 2);
     },
     runtime: { async isRunning(): Promise<boolean> { return false; } },
   } as unknown as Context;
+  modelMutationGuard(ctx);
 
   await withOutputSink(() => {}, () => pull(ctx, []));
   const sidecar = files.get(`${snapshotPath}.secrets.env`) ?? "";
@@ -378,6 +401,7 @@ check("both the backup and the share copy were removed", removed.length, 2);
     },
     runtime: { async isRunning(): Promise<boolean> { return false; } },
   } as unknown as Context;
+  modelMutationGuard(ctx);
 
   let failedPull = false;
   try { await withOutputSink(() => {}, () => pull(ctx, [])); } catch { failedPull = true; }
@@ -393,6 +417,7 @@ check("both the backup and the share copy were removed", removed.length, 2);
 
 for (const failure of ["template", "secrets", "verify", "archive", "archive-after-move", "archive-lost-ack", "template-lost-ack", "collision", "dangling", "missing-secrets"] as PullFailure[]) {
   const scenario = pullScenario(failure);
+  modelMutationGuard(scenario.ctx);
   let threw = false;
   try {
     await withOutputSink(() => {}, () => pull(scenario.ctx, failure === "verify" ? ["--share"] : []));
@@ -570,6 +595,7 @@ function secretsScenario(options: { privateFile?: boolean; fail?: SecretFailure;
 }
 
 async function runLoadSecrets(scenario: ReturnType<typeof secretsScenario>): Promise<boolean> {
+  modelMutationGuard(scenario.ctx);
   let threw = false;
   try {
     await withOutputSink((line) => scenario.output.push(line), () => loadSecrets(scenario.ctx, SECRETS_UPDATED));

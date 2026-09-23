@@ -67,10 +67,19 @@ export type Env = Record<string, string>;
  *  environment file compose reads (runtime-docker.ts), and those two must agree on where
  *  "here" is without importing each other. */
 export function locksDir(dataDir: string): string {
-  const trimmed = dataDir.replace(/\/+$/, "");
-  const cut = trimmed.lastIndexOf("/");
-  const parent = cut <= 0 ? "" : trimmed.slice(0, cut);
-  return `${parent}/${trimmed.slice(cut + 1)}-locks`;
+  const separator = pathSeparator(dataDir);
+  const cut = lastSeparator(dataDir);
+  const parent = cut < 0 ? "" : dataDir.slice(0, cut) || separator;
+  const name = dataDir.slice(cut + 1);
+  return `${parent}${parent === separator ? "" : separator}${name}-locks`;
+}
+
+function pathSeparator(path: string): "/" | "\\" {
+  return path.includes("\\") ? "\\" : "/";
+}
+
+function lastSeparator(path: string): number {
+  return Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
 }
 
 /** Parses KEY=VALUE lines; comments, blanks and surrounding quotes handled, anything else
@@ -151,9 +160,7 @@ const DATA_DIR_HINT =
   'its root (e.g. "/srv/openclaw/data"), never "/" or a bare top-level directory.';
 
 // A Windows drive prefix ("C:\" or "C:/") counts as a root the same way a leading "/" does:
-// OC_TARGET_LOCATION=local on a Windows host (checks' own fixtures do this) hands toSettings
-// a native Windows path, and locksDir()/parentOfData below already slice on "/" regardless of
-// host, so both separator styles are accepted rather than assuming the target is POSIX.
+// OC_TARGET_LOCATION=local on a Windows host can hand toSettings a native Windows path.
 const WINDOWS_ROOT = /^[A-Za-z]:[\\/]/;
 
 /** Guards the one string that later reaches a recursive `chown -R 1000:1000` in
@@ -168,8 +175,7 @@ const WINDOWS_ROOT = /^[A-Za-z]:[\\/]/;
  *  normalize — that would canonicalize every separator to the host's own style, which is
  *  exactly wrong for a path that may describe a different target than the one running this
  *  process (wsl/ssh are always POSIX regardless of this host) and for the one case that IS
- *  this host (OC_TARGET_LOCATION=local) but is deliberately kept forward-slashed even on
- *  Windows so locksDir()'s own "/"-slicing agrees with it.
+ *  this host (OC_TARGET_LOCATION=local), which can use native Windows paths.
  *
  *  The depth-2 floor is deliberate rather than an explicit deny-list — every system top-level
  *  directory ("/", "/etc", "/home", "/root", "/usr", "/var", "C:\", …) has exactly one segment
@@ -191,6 +197,9 @@ function assertSafeDataDir(dataDir: string): void {
   if (/[\\/]{2,}/.test(dataDir) || /[\\/]$/.test(dataDir)) {
     die(`OC_DATA_DIR "${dataDir}" is not a normalized path (repeated or trailing separators). ${DATA_DIR_HINT}`);
   }
+  if (dataDir.includes("/") && dataDir.includes("\\")) {
+    die(`OC_DATA_DIR "${dataDir}" mixes path separators. ${DATA_DIR_HINT}`);
+  }
   // The first split segment is "" for a POSIX root or the drive letter ("C:") for a Windows
   // one — both mark the root itself, never a directory name, so neither counts toward depth.
   const segments = dataDir.split(/[\\/]+/).slice(1);
@@ -209,15 +218,18 @@ export function toSettings(env: Env): Settings {
 
   const bindAddress = env.OC_BIND_ADDRESS ?? "127.0.0.1";
   const gatewayPort = env.OPENCLAW_GATEWAY_PORT ?? "18789";
-  const parentOfData = dataDir.slice(0, Math.max(dataDir.lastIndexOf("/"), 1));
+  const separator = pathSeparator(dataDir);
+  const cut = lastSeparator(dataDir);
+  const parentOfData = cut < 0 ? "" : dataDir.slice(0, cut) || separator;
+  const siblingSeparator = parentOfData === separator ? "" : separator;
 
   return {
     env,
     dataDir,
-    backupDir: env.OC_BACKUP_DIR ?? `${parentOfData}/backups`,
+    backupDir: env.OC_BACKUP_DIR ?? `${parentOfData}${siblingSeparator}backups`,
     // Snapshots hold secrets, so they default outside the repository and away from Windows
     // mounts, where chmod is accepted and then silently ignored.
-    snapshotDir: env.OC_SNAPSHOT_DIR ?? `${parentOfData}/snapshots`,
+    snapshotDir: env.OC_SNAPSHOT_DIR ?? `${parentOfData}${siblingSeparator}snapshots`,
     bindAddress,
     gatewayPort,
     serviceUrl: `http://${bindAddress}:${gatewayPort}`,

@@ -81,6 +81,30 @@ export function lockPath(ctx: Context): string {
   return `${lockHome(ctx)}/operation.lock`;
 }
 
+function mutationGuardPath(ctx: Context): string {
+  return `${lockHome(ctx)}/operation.mutation`;
+}
+
+async function withMutationGuard<T>(ctx: Context, body: () => Promise<T>): Promise<T> {
+  const home = await ctx.transport.exec("mkdir", ["-p", lockHome(ctx)], { allowFailure: true });
+  if (home.code !== 0) {
+    const homeExists = await ctx.transport.exec("test", ["-d", lockHome(ctx)], { allowFailure: true });
+    if (homeExists.code !== 0) return body();
+  }
+  const guard = mutationGuardPath(ctx);
+  const acquired = await ctx.transport.exec("mkdir", [guard], { allowFailure: true });
+  if (acquired.code !== 0) {
+    const exists = await ctx.transport.exec("test", ["-d", guard], { allowFailure: true });
+    if (exists.code === 0) throw new Error("another instance-lock change is in progress; retry shortly");
+    throw new Error(`could not serialize instance-lock changes at ${guard}: ${(acquired.stderr || acquired.stdout).trim()}`);
+  }
+  try {
+    return await body();
+  } finally {
+    await removeEmptyDirectory(ctx, guard);
+  }
+}
+
 /** Stable resource identity for reentrancy: equal paths on different transports are different targets. */
 function lockResource(ctx: Context): string {
   return `${ctx.transport.description}\u0000${lockPath(ctx)}`;
@@ -206,29 +230,7 @@ async function claimDirectory(ctx: Context): Promise<{ won: boolean; heldByOther
   return { won: false, heldByOther: exists.code === 0, detail: (result.stderr || result.stdout).trim() };
 }
 
-/** Wins a takeover by winning a fresh `mkdir`, the same primitive an uncontested claim wins.
- *
- *  Writing a new `holder.json` into a directory both callers merely saw already existing is
- *  not a claim: nothing stops two concurrent `--break-lock` callers from each reading the old
- *  holder, each removing its marker, and each then writing theirs. The second only renames
- *  who the winner is — the first has already started running its body with no lease left to
- *  check when the second overwrites it.
- *
- *  `rename` is atomic on every filesystem this reaches, so of several callers racing to move
- *  the SAME source path away, at most one succeeds; the rest find it already gone and are
- *  refused. The winner then takes an ordinary fresh `mkdir` of the now-empty path, so a
- *  takeover ends up on the identical, already-atomic path a first claim takes — there is no
- *  moment where two processes both believe they hold the directory.
- *
- *  Atomic is not the same as identified, though, and this is the caller that found the gap:
- *  a `mv` of a PATH proves nothing about WHICH lock that path held a moment earlier. B reads
- *  the old holder and pauses before its move; A takes the lock over properly and is running
- *  its body; B resumes, moves A's LIVE lock aside, mkdirs its own, and both are inside the
- *  critical section. So the move is followed by a compare-and-swap: the holder inside the
- *  displaced directory must be the one observed before the move, generation for generation.
- *  A different generation means the path was re-created between that read and this move —
- *  the displaced directory is somebody else's live lock, it is put back exactly as it was,
- *  and the caller is refused the same way a lost move is. */
+/** Moves a lock aside and accepts it only if its generation still matches the observation. */
 async function claimTakeover(
   ctx: Context,
   observedGeneration: string | undefined,
@@ -347,7 +349,7 @@ export function lockHeldHere(ctx: Context): boolean {
 }
 
 /** Takes the lock for the duration of an operation, or refuses. */
-export async function takeLock(
+async function takeLockClaim(
   ctx: Context,
   what: string,
   operationId: string,
@@ -382,7 +384,7 @@ export async function takeLock(
       // so this run is refused exactly like a fresh claim against a directory that is still
       // there: whoever is now holding it is reported by re-running rather than guessed at.
       die(
-        `could not take over the instance lock at ${lockPath(ctx)}: ${takeover.detail === "" ? "mv failed" : takeover.detail}\n` +
+        `could not take over the instance lock at ${lockPath(ctx)}: ${takeover.detail === "" ? "the lock changed during takeover" : takeover.detail}\n` +
           "Another operation already took it over. Re-run if the instance is still locked.",
       );
     }
@@ -467,10 +469,11 @@ export async function takeLock(
       // atomic, and only we can still own that exact path. A marker already moved away means
       // a takeover rotated this identity out and the directory is somebody else's: nothing is
       // touched, down to the holder file naming who it belongs to now.
-      const trash = await claimOwnedLockDirectory(ctx, generation);
-      if (trash === undefined) return;
       try {
-        await removeOwnedLock(ctx, generation, trash);
+        await withMutationGuard(ctx, async () => {
+          const trash = await claimOwnedLockDirectory(ctx, generation);
+          if (trash !== undefined) await removeOwnedLock(ctx, generation, trash);
+        });
       } catch {
         // A lock that cannot be removed becomes a stale one, which is reported and can be
         // forced. Failing the operation here would be worse: the work is already done.
@@ -478,6 +481,16 @@ export async function takeLock(
     },
   };
   return handle;
+}
+
+/** Serializes every path-changing claim from the initial read through holder publication. */
+export async function takeLock(
+  ctx: Context,
+  what: string,
+  operationId: string,
+  options: { breakLock?: boolean } = {},
+): Promise<HeldLock> {
+  return withMutationGuard(ctx, () => takeLockClaim(ctx, what, operationId, options));
 }
 
 /** Runs `body` holding the lock, and releases it whatever happens — including when the body

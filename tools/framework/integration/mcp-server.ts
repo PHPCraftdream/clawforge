@@ -29,6 +29,7 @@ import { ensureEnvironment } from "./provision.ts";
 import { maskSecrets, UserError } from "../core/log.ts";
 import { withOutputSink } from "../core/output.ts";
 import { maskStructuredOutput, maskStructuredResult, toolEnvelope, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./mcp-schema.ts";
+import { recoverEnv, recoverEnvBeforeContext } from "../commands/recover-env/index.ts";
 
 export * from "./mcp-schema.ts";
 
@@ -80,6 +81,13 @@ async function captureRun(
         useApplicationRecipesDir(app.recipesDir);
         clearRecipesDir();
         if (command.preparesEnvironment === true) await ensureEnvironment();
+
+        // recover-env repairs OC_DATA_DIR itself, so its MCP path must not build the
+        // Context that would reject that missing value before the command can run.
+        if (command.run === recoverEnv) {
+          await recoverEnvBeforeContext(argv, { service: app.service?.name });
+          return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined };
+        }
 
         const ctx = await createContext({
           mounts: app.mounts,

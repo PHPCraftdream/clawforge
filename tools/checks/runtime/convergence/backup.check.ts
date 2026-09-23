@@ -1,9 +1,4 @@
-// Checks backup rotation removes only the single oldest archive beyond the retention
-// count, not the whole backlog at once — however a backlog beyond OC_BACKUP_KEEP got
-// there (a lowered keep count, archives merged in from elsewhere), it should drain one
-// backup at a time across future runs, not vanish in one rotation.
-//
-// No target: a stub transport drives the real rotate() end to end.
+// Backup rotation, locking, archive publication and restore checks.
 
 import { randomBytes } from "node:crypto";
 import { resolve, join } from "node:path";
@@ -133,8 +128,14 @@ function stubBackupCtx(
         }
         // The lock directory itself: a plain `mkdir` (no -p) is the atomic claim takeLock
         // makes; `test -d` is how it tells "someone holds it" from "mkdir just failed".
-        if (command === "mkdir" && args.length === 1) return { code: lockAlreadyHeld ? 1 : 0, stdout: "", stderr: "" };
-        if (command === "test" && args[0] === "-d") return { code: lockAlreadyHeld ? 0 : 1, stdout: "", stderr: "" };
+        if (command === "mkdir" && args.length === 1) {
+          const guard = args[0]?.endsWith("/operation.mutation") === true;
+          return { code: guard || !lockAlreadyHeld ? 0 : 1, stdout: "", stderr: "" };
+        }
+        if (command === "test" && args[0] === "-d") {
+          const guard = args[1]?.endsWith("/operation.mutation") === true;
+          return { code: !guard && lockAlreadyHeld ? 0 : 1, stdout: "", stderr: "" };
+        }
         if (command === "test" && args[0] === "-e") {
           return { code: files.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
         }
@@ -443,6 +444,7 @@ const backupRuntime = {
 };
 
 const restoreRuntime = {
+  async isRunning(): Promise<boolean> { return false; },
   async stop(): Promise<void> {},
   async start(): Promise<void> { throw new Error("the gateway must never start from these restores"); },
   async waitForHealth(): Promise<void> {},
@@ -642,13 +644,9 @@ if (p202Transport === undefined) {
   }
 }
 
-// --- P2-04 (audit 2026-09-22 round 2): recipe stacks running through a backup are named.
+// --- Recipe stacks without quiesce support block a consistent backup. ------------------
 //
-// Recipes are their own Compose projects: stopping the gateway stops none of them. A
-// backup must still succeed — this bounds the snapshot's guarantee, it does not refuse
-// the operation — but the stacks left running are warned about by name, and a stopped
-// one stays quiet. The spy records which compose project each probe went to, so the
-// projectName(deploymentName(), recipe) wiring is pinned too.
+// A running stack without quiesce/resume blocks backup; a stopped stack stays quiet.
 
 {
   const recipes = await mkdtemp(join(tmpdir(), "clawforge-backup-recipe-check-"));
@@ -666,12 +664,15 @@ if (p202Transport === undefined) {
     };
 
     let output = "";
+    let refusal = "";
     useRecipesDir(recipes);
     try {
-      const archive = await withOutputSink((line) => { output += line; }, () => createBackup(ctxWithStack(true), {}));
-      check("a backup with a running recipe stack still succeeds", typeof archive === "string" && archive.length > 0, true);
-      check("the running stack is warned about by name", output.includes("recipe stack(s) still running") && output.includes("vault"), true);
-      check("the warning says what the snapshot does not cover", output.includes("not guaranteed consistent"), true);
+      await withOutputSink((line) => { output += line; }, async () => {
+        try { await createBackup(ctxWithStack(true), {}); }
+        catch (error) { refusal = (error as Error).message; }
+      });
+      check("a running recipe without quiesce hooks blocks backup", refusal.includes("could not be quiesced"), true);
+      check("the refusal names the uncovered stack", refusal.includes("vault"), true);
       // check() compares with ===: two array instances are never equal, so compare the
       // JSON forms — the project names themselves, not the containers holding them.
       check("the probe went to the recipe's own compose project", JSON.stringify(probed), JSON.stringify([projectName(deploymentName(), "vault")]));

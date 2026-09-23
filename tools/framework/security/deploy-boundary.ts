@@ -43,6 +43,14 @@ export const EXCLUDES = [
 export const MARKER_FILE = ".clawforge-deploy-marker";
 export const MARKER_PREFIX = "clawforge-deploy-root-v1 name=";
 
+/** Verifies that the root ownership marker survived the framework mirror byte-for-byte. */
+export function markerVerifyScript(markerPath: string, line1: string, line2: string): string {
+  return [
+    "# clawforge-root-marker-verify",
+    `printf '%s\\n' ${quoted(line1)} ${quoted(line2)} | cmp -s - ${quoted(markerPath)}`,
+  ].join("\n");
+}
+
 /** The paths `git ls-files` reports for `root` — content already committed (or staged),
  *  read by a real reviewer at some point, as opposed to whatever happens to sit in the
  *  working tree unreviewed. `undefined` when `root` is not a git checkout at all, or git

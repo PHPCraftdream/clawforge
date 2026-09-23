@@ -41,6 +41,18 @@ import { unpackForTry, findFreePort, tryDeploymentName, targetSiblingRoot, build
 
 export * from "./set-try-env.ts";
 
+const SCAFFOLD_MODULES: Record<string, string> = {
+  app: "core/app",
+  mounts: "runtime/mounts",
+  "commands/index": "commands/interface/index",
+};
+
+export function setTryModuleUrl(name: string, extension: string, sourceRoot = frameworkRoot): string {
+  const module = SCAFFOLD_MODULES[name];
+  if (module === undefined) throw new Error(`unknown temporary app module: ${name}`);
+  return pathToFileURL(resolve(sourceRoot, `${module}${extension}`)).href;
+}
+
 export interface TryReport {
   readonly name: string;
   readonly setId: string;
@@ -243,11 +255,6 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
 
     await mkdir(join(tempDir, "config"), { recursive: true });
     const extension = extname(fileURLToPath(import.meta.url));
-    const modulePaths: Record<string, string> = {
-      app: "core/app",
-      mounts: "runtime/mounts",
-      "commands/index": "commands/interface/index",
-    };
     // An absolute file:// URL, never a relative specifier: tempDir is os.tmpdir(), almost
     // always the system drive, while frameworkRoot can be checked out to any other drive —
     // node:path's relative() across two Windows drive letters has no traversal that reaches
@@ -255,15 +262,10 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
     // to a relative import specifier unmodified (a bare "D:/..." path Node's ESM resolver
     // then reads as relative to tempDir itself, producing a nonsense concatenated path).
     // pathToFileURL is drive-agnostic and correct on POSIX too.
-    const modulePath = (name: string) => {
-      const module = modulePaths[name];
-      if (module === undefined) throw new Error(`unknown temporary app module: ${name}`);
-      return pathToFileURL(resolve(frameworkRoot, `${module}${extension}`)).href;
-    };
     await writeFile(join(tempDir, "app.ts"),
-      `import { defineApp } from ${JSON.stringify(modulePath("app"))};\n` +
-      `import { mountPoints } from ${JSON.stringify(modulePath("mounts"))};\n` +
-      `import { openclawCommands } from ${JSON.stringify(modulePath("commands/index"))};\n` +
+      `import { defineApp } from ${JSON.stringify(setTryModuleUrl("app", extension))};\n` +
+      `import { mountPoints } from ${JSON.stringify(setTryModuleUrl("mounts", extension))};\n` +
+      `import { openclawCommands } from ${JSON.stringify(setTryModuleUrl("commands/index", extension))};\n` +
       `export default defineApp({name:${JSON.stringify(tryName)},description:"temporary set instance",service:{name:"gateway"},mounts:mountPoints,commands:openclawCommands});\n`);
     await (dependencies.createPrivateFile ?? createPrivateFile)(
       join(tempDir, ".env"),

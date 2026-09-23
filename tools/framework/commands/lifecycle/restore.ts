@@ -175,6 +175,22 @@ async function physicalPath(ctx: Context, prefix: string[], path: string): Promi
   return resolved.stdout.trim();
 }
 
+/** Refuses a data root whose existing ancestry is redirected before restore moves or
+ * creates anything. Re-run this at each destructive boundary to catch changed parents. */
+async function verifyDataDirAncestry(ctx: Context, dataDir: string): Promise<void> {
+  let probe = dataDir;
+  while (!(await ctx.transport.exists(probe))) {
+    const parent = probe.slice(0, Math.max(probe.lastIndexOf("/"), 1));
+    if (parent === probe) break;
+    probe = parent;
+  }
+  const prefix = await sudoFor(ctx, probe);
+  const resolved = await physicalPath(ctx, prefix, probe);
+  if (resolved !== probe) {
+    die(`refusing restore: ${probe} resolves to ${resolved}; data directory ancestry must not pass through a symlink`);
+  }
+}
+
 /** Brings the archive's privacy history back to the deployment-side ledger, before anything
  *  acts on the restored data (audit 2026-09-22 round 3, P1-02).
  *
@@ -238,27 +254,37 @@ export async function restoreArchive(
     die(`archive holds '${root}/' but the data directory is '${name}/' — restoring it would misplace every file`);
   }
 
+  await verifyDataDirAncestry(ctx, dataDir);
+
   if (options.force !== true) {
     warn(`this will replace the contents of ${dataDir}`);
     info(`the current directory is kept as ${dataDir}.replaced-<timestamp>`);
     if (!(await confirm("Type 'yes' to continue: "))) die("aborted");
   }
 
+  const wasRunning = await ctx.runtime.isRunning();
   log("stopping containers");
-  await ctx.runtime.stop();
-
   let aside: string | undefined;
-  if (await ctx.transport.exists(dataDir)) {
-    aside = `${dataDir}.replaced-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`;
-    log(`moving current data aside: ${aside}`);
-    await runMaybePrivileged(ctx, parent, "mv", [dataDir, aside]);
-  }
-
-  log(`unpacking into ${parent}`);
-  await runMaybePrivileged(ctx, parent, "mkdir", ["-p", parent]);
+  let oldDataMoved = false;
+  let restoreMayHaveWritten = false;
   let historyImported = false;
   let ledgerBefore: PrivatePathsLedgerState | undefined;
   try {
+    await ctx.runtime.stop();
+    await verifyDataDirAncestry(ctx, dataDir);
+    if (await ctx.transport.exists(dataDir)) {
+      aside = `${dataDir}.replaced-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`;
+      log(`moving current data aside: ${aside}`);
+      await verifyDataDirAncestry(ctx, dataDir);
+      await runMaybePrivileged(ctx, parent, "mv", [dataDir, aside]);
+      oldDataMoved = true;
+    }
+
+    log(`unpacking into ${parent}`);
+    await verifyDataDirAncestry(ctx, dataDir);
+    await runMaybePrivileged(ctx, parent, "mkdir", ["-p", parent]);
+    await verifyDataDirAncestry(ctx, dataDir);
+    restoreMayHaveWritten = true;
     await extractArchive(ctx, archive, parent);
 
     // Between unpack and the first action through the restored tree. inspectArchive
@@ -304,14 +330,19 @@ export async function restoreArchive(
     // data to put back in its place — a clean target left with a failed extraction's
     // leftovers reads as existing state to the next bootstrap/restore (audit 2026-09-23
     // round 4, P2-02).
-    warn(aside !== undefined ? "restore failed — restoring the previous data" : "restore failed — removing the unpacked tree");
-    // Probed against dataDir itself, not parent: ensureDataDirs (trustExisting, above) may
-    // already have chowned children of this tree to the fixed owner before the failure that
-    // put this catch here, and a writable parent says nothing about a restrictively-owned
-    // child underneath — rm -rf then dies mid-removal instead of clearing the tree.
-    await runMaybePrivileged(ctx, dataDir, "rm", ["-rf", dataDir], { force: await needsOwnerEscalation(ctx, OWNER) });
-    if (aside !== undefined) {
-      await runMaybePrivileged(ctx, parent, "mv", [aside, dataDir]);
+    warn(oldDataMoved ? "restore failed — restoring the previous data" : "restore failed — removing the unpacked tree");
+    const compensationErrors: unknown[] = [];
+    if (restoreMayHaveWritten) {
+      try {
+        await verifyDataDirAncestry(ctx, dataDir);
+        await runMaybePrivileged(ctx, dataDir, "rm", ["-rf", dataDir], { force: await needsOwnerEscalation(ctx, OWNER) });
+      } catch (rollbackError) { compensationErrors.push(rollbackError); }
+    }
+    if (oldDataMoved && aside !== undefined) {
+      try {
+        await verifyDataDirAncestry(ctx, dataDir);
+        await runMaybePrivileged(ctx, parent, "mv", [aside, dataDir]);
+      } catch (rollbackError) { compensationErrors.push(rollbackError); }
     }
     // The import already landed in the operator-side ledger before this failure: put it back
     // to exactly what it held before this restore touched it, not just "whatever the merge
@@ -327,14 +358,29 @@ export async function restoreArchive(
       // is unreachable today; it stays a plain no-op rather than a non-null assertion.
       if (snapshot !== undefined) {
         if (snapshot.existed) {
-          await mutatePrivatePathsLedgerState(privatePathsLedgerFile(), () => ({
-            next: { paths: snapshot.paths, forgotten: snapshot.forgotten },
-            value: undefined,
-          }));
+          try {
+            await mutatePrivatePathsLedgerState(privatePathsLedgerFile(), () => ({
+              next: { paths: snapshot.paths, forgotten: snapshot.forgotten },
+              value: undefined,
+            }));
+          } catch (rollbackError) { compensationErrors.push(rollbackError); }
         } else {
-          await removePrivatePathsLedger(privatePathsLedgerFile());
+          try { await removePrivatePathsLedger(privatePathsLedgerFile()); }
+          catch (rollbackError) { compensationErrors.push(rollbackError); }
         }
       }
+    }
+    if (wasRunning) {
+      try {
+        if (!(await ctx.runtime.isRunning())) {
+          await ctx.runtime.start();
+          await ctx.runtime.waitForHealth();
+        }
+      } catch (rollbackError) { compensationErrors.push(rollbackError); }
+    }
+    if (compensationErrors.length > 0) {
+      for (const compensationError of compensationErrors) warn(`restore compensation failed: ${(compensationError as Error).message}`);
+      throw new AggregateError([error, ...compensationErrors], "restore failed and one or more compensations also failed");
     }
     throw error;
   }

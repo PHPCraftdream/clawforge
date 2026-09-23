@@ -362,6 +362,7 @@ try {
       "[]",
     );
     const runtimeStub = {
+      async isRunning(): Promise<boolean> { return false; },
       async stop(): Promise<void> {},
       async start(): Promise<void> {},
       async waitForHealth(): Promise<void> {},
@@ -558,6 +559,7 @@ try {
         },
       },
       runtime: {
+        async isRunning(): Promise<boolean> { return false; },
         async stop(): Promise<void> {},
         async start(): Promise<void> {
           throw new Error("the gateway must never start from this restore");

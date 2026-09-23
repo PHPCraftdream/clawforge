@@ -59,6 +59,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
 }
 
 const runtime = {
+  async isRunning(): Promise<boolean> { return false; },
   async stop(): Promise<void> {},
   async start(): Promise<void> {
     throw new Error("the gateway must never start from these restores");

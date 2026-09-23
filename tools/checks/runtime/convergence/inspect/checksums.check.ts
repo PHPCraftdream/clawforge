@@ -120,20 +120,13 @@ function canonical(record: Record<string, string>): string {
 }
 
 /** Whether this machine can stand in for the target's shell: an sh that can take a
- *  directory as "$1", cd into it, and find find and sha256sum. */
+ *  directory as "$1", cd into it, and checksum a file with find and sha256sum. */
 async function shAvailable(): Promise<boolean> {
-  const probe = await mkdtemp(join(tmpdir(), "clawforge-inspect-shprobe-"));
   try {
-    const result = await spawnLocal(
-      "sh",
-      ["-c", 'cd -- "$1" && command -v find >/dev/null && command -v sha256sum >/dev/null', "sh", probe.split(sep).join("/")],
-      { allowFailure: true },
-    );
-    return result.code === 0;
+    await spawnLocal("sh", ["-c", "exit 0"], { allowFailure: true });
+    return true;
   } catch {
     return false;
-  } finally {
-    await rm(probe, { recursive: true, force: true });
   }
 }
 
@@ -184,6 +177,7 @@ try {
     await writeFile(join(mirrorTree, ...rel.split("/")), content);
     expected[rel] = createHash("sha256").update(content, "utf8").digest("hex");
   }
+  await copyTree(join(deployment, "recipes", "demo", "agent"), join(treeDir, "workspace", "onboarding"));
   const dataDirTree = treeDir.split(sep).join("/");
   const groupTree = recordingContext(stubContext, { targetEnv: "ZAI_API_KEY=k\n", dataDir: dataDirTree, mirrorChecksums: expected }, true);
   await gatherInspection(groupTree.ctx);
@@ -195,12 +189,25 @@ try {
     check("the hostile-tree inspection reached the checksum command", false, true);
   } else {
     check("the executed call still carries the directory as a positional parameter", [treeCall.args[2], treeCall.args[3]], ["sh", recipeMirrorTargetDir(dataDirTree, "demo")]);
+    check("the real shell checksum command succeeded", [treeCall.result?.code, treeCall.result?.stderr], [0, ""]);
     check("the checksums describe exactly the hostile tree, bytes intact", canonical(parseChecksums(treeCall.result?.stdout ?? "")), canonical(expected));
     check("no payload executed as shell — no marker in the command's stderr", [
       treeCall.result?.stderr.includes(CMD_SUBSTITUTION_MARKER) ?? true,
       treeCall.result?.stderr.includes(BACKTICK_MARKER) ?? true,
       treeCall.result?.stderr.includes(FILE_MARKER) ?? true,
     ], [false, false, false]);
+  }
+
+  if (sh && process.platform === "win32") {
+    const native = recordingContext(stubContext, {
+      targetEnv: "ZAI_API_KEY=k\n",
+      dataDir: treeDir,
+      mirrorChecksums: expected,
+    }, true);
+    await gatherInspection(native.ctx);
+    const call = native.calls[0];
+    check("native Windows separators remain a positional argument", call?.args[3], recipeMirrorTargetDir(treeDir, "demo"));
+    check("native Windows drive paths checksum the same tree", canonical(parseChecksums(call?.result?.stdout ?? "")), canonical(expected));
   }
 
   // --- end to end: a hostile data directory must still yield a correct drift verdict ------
@@ -252,6 +259,7 @@ try {
     // mangled argv and the markers would fire here.
     const remote = ["sh", "-c", script, "sh", recipeMirrorTargetDir(dataDirTree, "demo")].map(SshTransport.quote).join(" ");
     const roundTrip = await spawnLocal("sh", ["-c", remote], { allowFailure: true });
+    check("the ssh shell round trip succeeded", [roundTrip.code, roundTrip.stderr], [0, ""]);
     check("the ssh command line (each argv element single-quoted) checksums the hostile tree", canonical(parseChecksums(roundTrip.stdout)), canonical(expected));
     check("and no payload fires at either shell level", [
       roundTrip.stderr.includes(CMD_SUBSTITUTION_MARKER),

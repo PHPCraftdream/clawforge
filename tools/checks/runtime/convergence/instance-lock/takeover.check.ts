@@ -97,176 +97,99 @@ function check(name: string, actual: unknown, expected: unknown): void {
   await stalledAtMove;
   check("the stalled caller has not moved the contested directory yet", dirs.has(lockPath(ctx)), true);
 
-  let fastEnteredBody = false;
-  let fastHolderId: string | undefined;
-  await withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => {
-    fastEnteredBody = true;
-    fastHolderId = (await readLockHolder(ctx))?.operationId;
-  });
-  check("a second, unstalled takeover wins the directory while the first is paused", fastEnteredBody, true);
-  check("and is the one recorded as holder while its body runs", fastHolderId, "op-fast");
+  let fastError: Error | undefined;
+  await withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => {})
+    .catch((error: Error) => { fastError = error; });
+  check("another takeover cannot enter while the first owns the mutation guard", fastError !== undefined, true);
+  check("the competing caller is told the lock change is in progress", fastError?.message.includes("in progress"), true);
 
   releaseStalled();
   await stalled;
-  check("the stalled caller never enters the critical section", stalledEnteredBody, false);
-  check("its takeover is refused once the directory it tried to move is already gone", stalledError !== undefined, true);
-  check("saying another operation already won the takeover", stalledError?.message.includes("already took it over"), true);
-  check("exactly one of the two racing callers ran, and the lock is clear again", dirs.has(lockPath(ctx)), false);
+  check("the lock change resumes and enters once the guard is released", stalledEnteredBody, true);
+  check("the serialized caller completes its takeover", stalledError, undefined);
+  check("the mutation guard and lock are clear after release", dirs.has(lockPath(ctx)) || dirs.has(`${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`), false);
 }
 
-// --- a faster takeover re-creating the pathname is not the lock the slower one read ----------
+// --- the mutation guard keeps claimants out while a failed takeover restores the live lock ---
 //
-// The rename above is atomic, and that is ALL it proves: nothing in it says the caller moved
-// the lock it had just read. B reads the old holder and pauses before its move; A takes the
-// lock over properly and is running its body; B resumes and moves away A's LIVE lock — a
-// directory that did not exist when B looked, and that B has no identity for — mkdirs its
-// own, and both are inside the critical section. The generation inside the displaced
-// directory is what tells the two apart: it is the one observed before the move, or the
-// directory belongs to someone else and goes back untouched.
-//
-// The old holder names no generation, so B observes `undefined` and must accept it; the lock
-// A leaves at the path names A's, and comparing the two is what refuses B.
+// The takeover still has to compare identity after moving the directory. While it checks a
+// mismatched generation, ordinary claimants must see the guard and refuse instead of winning
+// the briefly empty pathname.
 
 {
   const { ctx, files, dirs } = stubContext();
-  // A holder written before generations existed: no identity recorded, and `undefined`
-  // compares equal to `undefined`, so a takeover of it is still checked.
-  const oldHolder = JSON.stringify({ operationId: "op-old", what: "apply", by: "old", takenAt: new Date().toISOString() });
+  const oldGeneration = "generation-old";
+  const newGeneration = "generation-live";
   dirs.add(lockPath(ctx));
-  files.set(`${lockPath(ctx)}/holder.json`, oldHolder);
+  dirs.add(`${lockPath(ctx)}/gen-${oldGeneration}`);
+  files.set(`${lockPath(ctx)}/holder.json`, JSON.stringify({
+    operationId: "op-live", what: "apply", by: "live", takenAt: new Date().toISOString(), generation: oldGeneration,
+  }));
 
-  const originalExec = ctx.transport.exec;
-  let releaseStalled!: () => void;
-  const gate = new Promise<void>((resolve) => { releaseStalled = resolve; });
-  let reachedMove!: () => void;
-  const stalledAtMove = new Promise<void>((resolve) => { reachedMove = resolve; });
-  let gated = false;
-  ctx.transport.exec = async (command: string, args: string[]) => {
-    if (command === "mv" && !gated) {
-      gated = true;
-      reachedMove();
-      await gate; // Paused before the move itself: the directory is still there, untouched.
+  const originalReadFile = ctx.transport.readFile;
+  let releaseRead!: () => void;
+  const readGate = new Promise<void>((resolve) => { releaseRead = resolve; });
+  let reachedDisplacedRead!: () => void;
+  const displacedRead = new Promise<void>((resolve) => { reachedDisplacedRead = resolve; });
+  ctx.transport.readFile = async (path: string) => {
+    if (path.includes(".stale-") && path.endsWith("/holder.json")) {
+      const movedRoot = path.slice(0, -"/holder.json".length);
+      files.set(path, JSON.stringify({
+        operationId: "op-live", what: "apply", by: "live", takenAt: new Date().toISOString(), generation: newGeneration,
+      }));
+      reachedDisplacedRead();
+      await readGate;
+      check("the failed takeover has temporarily moved the live root", dirs.has(lockPath(ctx)), false);
+      check("the live generation remains in the displaced tree", dirs.has(`${movedRoot}/gen-${oldGeneration}`), true);
     }
-    return originalExec(command, args);
+    return originalReadFile(path);
   };
 
-  let stalledEnteredBody = false;
-  let stalledError: Error | undefined;
-  const stalled = withInstanceLock(ctx, "apply", "op-stalled", { breakLock: true }, async () => {
-    stalledEnteredBody = true;
-  }).then(() => undefined, (error: Error) => { stalledError = error; });
+  let takeoverError: Error | undefined;
+  const takeover = takeLock(ctx, "apply", "op-stale", { breakLock: true })
+    .then((held) => held.release(), (error: Error) => { takeoverError = error; });
+  await displacedRead;
 
-  await stalledAtMove;
-  check("the stalled caller has not moved the contested directory yet", dirs.has(lockPath(ctx)), true);
+  const thirdCaller = await refused(() => takeLock(ctx, "apply", "op-third"));
+  check("a third caller is refused while the takeover owns the mutation guard", thirdCaller.includes("in progress"), true);
+  releaseRead();
+  await takeover;
 
-  // A takeover that runs to completion while B is paused: it rotates the old lock away and is
-  // sitting in its body, still holding what it won, by the time B resumes.
-  let fastInBody!: () => void;
-  const fastInBodySignal = new Promise<void>((resolve) => { fastInBody = resolve; });
-  let releaseFast!: () => void;
-  const fastGate = new Promise<void>((resolve) => { releaseFast = resolve; });
-  let fastEnteredBody = false;
-  let fastHolderId: string | undefined;
-  const fast = withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => {
-    fastEnteredBody = true;
-    fastHolderId = (await readLockHolder(ctx))?.operationId;
-    fastInBody();
-    await fastGate; // Fully in the body, holding the lock it won.
-  });
-  await fastInBodySignal;
-
-  check("a takeover that completes in the meantime wins the directory", fastEnteredBody, true);
-  check("and is the one recorded as holder while its body runs", fastHolderId, "op-fast");
-  check("leaving its own live lock at the path", [...dirs].some((entry) => entry.startsWith(`${lockPath(ctx)}/gen-`)), true);
-
-  releaseStalled();
-  await stalled;
-  check("the stalled caller still never enters the critical section", stalledEnteredBody, false);
-  check("its move succeeded — and moved the wrong directory", stalledError !== undefined, true);
-  check("saying another operation already won the takeover", stalledError?.message.includes("already took it over"), true);
-  check("the live lock it moved aside was restored, not stolen", dirs.has(lockPath(ctx)), true);
-  check("so the faster takeover is still the recorded holder", (await readLockHolder(ctx))?.operationId, "op-fast");
-
-  releaseFast();
-  await fast;
-  check("and once the faster takeover releases, the lock is gone", dirs.has(lockPath(ctx)), false);
+  check("the generation mismatch refuses takeover", takeoverError?.message.includes("already took it over"), true);
+  check("the live lock is restored before the guard is released", dirs.has(lockPath(ctx)), true);
+  check("the restored lock holder remains readable", (await readLockHolder(ctx))?.operationId, "op-live");
+  check("a refused takeover leaves no displaced directory", [...dirs].some((path) => path.includes(".stale-")), false);
 }
 
-// --- a release finishing after a takeover removes nothing of the new owner's -----------------
-//
-// The other side of the same gap. Release used to read the holder, see its own operation id,
-// and then remove the directory — two operations with the whole takeover in between, so the
-// remove deleted the lock of whoever had taken it over in the meantime. It is now one atomic
-// ownership check instead: moving its own generation marker aside, which either succeeds
-// (the directory is ours to finish with) or finds the marker already gone (a takeover rotated
-// this exact identity out, and nothing is touched at all).
-//
-// The slow holder's release is paused at its ownership check with the takeover free to
-// complete in the meantime, so the removal step — had it been a remove — would run strictly
-// after a finished takeover. A holder read is gated too: that is where the old release did
-// its checking, and the gate answers what that read saw before the takeover happened.
+// --- releases and takeovers share the same mutation guard -------------------------------------
 
 {
-  const { ctx, files, dirs } = stubContext();
+  const { ctx, dirs } = stubContext();
   const slow = await takeLock(ctx, "apply", "op-slow");
-  const slowHolderPath = `${lockPath(ctx)}/holder.json`;
-  // What the slow holder's release read before the takeover happened.
-  const slowHolder = files.get(slowHolderPath) ?? "";
-
-  let takeoverInBody!: () => void;
-  const takeoverInBodySignal = new Promise<void>((resolve) => { takeoverInBody = resolve; });
-  let releaseTakeover!: () => void;
-  const takeoverGate = new Promise<void>((resolve) => { releaseTakeover = resolve; });
-
   const originalExec = ctx.transport.exec;
-  const originalRead = ctx.transport.readFile;
-  let reachedOwnershipCheck!: () => void;
-  const atOwnershipCheck = new Promise<void>((resolve) => { reachedOwnershipCheck = resolve; });
-  let releaseOwnershipCheck!: () => void;
-  const ownershipGate = new Promise<void>((resolve) => { releaseOwnershipCheck = resolve; });
+  let releaseOwnership!: () => void;
+  const releaseGate = new Promise<void>((resolve) => { releaseOwnership = resolve; });
+  let reachedOwnership!: () => void;
+  const ownershipCheck = new Promise<void>((resolve) => { reachedOwnership = resolve; });
   let gated = false;
-  ctx.transport.readFile = async (path: string) => {
-    if (path === slowHolderPath && !gated) {
-      gated = true;
-      reachedOwnershipCheck();
-      await ownershipGate;
-      return slowHolder; // What that read saw, before anything took the lock over.
-    }
-    return originalRead(path);
-  };
   ctx.transport.exec = async (command: string, args: string[]) => {
-    // The ownership check proper: moving this holder's own generation marker out of the way,
-    // held until the takeover below has finished rotating the lock away under it.
     if (command === "mv" && (args[1] ?? "").includes(".released-") && !gated) {
       gated = true;
-      reachedOwnershipCheck();
-      await ownershipGate;
+      reachedOwnership();
+      await releaseGate;
     }
     return originalExec(command, args);
   };
 
-  let releaseResolved = false;
-  const releasing = slow.release().then(() => { releaseResolved = true; });
-  await atOwnershipCheck;
-
-  const takeover = withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => {
-    takeoverInBody();
-    await takeoverGate;
-  });
-  await takeoverInBodySignal;
-
-  check("the takeover is fully inside its body, marker and holder written", (await readLockHolder(ctx))?.operationId, "op-fast");
-  check("with its own lock in place at the path", dirs.has(lockPath(ctx)), true);
-
-  releaseOwnershipCheck();
+  const releasing = slow.release();
+  await ownershipCheck;
+  let takeoverError: Error | undefined;
+  await withInstanceLock(ctx, "apply", "op-fast", { breakLock: true }, async () => {})
+    .catch((error: Error) => { takeoverError = error; });
+  check("a takeover cannot race a release mutation", takeoverError?.message.includes("in progress"), true);
+  releaseOwnership();
   await releasing;
-  check("the late release resolves without disturbing the new holder", releaseResolved, true);
-  check("it removed nothing: the takeover's directory is still there", dirs.has(lockPath(ctx)), true);
-  check("and the takeover is still the recorded holder", (await readLockHolder(ctx))?.operationId, "op-fast");
-
-  releaseTakeover();
-  await takeover;
-  check("and once the takeover releases, the lock is gone", dirs.has(lockPath(ctx)), false);
+  check("the release removes its own lock after the guard clears", dirs.has(lockPath(ctx)), false);
 }
 
 process.stderr.write(failed === 0 ? "all instance lock takeover checks passed\n" : `${failed} failed\n`);

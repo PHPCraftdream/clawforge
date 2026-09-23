@@ -73,7 +73,9 @@ function recordingTransport(code = 0, stdout = "ok\n", stderr = "", description 
     description,
     async exec(command: string, args: string[], options?: Record<string, unknown>) {
       calls.push({ command, args, options });
-      return { code, stdout, stderr };
+      return command === "id" && (code !== 0 || !/^\d+\s*$/.test(stdout))
+        ? { code: 0, stdout: "1000\n", stderr: "" }
+        : { code, stdout, stderr };
     },
   };
   return { calls, transport };
@@ -147,7 +149,7 @@ check("both flags together are consent", rootElevationRequested(true, true), tru
 }
 
 {
-  const stub = recordingTransport();
+  const stub = recordingTransport(0, "1000\n");
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), async () => {
     await host(ctxWith(stub.transport), ["target", "--root", "--confirm-root", "--", "whoami"]);
@@ -157,7 +159,7 @@ check("both flags together are consent", rootElevationRequested(true, true), tru
 }
 
 {
-  const stub = recordingTransport();
+  const stub = recordingTransport(0, "1000\n");
   await withOutputSink(() => {}, async () => {
     await host(ctxWith(stub.transport), ["target", "--", "whoami"]);
   });
@@ -319,10 +321,7 @@ check("a probe that failed is no answer, even with a 0 printed", probeUidAnswer(
 }
 
 {
-  // The honest-unknown path: a probe that cannot answer must not pretend "not root" — it
-  // runs ungated, the gap living in the docs and this test, not in a silent verdict. The
-  // stub refuses the probe outright (exit 127, "id: not found") while still answering the
-  // command it was guarding, so "ungated" is observed rather than assumed.
+  // Unknown identity fails closed until the operator gives explicit consent.
   const calls: RecordedCall[] = [];
   const transport = {
     description: "wsl:Ubuntu-24.04",
@@ -331,12 +330,14 @@ check("a probe that failed is no answer, even with a 0 printed", probeUidAnswer(
       return command === "id" ? { code: 127, stdout: "", stderr: "id: not found" } : { code: 0, stdout: "ok\n", stderr: "" };
     },
   };
-  const written: string[] = [];
-  await withOutputSink((chunk) => written.push(chunk), async () => {
-    await host(ctxWith(transport), ["target", "--", "whoami"]);
+  const message = await deathOf(() => host(ctxWith(transport), ["target", "--", "whoami"]));
+  check("a target with unknown identity refuses to run without consent", message.includes("identity is unknown") && message.includes("--root --confirm-root"), true);
+  check("the unknown refusal names the failed probe", message.includes("id -u"), true);
+  check("unknown identity is refused before the command runs", calls.map((call) => call.command), ["id"]);
+  await withOutputSink(() => {}, async () => {
+    await host(ctxWith(transport), ["target", "--root", "--confirm-root", "--", "whoami"]);
   });
-  check("a target the probe cannot answer runs ungated", calls.at(-1)?.command, "whoami");
-  check("and without a verdict the run stays quiet about identity", written.join(""), "ok\n");
+  check("explicit consent permits the command after an unknown probe", calls.map((call) => call.command), ["id", "id", "sudo"]);
 }
 
 {

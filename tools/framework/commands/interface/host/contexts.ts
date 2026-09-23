@@ -41,8 +41,7 @@ export interface HostExecution {
 export interface IdentityProbe {
   /** true: the command arrives as root — uid 0, or Windows' elevated administrator token,
    *  root's equivalent there. false: the probe provably answered otherwise. undefined: the
-   *  probe could not answer — the command then runs ungated, a named best-effort gap, not
-   *  a hidden one. */
+   *  probe could not answer — the command requires explicit consent before it can run. */
   readonly arrivesAsRoot: boolean | undefined;
   /** Where the answer came from; the consent refusal names it. */
   readonly evidence: string;

@@ -48,6 +48,7 @@ import {
   MARKER_PREFIX,
   collectSensitiveCheckoutNames,
   markerWriteScript,
+  markerVerifyScript,
   parseRootProbe,
   quoted,
   rootInventoryScript,
@@ -60,7 +61,7 @@ import { readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
 
-export { collectSensitiveCheckoutNames, rootProbeScript, parseRootProbe, markerWriteScript };
+export { collectSensitiveCheckoutNames, rootProbeScript, parseRootProbe, markerWriteScript, markerVerifyScript };
 
 /** Runs a script on the target through ssh.
  *
@@ -386,6 +387,7 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
         "root properly.",
     );
   }
+  let createdMarkerLine: string | undefined;
   if (probe.marker === "absent") {
     // No marker: either deploy created this root (proven by the probe's emptiness), or an
     // operator says --adopt — and --adopt puts the affected inventory on screen first, so
@@ -411,10 +413,11 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
       }
       if (inventory.stdout.trim() !== "") info(inventory.stdout.trim());
     }
+    createdMarkerLine = `created=${new Date().toISOString()} id=${randomUUID()}`;
     const written = await runRemote(
       ctx,
       target,
-      markerWriteScript(markerPath, expectedMarker, `created=${new Date().toISOString()} id=${randomUUID()}`),
+      markerWriteScript(markerPath, expectedMarker, createdMarkerLine),
       { allowFailure: true },
     );
     if (written.code !== 0) {
@@ -437,12 +440,27 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
       // Deletions are mirrored, but only within what is actually sent: excluded paths on
       // the server — its .env, its data, other deployments — are left alone.
       "--delete",
+      // This generated remote file is absent from the source tree; protect only its root path.
+      "--exclude",
+      `/${MARKER_FILE}`,
       ...EXCLUDES.flatMap((pattern) => ["--exclude", pattern]),
       `${source}/`,
       `${target}:${remotePath}/`,
     ],
     { stream: true },
   );
+
+  if (createdMarkerLine !== undefined) {
+    const verified = await runRemote(
+      ctx,
+      target,
+      markerVerifyScript(markerPath, expectedMarker, createdMarkerLine),
+      { allowFailure: true },
+    );
+    if (verified.code !== 0) {
+      die(`the deploy root marker did not survive the framework sync at ${remotePath} on ${target}`);
+    }
+  }
 
   // The deployment, by name and file. Anything not listed here does not travel.
   const local = await ctx.paths.toTarget(deploymentDir());

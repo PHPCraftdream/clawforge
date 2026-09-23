@@ -113,11 +113,15 @@ async function recipeExpectations(): Promise<RecipeExpectation[]> {
 // transport user during this read-only call, and the failed cd then checksummed whatever
 // tree the shell landed in. The path is data at every shell — same shape as PROBE_SCRIPT in
 // security/private-file.ts. Without its argument the script fails instead of checksumming a
-// guessed directory.
+// guessed directory. Git for Windows needs drive paths converted for its shell; cygpath -w
+// receives only the positional value, whether its separators are slash or backslash.
 const CHECKSUM_SCRIPT =
-  'if [ "${1+set}" = set ] && [ -n "$1" ]; then ' +
-  'cd -- "$1" && find . -type f -exec sha256sum {} +; ' +
-  "else echo NOCHECKSUMDIR >&2; exit 64; fi";
+  'if [ "${1+set}" != set ] || [ -z "$1" ]; then echo NOCHECKSUMDIR >&2; exit 64; fi; ' +
+  'dir=$1; case "$dir" in [A-Za-z]:*) if command -v cygpath >/dev/null 2>&1; then dir=$(cygpath -w -- "$dir") || { echo CHECKSUMPATHFAILED >&2; exit 69; }; fi ;; esac; ' +
+  'cd -- "$dir" || { echo CHECKSUMCDFAILED >&2; exit 65; }; ' +
+  'command -v find >/dev/null || { echo CHECKSUMFINDFAILED >&2; exit 66; }; ' +
+  'command -v sha256sum >/dev/null || { echo CHECKSUMSHA256SUMFAILED >&2; exit 67; }; ' +
+  'find . -type f -exec sha256sum {} + || { echo CHECKSUMSCANFAILED >&2; exit 68; }';
 
 /** The same checksums for what is actually on the target, computed there — one command for
  *  the whole tree rather than reading every file back over the transport.
@@ -133,7 +137,10 @@ async function targetFileChecksums(ctx: Context, dir: string): Promise<Record<st
   const result = await ctx.transport.exec("sh", ["-c", CHECKSUM_SCRIPT, "sh", dir], {
     allowFailure: true,
   });
-  if (result.code !== 0) return {};
+  if (result.code !== 0) {
+    const detail = result.stderr.trim();
+    throw new Error(`could not checksum target files (exit ${result.code})${detail === "" ? "" : `: ${detail}`}`);
+  }
 
   const checksums: Record<string, string> = {};
   for (const line of result.stdout.split("\n")) {

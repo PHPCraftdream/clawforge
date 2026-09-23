@@ -115,8 +115,11 @@ assert.ok(calls[0].includes("models.providers.custom.apiKey"));
         : "CUSTOM_API_KEY=secret-value\n";
     },
     exec: async (command: string, args: string[]) => {
-      if (command === "mkdir" && args[0] !== "-p") return { code: 1, stdout: "", stderr: "" };
-      if (command === "test" && args[0] === "-d") return { code: 0, stdout: "", stderr: "" };
+      if (command === "mkdir" && args[0] === "/target/data-locks/operation.mutation") return { code: 0, stdout: "", stderr: "" };
+      if (command === "mkdir" && args[0] === "/target/data-locks/operation.lock") return { code: 1, stdout: "", stderr: "" };
+      if (command === "test" && args[0] === "-d") {
+        return { code: args[1] === "/target/data-locks/operation.lock" ? 0 : 1, stdout: "", stderr: "" };
+      }
       return { code: 0, stdout: "", stderr: "" };
     },
   } } as unknown as Context;

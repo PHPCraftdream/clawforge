@@ -82,18 +82,26 @@ function goodInspect(): InspectAnswer {
   };
 }
 
-/** Answers the recovery bootstrap's label-filtered `docker ps` and its one inspect — the
- *  two calls the whole read is made of. Anything else is a failure, which is itself the
+/** Answers the recovery bootstrap's label-filtered `docker ps` and inspect calls. Anything
+ *  else is a failure, which is itself the
  *  assertion that no compose invocation (and no environment file on the target) is needed. */
-function recoveryTransport(): { transport: Transport; dockerCalls: string[][] } {
+function recoveryTransport(
+  ids = "c0ffee\n",
+  inspectAnswers: Record<string, InspectAnswer> = { c0ffee: goodInspect() },
+): { transport: Transport; dockerCalls: string[][] } {
   const dockerCalls: string[][] = [];
   const transport = {
     description: "stub",
     async exec(command: string, args: string[]): Promise<ExecResult> {
       if (command !== "docker") throw new Error(`unexpected exec: ${command} ${args.join(" ")}`);
       dockerCalls.push([...args]);
-      if (args[0] === "ps") return { code: 0, stdout: "c0ffee\n", stderr: "" };
-      if (args[0] === "inspect") return { code: 0, stdout: JSON.stringify(goodInspect()), stderr: "" };
+      if (args[0] === "ps") return { code: 0, stdout: ids, stderr: "" };
+      if (args[0] === "inspect") {
+        const answer = inspectAnswers[args[3] ?? ""];
+        return answer === undefined
+          ? { code: 1, stdout: "", stderr: "no such container" }
+          : { code: 0, stdout: JSON.stringify(answer), stderr: "" };
+      }
       throw new Error(`unexpected docker call: ${args.join(" ")}`);
     },
   } as unknown as Transport;
@@ -213,6 +221,24 @@ try {
     check("the dry run names the fact it would fill", output.includes("OC_DATA_DIR=/srv/data"), true);
   }
 
+  // --- (1d) stopped matches from `docker ps --all` must not hide a running instance ------
+  {
+    await writeFile(envFile(), seedWithoutDataDir, "utf8");
+    const stopped = goodInspect();
+    stopped.State = { Running: false };
+    const { transport, dockerCalls } = recoveryTransport("stopped-id\nrunning-id\n", {
+      "stopped-id": stopped,
+      "running-id": {
+        ...goodInspect(),
+        Mounts: [{ Destination: "/home/node/.openclaw", Source: "/srv/live-data/config" }],
+      },
+    });
+    const { error } = await capture(() => recoverEnvBeforeContext([], { transport, service: "gateway" }));
+    check("a stopped matching container does not prevent recovery", error, "");
+    check("the running container supplies the recovered data directory", (await readFile(envFile(), "utf8")).includes("OC_DATA_DIR=/srv/live-data"), true);
+    check("all matching IDs are inspected until a running one is found", dockerCalls.filter((args) => args[0] === "inspect").map((args) => args[3]), ["stopped-id", "running-id"]);
+  }
+
   // --- (2) the shared declaration drives the schema, the validation and the argv ---------
   {
     const schema = inputSchema(recoverDeclaration) as {
@@ -235,11 +261,7 @@ try {
 
   // --- (2) a REAL serveMcp session: tools/list advertises it, tools/call accepts it ------
   {
-    // OC_DATA_DIR is present (a valid-looking path under the deployment) because MCP's
-    // tools/call path still builds a full Context before the command runs — the argument
-    // acceptance is the thing under test here, not the bootstrap order. The run itself
-    // refuses on a containerless runner; the assertion is only that the argument was
-    // never rejected and the settings parser never spoke.
+    // OC_DATA_DIR is absent on purpose: MCP must run recovery without building a Context.
     const moduleUrl = (name: string) => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
     const mcpScript = `
       const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp-server"))});
@@ -255,7 +277,6 @@ try {
     await writeFile(
       envFile(),
       [
-        `OC_DATA_DIR=${join(deployDir, "data")}`,
         "OC_TARGET_LOCATION=local",
         `OPENCLAW_GATEWAY_TOKEN=${TOKEN}`,
         "",
@@ -289,7 +310,8 @@ try {
     const adopted = responses.find((response) => response.id === 2);
     const adoptedText = adopted?.result?.content?.[0]?.text ?? "";
     check("tools/call with adopt-runtime is not rejected as an unknown argument", adoptedText.includes("unknown argument: adopt-runtime"), false);
-    check("tools/call with adopt-runtime never reaches the settings parser's refusal", adoptedText.includes("OC_DATA_DIR is not set"), false);
+    check("MCP recovery reaches its own missing-container refusal with OC_DATA_DIR absent", adoptedText.includes("connection facts are recoverable only from a running container"), true);
+    check("MCP recovery never reaches the settings parser's refusal", adoptedText.includes("OC_DATA_DIR is not set"), false);
 
     const rejected = responses.find((response) => response.id === 3);
     const rejectedText = rejected?.result?.content?.[0]?.text ?? "";

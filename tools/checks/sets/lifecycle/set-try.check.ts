@@ -4,7 +4,11 @@
 // second Docker daemon in a check process would test the check's own stub, not this.
 
 import { createServer } from "node:net";
-import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem, parseSetTryArgs } from "#framework/commands/sets/set-try.ts";
+import { tmpdir } from "node:os";
+import { extname, relative, resolve, win32 } from "node:path";
+import { fileURLToPath } from "node:url";
+import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem, parseSetTryArgs, setTryModuleUrl } from "#framework/commands/sets/set-try.ts";
+import { frameworkRoot } from "#framework/core/env.ts";
 
 let failed = 0;
 
@@ -107,6 +111,24 @@ check("set try reads --with-model only as a flag, not as --set's value", valueNa
 check("SSH is refused before unsafe local staging", tryTargetProblem("ssh", "win32")?.includes("not supported"), true);
 check("WSL is refused from a non-Windows tool host", tryTargetProblem("wsl", "linux")?.includes("requires"), true);
 check("unknown target modes are refused", tryTargetProblem("other", "win32")?.includes("expected local"), true);
+
+{
+  const extension = extname(new URL("../../../framework/commands/sets/set-try.ts", import.meta.url).pathname);
+  const moduleUrl = setTryModuleUrl("app", extension);
+  const expectedModulePath = resolve(frameworkRoot, `core/app${extension}`);
+  check("the scaffolded app import is an absolute file URL", new URL(moduleUrl).protocol, "file:");
+  check("the scaffolded app URL resolves to the framework source", fileURLToPath(moduleUrl), expectedModulePath);
+  if (process.platform === "win32") {
+    const tempDrive = win32.parse(tmpdir()).root.toLowerCase();
+    const otherDrive = tempDrive === "c:\\" ? "D:" : "C:";
+    const crossDriveRoot = `${otherDrive}\\framework`;
+    const crossDriveTarget = resolve(crossDriveRoot, `core/app${extension}`);
+    const oldRelativeTarget = relative(tmpdir(), crossDriveTarget);
+    const crossDriveUrl = setTryModuleUrl("app", extension, crossDriveRoot);
+    check("path.relative cannot express the old cross-drive import", oldRelativeTarget, crossDriveTarget);
+    check("the cross-drive scaffold import remains an absolute file URL", fileURLToPath(crossDriveUrl), crossDriveTarget);
+  }
+}
 
 {
   let stopped = 0;

@@ -254,6 +254,18 @@ function normalizeArchivePath(path: string): string {
   return path.split("/").filter((segment) => segment !== "" && segment !== ".").join("/");
 }
 
+/** Canonical member names after structural validation. Different spellings of one target
+ * are ambiguous to tar and must not receive different profile-policy decisions. */
+export function canonicalArchiveEntries(entries: readonly string[]): string[] {
+  const canonical = entries.map(normalizeArchivePath);
+  const seen = new Set<string>();
+  for (const entry of canonical) {
+    if (seen.has(entry)) throw new Error(`archive contains duplicate canonical entry: ${entry}`);
+    seen.add(entry);
+  }
+  return canonical;
+}
+
 /** Resolves an archive-relative path segment by segment, in order, through every link
  *  standing in it. `resolved` holds only segments already proven link-free — a link among
  *  them was substituted before any later segment was appended — so a `..` popping from it
@@ -329,6 +341,13 @@ export function inspectArchive(entries: string[], links: Map<string, ArchiveLink
     } else if (path !== root && !path.startsWith(`${root}/`)) {
       problems.push({ message: `entry outside ${root}/: ${path}`, fatal: true });
     }
+  }
+
+  const canonicalNames = paths.map(normalizeArchivePath);
+  const seenNames = new Set<string>();
+  for (const name of canonicalNames) {
+    if (seenNames.has(name)) problems.push({ message: `duplicate canonical archive entry: ${name}`, fatal: true });
+    seenNames.add(name);
   }
 
   // Full canonicalization, where `paths` above deliberately keeps its raw spelling: the
@@ -421,8 +440,35 @@ export function dataDirParent(dataDir: string): string {
  *  nearest existing ancestor for paths that do not exist yet. */
 async function privilegePrefixFor(ctx: Context, readPaths: readonly string[], writePath?: string): Promise<string[]> {
   for (const path of readPaths) {
-    const prefix = await sudoFor(ctx, path);
-    if (prefix.length > 0) return prefix;
+    let present: boolean;
+    try { present = await ctx.transport.exists(path); }
+    catch { present = true; }
+    if (!present) continue;
+    const readable = await ctx.transport.exec("test", ["-r", path], { allowFailure: true });
+    if (readable.code === 0) {
+      const directory = await ctx.transport.exec("test", ["-d", path], { allowFailure: true });
+      if (directory.code === 1) continue;
+      if (directory.code !== 0) throw new Error(`could not determine whether ${path} is a directory`);
+      const searchable = await ctx.transport.exec("test", ["-x", path], { allowFailure: true });
+      if (searchable.code === 0) continue;
+      if (searchable.code !== 1) throw new Error(`could not check traversal access to ${path}`);
+    }
+    if (readable.code !== 0 && readable.code !== 1) {
+      throw new Error(`could not check read access to ${path}: ${readable.stderr.trim() || `test exited ${readable.code}`}`);
+    }
+    const prefix = await sudoFor(ctx, path, { force: true });
+    const [head, ...rest] = [...prefix, "test", "-r", path];
+    const elevated = await ctx.transport.exec(head, rest, { allowFailure: true });
+    if (elevated.code !== 0) throw new Error(`cannot read ${path}, even with elevated access`);
+    const [dirHead, ...dirRest] = [...prefix, "test", "-d", path];
+    const isDirectory = await ctx.transport.exec(dirHead, dirRest, { allowFailure: true });
+    if (isDirectory.code !== 0 && isDirectory.code !== 1) throw new Error(`could not determine whether ${path} is a directory`);
+    if (isDirectory.code === 0) {
+      const [xHead, ...xRest] = [...prefix, "test", "-x", path];
+      const x = await ctx.transport.exec(xHead, xRest, { allowFailure: true });
+      if (x.code !== 0) throw new Error(`cannot traverse ${path}, even with elevated access`);
+    }
+    return prefix;
   }
   return writePath === undefined ? [] : sudoFor(ctx, writePath);
 }

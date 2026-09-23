@@ -21,7 +21,9 @@ import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import { parseBackupArchive } from "#framework/service/archive.ts";
 import { recordPrivateWrite } from "#framework/security/private-paths-ledger.ts";
+import { installedRecipePrivatePaths } from "#framework/service/recipe.ts";
 import { deploymentName } from "#framework/runtime/deployment.ts";
+import { createHash } from "node:crypto";
 
 let failed = 0;
 
@@ -272,23 +274,23 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   const DATA_DIR = `${PARENT}/data`;
   const BACKUP_DIR = `${PARENT}/backups`;
   const MARKER = `${DATA_DIR}/workspace/SMOKE-MARKER.md`;
-  const PRIVATE_RELATIVE = "workspace/private-vault/credentials.env";
-  const PRIVATE_FILE = `${DATA_DIR}/${PRIVATE_RELATIVE}`;
+  const EXISTING_MARKER = "user-owned marker must survive\n";
+  const PRIVATE_RELATIVE = "workspace/private-vault";
+  const PRIVATE_FILE = `${DATA_DIR}/${PRIVATE_RELATIVE}/credentials.env`;
+  const BINARY_FILE = `${DATA_DIR}/${PRIVATE_RELATIVE}/opaque.bin`;
   const SECRET_CONTENT = "generated-credential-bytes\n";
+  const BINARY_CONTENT = "\u0000\u00ff\u0080\n";
   const LOCK_PATH = `${locksDir(DATA_DIR)}/operation.lock`;
 
-  /** The survival proof needs one recorded private path to bite on:
-   *  installedRecipePrivatePaths() unions the recipes' declarations with this deployment's
-   *  ledger, and the ledger is the half a check can write honestly. Everything below runs
-   *  with a disposable deployment directory selected. */
-  async function withRecordedPrivatePath<T>(body: () => Promise<T>): Promise<T> {
+  /** Everything below runs with a disposable deployment directory selected. */
+  async function withRecordedPrivatePath<T>(body: () => Promise<T>, record = true): Promise<T> {
     const root = await mkdtemp(join(tmpdir(), "clawforge-smoke-roundtrip-"));
     let previous: string | undefined;
     try { previous = deploymentDir(); } catch { /* no deployment selected in this check */ }
     try {
       await mkdir(join(root, "config"), { recursive: true });
       useDeployment(root);
-      await recordPrivateWrite(PRIVATE_RELATIVE);
+      if (record) await recordPrivateWrite(PRIVATE_RELATIVE);
       return await body();
     } finally {
       if (previous === undefined) useDeployment(root);
@@ -320,15 +322,16 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   interface RoundTripOptions {
     initialRunning?: boolean;
     failBackup?: boolean;
-    failMarkerCleanup?: boolean;
     failRestore?: boolean;
     failIsRunning?: boolean;
+    missingConfig?: boolean;
+    omitConfigFromSnapshot?: boolean;
+    corruptConfigOnRestore?: boolean;
   }
 
   function roundTripContext(options: RoundTripOptions = {}): {
     ctx: Context;
     files: Map<string, string>;
-    written: Map<string, string>;
     events: string[];
     lock: () => boolean;
     running: () => boolean;
@@ -336,7 +339,6 @@ check("could-not-check is not a species of not-checked — the run gate depends 
     publishedBackups: () => string[];
   } {
     const files = new InstanceFiles();
-    const written = new Map<string, string>();
     const events: string[] = [];
     const restoreRoots: string[] = [];
     const backups: string[] = [];
@@ -344,9 +346,11 @@ check("could-not-check is not a species of not-checked — the run gate depends 
     let runningNow = options.initialRunning === true;
     let snapshot: Map<string, string> | undefined;
 
-    files.set(`${DATA_DIR}/config/openclaw.json`, "{}\n");
+    if (options.missingConfig !== true) files.set(`${DATA_DIR}/config/openclaw.json`, "{}\n");
     files.set(`${DATA_DIR}/config/.env`, "OPENAI_API_KEY=x\n");
     files.set(PRIVATE_FILE, SECRET_CONTENT);
+    files.set(BINARY_FILE, BINARY_CONTENT);
+    files.set(MARKER, EXISTING_MARKER);
 
     const present = (path: string): boolean => {
       if (files.has(path)) return true;
@@ -366,7 +370,6 @@ check("could-not-check is not a species of not-checked — the run gate depends 
       },
       async writeFile(path: string, content: string): Promise<void> {
         events.push(`write:${path}`);
-        written.set(path, content);
         files.set(path, content);
       },
       async remove(path: string): Promise<void> {
@@ -376,7 +379,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
       async mkdirp(): Promise<void> {},
       async exec(command: string, args: string[]): Promise<ExecResult> {
         events.push(`${command}:${args.join(" ")}`);
-        if (command === "mkdir" && !args[0]?.startsWith("-")) {
+        if (command === "mkdir" && args[0] === LOCK_PATH) {
           // The one bare mkdir on this target is the instance lock claim.
           if (lockExists) return { code: 1, stdout: "", stderr: "File exists" };
           lockExists = true;
@@ -402,6 +405,21 @@ check("could-not-check is not a species of not-checked — the run gate depends 
             ? { code: 1, stdout: "", stderr: `cat: ${args[0]}: No such file` }
             : { code: 0, stdout: content, stderr: "" };
         }
+        if (command === "bash" && args.some((arg) => arg.includes("sha256sum"))) {
+          const name = args[args.length - 1] ?? "";
+          const parent = args[args.length - 2] ?? "";
+          const root = `${parent}/${name}`;
+          const digest = createHash("sha256");
+          const entries = [...files]
+            .filter(([path]) => path === root || path.startsWith(`${root}/`))
+            .sort(([left], [right]) => left.localeCompare(right));
+          digest.update(`${name}\0`);
+          for (const [path, content] of entries) {
+            const relative = path === root ? "" : path.slice(root.length + 1);
+            digest.update(`${relative}\0${content}\0`);
+          }
+          return { code: 0, stdout: `${digest.digest("hex")}  -\n`, stderr: "" };
+        }
         if (command === "cp") {
           const source = args[args.length - 2] ?? "";
           const destination = args[args.length - 1] ?? "";
@@ -423,9 +441,6 @@ check("could-not-check is not a species of not-checked — the run gate depends 
           return { code: 0, stdout: "", stderr: "" };
         }
         if (command === "rm") {
-          if (options.failMarkerCleanup === true && args.includes(MARKER)) {
-            throw new Error("simulated transport failure removing the marker");
-          }
           for (const arg of args.filter((value) => !value.startsWith("-"))) {
             if (arg === LOCK_PATH) lockExists = false;
             for (const path of files.keys()) if (path === arg || path.startsWith(`${arg}/`)) files.delete(path);
@@ -435,7 +450,11 @@ check("could-not-check is not a species of not-checked — the run gate depends 
         if (command === "tar" && args.includes("-czf")) {
           const archive = args[args.indexOf("-czf") + 1] ?? "";
           // What the backup captures is what the data directory holds NOW.
-          snapshot = new Map([...files].filter(([path]) => path.startsWith(`${DATA_DIR}/`)));
+          snapshot = new Map(
+            [...files].filter(([path]) =>
+              path.startsWith(`${DATA_DIR}/`) && !(options.omitConfigFromSnapshot === true && path === `${DATA_DIR}/config/openclaw.json`),
+            ),
+          );
           files.set(archive, "archive\n");
           return { code: 0, stdout: "", stderr: "" };
         }
@@ -460,7 +479,9 @@ check("could-not-check is not a species of not-checked — the run gate depends 
           const destination = args[args.indexOf("-C") + 1] ?? "";
           const name = DATA_DIR.slice(DATA_DIR.lastIndexOf("/") + 1);
           for (const [path, content] of snapshot ?? []) {
-            files.set(`${destination}/${name}/${path.slice(DATA_DIR.length + 1)}`, content);
+            const relative = path.slice(DATA_DIR.length + 1);
+            const restoredContent = options.corruptConfigOnRestore === true && relative === "config/openclaw.json" ? `${content}corrupted` : content;
+            files.set(`${destination}/${name}/${relative}`, restoredContent);
           }
           restoreRoots.push(`${destination}/${name}`);
           return { code: 0, stdout: "", stderr: "" };
@@ -512,7 +533,6 @@ check("could-not-check is not a species of not-checked — the run gate depends 
         paths: { toContainer: (path: string) => path },
       } as unknown as Context,
       files,
-      written,
       events,
       lock: () => lockExists,
       running: () => runningNow,
@@ -563,7 +583,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
     // isolated root; the live root is never moved aside; the full backup is the only thing
     // published, and the scratch root leaves with the check.
     {
-      const { ctx, files, written, events, lock, running, restoredRoots, publishedBackups } = roundTripContext({ initialRunning: true });
+      const { ctx, files, events, lock, running, restoredRoots, publishedBackups } = roundTripContext({ initialRunning: true });
       const outcome = await runRoundTrip(ctx);
 
       check("a clean round trip from a running gateway does not throw", outcome.threw, false);
@@ -575,9 +595,11 @@ check("could-not-check is not a species of not-checked — the run gate depends 
       check("no pull-style snapshot was published", events.some((event) => event.includes("-state-")), false);
       check("the live data root was never moved aside", movedDataDir(events), false);
       check("the live private file is untouched", files.get(PRIVATE_FILE), SECRET_CONTENT);
-      check("the private subtree survived the isolated restore byte-identically", restoredRoots().map((root) => files.get(`${root}/${PRIVATE_RELATIVE}`)), [SECRET_CONTENT]);
-      check("the marker survived the isolated restore byte-identically", restoredRoots().map((root) => files.get(`${root}/workspace/SMOKE-MARKER.md`)), [written.get(MARKER)]);
-      check("the planted marker was cleaned up on the live root", events.some((event) => event.startsWith("rm:") && event.includes(MARKER)), true);
+      check("the private directory's file survived the isolated restore byte-identically", restoredRoots().map((root) => files.get(`${root}/${PRIVATE_FILE.slice(DATA_DIR.length + 1)}`)), [SECRET_CONTENT]);
+      check("binary bytes below the private directory survive unchanged", restoredRoots().map((root) => files.get(`${root}/${BINARY_FILE.slice(DATA_DIR.length + 1)}`)), [BINARY_CONTENT]);
+      check("a pre-existing same-name user file survives unchanged", files.get(MARKER), EXISTING_MARKER);
+      check("the same-name user file is preserved in the isolated restore", restoredRoots().map((root) => files.get(`${root}/workspace/SMOKE-MARKER.md`)), [EXISTING_MARKER]);
+      check("smoke never writes or removes its former fixed marker path", events.some((event) => (event.startsWith("write:") || event.startsWith("rm:")) && event.includes(MARKER)), false);
       check("the scratch root left no litter behind", litterLeft(files), false);
     }
 
@@ -590,15 +612,16 @@ check("could-not-check is not a species of not-checked — the run gate depends 
       check("a clean round trip from a stopped gateway does not throw", outcome.threw, false);
       check("a stopped gateway was never started, not even on success", runtimeEvents(events), []);
       check("and it ended the check stopped, as it began", running(), false);
-      check("the private subtree still survived the isolated restore", restoredRoots().map((root) => files.get(`${root}/${PRIVATE_RELATIVE}`)), [SECRET_CONTENT]);
+      check("the private directory's file still survived the isolated restore", restoredRoots().map((root) => files.get(`${root}/${PRIVATE_FILE.slice(DATA_DIR.length + 1)}`)), [SECRET_CONTENT]);
+      check("binary bytes below the private directory still survive unchanged", restoredRoots().map((root) => files.get(`${root}/${BINARY_FILE.slice(DATA_DIR.length + 1)}`)), [BINARY_CONTENT]);
       check("the live data root was still never moved aside", movedDataDir(events), false);
     }
 
     // Failure in every stage, from both initial states. The contract (P2-06): the check
-    // fails, the marker and scratch root are still cleaned up, and the gateway always ends
+    // fails, the scratch root is still cleaned up, and the gateway always ends
     // in its initial state — started back up only when it was running before, never
     // started when it was not.
-    for (const stage of ["failBackup", "failRestore", "failMarkerCleanup"] as const) {
+    for (const stage of ["failBackup", "failRestore"] as const) {
       for (const initialRunning of [true, false]) {
         const { ctx, files, events, lock, running, restoredRoots } = roundTripContext({ initialRunning, [stage]: true });
         const outcome = await runRoundTrip(ctx);
@@ -611,7 +634,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
           runtimeEvents(events).includes("runtime:start"),
           initialRunning,
         );
-        check(`a ${stageName} failure still cleans up the planted marker`, events.some((event) => event.startsWith("rm:") && event.includes(MARKER)), true);
+        check(`a ${stageName} failure leaves the same-name user file unchanged`, files.get(MARKER), EXISTING_MARKER);
         check(`a ${stageName} failure still releases the instance lock`, lock(), false);
         check(`a ${stageName} failure leaves no scratch-root litter`, litterLeft(files), false);
         check(`a ${stageName} failure never moves the live data root aside`, movedDataDir(events), false);
@@ -620,17 +643,6 @@ check("could-not-check is not a species of not-checked — the run gate depends 
           check("a restore failure never claims an isolated root came back", restoredRoots().length, 0);
         }
       }
-    }
-
-    // The failure that folds two errors into one report: marker cleanup failing after a
-    // successful body must not swallow either fact.
-    {
-      const { ctx, events, running } = roundTripContext({ initialRunning: true, failMarkerCleanup: true });
-      const outcome = await runRoundTrip(ctx);
-      check("a cleanup failure after a clean round trip still fails the check", outcome.threw, true);
-      check("and names both facts: the cleanup failed", outcome.message.includes("cleanup failed"), true);
-      check("the gateway still came back up despite the cleanup failure", running(), true);
-      check("the scratch root was still cleaned despite the marker failure", events.some((event) => event.startsWith("rm:") && event.includes(".clawforge-smoke-roundtrip-")), true);
     }
 
     // The irreducible boundary: if even reading the initial state fails, the check aborts
@@ -646,6 +658,34 @@ check("could-not-check is not a species of not-checked — the run gate depends 
       check("the lock was still released", lock(), false);
     }
   });
+
+  // Without any private paths, the required live config remains a read-only byte witness.
+  await withRecordedPrivatePath(async () => {
+    const { ctx, files, events, restoredRoots } = roundTripContext({ initialRunning: false });
+    check("the no-private-path fixture has no private paths", await installedRecipePrivatePaths(), []);
+    const outcome = await runRoundTrip(ctx);
+    check("smoke still verifies a round trip when no private paths are declared", outcome.threw, false);
+    check("the config witness is hashed before and after restore", events.filter((event) => event.startsWith("bash:")).length, 2);
+    check("the required live config returns unchanged", restoredRoots().map((root) => files.get(`${root}/config/openclaw.json`)), ["{}\n"]);
+  }, false);
+
+  // A config that exists live but is altered by extraction must fail the no-private-path check.
+  await withRecordedPrivatePath(async () => {
+    const { ctx } = roundTripContext({ initialRunning: false, corruptConfigOnRestore: true });
+    const outcome = await runRoundTrip(ctx);
+    check("corrupting the config without private paths fails the round trip", outcome.threw, true);
+    check("the required config is named as the failed witness", outcome.message.includes("restore changed the smoke witness config/openclaw.json"), true);
+  }, false);
+
+  // Absence of the required witness fails before creating an archive.
+  await withRecordedPrivatePath(async () => {
+    const { ctx, events, publishedBackups } = roundTripContext({ initialRunning: false, missingConfig: true });
+    const outcome = await runRoundTrip(ctx);
+    check("a missing live config fails closed", outcome.threw, true);
+    check("the failure names the missing witness", outcome.message.includes("required smoke witness config/openclaw.json is missing"), true);
+    check("a missing witness publishes no backup", publishedBackups().length, 0);
+    check("a missing witness does not pause the gateway", events.some((event) => event.startsWith("runtime:pause")), false);
+  }, false);
 }
 
 process.stderr.write(failed === 0 ? "all smoke outcome checks passed\n" : `${failed} failed\n`);

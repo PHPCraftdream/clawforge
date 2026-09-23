@@ -243,7 +243,7 @@ try {
     await writeFile(resolve(helperRoot, "helper", "shared.ts"), "export const REVISION = 1;\n", "utf8");
     await writeFile(
       resolve(helperRoot, "helper", "verify.ts"),
-      "import { REVISION } from \"./shared.ts\";\nexport async function verify() { return { ok: true, revision: REVISION }; }\n",
+      "export async function verify() { const { REVISION } = await import(\"./shared.ts?variant=1\"); return { ok: true, revision: REVISION }; }\n",
       "utf8",
     );
     useRecipesDir(helperRoot);
@@ -262,6 +262,19 @@ try {
       2,
     );
     check("helper: with nothing further changed the fresh module keeps serving", (await verifyOnce()).revision, 2);
+
+    await writeFile(
+      resolve(helperRoot, "helper", "verify.ts"),
+      "const helper = \"./shared.ts\";\nexport async function verify() { const { REVISION } = await import(helper); return { ok: true, revision: REVISION }; }\n",
+      "utf8",
+    );
+    let computedImportError = "";
+    try {
+      await verifyOnce();
+    } catch (error) {
+      computedImportError = error instanceof Error ? error.message : String(error);
+    }
+    check("helper: computed dynamic imports fail clearly instead of escaping freshness tracking", computedImportError.includes("computed dynamic import"), true);
   } finally {
     useRecipesDir(outerRecipes);
     await rm(helperRoot, { recursive: true, force: true });

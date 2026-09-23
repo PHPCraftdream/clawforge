@@ -219,6 +219,30 @@ try {
 
     const ctx = { settings: { dataDir: DATA, env: {} }, transport } as unknown as Context;
 
+    // A newly selected deployment may have no local ledger while the target retains the only
+    // privacy history. Direct verification reads that target copy in memory and refuses a
+    // pre-existing archive that includes the recorded path.
+    const targetOnlyPath = "workspace/target-only.env";
+    const targetOnlyArchive = `${ARCHIVES}/target-only-history.tar.gz`;
+    await transport.writeFile(`${DATA}/${targetOnlyPath}`, "target-only-private-content\n");
+    await transport.writeFile(
+      `${DATA}/config/clawforge-private-paths.json`,
+      `${JSON.stringify({ privatePaths: [targetOnlyPath] }, null, 2)}\n`,
+    );
+    await transport.exec("tar", [
+      "--exclude=data/config/clawforge-private-paths.json",
+      "-czf", targetOnlyArchive, "-C", PARENT, DATA_NAME,
+    ]);
+    let targetHistoryOutput = "";
+    const targetHistoryPassed = await withOutputSink(
+      (chunk) => { targetHistoryOutput += chunk; },
+      () => verifySnapshot(ctx, targetOnlyArchive, "share"),
+    );
+    check("direct verify applies target-only privacy history", targetHistoryPassed, false);
+    check("target-only privacy refusal names the private path", targetHistoryOutput.includes(targetOnlyPath), true);
+    await transport.remove(`${DATA}/config/clawforge-private-paths.json`);
+    await transport.remove(`${DATA}/${targetOnlyPath}`);
+
     // --- both fixture hooks drive the real private-write helpers on the POSIX target --------------
 
     const sidecarHooks = (await import(new URL("./fixture-recipe/fixture-sidecar/prepare.ts", import.meta.url).href)) as {

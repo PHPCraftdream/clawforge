@@ -15,6 +15,8 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
   const files = new Map<string, string>();
   const events: string[] = [];
   let lockExists = false;
+  let mutationGuardExists = false;
+  const lockMarkers = new Set<string>();
   let archiveMoved = false;
   const oldSnapshot = `${snapshotDir}/${deploymentName()}-state-2020-01-01T00-00-00.tar.gz`;
   files.set(oldSnapshot, "previous\n");
@@ -46,12 +48,25 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
       async mkdirp(): Promise<void> {},
       async exec(command: string, args: string[]): Promise<ExecResult> {
         events.push(`${command}:${args.join(" ")}`);
-        if (command === "mkdir" && !args[0]?.startsWith("-")) {
-          if (lockExists) return { code: 1, stdout: "", stderr: "File exists" };
-          lockExists = true;
+        if (command === "mkdir") {
+          const path = args[0] === "-m" ? args[2] : args[0];
+          if (path?.endsWith("/operation.mutation")) {
+            if (mutationGuardExists) return { code: 1, stdout: "", stderr: "File exists" };
+            mutationGuardExists = true;
+          } else if (path?.endsWith("/operation.lock")) {
+            if (lockExists) return { code: 1, stdout: "", stderr: "File exists" };
+            lockExists = true;
+          } else if (path?.match(/\/operation\.lock\/gen-[a-f0-9]+$/)) {
+            if (lockMarkers.has(path)) return { code: 1, stdout: "", stderr: "File exists" };
+            lockMarkers.add(path);
+          }
           return { code: 0, stdout: "", stderr: "" };
         }
-        if (command === "test" && args[0] === "-d") return { code: lockExists ? 0 : 1, stdout: "", stderr: "" };
+        if (command === "test" && args[0] === "-d") {
+          const path = args[1] ?? "";
+          const exists = path.endsWith("/operation.mutation") ? mutationGuardExists : path.endsWith("/operation.lock") ? lockExists : false;
+          return { code: exists ? 0 : 1, stdout: "", stderr: "" };
+        }
         if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
         // createBackup() asks `test -L` before archiving; the modeled data directory is a
         // real one, and the fall-through below would answer 0 — "is a symlink".
@@ -60,7 +75,9 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
         // P2-03), not a recursive remove of the whole lock path — the same event this stub
         // already answers for a plain `remove()` of the lock path.
         if (command === "rmdir") {
-          if (args[0]?.endsWith("operation.lock")) lockExists = false;
+          if (args[0]?.endsWith("/operation.mutation")) mutationGuardExists = false;
+          if (args[0]?.endsWith("/operation.lock") && lockMarkers.size === 0) lockExists = false;
+          lockMarkers.delete(args[0] ?? "");
           return { code: 0, stdout: "", stderr: "" };
         }
         if (command === "test" && args[0] === "-e") {
@@ -80,6 +97,11 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
         if (command === "mv") {
           const source = args[args.length - 2] ?? "";
           const destination = args[args.length - 1] ?? "";
+          if (lockMarkers.has(source)) {
+            lockMarkers.delete(source);
+            lockMarkers.add(destination);
+            return { code: 0, stdout: "", stderr: "" };
+          }
           if (failure === "archive" && destination.includes("-state-") && destination.endsWith(".tar.gz")) {
             return { code: 1, stdout: "", stderr: "publish failed" };
           }
@@ -99,6 +121,7 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
         }
         if (command === "rm") {
           for (const arg of args.filter((value) => !value.startsWith("-"))) {
+            lockMarkers.delete(arg);
             for (const path of files.keys()) if (path === arg || path.startsWith(`${arg}/`)) files.delete(path);
           }
           return { code: 0, stdout: "", stderr: "" };

@@ -281,6 +281,16 @@ export function privatePathsHistoryFile(dataDir: string): string {
   return `${dataDir.replace(/\/+$/, "")}/config/clawforge-private-paths.json`;
 }
 
+/** Read-only union for security checks: local history, target history, minus explicit
+ * tombstones. This never reconciles or writes either copy. */
+export async function privatePathsPolicy(ctx: Context): Promise<string[]> {
+  const local = await privatePathsLedgerState();
+  const target = await readTargetHistory(ctx, privatePathsHistoryFile(ctx.settings.dataDir));
+  const legacyForget = local.existed && local.paths.length === 0 && local.forgotten.length === 0;
+  const activeTarget = legacyForget ? [] : (target ?? []).filter((entry) => !local.forgotten.includes(entry));
+  return [...new Set([...local.paths, ...activeTarget])].sort();
+}
+
 /** Whether the deployment-side ledger file has ever been written on THIS deployment
  *  folder — distinct from "reads as empty", which a missing file also does. recordPrivateWrite,
  *  importRestoredPrivatePathsHistory and forgetPrivatePaths only call writeLedgerState when a
@@ -307,7 +317,15 @@ async function ledgerFileExists(file: string): Promise<boolean> {
  *  be verified must never look like "nothing to protect" here either. */
 async function readTargetHistoryCopy(ctx: Context, file: string): Promise<{ raw: string; paths: string[] } | undefined> {
   if (!(await ctx.transport.exists(file))) return undefined;
-  const prefix = await sudoFor(ctx, file);
+  const readable = await ctx.transport.exec("test", ["-r", file], { allowFailure: true });
+  let prefix: string[] = [];
+  if (readable.code !== 0) {
+    if (readable.code !== 1) throw new Error(`could not check read access to ${file}: ${readable.stderr.trim()}`);
+    prefix = await sudoFor(ctx, file, { force: true });
+    const [testHead, ...testRest] = [...prefix, "test", "-r", file];
+    const elevated = await ctx.transport.exec(testHead, testRest, { allowFailure: true });
+    if (elevated.code !== 0) throw new Error(`could not read the existing privacy history ${file}, even with elevated access`);
+  }
   const [head, ...rest] = [...prefix, "cat", file];
   const result = await ctx.transport.exec(head, rest);
   if (result.code !== 0) {

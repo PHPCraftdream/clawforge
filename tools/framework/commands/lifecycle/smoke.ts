@@ -26,7 +26,8 @@
 // and fails the run exactly as a failed check does: a suite that could not ask its
 // question has not earned a green light.
 
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
+import { basename, dirname } from "node:path";
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
 import { log, info, warn, die, UserError } from "#src/core/log.ts";
@@ -84,17 +85,21 @@ async function reachVerdict<T>(doing: string, call: () => Promise<T>): Promise<T
   }
 }
 
-/** Reads a file through the same escalation its writer may need and returns its sha256.
- *  The round trip compares digests, never content, so private bytes cannot leak into a
- *  thrown message or a log line. */
+/** Hashes a file or tree as a normalized tar stream on the target. Output remains a digest,
+ *  so private bytes never cross the transport or enter an error message. */
 async function sha256Of(ctx: Context, path: string): Promise<string> {
   const prefix = await sudoFor(ctx, path);
-  const [head, ...rest] = [...prefix, "cat", path];
+  const parent = dirname(path);
+  const name = basename(path);
+  const script = "set -o pipefail; tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --format=gnu -cf - -C \"$1\" -- \"$2\" | sha256sum";
+  const [head, ...rest] = [...prefix, "bash", "-o", "pipefail", "-c", script, "bash", parent, name];
   const result = await reach(`read ${path}`, () => ctx.transport.exec(head, rest));
   if (result.code !== 0) {
-    throw new CouldNotCheck(`could not read ${path}: ${result.stderr.trim() || `cat exited ${result.code}`}`);
+    throw new CouldNotCheck(`could not hash ${path}: ${result.stderr.trim() || `tar exited ${result.code}`}`);
   }
-  return createHash("sha256").update(result.stdout).digest("hex");
+  const digest = /^([a-f\d]{64})\s/.exec(result.stdout)?.[1];
+  if (digest === undefined) throw new CouldNotCheck(`could not hash ${path}: target returned no sha256 digest`);
+  return digest;
 }
 
 export const checks: Check[] = [
@@ -219,9 +224,9 @@ export const checks: Check[] = [
   {
     // Disaster-recovery test in the only shape a smoke run may take: it takes a FULL backup
     // with the gateway held down and restores it into an isolated scratch root beside the
-    // data directory, then proves the planted marker and every declared or recorded private
-    // path come back byte-identical. It never writes over the live data root: that used to
-    // be a migrate-profile snapshot pushed straight back over the working tree, which
+    // data directory, then compares private paths as normalized archive streams. It never
+    // writes a witness into the live data root: that used to be a migrate-profile snapshot
+    // pushed straight back over the working tree, which
     // dropped every privatePath on the floor while still reporting success (audit
     // 2026-09-23, XA round 6, P1-01). A live overwrite-and-restore drill, if anyone wants
     // one, is an explicit, separately confirmed operation — not a side effect of `smoke`.
@@ -238,13 +243,7 @@ export const checks: Check[] = [
     // every exit path, folding any compensation failure into the reported error instead of
     // swallowing either (audit 2026-09-23, XA round 6, P2-06).
     //
-    // The full backup itself stays behind: it is a real backup, rotated by the usual
-    // retention like any other.
-    //
-    // Cleanup of the marker and the scratch root is unconditional: it runs whether the body
-    // above passed, threw mid-way (a failed backup, a refused restore, a digest mismatch)
-    // or the digest itself could not be taken — anything less leaves litter behind for the
-    // next run to trip over.
+    // The full backup itself stays behind and follows the usual retention.
     name: "snapshot round-trip is byte-identical",
     run: async (ctx) => {
       await guarded(ctx, "smoke round-trip", [], () => roundTripCheck(ctx));
@@ -260,7 +259,6 @@ async function roundTripCheck(ctx: Context): Promise<void> {
   const initialRunning = await reach("ask whether the gateway is running", () => ctx.runtime.isRunning());
 
   const dataDir = ctx.settings.dataDir;
-  const marker = `${dataDir}/workspace/SMOKE-MARKER.md`;
   // The scratch root keeps the data directory's own basename — restore refuses an archive
   // whose root does not match the data directory's name — under a scratch parent of its own.
   const scratch = `${dataDirParent(dataDir)}/.clawforge-smoke-roundtrip-${randomBytes(4).toString("hex")}`;
@@ -282,23 +280,21 @@ async function roundTripCheck(ctx: Context): Promise<void> {
     }),
   } as unknown as Context;
 
-  let markerWritten = false;
   let bodyError: unknown;
 
   try {
-    await reach("write the marker", () => ctx.transport.writeFile(marker, `smoke-${Date.now()}\n`));
-    markerWritten = true;
-
-    // What must survive: the marker proves the restore is of THIS moment, and every
-    // declared or recorded private path that exists on the target proves the property the
-    // migrate profile used to break. Digests, never content: these bytes are credentials.
+    // The live config is always the read-only witness; private paths add coverage when
+    // declared. Tar keeps byte streams on the target and supports files and directories.
     const witnesses = new Map<string, string>();
-    for (const relative of await installedRecipePrivatePaths()) {
+    const paths = new Set(["config/openclaw.json", ...await installedRecipePrivatePaths()]);
+    for (const relative of paths) {
       const live = `${dataDir}/${relative}`;
-      if (!(await reach(`look for ${relative}`, () => ctx.transport.exists(live)))) continue;
+      if (!(await reach(`look for ${relative}`, () => ctx.transport.exists(live)))) {
+        if (relative === "config/openclaw.json") throw new CouldNotCheck("required smoke witness config/openclaw.json is missing");
+        continue;
+      }
       witnesses.set(relative, await sha256Of(ctx, live));
     }
-    const markerDigest = await sha256Of(ctx, marker);
 
     // FULL, not migrate: full is the only profile that keeps privatePaths, identity and
     // keys — the only restore that is a round trip.
@@ -310,40 +306,21 @@ async function roundTripCheck(ctx: Context): Promise<void> {
       restoreArchive(isolated, archive, { force: true, noStart: true }),
     );
 
-    const restoredMarker = `${restored}${marker.slice(dataDir.length)}`;
-    expect(
-      await reach("look for the marker in the isolated root", () => ctx.transport.exists(restoredMarker)),
-      "the marker did not survive the restore",
-    );
-    expect((await sha256Of(ctx, restoredMarker)) === markerDigest, "checksum mismatch after the round trip");
     for (const [relative, digest] of witnesses) {
       const copy = `${restored}/${relative}`;
       expect(
         await reach(`look for ${relative} in the isolated root`, () => ctx.transport.exists(copy)),
-        `the restore lost the private path ${relative}`,
+        `the restore lost the smoke witness ${relative}`,
       );
-      expect((await sha256Of(ctx, copy)) === digest, `the restore changed the private path ${relative}`);
+      expect((await sha256Of(ctx, copy)) === digest, `the restore changed the smoke witness ${relative}`);
     }
   } catch (error) {
     bodyError = error;
   }
 
-  // Compensation, on every exit path (P2-06): the marker and the scratch root are this
-  // check's own litter; the gateway goes back to the state the check found it in.
+  // Compensation, on every exit path (P2-06): the scratch root is this check's own litter;
+  // the gateway goes back to the state the check found it in.
   const compensationErrors: unknown[] = [];
-
-  if (markerWritten) {
-    try {
-      const prefix = await sudoFor(ctx, marker);
-      const [head, ...rest] = [...prefix, "rm", "-f", marker];
-      await ctx.transport.exec(head, rest);
-    } catch (cleanupError) {
-      // A failure here is a real failure, not a missing verdict — it deliberately does not
-      // go through reach(). If the body already failed, both are worth knowing: whatever
-      // broke the round trip, and that SMOKE-MARKER.md was also left behind because of it.
-      compensationErrors.push(cleanupError);
-    }
-  }
 
   try {
     await runMaybePrivileged(ctx, scratch, "rm", ["-rf", scratch]);

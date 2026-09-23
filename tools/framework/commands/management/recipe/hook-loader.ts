@@ -28,8 +28,10 @@ export async function resolve(specifier: string, context: ResolveContext, nextRe
   if (parentURL === undefined || !parentURL.includes(`?${VERSION_PARAM}=`)) return nextResolve(specifier, context);
   if (!specifier.startsWith("./") && !specifier.startsWith("../")) return nextResolve(specifier, context);
   const resolved = await nextResolve(specifier, context);
-  if (!resolved.url.startsWith("file:") || resolved.url.includes("?")) return resolved;
+  if (!resolved.url.startsWith("file:")) return resolved;
   const version = new URL(parentURL).searchParams.get(VERSION_PARAM);
   if (version === null) return resolved;
-  return { ...resolved, url: `${resolved.url}?${VERSION_PARAM}=${version}` };
+  const versioned = new URL(resolved.url);
+  versioned.searchParams.set(VERSION_PARAM, version);
+  return { ...resolved, url: versioned.href };
 }

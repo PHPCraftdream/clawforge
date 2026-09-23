@@ -133,44 +133,33 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   const stagingArchive = `${stagingDir}/archive.tar.gz`;
   const wasRunning = await ctx.runtime.isRunning();
 
-  if (options.hot === true) {
-    warn("hot backup: the gateway keeps writing, the archive may catch a partial sqlite write");
-  } else if (wasRunning) {
-    log("stopping the gateway for a consistent snapshot");
-    await ctx.runtime.pause();
-  }
-
-  // Recipes are their own Compose projects, so stopping the gateway stops none of them:
-  // a sidecar bind-mounting a file under the data directory keeps writing straight
-  // through the snapshot, outside the lock this command holds. A recipe that declares
-  // the lifecycle hooks (management/recipe/lifecycle.ts) is quiesced NOW — inside the
-  // window the gateway is paused for — and resumed on every exit path once the archive
-  // work is done; every stack still left outside the window is named rather than
-  // silently uncovered (audit 2026-09-22 round 2, P2-04; the hook contract: P2-12).
-  //
-  // The window is deliberately exactly the gateway's own pause window. --hot accepts a
-  // torn snapshot by definition. A leaveStopped caller (pull, smoke's round trip) owns
-  // a transaction continuing past this function: quiescing here with nobody left to
-  // resume would trade a torn snapshot for stacks left stopped. Both keep the pre-hook
-  // behavior — the running stacks are named, nothing is called.
-  const sidecars = await runningRecipeStacks(ctx);
   const quiesced: Recipe[] = [];
-  let uncovered = sidecars;
-  if (options.hot !== true && options.leaveStopped !== true && sidecars.length > 0) {
-    const outcome = await quiesceRecipeStacks(ctx, sidecars);
-    quiesced.push(...outcome.quiesced);
-    uncovered = outcome.unquiesced;
-  }
-  if (uncovered.length > 0) {
-    warn(
-      `recipe stack(s) still running, not quiesced for this backup: ${uncovered.map((recipe) => recipe.name).join(", ")} — ` +
-        `the snapshot's consistency guarantee covers the gateway only; what these stacks write under ${dataDir} ` +
-        "can be caught mid-write and is not guaranteed consistent in the archive",
-    );
-  }
-
   let stagingCreated = false;
+  let resultError: unknown;
+
   try {
+    if (options.hot === true) {
+      warn("hot backup: the gateway keeps writing, the archive may catch a partial sqlite write");
+    } else if (wasRunning) {
+      log("stopping the gateway for a consistent snapshot");
+      await ctx.runtime.pause();
+    }
+
+    // Every operation after pause, including sidecar discovery, belongs to this
+    // compensation scope: discovery and hook loading can both fail.
+    const sidecars = await runningRecipeStacks(ctx);
+    if (options.hot !== true && options.leaveStopped !== true && sidecars.length > 0) {
+      const outcome = await quiesceRecipeStacks(ctx, sidecars);
+      quiesced.push(...outcome.quiesced);
+      if (outcome.unquiesced.length > 0) {
+        throw new Error(
+          `backup refused because recipe stack(s) could not be quiesced: ${outcome.unquiesced.map((recipe) => recipe.name).join(", ")}`,
+        );
+      }
+    } else if (sidecars.length > 0) {
+      warn(`recipe stack(s) remain running during this transaction: ${sidecars.map((recipe) => recipe.name).join(", ")}`);
+    }
+
     log(`writing ${archive}`);
     const mkdirStagePrefix = await sudoFor(ctx, backupDir);
     const [mkdirStageHead, ...mkdirStageRest] = [
@@ -209,36 +198,37 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     if (!(await targetExists(ctx, archive))) {
       throw new Error(`could not confirm publication of ${archive}`);
     }
-  } finally {
-    if (stagingCreated) {
-      try {
-        await runMaybePrivileged(ctx, stagingDir, "rm", ["-rf", "--", stagingDir]);
-      } catch {
-        warn(`could not remove backup staging directory ${stagingDir}`);
-      }
-    }
+  } catch (error) {
+    resultError = error;
+  }
+
+  const compensationErrors: unknown[] = [];
+  if (stagingCreated) {
     try {
-      // Bring the gateway back even if tar failed. Waited for, not just started: up(),
-      // push() and restore() all confirm health before returning — this used to be the one
-      // command that handed control back while the container was still merely "Starting",
-      // and a caller doing something right after that assumed the gateway was already
-      // answering could lose that race.
-      if (options.hot !== true && wasRunning && options.leaveStopped !== true) {
-        log("starting the gateway again");
-        await ctx.runtime.start();
-        await ctx.runtime.waitForHealth();
-        log("gateway is healthy");
-      } else if (options.leaveStopped === true && wasRunning) {
-        info("leaving the gateway stopped — the caller restarts it once its own transaction is done");
-      }
-    } finally {
-      // Resumed on every exit path — including a restart above that threw: a quiesce
-      // whose compensation is skipped by an earlier failure leaves the stack stopped
-      // with nothing in the output saying so. resumeRecipeStacks never throws (a failed
-      // resume is warned, not raised), so this cannot mask the archive's own error.
-      if (quiesced.length > 0) await resumeRecipeStacks(ctx, quiesced);
+      await runMaybePrivileged(ctx, stagingDir, "rm", ["-rf", "--", stagingDir]);
+    } catch (error) {
+      compensationErrors.push(new Error(`could not remove backup staging directory ${stagingDir}`, { cause: error }));
     }
   }
+  if (options.hot !== true && wasRunning && options.leaveStopped !== true) {
+    try {
+      log("starting the gateway again");
+      await ctx.runtime.start();
+      await ctx.runtime.waitForHealth();
+      log("gateway is healthy");
+    } catch (error) {
+      compensationErrors.push(new Error("backup could not restore the gateway to its running state", { cause: error }));
+    }
+  } else if (options.leaveStopped === true && wasRunning) {
+    info("leaving the gateway stopped — the caller restarts it once its own transaction is done");
+  }
+  if (quiesced.length > 0) compensationErrors.push(...await resumeRecipeStacks(ctx, quiesced));
+
+  if (resultError !== undefined && compensationErrors.length > 0) {
+    throw new AggregateError([resultError, ...compensationErrors], "backup failed and compensation also failed");
+  }
+  if (resultError !== undefined) throw resultError;
+  if (compensationErrors.length > 0) throw new AggregateError(compensationErrors, "backup completed but compensation failed");
 
   log(`backup done: ${archive} (${await fileSize(ctx, archive)}, profile: ${profile})`);
   await rotate(ctx, backupDir);

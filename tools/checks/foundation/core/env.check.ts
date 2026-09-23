@@ -5,7 +5,7 @@
 // rather than trusted. toSettings is checked for its required field and its defaults, since
 // a wrong default silently points a deployment at the wrong directory or port.
 
-import { parseEnv, serializeEnvLine, toSettings } from "#framework/core/env.ts";
+import { locksDir, parseEnv, serializeEnvLine, toSettings } from "#framework/core/env.ts";
 
 let failed = 0;
 
@@ -202,12 +202,21 @@ rejects("relative/data", '"relative/data" (not absolute)');
 rejects("/srv//data", '"/srv//data" (double slash, not normalized)');
 rejects("/srv/data/..", '"/srv/data/.." (not normalized)');
 rejects("/srv/./data", '"/srv/./data" (not normalized)');
+rejects("C:\\srv\\openclaw/data", 'mixed Windows separators');
+rejects("C:\\srv\\openclaw\\..\\data", 'Windows parent traversal');
+rejects("C:\\srv\\openclaw\\data\\", 'Windows trailing separator');
 
 check(
   "OC_DATA_DIR at depth 2 is accepted",
   toSettings({ OC_DATA_DIR: "/srv/data" }).dataDir,
   "/srv/data",
 );
+
+const windowsSettings = toSettings({ OC_DATA_DIR: "C:\\srv\\openclaw\\data" });
+check("native Windows dataDir is accepted", windowsSettings.dataDir, "C:\\srv\\openclaw\\data");
+check("native Windows backupDir is a sibling", windowsSettings.backupDir, "C:\\srv\\openclaw\\backups");
+check("native Windows snapshotDir is a sibling", windowsSettings.snapshotDir, "C:\\srv\\openclaw\\snapshots");
+check("native Windows lock directory is a sibling", locksDir(windowsSettings.dataDir), "C:\\srv\\openclaw\\data-locks");
 
 // P1-09: depth is a backstop, not the safety property. A normal, valid-looking standard
 // directory two segments deep passes on purpose — the safety comes from ensureDataDirs

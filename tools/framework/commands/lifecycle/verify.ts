@@ -18,6 +18,7 @@ import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "#src/runtime/tra
 import {
   archiveRoot,
   inspectArchive,
+  canonicalArchiveEntries,
   listArchive,
   listArchiveLinks,
   isProfile,
@@ -27,6 +28,7 @@ import {
 import { parseEnv } from "#src/core/env.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
+import { privatePathsPolicy } from "#src/security/private-paths-ledger.ts";
 
 /** The two kinds of rule a profile forbids archive entries by, kept apart on purpose:
  *
@@ -237,7 +239,11 @@ export async function verifySnapshot(
   const secrets = await collectSecrets(ctx);
   // The same enumeration archive.ts excludes by: this check is what refuses an archive that
   // was already taken before that exclusion existed.
-  const recipePrivatePaths = await installedRecipePrivatePaths();
+  const [installedPrivatePaths, recordedPrivatePaths] = await Promise.all([
+    installedRecipePrivatePaths(),
+    privatePathsPolicy(ctx),
+  ]);
+  const recipePrivatePaths = [...new Set([...installedPrivatePaths, ...recordedPrivatePaths])];
   log(
     `checking against ${secrets.critical.length} provider/gateway and ${secrets.identity.length} identity secret(s)`,
   );
@@ -263,8 +269,15 @@ export async function verifySnapshot(
 
   // The root is read from the archive, not assumed to be "data": the data directory is
   // named by the deployment and an archive from elsewhere may use anything.
-  const root = archiveRoot(entries);
-  const relative = entries.map((entry) => entry.replace(/^\.\//, "").slice(root.length + 1));
+  let canonical: string[];
+  try {
+    canonical = canonicalArchiveEntries(entries);
+  } catch (error) {
+    warn(`snapshot FAILED the '${profile}' check: ${(error as Error).message}`);
+    return false;
+  }
+  const root = canonicalArchiveEntries([archiveRoot(entries)])[0];
+  const relative = canonical.map((entry) => entry === root ? "" : entry.slice(root.length + 1));
 
   for (const path of forbiddenViolations(profile, recipePrivatePaths, relative)) {
     warn(`archive contains ${path}, which the '${profile}' profile must exclude`);

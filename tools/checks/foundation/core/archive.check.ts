@@ -4,10 +4,12 @@
 
 import {
   archiveRoot,
+  canonicalArchiveEntries,
   createArchive,
   extractArchive,
   inspectArchive,
   listArchiveLinks,
+  listArchive,
   excludesFor,
   parseSnapshotArchive,
   SHARE_ALLOWED,
@@ -44,6 +46,15 @@ const GOOD = ["data/", "data/config/", "data/config/openclaw.json", "data/worksp
 
 check("root of a normal archive", archiveRoot(GOOD), "data");
 check("root ignores the ./ prefix", archiveRoot(["./state/", "./state/x"]), "state");
+check(
+  "canonical entry names remove alternate spelling before profile decisions",
+  JSON.stringify(canonicalArchiveEntries(["./data//workspace/./private.env"])),
+  JSON.stringify(["data/workspace/private.env"]),
+);
+let duplicateCanonicalRejected = false;
+try { canonicalArchiveEntries(["data/workspace/private.env", "./data//workspace/./private.env"]); }
+catch { duplicateCanonicalRejected = true; }
+check("duplicate canonical archive names are rejected", duplicateCanonicalRejected, true);
 
 checkAccepts("a normal archive passes", GOOD);
 checkAccepts(
@@ -230,6 +241,34 @@ check("a hard link is parsed", parsedHardlink?.kind, "hardlink");
 check("a hard link target is parsed", parsedHardlink?.target, "data/a hardlink");
 check("a plain file produces no link entry", hardlink.has("data/a hardlink"), false);
 
+{
+  const calls: Array<{ command: string; args: string[] }> = [];
+  const ctx = {
+    settings: {},
+    transport: {
+      async exists(): Promise<boolean> { return true; },
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        calls.push({ command, args });
+        const actual = command === "sudo" ? (args[0] === "-n" ? args[1] : args[0]) ?? "" : command;
+        const actualArgs = command === "sudo" ? args.slice(args[0] === "-n" ? 2 : 1) : args;
+        if (actual === "test" && actualArgs[0] === "-r" && actualArgs[1] === "/private/archive.tar.gz") {
+          return { code: command === "sudo" ? 0 : 1, stdout: "", stderr: "" };
+        }
+        if (actual === "test" && actualArgs[0] === "-w") return { code: 0, stdout: "", stderr: "" };
+        if (actual === "sh" || actual === "true") return { code: 0, stdout: "", stderr: "" };
+        if (actual === "tar") return { code: 0, stdout: "data/file\n", stderr: "" };
+        return { code: 1, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+  await listArchive(ctx, "/private/archive.tar.gz");
+  check(
+    "an unreadable archive source escalates even when its path is writable",
+    calls.some((call) => call.command === "sudo" && call.args[1] === "tar"),
+    true,
+  );
+}
+
 check(
   "the historical open_claw snapshot name remains selectable for openclaw",
   parseSnapshotArchive("open_claw-state-2026-01-12T03-04-05.tar.gz", "openclaw")?.stamp,
@@ -340,8 +379,12 @@ check("without declarations the exclude lists are unchanged", excludesFor("migra
         async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
           if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
           if (command === "test" && args[0] === "-w") return { code: allowed.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
+          if (command === "test" && args[0] === "-r") return { code: allowed.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
+          if (command === "test" && args[0] === "-x") return { code: allowed.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
+          if (command === "test" && args[0] === "-d") return { code: present.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
           if (command === "sh" && args.some((arg) => arg.includes("command -v sudo"))) return { code: 0, stdout: "/usr/bin/sudo\n", stderr: "" };
           if (command === "sudo" && args[0] === "-n" && args[1] === "true") return { code: 0, stdout: "", stderr: "" };
+          if (command === "sudo" && args[0] === "-n" && args[1] === "test") return { code: 0, stdout: "", stderr: "" };
           if (command === "sudo" && args[1] === "tar") {
             tarCalls.push({ head: "sudo", rest: args.slice(1) });
             return { code: 0, stdout: "", stderr: "" };

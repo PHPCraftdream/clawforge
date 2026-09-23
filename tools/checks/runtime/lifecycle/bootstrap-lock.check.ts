@@ -49,6 +49,7 @@ try {
   const writes: string[] = [];
   const runtimeCalls: string[] = [];
   const execCalls: string[][] = [];
+  const lockHome = "/srv/openclaw/data-locks";
 
   const ctx = {
     settings: {
@@ -77,10 +78,12 @@ try {
       async mkdirp(): Promise<void> {},
       async exec(command: string, args: string[], options: { allowFailure?: boolean } = {}): Promise<{ code: number; stdout: string; stderr: string }> {
         execCalls.push([command, ...args]);
-        // The lock claim itself: mkdir (not -p) is refused, and the directory is reported
-        // as existing — the exact shape takeLock() reads as "held by someone else".
-        if (command === "mkdir" && args[0] !== "-p") return { code: 1, stdout: "", stderr: "" };
-        if (command === "test" && args[0] === "-d") return { code: 0, stdout: "", stderr: "" };
+        // The mutation guard is available; only the operation lock is held by the fixture.
+        if (command === "mkdir" && args[0] === `${lockHome}/operation.mutation`) return { code: 0, stdout: "", stderr: "" };
+        if (command === "mkdir" && args[0] === `${lockHome}/operation.lock`) return { code: 1, stdout: "", stderr: "" };
+        if (command === "test" && args[0] === "-d") {
+          return { code: args[1] === `${lockHome}/operation.lock` ? 0 : 1, stdout: "", stderr: "" };
+        }
         const code = 0;
         if (code !== 0 && options.allowFailure !== true) throw new Error(`${command} failed`);
         return { code, stdout: "", stderr: "" };
@@ -134,6 +137,7 @@ try {
     const lockPath = `${home}/operation.lock`;
     let lockHomeCreated = false;
     let lockHomeWritable = false;
+    let mutationGuardHeld = false;
     const freshExecCalls: string[][] = [];
 
     const freshCtx = {
@@ -172,12 +176,21 @@ try {
           if (command === "mkdir" && args[0] === "-p" && args[1] === home) {
             return { code: lockHomeCreated ? 0 : 1, stdout: "", stderr: "" };
           }
-          if (command === "mkdir" && args[0] !== "-p") {
+          if (command === "mkdir" && args[0] === `${home}/operation.mutation`) {
+            if (mutationGuardHeld) return { code: 1, stdout: "", stderr: "File exists" };
+            mutationGuardHeld = true;
+            return { code: 0, stdout: "", stderr: "" };
+          }
+          if (command === "mkdir" && args[0] === lockPath) {
             // The lock claim itself: succeeds once the home exists and is owned.
             return { code: lockHomeCreated && lockHomeWritable ? 0 : 1, stdout: "", stderr: "" };
           }
           if (command === "test" && args[0] === "-d") {
-            return { code: 1, stdout: "", stderr: "" };
+            return { code: args[1] === `${home}/operation.mutation` && mutationGuardHeld ? 0 : 1, stdout: "", stderr: "" };
+          }
+          if (command === "rmdir" && args[0] === `${home}/operation.mutation`) {
+            mutationGuardHeld = false;
+            return { code: 0, stdout: "", stderr: "" };
           }
           if (command === "test" && args[0] === "-L") {
             // A fresh host's data directory is a real directory, never a link — ensureDataDirs'

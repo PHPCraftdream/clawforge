@@ -18,13 +18,8 @@
 // compose project through ctx.runtime, the transport, whatever the app needs. Nothing
 // here knows any recipe's business.
 //
-// Calls are best-effort in both directions: a missing, failing or hung hook never fails
-// the operation that is snapshotting the instance — it only leaves the recipe among the
-// uncovered stacks the caller warns about by name. The strict counterpart (refuse the
-// whole backup when a recipe that should participate cannot be quiesced) is deliberately
-// not built yet. A quiesce whose resume does not run — not declared, failed, or its
-// quiesce never completed — is warned about: a hook that stopped its service must not
-// leave it stopped silently.
+// Backups fail closed when a running recipe cannot quiesce. Quiesce hooks must pair with a
+// resume hook so every attempted stop has an explicit compensation path.
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -90,25 +85,37 @@ export interface QuiesceOutcome {
   readonly unquiesced: Recipe[];
 }
 
-/** Quiesces every running stack that declares quiesce.ts, in the order given. Best-effort
- *  by contract: a failing or hung hook is a warning-grade event here, never a refusal —
- *  an uncovered stack degrades the snapshot exactly as it did before this mechanism
- *  existed, and is returned for the caller to name. */
+/** Quiesces every running stack that declares a paired hook. A failed or timed out hook is
+ *  both uncovered and scheduled for resume because it may have partially stopped services. */
 export async function quiesceRecipeStacks(ctx: Context, stacks: readonly Recipe[]): Promise<QuiesceOutcome> {
   const quiesced: Recipe[] = [];
   const unquiesced: Recipe[] = [];
-  for (const spec of stacks) {
-    const path = await declaredHook(spec, "quiesce");
-    if (path === undefined) {
+  const hooks = await Promise.all(stacks.map(async (spec) => ({
+    spec,
+    quiesce: await declaredHook(spec, "quiesce"),
+    resume: await declaredHook(spec, "resume"),
+  })));
+  for (const { spec, quiesce, resume } of hooks) {
+    if (quiesce !== undefined && resume === undefined) {
       unquiesced.push(spec);
-      continue;
+      warn(`recipe ${spec.name} declares quiesce.ts without resume.ts; backup cannot safely quiesce it`);
+    } else if (quiesce === undefined) {
+      unquiesced.push(spec);
     }
+  }
+
+  const unavailable = new Set(unquiesced);
+  for (const spec of stacks) {
+    if (unavailable.has(spec)) continue;
+    const path = await declaredHook(spec, "quiesce");
+    if (path === undefined) continue;
     try {
       await runHook(ctx, spec, "quiesce", path);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      warn(`recipe ${spec.name} quiesce hook failed, its data stays uncovered by this snapshot: ${message}`);
+      warn(`recipe ${spec.name} quiesce hook failed or timed out; resume compensation will run: ${message}`);
       unquiesced.push(spec);
+      quiesced.push(spec);
       continue;
     }
     info(`${spec.name}: quiesced for the snapshot`);
@@ -117,30 +124,28 @@ export async function quiesceRecipeStacks(ctx: Context, stacks: readonly Recipe[
   return { quiesced, unquiesced };
 }
 
-/** Resumes exactly what quiesceRecipeStacks() quiesced — never the recipes whose quiesce
- *  failed: this framework has not observed their services stop, and a resume that
- *  restarts containers is not ours to call blind. Never throws: the operation's own
- *  outcome must not be overwritten by a compensation failure, and one recipe's failed
- *  resume must not skip the others'. A quiesce with no resume.ts is named — a hook that
- *  stopped its service would otherwise leave it stopped with nothing in the output
- *  explaining why. */
-export async function resumeRecipeStacks(ctx: Context, quiesced: readonly Recipe[]): Promise<void> {
+/** Attempts every resume hook and returns failures so the caller can report an incomplete
+ *  compensation without skipping the remaining recipes. */
+export async function resumeRecipeStacks(ctx: Context, quiesced: readonly Recipe[]): Promise<Error[]> {
+  const failures: Error[] = [];
   for (const spec of quiesced) {
     const path = await declaredHook(spec, "resume");
     if (path === undefined) {
-      warn(
-        `recipe ${spec.name} stays quiesced: it declares no resume.ts — ` +
-          `if its quiesce hook stopped the service, bring it back with: ./clawforge recipe install ${spec.name}`,
-      );
+      const message = `recipe ${spec.name} may remain quiesced: its resume.ts disappeared before compensation`;
+      warn(message);
+      failures.push(new Error(message));
       continue;
     }
     try {
       await runHook(ctx, spec, "resume", path);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      warn(`recipe ${spec.name} resume hook failed, it may still be quiesced: ${message}`);
+      const failure = new Error(`recipe ${spec.name} resume hook failed; its service may still be quiesced: ${message}`, { cause: error });
+      warn(failure.message);
+      failures.push(failure);
       continue;
     }
     info(`${spec.name}: resumed`);
   }
+  return failures;
 }

@@ -9,8 +9,8 @@
 // privilege arrives, not where it is named. Arrival as root is not assumed from the backend's
 // reputation: docker-desktop declares it, and everywhere else the effective identity is probed
 // before the command runs — `id -u` over the transport for target and engine, this process's
-// own uid (Windows: the shell's integrity level) for local. A probe that cannot answer does
-// not gate, and that gap is named in the code, not papered over.
+// own uid (Windows: the shell's integrity level) for local. A probe that cannot answer
+// refuses the command until explicit consent is given.
 
 import { die, info } from "#src/core/log.ts";
 import { emit, shouldFollow } from "#src/core/output.ts";
@@ -83,20 +83,24 @@ export async function host(ctx: Context, args: string[], environment: HostEnviro
   if (execution.note !== undefined) info(execution.note);
   // The gate answers "will this command arrive as root", not "do we recognize this backend
   // as root-granting": statically where the place has no other user (docker-desktop),
-  // probed before the command runs everywhere else. An unanswered probe runs ungated —
-  // an honest unknown, documented here rather than disguised as a pass.
+  // probed before the command runs everywhere else. An unanswered probe requires consent
+  // because the command's identity cannot be assumed unprivileged.
   let arrivesAsRoot = execution.arrivesAsRoot === true;
+  let identityKnown = execution.arrivesAsRoot === true;
   let evidence = "the place it runs has no other login user";
   if (execution.arrivesAsRoot !== true) {
     const probe = await probeHostIdentity(execution, environment);
+    identityKnown = probe.arrivesAsRoot !== undefined;
     if (probe.arrivesAsRoot !== undefined) {
       arrivesAsRoot = probe.arrivesAsRoot;
       evidence = probe.evidence;
+    } else {
+      evidence = probe.evidence;
     }
   }
-  if (!elevate && arrivesAsRoot) {
+  if (!elevate && (!identityKnown || arrivesAsRoot)) {
     die(
-      `host ${parsed.context} runs as root (uid 0) on this host (${execution.description}) — ` +
+      `host ${parsed.context} ${arrivesAsRoot ? "runs as root (uid 0)" : "identity is unknown"} on this host (${execution.description}) — ` +
       `${evidence}: add --root --confirm-root to consent`,
     );
   }

@@ -24,6 +24,7 @@
 // granted by default.
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomBytes } from "node:crypto";
 
 import { locksDir } from "../core/env.ts";
 import { log, die } from "../core/log.ts";
@@ -42,6 +43,11 @@ export interface LockHolder {
   /** Best effort, for a human reading a refusal: the machine and process that took it. */
   readonly by: string;
   readonly takenAt: string;
+  /** Which acquisition of the lock directory this record belongs to. A holder written before
+   *  generations existed has none, and that is a state of its own: `undefined` compares equal
+   *  to `undefined`, so a takeover of an unnamed lock is still checked against the one it
+   *  read. */
+  readonly generation?: string;
 }
 
 /** The lock itself is a DIRECTORY, and that is the whole mechanism.
@@ -84,9 +90,17 @@ function holderPath(ctx: Context): string {
   return `${lockPath(ctx)}/holder.json`;
 }
 
-/** A directory marker that proves this process won the lock directory. */
-function claimMarkerPath(ctx: Context, operationId: string): string {
-  return `${lockPath(ctx)}/claim-${encodeURIComponent(operationId)}`;
+/** A directory marker that proves this process won the lock directory, and which
+ *  acquisition of it won.
+ *
+ *  `mkdir lockPath` only says the directory did not exist a moment ago; it says nothing
+ *  about who owns it NOW, and the path can be re-created underneath whoever took it. The
+ *  marker names the winner instead: `gen-<token>`, the token being a random generation the
+ *  acquisition mints before its first command and records in its holder.json. It is created
+ *  with the same atomic plain `mkdir` the claim itself uses, so it is fail-if-exists too —
+ *  nobody can sit on somebody else's identity by creating the marker late. */
+function generationMarkerPath(ctx: Context, generation: string): string {
+  return `${lockPath(ctx)}/gen-${generation}`;
 }
 
 /** Removes only an empty directory; another owner's contents must survive. */
@@ -98,17 +112,60 @@ async function removeEmptyDirectory(ctx: Context, path: string): Promise<void> {
   await ctx.transport.exec("rmdir", [path], { allowFailure: true });
 }
 
-/** Cleans an uncommitted claim without traversing another owner's marker. */
-async function removeFailedMarkerClaim(ctx: Context, operationId: string): Promise<void> {
-  // The marker command may have created its directory before losing the acknowledgement.
-  // Remove only that exact marker, then the lock root only if it is still empty.
-  await removeEmptyDirectory(ctx, claimMarkerPath(ctx, operationId));
+/** Claims the lock directory as this acquisition's, by moving its own generation marker out
+ *  of the way — and by nothing else.
+ *
+ *  This is the compare-and-swap both races turn on. Every other step in this module is a
+ *  separate read and a separate write, and the gap between them is where a takeover can put
+ *  a different owner's lock at the same path: a late release then deletes a lock it never
+ *  held, and a stale takeover cleans up a claim that is already live. `rename` is atomic on
+ *  every filesystem this reaches, so one move of a path only this acquisition can still own
+ *  settles the question and acts on the answer in the same operation — the marker is either
+ *  still there, meaning this acquisition is the current one and the directory is ours to
+ *  finish with, or it is already gone, meaning a takeover rotated this exact identity away
+ *  and everything left inside belongs to whoever did that. Returns where the marker was
+ *  parked, or undefined when the directory is not ours to touch. */
+async function claimOwnedLockDirectory(ctx: Context, generation: string): Promise<string | undefined> {
+  const trash = `${lockPath(ctx)}/.released-${randomBytes(6).toString("hex")}`;
+  try {
+    const moved = await ctx.transport.exec("mv", [generationMarkerPath(ctx, generation), trash], { allowFailure: true });
+    return moved.code === 0 ? trash : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Empties a lock directory this caller has just proven it owns: the marker it parked there,
+ *  the holder file while that file is still this acquisition's, and finally the root itself.
+ *
+ *  The root goes with a plain rmdir, never a recursive remove. Anything that appeared inside
+ *  between the ownership check above and this step — a newer holder, another owner's marker
+ *  — makes that rmdir fail, and what survives is a stale lock for a human to look at rather
+ *  than a live one deleted by a late release. The holder file is read back for the same
+ *  reason and removed only when it is absent, unreadable, or names this generation. All of
+ *  it best effort: a lock that cannot be removed is reported and can be forced, while
+ *  failing the operation here would report a failure of work that already succeeded. */
+async function removeOwnedLock(ctx: Context, generation: string, trash: string): Promise<void> {
+  await ctx.transport.exec("rm", ["-rf", trash], { allowFailure: true });
+  const current = await readLockHolder(ctx);
+  if (current === undefined || current.generation === generation) {
+    // A file, not a directory: an empty-directory remove would refuse it.
+    await ctx.transport.remove(holderPath(ctx)).catch(() => {});
+  }
   await removeEmptyDirectory(ctx, lockPath(ctx));
 }
 
-export async function readLockHolder(ctx: Context): Promise<LockHolder | undefined> {
+/** Cleans an uncommitted claim without traversing another owner's marker. */
+async function removeFailedMarkerClaim(ctx: Context, generation: string): Promise<void> {
+  // The marker command may have created its directory before losing the acknowledgement.
+  // Remove only that exact marker, then the lock root only if it is still empty.
+  await removeEmptyDirectory(ctx, generationMarkerPath(ctx, generation));
+  await removeEmptyDirectory(ctx, lockPath(ctx));
+}
+
+async function readHolderAt(ctx: Context, path: string): Promise<LockHolder | undefined> {
   try {
-    const raw = await ctx.transport.readFile(holderPath(ctx));
+    const raw = await ctx.transport.readFile(path);
     const parsed = JSON.parse(raw) as LockHolder;
     return typeof parsed.operationId === "string" ? parsed : undefined;
   } catch {
@@ -117,6 +174,13 @@ export async function readLockHolder(ctx: Context): Promise<LockHolder | undefin
     // than free: an unreadable holder is a reason to ask a human, not to proceed.
     return undefined;
   }
+}
+
+export async function readLockHolder(ctx: Context): Promise<LockHolder | undefined> {
+  // A holder is read from somewhere other than the lock path by a takeover's compare-and-
+  // swap: the directory it just moved aside has to be checked for the holder that was
+  // observed at the lock path before the move.
+  return readHolderAt(ctx, holderPath(ctx));
 }
 
 /** Wins the lock, or says why not. The exit code of a plain mkdir is the answer to "did I
@@ -140,6 +204,63 @@ async function claimDirectory(ctx: Context): Promise<{ won: boolean; heldByOther
 
   const exists = await ctx.transport.exec("test", ["-d", lockPath(ctx)], { allowFailure: true });
   return { won: false, heldByOther: exists.code === 0, detail: (result.stderr || result.stdout).trim() };
+}
+
+/** Wins a takeover by winning a fresh `mkdir`, the same primitive an uncontested claim wins.
+ *
+ *  Writing a new `holder.json` into a directory both callers merely saw already existing is
+ *  not a claim: nothing stops two concurrent `--break-lock` callers from each reading the old
+ *  holder, each removing its marker, and each then writing theirs. The second only renames
+ *  who the winner is — the first has already started running its body with no lease left to
+ *  check when the second overwrites it.
+ *
+ *  `rename` is atomic on every filesystem this reaches, so of several callers racing to move
+ *  the SAME source path away, at most one succeeds; the rest find it already gone and are
+ *  refused. The winner then takes an ordinary fresh `mkdir` of the now-empty path, so a
+ *  takeover ends up on the identical, already-atomic path a first claim takes — there is no
+ *  moment where two processes both believe they hold the directory.
+ *
+ *  Atomic is not the same as identified, though, and this is the caller that found the gap:
+ *  a `mv` of a PATH proves nothing about WHICH lock that path held a moment earlier. B reads
+ *  the old holder and pauses before its move; A takes the lock over properly and is running
+ *  its body; B resumes, moves A's LIVE lock aside, mkdirs its own, and both are inside the
+ *  critical section. So the move is followed by a compare-and-swap: the holder inside the
+ *  displaced directory must be the one observed before the move, generation for generation.
+ *  A different generation means the path was re-created between that read and this move —
+ *  the displaced directory is somebody else's live lock, it is put back exactly as it was,
+ *  and the caller is refused the same way a lost move is. */
+async function claimTakeover(
+  ctx: Context,
+  observedGeneration: string | undefined,
+): Promise<{ won: boolean; detail: string }> {
+  const displaced = `${lockPath(ctx)}.stale-${randomBytes(6).toString("hex")}`;
+  const moved = await ctx.transport.exec("mv", [lockPath(ctx), displaced], { allowFailure: true });
+  if (moved.code !== 0) return { won: false, detail: (moved.stderr || moved.stdout).trim() };
+
+  // Compare-and-swap. `undefined === undefined` is the legacy shape: a holder written before
+  // generations existed names no identity, and a takeover of one is still checked against
+  // the lock it read.
+  const displacedHolder = await readHolderAt(ctx, `${displaced}/holder.json`);
+  if (displacedHolder?.generation !== observedGeneration) {
+    // Not the lock that was observed — it is gone, and a newer owner holds the path now. Put
+    // the displaced directory back: what sits at the lock path is that owner's, and
+    // restoring keeps the winner it chose. Only into an absent path; if something has
+    // appeared there meanwhile, the displaced directory is parked where it is rather than
+    // destroying what may be a live lock.
+    const present = await ctx.transport.exec("test", ["-d", lockPath(ctx)], { allowFailure: true });
+    if (present.code !== 0) {
+      await ctx.transport.exec("mv", [displaced, lockPath(ctx)], { allowFailure: true });
+    }
+    return { won: false, detail: "" };
+  }
+
+  const result = await ctx.transport.exec("mkdir", [lockPath(ctx)], { allowFailure: true });
+  // The displaced directory is unreachable through the lock path either way once the move has
+  // happened; best-effort cleanup of it must not turn an already-won takeover into a reported
+  // failure.
+  await ctx.transport.exec("rm", ["-rf", displaced], { allowFailure: true });
+  if (result.code !== 0) return { won: false, detail: (result.stderr || result.stdout).trim() };
+  return { won: true, detail: "" };
 }
 
 export function ageMs(holder: LockHolder, now = Date.now()): number {
@@ -253,6 +374,19 @@ export async function takeLock(
       // safe reading; proceeding would be assuming the best about a state nobody understands.
       die(existing === undefined ? unreadableLockMessage(ctx) : refusalMessage(existing));
     }
+
+    const takeover = await claimTakeover(ctx, existing?.generation);
+    if (!takeover.won) {
+      // Another caller's takeover — or a release — already changed what this path is between
+      // the read above and this attempt. Moving it aside a second time would not be a claim,
+      // so this run is refused exactly like a fresh claim against a directory that is still
+      // there: whoever is now holding it is reported by re-running rather than guessed at.
+      die(
+        `could not take over the instance lock at ${lockPath(ctx)}: ${takeover.detail === "" ? "mv failed" : takeover.detail}\n` +
+          "Another operation already took it over. Re-run if the instance is still locked.",
+      );
+    }
+
     log(
       existing === undefined
         ? "taking over a lock whose holder could not be read — --break-lock"
@@ -260,53 +394,48 @@ export async function takeLock(
     );
   }
 
+  // The identity of this acquisition: a fresh random generation, minted before the first
+  // command of the claim so every step below can name exactly which lock directory this is.
+  // Holding the path is not holding the lock — a path can be re-created underneath whoever
+  // took it, which is what claimTakeover now guards against.
+  const generation = randomBytes(12).toString("hex");
+
   const holder: LockHolder = {
     operationId,
     what,
     by: `${process.env.USERNAME ?? process.env.USER ?? "unknown"}@${process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? "unknown"} pid ${process.pid}`,
     takenAt: new Date().toISOString(),
+    generation,
   };
 
-  // A fresh mkdir proves this process created the lock, but that proof is otherwise lost if
-  // writing holder.json fails. Keep an owner marker inside the directory so cleanup can still
+  // A fresh mkdir — an uncontested claim's own, or the one a won takeover just repeated —
+  // proves this process created the lock, but that proof is otherwise lost if writing
+  // holder.json fails. Keep an owner marker inside the directory so cleanup can still
   // distinguish our incomplete claim from a lock that another process took over meanwhile.
-  const freshClaim = claim.won;
-  let markerCreated = false;
-  if (freshClaim) {
-    let marker;
-    try {
-      marker = await ctx.transport.exec("mkdir", ["-m", "700", claimMarkerPath(ctx, operationId)], { allowFailure: true });
-    } catch (error) {
-      await removeFailedMarkerClaim(ctx, operationId).catch(() => {});
-      throw error;
-    }
-    if (marker.code !== 0) {
-      const detail = (marker.stderr || marker.stdout).trim();
-      await removeFailedMarkerClaim(ctx, operationId).catch(() => {});
-      throw new Error(`could not record instance lock ownership${detail === "" ? "" : `: ${detail}`}`);
-    }
-    markerCreated = marker.code === 0;
-  } else {
-    // A takeover reuses the existing directory. Remove the previous fresh-claim marker when
-    // its owner is known, so a failed takeover cannot be mistaken for that old claim later.
-    const previous = await readLockHolder(ctx);
-    if (previous !== undefined) {
-      await ctx.transport.remove(claimMarkerPath(ctx, previous.operationId)).catch(() => {});
-    }
+  let marker;
+  try {
+    marker = await ctx.transport.exec("mkdir", ["-m", "700", generationMarkerPath(ctx, generation)], { allowFailure: true });
+  } catch (error) {
+    await removeFailedMarkerClaim(ctx, generation).catch(() => {});
+    throw error;
+  }
+  if (marker.code !== 0) {
+    const detail = (marker.stderr || marker.stdout).trim();
+    await removeFailedMarkerClaim(ctx, generation).catch(() => {});
+    throw new Error(`could not record instance lock ownership${detail === "" ? "" : `: ${detail}`}`);
   }
 
   try {
     await ctx.transport.writeFile(holderPath(ctx), `${JSON.stringify(holder, null, 2)}\n`);
   } catch (error) {
-    if (freshClaim && markerCreated) {
+    // The holder never got written, so whether this directory is still ours is settled by
+    // the marker alone — and by one atomic operation rather than a read followed by a
+    // remove: between those two, a takeover could put a different owner's lock at this path,
+    // and the cleanup would then delete a claim that is already live.
+    const trash = await claimOwnedLockDirectory(ctx, generation);
+    if (trash !== undefined) {
       try {
-        const marker = await ctx.transport.exec("test", ["-d", claimMarkerPath(ctx, operationId)], { allowFailure: true });
-        if (marker.code === 0) {
-          const current = await readLockHolder(ctx);
-          if (current === undefined || current.operationId === operationId) {
-            await ctx.transport.remove(lockPath(ctx));
-          }
-        }
+        await removeOwnedLock(ctx, generation, trash);
       } catch {
         // Preserve the write failure. A cleanup error must not hide the useful cause.
       }
@@ -331,13 +460,17 @@ export async function takeLock(
         heldScopes.delete(handle);
       }
 
-      // Only ours. A run that overran and had its lock taken over by --break-lock must not remove
-      // the new holder's lock on its way out — that would hand the instance to a third run
-      // while the second is still working.
-      const current = await readLockHolder(ctx);
-      if (current?.operationId !== operationId) return;
+      // Only ours, and checked with one operation instead of two. Reading the holder and
+      // then removing the directory left the whole gap open: a takeover completing between
+      // those two steps had its fresh lock deleted by the release that read the old holder.
+      // So ownership is answered by moving this acquisition's own generation marker aside —
+      // atomic, and only we can still own that exact path. A marker already moved away means
+      // a takeover rotated this identity out and the directory is somebody else's: nothing is
+      // touched, down to the holder file naming who it belongs to now.
+      const trash = await claimOwnedLockDirectory(ctx, generation);
+      if (trash === undefined) return;
       try {
-        await ctx.transport.remove(lockPath(ctx));
+        await removeOwnedLock(ctx, generation, trash);
       } catch {
         // A lock that cannot be removed becomes a stale one, which is reported and can be
         // forced. Failing the operation here would be worse: the work is already done.

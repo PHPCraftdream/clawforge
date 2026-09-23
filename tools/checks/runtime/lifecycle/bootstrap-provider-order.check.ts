@@ -80,7 +80,17 @@ try {
       async writeFile(): Promise<void> {},
       async remove(): Promise<void> {},
       async mkdirp(): Promise<void> {},
-      async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        // Not a symlink — ensureDataDirs' root guard (P1-01) checks this first, and the
+        // otherwise-unconditional "everything succeeds" stub below would misread it as one.
+        if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+        // The canonical-ancestry check (P1-09) resolves through the ancestors: no symlinks
+        // here, so every path resolves to itself.
+        if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: `${args[1] ?? ""}\n`, stderr: "" };
+        // The tree pre-exists with the right owner, so ensureDataDirs' provenance gate
+        // adopts it without any ownership change.
+        if (command === "stat" && args[0] === "-c" && args[1] === "%u:%g") return { code: 0, stdout: "1000:1000\n", stderr: "" };
+        if (command === "stat" && args[0] === "-c" && args[1] === "%a") return { code: 0, stdout: "700\n", stderr: "" };
         return { code: 0, stdout: "", stderr: "" };
       },
     },

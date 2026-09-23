@@ -14,6 +14,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { bootstrap } from "#framework/commands/lifecycle/bootstrap.ts";
+import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/datadir.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -147,6 +148,11 @@ try {
         description: "stub",
         async exists(path: string): Promise<boolean> {
           if (path === home) return lockHomeCreated;
+          // A fresh host: the data directory and its standard layout do not exist yet —
+          // ensureDataDirs creates (and then narrowly owns) them in this run. The secrets
+          // file stays absent so ensureSecretsFile attempts its write; the config file
+          // itself stays present so bootstrap's later config reads see a live instance.
+          if (path === DATA_DIR || path.startsWith(`${DATA_DIR}/`)) return path.endsWith("openclaw.json");
           if (path.endsWith("config/.env")) return false;
           return true;
         },
@@ -172,6 +178,26 @@ try {
           }
           if (command === "test" && args[0] === "-d") {
             return { code: 1, stdout: "", stderr: "" };
+          }
+          if (command === "test" && args[0] === "-L") {
+            // A fresh host's data directory is a real directory, never a link — ensureDataDirs'
+            // own symlink-root guard must see that and continue, not fall through to the
+            // generic "everything else succeeds" default below (which would misread this as
+            // "yes, it is a symlink").
+            return { code: 1, stdout: "", stderr: "" };
+          }
+          if (command === "readlink" && args[0] === "-f") {
+            // The canonical-ancestry check (P1-09) resolves through the ancestors; a fresh
+            // host has no links, so every path resolves to itself.
+            return { code: 0, stdout: `${args[1] ?? ""}\n`, stderr: "" };
+          }
+          if (command === "stat" && args[0] === "-c" && args[1] === "%u:%g") {
+            // The operator here runs as uid 1000 (see the id handler below), so the
+            // directories this run creates are already owned by the fixed identity.
+            return { code: 0, stdout: "1000:1000\n", stderr: "" };
+          }
+          if (command === "stat" && args[0] === "-c" && args[1] === "%a") {
+            return { code: 0, stdout: "700\n", stderr: "" };
           }
           if (command === "test" && args[0] === "-w") {
             const target = args[1];
@@ -244,6 +270,170 @@ try {
   }
 } finally {
   await rm(deployment, { recursive: true, force: true });
+}
+
+// ensureDataDirs' own guard against a symlinked data root: `chown -R` dereferences a symlink
+// named directly on its command line before recursing, so a data directory that is actually
+// a link would hand the recursive chown to whatever it points at instead of this
+// deployment's own tree (audit 2026-09-23, XS round 4, P1-01). No real chown happens on
+// either path below — the stub transport records every exec call, and the check is that
+// "chown" never appears among them once the symlink is reported.
+{
+  const symlinkDataDir = "/srv/openclaw/data";
+  const execCalls: string[][] = [];
+
+  const symlinkCtx = {
+    settings: { dataDir: symlinkDataDir },
+    transport: {
+      description: "stub",
+      async exists(): Promise<boolean> {
+        return false;
+      },
+      async exec(command: string, args: string[], options: { allowFailure?: boolean } = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+        execCalls.push([command, ...args]);
+        if (command === "test" && args[0] === "-L" && args[1] === symlinkDataDir) {
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "readlink" && args[0] === "-f" && args[1] === symlinkDataDir) {
+          return { code: 0, stdout: "/somewhere-else\n", stderr: "" };
+        }
+        const code = 0;
+        if (code !== 0 && options.allowFailure !== true) throw new Error(`${command} failed`);
+        return { code, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  let refused = "";
+  try {
+    await ensureDataDirs(symlinkCtx);
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+
+  check(
+    "ensureDataDirs refuses a symlinked data root",
+    refused.includes(symlinkDataDir) && refused.includes("/somewhere-else"),
+    true,
+  );
+  check(
+    "and never reaches chown — the symlink check runs first",
+    execCalls.some((call) => call[0] === "chown"),
+    false,
+  );
+  check(
+    "nor mkdir — nothing under the link is touched either",
+    execCalls.some((call) => call[0] === "mkdir"),
+    false,
+  );
+}
+
+// P1-09: the root-symlink guard above sees only the FINAL component. A symlink one level
+// up redirects an externally-deep-looking path into a different tree entirely; the
+// canonical-ancestry check must catch it before any mkdir/chown runs. The stub reports the
+// data directory itself as not-a-link (and absent), but its deepest existing ancestor
+// resolves elsewhere.
+{
+  const dataDir = "/srv/openclaw/data";
+  const redirected = "/mnt/elsewhere";
+  const execCalls: string[][] = [];
+
+  const ancestorLinkCtx = {
+    settings: { dataDir },
+    transport: {
+      description: "stub",
+      async exists(path: string): Promise<boolean> {
+        return path === "/srv" || path === "/srv/openclaw";
+      },
+      async exec(command: string, args: string[], options: { allowFailure?: boolean } = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+        execCalls.push([command, ...args]);
+        if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+        if (command === "readlink" && args[0] === "-f" && args[1] === "/srv/openclaw") {
+          return { code: 0, stdout: `${redirected}\n`, stderr: "" };
+        }
+        if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: `${args[1] ?? ""}\n`, stderr: "" };
+        const code = 0;
+        if (code !== 0 && options.allowFailure !== true) throw new Error(`${command} failed`);
+        return { code, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  let refused = "";
+  try {
+    await ensureDataDirs(ancestorLinkCtx);
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+
+  check(
+    "ensureDataDirs refuses a data root reached through a symlinked ANCESTOR",
+    refused.includes(dataDir) && refused.includes(redirected),
+    true,
+  );
+  check(
+    "and never mkdirs or chowns through the redirected path",
+    execCalls.some((call) => call[0] === "mkdir" || call[0] === "chown"),
+    false,
+  );
+}
+
+// P1-09: the central "do not auto-adopt" clause — a pre-existing standard tree with the
+// wrong owner and no provenance marker must be refused outright, never silently re-owned.
+// A tree that merely LOOKS like a data directory (someone else's /srv/openclaw/data) must
+// not be handed to the fixed uid just because bootstrap happened to point at it.
+{
+  const dataDir = "/srv/openclaw/data";
+  const execCalls: string[][] = [];
+  const foreignOwnerCtx = {
+    settings: { dataDir },
+    transport: {
+      description: "stub",
+      async exists(path: string): Promise<boolean> {
+        // The root and its standard subdirectories are already there; the marker is not —
+        // nothing on this tree claims clawforge set it up.
+        if (path === `${dataDir}/${DATA_DIR_MARKER}`) return false;
+        return path === dataDir || path === `${dataDir}/config` || path === `${dataDir}/workspace` || path === `${dataDir}/auth-secrets`;
+      },
+      async exec(command: string, args: string[], options: { allowFailure?: boolean } = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+        execCalls.push([command, ...args]);
+        if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+        if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: `${args[1] ?? ""}\n`, stderr: "" };
+        // Every standard path is owned by someone else — a foreign tree, not a wrong-owner
+        // one this deployment already created.
+        if (command === "stat" && args[0] === "-c" && args[1] === "%u:%g") return { code: 0, stdout: "0:0\n", stderr: "" };
+        const code = 0;
+        if (code !== 0 && options.allowFailure !== true) throw new Error(`${command} failed`);
+        return { code, stdout: "", stderr: "" };
+      },
+      async writeFile(): Promise<void> {
+        throw new Error("must not write the marker — the run must refuse before recording provenance");
+      },
+    },
+  } as unknown as Context;
+
+  let refused = "";
+  try {
+    await ensureDataDirs(foreignOwnerCtx);
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+
+  check(
+    "ensureDataDirs refuses to adopt a pre-existing tree with no provenance marker",
+    refused.includes(DATA_DIR_MARKER) && refused.includes(dataDir),
+    true,
+  );
+  check(
+    "naming the explicit adoption command as the way out",
+    refused.includes(`chown -R`) && refused.includes(dataDir),
+    true,
+  );
+  check(
+    "and never mkdirs or chowns the markerless tree",
+    execCalls.some((call) => call[0] === "mkdir" || call[0] === "chown"),
+    false,
+  );
 }
 
 process.stderr.write(failed === 0 ? "all bootstrap lock checks passed\n" : `${failed} failed\n`);

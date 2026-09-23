@@ -15,6 +15,17 @@ const OWNER = "1000:1000";
  *  restored tree before creating, chmod-ing or deleting anything through them. */
 export const DATA_SUBDIRS = ["config", "workspace", "auth-secrets"] as const;
 
+/** Provenance marker written by ensureDataDirs into a data root it created or adopted
+ *  (P1-09): its presence tells the next run "this tree was set up by clawforge", which is
+ *  what licenses the narrow drift re-owning — and whose absence makes ensureDataDirs refuse
+ *  to re-own anything. Exported for the check fixtures that provision realistic trees. */
+export const DATA_DIR_MARKER = ".clawforge-data-dir";
+
+const DATA_DIR_MARKER_CONTENT =
+  "clawforge data directory — created or adopted by clawforge (runtime/datadir.ts).\n" +
+  "Written by ensureDataDirs; its presence is what keeps ownership maintenance narrow:\n" +
+  "a tree without it was not set up by this framework and is never re-owned automatically.\n";
+
 /** "sudo" when the path is not writable by the current user, "" otherwise.
  *
  *  `force: true` skips the writability shortcut: a directory being writable never implies
@@ -85,7 +96,7 @@ async function ownerOf(ctx: Context, path: string): Promise<string> {
 /** Whether handing a path to `fixedOwner` needs root: true for anyone except root itself
  *  and the owner already being asked for — the two identities POSIX lets chown that owner
  *  without CAP_CHOWN. Read before the chown, never assumed from directory permissions. */
-async function needsOwnerEscalation(ctx: Context, fixedOwner: string): Promise<boolean> {
+export async function needsOwnerEscalation(ctx: Context, fixedOwner: string): Promise<boolean> {
   const uid = await ctx.transport.exec("id", ["-u"], { allowFailure: true });
   if (uid.code === 0 && uid.stdout.trim() === "0") return false;
   const gid = await ctx.transport.exec("id", ["-g"], { allowFailure: true });
@@ -93,28 +104,191 @@ async function needsOwnerEscalation(ctx: Context, fixedOwner: string): Promise<b
   return current !== fixedOwner;
 }
 
-/** Creates config/, workspace/ and auth-secrets/ and makes sure uid 1000 owns them. */
+/** Resolves `path` through every symlink on the target; dies when the target cannot answer
+ *  or the path does not resolve. "Cannot verify" must never read as "verified": every caller
+ *  here is about to act through the path it names. */
+async function physicalPath(ctx: Context, path: string): Promise<string> {
+  const resolved = await ctx.transport.exec("readlink", ["-f", path], { allowFailure: true });
+  const canonical = resolved.stdout.trim();
+  if (resolved.code !== 0 || canonical === "") {
+    die(`cannot resolve ${path} on the target: ${resolved.stderr.trim() || "the path does not resolve"}`);
+  }
+  return canonical;
+}
+
+/** The canonical destructive root, verified before anything is created or re-owned (P1-09).
+ *
+ *  `test -L dataDir` sees only the final component: a symlink one level UP
+ *  (`/srv/openclaw -> /elsewhere`) redirects every later mkdir/chown/chmod into a different
+ *  tree while the configured path still looks deep and harmless. So the ancestry is
+ *  resolved: walk up to the deepest ancestor that exists — the missing tail is created by
+ *  this run's own mkdir -p, which makes real directories — resolve THAT, and demand the
+ *  canonical path equal the configured one. A redirect is refused with both names. The
+ *  string-level depth floor in core/env.ts stays as the backstop; this is the primary
+ *  check. */
+async function assertCanonicalAncestry(ctx: Context, dataDir: string): Promise<void> {
+  let probe = dataDir;
+  for (;;) {
+    let present: boolean;
+    try {
+      present = await ctx.transport.exists(probe);
+    } catch {
+      break; // the transport refuses to answer — readlink below fails closed
+    }
+    if (present) break;
+    const parent = probe.slice(0, Math.max(probe.lastIndexOf("/"), 1));
+    if (parent === probe) break;
+    probe = parent;
+  }
+  const canonical = await physicalPath(ctx, probe);
+  if (canonical !== probe) {
+    die(
+      `${dataDir} would act through ${canonical}: ${probe} sits behind a symlink, so creating or ` +
+        "re-owning it would reach a different tree than OC_DATA_DIR names — " +
+        "point OC_DATA_DIR at the real path",
+    );
+  }
+}
+
+/** A standard path that already exists must resolve inside the verified root before this
+ *  run acts through it — the bootstrap-time counterpart of restore's verifyRestoredLayout,
+ *  with the same boundary: a link resolving WITHIN the tree stays tolerated, unreachable is
+ *  refused, never skipped. */
+async function assertResolvesInsideRoot(ctx: Context, path: string, root: string): Promise<void> {
+  const physical = await physicalPath(ctx, path);
+  if (physical !== root && !physical.startsWith(`${root}/`)) {
+    die(`refusing ${path}: it resolves to ${physical}, outside the data directory ${root}`);
+  }
+}
+
+/** Hands exactly `paths` to the fixed owner — one chown invocation naming only these paths,
+ *  never `-R` (P1-09): ownership changes follow creation and provenance, not whatever a
+ *  directory happens to contain. */
+async function chownToOwner(ctx: Context, paths: string[], why: string): Promise<void> {
+  const wrong: string[] = [];
+  for (const path of paths) {
+    if ((await ownerOf(ctx, path)) !== OWNER) wrong.push(path);
+  }
+  if (wrong.length === 0) return;
+  log(`${why}: setting owner ${OWNER} on ${wrong.join(" ")}`);
+  await runMaybePrivileged(ctx, wrong[0], "chown", [OWNER, ...wrong], {
+    force: await needsOwnerEscalation(ctx, OWNER),
+  });
+}
+
+/** Whether `dataDir` itself is a symlink, and where it points — undefined when it is a real
+ *  directory (or does not exist yet, which `test -L` also answers false for).
+ *
+ *  `chown -R` dereferences a symlink named directly on its command line before recursing, so
+ *  a data directory that is actually a link would hand the recursive chown below to whatever
+ *  the link resolves to — the exact hazard toSettings' path validation (core/env.ts) closes
+ *  for the string in .env, reopened at the filesystem level if an operator (or a previous,
+ *  now-replaced deployment) leaves a symlink where a directory is expected. Checked before
+ *  any mkdir/chown touches `dataDir`, not folded into ownerOf/sudoFor: those answer "who owns
+ *  this path", not "is this path what it claims to be", and conflating the two would let a
+ *  link with the right owner slip through unnoticed. */
+async function dataDirSymlinkTarget(ctx: Context, dataDir: string): Promise<string | undefined> {
+  const check = await ctx.transport.exec("test", ["-L", dataDir], { allowFailure: true });
+  if (check.code === 1) return undefined;
+  if (check.code !== 0) {
+    die(`could not check whether ${dataDir} is a symlink (exit ${check.code}): ${check.stderr.trim()}`);
+  }
+  const resolved = await ctx.transport.exec("readlink", ["-f", dataDir], { allowFailure: true });
+  const target = resolved.stdout.trim();
+  return resolved.code === 0 && target !== "" ? target : dataDir;
+}
+
+/** Creates config/, workspace/ and auth-secrets/ and makes sure uid 1000 owns them.
+ *
+ *  Ordered so that every verification precedes every mutation (P1-09): the root is resolved
+ *  through its ancestors and each pre-existing standard path through itself BEFORE the first
+ *  mkdir, and ownership is changed only for paths this run can account for — the ones it
+ *  created itself, plus, on a tree carrying this framework's provenance marker, the standard
+ *  paths whose owner drifted. There is no `chown -R` here any more: recursion is what turned
+ *  a mistyped OC_DATA_DIR into a whole-tree re-owning, and the standard layout is four paths
+ *  deep at most. A pre-existing tree without the marker is never re-owned at all — that case
+ *  dies with the one command that adopts it explicitly, so a directory that merely looks
+ *  like a data directory (/var/lib passes the string-level depth check on purpose) cannot
+ *  be handed to the container's uid by a bootstrap that stumbled onto it. */
 export async function ensureDataDirs(ctx: Context): Promise<void> {
   const { dataDir } = ctx.settings;
+  const marker = `${dataDir}/${DATA_DIR_MARKER}`;
 
+  const linkTarget = await dataDirSymlinkTarget(ctx, dataDir);
+  if (linkTarget !== undefined) {
+    die(
+      `data directory ${dataDir} is a symlink to ${linkTarget}: working through it would reach ` +
+        "whatever it points at, not just this deployment's own tree — " +
+        "point OC_DATA_DIR at a real directory (the link's target is one) and run this again",
+    );
+  }
+  await assertCanonicalAncestry(ctx, dataDir);
+
+  // What is already on the target, probed before anything is created — the
+  // created/pre-existing split below is the whole ownership policy, so it is read, not
+  // assumed.
+  const rootExisted = await ctx.transport.exists(dataDir);
+  const ours = rootExisted && (await ctx.transport.exists(marker));
+  const existed = new Map<string, boolean>();
   for (const sub of DATA_SUBDIRS) {
-    const dir = `${dataDir}/${sub}`;
-    if (!(await ctx.transport.exists(dir))) {
-      log(`creating ${dir}`);
-      const created = await ctx.transport.exec("mkdir", ["-p", dir], { allowFailure: true });
-      if (created.code !== 0) await runMaybePrivileged(ctx, dir, "mkdir", ["-p", dir]);
+    existed.set(sub, await ctx.transport.exists(`${dataDir}/${sub}`));
+  }
+  const preExisting: string[] = [];
+  if (rootExisted) preExisting.push(dataDir);
+  for (const sub of DATA_SUBDIRS) {
+    if (existed.get(sub) === true) preExisting.push(`${dataDir}/${sub}`);
+  }
+
+  // A pre-existing standard directory must resolve inside the (already canonical) root
+  // before this run chowns or chmods through it. A link planted at a standard name would
+  // otherwise carry both out of the data directory.
+  for (const path of preExisting) {
+    if (path !== dataDir) await assertResolvesInsideRoot(ctx, path, dataDir);
+  }
+
+  // Provenance gate, still before any mutation: without the marker nothing proves clawforge
+  // set this tree up, so a wrong owner here is refused, never corrected.
+  if (!ours) {
+    for (const path of preExisting) {
+      const owner = await ownerOf(ctx, path);
+      if (owner === OWNER) continue;
+      die(
+        `refusing to take ownership of ${path}${owner === "" ? "" : ` (owned by ${owner})`}: ` +
+          `${dataDir} carries no ${DATA_DIR_MARKER} marker, so nothing proves clawforge created this ` +
+          "tree, and re-owning a directory this deployment did not set up is how a shared or system " +
+          "directory gets handed to the container's uid.\n" +
+          "If it really is this deployment's data, adopt it explicitly once:\n" +
+          `  sudo chown -R ${OWNER} ${dataDir}\n` +
+          "then run this again — the marker written then keeps every future maintenance pass narrow",
+      );
     }
   }
 
-  const owners = await Promise.all([
-    ownerOf(ctx, dataDir),
-    ...DATA_SUBDIRS.map((sub) => ownerOf(ctx, `${dataDir}/${sub}`)),
-  ]);
+  // Creation, tracked: everything pushed here is made by the execs right below it.
+  const created: string[] = [];
+  if (!rootExisted) {
+    log(`creating ${dataDir}`);
+    const made = await ctx.transport.exec("mkdir", ["-p", dataDir], { allowFailure: true });
+    if (made.code !== 0) await runMaybePrivileged(ctx, dataDir, "mkdir", ["-p", dataDir]);
+    created.push(dataDir);
+  }
+  for (const sub of DATA_SUBDIRS) {
+    if (existed.get(sub) === true) continue;
+    const dir = `${dataDir}/${sub}`;
+    log(`creating ${dir}`);
+    const made = await ctx.transport.exec("mkdir", ["-p", dir], { allowFailure: true });
+    if (made.code !== 0) await runMaybePrivileged(ctx, dir, "mkdir", ["-p", dir]);
+    created.push(dir);
+  }
 
-  if (owners.some((owner) => owner !== OWNER)) {
-    log(`setting owner ${OWNER} on ${dataDir}`);
-    const force = await needsOwnerEscalation(ctx, OWNER);
-    await runMaybePrivileged(ctx, dataDir, "chown", ["-R", OWNER, dataDir], { force });
+  await chownToOwner(ctx, created, "created by this run");
+  if (ours) {
+    // Ownership drift on a proven tree: the marker is this framework's own record, so the
+    // standard paths may be re-owned — naming exactly these paths, never recursing.
+    await chownToOwner(ctx, preExisting, "ownership drift on a proven clawforge data directory");
+  } else {
+    await ctx.transport.writeFile(marker, DATA_DIR_MARKER_CONTENT, "644");
+    log(`recorded provenance in ${marker}`);
   }
 
   // auth-secrets holds encryption keys; keep it owner-only.

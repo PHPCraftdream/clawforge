@@ -56,6 +56,13 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
         // createBackup() asks `test -L` before archiving; the modeled data directory is a
         // real one, and the fall-through below would answer 0 — "is a symlink".
         if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+        // The instance lock's release now empties its directory with `rmdir` (round 6,
+        // P2-03), not a recursive remove of the whole lock path — the same event this stub
+        // already answers for a plain `remove()` of the lock path.
+        if (command === "rmdir") {
+          if (args[0]?.endsWith("operation.lock")) lockExists = false;
+          return { code: 0, stdout: "", stderr: "" };
+        }
         if (command === "test" && args[0] === "-e") {
           const path = args[1] ?? "";
           if (failure === "archive-after-move" && archiveMoved) {

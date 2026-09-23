@@ -12,7 +12,7 @@
 
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { readFile, writeFile, chmod, mkdir, rm, rmdir, access, readdir, lstat, open } from "node:fs/promises";
+import { readFile, mkdir, rm, rmdir, access, readdir, lstat, open, rename, type FileHandle } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { die, maskSecrets } from "../core/log.ts";
 import { outputSink } from "../core/output.ts";
@@ -42,9 +42,21 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
+/** The two name markers of the tooling's own temp-sibling staging families: a private write
+ *  stages `<path>.clawforge-private-<hex>` (private-config.ts, privateWriteCommand below), a
+ *  publish stages `<path>.clawforge-publish-<hex>` (publishCommand below, LocalTransport.writeFile).
+ *  Both siblings carry the file's real bytes from the first one written, so a process that dies
+ *  before the rename — or a cleanup that fails — leaves them beside the target under a name no
+ *  declared exact path matches. That is why the snapshot policy recognizes the marker families
+ *  themselves (service/archive.ts excludes them, commands/lifecycle/verify.ts refuses them), not
+ *  only the declared paths. Defined here, where the names are created, so the policy readers
+ *  cannot drift from the writers. */
+export const PRIVATE_STAGING_MARKER = ".clawforge-private-";
+export const PUBLISH_STAGING_MARKER = ".clawforge-publish-";
+
 /** Builds an exclusive, owner-only remote write with cleanup owned by the writer. */
 function privateWriteCommand(path: string): [string, string[]] {
-  const temporary = `${path}.clawforge-private-${randomBytes(8).toString("hex")}`;
+  const temporary = `${path}${PRIVATE_STAGING_MARKER}${randomBytes(8).toString("hex")}`;
   const target = shellQuote(path);
   const staging = shellQuote(temporary);
   const script =
@@ -55,6 +67,20 @@ function privateWriteCommand(path: string): [string, string[]] {
     `trap - EXIT; rm -f -- "$temporary"; exit $status; ` +
     `else exit 1; fi`;
   return ["sh", ["-c", script]];
+}
+
+/** Builds a publish command for a POSIX target: content lands in a temp sibling that is
+ *  renamed over the wanted name. rename(2) swaps the directory entry, so an existing
+ *  symlink at the target is replaced rather than written through, and a reader sees either
+ *  the old or the new content — never a partial file (P1-02,
+ *  docs/review-2026-09-23-xxa-round-6.md). */
+function publishCommand(path: string): [string, string[]] {
+  const temporary = `${path}${PUBLISH_STAGING_MARKER}${randomBytes(8).toString("hex")}`;
+  const script =
+    "temporary=$1; target=$2; " +
+    "trap 'rm -f -- \"$temporary\"' EXIT; " +
+    "cat > \"$temporary\" && mv -f -- \"$temporary\" \"$target\"; status=$?; exit $status";
+  return ["sh", ["-c", script, "sh", temporary, path]];
 }
 
 function validateEnvNames(names: string[]): void {
@@ -345,8 +371,22 @@ export class LocalTransport implements Transport {
   }
 
   async writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void> {
-    await writeFile(path, content);
-    if (mode !== undefined) await chmod(path, Number.parseInt(mode, 8));
+    // Same publish contract as publishCommand() on the remote transports: a temp sibling
+    // renamed over the name. rename(2) replaces a symlink at path instead of following it,
+    // and the exclusive temp create refuses to sneak through a link that appears between
+    // the caller's containment check and this write.
+    const temporary = `${path}${PUBLISH_STAGING_MARKER}${randomBytes(8).toString("hex")}`;
+    let handle: FileHandle | undefined;
+    try {
+      handle = await open(temporary, "wx", mode === undefined ? 0o666 : Number.parseInt(mode, 8));
+      await handle.writeFile(content);
+      await handle.close();
+      await rename(temporary, path);
+    } catch (error) {
+      await handle?.close().catch(() => {});
+      await rm(temporary, { force: true }).catch(() => {});
+      throw error;
+    }
   }
 
   async writePrivateFile(path: string, content: string | Uint8Array): Promise<void> {
@@ -478,8 +518,10 @@ export class WslTransport implements Transport {
   }
 
   async writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void> {
-    // `tee` rather than a redirect: no shell means no quoting hazards.
-    await this.exec("tee", [path], { input: content });
+    // Publish via publishCommand(): temp sibling renamed over the name, never a write
+    // through a symlink that is already there.
+    const [command, args] = publishCommand(path);
+    await this.exec(command, args, { input: content });
     if (mode !== undefined) await this.exec("chmod", [mode, path]);
   }
 
@@ -566,7 +608,8 @@ export class SshTransport implements Transport {
   }
 
   async writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void> {
-    await this.exec("tee", [path], { input: content });
+    const [command, args] = publishCommand(path);
+    await this.exec(command, args, { input: content });
     if (mode !== undefined) await this.exec("chmod", [mode, path]);
   }
 

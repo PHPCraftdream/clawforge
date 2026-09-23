@@ -5,7 +5,7 @@
 // rather than trusted. toSettings is checked for its required field and its defaults, since
 // a wrong default silently points a deployment at the wrong directory or port.
 
-import { parseEnv, toSettings } from "#framework/core/env.ts";
+import { parseEnv, serializeEnvLine, toSettings } from "#framework/core/env.ts";
 
 let failed = 0;
 
@@ -92,6 +92,79 @@ check(
   },
 );
 
+// --- serializeEnvLine: the write side is parseEnv's exact inverse (P2-13) ----------
+//
+// The store writers (secrets --apply/--dump, upsertEnvValue) route through this single
+// serializer. Every probe below is a structural shape, not a credential, and the check
+// output above prints only booleans — no store value is ever echoed.
+
+function roundTrips(label: string, value: string): void {
+  check(
+    `serialize → parse round trip: ${label}`,
+    parseEnv(serializeEnvLine("PROBE_KEY", value))["PROBE_KEY"] === value,
+    true,
+  );
+}
+
+// The flagship loss: padding that only quoting preserves.
+roundTrips("edge whitespace survives quoting", " sample ");
+check(
+  "a padded value is written single-quoted",
+  serializeEnvLine("PROBE_KEY", " sample "),
+  `PROBE_KEY=' sample '`,
+);
+
+// A value carrying its own quote character is lossless because parseEnv strips exactly
+// one matched outer pair and does no escape processing: `'it's'` reads back as it's,
+// and a bare `"wrapped"` — no single quote inside, but quote-wrapped — would be
+// unwrapped by the next read, so it is quoted too.
+roundTrips("a value containing a single quote", "it's");
+roundTrips("a value that is itself double-quote-wrapped", `"wrapped"`);
+roundTrips("a lone double quote (parseEnv's length>1 guard)", `"`);
+roundTrips("a lone single quote", `'`);
+roundTrips("a value made of two single quotes", `''`);
+
+// parseEnv treats `#` and backslashes as literal bytes (only a `#` at line START is a
+// comment), so these stay bare — quoting them would also round-trip, but the bare form
+// pins the minimal quoting contract.
+roundTrips("an embedded # stays literal", "abc#def");
+roundTrips("a leading # is data, not a comment", "#not-a-comment");
+roundTrips("a literal backslash-n is two bytes, not a newline", "a\\nb");
+roundTrips("a literal double backslash stays literal", "a\\\\b");
+roundTrips("interior whitespace is not edge whitespace", "a b c");
+roundTrips("an empty value stays empty", "");
+roundTrips("a URL-safe generated secret stays bare", "9tT4xQeFv2nH8sK1mR7wY5uC3zA6dB0pL-X_o");
+check(
+  "the common URL-safe path is written bare, unchanged",
+  serializeEnvLine("PROBE_KEY", "9tT4xQeFv2nH8sK1mR7wY5uC3zA6dB0pL-X_o"),
+  "PROBE_KEY=9tT4xQeFv2nH8sK1mR7wY5uC3zA6dB0pL-X_o",
+);
+
+// Values that cannot live on one line are refused with the key named, never written
+// lossily: a real newline splits into two lines, and a \r is eaten by the reader's line
+// trim as a CRLF terminator.
+try {
+  serializeEnvLine("PROBE_KEY", "first\nsecond");
+  check("a value with a newline is refused", "did not throw", "threw");
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  check("a value with a newline is refused", message.includes("PROBE_KEY") && message.includes("newline"), true);
+}
+try {
+  serializeEnvLine("PROBE_KEY", "carriage\rreturn");
+  check("a value with a carriage return is refused", "did not throw", "threw");
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  check("a value with a carriage return is refused", message.includes("PROBE_KEY"), true);
+}
+try {
+  serializeEnvLine("BAD-NAME", "x");
+  check("an invalid variable name is refused", "did not throw", "threw");
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  check("an invalid variable name is refused", message.includes("invalid environment variable name"), true);
+}
+
 // --- toSettings: required field --------------------------------------------------
 
 try {
@@ -101,6 +174,50 @@ try {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   check("toSettings without OC_DATA_DIR throws", message, "UserError: OC_DATA_DIR is not set in .env");
 }
+
+// --- toSettings: OC_DATA_DIR must be a safe, already-normalized absolute path ------
+//
+// ensureDataDirs (runtime/datadir.ts) later resolves the canonical root on the target and
+// changes ownership only for what it creates or a provenance marker vouches for, so a loose
+// string here must never even reach that machinery: each of these is asserted to throw
+// before any Context (and so any transport) exists (audit 2026-09-23, XS round 4, P1-01;
+// round 6, P1-09).
+
+function rejects(dataDir: string, label: string): void {
+  try {
+    toSettings({ OC_DATA_DIR: dataDir });
+    check(`OC_DATA_DIR ${label} is rejected`, "did not throw", "threw");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    check(`OC_DATA_DIR ${label} is rejected`, message.includes("OC_DATA_DIR"), true);
+  }
+}
+
+rejects("/", '"/"');
+rejects("/srv", '"/srv" (top-level, depth 1)');
+rejects("/srv/data/", '"/srv/data/" (trailing slash, not normalized)');
+rejects(".", '"." (not absolute)');
+rejects("..", '".." (not absolute)');
+rejects("relative/data", '"relative/data" (not absolute)');
+rejects("/srv//data", '"/srv//data" (double slash, not normalized)');
+rejects("/srv/data/..", '"/srv/data/.." (not normalized)');
+rejects("/srv/./data", '"/srv/./data" (not normalized)');
+
+check(
+  "OC_DATA_DIR at depth 2 is accepted",
+  toSettings({ OC_DATA_DIR: "/srv/data" }).dataDir,
+  "/srv/data",
+);
+
+// P1-09: depth is a backstop, not the safety property. A normal, valid-looking standard
+// directory two segments deep passes on purpose — the safety comes from ensureDataDirs
+// (runtime/datadir.ts), which resolves the canonical root through its ancestors and
+// provenance-gates every ownership change on the real filesystem before any mkdir/chown.
+check(
+  "OC_DATA_DIR naming a standard two-segment system directory is accepted (handled safely at the filesystem layer)",
+  toSettings({ OC_DATA_DIR: "/var/lib" }).dataDir,
+  "/var/lib",
+);
 
 // --- toSettings: defaults ----------------------------------------------------------
 

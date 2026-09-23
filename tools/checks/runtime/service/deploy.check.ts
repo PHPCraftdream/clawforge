@@ -308,5 +308,134 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
   check("escaping recipesDir is refused", refusal.includes("outside the deployment"), true);
 }
 
+// --- the sensitive-name policy refuses too (round 3, P1-03) ----------------------
+//
+// The pre-flight scan used to consult only the declared privateFiles list, so an
+// UNDECLARED file whose name the shared policy holds back — .env.local,
+// service.secrets.env, api.token, nested/.env.production — deployed cleanly while every
+// other carrier (`recipe import`, set build, the workspace mirror) held the same bytes
+// back, because they all read collectPortableRecipeFiles() and this command did not.
+// Deploy now walks that same inventory over recipes/ and the synced config/ and refuses
+// before any tool check, connection or remote write, so one name gets one answer from all
+// four carriers. A fresh recording context per run: a refusal must leave zero calls, and
+// the completing run must leave the recipes rsync behind.
+{
+  const sensitiveRoot = await mkdtemp(join(tmpdir(), "clawforge-deploy-sensitive-"));
+  useDeployment(sensitiveRoot);
+  const runCtx = (record: { command: string; args: string[] }[]): Context => ({
+    ...ctx,
+    transport: {
+      description: "stub",
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        record.push({ command, args });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  }) as unknown as Context;
+  try {
+    const sensitiveRecipe = resolve(sensitiveRoot, "recipes", "sensitive");
+    await mkdir(sensitiveRecipe, { recursive: true });
+    await writeFile(resolve(sensitiveRecipe, "compose.yml"), "services: {}\n");
+    await writeFile(resolve(sensitiveRecipe, ".env.local"), "UNDECLARED-SENSITIVE-P1-03=kept-here\n");
+
+    // 1. An undeclared .env.local in a recipe with no privateFiles declaration at all.
+    let sensitiveCalls: { command: string; args: string[] }[] = [];
+    let refusal = "";
+    try {
+      await withOutputSink(() => {}, () => deploy(runCtx(sensitiveCalls), ["deployer@server", "--no-bootstrap"]));
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    check("an undeclared sensitive-named recipe file refuses the deploy", refusal.includes("recipes/sensitive/.env.local"), true);
+    check("the refusal states the reason", refusal.includes("sensitive-name policy"), true);
+    check("the refusal names the file, never its contents", refusal.includes("UNDECLARED-SENSITIVE-P1-03"), false);
+    check("the refusal happens before any remote mutation — no ssh, no rsync", sensitiveCalls, []);
+
+    // 2. The same name inside the deployment's own config/, the other synced tree
+    //    (deploy.ts's config/ rsync site).
+    await rm(resolve(sensitiveRecipe, ".env.local"));
+    await mkdir(resolve(sensitiveRoot, "config"), { recursive: true });
+    await writeFile(resolve(sensitiveRoot, "config", "service.secrets.env"), "UNDECLARED-CONFIG-P1-03=kept-here\n");
+    sensitiveCalls = [];
+    refusal = "";
+    try {
+      await withOutputSink(() => {}, () => deploy(runCtx(sensitiveCalls), ["deployer@server", "--no-bootstrap"]));
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    check("an undeclared sensitive-named config file refuses the deploy", refusal.includes("config/service.secrets.env"), true);
+    check("the config refusal states the reason", refusal.includes("sensitive-name policy"), true);
+    check("the config refusal names the file, never its contents", refusal.includes("UNDECLARED-CONFIG-P1-03"), false);
+    check("the config refusal happens before any remote mutation", sensitiveCalls, []);
+
+    // 3. With both files gone, the same tree deploys: the policy must not over-refuse
+    //    ordinary content in recipes that declare nothing.
+    await rm(resolve(sensitiveRoot, "config", "service.secrets.env"));
+    const finalCalls: { command: string; args: string[] }[] = [];
+    await withOutputSink(() => {}, () => deploy(runCtx(finalCalls), ["deployer@server", "--no-bootstrap"]));
+    const recipesRsync = finalCalls.find(
+      (call) => call.command === "rsync" && call.args.some((arg) => arg.startsWith(resolve(sensitiveRoot, "recipes").replaceAll("\\", "/"))),
+    );
+    check("with no held-back file present deploy completes and the recipes rsync still happens", recipesRsync !== undefined, true);
+  } finally {
+    await rm(sensitiveRoot, { recursive: true, force: true });
+    useDeployment(resolve(monorepoRoot, "apps", "example app"));
+  }
+}
+
+// --- a config/ scan that fails for any reason other than absence refuses the deploy ---
+//
+// The config/ branch tolerates exactly ONE failure: the directory not being there at all,
+// because a deployment may legitimately have no config/. That is the whole of the tolerance
+// — any other reason the scan cannot read the tree must stop the deploy. The rethrow in
+// deploy.ts is correct but would be just as quiet if it were removed: a catch that swallowed
+// every error would let deploy() run to completion without ever having looked at the config/
+// tree, and the config/ sync below would then carry whatever sits in it (and a tree that
+// cannot even be listed is a tree nobody can vouch for). Nothing else in this file fails if
+// that catch is widened, so the contract is pinned here.
+//
+// Provoked by making the deployment's `config` entry a REGULAR FILE rather than a
+// directory: the scan then fails for a reason that is not ENOENT on every platform — on
+// POSIX, fs.access of config/recipe.json reports ENOTDIR; on Windows, where that same
+// access reads as ENOENT and is (correctly) tolerated, fs.readdir of the file reports
+// ENOTDIR. No errno is asserted, because which call fails first is the platform's
+// business: what is asserted is that a config/ tree that cannot be scanned refuses the
+// deploy before anything is sent, while a genuinely missing config/ keeps deploying (the
+// happy-path groups above carry no config/ at all).
+{
+  const configRoot = await mkdtemp(join(tmpdir(), "clawforge-deploy-config-error-"));
+  useDeployment(configRoot);
+  const runCtx = (record: { command: string; args: string[] }[]): Context => ({
+    ...ctx,
+    transport: {
+      description: "stub",
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        record.push({ command, args });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  }) as unknown as Context;
+  try {
+    // An empty recipes/ leaves nothing for that scan to refuse, so the only failure this
+    // deployment can produce is the config/ entry below.
+    await mkdir(resolve(configRoot, "recipes"), { recursive: true });
+    await writeFile(resolve(configRoot, "config"), "not a directory\n");
+
+    let configCalls: { command: string; args: string[] }[] = [];
+    let failure = "";
+    try {
+      await withOutputSink(() => {}, () => deploy(runCtx(configCalls), ["deployer@server", "--no-bootstrap"]));
+    } catch (error) {
+      failure = (error as Error).message;
+    }
+    check("a config/ scan that fails for any reason other than absence fails the deploy", failure !== "", true);
+    check("the failure names the config/ tree it could not scan", failure.includes(resolve(configRoot, "config")), true);
+    check("the failed config scan happens before any remote mutation — no ssh, no rsync", configCalls, []);
+  } finally {
+    await rm(configRoot, { recursive: true, force: true });
+    useDeployment(resolve(monorepoRoot, "apps", "example app"));
+  }
+}
+
 process.stderr.write(failed === 0 ? "all deploy checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

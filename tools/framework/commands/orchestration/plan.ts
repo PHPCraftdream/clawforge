@@ -14,7 +14,8 @@
 // Two kinds of action. Most name a command this framework can run, and `./clawforge apply`
 // executes exactly those. A few are advisory — nothing on this side can perform them
 // (an MCP client owns its own processes) or performing them automatically would defeat
-// their purpose (rewriting the lock file would silently re-pin whatever just drifted).
+// their purpose (rewriting the lock file would silently re-pin whatever just drifted;
+// overwriting the secret store would discard whatever recovery cannot reach).
 
 import { log, info, die } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
@@ -123,8 +124,64 @@ export function planActions(inspection: Inspection): PlanAction[] {
   const { problems } = inspection;
   const actions: PlanAction[] = [];
 
-  // 1. Secrets first: a missing one stops the instance from starting, so every later step
-  //    would be working against something that cannot come up.
+  // 0. Operator-side recovery, before anything repairs the instance. The group reads back
+  //    what only the target still holds, and the step that follows it in a combined plan
+  //    writes to the target: `secrets --apply` REPLACES the target's config/.env with the
+  //    names the local store supplies, so applied before the dump it would destroy exactly
+  //    the values the dump exists to recover.
+  if (has(problems, "ENV_STALE")) {
+    // Advisory, and only ever planned for an .env that exists: ENV_STALE compares facts the
+    // file must already carry, and a wholly absent .env cannot be recovered at all —
+    // reaching the target to inspect anything already requires it.
+    //
+    // Advisory since the direction problem (P2-03, round 3): a divergence between .env and
+    // the running container has two readings this code cannot tell apart — the file rotted
+    // while the container kept the answers, or the operator just edited it and the container
+    // has not caught up. Planning the repair as an executable step picked a side, and
+    // picking wrong rewrote a deliberate edit back to the values it was meant to replace.
+    // Both directions are named instead; picking one is the reader's, who knows which edit
+    // they just made.
+    actions.push({
+      id: "recover-env",
+      summary:
+        "connection facts in .env differ from the running container — decide the direction: " +
+        "./clawforge recover-env --adopt-runtime keeps the container's values; " +
+        "./clawforge up recreates the container from the edited .env",
+      because: found(problems, "ENV_STALE"),
+      advisory: true,
+    });
+  }
+
+  if (has(problems, "STORE_INCOMPLETE")) {
+    // Advisory, though a runner exists (see apply.ts): the finding only fires when a store
+    // file EXISTS, and `secrets --dump` refuses to overwrite one without --force. That
+    // refusal is the safeguard — the rewrite keeps only what recovery can reach — so
+    // whether the store's current contents matter is the reader's decision, not a step.
+    actions.push({
+      id: "secrets-dump",
+      summary:
+        "recover the target's secret values into the local store — ./clawforge secrets --dump refuses to overwrite the existing store without --force, and whether its contents matter is the decision this step leaves with you",
+      because: found(problems, "STORE_INCOMPLETE"),
+      advisory: true,
+    });
+  }
+
+  if (has(problems, "DECLARATION_MISSING")) {
+    // Executable without --force, for the reason the finding exists: the declaration is
+    // ABSENT, so the dump's own refusal — which protects an existing declaration from being
+    // replaced by one carrying only the three paths dump knows — has nothing to protect.
+    // If a declaration appears between planning and applying, the step fails with that
+    // refusal rather than quietly acquiring the flag.
+    actions.push({
+      id: "apply-config-dump",
+      summary: "reconstruct config/desired-state.json from the live config",
+      command: "./clawforge apply-config --dump",
+      because: found(problems, "DECLARATION_MISSING"),
+    });
+  }
+
+  // 1. Secrets before anything that needs the instance: a missing one stops the instance from
+  //    starting, so every later step would be working against something that cannot come up.
   if (has(problems, "SECRET_MISSING")) {
     actions.push({
       id: "secrets",

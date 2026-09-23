@@ -12,6 +12,7 @@ import { die } from "#src/core/log.ts";
 import { recipesDir } from "#src/runtime/deployment.ts";
 import { containerPaths } from "#src/runtime/mounts.ts";
 import { safeName } from "#src/core/names.ts";
+import { collectPortableRecipeFiles } from "#src/security/recipe-portable-content.ts";
 
 const DEFAULT_CRON_SCHEDULE = "17 3 * * *"; // daily, off-peak, off the :00/:30 pileup minutes
 const DEFAULT_CRON_TIMEOUT_SECONDS = 900;
@@ -63,25 +64,17 @@ export function parseAgentConfig(raw: unknown): AgentConfig {
 }
 
 /** Every regular file under `dir`, recursively, as POSIX-style relative paths — except
- *  anything under a top-level directory named `excludeDir`. Pure and local-filesystem-only:
- *  recipe content lives beside the tooling, never on the deployment's target, same boundary
- *  tools/framework/service/recipe.ts already draws for recipe.json. */
+ *  anything under a top-level directory named `excludeDir`. A thin delegate to the shared
+ *  portable-content policy (security/recipe-portable-content.ts, audit 2026-09-22, P1-03):
+ *  declared privateFiles and sensitive-name matches are held back, and the walker holds
+ *  nothing back silently — it warns — while a symlink resolving outside the recipe
+ *  directory stops the walk instead of being read through. Every caller of this function
+ *  (the provision-agent mirror, the checks) gets the policy by not doing anything at all.
+ *  Pure and local-filesystem-only: recipe content lives beside the tooling, never on the
+ *  deployment's target, same boundary tools/framework/service/recipe.ts already draws for
+ *  recipe.json. */
 export async function collectRecipeFiles(dir: string, excludeDir: string): Promise<string[]> {
-  async function walk(current: string, base: string): Promise<string[]> {
-    const entries = await readdir(current, { withFileTypes: true });
-    const paths: string[] = [];
-    for (const entry of entries) {
-      if (base === "" && entry.name === excludeDir) continue;
-      const full = resolve(current, entry.name);
-      if (entry.isDirectory()) {
-        paths.push(...(await walk(full, base === "" ? entry.name : `${base}/${entry.name}`)));
-      } else {
-        paths.push(base === "" ? entry.name : `${base}/${entry.name}`);
-      }
-    }
-    return paths;
-  }
-  return walk(dir, "");
+  return (await collectPortableRecipeFiles(dir, { excludeTop: excludeDir === "" ? undefined : excludeDir })).files;
 }
 
 /** Exported so `inspect` compares the SAME declaration provisioning acts on: two readers of

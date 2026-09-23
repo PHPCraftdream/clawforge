@@ -31,9 +31,20 @@ export async function applyConfig(ctx: Context, args: string[]): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const dump = args.includes("--dump");
   const force = args.includes("--force");
+  const breakLock = args.includes("--break-lock");
   for (const arg of args) {
     if (arg !== "--dry-run" && arg !== "--break-lock" && arg !== "--dump" && arg !== "--force") die(`unknown argument: ${arg}`);
   }
+
+  // Which flags mean anything is decided from the mode here, not left to branch order: the
+  // dump branch used to run first, so --dry-run --dump --force reached it with the dry run
+  // never consulted — and the recovered file, which holds only RECOVERABLE_PATHS, replaced a
+  // declaration that named settings no dump ever attempts. A preview must not be able to
+  // destroy what it previews.
+  if (dump && dryRun) die("--dry-run cannot be combined with --dump — a dump has no dry-run form: it writes the recovered declaration or it does nothing");
+  if (dump && breakLock) die("--break-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
+  if (!dump && dryRun && breakLock) die("--break-lock cannot be combined with --dry-run — a dry run takes no instance lock, so there is no lock to break");
+  if (!dump && force) die("--force only applies to --dump — a real apply overwrites the instance config regardless, and its preview is --dry-run");
 
   if (dump) {
     // Read-only against the target and the running container — the only write is the local

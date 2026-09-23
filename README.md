@@ -67,6 +67,36 @@ when something blocking was found. Over MCP these four return `structuredContent
 `{operationId, changed, healthy, problems, warnings, nextActions, result}` — beside the usual
 text.
 
+`inspect` also asks the running container, from inside it, whether it can reach the
+outbound endpoints its own live configuration names — each model provider's `baseUrl` and
+each channel's `proxy`. That is the one vantage the other probes lack: they are taken from
+this machine, and on 2026-09-20 the gateway spent a day unable to resolve its model
+provider while every one of them stayed green. A name that does not resolve and an
+endpoint that resolves but does not answer are reported as the different facts they are
+(`EGRESS_UNREACHABLE`, naming the endpoint and the config path that names it). The finding
+is a warning, deliberately: the instance is doing its job and the outside world is not
+something the deployment controls, so a DNS blip must not fail `doctor` or a CI run. Its
+limits are the probe's own: it asks only what the live configuration names — not the
+internet at large — and only of a running gateway, through a runtime that can exec into
+one; when the probe cannot run, `observed.egress` is absent, which is a gap and not a
+claim that everything is reachable.
+
+The deployment folder itself — the operator side — is part of the same comparison. Three
+findings cover it, each naming the command that reads that part back from the instance: a
+connection fact in `.env` that no longer matches the running container (`ENV_STALE`, naming the
+variable and never a value — the file mixes a real secret with the plumbing),
+`config/desired-state.json` missing while an instance is running (`DECLARATION_MISSING`, a
+warning on `LOCK_MISSING`'s precedent: the instance works and survives a restart, what it
+cannot do is be re-declared), and a value the target still holds that the default local store
+does not (`STORE_INCOMPLETE`). All three are warnings: the instance is doing its job, and what
+is at risk is reproducing it, not running it. The limits are the detector's own:
+`DECLARATION_MISSING` is only raised while something is running, so a fresh clone is told
+nothing is wrong; and the store check watches the default store (`secrets/local.env`, the one
+`secrets --dump` writes without a `--store`) and only when that file exists — `bootstrap` puts
+values on the target without ever creating a store, so an absent store is how healthy
+deployments look, and a store under another name is not watched at all, because `inspect` is
+not given a store name.
+
 Two things `apply` will not do. It never reconnects an MCP client, because the client owns
 the server processes it started; and it never rewrites `config/deployment.lock.json`, because
 re-pinning whatever just drifted turns a reproducibility claim into a rubber stamp. Both are
@@ -90,12 +120,18 @@ every transcript written since. Undoing a bad configuration should not cost an a
 notes, so they are separate operations.
 
 One instance changes at a time. Every mutating command — `apply`, `rollback`,
-`provision-agent`, `restart`, `apply-config`, `up`, `down`, `push`, `restore` — takes a lock
-on the target holding who has it and what they are doing, and a second one is refused with
-that named rather than failing in an interesting way halfway through. The lock is a
-directory, because creating one that already exists fails atomically on every POSIX
-filesystem and through `wsl.exe` and `ssh` alike; read-then-write would let two runs starting
-together both conclude it was free.
+`provision-agent`, `restart`, `apply-config`, `up`, `down`, `push`, `restore`, and every
+`recipe` action that can change the instance — `install`, `remove`, and the hook-running
+`verify`, `onboard`, `diagnose` — takes a lock on the target holding who has it and what they
+are doing, and a second one is refused with that named rather than failing in an interesting
+way halfway through. The lock is a directory, because creating one that already exists fails
+atomically on every POSIX filesystem and through `wsl.exe` and `ssh` alike; read-then-write
+would let two runs starting together both conclude it was free. A recipe action holds the
+lock for its whole run — `install` across the from-source build, which is minutes,
+deliberately, because a build finishing while `restore` is moving the tree is the
+interleaving the lock exists to prevent. `recipe import` takes none, since it writes the
+repository's `recipes/` directory and not the instance, so it works before bootstrap has
+prepared the lock home.
 
 It lives *beside* the data directory, in `<data>-locks/`, not inside it: `restore` replaces
 that whole directory, and a lock within it left with the old tree while a second run happily
@@ -131,13 +167,20 @@ those are properties of a deployment. So a recipe declares them:
 in `recipes/<name>/acceptance.json`, and `./clawforge accept` runs them. The kinds are the
 framework's, so no code travels from a deployment into it. A check marked `usesModel` costs
 tokens and takes an agent turn — which writes to that agent's workspace — so it never runs
-without `--with-model`, and is always reported as skipped and counted rather than quietly
-left out.
+without `--with-model`, and is always reported as `not-checked` and counted rather than
+quietly left out.
+
+Every check lands as `passed`, `failed`, `not-checked` or `could-not-check`: a verdict was
+obtained and is good or bad, the check deliberately did not run, or it was attempted and no
+verdict came out of it — which is how an instance that could not be reached reports, instead
+of pretending to pass. `smoke` speaks the same words. Plan steps under `apply` keep their own
+four — `done`, `failed`, `advisory`, `blocked` — because a step is an action a journal
+records, not a question awaiting a verdict.
 
 Some read and reconciliation checks use OpenClaw's CLI. If the Gateway requests a wider
 scope, ClawForge never starts a model turn implicitly. `accept --with-model` and
 `set try --with-model` explicitly opt into approving that exact request through the `main`
-agent; without the flag the check is reported as unable to be checked and the request can be
+agent; without the flag the check is reported as `could-not-check` and the request can be
 approved manually.
 
 ## Commands
@@ -160,41 +203,75 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | --- | --- | --- |
 | `bootstrap` | `[--no-pull]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance |
 | `up` | `[--break-lock]` | Start and wait for `/healthz`; secrets and port availability are checked before the start, not after |
-| `restart` | `[--break-lock]` | Restart in place so the instance re-reads its configuration — what `apply-config` and `configure-provider` need, and what `up` cannot do |
+| `restart` | `[--break-lock]` | Restart in place so the instance re-reads its configuration — what `apply-config` and `configure-provider` need, and what `up` cannot do. It re-reads files the container can see (bind-mounted config) and nothing compose baked into it: the environment was interpolated from `.env` at creation, so a rotated repo-env secret needs the recreate `secrets --apply` performs, or `up` |
 | `down` | `[--break-lock]` | Stop and remove the containers; data in bind mounts is untouched |
 | `logs` | `[--tail <n>]` | Follow the service log on a terminal; called as a tool, read the last `n` lines and return them |
 | `status` | — | Containers, image, health probes (HTTP probes and Docker's own verdict side by side — they can disagree), disk usage |
-| `inspect` | `[--json]` | What is declared, what is running, and where they disagree — one answer, every finding carrying a stable code. Read-only |
-| `doctor` | `[--json]` | The same inspection read as a verdict; exits non-zero when something blocking was found |
+| `inspect` | `[--json]` | What is declared, what is running, and where they disagree — one answer, every finding carrying a stable code. Also probes, from inside the container, the outbound endpoints the live config names, and compares the deployment folder itself — `.env`'s connection facts, the desired-state file, the default secret store — against the instance, as warnings. Read-only |
+| `doctor` | `[--json]` | The same inspection read as a verdict; exits non-zero when something blocking was found; outbound reachability is a warning, never a failure |
 | `plan` | `[--set <artifact>] [--json]` | The ordered actions the declaration implies, and why each one is there. Changes nothing |
 | `apply` | `[--set <artifact>] [--expect <checksum>] [--dry-run] [--break-lock] [--json]` | Run that plan, stop at the first failure, then inspect again and report what the instance actually is |
 | `lock` | `[--check] [--json]` | Pin the composition — framework version, image digest, recipe checksums, secret names — or check it still matches |
 | `rollback` | `[--operation <id>] [--no-restart] [--set] [--break-lock] [--json]` | Put back the configuration an operation replaced, and restart. One file, not the data directory |
 | `operations` | `[<id>] [--limit <n>] [--json]` | What mutating runs did: their steps, what failed, what never ran, and whether a snapshot was taken |
-| `accept` | `[<recipe>] [--set <artifact>] [--with-model] [--json]` | Run the acceptance checks a recipe declares. Checks that call the model are skipped unless asked for, and counted |
+| `accept` | `[<recipe>] [--set <artifact>] [--with-model] [--json]` | Run the acceptance checks a recipe declares. Checks that call the model are reported as `not-checked` unless asked for, and counted; one that cannot obtain a verdict is `could-not-check` and fails the run |
 | `cli …` | arbitrary | OpenClaw's own CLI, e.g. `./clawforge cli config get gateway.mode`; a one-off container by default, but execs into the persistent one when `cli-start` is running. As a tool it takes the arguments as a list and needs `confirm: true` — it can run anything that CLI can |
 | `cli-start` | — | Start the persistent CLI container: `cli`/`mcp-serve` then exec into it instead of paying create/destroy per call |
 | `cli-stop` | — | Stop and remove the persistent CLI container |
-| `apply-config` | `[--dry-run] [--dump] [--force] [--break-lock]` | Apply `config/desired-state.json`, overwriting hand edits to `openclaw.json`; `--dump` reconstructs a lost declaration from the live instance's own config — commonly declared paths only |
+| `apply-config` | `[--dry-run] [--dump] [--force] [--break-lock]` | Apply `config/desired-state.json`, overwriting hand edits to `openclaw.json`; `--dump` reconstructs a lost declaration from the live instance's own config — commonly declared paths only. Flags are validated against the mode before anything runs: `--dry-run` and `--dump` refuse each other (a dump has no dry-run form — the combination used to overwrite the declaration it was asked to preview), `--break-lock` applies only where a lock is taken, `--force` only to `--dump` |
 | `configure-provider` | `[--provider <id>] [--env <VAR>] [--force]` | Configure any provider from a target-side SecretRef; key values never enter `openclaw.json` |
-| `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force]` | The manifest of required secrets, the template, the local store of values; `--dump` recovers a lost store from a running instance |
+| `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force]` | The manifest of required secrets, the template, the local store of values; `--apply` puts repo-env values in force itself — recreating the running container, since restart cannot change an environment compose interpolated at creation — and confirms them without printing them; `--dump` recovers a lost store from a running instance |
 | `recover-env` | `[--dry-run]` | Repair `.env`'s four connection facts from the running container; a wholly absent `.env` is not repairable — reaching the target already requires it |
 | `backup` | `[--profile full\|migrate\|share] [--hot]` | Snapshot the data directory; the gateway is stopped for the duration by default |
 | `restore` | `[<archive>] [--force] [--fresh-identity] [--no-start] [--break-lock]` | Restore an archive; the structural check runs before anything is stopped, the secrets check before anything is started |
 | `pull` | `[--profile ...] [--share] [--with-secrets] [--hot]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
 | `push` | `[<snapshot>] [--force] [--fresh-identity] [--break-lock]` | Push a snapshot back: restore → install keys if any travelled with it → check → start |
 | `verify` | `<archive> [--profile ...]` | Check an archive for credentials before sharing it — what `pull --share` does on its own |
-| `recipe` | `<list\|import\|install\|remove\|status\|logs\|verify\|onboard> [<name>] [--volumes] [--tail <n>] [--force-disabled]` | App-owned services beside the instance, each its own compose project and optional lifecycle hooks |
+| `recipe` | `<list\|import\|install\|remove\|status\|logs\|verify\|onboard\|diagnose> <name> [new-name] [--volumes] [--tail <n>] [--force-disabled] [--break-lock]` | App-owned services beside the instance, each its own compose project and optional lifecycle hooks. install, remove and the hook-running actions take the instance lock for their whole run — install across its build; list/status/logs and import (a repository-side copy) take none. With import, `<name>` is the source directory and `[new-name]` the name to import under — the source's own name by default; the copy leaves out the generic credential-shaped names (`.env*`, `secrets/`, `*.token`, `*.secrets.env`) plus what the source's own `recipe.json` declares under `privateFiles` — a filter over file names, not a guarantee; `privatePaths` in the same file declares where the running recipe keeps generated credentials (data-relative), which migrate/share snapshots exclude and full keeps |
 | `provision-agent` | `<recipe> [--break-lock]` | Wire a recipe's MCP server to a dedicated agent: agent, workspace prompt files, MCP registration and an optional cron job |
+| `host` | `<target\|engine\|local> [--root --confirm-root] -- <command>` | Run one command on the operator's own machine layers — the deployment's transport, the container engine's VM, or the bare host. Privilege is stated where it arrives: target and local run as the operator's own user until both root flags elevate them; Docker Desktop's `docker-desktop` engine distro has no login user but root, so both flags are the consent every engine command needs before it runs at all — without them it is refused, not downgraded |
 | `deploy` | `<user@host> [--path <dir>] [--no-bootstrap]` | Deploy to a server: the code is mirrored whole, the deployment by name and by file, credentials never leave this machine. Only from a checkout — installed as a package it refuses, since there is no checkout to mirror |
 | `mcp-serve` | — | stdio bridge to OpenClaw's channels — what a client from `.mcp.json` starts, not something to run by hand; execs into the persistent CLI container when it is up |
 | `mcp-setup` | `[--client <name>] [--json]` | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
 | `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
 | `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
-| `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance |
+| `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
 | `check` | — | Framework checks with no instance — paths, archives, arguments, what a server delivery contains |
 | `new-app <name>` | — | Create a deployment directory (framework-level, available before `--app` is resolved) |
 | `init` | — | Scaffold the current directory as the single deployment (framework-level, installed mode only — see "Installing in a separate repository") |
+
+## The machine itself: `host`
+
+`./clawforge host <context> -- <command>` runs one ad hoc command against the operator's own
+machine layers instead of the deployment's containers: `target` (the deployment's own
+transport), `engine` (wherever the container engine actually executes — Docker Desktop's
+`docker-desktop` WSL2 distro on Windows), and `local` (this machine, unwrapped). Where no
+separate engine exists, `engine` says so and runs where `local` would.
+
+The privilege model, stated as it is:
+
+* `target` and `local` run as the operator's own user. `--root --confirm-root` together
+  elevate: `sudo -n` (a required password fails fast rather than hanging), `wsl -u root` in
+  the engine distro, refused outright where there is no root concept. Either flag alone does
+  nothing.
+* `engine` on Docker Desktop is the other case, and it is not a corner: the `docker-desktop`
+  distro has no login user but root — its default user is root (uid 0), and `/etc/passwd`
+  offers only `nologin` service accounts besides, so there is no unprivileged user to select.
+  Every engine command therefore arrives as root before any flag is read. There the two flags
+  are not an upgrade but the consent the command needs to run at all: without them the command
+  is refused rather than downgraded, and with them it is pinned to `-u root` explicitly. This
+  is not a boundary against the operator — the operator already has WSL and can run anything
+  there themselves. It is what keeps a routine diagnostic from silently carrying authority
+  over engine state nobody knowingly asked it to have, which is the defect an external audit
+  (P2-04, 2026-09-21) found in the previous "root only when asked for twice" contract: the
+  flags gated the request, and the request was not where the privilege came from.
+
+The check pins what the machine does, not what the argv requests: where the machine running
+the checks has the distro, `foundation/cli/host.check.ts` runs the audit's own read-only probe
+(`id -u` through the real engine resolution), asserts the effective uid, the refusal without
+consent, and the consented run. Where it cannot — Linux CI has no `docker-desktop` to ask —
+that leg prints a skip, names the limit, and the arrival declaration plus the consent gate are
+pinned hermetically instead.
 
 ## How it is put together
 
@@ -274,13 +351,13 @@ more of them than fit here:
 | `verify.check.ts` | a fatal structural finding rejects an archive before unpacking, not after |
 | `state.check.ts` | a share snapshot is removed whole even when verification throws rather than returning false |
 | `restore.check.ts` | a direct `restore` does not start the gateway on a config with missing secrets, does not report a corrupted config as a successful restore, and with no argument picks the newest FULL archive rather than the newest file |
-| `mcp-server.check.ts` | malformed JSON-RPC (`null`, a number, an array) does not take the server down — a real stdio process |
+| `mcp-server.check.ts` | malformed JSON-RPC (`null`, a number, an array) does not take the server down — a real stdio process, and a confirmed `recipe verify` — the one call that reaches a lock-taking command — running against a scratch app whose data directory, lock home included, stays inside the app the check removes; and `recipe import` is expressible over MCP — both forms, with and without the rename, validate clean and build the exact argv the dispatcher reads |
 | `env.check.ts` | `.env` parsing (quotes, comments, `=` inside a value), `toSettings()` defaults |
 | `deployment-names.check.ts` | deployment paths, `safeName` — protection against `--store ../../etc` |
 | `app-mounts-output.check.ts` | `defineApp`/`mcpCommands`, the bind-mount map, nested `withOutputSink` |
 | `requirements.check.ts` | collecting `SecretRef`s from the config, deduplicating provider vs explicit reference, rendering the template |
-| `recipe.check.ts` | parsing `recipe.json`, `install` refusing a disabled recipe without `--force-disabled` |
-| `security/credentials/secrets-command/*.check.ts` | `--init-store` refusing to overwrite a filled store; `--apply` aborting on a live config it could not read and naming the variables it replaces; `mcp-setup` merging `.mcp.json` |
+| `recipe.check.ts` | parsing `recipe.json`, `install` refusing a disabled recipe without `--force-disabled`, and the instance lock: every mutating action refused while another operation holds it — the prepare hook provably never running — the same actions riding a lock the calling chain already holds instead of refusing it, read-only actions ungated, and `--break-lock` honoured; and `import`'s exclusion contract — every name the old hardcoded blacklist excluded still excluded, the generic four with no declaration at all, the application's own names only via the source's `privateFiles` declaration, a broken source manifest stopping the import instead of reading as nothing declared, and a non-credential file copied whole |
+| `security/credentials/secrets-command/*.check.ts` | `--init-store` refusing to overwrite a filled store; `--apply` aborting on a live config it could not read and naming the variables it replaces; `--apply` performing the repo-env recreate, or saying exactly why it cannot, then confirming the value in force by name and never by value; `mcp-setup` merging `.mcp.json` |
 | `runtime-port.check.ts` | parsing `docker ps` through `.Label` (not `.Labels`), `preflightPort` |
 | `cli-help.check.ts` | `--help` for `control-mcp`/`new-app`/`help` neither hangs nor stays silent; `help` works before any deployment exists |
 | `passthrough-help.check.ts` | `cli` is marked `passesThroughHelp` — `--help` reaches OpenClaw instead of being intercepted here |
@@ -292,16 +369,22 @@ more of them than fit here:
 | `logs-bounded.check.ts` | `logs` and `recipe logs` follow on a terminal and read a bounded tail under a sink, with `--tail` parsed rather than passed on |
 | `openclaw-cli.check.ts` | the shared wrapper around OpenClaw's CLI: capture, the scope-upgrade approve-and-retry, and that an unrelated failure is not retried into a second error |
 | `restart.check.ts` | `restart` refuses a stopped instance, does not restart into a config with missing secrets, and waits for health |
+| `runtime/service/runtime-image-identity.check.ts` | what compose is handed — a private env file, never `env VAR=…` arguments; `reconcile()` re-reading the deployment `.env` from disk rather than the process-start snapshot; and, where this machine can run a container, a synthetic rotation proven live: `restart` keeping the created environment in force, `reconcile` replacing the container, the rotated value read back from `docker inspect` |
 | `inspection.check.ts` | the problem-code table: every code has a severity and a runnable remedy, a caller cannot downgrade a blocking one, and "healthy" means serving rather than silent |
 | `runtime/convergence/inspect/*.check.ts` | every finding `inspect` can report, provoked one at a time against a stubbed target and a real temp deployment; and `doctor`'s exit contract in both directions |
+| `runtime/convergence/inspect/egress.check.ts` | the outbound probe runs through the container exec and never `Runtime.probe()`, one exec on stdin for exactly the endpoints the live config names (none named — none asked), a name that does not resolve and an endpoint that does not answer are separate findings naming endpoint and config path, credentials in a proxy URL never reach the output, `doctor` still exits zero, and a stopped instance is asked nothing |
+| `runtime/convergence/inspect/folder.check.ts` | the deployment folder against the instance: each of `ENV_STALE`, `DECLARATION_MISSING`, `STORE_INCOMPLETE` provoked and distinct; a folder that matches the running instance producing no finding at all; a stale fact named by variable, never by value, and the token sharing `.env` reaching no output; the stopped-instance and absent-store non-findings pinned as the limits they are; and `doctor` exiting zero with all three firing |
 | `lock.check.ts` | what the lock notices: an image that moved behind an unchanged tag, a framework bump, an edited recipe, a newly required secret — and that all of it is a warning |
 | `plan.check.ts` | the order, as rules: secrets before anything that needs the instance, configuration before the restart that reads it, start instead of start-then-restart, recipes after the gateway is up |
-| `apply.check.ts` | stopping at the first failure, reporting what did not run as skipped, and never performing an advisory step |
+| `runtime/convergence/plan.check.ts` | the recovery half of the order: recover-env before the two dumps, the dumps before the steps that write to the target, the declaration dump executable only while the declaration is absent, and the store dump advisory because the refusal is the safeguard |
+| `apply.check.ts` | stopping at the first failure, reporting what did not run as advisory or blocked, and never performing an advisory step; a runner asserted for every executable id the planner can emit; the recovery step reaching done and every step landing in the journal under one operation id that `./clawforge operations <id>` reads back; a dump's `--force` refusal failing the step with the file untouched; and `--dry-run` emitting the plan and writing nothing |
 | `operations.check.ts` | the journal is on disk before the next step starts, an unfinished run keeps every step it managed and gains no invented outcome, and a target that cannot be written to does not fail the run it is recording |
 | `rollback.check.ts` | choosing what to undo: the newest run that took a snapshot, never one that took none, and every refusal saying where to look instead |
-| `apply-config.check.ts` | a dry run does not stage under the shared file name a real run writes, and two dry runs do not collide; `--dump` recovers exactly the curated paths from a stubbed JSON5 live config, refuses an existing declaration without `--force`, omits paths the live config never set rather than emitting nulls, and says plainly that recovered values are not the original declaration |
+| `apply-config.check.ts` | a dry run does not stage under the shared file name a real run writes, and two dry runs do not collide; `--dump` recovers exactly the curated paths from a stubbed JSON5 live config, refuses an existing declaration without `--force`, omits paths the live config never set rather than emitting nulls, and says plainly that recovered values are not the original declaration; flag combinations that mean nothing together are refused before the first read or write — `--dry-run` with `--dump` in both argv orders, `--break-lock` with either a dump or a dry run, `--force` without `--dump` — each refusal leaving the existing declaration byte-identical, with a plain `--dump --force` as the working control |
 | `instance-lock.check.ts` | a second operation is refused with the holder named, a failed run releases the lock, a stale one is described rather than stolen, and a run that lost its lock to `--break-lock` does not remove the new holder's, and a claim against an existing directory is refused |
 | `accept.check.ts` | every declared check kind in both directions, and that an unknown kind fails rather than passing quietly |
+| `foundation/cli/host.check.ts` | `host` end to end: the flag boundary, the root gate on target, context resolution per platform against injected environments, and the engine privilege contract — a context that arrives as root is refused without both flags before anything can spawn, and where this machine can answer, the real effective uid (`id -u` through the real resolution) rather than the argv |
+| `runtime/lifecycle/smoke.check.ts` | every smoke check lands as `passed`, `failed`, `not-checked` or `could-not-check` and the four stay distinct; a check that could not obtain a verdict cannot be the reason a run reports success; the two bodies that run without an instance read a verdict-less runtime apart from a failed one; and the drift check's restore failing after the verdict stays a failed check naming the drifted path and the repair |
 
 Calling `wslpath` is not an option: backslashes do not survive the trip through `wsl.exe`,
 and `D:\dev\x` arrives as `D:devx`. Translation is done in our own code and covered by the
@@ -439,7 +522,7 @@ comes in two flavours, and a recipe may be either or both.
 
 ```bash
 ./clawforge recipe list
-./clawforge recipe import <source> [name]
+./clawforge recipe import <source> [new-name]
 ./clawforge recipe install <name>
 ./clawforge recipe status <name>
 ./clawforge recipe verify <name>
@@ -455,6 +538,14 @@ Builds are multi-stage: cloning and compilation happen in the build stage, so ne
 nor toolchains reach the host or the final image. Everything is built **on the target**, so
 a first install on a server takes as long as the build.
 
+Every mutating recipe action runs under the instance lock. `install` and `remove` change the
+target, and `verify`, `onboard` and `diagnose` run the recipe's own hooks with a full context,
+so the framework cannot know what they touch; `install` holds the lock across the whole
+build, and until it is done other mutating operations are refused with `recipe install
+<name>` named as the holder. `list`, `status` and `logs` take no lock, and neither does
+`import` — a repository-side copy that never touches the instance. An operation that already
+holds the lock runs recipe actions as its own steps instead of refusing itself.
+
 A recipe can sit in the repository switched off — `"enabled": false` in `recipe.json`.
 `install` then refuses and points at `--force-disabled`.
 
@@ -466,14 +557,123 @@ env updates and checksums; the framework never prints the values. A secret is ne
 command-line argument — use `execWithSecrets` (or the private-file helpers) instead of putting
 a credential in `args`.
 
+### Private files: `privatePaths` and `privateFiles`
+
+A recipe that generates credentials declares — in the same `recipe.json` — where they live.
+Two fields, two different coordinate systems, stated here twice because swapping them fails
+silently:
+
+```json
+{
+  "description": "a sidecar service that keeps its own API token",
+  "ports": [{ "host": 8081, "container": 8080, "description": "sidecar API" }],
+  "variables": { "SIDECAR_URL": "where the gateway reaches the sidecar" },
+  "privatePaths": ["sidecar-credentials"],
+  "privateFiles": ["local-secrets.env"]
+}
+```
+
+**`privatePaths` is data-relative.** Each entry is a path from the data directory root on the
+target — `sidecar-credentials` means `<dataDir>/sidecar-credentials` — and describes where the
+recipe keeps generated credentials at runtime. One declaration, three readers: `backup` and
+`pull` exclude these paths from `migrate` and `share` archives (`full` keeps them — it is
+credential-complete by design, so restoring one restores the sidecar's working state), `verify`
+refuses an archive that already carries them, and the private-file helpers refuse a private
+write anywhere else. The write gate is pooled: a write is covered when *any* installed recipe
+declares the path (or a parent of it), not only the recipe doing the writing.
+
+Entries are literal, and they are validated when the manifest is loaded — a sloppy entry is
+rejected at load instead of silently excluding nothing:
+
+* non-empty, relative to the data directory, `/`-separated: `""`, `/absolute` and
+  `trailing/` are all refused;
+* no `.` or `..` segments — the declaration cannot climb or pad;
+* glob punctuation is not special: a declaration `vault[1]` is the literal directory
+  `vault[1]`, the archive exclusion escapes it for tar, and the undeclared sibling `vault1`
+  keeps travelling — nobody's declaration excludes more than it names;
+* the write gate judges the *normalized* path, by segments: a hook writing
+  `<data>/sidecar-credentials/../escape.env` is refused even though the string carries a
+  declared prefix, and `//` and `.` fold away before the comparison.
+
+The helpers in `#framework/security/private-config.ts` enforce the same declaration from the
+writing side: `ensurePrivateTargetDirectory` and `replacePrivateTargetFile` only proceed inside
+a declared path, files land mode 600 and directories 700, and a symlink between the data
+directory and the declared root is refused (the data root itself may be a link, and a link at
+the final component is replaced rather than written through). This is armor against a recipe
+author's path-assembly mistake, not isolation from hostile code — the hook already holds a
+full context. A prepare hook that uses them:
+
+```ts
+import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "#framework/security/private-config.ts";
+import type { Context } from "#framework/core/context.ts";
+import type { Recipe } from "#framework/service/recipe.ts";
+
+export async function prepare(ctx: Context, recipe: Recipe): Promise<void> {
+  const dataDir = ctx.settings.dataDir;
+  await ensurePrivateTargetDirectory(ctx, `${dataDir}/sidecar-credentials`);
+  await replacePrivateTargetFile(
+    ctx,
+    `${dataDir}/sidecar-credentials/sidecar.env`,
+    `SIDECAR_TOKEN=${generatePrivateSecret()}\n`,
+  );
+}
+```
+
+**`privateFiles` is recipe-tree-relative.** It names files and directories inside the recipe's
+own directory — the source tree, not the target — and `recipe import` reads it from the source
+manifest and nothing else ever reads it: the copy leaves declared entries out, beside the
+framework's generic credential-shaped names (`.env*`, `secrets/`, `*.token`, `*.secrets.env`).
+Entries are literal here too — no globs, `/`-separated, no `..`, backslashes refused. The
+coordinate systems do not mix: a data-directory path does nothing under `privateFiles`, and a
+recipe-directory path does nothing under `privatePaths`; an author who swaps them gets neither
+the exclusion nor the write gate, and nothing reports the mistake. `privateFiles` is a filter
+over file names, not a guarantee — a credential under an undeclared name is copied. The
+enforced promise about a recipe's private files is the target-side `privatePaths` policy, never
+the import filter.
+
+Reading the declarations is strict, so a broken manifest cannot read as "no secrets":
+`backup`, `pull` and `verify` enumerate every installed recipe's declaration, and a
+`recipe.json` that exists but cannot be read, parsed or validated stops the command rather than
+contributing an empty list — the quiet-empty failure is exactly how a private file once walked
+into a share archive. `recipe list` is deliberately the opposite: a catalogue keeps showing the
+working recipes beside a broken one, and the broken recipe is the one not listed.
+
+Checking that a declaration took effect, in the order that answers the question:
+
+```bash
+./clawforge recipe install <name>      # runs prepare.ts — the first write outside every declaration is refused
+./clawforge backup --profile migrate   # stops with an error if any manifest is broken; excludes declared paths
+./clawforge verify --profile migrate <archive>   # refuses the archive if a declared path travelled anyway
+```
+
+`verify` passing after a migrate backup is the round trip: exclusion at archive time and
+refusal at check time read the same declaration, so a declared path that was excluded passes,
+an archive taken before the declaration existed is refused, and a file written under a name
+nobody declared is invisible to the whole chain — verify looks for known secret values and
+declared paths, never for content it has no way to name.
+
+Limits, as plain as the happy path:
+
+* `recipe remove` removes the compose project, not the data. Files already written under the
+  data directory stay on the target, and once `recipes/<name>/recipe.json` is gone its
+  declaration is gone with it — the next `migrate`/`share` snapshot includes those files.
+  Move or delete them before removing the recipe.
+* The gate intercepts writes made through the helpers on this side. A running container that
+  writes into its own bind mount is not intercepted — declare the directories the service
+  actually writes, and keep credentials out of paths nothing declared.
+
 Mixed command groups may declare structured output only for selected actions. The recipe tool
 therefore keeps install/list/status as human progress while verify/onboard can return a stable
 machine-readable result beside the text.
 
-`recipe import <source> [name]` copies an app-owned recipe into a deployment, refuses to
-overwrite an existing recipe, and excludes `.env`, `secrets/`, token files, user registries and
-generated credential files. This keeps domain-specific sidecars outside the framework core while
-giving every application the same safe lifecycle and MCP surface.
+`recipe import <source> [new-name]` copies an app-owned recipe into a deployment and refuses
+to overwrite an existing recipe. The copy leaves out credential-shaped files: the framework's
+generic set — `.env*`, `secrets/`, `*.token`, `*.secrets.env`, its own conventions — plus
+whatever the source's own `recipe.json` declares under `privateFiles` (recipe-tree-relative
+literal paths), because the application, not the framework, knows its own files. This is a
+filter over file names, not a guarantee: a credential under a name nobody declared is copied.
+The enforced promise about a recipe's private files is the target-side `privatePaths` policy —
+snapshots exclude them and verify refuses archives that carry them — not import's copy filter.
 
 Keep recipe code easy to maintain: use small typed modules with one responsibility, named
 constants for paths and protocol values, pure renderers for generated files, and thin lifecycle
@@ -622,7 +822,7 @@ truth:
 
 | Location | Where | What |
 | --- | --- | --- |
-| `repo-env` | `.env` next to the repository | Values passed through compose |
+| `repo-env` | `.env` next to the repository | Values compose interpolated into the container's environment at creation |
 | `target-env` | `<data>/config/.env` on the target | Values read by OpenClaw itself |
 
 Per-target values live in `apps/<deployment>/secrets/<name>.env` — the deployment directory
@@ -632,6 +832,18 @@ would destroy exist nowhere else, and replacing them needs `--force`.
 
 The store is the source of truth: `secrets --apply` delivers each declared value to its
 runtime location, including the repository `.env` when a requirement belongs to `repo-env`.
+
+Applying a value and putting it in force are different events, and the two locations differ
+in what closes the gap. A `target-env` value sits in a file bind-mounted into the container,
+and a restart — the process re-reading its files at startup — applies it. A `repo-env` value
+was interpolated into the container's environment when compose created it, and a restart
+keeps the container it created: pointing at restart here reported success while the old
+token stayed live. `secrets --apply` therefore recreates the running container itself when
+it delivers repo-env values — the container is replaced, not merely signalled; connections
+drop — waits for health, and confirms against the container's own environment, by variable
+name and never by value, that the new values are in force. A stopped instance picks them up
+on its next start; a runtime that cannot recreate is told to run `./clawforge up` rather
+than left with an instruction that cannot work.
 
 `./clawforge up` and `./clawforge bootstrap` refuse to start when something is missing: a refusal with a
 list beats a gateway crash-looping on `SecretRefResolutionError`.
@@ -665,6 +877,10 @@ whole backlog at once.
 | `--with-secrets` | everything, `config/.env` included | moving in one piece; **never hand this to anyone** |
 | default (`migrate`) | everything except keys; keys travel beside it in `<archive>.secrets.env` | moving to your own server |
 | `--share` | only an allow-list: `openclaw.json`, `plugin-skills`, `npm`, `workspace-attestations`, workspace | handing an agent to another person |
+
+Recipe-declared private paths (`recipe.json` `privatePaths`) cut across the same three
+profiles: `migrate` and `share` exclude them, `full` keeps them — see
+[Private files: `privatePaths` and `privateFiles`](#private-files-privatepaths-and-privatefiles).
 
 The `share` profile exists because "just a snapshot" cannot be handed over. Verified by
 grepping the data directory: the provider key lives only in `config/.env`, but
@@ -714,49 +930,69 @@ The deployment directory — `.env`, `config/desired-state.json`, the stores und
 the `recipes/` beside them — lives on the operator side, and no snapshot in the previous
 section covers it: `backup` and `pull` archive the instance's data directory, not the
 operator's own configuration of the instance. When that folder is lost — disk failure, a
-wrong `rm` — the instance keeps running, and three commands read the operator side back from
-it, in the order a replacement deployment needs them:
+wrong `rm` — the instance keeps running, and nothing else changes — which is exactly why the
+loss stays invisible until something breaks. `./clawforge inspect` is how it stops being
+invisible: it reports `ENV_STALE` (a connection fact in `.env` no longer matches the running
+container), `DECLARATION_MISSING` (the instance is running, but nothing can re-declare it)
+or `STORE_INCOMPLETE` (the target still holds values the default local store does not).
 
-```bash
-./clawforge recover-env                    # the connection facts in .env, from the running container
-./clawforge secrets --dump --store prod    # secret values, from the target's config/.env and the container's environment
-./clawforge apply-config --dump            # the commonly declared paths of desired-state.json, from the live config
-```
+What was prose is now a plan. `./clawforge plan` turns those findings into an ordered list of
+steps and `./clawforge apply` runs them the way it runs every plan — one operation id, a
+journal entry per step on the target, the instance lock held for the run, the run refused if
+the declaration changed underneath it. Recovery comes first, and the order is not cosmetic:
+`secrets --apply` replaces the target's `config/.env` with the names the local store
+supplies, so repairing the instance before recovering the folder destroys the very values
+the recovery exists to bring back.
 
-`recover-env` comes first because its limit is inherent: it repairs a stale or half-filled
-`.env` by merging back the four connection facts compose resolved from it at container
-creation — `OC_DATA_DIR`, `OPENCLAW_GATEWAY_PORT`, `OC_COMPOSE_PROJECT`, `OPENCLAW_IMAGE` —
-one `docker inspect` of the running container reads the answers back, a value already correct
-is untouched, and a fact Docker's answer does not carry is named rather than guessed. A wholly
-absent `.env` cannot be repaired here, because reaching the target to inspect anything
-already requires the `.env` that names the target and its transport; `bootstrap` creates it,
-and everything below presumes it exists.
+Three findings, three steps — two of them `apply` runs, one of them it deliberately does
+not:
 
-`secrets --dump --store <name>` is the reverse of `secrets --apply`: target-env values from
-the target's own `config/.env`, repo-env (the gateway token) from the running container's own
-environment, since it is never written to the target's filesystem at all — into a local store.
-A name it cannot recover is left blank and named in the report, never guessed; `--force`
-replaces an existing store. What it reads is what the target holds now, not history.
+- `ENV_STALE` → `./clawforge recover-env`. Merges the four connection facts compose resolved
+  from `.env` at container-creation time — `OC_DATA_DIR`, `OPENCLAW_GATEWAY_PORT`,
+  `OC_COMPOSE_PROJECT`, `OPENCLAW_IMAGE` — back into it, one `docker inspect` of the running
+  container reading the answers. A value already correct is untouched; a fact Docker's
+  answer does not carry is named, never guessed. The inherent limit stands, and no plan step
+  pretends otherwise: a wholly absent `.env` cannot be recovered, because reaching the
+  target to inspect anything already requires the `.env` that names the target and its
+  transport. `bootstrap` creates it; `plan` emits this step only because `.env` exists and
+  disagrees.
+- `DECLARATION_MISSING` → `./clawforge apply-config --dump`, reconstructing
+  `config/desired-state.json` from the live instance's own `openclaw.json`. The step runs
+  without `--force` for the reason the finding exists: the refusal behind that flag protects
+  an existing declaration from being replaced by one carrying only the three commonly
+  declared paths — with no declaration there is nothing to protect, so recovery is
+  executable as planned. If a declaration appears between planning and applying, the step
+  fails with exactly that refusal rather than acquiring a flag nobody passed.
+- `STORE_INCOMPLETE` → `./clawforge secrets --dump`, planned as advice rather than a step.
+  The finding only fires when a store file already exists, and `--dump` refuses to overwrite
+  one without `--force` — which is the safeguard, not an obstacle: the rewrite keeps only
+  what recovery can reach, and whether the store's current contents matter (a value rotated
+  off the target, say) is a decision no plan can make. `apply` reports the step as advisory,
+  runs everything around it, and the confirming inspection still names `STORE_INCOMPLETE`
+  with the command. Run it yourself once you have looked at the store; `--store` names a
+  different one, but a store under another name is not watched at all, because `inspect` is
+  not given a store name.
 
-`apply-config --dump` reconstructs `config/desired-state.json` from the live instance's own
-`openclaw.json` — the small, fixed set of commonly declared paths (`gateway.mode`,
-`gateway.bind`, `agents.defaults.model.primary`), a path the live config never set omitted
-rather than emitted with a guessed value. The reconstruction is not the original authoring:
-the live config shows the outcome of applying the declaration, not the declaration itself, so
-a value OpenClaw defaults to is indistinguishable from a declared one once the declaration is
-gone. Recipes have no part in it: `desired-state.json` is a `{path, value}` batch payload,
-with no established way to declare an installed-recipe list — there is nothing to recover
-them into.
+The reconstruction limits are the commands' own, unchanged by the planning around them. The
+live config shows the outcome of applying the declaration, not the declaration itself — a
+value OpenClaw defaults to is indistinguishable from a declared one once the declaration is
+gone — so `apply-config --dump` recovers the small fixed set of commonly declared paths
+(`gateway.mode`, `gateway.bind`, `agents.defaults.model.primary`), omits a path the live
+config never set rather than emitting a guessed value, and recipes have no part in it:
+`desired-state.json` is a `{path, value}` batch payload, with nothing to recover them into.
+`secrets --dump` reads target-env values from the target's own `config/.env` and repo-env
+values (the gateway token) from the running container's own environment, where they only
+ever existed; a name it cannot recover is left blank and named, never guessed.
 
 One loss no command undoes: a secret whose only copy was the lost `.env` or store, and whose
-target-env copy has been overwritten or rotated since. `secrets --dump` reads what the target
-holds now; what it held before the loss is nowhere.
+target-env copy has been overwritten or rotated since. The dumps read what the target holds
+now; what it held before the loss is nowhere.
 
-The three commands recover the deployment's own connection to an instance still running
-elsewhere. The instance's own state — workspace, memory, conversations, plugins,
-`config/.env` included — is what `./clawforge pull --with-secrets` (or an ordinary `pull`
-plus its sidecar `.secrets.env`) archives whole: the complement, not a substitute, and the
-way to end up running the instance from a new operator machine rather than merely reaching
+These steps recover the deployment's own connection to an instance still running elsewhere.
+The instance's own state — workspace, memory, conversations, plugins, `config/.env`
+included — is what `./clawforge pull --with-secrets` (or an ordinary `pull` plus its sidecar
+`.secrets.env`) archives whole: the complement, not a substitute, and the way to end up
+running the instance from a new operator machine rather than merely reaching
 it.
 
 ## Deploying to a server

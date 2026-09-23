@@ -145,9 +145,15 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
       }
     });
 
+    // SIGTERM first, SIGKILL after a grace period: a child that ignores SIGTERM would
+    // otherwise outwait the very deadline this timer exists to enforce.
+    let escalate: ReturnType<typeof setTimeout> | undefined;
     const timer = options.timeoutMs === undefined
       ? undefined
-      : setTimeout(() => child.kill("SIGTERM"), options.timeoutMs);
+      : setTimeout(() => {
+        child.kill("SIGTERM");
+        escalate = setTimeout(() => child.kill("SIGKILL"), 5000);
+      }, options.timeoutMs);
 
     // Handle early stdin closure and wait for the complete child result.
     child.stdin?.on("error", (error) => {
@@ -160,6 +166,7 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
 
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
+      if (escalate !== undefined) clearTimeout(escalate);
       const result: ExecResult = { code: code ?? -1, stdout, stderr };
       if (launchError !== undefined) {
         rejectPromise(launchError);

@@ -414,5 +414,34 @@ if (process.platform === "win32") {
   check("local: a missing executable rejects normally", finallyRan, true);
 }
 
+// A deadline the child can outwait is not a deadline: spawnLocal must END the child at
+// timeoutMs, not merely remember the number.
+{
+  const started = Date.now();
+  const killed = await spawnLocal(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeoutMs: 800, allowFailure: true });
+  check("local: a child past its deadline is killed, not waited on", killed.code !== 0, true);
+  check("local: the kill lands near the deadline", Date.now() - started < 7000, true);
+}
+
+// The escalation half the block above cannot see: that child dies on the SIGTERM itself,
+// so it proves nothing about what happens when SIGTERM is not enough. This child provably
+// ignores SIGTERM — on POSIX a handled signal replaces the default termination, so an
+// empty handler survives the first kill, and only the delayed SIGKILL (the 5s grace
+// spawnLocal pins) can end it. The 9s self-exit is a failsafe, not the success path: if
+// the escalation ever breaks, the child outlives it and exits 0 on its own, so these
+// checks fail within seconds instead of hanging the suite. Windows cannot run this
+// premise at all: kill() there is TerminateProcess whatever the signal name, so nothing
+// can ignore SIGTERM — on Windows only the bounded-ending half of the promise is
+// observable, which is why the grace-window check is POSIX-only.
+{
+  const ignoresTerm = ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); setTimeout(() => process.exit(0), 9000);"];
+  const started = Date.now();
+  const escalated = await spawnLocal(process.execPath, ignoresTerm, { timeoutMs: 600, allowFailure: true });
+  const elapsed = Date.now() - started;
+  check("local: a child that ignores SIGTERM is still ended by the deadline path", escalated.code !== 0, true);
+  check("local: the end came from the SIGKILL grace, not the deadline's own SIGTERM", process.platform === "win32" || elapsed > 5000, true);
+  check("local: the escalation lands well inside the child's failsafe window", elapsed < 8500, true);
+}
+
 process.stderr.write(failed === 0 ? "all transport listing checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

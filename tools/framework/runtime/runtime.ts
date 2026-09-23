@@ -50,6 +50,17 @@ export interface Runtime {
    *  because nothing the runtime compares (image, ports, environment) has changed when the
    *  edit was to a file inside a bind mount. */
   restart(): Promise<void>;
+  /** Brings the running instance back in step with the deployment's current configuration
+   *  by asking compose to recreate it — the counterpart of restart(), which keeps the
+   *  container exactly as created. A container's environment is fixed once at creation
+   *  from whatever the deployment's .env said that day, so restart() re-reads only what
+   *  lives in bind-mounted files; a changed .env value reaches the running service only
+   *  through a recreate, and this is the one method that performs it. Reads the
+   *  deployment's .env at call time, not the snapshot this process was started with:
+   *  the caller may have rewritten that file moments ago. Optional because it replaces
+   *  the container — a runtime that cannot pay that cost leaves the decision to the
+   *  operator, and the caller must say so instead of pretending. */
+  reconcile?(): Promise<void>;
   /** Follows the log until interrupted. */
   followLogs(extraArgs?: string[]): Promise<void>;
   /** Reads the last `tail` lines and returns them. The bounded counterpart of followLogs:
@@ -113,18 +124,22 @@ export interface Runtime {
   execInHelper(
     service: string,
     args: string[],
-    options?: { input?: string; allowFailure?: boolean },
+    options?: { input?: string; allowFailure?: boolean; timeoutMs?: number },
   ): Promise<ExecResult>;
   /** The general form of execInHelper: any command, not just the app's own CLI entrypoint —
    *  for ad hoc diagnostics execInHelper cannot reach (reading a file bundled in the image, a
    *  curl probe against something only reachable from inside the container's own network
    *  namespace). Same container, same failure mode: throws HelperNotRunning when it is not
-   *  up, so callers can fall back the same way execInHelper's callers already do. */
+   *  up, so callers can fall back the same way execInHelper's callers already do.
+   *
+   *  `options.timeoutMs` bounds the WHOLE call in milliseconds: the transport kills the child
+   *  when it runs out, so a wedged container, resolver or client cannot stall the caller
+   *  past its own budget. */
   execCommand?(
     service: string,
     command: string,
     args: string[],
-    options?: { input?: string; allowFailure?: boolean },
+    options?: { input?: string; allowFailure?: boolean; timeoutMs?: number },
   ): Promise<ExecResult>;
 
   /** Name of whatever already publishes `port` and does not belong to this deployment,

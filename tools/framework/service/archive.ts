@@ -10,6 +10,7 @@
 
 import type { Context } from "../core/context.ts";
 import { sudoFor } from "../runtime/datadir.ts";
+import { publishPrivatePathsHistory } from "../security/private-paths-ledger.ts";
 import { installedRecipePrivatePaths } from "./recipe.ts";
 
 const LEGACY_PREFIXES = ["oc", "cf"] as const;
@@ -95,6 +96,16 @@ function baseExcludes(dataName: string): string[] {
   ];
 }
 
+/** GNU tar matches --exclude patterns as globs: a declaration `vault[1]` was a character
+ *  class to tar but a literal name to private-config, so the one real directory named
+ *  vault[1] shipped in every migrate/share snapshot while an undeclared sibling `vault1`
+ *  vanished from them. privatePaths are literal data-relative paths, so their rules escape
+ *  the glob metacharacters; the base exclusions keep their wildcards — --no-wildcards would
+ *  break those. Escaping verified against GNU tar 1.35. */
+function escapeTarGlob(pattern: string): string {
+  return pattern.replace(/[*?[\]\\]/g, "\\$&");
+}
+
 /** The tar exclusion list for one profile.
  *
  *  recipePrivatePaths carries the recipes' own declared private paths (installedRecipePrivatePaths,
@@ -113,6 +124,10 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
     // Same instance, different host: keep identity, hand the keys over separately.
     excludes.push(
       `${dataName}/config/.env`,
+      // The privacy history is published for full backups (audit 2026-09-22 round 3, P1-02);
+      // a profile-limited snapshot does not carry it, and this profile's readers do not
+      // expect it — verify's SHARE_ALLOWED would refuse a share archive holding it.
+      `${dataName}/config/clawforge-private-paths.json`,
       `${dataName}/clawforge-operations`,
       ...LEGACY_PREFIXES.map((prefix) => `${dataName}/${prefix}-operations`),
     );
@@ -122,6 +137,7 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
     // Handing the agent to someone else: only its personality travels.
     excludes.push(
       `${dataName}/config/.env`,
+      `${dataName}/config/clawforge-private-paths.json`, // published for full backups only (round 3, P1-02)
       `${dataName}/config/identity`,
       `${dataName}/config/devices`,
       `${dataName}/config/state`,
@@ -167,6 +183,25 @@ export function archiveRoot(entries: string[]): string {
     throw new Error(`archive has ${roots.size} top-level entries, expected exactly one`);
   }
   return [...roots][0];
+}
+
+/** Whether an archive listing holds anything beneath its single root directory.
+ *
+ *  A successful tar is not evidence of a backup: pointed at a data directory that is
+ *  itself a symlink, tar stores one entry — the link — and exits 0, and an archive that
+ *  holds nothing beneath its root restores nothing anywhere. createBackup() checks the
+ *  staging archive with this before publishing it (audit 2026-09-22 round 2, P2-02). */
+export function archiveCarriesContent(entries: string[]): boolean {
+  let root: string;
+  try {
+    root = archiveRoot(entries);
+  } catch {
+    return false;
+  }
+  return entries.some((entry) => {
+    const path = entry.replace(/^\.\//, "");
+    return path !== root && path !== `${root}/`;
+  });
 }
 
 export interface ArchiveProblem {
@@ -248,6 +283,18 @@ export function inspectArchive(entries: string[], links: Map<string, ArchiveLink
     // writesThrough prefix match below, in the same direction: a real escaping symlink
     // read as safe.
     const source = rawSource.replace(/^\.\//, "");
+    // The root is the one entry every later restore step is relative to — the fresh-identity
+    // deletion, the standard subdirectories, the ownership and permission pass. An archive
+    // that ships it as a link would put a symlink where an ordinary directory belongs, and
+    // those steps would follow it wherever it points. No archive this tooling produces can
+    // contain one, so it is refused even when the target happens to stay inside the parent.
+    if (source === root) {
+      problems.push({
+        message: `the archive root is a ${link.kind}, not an ordinary directory: ${source} -> ${link.target}`,
+        fatal: true,
+      });
+      continue;
+    }
     if (link.kind === "hardlink") {
       if (!hardlinkEscapes(link.target, root)) continue;
       problems.push({
@@ -328,18 +375,56 @@ export async function listArchiveLinks(ctx: Context, archive: string): Promise<M
   return links;
 }
 
+/** The data directory is a symlink, and where it resolves — undefined when it is not one.
+ *
+ *  tar is invoked with the data directory's NAME relative to its parent, so a symlinked
+ *  data root is archived as the link itself: one entry, none of the data behind it (audit
+ *  2026-09-22 round 2, P2-02). createBackup() refuses that layout before stopping the
+ *  gateway and createArchive() refuses again at the point of archiving; this is the check
+ *  both run. Exit codes other than 0/1 are thrown, not read as "not a link" — a check
+ *  that cannot answer must not wave the backup through. */
+export async function symlinkedDataRoot(ctx: Context): Promise<string | undefined> {
+  const { dataDir } = ctx.settings;
+  const check = await ctx.transport.exec("test", ["-L", dataDir], { allowFailure: true });
+  if (check.code === 1) return undefined;
+  if (check.code !== 0) {
+    throw new Error(`could not check whether the data directory is a symlink (exit ${check.code}): ${check.stderr.trim()}`);
+  }
+  const resolved = await ctx.transport.exec("readlink", ["-f", dataDir], { allowFailure: true });
+  const target = resolved.stdout.trim();
+  return resolved.code === 0 && target !== "" ? target : dataDir;
+}
+
 /** Creates the archive. The caller is responsible for stopping the gateway first. */
 export async function createArchive(
   ctx: Context,
   options: { archive: string; profile: Profile },
 ): Promise<void> {
   const { dataDir } = ctx.settings;
+  const linkTarget = await symlinkedDataRoot(ctx);
+  if (linkTarget !== undefined) {
+    throw new Error(
+      `refusing to archive ${dataDir}: it is a symlink to ${linkTarget}, and tar would store the link itself — none of the data behind it`,
+    );
+  }
+  // The privacy history must be inside the tree before tar runs, so a full backup carries
+  // it physically and a restore can hand it back to whichever deployment directory manages
+  // the target next (audit 2026-09-22 round 3, P1-02). Full only: migrate and share exclude
+  // the copy — instance-local metadata does not travel with the profile-limited snapshots.
+  if (options.profile === "full") await publishPrivatePathsHistory(ctx);
   const name = dataDirName(dataDir);
   const parent = dataDirParent(dataDir);
 
   // Read from the recipes' own privatePaths declaration before the command is built: the
   // recipes live on this side, the archive on the target.
-  const excludeArgs = excludesFor(options.profile, name, await installedRecipePrivatePaths()).map((pattern) => `--exclude=${pattern}`);
+  const privatePaths = await installedRecipePrivatePaths();
+  // The declaration contributed these exact patterns (dataDirName + declared path); they and
+  // only they are escaped, because the declaration is literal — everything else in the list
+  // is glob by design.
+  const declared = new Set(privatePaths.map((path) => `${name}/${path}`));
+  const excludeArgs = excludesFor(options.profile, name, privatePaths).map((pattern) =>
+    `--exclude=${declared.has(pattern) ? escapeTarGlob(pattern) : pattern}`,
+  );
   const prefix = await sudoFor(ctx, options.archive);
 
   // --numeric-owner keeps uid/gid 1000 meaningful on a host with different user names.

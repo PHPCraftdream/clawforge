@@ -25,6 +25,22 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "Every finding carries a stable code — CONFIG_DRIFT, SECRET_MISSING, RESTART_REQUIRED " +
       "and the rest — so a caller can branch on it instead of reading prose, plus the exact " +
       "command that resolves it.\n" +
+      "It also asks the running container, from inside it, whether the outbound endpoints its " +
+      "live configuration names (model provider baseUrls, channel proxies) resolve and answer — " +
+      "the vantage a probe from this machine lacks. Unreachable ones are reported as " +
+      "EGRESS_UNREACHABLE, a warning: the instance is up and the outside world is not ours to " +
+      "control.\n" +
+      "The deployment folder itself is compared against the running instance too: .env's four " +
+      "connection facts against the container's (ENV_STALE — naming the variable, never a " +
+      "value; the file mixes a real secret with the plumbing), the absence of " +
+      "config/desired-state.json while something is running (DECLARATION_MISSING), and the " +
+      "default local store missing a value the target still holds (STORE_INCOMPLETE — " +
+      "watched only when the store file exists, since bootstrap puts values on the target " +
+      "without creating one). All three are warnings that name the command that repairs " +
+      "them: recover-env, apply-config --dump, secrets --dump. The instance is fine; what " +
+      "is at risk is reproducing it. observed.connectionFacts and observed.secretStore " +
+      "carry the per-fact comparison and the store's missing names; absent means not " +
+      "checked, never checked-and-fine.\n" +
       "Read-only: it starts, writes and registers nothing. `./clawforge plan` turns its findings " +
       "into actions.\n" +
       "The live agent/MCP/cron lists come from OpenClaw's own CLI, a container per call — " +
@@ -41,8 +57,14 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "inventory — one gatherer, so the two can never disagree.\n" +
       "Exits non-zero when a blocking problem was found, which is the part a CI step or an " +
       "agent can act on without reading the text. Warnings do not fail it: an instance with " +
-      "no lock file still works, and a check that fails on everything it has an opinion " +
-      "about stops being consulted.",
+      "no lock file still works, and an outbound endpoint the container cannot reach this " +
+      "second — EGRESS_UNREACHABLE, asked of the container itself — is the outside world's " +
+      "doing, not the instance's. " +
+      "The deployment-folder findings — a stale .env fact, a missing desired-state.json, " +
+      "an incomplete local store — are warnings for the same reason: the instance is doing " +
+      "its job, and a folder that is merely behind must not fail a build. " +
+      "A check that fails on everything it has an opinion about " +
+      "stops being consulted.",
     arguments: [{ name: "json", description: "Emit the verdict, problems and next actions as JSON", kind: "flag" }],
     structured: true,
     readOnly: true,
@@ -59,6 +81,12 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "Each step says which finding put it there. A few steps are advisory: reconnecting " +
       "an MCP client is something only the client can do, and the lock file is never " +
       "re-pinned automatically, since doing that would rubber-stamp whatever drifted.\n" +
+      "Recovery steps appear here too, and first: a stale .env plans ./clawforge recover-env " +
+      "and a missing desired-state.json plans ./clawforge apply-config --dump, both run " +
+      "exactly as planned — the dump's --force refusal protects an existing declaration, and " +
+      "this one is absent. An incomplete local store plans ./clawforge secrets --dump as " +
+      "advisory instead: it refuses to overwrite an existing store without --force, and " +
+      "whether the store's contents matter is the reader's decision, not a step.\n" +
       "Changes nothing. `./clawforge apply` runs exactly this list.",
     arguments: [
       { name: "set", description: "Plan from a built set artifact instead of the working tree", kind: "option" },
@@ -74,7 +102,9 @@ export const orchestrationCommands: Record<string, AppCommand> = {
     details:
       "Runs exactly the steps `./clawforge plan` lists, in that order, and stops at the first " +
       "failure — the steps depend on each other, so continuing would report success for an " +
-      "instance nobody has. What did not run is reported as advisory or blocked rather than left out.\n" +
+      "instance nobody has. Every step lands in the operation journal as done, failed, " +
+      "advisory (never this command's job) or blocked (an earlier step already failed) — " +
+      "the words `./clawforge operations` reads back, nothing left out.\n" +
       "Then it inspects again and reports what it found. \"Applied\" and \"working\" are " +
       "different claims and this command makes the stronger one: every step can succeed and " +
       "the instance still be broken for a reason no step was looking at.\n" +
@@ -82,7 +112,14 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "computed (the plan's declarationChecksum). Checked before the first step, because " +
       "the whole value of the refusal is that it happens first.\n" +
       "Advisory steps are never performed: reconnecting an MCP client is the client's to do, " +
-      "and re-pinning the lock file is a decision, not a repair.",
+      "re-pinning the lock file is a decision, not a repair, and so is the store recovery a " +
+      "plan lists when the local secret store is incomplete — ./clawforge secrets --dump " +
+      "would overwrite it only with --force, so apply reports the step as advisory and " +
+      "leaves the decision where it belongs. The operator-side recovery steps that are " +
+      "executable — recover-env, apply-config --dump — run under the same rules as every " +
+      "step: one operation id, a journal entry each, stop at the first failure; they write " +
+      "to the deployment folder rather than the instance, so their runners take no instance " +
+      "lock of their own.",
     arguments: [
       { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option" },
       { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option" },
@@ -109,7 +146,10 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "an agent turn, which writes to that agent's own workspace. They are always reported " +
       "as \"not-checked\" and counted — a suite that silently drops what it did not run reads as " +
       "coverage it does not have.\n" +
-      "Exits non-zero when a check fails.",
+      "A check that was attempted but got no verdict — the server would not start, the " +
+      "instance refused the call — is reported as \"could-not-check\" with the reason, never " +
+      "as passed.\n" +
+      "Exits non-zero when a check fails or could not be checked.",
     arguments: [
       { name: "recipe", description: "Recipe to check (default: every recipe that declares checks)", kind: "positional" },
       { name: "set", description: "Check this verified artifact's declarations and save an acceptance receipt", kind: "option" },
@@ -183,12 +223,16 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "paths is recovered (a value OpenClaw defaults to cannot be told apart from a declared " +
       "one), paths the live config never set are omitted rather than guessed, and recipes are " +
       "not part of this file at all. Refuses to overwrite an existing declaration unless " +
-      "--force is given.",
+      "--force is given.\n" +
+      "The flags are validated against the mode before anything is read or written: " +
+      "--dry-run cannot be combined with --dump — a dump has no dry-run form, it either " +
+      "writes the recovered declaration or does nothing — --break-lock applies only where " +
+      "an instance lock is taken (the real apply), and --force only applies to --dump.",
     arguments: [
-      { name: "dry-run", description: "Validate without writing", kind: "flag" },
+      { name: "dry-run", description: "Validate the apply without writing; refused together with --dump", kind: "flag" },
       { name: "dump", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
-      { name: "force", description: "Overwrite an existing desired-state.json (with --dump)", kind: "flag" },
-      { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+      { name: "force", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag" },
+      { name: "break-lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
     ],
   },
 };

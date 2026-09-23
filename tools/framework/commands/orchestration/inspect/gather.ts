@@ -40,7 +40,7 @@ import {
 import type { Problem, Inspection } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { prospectiveConfig, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
-import { declaredState, observeConfig, observeLive } from "./observe.ts";
+import { declaredState, observeConfig, observeLive, observeConnectionFacts, observeSecretStore, observeDeclarationFile } from "./observe.ts";
 
 /** The whole picture. Exported because doctor, plan and apply all read it rather than
  *  gathering their own — three gatherers would be three answers to one question. */
@@ -60,11 +60,16 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   // exactly the kind of thing this read-only command exists to report, not to be brought
   // down by, and the live config alone is still a safe answer to fall back to.
   let prospective: unknown;
+  let liveConfig: unknown;
   try {
-    prospective = prospectiveConfig(await readLiveConfigForProspective(ctx), declared.config);
+    // One read serves both the prospective merge and the egress endpoints observeLive probes:
+    // two reads of the same file per inspection asked the target twice for one answer, and
+    // two separate reads could disagree about what is configured.
+    liveConfig = await readLiveConfigForProspective(ctx);
+    prospective = prospectiveConfig(liveConfig, declared.config);
   } catch (error) {
     problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} declares an unsafe configuration path: ${(error as Error).message}`));
-    prospective = await readLiveConfigForProspective(ctx);
+    prospective = liveConfig;
   }
   const secrets = await statusForRequirements(ctx, await requirementsForConfig(ctx, prospective));
   for (const secret of secrets) {
@@ -72,6 +77,11 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
       problems.push(problem("SECRET_MISSING", `${secret.name} (${secret.usedBy}) is not set in ${secret.location === "repo-env" ? ".env" : "<data>/config/.env"}`));
     }
   }
+
+  // The operator side reads while the instance is down, and matters most then: the store
+  // is the only place a stopped instance's values can still be re-read from, since the
+  // container that carries repo-env values is gone.
+  const secretStore = await observeSecretStore(ctx, secrets, problems);
 
   // Read whether or not anything is serving: the declaration is compared against a file on
   // the target, and a stopped instance is exactly when someone is about to start one.
@@ -86,6 +96,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
         probes: {},
         config: configState.config,
         secrets,
+        secretStore: secretStore,
         agents: [],
         mcpServers: [],
         cronJobs: [],
@@ -96,7 +107,13 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
     };
   }
 
-  const live = await observeLive(ctx, declared, problems, configState.mtimeMs);
+  // These two need an instance. DECLARATION_MISSING is a fact about the folder, but it is
+  // only a finding while something is running to be re-declared — the whole point of its
+  // name — and the facts ENV_STALE compares against exist only in a running container.
+  await observeDeclarationFile(problems);
+  const connectionFacts = await observeConnectionFacts(ctx, problems);
+
+  const live = await observeLive(ctx, declared, problems, configState.mtimeMs, liveConfig);
 
   // One read of the runtime's own identity, shared below by the set-requirement match and
   // the displayed digest: two separate live queries for one inspection asked the runtime
@@ -133,6 +150,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
     observed: {
       running: true,
       secrets,
+      secretStore: secretStore,
       image: ctx.settings.image,
       // The actually-running container's own digest (the same fetch as above, no manifest
       // to prefer against here), not ctx.runtime.imageReference() (whatever the configured
@@ -146,6 +164,8 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
       frameworkVersion: await frameworkVersion(),
       probes: live.probes ?? {},
       health: live.health,
+      egress: live.egress,
+      connectionFacts: connectionFacts,
       config: configState.config,
       agents: live.agents ?? [],
       mcpServers: live.mcpServers ?? [],
@@ -249,6 +269,9 @@ function renderText(inspection: Inspection): void {
   if (observed.openclawVersion !== undefined) info(`openclaw   ${observed.openclawVersion}`);
   if (Object.keys(observed.probes).length > 0) {
     info(`probes     ${Object.entries(observed.probes).map(([name, code]) => `${name} ${code}`).join("  ")}`);
+  }
+  if (observed.egress !== undefined && observed.egress.length > 0) {
+    info(`egress     ${observed.egress.map((entry) => `${entry.endpoint} ${entry.state}`).join("  ")}`);
   }
 
   log("declared vs live");

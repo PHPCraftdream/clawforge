@@ -9,7 +9,7 @@
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { collectRecipeFiles } from "../commands/management/provision-agent/index.ts";
+import { collectPortableRecipeFiles } from "../security/recipe-portable-content.ts";
 
 export function checksumOf(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
@@ -21,11 +21,16 @@ export function checksumOf(content: string | Uint8Array): string {
  *
  *  `agent/` is excluded, exactly as the mirror excludes it: those files are the agent's
  *  prompt, not part of what the recipe serves. See agentBundleChecksums for why that
- *  exclusion must not extend past this function. */
+ *  exclusion must not extend past this function.
+ *
+ *  The walk runs through the shared portable-content policy (audit 2026-09-22, P1-03), so
+ *  policy-excluded files — declared privateFiles, sensitive names — are left out of this
+ *  map too: every consumer of it (set build's manifest, inspect, the lock) shares one
+ *  portable-content notion instead of checksumming bytes no carrier may have moved. */
 export async function recipeFileChecksums(recipeDir: string): Promise<Record<string, string>> {
-  const relPaths = await collectRecipeFiles(recipeDir, "agent");
+  const { files } = await collectPortableRecipeFiles(recipeDir, { excludeTop: "agent" });
   const checksums: Record<string, string> = {};
-  for (const rel of relPaths.sort()) {
+  for (const rel of files.sort()) {
     checksums[rel] = checksumOf(await readFile(resolve(recipeDir, ...rel.split("/"))));
   }
   return checksums;
@@ -44,16 +49,23 @@ export async function recipeFileChecksums(recipeDir: string): Promise<Record<str
  *  re-provisioning; only the first means the mirror is stale. */
 export async function agentBundleChecksums(recipeDir: string): Promise<Record<string, string>> {
   const agentDir = resolve(recipeDir, "agent");
-  let relPaths: string[];
+  // The walkRoot trick: privateFiles declarations are recipe-relative, and the walker
+  // matches them against recipe-relative paths even when the walk is rooted at agent/ —
+  // so a declaration like agent/foo excludes from the bundle map exactly as it does from
+  // the served map.
+  let files: string[];
   try {
-    relPaths = await collectRecipeFiles(agentDir, "");
-  } catch {
-    // A recipe can be a plain service with no agent at all.
-    return {};
+    ({ files } = await collectPortableRecipeFiles(recipeDir, { walkRoot: agentDir }));
+  } catch (error) {
+    // A recipe can be a plain service with no agent at all (ENOENT). Any other failure —
+    // an escaping symlink, an unreadable tree — must stop the caller, not read as
+    // "no agent bundle": the old catch-all swallowed exactly the errors the policy exists to raise.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
   }
 
   const checksums: Record<string, string> = {};
-  for (const rel of relPaths.sort()) {
+  for (const rel of files.sort()) {
     checksums[rel] = checksumOf(await readFile(resolve(agentDir, ...rel.split("/"))));
   }
   return checksums;

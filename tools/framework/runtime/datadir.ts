@@ -10,7 +10,10 @@ import type { Context } from "../core/context.ts";
 import { lockHome } from "./instance-lock.ts";
 
 const OWNER = "1000:1000";
-const SUBDIRS = ["config", "workspace", "auth-secrets"] as const;
+/** The standard layout of a data directory: what restore promises, and ensureDataDirs
+ *  creates. Exported because restore must check these paths are physically inside the
+ *  restored tree before creating, chmod-ing or deleting anything through them. */
+export const DATA_SUBDIRS = ["config", "workspace", "auth-secrets"] as const;
 
 /** "sudo" when the path is not writable by the current user, "" otherwise. */
 export async function sudoFor(ctx: Context, path: string): Promise<string[]> {
@@ -72,7 +75,7 @@ async function ownerOf(ctx: Context, path: string): Promise<string> {
 export async function ensureDataDirs(ctx: Context): Promise<void> {
   const { dataDir } = ctx.settings;
 
-  for (const sub of SUBDIRS) {
+  for (const sub of DATA_SUBDIRS) {
     const dir = `${dataDir}/${sub}`;
     if (!(await ctx.transport.exists(dir))) {
       log(`creating ${dir}`);
@@ -83,7 +86,7 @@ export async function ensureDataDirs(ctx: Context): Promise<void> {
 
   const owners = await Promise.all([
     ownerOf(ctx, dataDir),
-    ...SUBDIRS.map((sub) => ownerOf(ctx, `${dataDir}/${sub}`)),
+    ...DATA_SUBDIRS.map((sub) => ownerOf(ctx, `${dataDir}/${sub}`)),
   ]);
 
   if (owners.some((owner) => owner !== OWNER)) {

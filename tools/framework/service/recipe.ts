@@ -2,10 +2,13 @@
 //
 // A recipe is a directory under the application's recipes/<name>/ containing:
 //
-//   recipe.json    metadata — description, published ports, required variables
+//   recipe.json    metadata — description, ports, variables, and the privatePaths/privateFiles
+//                  declarations (see their doc comments below)
 //   compose.yml    the service definition, with restart: unless-stopped
 //   prepare.ts    optional app-owned preparation/afterStart hooks around build/up
-//   verify.ts     optional app-owned read-only verification hook
+//   verify.ts     optional app-owned verification hook — not assumed read-only: it runs under
+//                  the instance lock and MCP confirms it, because the framework cannot know
+//                  what an app-owned hook touches
 //   onboard.ts    optional app-owned onboarding hook
 //   Dockerfile     multi-stage build: cloning and compiling happen in the build stage,
 //                  so git, toolchains and sources never reach the host or the final image
@@ -24,6 +27,7 @@ import { resolve } from "node:path";
 import { monorepoRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { recipesDir } from "../runtime/deployment.ts";
+import { persistedPrivatePaths } from "../security/private-paths-ledger.ts";
 
 /** Default location. An application declares its own via AppDefinition.recipesDir: the
  *  mechanism is the framework's, the recipes are the application's data. */
@@ -63,7 +67,7 @@ export interface Recipe {
   /** Variables the recipe expects, with a short explanation each. */
   readonly variables?: Record<string, string>;
   /** Data-relative paths (from the data directory root) this recipe keeps its generated
-   *  credentials under, e.g. ["tor-socks5"]. One declaration, three readers: archive.ts
+   *  credentials under, e.g. ["generated-credentials"]. One declaration, three readers: archive.ts
    *  excludes these from migrate and share snapshots, verify.ts refuses archives that
    *  already carry them, and private-config.ts refuses private writes anywhere else.
    *  full deliberately still contains them — it is credential-complete by design. */
@@ -173,28 +177,127 @@ export async function listRecipes(): Promise<Recipe[]> {
     try {
       recipes.push(await loadRecipe(name));
     } catch {
-      // A malformed directory should not hide the working ones; `./clawforge recipe <name>`
-      // will report the specific problem.
+      // The listing's rule, and only the listing's: a catalogue must not break — or hide the
+      // working recipes — over one broken manifest (`./clawforge recipe <name>` reports the
+      // specific problem). Policy readers use installedRecipePrivatePaths(), which does not.
     }
   }
   return recipes;
 }
 
-/** Every installed recipe's declared private paths, data-relative and deduplicated.
- *
- *  The single declaration (recipe.json privatePaths) turned into the list the snapshot
- *  rules consume: archive.ts excludes these from migrate and share, verify.ts refuses
- *  archives that already carry them. Best-effort by the same rule as listRecipes: recipes
- *  that cannot be enumerated (no deployment selected, an unreadable root) contribute
- *  nothing rather than breaking snapshotting. */
-export async function installedRecipePrivatePaths(): Promise<string[]> {
-  let recipes: Recipe[];
+/** Strict enumeration behind installedRecipePrivatePaths. */
+async function strictDeclaredPrivatePaths(): Promise<string[]> {
+  let root: string;
   try {
-    recipes = await listRecipes();
+    root = recipesDirectory();
   } catch {
+    // No deployment selected, so no recipe root: the same answer as "no recipes configured".
     return [];
   }
-  return [...new Set(recipes.flatMap((recipe) => recipe.privatePaths ?? []))];
+
+  let entries: Dirent[];
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw new Error(`could not enumerate the recipes root ${root}: ${(error as Error).message}`);
+  }
+
+  const paths: string[] = [];
+  for (const entry of entries.filter((candidate) => candidate.isDirectory())) {
+    const manifest = resolve(root, entry.name, "recipe.json");
+    let raw: string;
+    try {
+      raw = await readFile(manifest, "utf8");
+    } catch (error) {
+      // A directory without a manifest is not a recipe — agent bundles live there too.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw new Error(`could not read ${manifest}: ${(error as Error).message}`);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(`could not parse ${manifest}: ${(error as Error).message}`);
+    }
+    if (parsed === null || typeof parsed !== "object") {
+      throw new Error(`${manifest} must contain an object`);
+    }
+    const declared = parsePrivatePaths(entry.name, (parsed as { privatePaths?: unknown }).privatePaths);
+    if (declared !== undefined) paths.push(...declared);
+  }
+  return [...new Set(paths)];
+}
+
+/** Every private path this deployment's target may hold under the data directory,
+ *  data-relative and deduplicated — the security-policy read: archive.ts excludes these
+ *  from migrate and share, verify.ts refuses archives that already carry them,
+ *  private-config.ts refuses private writes anywhere else. The union of two sources:
+ *
+ *    - what the CURRENT recipes declare (strictDeclaredPrivatePaths, strict on two rules:
+ *      quiet when nothing is declared — no recipe root, an absent root, a directory with no
+ *      recipe.json — and stop on a recipe.json that exists but cannot be read, parsed or
+ *      validated: a broken declaration read as "nothing declared" is exactly how a private
+ *      file once walked into a share archive, audit 2026-09-21, P1-01);
+ *    - what PAST private writes recorded (persistedPrivatePaths — the deployment-side
+ *      ledger private-config.ts appends to on every private write). Removing a recipe, or
+ *      switching to a set without it, takes the declaration away while the runtime files
+ *      stay on the target; without the record, the exclusions and the refusals would drop
+ *      at exactly that moment (audit 2026-09-22, P1-02). Entries leave only through
+ *      explicit cleanup — never silently, and never because the source tree changed.
+ *
+ *  Both halves fail closed: a broken manifest or an unreadable ledger stops the policy
+ *  readers instead of reading as "nothing to protect". */
+export async function installedRecipePrivatePaths(): Promise<string[]> {
+  const [declared, persisted] = await Promise.all([strictDeclaredPrivatePaths(), persistedPrivatePaths()]);
+  return [...new Set([...declared, ...persisted])];
+}
+
+/** The privateFiles declaration: files and directories inside a recipe's own directory that
+ *  hold credentials, for `recipe import` to leave out of the copy. Adjacent to privatePaths
+ *  on purpose, not the same field: privatePaths are data-relative paths describing the
+ *  target's runtime layout, read as security policy by archive/verify/private-config, while
+ *  these are recipe-tree-relative paths describing the source tree — and import reads them
+ *  from a directory that is not yet a recipe of this deployment, so the strict enumeration
+ *  over the recipes root does not apply. Read strictly all the same: a manifest that exists
+ *  but cannot be read, parsed or validated throws rather than reading as "nothing declared"
+ *  — the quiet-empty failure is how a private file once walked into a share archive (audit
+ *  2026-09-21, P1-01). Entries are literal — no globs, one meaning only (P1-02 was two
+ *  readers disagreeing about globs) — and an absent declaration is honest: the caller's
+ *  generic policy still applies. */
+export async function declaredPrivateFiles(sourceDirectory: string): Promise<string[]> {
+  const manifest = resolve(sourceDirectory, "recipe.json");
+  let raw: string;
+  try {
+    raw = await readFile(manifest, "utf8");
+  } catch (error) {
+    throw new Error(`could not read ${manifest}: ${(error as Error).message}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`could not parse ${manifest}: ${(error as Error).message}`);
+  }
+  if (parsed === null || typeof parsed !== "object") {
+    throw new Error(`${manifest} must contain an object`);
+  }
+  const declared = (parsed as { privateFiles?: unknown }).privateFiles;
+  if (declared === undefined) return [];
+  if (!Array.isArray(declared)) throw new Error(`${manifest}: privateFiles must be an array of recipe-relative paths`);
+  return declared.map((entry) => {
+    if (typeof entry !== "string" || entry === "") {
+      throw new Error(`${manifest}: privateFiles entries must be non-empty strings`);
+    }
+    if (entry.includes("\\")) {
+      throw new Error(`${manifest}: privateFiles entries are /-separated paths relative to the recipe directory: ${entry}`);
+    }
+    const segments = entry.split("/");
+    if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+      throw new Error(`${manifest}: privateFiles entries must stay inside the recipe directory: ${entry}`);
+    }
+    return entry;
+  });
 }
 
 /** Directories that hold an agent/MCP bundle but no service definition: provisioned and

@@ -45,6 +45,11 @@ async function startInstance(ctx: Context): Promise<void> {
  *  bind mount changes nothing the runtime compares. That is why applying a desired state
  *  and then running `up` leaves the old settings live.
  *
+ *  The mirror-image limit: a restart re-reads files inside the container but keeps the
+ *  container itself, environment included — those were interpolated from .env when compose
+ *  created it. What restart is to an edited bind mount, Runtime.reconcile() (secrets --apply
+ *  performs it, `up` is its manual form) is to an edited .env.
+ *
  *  Secrets are checked first, same as `up`: a config that now references a variable nothing
  *  supplies would otherwise turn a restart into a crash loop. The port is not checked —
  *  the container keeps the binding it already holds. */

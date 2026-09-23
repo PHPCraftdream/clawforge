@@ -283,6 +283,42 @@ export async function readDeclaredConfig(): Promise<DeclaredState["config"]> {
   return (parsed as { path: string; value: unknown }[]).map((entry) => ({ path: entry.path, value: entry.value }));
 }
 
+/** One outbound endpoint the live configuration names, with the path that names it. */
+export interface EgressEndpoint {
+  readonly path: string;
+  readonly url: string;
+}
+
+/** The outbound endpoints a live configuration actually names — each model provider's
+ *  baseUrl and each channel's proxy, and nothing else; this is not a general "is the
+ *  internet up" check. Read from the LIVE config rather than the declaration: configure-
+ *  provider writes a provider the declaration never mentions, and the live config is what
+ *  the running instance is using (it reads its configuration at startup, so the prospective
+ *  overlay would also name endpoints that are not yet in force). */
+export function egressEndpoints(liveConfig: unknown): EgressEndpoint[] {
+  const found: EgressEndpoint[] = [];
+  const gather = (node: unknown, prefix: string, leaf: string): void => {
+    if (node === null || typeof node !== "object" || Array.isArray(node)) return;
+    for (const [key, entry] of Object.entries(node as Record<string, unknown>)) {
+      const value = entry !== null && typeof entry === "object" && !Array.isArray(entry)
+        ? (entry as Record<string, unknown>)[leaf]
+        : undefined;
+      if (typeof value !== "string" || value.trim() === "") continue;
+      // A key containing path punctuation stays unambiguous in bracket form, the way valueAt reads it.
+      const head = /[.["\]]/.test(key) ? `${prefix}[${JSON.stringify(key)}]` : `${prefix}${key}`;
+      found.push({ path: `${head}.${leaf}`, url: value });
+    }
+  };
+  gather(valueAt(liveConfig, "models.providers"), "models.providers.", "baseUrl");
+  gather(valueAt(liveConfig, "channels"), "channels.", "proxy");
+  return found;
+}
+
+/** The endpoint as it may be printed or reported: credentials embedded in it never survive. */
+export function redactEndpoint(url: string): string {
+  return url.replace(/\/\/[^@/\s]*@/g, "//***@");
+}
+
 // Re-exported rather than reimplemented: this used to be a second copy of lock.ts's version,
 // and "which framework is this" answered twice is a question that can be answered two ways.
 export { frameworkVersion } from "#src/commands/management/lock.ts";

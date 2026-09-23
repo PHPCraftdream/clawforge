@@ -5,7 +5,7 @@
 // without a circular import.
 
 import { randomUUID } from "node:crypto";
-import { composeFile, locksDir, type Settings } from "../core/env.ts";
+import { composeFile, locksDir, toSettings, loadEnv, type Settings } from "../core/env.ts";
 import { deploymentDir, composeProjectName } from "./deployment.ts";
 import type { PathBridge } from "../core/paths.ts";
 import type { ExecResult, Transport } from "./transport.ts";
@@ -21,6 +21,11 @@ export interface DockerRuntimeOptions {
   readonly service: string;
   /** How many log lines to show by default. */
   readonly logTail?: string;
+  /** Builds the Settings a recreate interpolates, re-reading .env at call time and
+   *  layering the application's computed settings back on top — the way the context
+   *  itself builds them. Without it reconcile() falls back to a bare .env re-read,
+   *  which silently drops app-computed Compose variables that .env does not carry. */
+  readonly reconcileSettings?: () => Promise<Settings>;
 }
 
 /** Detects control characters unsupported by the env-file serializer. */
@@ -57,6 +62,7 @@ export class DockerRuntime implements Runtime {
   #paths: PathBridge;
   #service: string;
   #logTail: string;
+  #reconcileSettings?: () => Promise<Settings>;
 
   constructor(
     transport: Transport,
@@ -69,14 +75,17 @@ export class DockerRuntime implements Runtime {
     this.#paths = paths;
     this.#service = options.service;
     this.#logTail = options.logTail ?? "100";
+    this.#reconcileSettings = options.reconcileSettings;
   }
 
-  /** Supplies one operation's environment by file and removes it on completion. */
-  async #withEnvFile<T>(action: (path: string) => Promise<T>): Promise<T> {
-    const directory = locksDir(this.#settings.dataDir);
+  /** Supplies one operation's environment by file and removes it on completion. Defaults
+   *  to the settings this runtime was built with; reconcile() is the one caller that hands
+   *  in fresh ones read from disk. */
+  async #withEnvFile<T>(action: (path: string) => Promise<T>, settings: Settings = this.#settings): Promise<T> {
+    const directory = locksDir(settings.dataDir);
     const privateDirectory = `${directory}/compose-${randomUUID()}`;
     const path = `${privateDirectory}/compose.env`;
-    const body = serializeComposeEnv(this.#settings.env);
+    const body = serializeComposeEnv(settings.env);
     let cleanupNeeded = false;
     let operationFailed = false;
     let operationError: unknown;
@@ -151,15 +160,15 @@ export class DockerRuntime implements Runtime {
 
   // Failures propagate by default: only the read-only queries below opt out, because
   // "the project does not exist yet" is an answer, not an error.
-  async #compose(args: string[], stream = false, allowFailure = false): Promise<ExecResult> {
+  async #compose(args: string[], stream = false, allowFailure = false, settings: Settings = this.#settings): Promise<ExecResult> {
     return this.#withEnvFile(async (envFile) => {
       const base = await this.#composeArgs(envFile);
       return this.#transport.exec("docker", [...base, ...args], {
         stream,
         allowFailure,
-        unsetEnv: Object.keys(this.#settings.env),
+        unsetEnv: Object.keys(settings.env),
       });
-    });
+    }, settings);
   }
 
   async start(): Promise<void> {
@@ -174,8 +183,23 @@ export class DockerRuntime implements Runtime {
     await this.#compose(["stop", this.#service], true);
   }
 
+  /** Keeps the container — environment included, interpolated once at creation: an edited
+   *  .env needs reconcile(), an edited bind-mounted file is exactly what this is for. */
   async restart(): Promise<void> {
     await this.#compose(["restart", this.#service], true);
+  }
+
+  /** `up` against the deployment .env as it is on disk NOW. start() would interpolate the
+   *  env snapshot this process was built from — the values the operator is rotating away
+   *  from when secrets --apply rewrites .env and then calls this in the same breath — and
+   *  compose would then converge on the stale container instead of recreating it. With a
+   *  settings builder supplied, the rebuild is layered: the application's computed settings
+   *  are applied on top of the fresh .env read, the way the context itself builds them. */
+  async reconcile(): Promise<void> {
+    const current = this.#reconcileSettings !== undefined
+      ? await this.#reconcileSettings()
+      : toSettings(await loadEnv());
+    await this.#compose(["up", "--detach", this.#service], true, false, current);
   }
 
   async followLogs(extraArgs: string[] = []): Promise<void> {
@@ -393,7 +417,7 @@ export class DockerRuntime implements Runtime {
     service: string,
     command: string,
     args: string[],
-    options: { input?: string; allowFailure?: boolean },
+    options: { input?: string; allowFailure?: boolean; timeoutMs?: number },
   ): Promise<ExecResult> {
     const result = await this.#compose(["ps", "--quiet", service], false, true);
     const id = result.stdout.trim().split("\n")[0]?.trim();
@@ -407,6 +431,7 @@ export class DockerRuntime implements Runtime {
       stream: options.input === undefined,
       input: options.input,
       allowFailure: options.allowFailure,
+      timeoutMs: options.timeoutMs,
     });
   }
 
@@ -417,7 +442,7 @@ export class DockerRuntime implements Runtime {
   async execInHelper(
     service: string,
     args: string[],
-    options: { input?: string; allowFailure?: boolean } = {},
+    options: { input?: string; allowFailure?: boolean; timeoutMs?: number } = {},
   ): Promise<ExecResult> {
     return this.#execInContainer(service, "node", ["dist/index.js", ...args], options);
   }
@@ -426,7 +451,7 @@ export class DockerRuntime implements Runtime {
     service: string,
     command: string,
     args: string[],
-    options: { input?: string; allowFailure?: boolean } = {},
+    options: { input?: string; allowFailure?: boolean; timeoutMs?: number } = {},
   ): Promise<ExecResult> {
     return this.#execInContainer(service, command, args, options);
   }

@@ -9,9 +9,10 @@ import type { Context } from "#src/core/context.ts";
 import { randomUUID } from "node:crypto";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { createArchive, fileSize, isProfile, backupArchiveName, parseBackupArchive, type Profile } from "#src/service/archive.ts";
+import { archiveCarriesContent, createArchive, fileSize, isProfile, backupArchiveName, listArchive, parseBackupArchive, symlinkedDataRoot, type Profile } from "#src/service/archive.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { SshTransport } from "#src/runtime/transport.ts";
+import { runningRecipeStacks } from "../management/recipe.ts";
 
 export interface BackupOptions {
   hot?: boolean;
@@ -99,6 +100,33 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
 
   if (!(await ctx.transport.exists(dataDir))) die(`data directory ${dataDir} does not exist`);
 
+  // tar is handed the data directory's name relative to its parent, so a symlinked root
+  // is archived as the link itself — one entry, no data, and a "successful" backup that
+  // cannot be restored anywhere (audit 2026-09-22 round 2, P2-02). Refused before the
+  // gateway is stopped: there is no consistent snapshot of this layout to take.
+  const linkTarget = await symlinkedDataRoot(ctx);
+  if (linkTarget !== undefined) {
+    die(
+      `data directory ${dataDir} is a symlink to ${linkTarget}: a backup would archive the link itself, not the data behind it — ` +
+        `point the data directory setting at a real directory (the link's target is one) and run the backup again`,
+    );
+  }
+
+  // Recipes are their own Compose projects, so stopping the gateway stops none of
+  // them: a sidecar bind-mounting a file under the data directory keeps writing
+  // straight through the snapshot, outside the lock this command holds. Until a
+  // lifecycle-participant mechanism exists to quiesce them, the guarantee is
+  // explicitly bounded to the main service, and the stacks left outside it are named
+  // rather than silently uncovered (audit 2026-09-22 round 2, P2-04).
+  const sidecars = await runningRecipeStacks(ctx);
+  if (sidecars.length > 0) {
+    warn(
+      `recipe stack(s) still running, not quiesced for this backup: ${sidecars.map((recipe) => recipe.name).join(", ")} — ` +
+        `the snapshot's consistency guarantee covers the gateway only; what these stacks write under ${dataDir} ` +
+        "can be caught mid-write and is not guaranteed consistent in the archive",
+    );
+  }
+
   const mkdirPrefix = await sudoFor(ctx, backupDir);
   const [mkHead, ...mkRest] = [...mkdirPrefix, "mkdir", "-p", backupDir];
   await ctx.transport.exec(mkHead, mkRest);
@@ -133,6 +161,13 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     stagingCreated = true;
 
     await createArchive(ctx, { archive: stagingArchive, profile });
+    // tar exiting 0 and the file landing are not evidence the data is inside: an archive
+    // that holds nothing beneath its root — what a symlinked root used to produce —
+    // restores nothing anywhere. Checked on the staging archive, before it can become
+    // the newest backup (audit 2026-09-22 round 2, P2-02).
+    if (!archiveCarriesContent(await listArchive(ctx, stagingArchive))) {
+      throw new Error(`the fresh archive of ${dataDir} carries no data beneath its root — refusing to publish it as a backup`);
+    }
 
     const chmodPrefix = await sudoFor(ctx, stagingArchive);
     const [chHead, ...chRest] = [...chmodPrefix, "chmod", "600", stagingArchive];

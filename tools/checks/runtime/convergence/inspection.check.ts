@@ -55,6 +55,10 @@ check(
     "AGENT_MISSING",
     "CONFIG_DRIFT",
     "CRON_DRIFT",
+    "DECLARATION_MISSING",
+    "EGRESS_UNREACHABLE",
+    // Operator-side findings: the deployment folder against the instance.
+    "ENV_STALE",
     "GATEWAY_DOWN",
     "GATEWAY_UNHEALTHY",
     "LOCK_DRIFT",
@@ -73,6 +77,7 @@ check(
     "SET_REQUIREMENT_UNMET",
     "SET_SCHEDULE_INVALID",
     "SET_SECRET_UNDECLARED",
+    "STORE_INCOMPLETE",
   ],
 );
 

@@ -86,22 +86,34 @@ export interface AppCommand {
    *  tool, not for us. `./clawforge help <command>` still explains the command itself either way;
    *  this only changes what a bare `<command> --help` does. */
   readonly passesThroughHelp?: boolean;
-  /** The command's machine-readable output is a single JSON document, so a tool call can
-   *  return it as structuredContent instead of leaving the caller to parse a log.
+  /** Every successful tool call returns the same structured envelope, declared to clients
+   *  as the tool's outputSchema: the command's own captured output carried whole in
+   *  `result` — its JSON document when it emits one, its text otherwise — plus the fields
+   *  every caller needs: whether the call changed anything, what was found, what to do
+   *  next.
    *
-   *  The command does not change to satisfy this: it already emits that JSON through emit()
-   *  when its output is captured, which is exactly what `--json` prints on a console. The
-   *  flag says the output can be trusted to parse, and nothing more — an output that turns
-   *  out not to parse is returned as text, not as an error. */
+   *  The command does not change to satisfy this: it already emits its JSON through emit()
+   *  when its output is captured, which is exactly what `--json` prints on a console. What
+   *  the flag promises is the envelope, not the JSON: an action whose output is plain text
+   *  still answers in the envelope, with that text as its result — because the tool
+   *  declares one outputSchema for every action, and a declaration some action does not
+   *  satisfy is worse than none. A mixed command therefore declares no per-action
+   *  structured metadata; per-action facts (read-only or not) belong to
+   *  readOnly/readOnlyWhen, which is what the envelope's `changed` field is built from. */
   readonly structured?: boolean;
-  /** Refines structured output for command groups with mixed subcommands. */
-  readonly structuredWhen?: (args: string[]) => boolean;
   /** The command observes and never changes anything. Lets a tool result state `changed:
    *  false` as a fact rather than as an assumption, which is what makes it safe for an
    *  agent to call between steps. */
   readonly readOnly?: boolean;
   /** Refines read-only reporting for command groups with mixed subcommands. */
   readonly readOnlyWhen?: (args: string[]) => boolean;
+  /** The command's successful output carries registered credential values on purpose —
+   *  `mcp-creds` is the one — so the response redaction that guards every other healthy
+   *  answer (audit 2026-09-22 round 3, P2-05) lets it through instead of answering with
+   *  "***" where the caller asked for the value. Declared here, on the record beside the
+   *  command, rather than left as an implicit hole in the dispatcher. A failure is never
+   *  deliberate: the mask applies to it as to every other command. */
+  readonly exportsSecrets?: boolean;
 }
 
 /** A variable the application needs, and where it is expected. */

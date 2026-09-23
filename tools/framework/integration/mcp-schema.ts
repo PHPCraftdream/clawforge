@@ -17,7 +17,6 @@ export type Declared = {
   readonly destructive?: boolean;
   readonly arguments?: CommandArgument[];
   readonly structured?: boolean;
-  readonly structuredWhen?: (args: string[]) => boolean;
   readonly readOnly?: boolean;
   readonly readOnlyWhen?: (args: string[]) => boolean;
 };
@@ -40,8 +39,9 @@ export interface StructuredResult {
   readonly problems: unknown[];
   readonly warnings: unknown[];
   readonly nextActions: string[];
-  /** The command's own JSON, whole and unaltered — the envelope adds to it, never replaces
-   *  it, so a caller that wants a field the envelope does not name still has it. */
+  /** The command's own output, whole and unaltered — its JSON document when it emitted
+   *  one, its captured text otherwise. The envelope adds to it, never replaces it, so a
+   *  caller that wants a field the envelope does not name still has it. */
   readonly result: unknown;
 }
 
@@ -56,7 +56,7 @@ export const STRUCTURED_OUTPUT_SCHEMA = {
     problems: { type: "array", description: "Findings, each with a stable code, severity, detail and nextAction" },
     warnings: { type: "array", description: "The subset of problems that are not blocking" },
     nextActions: { type: "array", items: { type: "string" }, description: "Commands that resolve the findings" },
-    result: { description: "The command's own JSON output, unaltered" },
+    result: { description: "The command's own output, unaltered — its JSON document when it emits one, its text otherwise" },
   },
   required: ["operationId", "changed", "problems", "warnings", "nextActions", "result"],
 } as const;
@@ -96,6 +96,26 @@ export function structuredResult(command: Declared, output: string, operationId:
     warnings: problems.filter(isWarning),
     nextActions: Array.isArray(fields.nextActions) ? fields.nextActions.filter((entry): entry is string => typeof entry === "string") : [],
     result: payload,
+  };
+}
+
+/** The envelope a structured tool call returns, whatever the action emitted.
+ *
+ *  structuredResult keeps the command's own JSON document when it emitted one. Every other
+ *  successful output — progress text, a log tail — is wrapped in the same shape rather
+ *  than returned bare, because the tool declares one outputSchema for all of its
+ *  responses: a client that calls any action of a structured command gets the envelope,
+ *  with the command's own output verbatim in `result` and nothing invented around it. A
+ *  text action's envelope stays silent where a structured one speaks — no healthy, no
+ *  problems, no nextActions — because a gap can be seen and a guess cannot be trusted. */
+export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string): StructuredResult {
+  return structuredResult(command, machineOutput ?? output, operationId) ?? {
+    operationId,
+    changed: command.readOnly === true ? false : true,
+    problems: [],
+    warnings: [],
+    nextActions: [],
+    result: machineOutput ?? output,
   };
 }
 

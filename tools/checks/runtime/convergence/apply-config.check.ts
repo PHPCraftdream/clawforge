@@ -193,5 +193,96 @@ check("and stays a .json file", dry.endsWith(".json"), true);
   }
 }
 
+// --- flag combinations that mean nothing together are refused before anything runs ------------
+//
+// The parser accepted any combination and let branch order rank them: the dump branch ran
+// first, so --dry-run --dump --force reached the dump with the dry run never consulted, and
+// the recovered file — curated paths only — replaced a declaration naming settings dump
+// never attempts. A preview must not be able to destroy what it previews. The bytes of the
+// existing declaration are the assertion: every refusal below leaves it byte-identical, and
+// the same flags refuse the same way whichever order they arrive in.
+
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-apply-config-flags-check-"));
+  try {
+    await mkdir(resolve(deployment, "config"), { recursive: true });
+    // gateway.extra is deliberately outside RECOVERABLE_PATHS: the file's whole value is the
+    // one setting a dump would drop, which is what makes byte-identity the right assertion.
+    const declared = `${JSON.stringify([{ path: "gateway.extra", value: "declared by hand" }], null, 2)}\n`;
+    await writeFile(resolve(deployment, "config", "desired-state.json"), declared, "utf8");
+    useDeployment(deployment);
+
+    const ctx = {
+      settings: { dataDir: "/srv/clawforge" },
+      transport: {
+        async exists(path: string): Promise<boolean> {
+          return path.endsWith("openclaw.json");
+        },
+        async readFile(): Promise<string> {
+          return `{ "gateway": { "mode": "local" } }`;
+        },
+      },
+    } as unknown as Context;
+
+    const desiredState = resolve(deployment, "config", "desired-state.json");
+    const refusal = async (...args: string[]): Promise<string> => {
+      let message = "";
+      await withOutputSink(
+        () => {},
+        async () => {
+          try {
+            await applyConfig(ctx, args);
+          } catch (error) {
+            message = (error as Error).message;
+          }
+        },
+      );
+      return message;
+    };
+    const untouched = async (): Promise<string> => readFile(desiredState, "utf8");
+
+    // The audit's exact repro, in both argv orders.
+    const first = await refusal("--dry-run", "--dump", "--force");
+    check("--dry-run --dump --force is refused, naming both flags", [first.includes("--dry-run"), first.includes("--dump")], [true, true]);
+    check("and the declaration survives byte-identical", await untouched(), declared);
+    const second = await refusal("--force", "--dry-run", "--dump");
+    check("the same flags in the other order are refused the same way", [second.includes("--dry-run"), second.includes("--dump")], [true, true]);
+    check("and the declaration still survives byte-identical", await untouched(), declared);
+
+    // Without --force the same refusal fires, not the existing-declaration one: validation
+    // precedes the dump's own checks, so the answer never depends on the file's state.
+    const dryDump = await refusal("--dry-run", "--dump");
+    check("--dry-run --dump refuses before the --force question even arises", [dryDump.includes("--dry-run"), dryDump.includes("already exists")], [true, false]);
+    check("and the declaration survives byte-identical", await untouched(), declared);
+
+    // --break-lock is meaningful only where a lock is taken; --force only where an existing
+    // declaration can be overwritten. Both used to be silently dropped.
+    const breakDump = await refusal("--break-lock", "--dump");
+    check("--break-lock with --dump is refused rather than silently ignored", breakDump.includes("--break-lock"), true);
+    check("and the declaration survives byte-identical", await untouched(), declared);
+    const dryBreak = await refusal("--dry-run", "--break-lock");
+    check("--break-lock with a dry run is refused too — neither takes a lock", dryBreak.includes("--break-lock"), true);
+    const forceApply = await refusal("--force");
+    check("--force without --dump is refused rather than silently ignored", forceApply.includes("--force"), true);
+    check("and the declaration survives every one of these refusals byte-identical", await untouched(), declared);
+
+    // The working combination still works — a guard that refuses valid work fails here
+    // rather than silently.
+    await withOutputSink(
+      () => {},
+      async () => {
+        await applyConfig(ctx, ["--dump", "--force"]);
+      },
+    );
+    const overwritten = await untouched();
+    check("a plain --dump --force still overwrites the declaration", overwritten !== declared, true);
+    check("with exactly the curated paths the live config holds", JSON.parse(overwritten) as unknown[], [
+      { path: "gateway.mode", value: "local" },
+    ]);
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+  }
+}
+
 process.stderr.write(failed === 0 ? "all apply-config checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

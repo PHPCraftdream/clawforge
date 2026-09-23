@@ -3,6 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { checksumOf } from "../service/checksums.ts";
 import { installedRecipePrivatePaths } from "../service/recipe.ts";
+import { recordPrivateWrite } from "./private-paths-ledger.ts";
 import { locksDir } from "../core/env.ts";
 import type { Context } from "../core/context.ts";
 import { registerSecret } from "../core/log.ts";
@@ -30,6 +31,33 @@ function parentPath(path: string): string {
   return slash <= 0 ? "/" : path.slice(0, slash);
 }
 
+/** Normalizes a data-relative POSIX path by segments: collapses "//" and ".", resolves ".."
+ *  textually. Returns null when the path climbs above its root. */
+function normalizeRelativeSegments(path: string): string[] | null {
+  const segments: string[] = [];
+  for (const segment of path.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length === 0) return null;
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return segments;
+}
+
+// Fed to `sh -s` on stdin with the candidate ancestors as argv — the same channel
+// existsVia() uses, because a multi-line argument does not survive wsl.exe's re-parsing.
+// Ancestors are reported, not followed: the contract refuses the link, it does not judge
+// its target. Explicit `exit 0` keeps the verdict on stdout alone — a for loop's exit
+// status is its body's last command, so an all-clear scan would otherwise exit 1.
+const SYMLINK_SCAN = `for p in "$@"; do
+  [ -h "$p" ] && echo "$p"
+done
+exit 0
+`;
+
 /** A recipe may write private files only where its recipe.json declares them.
  *
  *  The privatePaths declaration is the single source the snapshot rules read: archive.ts
@@ -38,19 +66,86 @@ function parentPath(path: string): string {
  *  credentials once travelled inside a migrate archive — so the write itself is refused,
  *  while the recipe is being developed, instead of silently leaking from every snapshot
  *  taken afterwards. Recipes are enumerated from the deployment's own recipe root, so the
- *  declaration a synthetic target is validated against is the deployed one. */
-async function assertDeclaredPrivatePath(ctx: Context, path: string): Promise<void> {
+ *  declaration a synthetic target is validated against is the deployed one.
+ *
+ *  The target is normalized by segments and compared against the declarations by segments,
+ *  so `<data>/vault/../workspace/private.env` cannot pass as covered by a `vault`
+ *  declaration. Symlink contract: a link BETWEEN the data directory and the declared root
+ *  is refused, because it moves the write outside the subtree the declaration covers and
+ *  the snapshots exclude; the data root itself may be a link (a deployment layout decision
+ *  — a private write lands in the tree the link points to; backup is the exception and
+ *  refuses a symlinked data root outright, because tar is handed the link's own name and
+ *  would store the link instead of its content — audit 2026-09-22 round 2, P2-02), and a
+ *  link at the final component of a FILE target is replaced (mv -T), not written through.
+ *  This is armor against a recipe author's
+ *  path-assembly mistake, not isolation from hostile JavaScript — the hook already holds a
+ *  full Context.
+ *
+ *  The verdict is computed on the string the kernel will actually walk: pathname resolution
+ *  follows the RAW path's components, and a link sitting before a `..` vanishes from
+ *  textual normalization but is still crossed on disk — so the symlink scan runs over the
+ *  raw path's directory prefixes, not the normalized ones. With no link among them,
+ *  textual and physical resolution agree, and the single verified path returned here is
+ *  what every subsequent mkdir/write/mv uses; the helpers never fall back to the raw
+ *  string (audit 2026-09-22 round 2, P2-01). A link at the final component of a DIRECTORY
+ *  target is refused too: `mkdir -p` and `chmod` do not replace it the way `mv -T` does,
+ *  they act through it.
+ *
+ *  Returns the target's normalized data-relative path together with the declaration that
+ *  covered it — the pair the private-paths ledger records, so a declared directory stays a
+ *  declared directory after its declaration is gone while an undeclared ancestor of a file
+ *  write never becomes one (audit 2026-09-22, P1-02; round 3, P2-01) — and the target's
+ *  absolute form for the write. */
+async function assertDeclaredPrivatePath(
+  ctx: Context,
+  path: string,
+  mode: "file" | "directory",
+): Promise<{ ledger: string; boundary: string; target: string }> {
   const dataDir = ctx.settings?.dataDir ?? "";
   if (dataDir === "" || !path.startsWith(`${dataDir}/`)) {
     throw new Error(`private target path must be inside the data directory (${dataDir === "" ? "context has no dataDir" : dataDir}): ${path}`);
   }
-  const relative = path.slice(dataDir.length + 1);
+  const rawRelative = path.slice(dataDir.length + 1);
+  const relative = normalizeRelativeSegments(rawRelative);
+  if (relative === null || relative.length === 0) {
+    throw new Error(`private target path must stay inside the data directory: ${path}`);
+  }
   const declared = await installedRecipePrivatePaths();
-  if (!declared.some((candidate) => relative === candidate || relative.startsWith(`${candidate}/`))) {
+  const boundary = declared.find((candidate) => {
+    const declaredSegments = candidate.split("/");
+    return declaredSegments.length > 0 && relative.length >= declaredSegments.length
+      && declaredSegments.every((segment, index) => relative[index] === segment);
+  });
+  if (boundary === undefined) {
     throw new Error(
       `private target path is not covered by any recipe's privatePaths — declare it (or a parent directory of it) in recipes/<name>/recipe.json: ${path}`,
     );
   }
+  // Every proper prefix of the raw path is a directory the kernel crosses before the final
+  // component; `.` and `..` inside a prefix are resolved as written, so they are scanned
+  // exactly where they stand. Directory mode adds the final component itself.
+  const rawSegments = rawRelative.split("/");
+  const checked = Array.from(
+    { length: rawSegments.length - 1 },
+    (_, depth) => `${dataDir}/${rawSegments.slice(0, depth + 1).join("/")}`,
+  );
+  if (mode === "directory") checked.push(`${dataDir}/${relative.join("/")}`);
+  if (checked.length > 0) {
+    let result: ExecResult;
+    try {
+      result = await ctx.transport.exec("sh", ["-s", "--", ...checked], { input: SYMLINK_SCAN, allowFailure: true });
+    } catch (error) {
+      throw new Error(`could not check the private target path for symlinks: ${(error as Error).message}`);
+    }
+    if (result.code !== 0) {
+      throw new Error(`could not check the private target path for symlinks (exit ${result.code}): ${result.stderr.trim()}`);
+    }
+    const lines = result.stdout.split("\n").filter((line) => line !== "");
+    if (lines.length > 0) {
+      throw new Error(`private target path crosses a symlinked directory (${lines[0]}): ${path}`);
+    }
+  }
+  return { ledger: relative.join("/"), boundary, target: `${dataDir}/${relative.join("/")}` };
 }
 
 /** Creates a target directory and narrows it to owner-only access. */
@@ -62,29 +157,37 @@ async function createPrivateDirectory(ctx: Context, path: string): Promise<void>
 /** Creates one of the recipe's declared private directories, owner-only. */
 export async function ensurePrivateTargetDirectory(ctx: Context, path: string): Promise<void> {
   if (!path.startsWith("/")) throw new Error(`private target directory must be absolute: ${path}`);
-  await assertDeclaredPrivatePath(ctx, path);
-  await createPrivateDirectory(ctx, path);
+  const { ledger, boundary, target } = await assertDeclaredPrivatePath(ctx, path, "directory");
+  // Recorded before anything is created: a write that cannot be remembered is refused
+  // rather than made and left unprotected once its declaration disappears (P1-02).
+  await recordPrivateWrite(ledger, boundary);
+  await createPrivateDirectory(ctx, target);
 }
 
 /** Atomically replaces a target file with mode 600, preserving the old file on a failed write. */
 export async function replacePrivateTargetFile(ctx: Context, path: string, content: string): Promise<PrivateFileResult> {
   if (!path.startsWith("/")) throw new Error(`private target file must be absolute: ${path}`);
-  await assertDeclaredPrivatePath(ctx, path);
+  const { ledger, boundary, target } = await assertDeclaredPrivatePath(ctx, path, "file");
+  // Recorded before anything is written, same contract as ensurePrivateTargetDirectory:
+  // a write that cannot be remembered is refused rather than left unprotected (P1-02).
+  await recordPrivateWrite(ledger, boundary);
   // Created and validated through the file's own declaration rather than via
   // ensurePrivateTargetDirectory: a declaration may name the exact file, and that entry
   // then covers its parent directory too without the parent being declared a second time.
-  await createPrivateDirectory(ctx, parentPath(path));
-  const temporary = `${path}.clawforge-private-${randomBytes(8).toString("hex")}`;
+  await createPrivateDirectory(ctx, parentPath(target));
+  // The staging file and the mv both use the verified path: with the symlink contract
+  // above enforced, this is the only path any part of the write touches.
+  const temporary = `${target}.clawforge-private-${randomBytes(8).toString("hex")}`;
   try {
     if (ctx.transport.writePrivateFile !== undefined) await ctx.transport.writePrivateFile(temporary, content);
     else await ctx.transport.writeFile(temporary, content, "600");
     await ctx.transport.exec("chmod", ["600", temporary]);
-    await ctx.transport.exec("mv", ["-fT", "--", temporary, path]);
+    await ctx.transport.exec("mv", ["-fT", "--", temporary, target]);
   } catch (error) {
     await ctx.transport.remove(temporary).catch(() => {});
     throw error;
   }
-  return { path, checksum: checksumOf(content), bytes: Buffer.byteLength(content, "utf8") };
+  return { path: target, checksum: checksumOf(content), bytes: Buffer.byteLength(content, "utf8") };
 }
 
 /** Renders entries as shell-sourceable `export` lines, single-quoted per POSIX. */

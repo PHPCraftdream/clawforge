@@ -5,6 +5,11 @@
 // too: a runtime that cannot introspect, a container that is not running, and a wholly
 // absent .env — which recovery cannot create, because reaching the target already
 // requires it (bootstrap does).
+//
+// The direction problem (P2-03, round 3) is the shape of every case here now: a plain
+// recover-env fills only the fact NAMES the file is missing entirely and reports the ones
+// both sides carry differently without writing over them, while `--adopt-runtime` is the
+// container-authoritative direction that also merges those over the file's existing values.
 
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -87,10 +92,10 @@ async function capture(body: () => Promise<void>): Promise<{ output: string; err
 try {
   await resetEnv();
 
-  // --- merge: stale facts rewritten in place, everything else untouched ------------------
+  // --- merge: --adopt-runtime merges every differing fact, everything else untouched -------
   {
     facts = { dataDir: "/new/data", port: "18790", composeProject: "new-project", image: "ghcr.io/openclaw/openclaw:new-tag" };
-    const { output } = await capture(() => recoverEnv(ctx, []));
+    const { output } = await capture(() => recoverEnv(ctx, ["--adopt-runtime"]));
     const merged = await readFile(envFile(), "utf8");
     check("a stale data dir is updated in place", merged.includes("OC_DATA_DIR=/new/data"), true);
     check("a stale port is updated in place", merged.includes("OPENCLAW_GATEWAY_PORT=18790"), true);
@@ -119,11 +124,11 @@ try {
     check("the report never carries the token", output.includes(TOKEN), false);
   }
 
-  // --- --dry-run: says what would change, writes nothing ---------------------------------
+  // --- --dry-run: --adopt-runtime says what would change, writes nothing -------------------
   {
     await resetEnv();
     facts = { dataDir: "/new/data", port: "18790", composeProject: "new-project", image: "ghcr.io/openclaw/openclaw:new-tag" };
-    const { output } = await capture(() => recoverEnv(ctx, ["--dry-run"]));
+    const { output } = await capture(() => recoverEnv(ctx, ["--dry-run", "--adopt-runtime"]));
     check("a dry run leaves the file byte-identical", await readFile(envFile(), "utf8"), SEED);
     check("the dry run says it is one", output.includes("dry run"), true);
     check(
@@ -132,6 +137,18 @@ try {
         .every((line) => output.includes(line)),
       true,
     );
+  }
+
+  // --- plain dry run over diverged facts: nothing would be written over them ----------------
+  {
+    await resetEnv();
+    facts = { dataDir: "/new/data", port: "18790", composeProject: "new-project", image: "ghcr.io/openclaw/openclaw:new-tag" };
+    const { output, error } = await capture(() => recoverEnv(ctx, ["--dry-run"]));
+    check("a plain dry run still leaves the file byte-identical", await readFile(envFile(), "utf8"), SEED);
+    check("it exits cleanly", error, "");
+    check("it says nothing would be written without a direction", output.includes("nothing is written over them"), true);
+    check("it names both directions", output.includes("--adopt-runtime") && output.includes("./clawforge up"), true);
+    check("the dry-run header counts zero writable facts", output.includes("0 of 4 connection fact(s) would be written"), true);
   }
 
   // --- nothing to recover: every fact already matches ------------------------------------
@@ -143,11 +160,31 @@ try {
     check("a full match is reported as nothing to recover", output.includes("nothing to recover"), true);
   }
 
+  // --- plain recover-env fills a missing NAME, never a diverged value -----------------------
+  {
+    const halfFilled = [
+      "OPENCLAW_GATEWAY_PORT=9999",
+      "OC_COMPOSE_PROJECT=old-project",
+      "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:old-tag",
+      `OPENCLAW_GATEWAY_TOKEN=${TOKEN}`,
+      "",
+    ].join("\n");
+    await writeFile(envFile(), halfFilled, "utf8");
+    facts = { dataDir: "/new/data", port: "18790", composeProject: "old-project", image: "ghcr.io/openclaw/openclaw:old-tag" };
+    const { output } = await capture(() => recoverEnv(ctx, []));
+    const merged = await readFile(envFile(), "utf8");
+    check("a name the file lacked entirely is filled from the container", merged.includes("OC_DATA_DIR=/new/data"), true);
+    check("a value both sides carry differently is NOT written over", merged.includes("OPENCLAW_GATEWAY_PORT=9999"), true);
+    check("and the container's port never lands in the file", merged.includes("18790"), false);
+    check("the direction choice is reported", output.includes("--adopt-runtime"), true);
+    check("the token line passes through untouched", merged.includes(`OPENCLAW_GATEWAY_TOKEN=${TOKEN}`), true);
+  }
+
   // --- an unrecoverable fact is left as it is, and named ---------------------------------
   {
     await resetEnv();
     facts = { port: "18790", composeProject: "new-project", image: "ghcr.io/openclaw/openclaw:new-tag" };
-    const { output } = await capture(() => recoverEnv(ctx, []));
+    const { output } = await capture(() => recoverEnv(ctx, ["--adopt-runtime"]));
     const merged = await readFile(envFile(), "utf8");
     check("a missing data-dir fact leaves OC_DATA_DIR as it was", merged.includes("OC_DATA_DIR=/old/data"), true);
     check("the unrecoverable fact is named in a warning", output.includes("OC_DATA_DIR"), true);
@@ -164,7 +201,7 @@ try {
   {
     await resetEnv();
     facts = { dataDir: "/newer/data", image: "ghcr.io/openclaw/openclaw:newer" };
-    const { output } = await capture(() => recoverEnv(ctx, []));
+    const { output } = await capture(() => recoverEnv(ctx, ["--adopt-runtime"]));
     const merged = await readFile(envFile(), "utf8");
     check("a missing port fact leaves OPENCLAW_GATEWAY_PORT as it was", merged.includes("OPENCLAW_GATEWAY_PORT=9999"), true);
     check("a missing label leaves OC_COMPOSE_PROJECT as it was", merged.includes("OC_COMPOSE_PROJECT=old-project"), true);
@@ -175,6 +212,16 @@ try {
       true,
     );
     check("the token and unrelated settings survive", merged.includes(`OPENCLAW_GATEWAY_TOKEN=${TOKEN}`) && merged.includes("KEEP_ME=keep"), true);
+  }
+
+  // --- plain run over diverged facts: reports the choice, writes nothing, succeeds ----------
+  {
+    await resetEnv();
+    facts = { dataDir: "/new/data", port: "18790", composeProject: "new-project", image: "ghcr.io/openclaw/openclaw:new-tag" };
+    const { output, error } = await capture(() => recoverEnv(ctx, []));
+    check("a refused-to-choose run is not an error", error, "");
+    check("nothing was written over the diverged values", await readFile(envFile(), "utf8"), SEED);
+    check("each diverged fact is named", ["OC_DATA_DIR", "OPENCLAW_GATEWAY_PORT", "OC_COMPOSE_PROJECT", "OPENCLAW_IMAGE"].every((name) => output.includes(name)), true);
   }
 
   // --- not running: nothing to read the facts from ---------------------------------------

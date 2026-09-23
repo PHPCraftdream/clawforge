@@ -10,12 +10,13 @@ import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
-import { isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
+import { archiveRoot, isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
+import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { requirements, template } from "#src/service/secrets.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { createBackup } from "./backup.ts";
 import { restoreArchive } from "./restore.ts";
-import { verifySnapshot } from "./verify.ts";
+import { forbiddenViolations, verifySnapshot } from "./verify.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 
 const SECRETS_SUFFIX = ".secrets.env";
@@ -353,6 +354,21 @@ async function pullLocked(ctx: Context, profile: Profile, hot: boolean): Promise
 
     const entries = await listArchive(ctx, staged);
     const size = await fileSize(ctx, staged);
+
+    // Share verifies by unpacking and searching; migrate published without leaning on the
+    // verifier at all. The exclusion is a promise about paths, and the listing is already in
+    // hand, so before anything is published it is checked against the same rules verify
+    // enforces — one parse of output already fetched, not a second unpack.
+    if (profile === "migrate") {
+      const root = archiveRoot(entries);
+      const relative = entries.map((entry) => entry.replace(/^\.\//, "").slice(root.length + 1));
+      const violations = forbiddenViolations("migrate", await installedRecipePrivatePaths(), relative);
+      if (violations.length > 0) {
+        for (const path of violations) warn(`snapshot contains ${path}, which the migrate profile must exclude`);
+        await removeSnapshotFiles(ctx, [staged, archive]);
+        die(`snapshot rejected and deleted, along with ${archive}`);
+      }
+    }
 
     // Refuse collisions without replacing a previous complete snapshot.
     try {

@@ -27,16 +27,69 @@ import { parseEnv } from "#src/core/env.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 
-/** Paths a profile must not contain. The recipe-declared private paths arrive from the same
- *  installedRecipePrivatePaths() enumeration archive.ts excludes by — passed in so this stays
- *  pure — and are checked here, not just excluded there, because an archive already taken
- *  before that exclusion existed still carries them and verify is what must refuse it. */
-function forbiddenPaths(profile: Profile, recipePrivatePaths: readonly string[]): string[] {
+/** The two kinds of rule a profile forbids archive entries by, kept apart on purpose:
+ *
+ *  `literals` are DECLARED paths — the recipes' privatePaths entries (installedRecipePrivatePaths,
+ *  passed in from the same enumeration archive.ts excludes by, so this stays pure — an archive
+ *  taken before that exclusion existed still carries them, and verify is what must refuse it),
+ *  plus the profile's own secrets file and share's identity/state directories. An entry violates
+ *  a literal when it IS the declared path or lives INSIDE it — compared on '/' boundaries, the
+ *  same discipline verifyRestoredLayout() applies to restored roots. A bare string prefix here
+ *  is the P2-05 bug: the declaration `vault` forbade the public sibling `vault-public`, and the
+ *  exact file `config/private.env` its `.example` neighbor — valid content the archiver's
+ *  component-boundary tar --exclude correctly keeps, so pull deleted backups verify refused.
+ *
+ *  `prefixes` name one family of generated files by a shared stem, matched by string prefix
+ *  DELIBERATELY: `config/.env.clawforge-` is the staging name loadSecrets() appends a random
+ *  suffix to (state.ts) — credential material that is never instance state, and a family, not
+ *  one path. No recipe-declared path belongs in this list; the split exists so the staging
+ *  family keeps its prefix semantics without dragging declared paths into bare-prefix matching. */
+export interface ForbiddenRules {
+  literals: readonly string[];
+  prefixes: readonly string[];
+}
+
+export function forbiddenRules(profile: Profile, recipePrivatePaths: readonly string[]): ForbiddenRules {
   if (profile === "share") {
-    return [...recipePrivatePaths, "config/.env", "config/.env.clawforge-", "config/identity/", "config/devices/", "config/state/", "config/agents/"];
+    return {
+      literals: [...recipePrivatePaths, "config/.env", "config/identity/", "config/devices/", "config/state/", "config/agents/"],
+      prefixes: ["config/.env.clawforge-"],
+    };
   }
-  if (profile === "migrate") return [...recipePrivatePaths, "config/.env", "config/.env.clawforge-"];
-  return [];
+  if (profile === "migrate") {
+    return { literals: [...recipePrivatePaths, "config/.env"], prefixes: ["config/.env.clawforge-"] };
+  }
+  return { literals: [], prefixes: [] };
+}
+
+/** True when an archive entry IS the declared path or lives inside it: equality, or a '/'
+ *  continuation — never a bare string prefix (P2-05). Declarations may carry a trailing slash
+ *  (share's directory rules above), so it is normalized away; the archive's own directory
+ *  entries keep theirs and still match through the boundary test. */
+function violatesLiteralPath(entry: string, declared: string): boolean {
+  const path = declared.replace(/\/+$/, "");
+  return entry === path || entry.startsWith(`${path}/`);
+}
+
+/** The declared rules these archive entries violate — literals by path boundary
+ *  (violatesLiteralPath), staging prefixes by the string prefix that defines the family.
+ *  verifySnapshot and pull's migrate publish check must judge the same declaration the same
+ *  way over the same listing, so this comparison lives here and nowhere else. Returns the
+ *  violated rules as written, for the warnings to name. */
+export function forbiddenViolations(
+  profile: Profile,
+  recipePrivatePaths: readonly string[],
+  entries: readonly string[],
+): string[] {
+  const rules = forbiddenRules(profile, recipePrivatePaths);
+  const violated: string[] = [];
+  for (const declared of rules.literals) {
+    if (entries.some((entry) => violatesLiteralPath(entry, declared))) violated.push(declared);
+  }
+  for (const stem of rules.prefixes) {
+    if (entries.some((entry) => entry.startsWith(stem))) violated.push(stem);
+  }
+  return violated;
 }
 
 /** Creates a private directory, preserving compatibility with older transports. */
@@ -194,11 +247,9 @@ export async function verifySnapshot(
   const root = archiveRoot(entries);
   const relative = entries.map((entry) => entry.replace(/^\.\//, "").slice(root.length + 1));
 
-  for (const path of forbiddenPaths(profile, recipePrivatePaths)) {
-    if (relative.some((entry) => entry.startsWith(path))) {
-      warn(`archive contains ${path}, which the '${profile}' profile must exclude`);
-      failures += 1;
-    }
+  for (const path of forbiddenViolations(profile, recipePrivatePaths, relative)) {
+    warn(`archive contains ${path}, which the '${profile}' profile must exclude`);
+    failures += 1;
   }
 
   // For share the allowed set is stated positively as well, so anything new in the data

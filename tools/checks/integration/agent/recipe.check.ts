@@ -2,6 +2,11 @@
 // `install` branch of tools/framework/commands/management/recipe.ts — a disabled recipe refuses to build
 // without --force-disabled, and a declared variable that is not set refuses before it does.
 //
+// Since the mutating recipe actions run under the instance lock, this file also covers that gating:
+// every action except the read-only ones and `import` refuses while another operation holds the
+// lock, rides a lock the calling chain already holds, and honours --break-lock — all against an
+// in-memory transport, so the lock's own mkdir mechanic is exercised rather than mocked away.
+//
 // Real recipe.json files under a scratch directory, so loadRecipe/listRecipes run against
 // actual disk I/O rather than a mock of node:fs. The scratch directory is removed in a
 // finally block so a failed assertion does not leave litter.
@@ -11,6 +16,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { recipe, recipeActionIsReadOnly } from "#framework/commands/management/recipe.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
+import { guarded, lockPath, readLockHolder, takeLock, withInstanceLock } from "#framework/runtime/instance-lock.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import {
   listAgentBundleRecipes,
@@ -48,11 +54,66 @@ async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string>
   return "";
 }
 
-/** A fresh stub `ctx` whose stack() returns spies recording build/up calls. */
-function stubContext(env: Record<string, string>): { ctx: Context; calls: string[] } {
+/** A fresh stub `ctx` whose stack() returns spies recording build/up calls, and whose transport is
+ *  an in-memory filesystem with just enough shell for the instance lock: plain `mkdir` of an
+ *  existing directory fails, which is the entire acquisition mechanism — `mkdir -p` and `mkdir -m`
+ *  only prepare directories, `rmdir` refuses a non-empty one, and `test -d` reads it back. */
+function stubContext(env: Record<string, string>): {
+  ctx: Context;
+  calls: string[];
+  files: Map<string, string>;
+  dirs: Set<string>;
+} {
   const calls: string[] = [];
+  const files = new Map<string, string>();
+  const dirs = new Set<string>();
   const ctx = {
-    settings: { env },
+    settings: { env, dataDir: "/srv/clawforge-recipe-check" },
+    transport: {
+      description: "stub",
+      async exec(command: string, args: string[]) {
+        if (command === "mkdir" && args[0] !== "-p" && args[0] !== "-m") {
+          const target = args[args.length - 1];
+          if (dirs.has(target)) return { code: 1, stdout: "", stderr: "File exists" };
+          dirs.add(target);
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "mkdir") {
+          dirs.add(args[args.length - 1]);
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "rmdir") {
+          const target = args[args.length - 1];
+          const hasFile = [...files.keys()].some((entry) => entry.startsWith(`${target}/`));
+          const hasChild = [...dirs].some((entry) => entry.startsWith(`${target}/`));
+          if (hasFile || hasChild) return { code: 1, stdout: "", stderr: "Directory not empty" };
+          dirs.delete(target);
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "test" && args[0] === "-d") {
+          return { code: dirs.has(args[1]) ? 0 : 1, stdout: "", stderr: "" };
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      async readFile(path: string): Promise<string> {
+        const content = files.get(path);
+        if (content === undefined) throw new Error(`no such file: ${path}`);
+        return content;
+      },
+      async writeFile(path: string, content: string): Promise<void> {
+        files.set(path, content);
+      },
+      async remove(path: string): Promise<void> {
+        files.delete(path);
+        dirs.delete(path);
+        for (const key of files.keys()) {
+          if (key.startsWith(`${path}/`)) files.delete(key);
+        }
+        for (const key of dirs) {
+          if (key.startsWith(`${path}/`)) dirs.delete(key);
+        }
+      },
+    },
     runtime: {
       stack() {
         return {
@@ -75,7 +136,7 @@ function stubContext(env: Record<string, string>): { ctx: Context; calls: string
       },
     },
   } as unknown as Context;
-  return { ctx, calls };
+  return { ctx, calls, files, dirs };
 }
 
 const scratch = resolve(tmpdir(), `clawforge-recipe-check-${Date.now()}`);
@@ -338,6 +399,156 @@ try {
     false,
   );
 
+  // --- the instance lock: every mutating action gates like apply ----------------------
+  //
+  // install and remove change the target through the runtime, and verify, onboard and diagnose
+  // run app-owned hooks with a full Context, so all of them take the instance lock the way
+  // apply does — prepare.ts has the same power over the target as the build it precedes. The
+  // refusal direction below is the audit's own reproduction: a hook writing while the holder
+  // reads. The nesting direction is the other half: a caller that already holds the lock (an
+  // orchestration step running a recipe command as its own) is served, not refused by its own
+  // step.
+
+  {
+    const { ctx, calls, files, dirs } = stubContext({});
+    const held = await takeLock(ctx, "backup", "op-backup");
+    const holderBefore = files.get(`${lockPath(ctx)}/holder.json`);
+    const message = await messageOf("install while another operation holds the lock", () =>
+      withOutputSink(() => {}, () => recipe(ctx, ["install", "plain"])),
+    );
+    check('the refusal names the conflict', message.includes("another operation is changing this instance"), true);
+    check("the refusal names what the holder is doing", message.includes("backup"), true);
+    check("nothing was built or started under someone else's lock", calls, []);
+    check("the holder file is untouched by the refusal", files.get(`${lockPath(ctx)}/holder.json`), holderBefore);
+    check("the lock directory still exists after the refusal", dirs.has(lockPath(ctx)), true);
+    await held.release();
+  }
+
+  {
+    const { ctx, calls } = stubContext({});
+    await writeRecipe("marker", { description: "Writes a marker in prepare" });
+    const markerPath = resolve(scratch, "marker-writes.txt");
+    await writeFile(
+      resolve(scratch, "marker", "prepare.ts"),
+      "import { appendFile } from \"node:fs/promises\";\n" +
+        `export async function prepare() { await appendFile(${JSON.stringify(markerPath)}, "hook ran\\n", "utf8"); }\n`,
+      "utf8",
+    );
+    const held = await takeLock(ctx, "backup", "op-backup");
+    await messageOf("install of a hook-writing recipe while another operation holds the lock", () =>
+      withOutputSink(() => {}, () => recipe(ctx, ["install", "marker"])),
+    );
+    check(
+      "the refusal happens before any hook code runs",
+      await access(markerPath).then(() => true, () => false),
+      false,
+    );
+    await held.release();
+    await withOutputSink(() => {}, () => recipe(ctx, ["install", "marker"]));
+    check("once the lock is free, install runs the hook and the stack", calls, ["build", "up"]);
+    check("the prepare hook wrote its marker inside that install", await access(markerPath).then(() => true, () => false), true);
+  }
+
+  {
+    const { ctx, calls } = stubContext({ PREPARE_TEST: "yes" });
+    const originalExec = ctx.transport.exec;
+    let lockClaims = 0;
+    ctx.transport.exec = async (command: string, args: string[]) => {
+      if (command === "mkdir" && args[0] === lockPath(ctx)) lockClaims += 1;
+      return originalExec(command, args);
+    };
+    await withOutputSink(() => {}, () =>
+      withInstanceLock(ctx, "apply", "op-outer", {}, async () => {
+        await recipe(ctx, ["install", "prepared"]);
+      }),
+    );
+    check("a recipe install nested in a locked operation still builds and starts", calls, ["build", "up"]);
+    check("the nested install rode the outer operation's lock", lockClaims, 1);
+    check("the lock went away with the outer operation, not kept by the step", await readLockHolder(ctx), undefined);
+  }
+
+  {
+    const { ctx, calls } = stubContext({ PREPARE_TEST: "yes" });
+    const originalExec = ctx.transport.exec;
+    let lockClaims = 0;
+    ctx.transport.exec = async (command: string, args: string[]) => {
+      if (command === "mkdir" && args[0] === lockPath(ctx)) lockClaims += 1;
+      return originalExec(command, args);
+    };
+    let verifyOut = "";
+    await guarded(ctx, "apply", [], async () => {
+      await withOutputSink((chunk) => {
+        verifyOut += chunk;
+      }, () => recipe(ctx, ["verify", "prepared"]));
+    });
+    check("a guarded outer lets the verify hook run as a nested step", verifyOut.includes('"kind":"verify"'), true);
+    check("the nested verify rode that same single lock claim", lockClaims, 1);
+    check("a nested verify builds and starts nothing", calls, []);
+    check("and the lock is released with the outer guard", await readLockHolder(ctx), undefined);
+  }
+
+  {
+    const { ctx, files } = stubContext({});
+    const held = await takeLock(ctx, "backup", "op-backup");
+    let statusOut = "";
+    await withOutputSink((chunk) => {
+      statusOut += chunk;
+    }, () => recipe(ctx, ["status", "plain"]));
+    let logsOut = "";
+    await withOutputSink((chunk) => {
+      logsOut += chunk;
+    }, () => recipe(ctx, ["logs", "plain"]));
+    check("status runs while another operation holds the lock", statusOut.includes("not running"), true);
+    check("logs runs while another operation holds the lock", logsOut.includes("stubbed log tail=100"), true);
+    check("read-only actions took no lock and refused nothing", (await readLockHolder(ctx))?.operationId, "op-backup");
+    check("the foreign lock's own record is untouched", files.has(`${lockPath(ctx)}/holder.json`), true);
+
+    // import is the one action that never gates: it copies into the repository's recipes/
+    // directory and must go through while another operation is changing the target.
+    const importRoot = resolve(tmpdir(), `clawforge-recipe-import-${Date.now()}`);
+    const importedSource = resolve(importRoot, "source-recipe");
+    try {
+      await mkdir(importedSource, { recursive: true });
+      await writeFile(resolve(importedSource, "recipe.json"), JSON.stringify({ description: "Imported under a lock" }), "utf8");
+      await withOutputSink(() => {}, () => recipe(ctx, ["import", importedSource, "imported-under-lock"]));
+      check(
+        "import succeeds under a foreign lock: it copies into the repository and never touches the target",
+        await access(resolve(scratch, "imported-under-lock", "recipe.json")).then(() => true, () => false),
+        true,
+      );
+      check("import took no lock of its own: the holder is still op-backup", (await readLockHolder(ctx))?.operationId, "op-backup");
+    } finally {
+      await rm(importRoot, { recursive: true, force: true });
+    }
+    await held.release();
+  }
+
+  {
+    const { ctx } = stubContext({});
+    const held = await takeLock(ctx, "backup", "op-backup");
+    for (const action of ["verify", "onboard", "diagnose"] as const) {
+      const message = await messageOf(`${action} while another operation holds the lock`, () =>
+        withOutputSink(() => {}, () => recipe(ctx, [action, "prepared"])),
+      );
+      check(`${action} refuses like install does`, message.includes("another operation is changing this instance"), true);
+    }
+    const removeMessage = await messageOf("remove while another operation holds the lock", () =>
+      withOutputSink(() => {}, () => recipe(ctx, ["remove", "plain"])),
+    );
+    check("remove refuses like install does", removeMessage.includes("another operation is changing this instance"), true);
+    await held.release();
+  }
+
+  {
+    const { ctx, calls } = stubContext({});
+    const held = await takeLock(ctx, "backup", "op-backup");
+    await withOutputSink(() => {}, () => recipe(ctx, ["install", "plain", "--break-lock"]));
+    check("--break-lock installs through a foreign lock", calls, ["build", "up"]);
+    check("the install held the lock only for its own run", await readLockHolder(ctx), undefined);
+    await held.release();
+    check("the old owner's late release is a harmless no-op", await readLockHolder(ctx), undefined);
+  }
+
   {
     const importedRoot = resolve(tmpdir(), `clawforge-recipe-import-${Date.now()}`);
     const importedSource = resolve(importedRoot, "source-recipe");
@@ -359,6 +570,110 @@ try {
     } finally {
       useRecipesDir(scratch);
       await rm(importedRoot, { recursive: true, force: true });
+    }
+  }
+
+  // The exclusion contract: the framework's generic policy covers its own conventions; the
+  // application's own credential files are excluded because the source's recipe.json
+  // declares them under privateFiles — the two names the dispatcher used to hardcode
+  // included, so no name the old hardcoded blacklist excluded is copied now.
+  {
+    const policyRoot = resolve(tmpdir(), `clawforge-recipe-import-policy-${Date.now()}`);
+    const source = resolve(policyRoot, "source-recipe");
+    try {
+      await mkdir(resolve(source, "secrets"), { recursive: true });
+      await mkdir(resolve(source, "nested", "keys"), { recursive: true });
+      await writeFile(
+        resolve(source, "recipe.json"),
+        JSON.stringify({ description: "Policy fixture", privateFiles: ["proxy-credentials.env", "registry.users.ktav", "nested/keys"] }),
+        "utf8",
+      );
+      const excluded = [".env", ".env.local", "secrets/local.env", "gateway.token", "db.secrets.env", "proxy-credentials.env", "registry.users.ktav", "nested/keys/credentials.env"];
+      for (const name of excluded) await writeFile(resolve(source, name), "FIXTURE-CREDENTIAL\n", "utf8");
+      await writeFile(resolve(source, "compose.yml"), "services: {}\n", "utf8");
+      useRecipesDir(resolve(policyRoot, "recipes"));
+      await mkdir(resolve(policyRoot, "recipes"), { recursive: true });
+      const { ctx } = stubContext({});
+      await withOutputSink(() => {}, () => recipe(ctx, ["import", source, "policy"]));
+      for (const name of excluded) {
+        check(
+          `import still excludes ${name}`,
+          await access(resolve(policyRoot, "recipes", "policy", name)).then(() => true, () => false),
+          false,
+        );
+      }
+      check("a non-credential file is copied whole", await access(resolve(policyRoot, "recipes", "policy", "compose.yml")).then(() => true, () => false), true);
+      check("the manifest itself is copied", await access(resolve(policyRoot, "recipes", "policy", "recipe.json")).then(() => true, () => false), true);
+    } finally {
+      useRecipesDir(scratch);
+      await rm(policyRoot, { recursive: true, force: true });
+    }
+  }
+
+  // The honest default when the declaration is absent: the generic policy still excludes the
+  // framework's own conventions — and exactly those: an application file nobody declared is
+  // copied, because silently covering it would be the framework pretending to know.
+  {
+    const defaultRoot = resolve(tmpdir(), `clawforge-recipe-import-default-${Date.now()}`);
+    const source = resolve(defaultRoot, "source-recipe");
+    try {
+      await mkdir(resolve(source, "secrets"), { recursive: true });
+      await writeFile(resolve(source, "recipe.json"), JSON.stringify({ description: "No declaration" }), "utf8");
+      const generic = [".env", "secrets/store.env", "gateway.token", "db.secrets.env"];
+      for (const name of generic) await writeFile(resolve(source, name), "FIXTURE-CREDENTIAL\n", "utf8");
+      await writeFile(resolve(source, "proxy-credentials.env"), "FIXTURE-CREDENTIAL\n", "utf8");
+      useRecipesDir(resolve(defaultRoot, "recipes"));
+      await mkdir(resolve(defaultRoot, "recipes"), { recursive: true });
+      const { ctx } = stubContext({});
+      await withOutputSink(() => {}, () => recipe(ctx, ["import", source, "default"]));
+      for (const name of generic) {
+        check(
+          `without a declaration the generic policy still excludes ${name}`,
+          await access(resolve(defaultRoot, "recipes", "default", name)).then(() => true, () => false),
+          false,
+        );
+      }
+      check(
+        "an undeclared application file is copied — exclusion is declared, not guessed",
+        await access(resolve(defaultRoot, "recipes", "default", "proxy-credentials.env")).then(() => true, () => false),
+        true,
+      );
+    } finally {
+      useRecipesDir(scratch);
+      await rm(defaultRoot, { recursive: true, force: true });
+    }
+  }
+
+  // A source manifest that exists but cannot be read stops the import instead of reading as
+  // "nothing declared" — the quiet-empty failure that once walked a private file into a
+  // share archive — and a declaration trying to climb out of the recipe directory is
+  // refused, the same strictness the target-side privatePaths policy gets.
+  {
+    const brokenRoot = resolve(tmpdir(), `clawforge-recipe-import-broken-${Date.now()}`);
+    const source = resolve(brokenRoot, "source-recipe");
+    try {
+      await mkdir(source, { recursive: true });
+      await writeFile(resolve(source, "recipe.json"), "{ broken", "utf8");
+      useRecipesDir(resolve(brokenRoot, "recipes"));
+      await mkdir(resolve(brokenRoot, "recipes"), { recursive: true });
+      const { ctx } = stubContext({});
+      const parseMessage = await messageOf("a broken source manifest stops the import", () =>
+        withOutputSink(() => {}, () => recipe(ctx, ["import", source, "broken"])),
+      );
+      check("the refusal names the unreadable manifest", parseMessage.includes("could not parse"), true);
+      await writeFile(resolve(source, "recipe.json"), JSON.stringify({ description: "Escaping declaration", privateFiles: ["../outside"] }), "utf8");
+      const escapeMessage = await messageOf("a privateFiles entry that leaves the recipe directory is refused", () =>
+        withOutputSink(() => {}, () => recipe(ctx, ["import", source, "escaping"])),
+      );
+      check("the refusal names the boundary", escapeMessage.includes("must stay inside the recipe directory"), true);
+      check(
+        "nothing was copied by either refusal",
+        await access(resolve(brokenRoot, "recipes", "broken")).then(() => true, () => false),
+        false,
+      );
+    } finally {
+      useRecipesDir(scratch);
+      await rm(brokenRoot, { recursive: true, force: true });
     }
   }
 } finally {

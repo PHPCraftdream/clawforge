@@ -84,6 +84,19 @@ checkRejects(
   [...GOOD.map((entry) => `./${entry}`), "./data/link/evil"],
   new Map([["./data/link", { kind: "symlink", target: "/outside" }]]),
 );
+// The restore root is the one entry every post-unpack action is relative to: shipped as
+// a link, the fresh-identity deletion and the standard-directory preparation would
+// follow it wherever it points.
+checkRejects(
+  "the archive root shipped as a symlink is fatal on its own",
+  ["data", "data/config/openclaw.json"],
+  new Map([["data", { kind: "symlink", target: "/app" }]]),
+);
+checkRejects(
+  "the archive root shipped as a hard link is fatal on its own",
+  ["data", "data/config/openclaw.json"],
+  new Map([["data", { kind: "hardlink", target: "data/config/openclaw.json" }]]),
+);
 
 // A hard link has no dangling case: tar performs link() the moment the archive is
 // unpacked, so an out-of-root target is dangerous by itself, unlike a symlink.

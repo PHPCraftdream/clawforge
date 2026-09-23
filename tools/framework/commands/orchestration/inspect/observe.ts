@@ -3,10 +3,11 @@
 // the pure pieces these use, and gather.ts for gatherInspection/inspect/doctor/renderJson/
 // renderText.
 
-import { lstat, readFile, readdir } from "node:fs/promises";
+import { access, lstat, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import JSON5 from "json5";
-import { deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
+import { deploymentName, desiredStateFile, envFile, recipesDir, secretStoreFile } from "#src/runtime/deployment.ts";
+import { parseEnv } from "#src/core/env.ts";
 import { openclawCliJson, openclawCli } from "#src/service/openclaw-cli.ts";
 import { recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { readLedger, orphanedBy, foreign } from "#src/set/ownership/ledger.ts";
@@ -20,11 +21,25 @@ import {
 } from "#src/commands/management/provision-agent/index.ts";
 import type { RecipeAgentBundle, CronJob } from "#src/commands/management/provision-agent/index.ts";
 import { problem } from "#src/service/inspection.ts";
-import type { Problem, DeclaredState, ObservedState } from "#src/service/inspection.ts";
-import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt, cronDifferences } from "./helpers.ts";
+import type { Problem, DeclaredState, ObservedState, EgressObservation, ConnectionFactObservation, SecretStoreObservation } from "#src/service/inspection.ts";
+import type { SecretStatus } from "#src/service/secrets.ts";
+import {
+  CONNECTION_FACTS,
+  staleConnectionFacts,
+  unrecoverableConnectionFacts,
+} from "#src/commands/recover-env/facts.ts";
+import type { ConnectionFacts } from "#src/commands/recover-env/facts.ts";
+import { DEFAULT_SECRET_STORE } from "#src/commands/management/secrets.ts";
+import type { ExecResult } from "#src/runtime/transport.ts";
+import { EGRESS_EXEC_TIMEOUT_MS, EGRESS_PROBE_SCRIPT } from "./egress-probe.ts";
+import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt, cronDifferences, egressEndpoints, redactEndpoint } from "./helpers.ts";
 import type { Context } from "#src/core/context.ts";
 
 const PROBE_ENDPOINTS = ["healthz", "startupz", "readyz"];
+
+// The compose service inspect observes, named literally the way config.ts, provider.ts,
+// accept.ts and smoke.ts already name it for their own execs into the same container.
+const GATEWAY_SERVICE = "gateway";
 
 /** Parses GNU stat's fractional, timezone-qualified `%y` timestamp. */
 function parseStatTimestamp(raw: string): number | undefined {
@@ -228,11 +243,175 @@ export async function observeConfig(
   return { config, mtimeMs };
 }
 
+/** The deployment .env's connection facts against the running container — the same
+ *  comparison recover-env reports on and --adopt-runtime resolves (staleConnectionFacts), surfaced instead of waiting
+ *  to be asked. Below the not-running early return in gatherInspection: the facts come
+ *  from a running container, and without one there is nothing to compare against.
+ *
+ *  The finding names WHICH variable drifted and never a value, not even a non-secret one:
+ *  .env mixes a real secret (OPENCLAW_GATEWAY_TOKEN) with these plumbing facts, so nothing
+ *  parsed from that file is printable beyond the four names. */
+export async function observeConnectionFacts(
+  ctx: Context,
+  problems: Problem[],
+): Promise<ConnectionFactObservation[] | undefined> {
+  // Optional on the runtime contract, the way execCommand is: a runtime that cannot
+  // introspect its container is not asked, and skipping is its honest answer.
+  if (typeof ctx.runtime.runningConnectionFacts !== "function") return undefined;
+  const facts: ConnectionFacts | undefined = await ctx.runtime.runningConnectionFacts();
+  // Not running, or the container could not be inspected: a gap, not a verdict.
+  if (facts === undefined) return undefined;
+  let raw: string;
+  try {
+    raw = await readFile(envFile(), "utf8");
+  } catch {
+    // No .env — nothing to compare against; the fresh-clone shape, not a finding.
+    return undefined;
+  }
+  const current = parseEnv(raw);
+  // The comparison itself comes from facts.ts — recover-env acts on exactly it, so
+  // inspect and recover-env cannot disagree about what counts as stale.
+  const stale = new Set(staleConnectionFacts(facts, current).map((entry) => entry.name));
+  const unrecovered = new Set(unrecoverableConnectionFacts(facts).map((entry) => entry.name));
+  const observations: ConnectionFactObservation[] = CONNECTION_FACTS.map((fact) => ({
+    name: fact.name,
+    state: unrecovered.has(fact.name) ? "unrecovered" : stale.has(fact.name) ? "stale" : "match",
+  }));
+  for (const name of stale) {
+    problems.push(problem("ENV_STALE", `${name} in ${envFile()} differs from the running container`));
+  }
+  return observations;
+}
+
+/** The deployment's default local store against the values the target holds. Watched only
+ *  when a store file exists, and only the default one (inspect takes no store name):
+ *  bootstrap puts values on the target without ever creating a store, so an absent store
+ *  is how every healthy deployment starts out, not evidence of loss — and there is no way
+ *  to tell it from a lost one. A store that EXISTS missing a required name is unambiguous:
+ *  the workflow is in use, and that value has no local copy. Names checked are the same
+ *  required set SECRET_MISSING reports, and only names the target still holds — the
+ *  target-absent ones are SECRET_MISSING's business, and `secrets --dump` recovers from
+ *  the target, not from nowhere. */
+export async function observeSecretStore(
+  ctx: Context,
+  secrets: readonly SecretStatus[],
+  problems: Problem[],
+): Promise<SecretStoreObservation | undefined> {
+  const store = secretStoreFile(DEFAULT_SECRET_STORE);
+  let raw: string;
+  try {
+    raw = await readFile(store, "utf8");
+  } catch {
+    return undefined;
+  }
+  const values = parseEnv(raw);
+  const missing = secrets.filter(
+    (entry) => entry.required && entry.present && (values[entry.name] ?? "").trim() === "",
+  );
+  for (const entry of missing) {
+    problems.push(problem("STORE_INCOMPLETE", `${entry.name} (${entry.usedBy}) is present on the target but has no value in ${store}`));
+  }
+  return { file: store, missing: missing.map((entry) => entry.name) };
+}
+
+/** The declaration's own existence. A fact about the folder, and only a finding while an
+ *  instance is running to be re-declared — the caller gates it below the not-running
+ *  early return, which is what the code's name claims ("missing" for WHOM). */
+export async function observeDeclarationFile(problems: Problem[]): Promise<void> {
+  const absent = await access(desiredStateFile()).then(
+    () => false,
+    (error: NodeJS.ErrnoException) => {
+      // Unreadable for any other reason: declaredState()'s own read already reports it,
+      // and a second finding for the same file would read as two problems.
+      if (error.code === "ENOENT") return true;
+      return false;
+    },
+  );
+  if (absent) {
+    problems.push(
+      problem("DECLARATION_MISSING", `${desiredStateFile()} does not exist — a running instance nobody can re-declare from this repository`),
+    );
+  }
+}
+
+/** Probes the outbound endpoints the live configuration names, from inside the gateway
+ *  container. Returns the observations, or undefined when there is nothing to probe or the
+ *  probe itself could not run — an absent answer is a gap, never a quiet "all reachable". */
+async function observeEgress(
+  ctx: Context,
+  liveConfig: unknown,
+  problems: Problem[],
+): Promise<EgressObservation[] | undefined> {
+  const endpoints = egressEndpoints(liveConfig);
+  // execCommand is optional on the runtime contract, the way runningConnectionFacts is: a
+  // runtime that cannot exec into the container cannot be asked from inside, and skipping
+  // is its honest answer.
+  if (endpoints.length === 0 || ctx.runtime.execCommand === undefined) return undefined;
+
+  let result: ExecResult;
+  try {
+    result = await ctx.runtime.execCommand(
+      GATEWAY_SERVICE,
+      "node",
+      ["-e", EGRESS_PROBE_SCRIPT],
+      {
+        input: JSON.stringify(endpoints.map((endpoint) => endpoint.url)),
+        allowFailure: true,
+        // The script bounds each endpoint, but a deadline the child can ignore — a hung
+        // resolver holding a getaddrinfo thread, a wedged docker/WSL client before node
+        // even starts — needs a bound of its own: the whole exec, killed by the transport.
+        timeoutMs: EGRESS_EXEC_TIMEOUT_MS,
+      },
+    );
+  } catch {
+    // HelperNotRunning and every other exec failure included: the container's state is the
+    // other findings' business (health, probes), and this one must not take inspect down.
+    return undefined;
+  }
+  if (result.code !== 0) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    return undefined;
+  }
+  // One answer per asked endpoint, in order, or the probe is broken — and a broken probe
+  // must not be read as a verdict about any endpoint.
+  if (!Array.isArray(parsed) || parsed.length !== endpoints.length) return undefined;
+
+  const observations: EgressObservation[] = [];
+  for (let index = 0; index < endpoints.length; index += 1) {
+    const endpoint = endpoints[index];
+    const answer = parsed[index] as { url?: unknown; state?: unknown; detail?: unknown };
+    const state = answer?.state;
+    if (answer?.url !== endpoint.url || (state !== "ok" && state !== "dns" && state !== "unreachable" && state !== "invalid" && state !== "timeout")) {
+      return undefined;
+    }
+    const display = redactEndpoint(endpoint.url);
+    const detail = typeof answer.detail === "string" ? answer.detail : undefined;
+    const unreachable = state === "dns"
+      ? `${display} (${endpoint.path}) does not resolve from inside the "${GATEWAY_SERVICE}" container`
+      : state === "invalid"
+        ? `${display} (${endpoint.path}) is not a usable URL`
+        : state === "timeout"
+          ? `${display} (${endpoint.path}) gave no answer within the egress probe's whole deadline`
+          : `${display} (${endpoint.path}) resolves from inside the "${GATEWAY_SERVICE}" container but does not answer`;
+    if (state !== "ok") {
+      problems.push(problem("EGRESS_UNREACHABLE", detail === undefined ? unreachable : `${unreachable} (${detail})`));
+    }
+    const observation: EgressObservation = { path: endpoint.path, endpoint: display, state, detail };
+    observations.push(observation);
+  }
+  return observations;
+}
+
 export async function observeLive(
   ctx: Context,
   declared: DeclaredState,
   problems: Problem[],
   configMtimeMs: number | undefined,
+  liveConfig: unknown,
 ): Promise<Partial<ObservedState>> {
   const probes: Record<string, number> = {};
   for (const endpoint of PROBE_ENDPOINTS) {
@@ -286,6 +465,9 @@ export async function observeLive(
       ),
     );
   }
+
+  // The outbound counterpart of the probes above, from the one vantage they lack.
+  const egress = await observeEgress(ctx, liveConfig, problems);
 
   // --- what OpenClaw itself has registered ----------------------------------------------
   const agents = await listOrEmpty(ctx, ["agents", "list", "--json"], (parsed) =>
@@ -432,7 +614,7 @@ export async function observeLive(
     openclawVersion = undefined;
   }
 
-  return { probes, health, agents, mcpServers, cronJobs, foreignObjects, openclawVersion };
+  return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion };
 }
 
 /** A `--json` list from OpenClaw's CLI, or an empty one when the call fails. A failing list

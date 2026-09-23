@@ -18,6 +18,13 @@ export interface HostExecution {
   readonly description: string;
   /** Set when this context is not actually a distinct machine here — printed by the command so the report is honest. */
   readonly note?: string;
+  /** Set when every command this execution runs arrives as root (uid 0) whichever path is
+   *  used — not because it asked, but because the place it runs has no other user. Docker
+   *  Desktop's docker-desktop distro is the case: its default user is root, and /etc/passwd
+   *  offers only nologin service accounts besides. The command layer must demand the
+   *  --root --confirm-root consent BEFORE anything runs: gating the flags alone would check
+   *  what was requested, never what was obtained. */
+  readonly arrivesAsRoot?: boolean;
   exec(command: string, args: string[], options: ExecOptions): Promise<ExecResult>;
   elevate(command: string, args: string[], options: ExecOptions): Promise<ExecResult>;
 }
@@ -52,7 +59,10 @@ export const realHostEnvironment: HostEnvironment = {
 };
 
 /** `--exec`, same as WslTransport's: the plain `--` form sends the command line through the
- *  distro's default shell, which re-parses argv; --exec hands it over verbatim. */
+ *  distro's default shell, which re-parses argv; --exec hands it over verbatim. Without `-u`
+ *  the distro's default user runs the command — for docker-desktop that is root (uid 0),
+ *  which is why the consent gate lives in the command layer, not here: the argv chooses what
+ *  to request, never what the default would have run as anyway. */
 export function wslEngineCommand(distro: string, command: string, args: string[], root: boolean): { command: string; args: string[] } {
   return {
     command: "wsl.exe",
@@ -105,7 +115,8 @@ export async function resolveHostContext(ctx: Context, name: HostContextName, en
           };
           return {
             description: `wsl:${ENGINE_DISTRO}`,
-            note: `engine runs in Docker Desktop's ${ENGINE_DISTRO} WSL2 distro — not the target's ${ctx.transport.description}`,
+            note: `engine runs in Docker Desktop's ${ENGINE_DISTRO} WSL2 distro — not the target's ${ctx.transport.description} — as its default user, root (uid 0): the distro has no other login user`,
+            arrivesAsRoot: true,
             exec: viaWsl(false),
             elevate: viaWsl(true),
           };

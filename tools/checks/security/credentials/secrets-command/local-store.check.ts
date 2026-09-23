@@ -11,8 +11,11 @@
 // the first byte, on Windows a closed DACL (the POSIX mode argument Windows ignores
 // protects nobody), secrets/ itself sealed so an editor's atomic replacement hands the
 // file back no wider than the directory, --apply reporting a store whose protection has
-// slipped — and the hint after applying names the action that really applies the values:
-// restart for a running instance, up only for a stopped one.
+// slipped — and what applying does afterwards names the action that really puts the
+// values in force: restart for a running instance's target-env values, up only for a
+// stopped one, while repository values — fixed at container creation — get the recreate
+// up performs, performed when the runtime can and named when it cannot, then confirmed
+// against the container's own environment.
 //
 // Split out of secrets-command.check.ts; see fixture.ts for the shared deployment and
 // the sibling *.check.ts files for the rest.
@@ -223,6 +226,12 @@ try {
   // status listing.
   const targetEnv = "/srv/clawforge/data/config/.env";
   let targetEnvContent = "";
+  // The live gateway config the transport answers with. The repo-env delivery block swaps a
+  // provider-free config in: a declared provider makes ZAI_API_KEY a required store value,
+  // and a store supplying that target-env value would drag the target-env branch — whose
+  // running-instance hint is the restart suggestion that block exists to forbid — into an
+  // apply that must exercise the repository delivery alone.
+  let liveConfig = '{"models":{"providers":{"zai":{}}}}';
   // What the private staging write is holding until the rename publishes it.
   let staged: string | undefined;
   let running = false;
@@ -250,7 +259,7 @@ try {
         return true;
       },
       async readFile(path: string): Promise<string> {
-        if (path.endsWith("openclaw.json")) return '{"models":{"providers":{"zai":{}}}}';
+        if (path.endsWith("openclaw.json")) return liveConfig;
         if (path === targetEnv) return targetEnvContent;
         return "";
       },
@@ -503,6 +512,95 @@ try {
     check("one store delivers repository values", deliveredRepositoryEnv.includes("REPO_SECRET=repo-value"), true);
     check("repository settings survive delivery", deliveredRepositoryEnv.includes("KEEP_SETTING=keep"), true);
     check("delivery output never carries repository secret values", repositoryOutput.includes("repo-value"), false);
+  }
+  {
+    // The delivery contract for repository values: restart cannot apply them (a container's
+    // environment is fixed at creation), so the command either performs the recreate or says
+    // exactly that — and then confirms what the container actually holds, by name, never by
+    // value.
+    const repositoryEnv = resolve(deployDir, ".env");
+    const repositoryStore = resolve(secretsDirectory, "repo-delivery.env");
+    await writeFile(repositoryEnv, "KEEP_SETTING=keep\n", "utf8");
+    await writeFile(repositoryStore, "REPO_SECRET=repo-value-two\n", "utf8");
+    targetEnvContent = "ZAI_API_KEY=zai-value\n";
+    // A repo-env apply and nothing else: applyStore refuses a store missing a required
+    // prospective value, but a store supplying ZAI_API_KEY would also run the target-env
+    // branch, whose running-instance hint names ./clawforge restart — the very suggestion
+    // this block pins as absent. With neither the live config nor the desired-state
+    // declaration naming a provider, REPO_SECRET (optional, repo-env) is the only
+    // requirement, and the store's single value satisfies it.
+    liveConfig = "{}";
+    await writeFile(resolve(deployDir, "config", "desired-state.json"), "[]", "utf8");
+
+    const delivered: { reconciled: boolean; waited: boolean } = { reconciled: false, waited: false };
+    applyCtx.runtime.reconcile = async (): Promise<void> => { delivered.reconciled = true; };
+    applyCtx.runtime.waitForHealth = async (): Promise<void> => { delivered.waited = true; };
+    applyCtx.runtime.runningEnvironment = async () => ({ REPO_SECRET: "repo-value-two" });
+
+    running = true;
+    let deliveryOutput = "";
+    await withOutputSink(
+      (chunk) => {
+        deliveryOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
+    );
+    check("a running instance gets the recreate performed, not suggested", delivered.reconciled, true);
+    check("the command waits for health after recreating", delivered.waited, true);
+    check("the recreate is announced as replacing the container", deliveryOutput.includes("replaced, not merely signalled"), true);
+    check("the confirmation names the variable in force", deliveryOutput.includes("confirmed") && deliveryOutput.includes("REPO_SECRET"), true);
+    check("the confirmation never carries the value", deliveryOutput.includes("repo-value-two"), false);
+    check("nothing suggests restart for repository values", deliveryOutput.includes("./clawforge restart"), false);
+
+    // A container that still answers with the previous value is named, by variable only.
+    await writeFile(repositoryStore, "REPO_SECRET=repo-value-three\n", "utf8");
+    applyCtx.runtime.runningEnvironment = async () => ({ REPO_SECRET: "previous-value" });
+    let staleOutput = "";
+    await withOutputSink(
+      (chunk) => {
+        staleOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
+    );
+    check("a container still holding the old value is reported by name", staleOutput.includes("REPO_SECRET") && staleOutput.includes("does not hold"), true);
+    check("the mismatch report never carries either value", staleOutput.includes("repo-value-three") || staleOutput.includes("previous-value"), false);
+    check("the mismatch repair names the recreate", staleOutput.includes("./clawforge up"), true);
+
+    // Without the capability the command says so and hands over the honest verb.
+    delete applyCtx.runtime.reconcile;
+    applyCtx.runtime.runningEnvironment = async () => ({ REPO_SECRET: "repo-value-three" });
+    let incapableOutput = "";
+    await withOutputSink(
+      (chunk) => {
+        incapableOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
+    );
+    check("a runtime that cannot recreate is told to run up", incapableOutput.includes("recreate the container") && incapableOutput.includes("./clawforge up"), true);
+    check("the incapable runtime still gets no restart suggestion", incapableOutput.includes("./clawforge restart"), false);
+
+    // Stopped: the next start creates the container with the new values.
+    running = false;
+    applyCtx.runtime.reconcile = async (): Promise<void> => { delivered.reconciled = true; };
+    let stoppedDeliveryOutput = "";
+    const reconciledBefore = delivered.reconciled;
+    await withOutputSink(
+      (chunk) => {
+        stoppedDeliveryOutput += chunk;
+      },
+      () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
+    );
+    check("a stopped instance is told the next start carries the values", stoppedDeliveryOutput.includes("the instance is stopped") && stoppedDeliveryOutput.includes("./clawforge up"), true);
+    check("a stopped instance is not recreated by --apply", delivered.reconciled, reconciledBefore);
+
+    // The dump block below proves target-env recovery with a ZAI_API_KEY value, which only
+    // exists in a store that requirements name — put the provider requirement back.
+    liveConfig = '{"models":{"providers":{"zai":{}}}}';
+    await writeFile(
+      resolve(deployDir, "config", "desired-state.json"),
+      JSON.stringify([{ path: "models.providers.zai", value: {} }]),
+      "utf8",
+    );
   }
   {
     // --dump: the reverse of --apply. target-env is read straight from the target's own

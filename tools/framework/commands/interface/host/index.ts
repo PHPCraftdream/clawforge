@@ -2,13 +2,17 @@
 // operator's own machine layers, not the deployment's containers — that is what exec/cli are
 // for. The three contexts: target (the deployment's own transport), engine (wherever the
 // container engine actually executes), local (this machine, unwrapped). Root is never
-// implicit: --root and --confirm-root must both be present before anything elevates.
+// implicit. Where the context runs as the operator's own user, --root and --confirm-root
+// together are what elevate it, each alone doing nothing. Where the context itself has no
+// other user — Docker Desktop's engine distro runs everything as root — the same two flags
+// are the consent required before the command runs at all: the gate sits where the
+// privilege arrives, not where it is named.
 
 import { die, info } from "#src/core/log.ts";
 import { emit, shouldFollow } from "#src/core/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecOptions } from "#src/runtime/transport.ts";
-import { resolveHostContext, type HostContextName } from "./contexts.ts";
+import { realHostEnvironment, resolveHostContext, type HostContextName, type HostEnvironment } from "./contexts.ts";
 
 export interface HostInvocation {
   readonly context: HostContextName;
@@ -68,11 +72,18 @@ export function rootElevationRequested(root: boolean, confirmRoot: boolean): boo
   return root;
 }
 
-export async function host(ctx: Context, args: string[]): Promise<void> {
+export async function host(ctx: Context, args: string[], environment: HostEnvironment = realHostEnvironment): Promise<void> {
   const parsed = parseHostArgs(args);
   const elevate = rootElevationRequested(parsed.root, parsed.confirmRoot);
-  const execution = await resolveHostContext(ctx, parsed.context);
+  const execution = await resolveHostContext(ctx, parsed.context, environment);
   if (execution.note !== undefined) info(execution.note);
+  if (!elevate && execution.arrivesAsRoot === true) {
+    die(
+      `host ${parsed.context} runs as root (uid 0) on this host (${execution.description}) — ` +
+      `the place it runs has no other login user, so the privilege arrives with the command: ` +
+      `add --root --confirm-root to consent, or use the target or local context`,
+    );
+  }
 
   // One capability, two shapes, chosen the way lifecycle.ts's and recipe.ts's logs choose it
   // (shouldFollow): a real terminal streams the child's output live; under a sink or a plain

@@ -112,10 +112,15 @@ export const managementCommands: Record<string, AppCommand> = {
       "WSL2 distro on Windows. Where no separate engine exists (native Linux dockerd, or no backend " +
       "yet for this platform), it says so and runs in the same place as local;\n" +
       "  local   this machine, unwrapped.\n" +
-      "Root is never implicit: --root alone does nothing, and neither does --confirm-root — both " +
-      "together elevate (wsl -u root in the engine distro, where WSL grants it without a password; " +
-      "sudo -n elsewhere, so a required password fails fast instead of hanging; refused outright " +
-      "where there is no root concept).\n" +
+      "Privilege is stated where it arrives, not where it is named. target and local run as the " +
+      "operator's own user; there --root --confirm-root together elevate (--root alone and " +
+      "--confirm-root alone do nothing): sudo -n, so a required password fails fast instead of " +
+      "hanging; wsl -u root in the engine distro, where WSL grants it without a password; refused " +
+      "outright where there is no root concept.\n" +
+      "engine is the exception: Docker Desktop's docker-desktop distro has no login user but root, " +
+      "so every engine command arrives as root (uid 0) before any flag is read. There the two flags " +
+      "are not an upgrade but the consent the command needs to run at all — without them it is " +
+      "refused, not downgraded; with them it is pinned to -u root explicitly.\n" +
       "Everything from the first non-flag argument on (optionally after a bare --) is the command, " +
       "verbatim — over MCP pass it as the args list, no leading --.",
     // Same reasoning as cli/exec: it can run anything the targeted machine allows, so it gets
@@ -130,8 +135,8 @@ export const managementCommands: Record<string, AppCommand> = {
         required: true,
         choices: ["target", "engine", "local"],
       },
-      { name: "root", description: "Request root. Does nothing without --confirm-root", kind: "flag" },
-      { name: "confirm-root", description: "Second consent for --root; both flags together are required", kind: "flag" },
+      { name: "root", description: "Request root. On target/local: half of the elevation consent, dead without --confirm-root. On engine: half of the consent every command needs to run at all — the distro's only user is root (uid 0)", kind: "flag" },
+      { name: "confirm-root", description: "Second consent; both flags together are required — to elevate on target/local, and for an engine command to run at all", kind: "flag" },
       {
         name: "args",
         description: "Command and arguments to run, e.g. [\"resolvectl\", \"status\"]",
@@ -190,7 +195,13 @@ export const managementCommands: Record<string, AppCommand> = {
       "in by hand —\n" +
       "it refuses to overwrite an existing store unless --force is given, since the " +
       "values it would destroy exist nowhere else.\n" +
-      "--apply --store <name> installs that store's values into both runtime locations.\n" +
+      "--apply --store <name> installs that store's values into both runtime locations, and " +
+      "the two locations take different paths from there: target-env values are re-read by " +
+      "the gateway on restart, while repo-env values were interpolated into the container's " +
+      "environment at creation — so with an instance running, --apply recreates the container " +
+      "itself (it is replaced, not merely signalled), waits for health, and confirms the new " +
+      "values are in force without printing them; a stopped instance picks them up on the " +
+      "next start.\n" +
       "--dump --store <name> is the reverse: recovers what an already-running instance " +
       "actually holds — target-env from the target's own config/.env, repo-env (the " +
       "gateway token) from the running container's own environment, since it is never " +
@@ -238,7 +249,12 @@ export const managementCommands: Record<string, AppCommand> = {
     // the dispatcher, so the gate and the command cannot drift apart again.
     destructive: true,
     readOnlyWhen: recipeActionIsReadOnly,
-    structuredWhen: (args) => args[0] === "verify" || args[0] === "onboard" || args[0] === "diagnose",
+    // One envelope for every action's answer, declared once as the tool's outputSchema:
+    // verify, onboard and diagnose contribute their JSON, and the text actions carry
+    // their text in `result` — no action's response falls outside the declared shape. A
+    // new action needs nothing here but the right readOnlyWhen below, which is what the
+    // envelope's changed field is built from.
+    structured: true,
     details:
       "A recipe is a third-party service living beside the instance — its own directory " +
       "under the deployment's recipes/, its own compose project, its own lifecycle.\n" +
@@ -246,12 +262,31 @@ export const managementCommands: Record<string, AppCommand> = {
       "or volumes.\n" +
       "Building happens on the target (a fresh Rust or Go build takes minutes and streams " +
       "rather than hangs silently); a recipe kept in the repository but marked disabled " +
-      "refuses `install` unless --force-disabled is given. An optional recipes/<name>/prepare.ts " +
+      "refuses `install` unless --force-disabled is given. " +
+      "install, remove, verify, onboard and diagnose take the instance lock for their whole run — " +
+      "install across its build, so minutes — during which other mutating operations are refused " +
+      "with the holder named, and a caller that already holds the lock runs them as its own steps " +
+      "instead of refusing itself; " +
+      "list, status and logs take no lock, and neither does import: it writes the repository's " +
+      "recipes/ directory, not the instance, so it works before bootstrap has prepared the lock home. " +
+      "An optional recipes/<name>/prepare.ts " +
       "hook belongs to the application and may generate private target config before build or " +
       "reconcile the running service afterwards; " +
-      "verify.ts and onboard.ts hooks expose app-owned checks and onboarding through MCP; " +
-      "recipe import copies an app-owned recipe without overwriting an existing one; the " +
-      "framework does not interpret domain-specific fields.\n" +
+      "verify.ts and onboard.ts hooks expose app-owned checks and onboarding through MCP, " +
+      "gated as mutations — confirm and the instance lock — because the framework cannot " +
+      "know what an app-owned hook touches; " +
+      "import copies <source> — a directory with its own recipe.json — into recipes/ under " +
+      "new-name, defaulting to the source directory's own name, and refuses to overwrite; " +
+      "the framework does not interpret domain-specific fields.\n" +
+      "import leaves out credential-shaped names: the framework's generic set (.env*, " +
+      "secrets/, *.token, *.secrets.env) plus whatever the source's own recipe.json declares " +
+      "under privateFiles — a filter over file names, not a guarantee: a credential under " +
+      "any other name is copied unless the source declares it.\n" +
+      "Where the running recipe may keep generated credentials is a separate declaration in " +
+      "the same file: privatePaths — literal, data-relative paths. migrate and share snapshots " +
+      "exclude them, full keeps them, and the private-config helpers refuse a private write " +
+      "anywhere else. The two fields are not interchangeable: privateFiles is recipe-relative " +
+      "(what import copies), privatePaths is data-relative (where the target keeps secrets).\n" +
       "diagnose bundles one report instead of several manual round trips: whether the " +
       "recipe's stack is running, a bounded tail of every service in it (not just one), " +
       "and the verify.ts hook's own result if it has one — gated like verify itself, since " +
@@ -263,7 +298,8 @@ export const managementCommands: Record<string, AppCommand> = {
         kind: "positional",
         choices: ["list", "import", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
       },
-      { name: "name", description: "Recipe name, or destination name for import", kind: "positional" },
+      { name: "name", description: "Recipe name; with import, the source directory to copy from", kind: "positional" },
+      { name: "new-name", description: "With import: import under this name instead of the source directory's own name", kind: "positional" },
       { name: "volumes", description: "With remove: delete its volumes too", kind: "flag" },
       { name: "tail", description: "With logs/diagnose: lines to return per service", kind: "option" },
       {
@@ -271,6 +307,7 @@ export const managementCommands: Record<string, AppCommand> = {
         description: "With install: build a recipe marked disabled",
         kind: "flag",
       },
+      { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
     ],
   },
   "provision-agent": {
@@ -362,6 +399,11 @@ export const managementCommands: Record<string, AppCommand> = {
   "mcp-creds": {
     summary: "Print service URL, token and MCP client config for both servers",
     run: mcpCreds,
+    // Its whole job is handing over the credential: masking its healthy output (the
+    // response redaction every other successful answer now goes through, P2-05) would
+    // answer with "***" where the caller asked for the token. The deliberate reveal is
+    // declared here, not left as an implicit hole in the dispatcher.
+    exportsSecrets: true,
     details:
       "The same information `./clawforge mcp-setup` writes to a file, printed instead —\n" +
       "useful for pasting into a client by hand or checking what --json/--token would produce.",

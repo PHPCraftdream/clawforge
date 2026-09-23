@@ -49,6 +49,10 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "mount changes nothing the runtime compares.\n" +
       "That is why apply-config and configure-provider point here: their changes only take " +
       "effect on the next start of the gateway process.\n" +
+      "Restart re-reads what the container can see — never what compose baked into it: the " +
+      "environment was interpolated from the deployment .env once, at creation, and no " +
+      "restart changes it. A rotated repo-env secret needs the recreate that `secrets --apply` " +
+      "performs itself, or `./clawforge up`.\n" +
       "Secrets are checked first, same as `up`; the port is not, since the container keeps " +
       "the binding it already holds.",
     arguments: [{ name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" }],
@@ -125,6 +129,9 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "this instance's actual secret values, including inside binary files. A pull that " +
       "fails the check is deleted — both the snapshot and the backup it was copied from — " +
       "rather than left behind under a name that looks like a normal successful pull.\n" +
+      "A migrate pull checks the staged archive's listing against the same privacy " +
+      "exclusions before publishing — a snapshot carrying config/.env or a recipe's " +
+      "declared private paths is rejected and deleted the same way.\n" +
       "Keeps the newest OC_SNAPSHOT_KEEP snapshots (default 10, same as backup's " +
       "OC_BACKUP_KEEP) and removes the rest, sidecar files included — unbounded before, " +
       "on a deployment pulled regularly this filled the snapshot directory forever.",
@@ -169,6 +176,8 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "provider keys and the gateway token are never acceptable outside `full`, this " +
       "instance's own identity/device tokens are expected in `migrate` but fatal in " +
       "`share`.\n" +
+      "A recipe's declared private paths (recipe.json privatePaths — literal, " +
+      "data-relative) are refused the same way for migrate and share.\n" +
       "Does not scan for personal content in transcripts or workspace notes — review " +
       "those yourself.",
     arguments: [
@@ -188,6 +197,13 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "restores byte-for-byte;\n" +
       "the verifier both accepts a shareable archive AND rejects one carrying " +
       "credentials; the MCP bridge speaks clean JSON-RPC.\n" +
+      "The drift check restores the declaration on its way out, verdict already in; if " +
+      "that restore fails, the check fails saying the instance may still hold the drifted " +
+      "value and naming ./clawforge apply-config as the repair.\n" +
+      "Every check lands as passed, failed, not-checked (this deployment makes the check " +
+      "inapplicable) or could-not-check (it could not obtain a verdict — the instance was " +
+      "unreachable, the call never answered); the run exits non-zero unless every " +
+      "applicable check passed.\n" +
       "--quick skips the slow round-trip check.",
     arguments: [
       { name: "quick", description: "Skip the slow round-trip check", kind: "flag" },

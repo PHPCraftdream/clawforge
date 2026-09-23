@@ -232,6 +232,24 @@ function withFileOps(transport: Transport): Transport {
   );
 }
 
+{
+  const execOptions: { timeoutMs?: number }[] = [];
+  const transport = {
+    description: "stub",
+    async exec(_command: string, _args: string[], options: { timeoutMs?: number }): Promise<ExecResult> {
+      execOptions.push({ timeoutMs: options?.timeoutMs });
+      if (_args[0] === "compose") return { code: 0, stdout: "abc123\n", stderr: "" };
+      return { code: 0, stdout: "ok\n", stderr: "" };
+    },
+  } as unknown as Transport;
+  const runtime = new DockerRuntime(withFileOps(transport), stubSettings, paths, { service: "gateway" });
+
+  await runtime.execCommand!("cli-helper", "curl", ["-fsS", "http://127.0.0.1:18789/healthz"], { timeoutMs: 4321 });
+  check("execCommand forwards a deadline to the transport", execOptions.at(-1)?.timeoutMs, 4321);
+  await runtime.execCommand!("cli-helper", "curl", ["-fsS", "http://127.0.0.1:18789/healthz"]);
+  check("execCommand without a deadline forwards none", execOptions.at(-1)?.timeoutMs, undefined);
+}
+
 // --- cli(): tries the helper first, falls back only on HelperNotRunning -----------------
 
 function runtimeStub(overrides: {

@@ -25,6 +25,7 @@ export type Severity = "blocking" | "warning";
 export type ProblemCode =
   | "GATEWAY_DOWN"
   | "GATEWAY_UNHEALTHY"
+  | "EGRESS_UNREACHABLE"
   | "CONFIG_DRIFT"
   | "SECRET_MISSING"
   | "RESTART_REQUIRED"
@@ -35,6 +36,9 @@ export type ProblemCode =
   | "CRON_DRIFT"
   | "LOCK_MISSING"
   | "LOCK_DRIFT"
+  | "ENV_STALE"
+  | "DECLARATION_MISSING"
+  | "STORE_INCOMPLETE"
   | "SET_RECIPE_INCOMPLETE"
   | "SET_REFERENCE_BROKEN"
   | "SET_SCHEDULE_INVALID"
@@ -62,6 +66,16 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   GATEWAY_UNHEALTHY: {
     severity: "blocking",
     summary: "the gateway is running but does not report itself healthy",
+    nextAction: "./clawforge logs --tail 100",
+  },
+  EGRESS_UNREACHABLE: {
+    severity: "warning",
+    // A warning on purpose: the gateway is doing its job and the failure is outside it, so a
+    // name that will not resolve this second must not fail a doctor that CI branches on.
+    // 2026-09-20: the gateway could not resolve its model provider for a whole day while
+    // every inbound probe stayed green — those probes are taken from the operator machine's
+    // network, not the container's.
+    summary: "the running gateway cannot reach an endpoint its own configuration names",
     nextAction: "./clawforge logs --tail 100",
   },
   CONFIG_DRIFT: {
@@ -122,6 +136,40 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     severity: "warning",
     summary: "the instance no longer matches config/deployment.lock.json",
     nextAction: "./clawforge plan",
+  },
+
+  // Operator-side findings: the deployment folder this repository keeps, not the instance.
+  // The instance can be perfectly healthy while its own reproduction quietly rots, so each
+  // names the command that reads the operator side back from the instance — which is only
+  // possible while the instance still holds what was lost.
+  ENV_STALE: {
+    severity: "warning",
+    // A warning, not blocking: the container runs on the values it was created with, so a
+    // stale .env costs nothing until the next restart — and a folder that is merely behind
+    // must not fail a doctor that CI branches on. The detail names WHICH variable drifted
+    // and never a value, not even a non-secret one: .env mixes a real secret
+    // (OPENCLAW_GATEWAY_TOKEN) with the plumbing, so nothing parsed from that file is
+    // printable beyond the four names.
+    summary: "a connection fact in the deployment's .env no longer matches the running container",
+    nextAction: "./clawforge recover-env",
+  },
+  DECLARATION_MISSING: {
+    severity: "warning",
+    // Warning, on LOCK_MISSING's precedent: the instance works and survives a restart,
+    // which is what blocking is reserved for; what it cannot do is be re-declared from
+    // this repository. An absent declaration is also a state the framework already treats
+    // as legitimate (an empty one), so blocking would fail every deployment that declares
+    // nothing through config.
+    summary: "an instance is running, but config/desired-state.json does not exist to re-declare it",
+    nextAction: "./clawforge apply-config --dump",
+  },
+  STORE_INCOMPLETE: {
+    severity: "warning",
+    // Recovery reads the value back from the target while the target still holds it; once
+    // the target's copy is rotated or overwritten, the operator side's is gone for good.
+    // The warning exists to be heeded inside that window.
+    summary: "the instance holds a secret the deployment's default local store does not",
+    nextAction: "./clawforge secrets --dump",
   },
 
   // Set-level findings. Their remedy is always an edit to the declaration rather than a
@@ -222,6 +270,39 @@ export interface DeclaredState {
   readonly recipes: readonly string[];
 }
 
+/** One outbound endpoint the live configuration names, asked of the container itself. The
+ *  states separate the ways this fails because a reader has to know which happened:
+ *  "dns" — the name does not resolve from inside the container; "unreachable" — it resolves
+ *  but does not answer; "invalid" — the configured value is not a usable URL at all;
+ *  "timeout" — it gave no answer at all within the probe's whole deadline (DNS, connection,
+ *  headers and body alike), so no reachability verdict is possible either way. */
+export interface EgressObservation {
+  /** The configuration path that names it, e.g. models.providers.zai.baseUrl. */
+  readonly path: string;
+  /** The endpoint as configured, with any credentials in it redacted. */
+  readonly endpoint: string;
+  readonly state: "ok" | "dns" | "unreachable" | "invalid" | "timeout";
+  /** The resolver's or connection's own error code, when there was one. */
+  readonly detail?: string;
+}
+
+/** One .env connection fact against the running container, by variable NAME — never a
+ *  value: the file mixes a real secret with the plumbing, so nothing parsed from it is
+ *  printable beyond the four names. "unrecovered" — the running container's answer did not
+ *  carry this fact, so there was nothing to compare against; named, not guessed. */
+export interface ConnectionFactObservation {
+  readonly name: string;
+  readonly state: "match" | "stale" | "unrecovered";
+}
+
+/** The deployment's default local secret store — secrets/local.env, the store `secrets
+ *  --dump` writes without a --store — against the values the target holds. */
+export interface SecretStoreObservation {
+  readonly file: string;
+  /** Required names present on the target with no value in the store. Names only. */
+  readonly missing: readonly string[];
+}
+
 /** What the instance actually is, right now. */
 export interface ObservedState {
   readonly running: boolean;
@@ -229,6 +310,21 @@ export interface ObservedState {
   readonly health?: string;
   /** HTTP probe results by endpoint, e.g. { healthz: 200 }. */
   readonly probes: Readonly<Record<string, number>>;
+  /** Outbound reachability of the endpoints the live configuration names, probed from INSIDE
+   *  the container — the vantage the inbound probes above (taken from the operator machine)
+   *  structurally lack. Present only when the instance is running and the probe could run at
+   *  all; an absent field is a gap, never a quiet claim that everything is reachable. */
+  readonly egress?: readonly EgressObservation[];
+  /** The deployment .env's connection facts against the running container, by variable
+   *  NAME. Present only when the comparison ran: a runtime that cannot introspect the
+   *  container, a container that is not running, or an absent .env each leave it absent —
+   *  a gap, never a quiet claim that the folder matches. */
+  readonly connectionFacts?: readonly ConnectionFactObservation[];
+  /** The deployment's default local store against the values the target holds, by variable
+   *  NAME. Present only when a store file existed to read: bootstrap puts values on the
+   *  target without ever creating a store, so an absent store is not checked, and this
+   *  field's absence is that gap, never a claim that the store is complete. */
+  readonly secretStore?: SecretStoreObservation;
   /** Image actually in use, and its digest when the runtime can resolve one. */
   readonly image?: string;
   readonly imageDigest?: string;

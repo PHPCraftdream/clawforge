@@ -4,8 +4,25 @@
 // Four of .env's values are plumbing, not secrets — OC_DATA_DIR, OPENCLAW_GATEWAY_PORT,
 // OC_COMPOSE_PROJECT, OPENCLAW_IMAGE — and compose resolved all four from that same .env at
 // container-creation time, so the running container still holds the answers (the same
-// introspection surface `secrets --dump` recovers the gateway token from). A value already
-// correct is left untouched; one Docker's answer does not carry is named, never guessed.
+// introspection surface `secrets --dump` recovers the gateway token from).
+//
+// Which side is authoritative when the two disagree is not decidable here: the file could
+// have rotted while the container kept the answers, or the operator could have just edited
+// it with the container not caught up yet — and writing the container's values over the
+// second reading silently discards a deliberate edit (P2-03, round 3). So a plain
+// recover-env writes only the UNAMBIGUOUS case — a fact name the .env does not carry at
+// all — and reports facts both sides carry differently without writing over them. The
+// direction is chosen explicitly:
+//
+//   ./clawforge recover-env --adopt-runtime   the container is authoritative: its facts are
+//                                             merged into the file (already-correct values
+//                                             untouched)
+//   ./clawforge recover-env                   fill missing names; report diverged ones
+//
+// The opposite direction — the file is right and the CONTAINER must catch up — is not a
+// file repair at all: a container's environment is fixed once at creation, so adopting the
+// edited .env means recreating it, which `./clawforge up` does against the file as it reads
+// now.
 //
 // The inherent limit, stated plainly: this is for a stale or half-filled .env. A wholly
 // ABSENT .env cannot be repaired here, because reaching the target to inspect its container
@@ -18,13 +35,8 @@ import { envFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { replacePrivateFile } from "#src/security/private-file.ts";
 import { upsertEnvValue } from "#src/security/private-config.ts";
-
-const FACTS: { field: "dataDir" | "port" | "composeProject" | "image"; name: string }[] = [
-  { field: "dataDir", name: "OC_DATA_DIR" },
-  { field: "port", name: "OPENCLAW_GATEWAY_PORT" },
-  { field: "composeProject", name: "OC_COMPOSE_PROJECT" },
-  { field: "image", name: "OPENCLAW_IMAGE" },
-];
+import { CONNECTION_FACTS, connectionFactDiffs, unrecoverableConnectionFacts } from "./facts.ts";
+import type { ConnectionFactDiff } from "./facts.ts";
 
 /** Reports the facts Docker's own answer did not carry — left as they are, never guessed.
  *  Shared by every exit path, so a dry run names exactly the gaps a real write would. */
@@ -34,15 +46,32 @@ function reportUnrecoverable(unrecoverable: { name: string }[]): void {
   for (const fact of unrecoverable) info(fact.name);
 }
 
-/** Merges the running container's connection facts back into the deployment's .env. The file
- *  mixes these non-secret plumbing values with a real secret (OPENCLAW_GATEWAY_TOKEN), so the
- *  raw content passes through upsertEnvValue for exactly the four names and is never printed,
- *  parsed out, or reported beyond them. */
+/** Names the facts both sides carry with different values and the two directions out — the
+ *  decision this command declines to make on the operator's behalf. Names only: the values
+ *  are printed when a direction is chosen and a write reports what it wrote. */
+function reportDirectionChoice(diverged: ConnectionFactDiff[]): void {
+  if (diverged.length === 0) return;
+  log(
+    `${diverged.length} connection fact(s) differ from the running container, and which side is ` +
+      "authoritative is the operator's call — nothing is written over them without a direction:",
+  );
+  for (const fact of diverged) info(fact.name);
+  info("keep the container's values: ./clawforge recover-env --adopt-runtime");
+  info("keep .env's values (the edit is the intent): ./clawforge up recreates the container from the file as it now reads");
+}
+
+/** Merges the running container's connection facts into the deployment's .env — the names
+ *  the file is missing entirely by default, every differing fact under --adopt-runtime. The
+ *  file mixes these non-secret plumbing values with a real secret (OPENCLAW_GATEWAY_TOKEN),
+ *  so the raw content passes through upsertEnvValue for exactly the four names and is never
+ *  printed, parsed out, or reported beyond them. */
 export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
   let dryRun = false;
+  let adoptRuntime = false;
 
   for (const arg of args) {
     if (arg === "--dry-run") dryRun = true;
+    else if (arg === "--adopt-runtime") adoptRuntime = true;
     else die(`unknown argument: ${arg}`);
   }
 
@@ -75,34 +104,46 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
   const raw = await readFile(path, "utf8");
   const current = parseEnv(raw);
 
-  const stale = FACTS.filter((fact) => facts[fact.field] !== undefined && current[fact.name] !== facts[fact.field]);
-  const unrecoverable = FACTS.filter((fact) => facts[fact.field] === undefined);
+  const diffs = connectionFactDiffs(facts, current);
+  const diverged = diffs.filter((entry) => entry.kind === "diverged");
+  // Missing names are the unambiguous case — filling them cannot overwrite anything the
+  // operator typed. Values both sides carry differently are written only when the operator
+  // chose the container as the authoritative side.
+  const writable = adoptRuntime ? diffs : diffs.filter((entry) => entry.kind === "missing");
+  const unrecoverable = unrecoverableConnectionFacts(facts);
 
-  if (stale.length === 0) {
+  if (diffs.length === 0) {
     log(`nothing to recover — every connection fact that could be recovered already matches the running instance`);
     reportUnrecoverable(unrecoverable);
     return;
   }
 
   if (dryRun) {
-    log(`dry run — ${stale.length} of ${FACTS.length} connection fact(s) would be written to ${path}`);
-    for (const fact of stale) info(`${fact.name}=${facts[fact.field]!}`);
+    log(`dry run — ${writable.length} of ${CONNECTION_FACTS.length} connection fact(s) would be written to ${path}`);
+    for (const fact of writable) info(`${fact.name}=${fact.value}`);
+    if (!adoptRuntime) reportDirectionChoice(diverged);
     reportUnrecoverable(unrecoverable);
     return;
   }
 
-  let content = raw;
-  for (const fact of stale) content = upsertEnvValue(content, fact.name, facts[fact.field]!);
-  // replacePrivateFile even though these four values are not secrets: the file mixes them
-  // with a real secret (OPENCLAW_GATEWAY_TOKEN) in the same file, so protection is per-file,
-  // not per-line. Unrelated lines — the token's included — pass through upsertEnvValue
-  // untouched and are never read beyond that.
-  await replacePrivateFile(path, content);
+  if (writable.length > 0) {
+    let content = raw;
+    for (const fact of writable) content = upsertEnvValue(content, fact.name, fact.value);
+    // replacePrivateFile even though these four values are not secrets: the file mixes them
+    // with a real secret (OPENCLAW_GATEWAY_TOKEN) in the same file, so protection is per-file,
+    // not per-line. Unrelated lines — the token's included — pass through upsertEnvValue
+    // untouched and are never read beyond that.
+    await replacePrivateFile(path, content);
 
-  log(`recovered ${stale.length} of ${FACTS.length} connection fact(s) into ${path}`);
-  for (const fact of stale) info(`${fact.name}=${facts[fact.field]!}`);
+    log(`recovered ${writable.length} of ${CONNECTION_FACTS.length} connection fact(s) into ${path}`);
+    for (const fact of writable) info(`${fact.name}=${fact.value}`);
+    // The facts just written were read FROM the running container, so it already operates
+    // them — and a restart keeps the container with its once-interpolated environment, so
+    // it could not deliver them even if it had to. What reads this file fresh is the next
+    // recreation (compose interpolates .env at container creation) and this tooling's own
+    // context, which re-derives from it.
+    info("the running container already operates these facts — nothing needs restarting");
+  }
+  if (!adoptRuntime) reportDirectionChoice(diverged);
   reportUnrecoverable(unrecoverable);
-  // A value changed on disk, but the running container has not read it — the same honest
-  // hint secrets --apply gives.
-  info("restart the gateway to re-read them: ./clawforge restart");
 }

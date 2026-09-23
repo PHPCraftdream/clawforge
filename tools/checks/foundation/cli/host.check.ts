@@ -7,6 +7,10 @@
 //   - parseHostArgs: where host's own flags stop and the command's verbatim tail begins, with
 //     and without the bare `--` the shell needs but MCP never sends;
 //   - the root gate: --root and --confirm-root each refuse to act alone;
+//   - the engine privilege contract: a context can arrive as root (Docker Desktop's
+//     docker-desktop distro has no other login user), so the double-flag consent is demanded
+//     wherever the privilege arrives; the real effective uid is asserted where this machine
+//     can answer it, and the check says so plainly where it cannot;
 //   - resolveHostContext per platform against a fake environment — target passthrough, engine
 //     onto docker-desktop's WSL distro on Windows and onto local everywhere else, local with no
 //     root to elevate to on Windows — plus the pure wsl.exe/sudo command builders and wsl.exe's
@@ -17,7 +21,7 @@
 //   - full dispatch through a recording transport, and one real bare-machine run.
 
 import { host, parseHostArgs, rootElevationRequested } from "#framework/commands/interface/host/index.ts";
-import { parseWslDistroListing, resolveHostContext, sudoCommand, wslEngineCommand } from "#framework/commands/interface/host/contexts.ts";
+import { ENGINE_DISTRO, parseWslDistroListing, realHostEnvironment, resolveHostContext, sudoCommand, wslEngineCommand } from "#framework/commands/interface/host/contexts.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp-server.ts";
 import { withOutputSink } from "#framework/core/output.ts";
@@ -35,6 +39,10 @@ function check(name: string, actual: unknown, expected: unknown): void {
   process.stderr.write(
     `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
   );
+}
+
+function skip(reason: string): void {
+  process.stderr.write(`  skip ${reason}\n`);
 }
 
 // die() throws rather than exiting, so the message is the observable.
@@ -192,6 +200,56 @@ check("both flags together are consent", rootElevationRequested(true, true), tru
     listWslDistros: async () => [],
   });
   check("local on windows refuses elevation outright", (await deathOf(() => execution.elevate("whoami", [], {}))).includes("no root"), true);
+}
+
+// --- the engine privilege contract: what the command arrives as, not what was requested -------
+// The auditors' failure mode, pinned here: argv containing -u root proves a request, never a
+// privilege. The hermetic half pins the declaration and the gate against fake environments;
+// the real half runs the auditors' own probe — id -u through the real engine resolution — and
+// is skipped, plainly, wherever this machine cannot answer it: not Windows, or no docker-desktop
+// distro. A skip there is a named limit of the check, not a pass.
+
+{
+  const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "engine", {
+    platform: "win32",
+    listWslDistros: async () => ["Ubuntu-24.04", "docker-desktop"],
+  });
+  check("the docker-desktop engine declares what the audit found: it arrives as root", execution.arrivesAsRoot, true);
+  check("and says so before anything runs", execution.note?.includes("root (uid 0)") === true && execution.note?.includes("no other login user"), true);
+  check("the collapse off windows is not declared root", (await resolveHostContext(ctxWith(recordingTransport().transport), "engine", { platform: "linux", listWslDistros: async () => [] })).arrivesAsRoot, undefined);
+  check("nor the engine without docker-desktop", (await resolveHostContext(ctxWith(recordingTransport().transport), "engine", { platform: "win32", listWslDistros: async () => ["Ubuntu-24.04"] })).arrivesAsRoot, undefined);
+  check("nor the target", (await resolveHostContext(ctxWith(recordingTransport().transport), "target")).arrivesAsRoot, undefined);
+}
+
+{
+  // The gate on a context that arrives as root: no flags, no run. The consent is demanded
+  // before anything can spawn, so the fake environment is safe to resolve for real.
+  const stub = recordingTransport();
+  const message = await deathOf(() => host(ctxWith(stub.transport), ["engine", "--", "id", "-u"], { platform: "win32", listWslDistros: async () => ["docker-desktop"] }));
+  check("an unconsented engine command is refused, naming the privilege", message.includes("root (uid 0)") && message.includes("--root --confirm-root"), true);
+  check("refusal is not a downgrade: nothing ran", stub.calls.length, 0);
+}
+
+const realEngineDistro = realHostEnvironment.platform === "win32" && (await realHostEnvironment.listWslDistros()).includes(ENGINE_DISTRO);
+if (realEngineDistro) {
+  // The auditors' exact probe, read-only (id -u, the only command this runs in the distro):
+  // what the engine context REALLY arrives as before any flag is read. This is the assertion
+  // the review that passed P2-04 was missing — argv was checked where only the effective uid
+  // could answer.
+  const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "engine");
+  const probe = await execution.exec("id", ["-u"], { input: "", allowFailure: true, timeoutMs: 120_000 });
+  const uid = probe.stdout.trim().split("\n").at(-1)?.trim() ?? "";
+  check("the real engine path arrives as root (uid 0), exactly as declared", uid === "0" && execution.arrivesAsRoot === true, true);
+  check("the real gate refuses the same command without consent", (await deathOf(() => host(ctxWith(recordingTransport().transport), ["engine", "--", "id", "-u"]))).includes("--root --confirm-root"), true);
+  // The consented leg, end to end and for real: both flags, then the same read-only probe
+  // through the command itself.
+  const written: string[] = [];
+  await withOutputSink((chunk) => written.push(chunk), async () => {
+    await host(ctxWith(recordingTransport().transport), ["engine", "--root", "--confirm-root", "--", "id", "-u"]);
+  });
+  check("consented, the command runs in the engine and answers as root", written.join("").trim().split("\n").at(-1)?.trim(), "0");
+} else {
+  skip("the real engine uid probe needs this machine to be Windows with the docker-desktop distro — the arrival declaration and the consent gate above are pinned hermetically instead");
 }
 
 check("--exec hands the command line over verbatim, unparsed by any shell", wslEngineCommand("docker-desktop", "cat", ["/etc/resolv.conf"], false), {

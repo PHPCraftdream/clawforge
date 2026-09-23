@@ -31,6 +31,16 @@ Provider setup is provider-agnostic: put `<PROVIDER>_API_KEY` in the target's
 when the provider uses a custom variable name; URLs, adapters and model catalogues stay in
 `config/desired-state.json`.
 
+## Recipe private files
+
+A recipe's `recipe.json` can declare two private-file fields, in two different coordinate
+systems. `privatePaths` lists data-relative paths where the recipe keeps generated
+credentials on the target: `migrate` and `share` snapshots exclude them, `full` keeps them,
+and the `@clawforge/framework/private-config` helpers refuse private writes anywhere else.
+`privateFiles` lists recipe-relative files that `recipe import` leaves out of the copy — a
+filter over file names, not a guarantee. Both are literal paths, validated strictly. The
+repository README's "Recipes" section documents both contracts, including their limits.
+
 ## MCP
 
 The project-local servers are named `clawforge` (OpenClaw's channel bridge) and

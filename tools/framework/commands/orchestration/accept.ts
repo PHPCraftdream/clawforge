@@ -24,6 +24,7 @@ import { emit, isCaptured } from "#src/core/output.ts";
 import { recipesDir, deploymentName } from "#src/runtime/deployment.ts";
 import { openclawCliJson, withModelApproval } from "#src/service/openclaw-cli.ts";
 import { recipeServerContainerPath, mcpServerMatches } from "../management/provision-agent/index.ts";
+import type { CheckOutcome } from "../check-outcome.ts";
 import type { Context } from "#src/core/context.ts";
 import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
@@ -43,16 +44,10 @@ export interface AcceptanceCheck {
   readonly [argument: string]: unknown;
 }
 
-/** Four outcomes, not three-collapsed-into-one. "skipped" used to mean both "nobody asked
- *  for this" (a model-calling check, without --with-model) and "we tried and got nowhere" (
- *  the server would not start, the CLI did not answer) — a reader needs a different reaction
- *  to each, and one label for both is how a report stops being trusted.
- *
- *   not-checked      deliberately not run (declared usesModel, --with-model was not given)
- *   could-not-check  attempted, no verdict obtainable — the detail says why
- *   failed           a verdict was obtained, and it is bad
- *   passed           a verdict was obtained, and it is good */
-export type AcceptanceStatus = "passed" | "failed" | "not-checked" | "could-not-check";
+/** The acceptance readings of the shared check outcomes. The four values and the reasoning
+ *  behind them live in commands/check-outcome.ts, beside the error classes a throw-style
+ *  check suite uses to land on them. */
+export type AcceptanceStatus = CheckOutcome;
 
 /** Model use is a property of the operation, not a claim made by deployment metadata.
  * `usesModel: false` on `agent_answers` must not make a paid check run accidentally. */

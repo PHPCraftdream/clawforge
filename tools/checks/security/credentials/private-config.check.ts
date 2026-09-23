@@ -13,7 +13,8 @@ import {
 } from "#framework/security/private-config.ts";
 import { clearRecipesDir, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
 import { locksDir } from "#framework/core/env.ts";
-import { LocalTransport, type ExecResult } from "#framework/runtime/transport.ts";
+import { LocalTransport, WslTransport, spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport.ts";
+import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
 
 assert.equal(upsertEnvValue("A=1\nB=2\n", "B", "updated"), "A=1\nB=updated\n");
@@ -35,22 +36,37 @@ await mkdir(join(scratch, "declared"), { recursive: true });
 await writeFile(join(scratch, "declared", "recipe.json"), JSON.stringify({ description: "declared", privatePaths: ["recipe-private"] }), "utf8");
 
 const files = new Map<string, string>();
-const ctx = {
-  settings: { dataDir: "/srv/fixture/data", env: {} },
-  transport: {
-    mkdirp: async (): Promise<void> => {},
-    exec: async (command: string, args: string[]) => {
-      if (command === "mv") {
-        files.set(args.at(-1)!, files.get(args.at(-2)!)!);
-        files.delete(args.at(-2)!);
-      }
-      return { code: 0, stdout: "", stderr: "" };
+// The stub models a POSIX filesystem, where paths that differ only by "//", "." or ".."
+// segments denote the same file: every map access canonicalizes, so a write accepted at a
+// folded spelling is observed at the canonical path the declaration actually covers.
+const canonical = (path: string): string => {
+  const segments: string[] = [];
+  for (const segment of path.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") segments.pop();
+    else segments.push(segment);
+  }
+  return `/${segments.join("/")}`;
+};
+const stubContext = (): Context =>
+  ({
+    settings: { dataDir: "/srv/fixture/data", env: {} },
+    transport: {
+      mkdirp: async (): Promise<void> => {},
+      exec: async (command: string, args: string[]) => {
+        if (command === "mv") {
+          files.set(canonical(args.at(-1)!), files.get(canonical(args.at(-2)!))!);
+          files.delete(canonical(args.at(-2)!));
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      writePrivateFile: async (path: string, content: string) => { files.set(canonical(path), content); },
+      writeFile: async (path: string, content: string) => { files.set(canonical(path), content); },
+      remove: async (path: string) => { files.delete(canonical(path)); },
     },
-    writePrivateFile: async (path: string, content: string) => { files.set(path, content); },
-    writeFile: async (path: string, content: string) => { files.set(path, content); },
-    remove: async (path: string) => { files.delete(path); },
-  },
-} as unknown as Context;
+  }) as unknown as Context;
+
+const ctx = stubContext();
 
 try {
   useRecipesDir(scratch);
@@ -61,8 +77,35 @@ try {
   await assert.rejects(replacePrivateTargetFile(ctx, "/srv/fixture/data/undeclared/config.ktav", "x"), /privatePaths/);
   await assert.rejects(ensurePrivateTargetDirectory(ctx, "/srv/fixture/data/undeclared"), /privatePaths/);
   await assert.rejects(replacePrivateTargetFile(ctx, "/elsewhere/config.ktav", "x"), /inside the data directory/);
+  // Traversal is judged on the NORMALIZED path, not the string: `..` cannot borrow a
+  // declared prefix to land outside it, and repeated slashes/dots fold to the canonical
+  // path the declaration actually covers.
+  await assert.rejects(replacePrivateTargetFile(ctx, "/srv/fixture/data/recipe-private/../escape.env", "x"), /privatePaths/);
+  await assert.rejects(replacePrivateTargetFile(ctx, "/srv/fixture/data/recipe-private/sub/../../escape.env", "x"), /privatePaths/);
+  await assert.rejects(replacePrivateTargetFile(ctx, "/srv/fixture/data/recipe-private/../../outside.env", "x"), /inside the data directory/);
+  await assert.rejects(replacePrivateTargetFile(ctx, "/srv/fixture/data/recipe-private/..", "x"), /inside the data directory/);
+  await replacePrivateTargetFile(ctx, "/srv/fixture/data//recipe-private/./config.ktav", "secret-free test");
+  assert.equal(files.get("/srv/fixture/data/recipe-private/config.ktav"), "secret-free test");
+  assert.deepEqual([...files.keys()], ["/srv/fixture/data/recipe-private/config.ktav"]);
   // A refused write must leave nothing behind, not even a half-written staging file.
   assert.deepEqual([...files.keys()], ["/srv/fixture/data/recipe-private/config.ktav"]);
+
+  // An exact-file declaration covers that file alone: `..` through the file-named component
+  // normalizes to a sibling the declaration does not name. The recipes root is enumerated as
+  // <root>/<recipe-name>/recipe.json, so the manifest sits in a recipe dir inside the root.
+  // Nothing after this in the block reads the recipes root, so no mid-block restore is
+  // needed — the finally below hands the recipes root back to the deployment.
+  await mkdir(join(scratch, "exact", "exact"), { recursive: true });
+  await writeFile(
+    join(scratch, "exact", "exact", "recipe.json"),
+    JSON.stringify({ description: "exact", privatePaths: ["exact/private.env"] }),
+    "utf8",
+  );
+  useRecipesDir(join(scratch, "exact"));
+  const ctxExact = stubContext();
+  await replacePrivateTargetFile(ctxExact, "/srv/fixture/data/exact/private.env", "x");
+  assert.equal(files.get("/srv/fixture/data/exact/private.env"), "x");
+  await assert.rejects(replacePrivateTargetFile(ctxExact, "/srv/fixture/data/exact/private.env/../sibling.env", "x"), /privatePaths/);
 } finally {
   if (previousRecipes === undefined) clearRecipesDir();
   else useRecipesDir(previousRecipes);
@@ -363,6 +406,155 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
       );
     } finally {
       await rm(locks, { recursive: true, force: true });
+    }
+  }
+}
+
+/** A real POSIX filesystem with real symlinks and real GNU tar: this machine off Windows,
+ *  a WSL distribution on it. Where neither exists the group is skipped, loudly. */
+async function realPosixTransport(): Promise<Transport | undefined> {
+  if (process.platform !== "win32") return new LocalTransport();
+  try {
+    const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
+    for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {
+      const candidate = new WslTransport(distro);
+      const shell = await candidate
+        .exec("sh", ["-c", "true"], { allowFailure: true, timeoutMs: 30_000 })
+        .then((result) => result.code === 0, () => false);
+      if (shell) return candidate;
+    }
+  } catch {
+    // wsl.exe missing or unlaunchable — reported as the skip below.
+  }
+  return undefined;
+}
+
+// --- the symlink contract on a real transport -------------------------------------------------
+//
+// A link BETWEEN the data directory and the declared root moves the write outside the subtree
+// the declaration covers and is refused, by name; the data root itself may be a link for
+// private writes — they land in the tree the link points to. (Backup is the exception: it
+// refuses a symlinked data root outright, because tar would store the link itself — P2-02.)
+// This needs a real shell over a real filesystem, so the group runs on a real POSIX
+// transport — the machine's own filesystem off Windows, a WSL distribution on it — and
+// skips, loudly through checkExec, only where neither exists.
+
+{
+  const transport = await realPosixTransport();
+  if (transport === undefined) {
+    checkExec("symlink-ancestor checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
+  } else {
+    const tag = randomBytes(4).toString("hex");
+    const root = `/tmp/clawforge-trav-${tag}`;
+    const recipes = await mkdtemp(join(tmpdir(), "clawforge-trav-recipes-"));
+    const previousRecipesDir = (() => {
+      try { return recipesDirectory(); } catch { return undefined; }
+    })();
+    try {
+      await mkdir(join(recipes, "only"), { recursive: true });
+      await writeFile(join(recipes, "only", "recipe.json"), JSON.stringify({ description: "only", privatePaths: ["real-sub"] }), "utf8");
+      useRecipesDir(recipes);
+      const wslCtx = { settings: { dataDir: `${root}/data`, env: {} }, transport } as unknown as Context;
+
+      // Case 1: the declared root itself is a symlink out of the data directory.
+      await transport.mkdirp(`${root}/data/elsewhere`);
+      await transport.exec("ln", ["-s", "elsewhere", `${root}/data/real-sub`]);
+      checkExec(
+        "a symlinked ancestor between the data dir and the declared root is refused",
+        await rejectedExec(() => replacePrivateTargetFile(wslCtx, `${root}/data/real-sub/f.env`, "x")),
+        true,
+      );
+      let refusal = "";
+      try {
+        await replacePrivateTargetFile(wslCtx, `${root}/data/real-sub/f.env`, "x");
+      } catch (error) {
+        refusal = (error as Error).message;
+      }
+      checkExec(
+        "the refusal names the symlinked ancestor",
+        /symlinked directory/.test(refusal) && refusal.includes(`${root}/data/real-sub`),
+        true,
+      );
+
+      // Case 2: the same declaration over a real directory must really write.
+      await transport.exec("rm", [`${root}/data/real-sub`]);
+      await transport.mkdirp(`${root}/data/real-sub`);
+      let healthy = "";
+      try {
+        await replacePrivateTargetFile(wslCtx, `${root}/data/real-sub/f.env`, "plain");
+        healthy = "ok";
+      } catch (error) {
+        healthy = (error as Error).message;
+      }
+      checkExec("a healthy write into the declared root succeeds", healthy, "ok");
+      const landed = await transport.exec("test", ["-f", `${root}/data/real-sub/f.env`], { allowFailure: true });
+      checkExec("the file really landed inside the declared root", landed.code, 0);
+
+      // Case 3: the data ROOT itself may be a symlink — private writes land in the target
+      // tree (backup refuses such a root: P2-02).
+      await transport.mkdirp(`${root}/data2/real-sub`);
+      await transport.exec("ln", ["-s", "data2", `${root}/datalink`]);
+      const linkCtx = { settings: { dataDir: `${root}/datalink`, env: {} }, transport } as unknown as Context;
+      let linked = "";
+      try {
+        await replacePrivateTargetFile(linkCtx, `${root}/datalink/real-sub/g.env`, "plain");
+        linked = "ok";
+      } catch (error) {
+        linked = (error as Error).message;
+      }
+      checkExec("a symlinked data root stays allowed", linked, "ok");
+      const linkedLanding = await transport.exec("test", ["-f", `${root}/data2/real-sub/g.env`], { allowFailure: true });
+      checkExec("the write lands in the tree the link points to", linkedLanding.code, 0);
+      // Case 4 (audit 2026-09-22 round 2, P2-01): a link that textual normalization cancels
+      // but the kernel still walks. `link` points outside the data directory, so
+      // `link/../real-sub/f.env` normalizes to the declared `real-sub/f.env` — a scan over
+      // the normalized ancestors sees no link at all, accepts, and the write lands at
+      // <root>/real-sub/f.env. The scan must run over the raw prefixes and refuse.
+      await transport.mkdirp(`${root}/elsewhere`);
+      await transport.exec("ln", ["-s", "../elsewhere", `${root}/data/link`]);
+      checkExec(
+        "a link cancelled by a following `..` is refused",
+        await rejectedExec(() => replacePrivateTargetFile(wslCtx, `${root}/data/link/../real-sub/f.env`, "x")),
+        true,
+      );
+      const escaped = await transport.exec("test", ["-e", `${root}/real-sub`], { allowFailure: true });
+      checkExec("the cancelled-link refusal creates nothing outside the data directory", escaped.code, 1);
+
+      // Case 5: a `..` over real directories must keep working — the raw scan refuses the
+      // link, not the dots — and land at the normalized declared path.
+      let dotdot = "";
+      try {
+        await replacePrivateTargetFile(wslCtx, `${root}/data/real-sub/../real-sub/h.env`, "plain");
+        dotdot = "ok";
+      } catch (error) {
+        dotdot = (error as Error).message;
+      }
+      checkExec("a `..` over real directories stays allowed", dotdot, "ok");
+      const dotdotLanding = await transport.exec("test", ["-f", `${root}/data/real-sub/h.env`], { allowFailure: true });
+      checkExec("the `..` write lands at the normalized declared path", dotdotLanding.code, 0);
+
+      // Case 6 (same audit, second branch): a link at the FINAL component of a directory
+      // target. `mkdir -p` and `chmod` do not replace it the way `mv -T` replaces a file
+      // link — they act through it — so the old helper owner-only-chmodded an external
+      // directory. The helper must refuse before touching anything.
+      await transport.exec("rm", ["-rf", `${root}/data/real-sub`]);
+      await transport.mkdirp(`${root}/outside-dir`);
+      await transport.exec("chmod", ["755", `${root}/outside-dir`]);
+      await transport.exec("ln", ["-s", "../outside-dir", `${root}/data/real-sub`]);
+      checkExec(
+        "a symlink at the final component of a directory target is refused",
+        await rejectedExec(() => ensurePrivateTargetDirectory(wslCtx, `${root}/data/real-sub`)),
+        true,
+      );
+      const outsideMode = await transport.exec("stat", ["-c", "%a", `${root}/outside-dir`], { allowFailure: true });
+      checkExec("the refused directory write does not chmod the external target", outsideMode.stdout.trim(), "755");
+      const stillLink = await transport.exec("test", ["-h", `${root}/data/real-sub`], { allowFailure: true });
+      checkExec("the refused directory target is still the link it was", stillLink.code, 0);
+    } finally {
+      await transport.remove(root).catch(() => {});
+      await rm(recipes, { recursive: true, force: true });
+      if (previousRecipesDir === undefined) clearRecipesDir();
+      else useRecipesDir(previousRecipesDir);
     }
   }
 }

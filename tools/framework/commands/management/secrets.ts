@@ -19,6 +19,10 @@ import { upsertEnvValue } from "#src/security/private-config.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
 
+/** The store `secrets` commands write and read when no --store is given — and the one
+ *  store inspect's STORE_INCOMPLETE finding watches, since inspect takes no store name. */
+export const DEFAULT_SECRET_STORE = "local";
+
 /** Delivers a local store to each declared secret location, refusing incomplete input. */
 async function applyStore(ctx: Context, storeName: string): Promise<void> {
   const path = secretStoreFile(storeName);
@@ -123,8 +127,65 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
     }
     await replacePrivateFile(envFile(), content);
     log(`applied ${repoSupplied.length} repository value(s) from ${path}`);
-    info(`${envFile()} holds the new repository values; restart the gateway to reload them`);
+    await deliverRepositoryValues(ctx, repoSupplied, values);
   }
+}
+
+// The target branch above may point at restart because config/.env is a file inside a bind
+// mount that the gateway process re-reads at startup — restarting leaves the container and
+// the interpolated service definition untouched, so `up` converges on the healthy container
+// and does nothing. Repo-env values are different in kind: compose interpolated them into
+// the service definition and fixed them in the container's environment at creation, and
+// `restart` keeps that container, so the old value stays in force while reporting success.
+// The honest verb is the recreate `up` performs — an operation compose only offers because
+// the interpolated service configuration genuinely changed, unlike the bind-mount edit,
+// which leaves it identical — and the cost is real: the container is replaced, not merely
+// signalled, so connections drop and the service starts fresh. The recreate must go through
+// reconcile(): settings.env is the process-start snapshot of the .env file, and applyStore
+// rewrote that file in this same process — an `up` composed from the snapshot would recreate
+// the container with the OLD values.
+
+/** Puts rotated repo-env values in force, and says what was done either way. */
+async function deliverRepositoryValues(ctx: Context, entries: SecretRequirement[], values: Record<string, string | undefined>): Promise<void> {
+  if (!(await ctx.runtime.isRunning())) {
+    info(`${envFile()} holds the new values, and the instance is stopped — the next start creates the container with them: ./clawforge up`);
+    return;
+  }
+  // A runtime that cannot recreate gets the corrected instruction, not the old lie: restart
+  // would leave the previous value in force while reporting success.
+  if (typeof ctx.runtime.reconcile !== "function") {
+    info(`${envFile()} holds the new values, but the running container keeps the environment it was created with — a restart does not apply them`);
+    info("recreate the container so compose interpolates the new values: ./clawforge up");
+    return;
+  }
+  info("recreating the container so compose interpolates the new values — it is replaced, not merely signalled: connections drop and the service starts fresh");
+  await ctx.runtime.reconcile();
+  log(`waiting for the gateway at ${ctx.settings.serviceUrl}`);
+  await ctx.runtime.waitForHealth();
+  log("gateway is healthy");
+  await confirmRepositoryValues(ctx, entries, values);
+}
+
+/** Compares what the recreated container actually holds against what was written — without
+ *  printing either. */
+async function confirmRepositoryValues(ctx: Context, entries: SecretRequirement[], values: Record<string, string | undefined>): Promise<void> {
+  if (typeof ctx.runtime.runningEnvironment !== "function") {
+    info(`${ctx.runtime.description} cannot read the running container's environment, so the new values are in force but unconfirmed here`);
+    return;
+  }
+  const environment = await ctx.runtime.runningEnvironment();
+  if (environment === undefined) {
+    warn("could not read the running container's environment to confirm the new values — ./clawforge status or ./clawforge inspect says whether the instance is serving");
+    return;
+  }
+  const stale = entries.filter((entry) => environment[entry.name] !== values[entry.name]).map((entry) => entry.name);
+  if (stale.length > 0) {
+    warn(`the running container does not hold the new value(s) for ${stale.join(", ")} — recreate with ./clawforge up`);
+    return;
+  }
+  log(entries.length === 1
+    ? `confirmed: the running container holds the new value for ${entries[0].name}`
+    : `confirmed: the running container holds the new values for all ${entries.length} repo-env variables`);
 }
 
 /** Renders a store file with recovered values filled in where known — the same section/
@@ -222,7 +283,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   let writeTemplate = false;
   let printTemplate = false;
   let apply = false;
-  let store = "local";
+  let store = DEFAULT_SECRET_STORE;
   let initStore = false;
   let dump = false;
   let force = false;

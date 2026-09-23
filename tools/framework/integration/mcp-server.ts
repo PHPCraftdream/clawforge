@@ -28,7 +28,7 @@ import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "./provision.ts";
 import { maskSecrets, UserError } from "../core/log.ts";
 import { withOutputSink } from "../core/output.ts";
-import { maskStructuredOutput, maskStructuredResult, structuredResult, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./mcp-schema.ts";
+import { maskStructuredOutput, maskStructuredResult, toolEnvelope, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./mcp-schema.ts";
 
 export * from "./mcp-schema.ts";
 
@@ -198,7 +198,10 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
               name,
               description: toolDescription(command),
               inputSchema: inputSchema(command),
-              ...(command.structured === true || command.structuredWhen?.(["verify"]) === true ? { outputSchema: STRUCTURED_OUTPUT_SCHEMA } : {}),
+              // Declared from the command's own metadata alone — a structured tool
+              // answers every action in the envelope, so one honest schema covers all of
+              // them and no action name is consulted here.
+              ...(command.structured === true ? { outputSchema: STRUCTURED_OUTPUT_SCHEMA } : {}),
             })),
             ...gateTools.map((command) => ({
               name: command.name,
@@ -232,13 +235,15 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
               break;
             }
             const { output, failure } = await captureGateRun(gateCommand, toArgv(gateCommand, args));
+            // The mask follows the answer, not the exit status (audit 2026-09-22 round 3,
+            // P2-05): a gate command's healthy output gets the same treatment as its failure.
             reply(request.id, {
               ...(failure === undefined ? {} : { isError: true }),
               content: [{
                 type: "text",
-                text: failure === undefined
+                text: maskSecrets(failure === undefined
                   ? (output === "" ? "(no output)" : output)
-                  : maskSecrets(output === "" ? failure : `${output}\n\n${failure}`),
+                  : (output === "" ? failure : `${output}\n\n${failure}`)),
               }],
             });
             break;
@@ -274,18 +279,30 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           // Built from the output alone, never from the output plus the failure text: a
           // command that reports findings and then fails on them — doctor is the one that
           // does — still emitted a valid document, and that is what the caller needs most
-          // in exactly that case.
-          const structured = (command.structured === true || command.structuredWhen?.(argv) === true)
-            ? structuredResult(effectiveCommand, machineOutput ?? output, `${name}-${Date.now().toString(36)}`)
+          // in exactly that case. A structured command wraps EVERY action's output in the
+          // envelope it declared — text included — so the declared schema is true of each
+          // response rather than of the actions someone remembered to list.
+          const structured = command.structured === true
+            ? toolEnvelope(effectiveCommand, output, machineOutput, `${name}-${Date.now().toString(36)}`)
             : undefined;
-          const responseStructured = failure === undefined || structured === undefined
+          // Redaction is not an error-path courtesy (audit 2026-09-22 round 3, P2-05): a
+          // successful diagnostic prints the same logs, hook output and machine JSON a
+          // failure would have, so registered values are masked here too — in the text and
+          // in every key and value of the envelope. The one exception is declared on the
+          // command (mcp-creds): its success is a deliberate reveal, and masking it would
+          // answer the call with nothing. A failure keeps the mask even there.
+          const deliberate = command.exportsSecrets === true;
+          const responseStructured = structured === undefined || (deliberate && failure === undefined)
             ? structured
             : maskStructuredResult(structured);
 
           if (failure === undefined) {
             reply(request.id, {
-              content: [{ type: "text", text: output === "" ? "(no output)" : output }],
-              ...(structured === undefined ? {} : { structuredContent: structured }),
+              content: [{
+                type: "text",
+                text: output === "" ? "(no output)" : (deliberate ? output : maskSecrets(output)),
+              }],
+              ...(responseStructured === undefined ? {} : { structuredContent: responseStructured }),
             });
             break;
           }

@@ -6,7 +6,7 @@ import { PROFILES } from "#src/service/archive.ts";
 
 export const PROFILE_ARGUMENT = {
   name: "profile",
-  description: "full (everything), migrate (no provider keys) or share (workspace only)",
+  description: "full (everything), migrate (no provider keys or recipe-declared private files) or share (no keys, identity, or recipe-declared private files)",
   kind: "option",
   choices: PROFILES,
 } as const;

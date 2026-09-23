@@ -12,8 +12,10 @@ import { restoreArchive, newestArchive } from "#framework/commands/lifecycle/res
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
+import { UserError } from "#framework/core/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, type ExecResult } from "#framework/runtime/transport.ts";
+import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
 
 let failed = 0;
 
@@ -32,6 +34,9 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
 const CONFIG_PATH = "/srv/openclaw/data/config/openclaw.json";
 const TARGET_ENV_PATH = "/srv/openclaw/data/config/.env";
+const DATA_DIR = "/srv/openclaw/data";
+const PARENT = "/srv/openclaw";
+const ARCHIVE = "/srv/openclaw/backups/openclaw-x.tar.gz";
 
 let startCalled = false;
 
@@ -61,6 +66,10 @@ function makeCtx(): Context {
         }
         if (command === "tar" && args.includes("-tvzf")) return { code: 0, stdout: "", stderr: "" };
         if (command === "stat") return { code: 0, stdout: "1000:1000", stderr: "" };
+        // The restored-layout probes ask about the tree this stub pretends is there: an
+        // ordinary directory, resolvable, nothing a link reaches around.
+        if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+        if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: args[1] ?? "", stderr: "" };
         return { code: 0, stdout: "", stderr: "" };
       },
     },
@@ -111,6 +120,62 @@ check("the gateway is never started when a required secret is missing", startCal
   );
 
   check("a corrupted restored config is not reported as a successful restore", corruptThrew, true);
+}
+
+// --- P2-04 (audit 2026-09-22 round 2): a restore names the recipe stacks it did not recreate.
+//
+// restoreArchive() stops the gateway's project and moves the data directory aside;
+// recipe stacks are separate Compose projects, so their containers survive with mounts
+// resolved against the OLD tree. The command cannot recreate another project's
+// containers, so it says so instead: name each running stack, point at the moved-aside
+// data, give the framework-native remediation. Nothing running — nothing said.
+
+{
+  const recipes = await mkdtemp(`${tmpdir()}/clawforge-restore-recipe-check-`);
+  try {
+    await mkdir(resolve(recipes, "vault"), { recursive: true });
+    await writeFile(resolve(recipes, "vault", "recipe.json"), JSON.stringify({ description: "sidecar under the data directory" }), "utf8");
+    const probed: string[] = [];
+    const ctxWithStack = (running: boolean): Context => {
+      const ctx = makeCtx();
+      (ctx as unknown as { runtime: { stack: unknown } }).runtime.stack = (project: string) => {
+        probed.push(project);
+        return { async isRunning(): Promise<boolean> { return running; } };
+      };
+      return ctx;
+    };
+
+    let output = "";
+    useRecipesDir(recipes);
+    try {
+      await withOutputSink((line) => { output += line; }, () =>
+        restoreArchive(ctxWithStack(true), "/srv/openclaw/backups/openclaw-x.tar.gz", { force: true }),
+      );
+      check("a restore with a running recipe stack names it", output.includes("recipe stack(s) still running") && output.includes("vault"), true);
+      check("the warning says the stack was not recreated", output.includes("not recreated"), true);
+      check("the warning points at the moved-aside data", output.includes("kept at /srv/openclaw/data.replaced-"), true);
+      check("the remediation names the framework commands", output.includes("./clawforge recipe remove vault") && output.includes("./clawforge recipe install vault"), true);
+      // check() compares with ===: two array instances are never equal, so compare the
+      // JSON forms — the project names themselves, not the containers holding them.
+      check("the probe went to the recipe's own compose project", JSON.stringify(probed), JSON.stringify([projectName(deploymentName(), "vault")]));
+    } finally {
+      clearRecipesDir();
+    }
+
+    output = "";
+    probed.length = 0;
+    useRecipesDir(recipes);
+    try {
+      await withOutputSink((line) => { output += line; }, () =>
+        restoreArchive(ctxWithStack(false), "/srv/openclaw/backups/openclaw-x.tar.gz", { force: true }),
+      );
+    } finally {
+      clearRecipesDir();
+    }
+    check("a restore with no running recipe stack stays quiet", output.includes("recipe stack"), false);
+  } finally {
+    await rm(recipes, { recursive: true, force: true });
+  }
 }
 
 // --- which archive `./clawforge restore` picks when given none ------------------------------
@@ -194,6 +259,250 @@ if (process.platform !== "win32") {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+// --- P1-04 (audit 2026-09-22 round 3): the restored layout is verified with the
+// privileges that act through it.
+//
+// extractArchive() unpacks through sudoFor() and keeps the archive's numeric ownership,
+// while ensureDataDirs()/--fresh-identity act with whatever escalation they need — and the
+// probes between them ran unprivileged, where `test` reports an untraversable directory
+// exit 1, the same exit code it gives for a path that is not there. A mandatory layout
+// path the check could not actually look at was therefore skipped as "absent" instead of
+// refused, and the privileged writes that follow could travel it unseen. Scenario A is
+// the unprivileged run whose parent cannot be searched: the restore must stop and the
+// previous data goes back. Scenario B is the escalated run: the probes ask as root, the
+// parent IS searchable, absence stays trustworthy, and the restore completes — with every
+// privileged step recorded to prove it escalated. Scenario C is a probe that answers
+// neither yes nor no: `test` itself failed, which is not an answer that can be read as
+// "absent" either, and the parent searches fine — only the unanswerable probe stands
+// between the restore and writes through a path its checks could not see.
+
+interface RecordedExec {
+  command: string;
+  args: string[];
+}
+
+/** Every exec recorded, and answers like a target whose restored data tree the transport
+ *  user cannot search: the subdirectories answer a clean 1 from both existence probes
+ *  (what an EACCES-denied `test -e` reports, indistinguishable from "not there"), and the
+ *  parent-searchability probe answers `searchParent ?? escalated` — root can search, the
+ *  unprivileged run cannot. In the escalated run the parent and the data tree are not
+ *  writable, so extraction, the verification probes and the later chmod all escalate,
+ *  while the lock home beside the tree stays writable.
+ *
+ *  `overrides.searchParent` answers the parent-searchability probe for the unprivileged
+ *  run too, and `overrides.unexpectedProbe` names the one mandatory subdirectory whose
+ *  existence probes answer an unexpected exit code — `test` itself failing, which is
+ *  neither "there" nor "absent" — so a restore that would trust such an answer as
+ *  "absent" has something to be caught by. */
+function deniedContext(
+  escalated: boolean,
+  overrides: { searchParent?: boolean; unexpectedProbe?: string } = {},
+): { ctx: Context; calls: RecordedExec[] } {
+  const calls: RecordedExec[] = [];
+  const searchParent = overrides.searchParent ?? escalated;
+  const unexpectedProbe = overrides.unexpectedProbe;
+  const mandatory = ["config", "workspace", "auth-secrets"].map((sub) => `${DATA_DIR}/${sub}`);
+  const underData = (path: string): boolean => path === DATA_DIR || path.startsWith(`${DATA_DIR}/`);
+  const writable = (path: string): boolean => !escalated || !(path === PARENT || underData(path));
+  const ctx = {
+    settings: { dataDir: DATA_DIR, env: {} },
+    transport: {
+      description: "stub",
+      async exists(path: string): Promise<boolean> {
+        // Absent on purpose, as above: the restored config references a variable nothing
+        // supplies, so a completed restore ends on the missing-secrets path.
+        if (path === TARGET_ENV_PATH) return false;
+        return true;
+      },
+      async readFile(path: string): Promise<string> {
+        if (path === CONFIG_PATH) {
+          return JSON.stringify({ provider: { key: { source: "env", id: "REQUIRED_VAR" } } });
+        }
+        return "";
+      },
+      async writeFile(): Promise<void> {},
+      async mkdirp(): Promise<void> {},
+      async remove(): Promise<void> {},
+      async exec(rawCommand: string, rawArgs: string[]): Promise<ExecResult> {
+        calls.push({ command: rawCommand, args: rawArgs });
+        // Recorded exactly as made. Answered through the escalation prefix: the rules
+        // below must see the same call whichever run made it.
+        const command = rawCommand === "sudo" && rawArgs[0] === "-n" ? (rawArgs[1] ?? "") : rawCommand;
+        const args = rawCommand === "sudo" && rawArgs[0] === "-n" ? rawArgs.slice(2) : rawArgs;
+        // Defensively answered rather than trusted to the default: if sudoFor() ever
+        // decided escalation was needed in the unprivileged run, these say it may not.
+        if (command === "sh" && args.some((arg) => arg.includes("command -v sudo"))) {
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "true") return { code: 0, stdout: "", stderr: "" };
+        if (command === "tar" && args.includes("-tzf")) {
+          return { code: 0, stdout: "data/\ndata/config/openclaw.json\n", stderr: "" };
+        }
+        if (command === "tar" && args.includes("-tvzf")) return { code: 0, stdout: "", stderr: "" };
+        if (command === "stat") return { code: 0, stdout: "1000:1000", stderr: "" };
+        // The restored root is an ordinary directory, not a link.
+        if (command === "test" && args[0] === "-L" && args[1] === DATA_DIR) return { code: 1, stdout: "", stderr: "" };
+        // The mandatory layout paths answer absent — the EACCES-as-exit-1 this pinned down.
+        if (command === "test" && (args[0] === "-e" || args[0] === "-L") && mandatory.includes(args[1] ?? "")) {
+          // One of them can answer with the failure of the probe itself instead: an exit
+          // code that is neither "there" nor "absent", which must not be read as either.
+          if (args[1] === `${DATA_DIR}/${unexpectedProbe}`) return { code: 2, stdout: "", stderr: "" };
+          return { code: 1, stdout: "", stderr: "" };
+        }
+        // The parent-searchability probe: the same privileges that asked about the path
+        // are the ones that would have to search its parent.
+        if (command === "test" && args[0] === "-x" && args[1] === DATA_DIR) {
+          return { code: searchParent ? 0 : 1, stdout: "", stderr: "" };
+        }
+        if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: args[1] ?? "", stderr: "" };
+        if (command === "test" && args[0] === "-w") return { code: writable(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+    runtime: {
+      async stop(): Promise<void> {},
+      async start(): Promise<void> {
+        // Nothing here reaches the gateway — every restore here ends on the missing-secrets
+        // path or stops before it — so a start is a flow bug that must not read as a
+        // successful restore.
+        throw new Error("the gateway must never start from these restores");
+      },
+      async waitForHealth(): Promise<void> {},
+    },
+  } as unknown as Context;
+  return { ctx, calls };
+}
+
+{
+  const { ctx, calls } = deniedContext(false);
+  let failure: unknown;
+  await withOutputSink(
+    () => {},
+    async () => {
+      try {
+        await restoreArchive(ctx, ARCHIVE, { force: true });
+      } catch (error) {
+        failure = error;
+      }
+    },
+  );
+
+  check("a restored path the probes cannot traverse refuses the restore", failure instanceof UserError, true);
+  check(
+    "the refusal names the unverifiable path",
+    failure instanceof Error && failure.message.includes(`${DATA_DIR}/config`),
+    true,
+  );
+  check("ensureDataDirs never ran through the unverified path", calls.some((call) => call.command === "chmod"), false);
+  check(
+    "no standard directory was created below it either",
+    calls.some((call) => call.command === "mkdir" && call.args.some((arg) => arg.startsWith(`${DATA_DIR}/config`))),
+    false,
+  );
+  check(
+    "the previous data was moved back in its place",
+    calls.some((call) => call.command === "rm" && call.args[0] === "-rf" && call.args[1] === DATA_DIR),
+    true,
+  );
+}
+
+{
+  const { ctx, calls } = deniedContext(true);
+  let failure: unknown;
+  let output = "";
+  await withOutputSink(
+    (line) => {
+      output += line;
+    },
+    async () => {
+      try {
+        await restoreArchive(ctx, ARCHIVE, { force: true });
+      } catch (error) {
+        failure = error;
+      }
+    },
+  );
+
+  check("an escalated restore of absent subdirectories still completes", failure, undefined);
+  check("and reports the missing-secrets completion path", output.includes("restore complete"), true);
+  check(
+    "the extraction ran privileged, as sudoFor decided for the parent",
+    calls.some((call) => call.command === "sudo" && call.args[0] === "-n" && call.args[1] === "tar" && call.args.includes("--numeric-owner")),
+    true,
+  );
+  check(
+    "the parent-searchability probe ran privileged too",
+    calls.some(
+      (call) =>
+        call.command === "sudo" &&
+        call.args[0] === "-n" &&
+        call.args[1] === "test" &&
+        call.args[2] === "-x" &&
+        call.args[3] === DATA_DIR,
+    ),
+    true,
+  );
+  check(
+    "no existence probe answered for a data path without that escalation",
+    calls.some(
+      (call) =>
+        call.command === "test" &&
+        (call.args[0] === "-e" || call.args[0] === "-L") &&
+        (call.args[1] ?? "").startsWith(`${DATA_DIR}/`),
+    ),
+    false,
+  );
+  check(
+    "and the chmod after the restore ran privileged too",
+    calls.some(
+      (call) =>
+        call.command === "sudo" &&
+        call.args[0] === "-n" &&
+        call.args[1] === "chmod" &&
+        call.args[2] === "700" &&
+        call.args[3] === `${DATA_DIR}/auth-secrets`,
+    ),
+    true,
+  );
+}
+
+{
+  // A probe that answers neither yes nor no: `test -e` failed outright (exit 2), so "is
+  // this mandatory path there?" has no answer. The parent searches fine and everything
+  // else looks absent-but-answerable, so nothing but the unanswerable probe stands
+  // between the restore and writes through a path its checks could not see.
+  const { ctx, calls } = deniedContext(false, { searchParent: true, unexpectedProbe: "config" });
+  let failure: unknown;
+  await withOutputSink(
+    () => {},
+    async () => {
+      try {
+        await restoreArchive(ctx, ARCHIVE, { force: true });
+      } catch (error) {
+        failure = error;
+      }
+    },
+  );
+
+  check("an existence probe answering neither yes nor no refuses the restore", failure instanceof UserError, true);
+  check(
+    "the refusal names the unanswerable path and the exit code it gave",
+    failure instanceof Error && failure.message.includes(`${DATA_DIR}/config`) && failure.message.includes("exited 2"),
+    true,
+  );
+  check("ensureDataDirs never ran through the unverifiable path", calls.some((call) => call.command === "chmod"), false);
+  check(
+    "no standard directory was created below it either",
+    calls.some((call) => call.command === "mkdir" && call.args.some((arg) => arg.startsWith(`${DATA_DIR}/config`))),
+    false,
+  );
+  check(
+    "the previous data was moved back in its place",
+    calls.some((call) => call.command === "rm" && call.args[0] === "-rf" && call.args[1] === DATA_DIR),
+    true,
+  );
 }
 
 process.stderr.write(failed === 0 ? "all restore checks passed\n" : `${failed} failed\n`);

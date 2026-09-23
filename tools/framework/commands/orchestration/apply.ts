@@ -21,6 +21,7 @@ import { applyConfig } from "./config.ts";
 import { secrets } from "../management/secrets.ts";
 import { up, restart } from "../lifecycle/lifecycle.ts";
 import { provisionAgent, removeOwnedObject } from "../management/provision-agent/index.ts";
+import { recoverEnv } from "../recover-env/index.ts";
 import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
 import type { StepStatus } from "#src/service/operations.ts";
@@ -30,6 +31,7 @@ import { withSetSource } from "#src/set/artifacts/source.ts";
 import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "#src/core/context.ts";
+import { refreshContext } from "#src/core/context.ts";
 
 /** Whether the container is running but its image could not be resolved to any digest at
  *  all — a container built or tagged in a way docker cannot report RepoDigests for, say.
@@ -50,13 +52,37 @@ export async function runningImageUnconfirmed(ctx: Context): Promise<boolean> {
  *  by shelling out to `./clawforge`: the step already knows which function it means, and going back
  *  out through the dispatcher would lose the Context, the output sink and the error. */
 const RUNNERS: Record<string, (ctx: Context, action: PlanAction) => Promise<void>> = {
+  // The recovery steps write only the operator side — .env, the local store, the
+  // declaration — nothing the instance lock serializes, so their runners call the commands'
+  // lockless modes directly. `apply` still holds its run-level lock, because the other steps
+  // in the same plan mutate the instance; these ride along under it harmlessly.
+  // Bare recover-env is the safe form: it fills the connection facts .env is missing
+  // entirely and never writes over a value both sides carry — which side is authoritative
+  // for those is the operator's call (P2-03, round 3), so no planned run picks it.
+  "recover-env": (ctx) => recoverEnv(ctx, []),
   secrets: (ctx) => secrets(ctx, ["--apply"]),
   "apply-config": (ctx) => applyConfig(ctx, []),
+  // Planned advisory (see planActions), with a runner anyway: if a future plan ever emits it
+  // as executable, it must fail loudly at exactly the --force refusal — never overwrite the
+  // store, and never fall out of this table as "no runner for this step".
+  "secrets-dump": (ctx) => secrets(ctx, ["--dump"]),
+  "apply-config-dump": (ctx) => applyConfig(ctx, ["--dump"]),
   up: (ctx) => up(ctx, []),
   restart: (ctx) => restart(ctx, []),
 };
 
-function runnerFor(action: PlanAction): ((ctx: Context, action: PlanAction) => Promise<void>) | undefined {
+/** The steps whose whole point is rewriting the deployment's .env — the file every other
+ *  step's Context was built from. `recover-env` fills into it the connection facts the file
+ *  is missing; `secrets --apply` writes rotated repo-env values into it. After either
+ *  succeeds, the rest of the run re-derives its Context from disk — or stops, when the
+ *  facts that moved are the target's own coordinates: the plan and the instance lock were
+ *  taken for the previous target, and continuing under them would address a deployment
+ *  nobody planned for. */
+const REDERIVES_CONTEXT = new Set(["recover-env", "secrets"]);
+
+/** Exported so the checks can assert every executable step a plan can emit has one — the
+ *  gap surfaced as a failed run in production otherwise, not as a failing check. */
+export function runnerFor(action: PlanAction): ((ctx: Context, action: PlanAction) => Promise<void>) | undefined {
   if (action.id.startsWith("provision-agent:")) {
     const recipe = action.id.slice("provision-agent:".length);
     return (ctx) => provisionAgent(ctx, [recipe]);
@@ -91,6 +117,28 @@ export interface ApplyOutcome {
   readonly nextActions: string[];
 }
 
+/** Thrown by runSteps when a step moved the deployment target itself (dataDir, port, ...):
+ *  the remaining steps were planned for the previous target, and the run-level lock covers
+ *  the old coordinates only. The run stops safely — recorded outcomes stay in the journal —
+ *  and a fresh `./clawforge apply` re-plans against the refreshed .env and takes the lock
+ *  for the new target. */
+export class TargetChangedError extends Error {
+  readonly stepId: string;
+  readonly changes: readonly string[];
+  readonly outcomes: StepOutcome[];
+
+  constructor(stepId: string, changes: readonly string[], outcomes: StepOutcome[]) {
+    super(
+      `step "${stepId}" changed the deployment target (${changes.join(", ")}) — the remaining steps were planned for the previous target.\n` +
+        "Re-run ./clawforge apply: it re-plans against the refreshed .env and takes the lock for the new coordinates.",
+    );
+    this.name = "TargetChangedError";
+    this.stepId = stepId;
+    this.changes = changes;
+    this.outcomes = outcomes;
+  }
+}
+
 /** Returns whether argv contains the apply dry-run flag rather than an option value. */
 export function isApplyDryRun(args: readonly string[]): boolean {
   for (let index = 0; index < args.length; index += 1) {
@@ -116,6 +164,7 @@ export async function runSteps(
   ctx: Context,
   actions: readonly PlanAction[],
   journal?: Journal,
+  scope: { current: Context } = { current: ctx },
 ): Promise<StepOutcome[]> {
   const outcomes: StepOutcome[] = [];
   let stopped = false;
@@ -128,7 +177,7 @@ export async function runSteps(
     await journal?.step(outcome.id, outcome.status, outcome.detail);
   };
 
-  for (const action of actions) {
+  for (const [index, action] of actions.entries()) {
     if (action.advisory === true) {
       await record({ id: action.id, status: "advisory", detail: "advisory: for you to do, not this command" });
       continue;
@@ -151,9 +200,44 @@ export async function runSteps(
 
     log(`step: ${action.summary}`);
     try {
-      await runner(ctx, action);
+      await runner(scope.current, action);
       await record({ id: action.id, status: "done" });
+      if (REDERIVES_CONTEXT.has(action.id)) {
+        const refresh = await refreshContext(scope.current);
+        if (refresh !== undefined) {
+          if (refresh.targetChanges.length > 0) {
+            // The target itself moved. Everything still queued was planned for the
+            // previous target, and the run-level lock covers the old coordinates — so
+            // nothing after this step runs. Each remaining step is recorded with why,
+            // and the run fails: applyFromSource turns this into a journal-closed,
+            // reported failure pointing at a fresh apply.
+            for (const later of actions.slice(index + 1)) {
+              if (later.advisory === true) {
+                await record({ id: later.id, status: "advisory", detail: "advisory: for you to do, not this command" });
+              } else {
+                await record({
+                  id: later.id,
+                  status: "blocked",
+                  detail: `the deployment target changed (${refresh.targetChanges.join(", ")}) — re-run ./clawforge apply against the refreshed .env`,
+                });
+              }
+            }
+            throw new TargetChangedError(action.id, refresh.targetChanges, outcomes);
+          }
+          if (refresh.changed.length > 0) {
+            // Same target, new values (e.g. a repo-env secret just installed): the steps
+            // after this one — up/restart included — must interpolate what is on disk
+            // now, not the snapshot this run started from.
+            scope.current = refresh.context;
+            info(`.env changed during this run (${refresh.changed.join(", ")}) — the remaining steps continue against the refreshed context`);
+          }
+        }
+      }
     } catch (error) {
+      // Not a step failure: this step succeeded and the later ones are already recorded —
+      // the error must reach applyFromSource as-is, or the run would close its journal as
+      // an ordinary failed step instead of pointing at a fresh apply.
+      if (error instanceof TargetChangedError) throw error;
       const detail = error instanceof Error ? error.message : String(error);
       await record({ id: action.id, status: "failed", detail });
       stopped = true;
@@ -360,6 +444,7 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
   let steps: StepOutcome[];
   let outcome!: ApplyOutcome;
   let failedStep: StepOutcome | undefined;
+  let targetChange: TargetChangedError | undefined;
   let snapshot: string | undefined;
   let remaining: readonly { readonly code: string; readonly detail: string }[] = [];
 
@@ -374,9 +459,18 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
       snapshot = await snapshotConfig(ctx, journal.id);
       if (snapshot !== undefined) await journal.noteSnapshot(snapshot);
 
-      steps = await runSteps(ctx, plan.actions, journal);
+      // One holder for the whole run: steps that rewrite .env re-derive the context and
+      // every later step — and the confirming inspection below — sees what is on disk now.
+      const scope: { current: Context } = { current: ctx };
+      try {
+        steps = await runSteps(ctx, plan.actions, journal, scope);
+      } catch (error) {
+        if (!(error instanceof TargetChangedError)) throw error;
+        targetChange = error;
+        steps = targetChange.outcomes;
+      }
       failedStep = steps.find((step) => step.status === "failed");
-      outcome = await confirm(ctx, plan, steps, steps.some((step) => step.status === "done"), journal.id);
+      outcome = await confirm(scope.current, plan, steps, steps.some((step) => step.status === "done"), journal.id);
 
       // Every step succeeding is not the claim this command makes. What it promises is that
       // the instance is now what the repository declares — so the confirming inspection has
@@ -386,12 +480,14 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
       remaining = blockingRemainder(outcome.problems);
 
       await journal.close(
-        failedStep === undefined && remaining.length === 0 ? "succeeded" : "failed",
+        failedStep === undefined && targetChange === undefined && remaining.length === 0 ? "succeeded" : "failed",
         failedStep !== undefined
           ? `stopped at "${failedStep.id}": ${failedStep.detail ?? "no detail"}`
-          : remaining.length === 0
-            ? undefined
-            : `every step ran, but the instance still reports ${remaining.map((entry) => entry.code).join(", ")}`,
+          : targetChange !== undefined
+            ? `stopped after "${targetChange.stepId}": the deployment target changed (${targetChange.changes.join(", ")})`
+            : remaining.length === 0
+              ? undefined
+              : `every step ran, but the instance still reports ${remaining.map((entry) => entry.code).join(", ")}`,
       );
     });
   } finally {
@@ -399,6 +495,13 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
   }
 
   report(jsonOnly, outcome, undefined);
+
+  if (targetChange !== undefined) {
+    throw new Error(
+      `${targetChange.message}\n` +
+        `What ran, and what did not: ./clawforge operations ${journal.id}`,
+    );
+  }
 
   if (failedStep !== undefined) {
     throw new Error(

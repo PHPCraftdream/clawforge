@@ -9,6 +9,11 @@
 // rsync and ssh run on the target side (inside WSL when the tooling is on Windows), because
 // that is where the SSH keys and the tools live.
 //
+// A gate stands before either delivery: every tree about to travel — the recipes and the
+// deployment's own config/ — is walked with the same portable-content policy the other
+// carriers of recipe bytes use, and a file that policy holds private refuses the whole
+// deploy instead of being left for rsync globs to guess at (audit 2026-09-22 round 3, P1-03).
+//
 // Prerequisites on the server are the user's responsibility, as everywhere else — this
 // installs nothing and reports precisely what is missing.
 //
@@ -27,9 +32,11 @@ import { log, info, die } from "#src/core/log.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, recipesDir, applicationRecipesSetting } from "#src/runtime/deployment.ts";
 import { SshTransport } from "#src/runtime/transport.ts";
+import { collectPortableRecipeFiles } from "#src/security/recipe-portable-content.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport.ts";
-import { isAbsolute, relative, sep, win32 } from "node:path";
+import { readdir } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
 
 /** Never leaves this machine. Local state, credentials, and every deployment directory —
  *  the deployment's own files are delivered separately and by name. */
@@ -161,6 +168,79 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // absolute declaration names a path on this machine and cannot be copied to the same
   // path on another host without risking an unrelated remote tree.
   const remoteRecipes = remoteRecipesPath(remoteApp);
+
+  // Deploy REFUSES rather than excludes, and the refusal happens here — before any tool
+  // check, connection or remote write — because everything after this point is mutation.
+  // Exclusion was the other option (rsync --exclude, like the syncs below), and it was
+  // rejected on the policy's own terms: rsync patterns are globs with no literal-[ escape,
+  // so a literal declaration like vault[1] would either leak through as a copy or
+  // over-exclude an undeclared sibling — the same two failure directions P1-02 fixed for
+  // tar globs (audit 2026-09-22, P1-03) — and unlike a local mirror, deploy lands bytes on
+  // another host where nothing can review what was held back afterwards. A refusal is the
+  // only answer that puts the decision back in front of the operator while everything is
+  // still on this machine.
+  //
+  // WHAT is refused is no longer deploy's own opinion (audit 2026-09-22 round 3, P1-03):
+  // the scan reads collectPortableRecipeFiles — the same walker `recipe import`, set build
+  // (service/checksums.ts) and the provision-agent mirror read — so a name gets one answer
+  // from all four carriers. That walker holds back declared privateFiles, the
+  // sensitive-NAME policy (.env, .env.local, *.token, *.secrets.env, secrets/…) and
+  // symlink targets, none of which the fixed EXCLUDES globs below can express; the scan
+  // covers every recipe directory and the deployment's own config/, the second tree the
+  // syncs below deliver. It reports only what currently EXISTS: after `recipe import` the
+  // declared bytes are absent (import copies the declaration, not the files) and deploying
+  // is fine.
+  const recipesRoot = recipesDir();
+  const carrying: string[] = [];
+  let recipeNames: string[] = [];
+  try {
+    recipeNames = (await readdir(recipesRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    // No recipes directory: nothing synced to scan, and the later rsync of recipes/ fails
+    // exactly as it does today. Any other read error is not ours to interpret.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  for (const name of recipeNames) {
+    // One walk of each recipe by the shared policy: every held-back entry comes back with
+    // its reason (declared privateFiles, sensitive-name policy, or a symlink target), which
+    // subsumes the old declared-only scan rather than running beside it.
+    const walked = await collectPortableRecipeFiles(resolve(recipesRoot, name));
+    for (const entry of walked.excluded) {
+      carrying.push(`recipes/${name}/${entry.path} (${entry.reason})`);
+    }
+  }
+  try {
+    // The deployment's config/ is synced wholesale below, and the same fixed EXCLUDES
+    // cannot express the policy there either — a stray .env.local or service.secrets.env
+    // dropped into it would otherwise travel. A deployment may have no config/ at all;
+    // only that absence is tolerated, never a read that failed for any other reason.
+    const config = await collectPortableRecipeFiles(resolve(deploymentDir(), "config"));
+    for (const entry of config.excluded) {
+      carrying.push(`config/${entry.path} (${entry.reason})`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (carrying.length > 0) {
+    die(
+      "deploy refuses to send files the portable-content policy holds private:\n" +
+        carrying.map((line) => `  ${line}`).join("\n") + "\n" +
+        "This is the same inventory `recipe import`, set build and the workspace mirror " +
+        "read — one answer per name, from every carrier. Deploy excludes nothing here on " +
+        "purpose: rsync --exclude patterns are globs with no literal-[ escape, so a literal " +
+        "declaration like vault[1] would either leak or over-exclude an undeclared sibling " +
+        "(audit 2026-09-22, P1-03, the two failure directions P1-02 fixed for tar) — and " +
+        "these bytes land on another host, with nothing left to review. The scan covers the " +
+        "recipes tree and the synced config/ directory alike, whether or not anything " +
+        "declares the name. A declaration whose files are absent does not refuse — that is " +
+        "the normal state after `recipe import`. Keep credentials in the deployment's .env " +
+        "or secrets/ (they stay here), or have the recipe's prepare hook create them on the " +
+        "target.",
+    );
+  }
 
   for (const tool of ["ssh", "rsync"]) {
     const found = await ctx.transport.exec("sh", ["-c", `command -v ${tool}`], { allowFailure: true });

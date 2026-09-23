@@ -5,15 +5,21 @@
 //
 // No target: a stub transport drives the real rotate() end to end.
 
+import { randomBytes } from "node:crypto";
 import { resolve, join } from "node:path";
 import { access, mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { archiveCarriesContent, createArchive, listArchive } from "#framework/service/archive.ts";
+import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
 import { rotate, createBackup } from "#framework/commands/lifecycle/backup.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
+import { UserError } from "#framework/core/log.ts";
 import type { Context } from "#framework/core/context.ts";
-import { LocalTransport } from "#framework/runtime/transport.ts";
+import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport.ts";
+import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
+import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
 
 let failed = 0;
 
@@ -90,7 +96,7 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
 function stubBackupCtx(
   lockAlreadyHeld: boolean,
-  options: { tarFailure?: boolean; publishCollision?: boolean } = {},
+  options: { tarFailure?: boolean; publishCollision?: boolean; symlinkedRoot?: boolean; emptyArchive?: boolean } = {},
 ): { ctx: Context; calls: string[]; files: Set<string>; contents: Map<string, string> } {
   const calls: string[] = [];
   const files = new Set(["/srv/clawforge/data"]);
@@ -107,6 +113,23 @@ function stubBackupCtx(
       },
       async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
         calls.push(`exec ${command} ${args.join(" ")}`);
+        // symlinkedDataRoot()'s two questions, answered truthfully: the stub's data
+        // directory is a real directory, unless this run simulates a symlinked root.
+        if (command === "test" && args[0] === "-L") {
+          return { code: options.symlinkedRoot === true ? 0 : 1, stdout: "", stderr: "" };
+        }
+        if (options.symlinkedRoot === true && command === "readlink") {
+          return { code: 0, stdout: "/srv/clawforge/real-data", stderr: "" };
+        }
+        // listArchive() of a staging archive: content beneath the root, except when this
+        // run simulates a content-free archive (what a symlinked root used to produce).
+        if (command === "tar" && args.includes("-tzf")) {
+          return {
+            code: 0,
+            stdout: options.emptyArchive === true ? "data/\n" : "data/\ndata/config/openclaw.json\n",
+            stderr: "",
+          };
+        }
         // The lock directory itself: a plain `mkdir` (no -p) is the atomic claim takeLock
         // makes; `test -d` is how it tells "someone holds it" from "mkdir just failed".
         if (command === "mkdir" && args.length === 1) return { code: lockAlreadyHeld ? 1 : 0, stdout: "", stderr: "" };
@@ -288,6 +311,41 @@ function rotationContext(listing: string[], keep: string): { ctx: Context; execC
   check("a failed tar restarts the gateway", calls.includes("start") && calls.includes("waitForHealth"), true);
 }
 
+// A data directory that is itself a symlink used to produce a "successful" one-entry
+// archive — the link, none of the data (audit 2026-09-22 round 2, P2-02). The refusal
+// must come before the gateway is ever touched.
+{
+  const { ctx, calls, files } = stubBackupCtx(false, { symlinkedRoot: true });
+  let message = "";
+  await withOutputSink(
+    () => {},
+    async () => {
+      try { await createBackup(ctx, {}); } catch (error) { message = (error as Error).message; }
+    },
+  );
+  check("a symlinked data root is refused", message.includes("is a symlink to"), true);
+  check("the refusal names the real directory the link points to", message.includes("/srv/clawforge/real-data"), true);
+  check("a refused symlink-root backup never pauses the gateway", calls.includes("pause"), false);
+  check("a refused symlink-root backup writes no archive", [...files].some((path) => path.endsWith(".tar.gz")), false);
+}
+
+// Defense in depth behind that refusal: tar exiting 0 and the file landing are not
+// evidence the data is inside. A staging archive that holds nothing beneath its root is
+// never published, and the gateway still comes back up.
+{
+  const { ctx, calls, files } = stubBackupCtx(false, { emptyArchive: true });
+  let message = "";
+  await withOutputSink(
+    () => {},
+    async () => {
+      try { await createBackup(ctx, {}); } catch (error) { message = (error as Error).message; }
+    },
+  );
+  check("an archive with no data beneath its root is refused", message.includes("carries no data"), true);
+  check("an empty-content refusal leaves no archive", [...files].every((path) => !path.endsWith(".tar.gz")), true);
+  check("an empty-content refusal restarts the gateway", calls.includes("start") && calls.includes("waitForHealth"), true);
+}
+
 // Publication refuses a same-name collision and leaves the existing archive untouched.
 {
   const { ctx, calls, files, contents } = stubBackupCtx(false, { publishCollision: true });
@@ -335,6 +393,239 @@ if (process.platform !== "win32") {
     check("rotation does not execute path metacharacters", markerPresent, false);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+}
+
+// --- P2-02 (audit 2026-09-22 round 2): a symlinked data root, end to end on a real filesystem.
+//
+// createBackup() used to hand tar the link's own name and report success: the archive held
+// exactly one entry — the link — and none of the data. Every scenario here is the real
+// thing: a real GNU tar archive, a real symlink, a real transport (local off Windows, a WSL
+// distribution on it). A simulated tar cannot reproduce this class of bug. No instance and
+// no gateway: the runtime stub fails loudly if the gateway is ever asked to start.
+
+/** A real POSIX filesystem with real symlinks and real GNU tar: this machine off Windows,
+ *  a WSL distribution on it. Where neither exists the group is skipped, loudly. */
+async function realPosixTransport(): Promise<Transport | undefined> {
+  if (process.platform !== "win32") return new LocalTransport();
+  try {
+    const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
+    for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {
+      const candidate = new WslTransport(distro);
+      const shell = await candidate
+        .exec("sh", ["-c", "true"], { allowFailure: true, timeoutMs: 30_000 })
+        .then((result) => result.code === 0, () => false);
+      if (shell) return candidate;
+    }
+  } catch {
+    // wsl.exe missing or unlaunchable — reported as the skip below.
+  }
+  return undefined;
+}
+
+const backupRuntime = {
+  async isRunning(): Promise<boolean> { return false; },
+  async pause(): Promise<void> {},
+  async start(): Promise<void> { throw new Error("the gateway must never start from these backups"); },
+  async waitForHealth(): Promise<void> {},
+};
+
+const restoreRuntime = {
+  async stop(): Promise<void> {},
+  async start(): Promise<void> { throw new Error("the gateway must never start from these restores"); },
+  async waitForHealth(): Promise<void> {},
+};
+
+async function code0(transport: Transport, command: string, args: string[]): Promise<boolean> {
+  return (await transport.exec(command, args, { allowFailure: true })).code === 0;
+}
+
+async function attemptBackup(
+  transport: Transport,
+  dataDir: string,
+  backupDir: string,
+): Promise<{ refused: boolean; user: boolean; message: string; archive: string }> {
+  const ctx = { settings: { dataDir, backupDir, env: {} }, transport, runtime: backupRuntime } as unknown as Context;
+  try {
+    const archive = await withOutputSink(() => {}, () => createBackup(ctx, {}));
+    return { refused: false, user: false, message: "", archive };
+  } catch (error) {
+    return {
+      refused: true,
+      user: error instanceof UserError,
+      message: error instanceof Error ? error.message : String(error),
+      archive: "",
+    };
+  }
+}
+
+const p202Transport = await realPosixTransport();
+if (p202Transport === undefined) {
+  check("backup symlink-root checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
+} else {
+  // The auditor's repro: a non-empty data root that is itself a symlink. Backup must
+  // refuse before anything misleading is written, and the data behind the link stays put.
+  {
+    const root = `/tmp/clawforge-backup-root-link-${randomBytes(4).toString("hex")}`;
+    try {
+      await p202Transport.mkdirp(`${root}/data2/config`);
+      await p202Transport.mkdirp(`${root}/data2/workspace`);
+      await p202Transport.writeFile(`${root}/data2/config/openclaw.json`, '{"provider":{}}\n');
+      await p202Transport.writeFile(`${root}/data2/workspace/SOUL.md`, "fixture\n");
+      await p202Transport.exec("ln", ["-s", "data2", `${root}/datalink`]);
+
+      const outcome = await attemptBackup(p202Transport, `${root}/datalink`, `${root}/backups`);
+      check("a backup over a symlinked data root is refused", outcome.refused, true);
+      check("the refusal is a deliberate one (a UserError)", outcome.user, true);
+      check("the refusal names the target the link points at", outcome.message.includes(`${root}/data2`), true);
+      const stray = await p202Transport.exec(
+        "sh",
+        ["-c", "find \"$1\" -name '*.tar.gz' 2>/dev/null", "sh", root],
+        { allowFailure: true },
+      );
+      check("the refused backup leaves no archive anywhere below the root", stray.stdout.trim(), "");
+      check(
+        "the data behind the link is untouched",
+        await code0(p202Transport, "test", ["-f", `${root}/data2/config/openclaw.json`]),
+        true,
+      );
+    } finally {
+      await p202Transport.remove(root).catch(() => {});
+    }
+  }
+
+  // createArchive() refuses the same layout on its own — the invariant lives at the point
+  // of archiving too, for every caller that is not createBackup().
+  {
+    const root = `/tmp/clawforge-backup-archive-link-${randomBytes(4).toString("hex")}`;
+    try {
+      await p202Transport.mkdirp(`${root}/data2/config`);
+      await p202Transport.writeFile(`${root}/data2/config/openclaw.json`, '{"provider":{}}\n');
+      await p202Transport.exec("ln", ["-s", "data2", `${root}/datalink`]);
+      const archive = `${root}/direct.tar.gz`;
+      const ctx = { settings: { dataDir: `${root}/datalink`, env: {} }, transport: p202Transport } as unknown as Context;
+      let message = "";
+      await withOutputSink(() => {}, async () => {
+        try { await createArchive(ctx, { archive, profile: "full" }); } catch (error) { message = (error as Error).message; }
+      });
+      check("createArchive refuses a symlinked data root", message.includes("refusing to archive"), true);
+      check("createArchive wrote nothing", await code0(p202Transport, "test", ["-e", archive]), false);
+    } finally {
+      await p202Transport.remove(root).catch(() => {});
+    }
+  }
+
+  // The shape the content check exists for, from real tar: an archive of an empty data
+  // directory holds nothing beneath its root, and archiveCarriesContent() reads it as
+  // exactly that — so createBackup refuses the same shape and publishes nothing. The
+  // instance lock lives in a <name>-locks sibling, so it cannot seed the tree with content.
+  {
+    const root = `/tmp/clawforge-backup-empty-${randomBytes(4).toString("hex")}`;
+    try {
+      await p202Transport.mkdirp(`${root}/empty-data`);
+      const emptyArchive = `${root}/empty.tar.gz`;
+      const emptyCtx = { settings: { dataDir: `${root}/empty-data`, env: {} }, transport: p202Transport } as unknown as Context;
+      await withOutputSink(() => {}, () => createArchive(emptyCtx, { archive: emptyArchive, profile: "full" }));
+      const emptyListing = await listArchive(emptyCtx, emptyArchive);
+      check("a real bare-root archive holds only the root entry", emptyListing.length, 1);
+      check("archiveCarriesContent reads the bare-root shape as content-free", archiveCarriesContent(emptyListing), false);
+
+      const outcome = await attemptBackup(p202Transport, `${root}/empty-data`, `${root}/backups`);
+      check("a backup of an empty data root is refused as content-free", outcome.message.includes("carries no data"), true);
+      const leftovers = await p202Transport.exec("ls", ["-1", `${root}/backups`], { allowFailure: true });
+      check("the content-free backup published no archive", leftovers.stdout.trim(), "");
+    } finally {
+      await p202Transport.remove(root).catch(() => {});
+    }
+  }
+
+  // The guard is not a ban on backing up: a real data directory still round-trips —
+  // backup produces an archive that carries the data, and restore recovers it.
+  {
+    const root = `/tmp/clawforge-backup-roundtrip-${randomBytes(4).toString("hex")}`;
+    try {
+      const dataDir = `${root}/data`;
+      await p202Transport.mkdirp(`${dataDir}/config`);
+      await p202Transport.mkdirp(`${dataDir}/workspace`);
+      await p202Transport.writeFile(`${dataDir}/config/openclaw.json`, '{"provider":{}}\n');
+      await p202Transport.writeFile(`${dataDir}/workspace/SOUL.md`, "fixture\n");
+
+      const outcome = await attemptBackup(p202Transport, dataDir, `${root}/backups`);
+      check("a backup over a real data directory still succeeds", outcome.refused, false);
+      const ctx = { settings: { dataDir, env: {} }, transport: p202Transport } as unknown as Context;
+      const entries = await listArchive(ctx, outcome.archive);
+      check("the published archive carries content beneath its root", archiveCarriesContent(entries), true);
+      check(
+        "the published archive carries the config",
+        entries.some((entry) => entry.replace(/^\.\//, "").includes("config/openclaw.json")),
+        true,
+      );
+
+      const restoredData = `${root}/restored/data`;
+      await withOutputSink(() => {}, async () => {
+        await restoreArchive(
+          { settings: { dataDir: restoredData, env: {} }, transport: p202Transport, runtime: restoreRuntime } as unknown as Context,
+          outcome.archive,
+          { force: true, noStart: true },
+        );
+      });
+      check("the restored tree holds the config", await code0(p202Transport, "test", ["-f", `${restoredData}/config/openclaw.json`]), true);
+      check("the restored tree holds the workspace", await code0(p202Transport, "test", ["-f", `${restoredData}/workspace/SOUL.md`]), true);
+    } finally {
+      await p202Transport.remove(root).catch(() => {});
+    }
+  }
+}
+
+// --- P2-04 (audit 2026-09-22 round 2): recipe stacks running through a backup are named.
+//
+// Recipes are their own Compose projects: stopping the gateway stops none of them. A
+// backup must still succeed — this bounds the snapshot's guarantee, it does not refuse
+// the operation — but the stacks left running are warned about by name, and a stopped
+// one stays quiet. The spy records which compose project each probe went to, so the
+// projectName(deploymentName(), recipe) wiring is pinned too.
+
+{
+  const recipes = await mkdtemp(join(tmpdir(), "clawforge-backup-recipe-check-"));
+  try {
+    await mkdir(resolve(recipes, "vault"), { recursive: true });
+    await writeFile(resolve(recipes, "vault", "recipe.json"), JSON.stringify({ description: "sidecar under the data directory" }), "utf8");
+    const probed: string[] = [];
+    const ctxWithStack = (running: boolean): Context => {
+      const { ctx } = stubBackupCtx(false);
+      (ctx as unknown as { runtime: { stack: unknown } }).runtime.stack = (project: string) => {
+        probed.push(project);
+        return { async isRunning(): Promise<boolean> { return running; } };
+      };
+      return ctx;
+    };
+
+    let output = "";
+    useRecipesDir(recipes);
+    try {
+      const archive = await withOutputSink((line) => { output += line; }, () => createBackup(ctxWithStack(true), {}));
+      check("a backup with a running recipe stack still succeeds", typeof archive === "string" && archive.length > 0, true);
+      check("the running stack is warned about by name", output.includes("recipe stack(s) still running") && output.includes("vault"), true);
+      check("the warning says what the snapshot does not cover", output.includes("not guaranteed consistent"), true);
+      // check() compares with ===: two array instances are never equal, so compare the
+      // JSON forms — the project names themselves, not the containers holding them.
+      check("the probe went to the recipe's own compose project", JSON.stringify(probed), JSON.stringify([projectName(deploymentName(), "vault")]));
+    } finally {
+      clearRecipesDir();
+    }
+
+    output = "";
+    probed.length = 0;
+    useRecipesDir(recipes);
+    try {
+      await withOutputSink((line) => { output += line; }, () => createBackup(ctxWithStack(false), {}));
+    } finally {
+      clearRecipesDir();
+    }
+    check("a stopped recipe stack draws no warning", output.includes("recipe stack"), false);
+    check("a stopped stack is still probed, not skipped", probed.length, 1);
+  } finally {
+    await rm(recipes, { recursive: true, force: true });
   }
 }
 

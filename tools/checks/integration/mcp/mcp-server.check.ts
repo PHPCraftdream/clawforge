@@ -12,13 +12,14 @@
 // that would need a bootstrapped instance), and the check must not depend on whichever
 // deployment happens to already be on this machine.
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createApp, appsDir } from "#framework/integration/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { MCP_EXEMPTIONS, inputSchema, structuredResult, toArgv, toolDescription } from "#framework/integration/mcp-server.ts";
+import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toArgv, toolDescription, validate } from "#framework/integration/mcp-server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 let failed = 0;
@@ -64,10 +65,40 @@ function runServer(name: string, input: string): Promise<{ code: number | null; 
   });
 }
 
+/** The same stdio exchange, against a script that builds its own app in-process (the
+ *  mcp-structured-progress check's harness): for a sweep that needs a command declaration
+ *  whose stack-bound actions cannot run here. The declaration under test is real; only the
+ *  bytes the command emits are stood in for. */
+function runScript(script: string, input: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolvePromise) => {
+    const proc = spawn(
+      process.execPath,
+      ["--input-type=module", "-e", script],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    proc.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    proc.on("close", (code) => resolvePromise({ code, stdout, stderr }));
+    proc.stdin.end(`${input}\n`);
+  });
+}
+
 const deploymentName = `mcp-check-${randomBytes(4).toString("hex")}`;
 
 try {
   await createApp(deploymentName);
+
+  // A real `recipe import` round trip: one of the plain-text actions, driven end to end.
+  const importSource = resolve(appsDir, deploymentName, "fixture-source");
+  await mkdir(importSource, { recursive: true });
+  await writeFile(resolve(importSource, "recipe.json"), JSON.stringify({ description: "Import probe" }), "utf8");
+  lines.push(JSON.stringify({ jsonrpc: "2.0", id: 11, method: "tools/call", params: { name: "recipe", arguments: { action: "import", name: importSource, confirm: true } } }));
 
   const result = await runServer(deploymentName, lines.join("\n"));
   const responses = result.stdout
@@ -106,6 +137,16 @@ try {
     false,
   );
 
+  // A plain-text action answers in the declared envelope too, with the command's own
+  // output carried as its result — the case the declaration used to lie about.
+  const imported = responses.find((r) => r.id === 11)?.result as
+    | { isError?: boolean; content?: Array<{ text?: string }>; structuredContent?: Record<string, unknown> }
+    | undefined;
+  check("recipe import succeeds over MCP", imported?.isError, undefined);
+  check("recipe import answers in the declared envelope", imported?.structuredContent !== undefined, true);
+  check("recipe import reports that it changed something", imported?.structuredContent?.changed, true);
+  check("recipe import keeps its own text beside the envelope", String(imported?.content?.[0]?.text ?? "").includes("imported recipe"), true);
+
   // --- structured results are declared, so a client knows the shape before calling -------
 
   const tools = (listed?.result as { tools?: Array<{ name: string; outputSchema?: unknown }> } | undefined)?.tools ?? [];
@@ -115,7 +156,8 @@ try {
   // The other twenty tools are unchanged: adding an envelope to the two that produce one
   // must not quietly promise a shape the rest do not return.
   check("a command that returns a log does not claim one", byName.get("status")?.outputSchema, undefined);
-  check("a mixed recipe command advertises conditional structured output", byName.get("recipe")?.outputSchema !== undefined, true);
+  check("the recipe tool declares one envelope schema for every action", byName.get("recipe")?.outputSchema !== undefined, true);
+  deep("and it is the envelope schema itself", byName.get("recipe")?.outputSchema, STRUCTURED_OUTPUT_SCHEMA);
   check("nor does a gate command", byName.get("check")?.outputSchema, undefined);
 } finally {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
@@ -187,6 +229,30 @@ try {
   }
 }
 
+// --- import is expressible over MCP: both CLI forms round-trip the real schema ------------
+//
+// The declaration used to carry only action and name, so the dispatcher's third positional —
+// the rename — could not be expressed at all (the natural arguments shape was answered with
+// "unknown argument: source"), and name's description called it the destination while the
+// dispatcher read it as the source. Positionals are emitted in declaration order and an
+// absent one is skipped, so new-name sits directly after name: with it the argv grows to
+// the three-positional form, without it the two-positional one — the two forms the CLI
+// accepts and the dispatcher destructures as [action, name, ...rest].
+{
+  const recipeCommand = openclawCommands.recipe!;
+  const declared = new Map((recipeCommand.arguments ?? []).map((argument) => [argument.name, argument]));
+  const plain = { action: "import", name: "fixture-source", confirm: true };
+  deep("import without a rename validates clean", validate(recipeCommand, plain), []);
+  deep("and builds exactly the two positionals the dispatcher reads as source-only", toArgv(recipeCommand, plain), ["import", "fixture-source"]);
+  const renamed = { action: "import", name: "fixture-source", "new-name": "renamed", confirm: true };
+  deep("import with a rename validates clean", validate(recipeCommand, renamed), []);
+  deep("and builds the three positionals in the order the dispatcher destructures", toArgv(recipeCommand, renamed), ["import", "fixture-source", "renamed"]);
+  check("import's positional is described as the source, not the destination", declared.get("name")?.description?.includes("source"), true);
+  check("the wrong 'destination' wording is gone from it", declared.get("name")?.description?.includes("destination"), false);
+  check("the rename is declared as its own positional", declared.get("new-name")?.kind, "positional");
+  check("the schema documents the rename for clients", (inputSchema(recipeCommand).properties as Record<string, unknown>)["new-name"] !== undefined, true);
+}
+
 // A structured read-only command reports changed:false, while the corresponding write remains
 // gated and reports changed:true after an explicit confirmation.
 {
@@ -229,13 +295,32 @@ try {
   const verifyLines = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recipe", arguments: { action: "verify", name: "probe" } } },
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "recipe", arguments: { action: "verify", name: "probe", confirm: true } } },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "recipe", arguments: { action: "onboard", name: "probe", confirm: true } } },
+    { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "recipe", arguments: { action: "list" } } },
   ].map((request) => JSON.stringify(request)).join("\n");
 
   try {
     await createApp(verifyDeployment);
+    // The confirmed verify is the one call here that reaches a lock-taking command, so the data
+    // directory — and with it the instance lock's home beside it — is kept inside the scratch app
+    // rather than the scaffold's /srv default, which a check has no business needing write access
+    // to. Spelled as the target sees the path: through wsl.exe a drive-letter path would be a
+    // relative one, so the drive maps to its /mnt mount; where the transport is local the resolved
+    // path is already a plain POSIX one and passes through unchanged. The finally below removes it
+    // with the rest of the app.
+    const envPath = resolve(appsDir, verifyDeployment, ".env");
+    const dataDir = resolve(appsDir, verifyDeployment, "data");
+    const drive = /^([A-Za-z]):[\\/](.*)$/.exec(dataDir);
+    const targetDataDir = drive === null ? dataDir : `/mnt/${drive[1].toLowerCase()}/${drive[2].replaceAll("\\", "/")}`;
+    await writeFile(
+      envPath,
+      (await readFile(envPath, "utf8")).replace(/^OC_DATA_DIR=.*$/m, `OC_DATA_DIR=${targetDataDir}`),
+      "utf8",
+    );
     await mkdir(recipeDir, { recursive: true });
     await writeFile(resolve(recipeDir, "recipe.json"), JSON.stringify({ description: "Verify gating probe" }), "utf8");
     await writeFile(resolve(recipeDir, "verify.ts"), "export async function verify() { return { ok: true, problems: [] }; }\n", "utf8");
+    await writeFile(resolve(recipeDir, "onboard.ts"), "export async function onboard() { return { ok: true, steps: [\"dashboard ready\"] }; }\n", "utf8");
     const result = await runServer(verifyDeployment, verifyLines);
     const responses = result.stdout
       .split("\n")
@@ -251,6 +336,19 @@ try {
     // The hook's own JSON says nothing about changed, so the envelope must fall back to
     // "assume it changed something" — never to changed:false, which nothing here can back.
     check("a confirmed verify is not reported as changed:false", structured?.changed, true);
+
+    const onboardStructured = (byId.get(3)?.result as { structuredContent?: { changed?: boolean; result?: unknown } } | undefined)?.structuredContent;
+    check("confirmed recipe onboard succeeds", byId.get(3)?.error, undefined);
+    check("a confirmed onboard is not reported as changed:false", onboardStructured?.changed, true);
+    deep("onboard's own JSON rides in the envelope whole", onboardStructured?.result, { ok: true, steps: ["dashboard ready"] });
+    const listReply = byId.get(4)?.result as { structuredContent?: { changed?: boolean; result?: unknown } } | undefined;
+    check("recipe list answers in the declared envelope too", listReply?.structuredContent !== undefined, true);
+    check("a text action's envelope reports it changed nothing", listReply?.structuredContent?.changed, false);
+    check(
+      "and its result is the command's own text",
+      typeof listReply?.structuredContent?.result === "string" && String(listReply.structuredContent.result).includes("available recipes"),
+      true,
+    );
   } finally {
     await rm(resolve(appsDir, verifyDeployment), { recursive: true, force: true });
   }
@@ -331,6 +429,28 @@ function deep(name: string, actual: unknown, expected: unknown): void {
   check(name, JSON.stringify(actual), JSON.stringify(expected));
 }
 
+/** Validates a value against the subset of JSON Schema the declared output schema uses —
+ *  driven by the schema object itself, so a future envelope change tightens or loosens
+ *  this sweep with it instead of leaving the two to drift. */
+function conforms(
+  schema: { type?: unknown; required?: unknown; properties?: Record<string, { type?: unknown; items?: { type?: unknown } }> } | undefined,
+  value: unknown,
+): boolean {
+  if (schema === undefined || schema.type !== "object" || value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  for (const key of (schema.required as string[] | undefined) ?? []) {
+    if (!(key in record)) return false;
+  }
+  for (const [key, spec] of Object.entries(schema.properties ?? {})) {
+    const field = record[key];
+    if (field === undefined) continue;
+    if (spec.type === "string" && typeof field !== "string") return false;
+    if (spec.type === "boolean" && typeof field !== "boolean") return false;
+    if (spec.type === "array" && (!Array.isArray(field) || (spec.items?.type === "string" && field.some((entry) => typeof entry !== "string")))) return false;
+  }
+  return true;
+}
+
 {
   const payload = JSON.stringify({
     healthy: false,
@@ -379,6 +499,199 @@ function deep(name: string, actual: unknown, expected: unknown): void {
   // stands, so a working call does not become an error over its envelope.
   check("output that is not JSON produces no envelope", structuredResult({ summary: "s", structured: true }, "==> starting\n", "op-4"), undefined);
   check("nor does JSON that is not a document", structuredResult({ summary: "s", structured: true }, "42", "op-5"), undefined);
+}
+
+// --- the declared schema is checked against EVERY action's actual response (P3-01) --------
+//
+// tools/list used to declare the outputSchema by asking structuredWhen for the one action
+// name it happened to return true for, while the dispatcher attached structuredContent to
+// a different hardcoded set — nothing ever compared the declaration with what the actions
+// really answer. This sweep is that comparison: the action list comes from the real
+// declaration's own input schema, every action is driven through the real server loop,
+// and each response is validated against the schema tools/list itself declared. The
+// command runs are stood in for — status/logs/install/remove need an engine to succeed —
+// each emitting exactly the shape its real implementation emits when captured (one JSON
+// document for the hook/report actions, plain progress text for the rest), while the
+// metadata under test — structured, readOnlyWhen, destructive, arguments — is the real
+// declaration. list and import are additionally driven for real against the actual
+// command above.
+{
+  const recipeCommand = openclawCommands.recipe!;
+  const actionChoices = ((inputSchema(recipeCommand).properties as Record<string, { enum?: string[] } | undefined>)?.action?.enum ?? []) as string[];
+  check("the declaration enumerates the actions to sweep", actionChoices.length, 9);
+
+  const moduleUrl = (name: string): string => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
+  const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
+  await writeFile(join(sweepRoot, ".env"), `OC_DATA_DIR=${join(sweepRoot, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
+  const script = `
+    const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp-server"))});
+    const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
+    const { managementCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.management"))});
+    const { log, info } = await import(${JSON.stringify(moduleUrl("core/log"))});
+    const { emit } = await import(${JSON.stringify(moduleUrl("core/output"))});
+    const outputs = {
+      list: () => { log("available recipes"); info("sidecar          a probe service"); },
+      import: () => { log('imported recipe "sidecar"'); info("destination: recipes/sidecar"); },
+      install: () => { log("building sidecar (this compiles from source and can take minutes)"); log("sidecar is running"); },
+      remove: () => { log("sidecar removed"); },
+      status: () => { info("running"); },
+      logs: () => { emit("sidecar-gateway  | ready\\n"); },
+      verify: () => { emit(JSON.stringify({ ok: true, problems: [] }) + "\\n"); },
+      onboard: () => { emit(JSON.stringify({ ok: true, steps: ["dashboard ready"] }) + "\\n"); },
+      diagnose: () => { emit(JSON.stringify({ recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" }) + "\\n"); },
+    };
+    await useDeployment(${JSON.stringify(sweepRoot)});
+    await serveMcp({
+      name: "sweep",
+      commands: {
+        recipe: { ...managementCommands.recipe, run: async (_ctx, args) => { (outputs[args[0] ?? "list"] ?? outputs.list)(); } },
+        notes: { summary: "a text-only tool that declares no envelope", run: async () => { log("plain notes"); } },
+      },
+    });
+  `;
+  const requests = [
+    { jsonrpc: "2.0", id: 0, method: "tools/list" },
+    ...actionChoices.map((action, index) => ({
+      jsonrpc: "2.0",
+      id: index + 1,
+      method: "tools/call",
+      params: { name: "recipe", arguments: { action, ...(recipeCommand.readOnlyWhen?.([action]) === true ? {} : { confirm: true }) } },
+    })),
+    { jsonrpc: "2.0", id: actionChoices.length + 1, method: "tools/call", params: { name: "notes", arguments: {} } },
+  ];
+
+  try {
+    const result = await runScript(script, requests.map((request) => JSON.stringify(request)).join("\n"));
+    if (result.code !== 0) process.stderr.write(`sweep server exited ${result.code}:\n${result.stderr}\n`);
+    const responses = result.stdout
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const byId = new Map(responses.map((response) => [response.id, response]));
+    check("the sweep server answers every request", responses.length, requests.length);
+
+    const listed = ((byId.get(0)?.result as { tools?: Array<{ name: string; outputSchema?: unknown }> } | undefined)?.tools ?? []);
+    const byName = new Map(listed.map((tool) => [tool.name, tool]));
+    deep("the sweep declares the same schema the real server does", byName.get("recipe")?.outputSchema, STRUCTURED_OUTPUT_SCHEMA);
+    check("a tool without structured metadata declares no schema", byName.get("notes")?.outputSchema, undefined);
+
+    const schema = byName.get("recipe")?.outputSchema as Parameters<typeof conforms>[0] | undefined;
+    for (const action of actionChoices) {
+      const reply = byId.get(actionChoices.indexOf(action) + 1)?.result as
+        | { isError?: boolean; content?: Array<{ text?: string }>; structuredContent?: Record<string, unknown> }
+        | undefined;
+      const readOnly = recipeCommand.readOnlyWhen?.([action]) === true;
+      check(`${action}: the call succeeds`, reply?.isError, undefined);
+      check(`${action}: the declared schema is true of the response`, conforms(schema, reply?.structuredContent), true);
+      check(`${action}: changed follows the read-only classification`, reply?.structuredContent?.changed, readOnly ? false : true);
+      check(`${action}: the command's own text still stands beside the envelope`, String(reply?.content?.[0]?.text ?? "").length > 0, true);
+    }
+
+    const envelopeResult = (action: string): unknown =>
+      (byId.get(actionChoices.indexOf(action) + 1)?.result as { structuredContent?: { result?: unknown } } | undefined)?.structuredContent?.result;
+    deep("verify: the hook's JSON rides in the envelope whole", envelopeResult("verify"), { ok: true, problems: [] });
+    deep("onboard: the same for its own document", envelopeResult("onboard"), { ok: true, steps: ["dashboard ready"] });
+    deep("diagnose: the same for its report", envelopeResult("diagnose"), { recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" });
+    for (const action of ["list", "import", "install", "remove", "status", "logs"]) {
+      check(`${action}: a text action carries its text as the result`, typeof envelopeResult(action) === "string" && String(envelopeResult(action)).length > 0, true);
+    }
+
+    const notes = byId.get(actionChoices.length + 1)?.result as { structuredContent?: unknown; content?: Array<{ text?: string }> } | undefined;
+    check("a tool that declares no schema returns no structuredContent", notes?.structuredContent, undefined);
+    check("and its plain text is the whole answer", String(notes?.content?.[0]?.text ?? "").includes("plain notes"), true);
+  } finally {
+    await rm(sweepRoot, { recursive: true, force: true });
+  }
+}
+
+// --- a healthy answer goes through the same redaction as a failure (P2-05) ----------------
+//
+// Masking used to live only on the error branch, so a hook or a log that echoed a value the
+// registry already knew — recipe diagnose being the named case — reached the MCP transcript
+// on a clean exit. This drives the real server loop against a scratch deployment whose
+// gateway token is registered the way a real session registers it (createContext), with
+// commands and gate commands echo the value while succeeding.
+{
+  const secret = "zt0k_4f8e2d6c9b1a";
+  const redactionRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-redaction-"));
+  await writeFile(join(redactionRoot, ".env"), `OC_DATA_DIR=${join(redactionRoot, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_TOKEN=${secret}\n`, "utf8");
+  const moduleUrl = (name: string): string => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
+  const script = `
+    const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp-server"))});
+    const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
+    const { openclawCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/index"))});
+    const { emit } = await import(${JSON.stringify(moduleUrl("core/output"))});
+    const { log, registerSecret } = await import(${JSON.stringify(moduleUrl("core/log"))});
+    const leaked = ${JSON.stringify(secret)}; registerSecret(leaked);
+    await useDeployment(${JSON.stringify(redactionRoot)});
+    const gateEcho = { name: "gate-echo", summary: "prints the token and succeeds", run: async () => { emit("gate says " + leaked + "\\n"); return 0; } };
+    const gateFail = { name: "gate-fail", summary: "prints the token and fails", run: async () => { emit("gate refused " + leaked + "\\n"); return 7; } };
+    await serveMcp({
+      name: "redaction",
+      commands: {
+        "mcp-creds": openclawCommands["mcp-creds"],
+        recipe: { ...openclawCommands.recipe, run: async (_ctx, args) => {
+          emit(JSON.stringify({ recipe: args[1], verify: { token: leaked }, logs: "gateway | token=" + leaked }) + "\\n");
+        } },
+        probe: {
+          summary: "echoes the token on success", structured: true, readOnly: true,
+          run: async () => {
+            log("progress mentions " + leaked);
+            emit(JSON.stringify({ ok: true, [leaked + "_endpoint"]: "wss://inside", detail: "token=" + leaked }) + "\\n");
+          },
+        },
+      },
+    }, [gateEcho, gateFail]);
+  `;
+  const requests = [
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "recipe", arguments: { action: "diagnose", name: "sidecar", confirm: true } } },
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "probe", arguments: {} } },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "mcp-creds", arguments: { token: true } } },
+    { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "gate-echo", arguments: {} } },
+    { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "gate-fail", arguments: {} } },
+  ];
+  try {
+    const result = await runScript(script, requests.map((request) => JSON.stringify(request)).join("\n"));
+    if (result.code !== 0) process.stderr.write(`redaction server exited ${result.code}:\n${result.stderr}\n`);
+    const responses = result.stdout.split("\n").filter((line) => line.trim() !== "").map((line) => JSON.parse(line) as Record<string, unknown>);
+    const byId = new Map(responses.map((response) => [response.id, response]));
+    const answerOf = (id: number): { isError?: boolean; text: string; structured: string } | undefined => {
+      const value = byId.get(id)?.result as { isError?: boolean; content?: Array<{ text?: string }>; structuredContent?: unknown } | undefined;
+      if (value === undefined) return undefined;
+      return { isError: value.isError, text: String(value.content?.[0]?.text ?? ""), structured: JSON.stringify(value.structuredContent) };
+    };
+    const diagnose = answerOf(1);
+    check("recipe diagnose succeeds over MCP", diagnose?.isError, undefined);
+    check("diagnose: the raw token is gone from the text", diagnose?.text.includes(secret), false);
+    check("diagnose: and from the envelope's report", diagnose?.structured.includes(secret), false);
+
+    const probe = answerOf(2);
+    check("probe: the echo command still succeeds", probe?.isError, undefined);
+    check("probe: the raw token is gone from the text", probe?.text.includes(secret), false);
+    check("probe: masked, not dropped, in the progress text", probe?.text.includes("progress mentions ***"), true);
+    check("probe: the raw token is gone from the envelope", probe?.structured.includes(secret), false);
+    check("probe: a masked key keeps its shape", probe?.structured.includes("***_endpoint"), true);
+    check("probe: a masked value keeps its neighbourhood", probe?.structured.includes("token=***"), true);
+    const creds = answerOf(3);
+    check("mcp-creds succeeds over MCP", creds?.isError, undefined);
+    check("mcp-creds: the declared deliberate export still hands over the token", creds?.text.includes(secret), true);
+    const gateOk = answerOf(4);
+    check("gate-echo: the healthy gate answer is a success", gateOk?.isError, undefined);
+    check("gate-echo: the raw token is gone from the text", gateOk?.text.includes(secret), false);
+    check("gate-echo: masked, not dropped, in the gate output", gateOk?.text.includes("gate says ***"), true);
+    const gateErr = answerOf(5);
+    check("gate-fail: the failing gate answer is an error", gateErr?.isError, true);
+    check("gate-fail: and it masks the token too", gateErr?.text.includes(secret), false);
+
+    check("mcp-creds is the one command declaring a deliberate export", openclawCommands["mcp-creds"]?.exportsSecrets === true, true);
+    deep(
+      "and no other command claims the exemption",
+      Object.keys(openclawCommands).filter((name) => openclawCommands[name]?.exportsSecrets === true),
+      ["mcp-creds"],
+    );
+  } finally {
+    await rm(redactionRoot, { recursive: true, force: true });
+  }
 }
 
 process.stderr.write(failed === 0 ? "all mcp-server checks passed\n" : `${failed} failed\n`);

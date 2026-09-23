@@ -39,6 +39,10 @@ async function windowsOwnerSid(): Promise<string> {
   return /S-1-\d+(?:-\d+)+/.exec(result.stdout)?.[0] ?? "";
 }
 
+function ownerAlias(trustee: string, owner: string): string {
+  return trustee === "LA" && owner.endsWith("-500") ? owner : trustee;
+}
+
 /** The DACL as saved SDDL — the same locale-free form the product verifies with, read here
  *  independently so the check does not trust the code under test to grade itself. */
 async function savedAces(file: string): Promise<{ daclProtected: boolean; aces: { type: string; flags: string; rights: string; trustee: string }[] }> {
@@ -222,8 +226,8 @@ async function aclTransitionChecks(root: string): Promise<void> {
   check("the file never carries the directory's Guests access during protection", seen.every((aces) => !guests.some((trustee) => aces.includes(trustee))), true);
   check("protection succeeds on the staged file", refusal, null);
   const sealed = await savedAces(file);
-  check("the sealed DACL names only the owner, SYSTEM and Administrators", sealed.aces.every((ace) => [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"].includes(ace.trustee)), true);
-  check("the sealed DACL still gives the owner full access", sealed.aces.some((ace) => ace.trustee === owner && /^FA$/i.test(ace.rights)), true);
+  check("the sealed DACL names only the owner, SYSTEM and Administrators", sealed.aces.every((ace) => [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"].includes(ownerAlias(ace.trustee, owner))), true);
+  check("the sealed DACL still gives the owner full access", sealed.aces.some((ace) => ownerAlias(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights)), true);
 
   let injected: string | null = null;
   await withToolRunner(async (command, args, timeoutMs) => {
@@ -243,7 +247,7 @@ async function aclTransitionChecks(root: string): Promise<void> {
   const afterFailure = await savedAces(file);
   check(
     "a failed DACL apply leaves the file no wider than it started",
-    afterFailure.aces.every((ace) => [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"].includes(ace.trustee)) &&
+    afterFailure.aces.every((ace) => [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"].includes(ownerAlias(ace.trustee, owner))) &&
       !afterFailure.aces.some((ace) => guests.includes(ace.trustee)),
     true,
   );
@@ -430,10 +434,10 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
   }
   const dacl = await savedAces(file);
   const allowed = new Set([owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"]);
-  const foreign = dacl.aces.map((ace) => ace.trustee).filter((trustee) => !allowed.has(trustee));
+  const foreign = dacl.aces.map((ace) => ownerAlias(ace.trustee, owner)).filter((trustee) => !allowed.has(trustee));
   check("no trustee beyond owner, SYSTEM and Administrators survives", foreign, []);
   check("the DACL is sealed against inheritance", dacl.daclProtected && dacl.aces.every((ace) => !ace.flags.includes("ID")), true);
-  check("the owner keeps full access", dacl.aces.some((ace) => ace.trustee === owner && /^FA$/i.test(ace.rights)), true);
+  check("the owner keeps full access", dacl.aces.some((ace) => ownerAlias(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights)), true);
   let ownerCanWrite = true;
   try {
     const handle = await open(file, "r+");

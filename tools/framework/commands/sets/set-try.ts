@@ -10,8 +10,8 @@
 // ever remove what this operation itself created, never the real instance beside it.
 
 import { mkdir, writeFile, rm, readFile, cp } from "node:fs/promises";
-import { join, dirname, relative, resolve, extname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, dirname, resolve, extname } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 import { log, info, warn, die } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
@@ -248,11 +248,17 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
       mounts: "runtime/mounts",
       "commands/index": "commands/interface/index",
     };
+    // An absolute file:// URL, never a relative specifier: tempDir is os.tmpdir(), almost
+    // always the system drive, while frameworkRoot can be checked out to any other drive —
+    // node:path's relative() across two Windows drive letters has no traversal that reaches
+    // one from the other and returns the absolute target unchanged, which this used to hand
+    // to a relative import specifier unmodified (a bare "D:/..." path Node's ESM resolver
+    // then reads as relative to tempDir itself, producing a nonsense concatenated path).
+    // pathToFileURL is drive-agnostic and correct on POSIX too.
     const modulePath = (name: string) => {
       const module = modulePaths[name];
       if (module === undefined) throw new Error(`unknown temporary app module: ${name}`);
-      const path = relative(tempDir, resolve(frameworkRoot, `${module}${extension}`)).replaceAll("\\", "/");
-      return path.startsWith(".") ? path : `./${path}`;
+      return pathToFileURL(resolve(frameworkRoot, `${module}${extension}`)).href;
     };
     await writeFile(join(tempDir, "app.ts"),
       `import { defineApp } from ${JSON.stringify(modulePath("app"))};\n` +

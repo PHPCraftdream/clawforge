@@ -424,7 +424,7 @@ export async function unprotectedPrivateFile(file: string): Promise<string | und
 }
 
 /** Creates a private file without exposing its first byte under the process umask. */
-export async function createPrivateFile(file: string, content: string): Promise<void> {
+async function createPrivateFileContent(file: string, content: string | Uint8Array): Promise<void> {
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   let created = false;
   try {
@@ -436,7 +436,8 @@ export async function createPrivateFile(file: string, content: string): Promise<
       await protectPrivateFile(file);
       handle = await open(file, "r+");
     }
-    await handle.writeFile(content, "utf8");
+    if (typeof content === "string") await handle.writeFile(content, "utf8");
+    else await handle.writeFile(content);
   } catch (error) {
     if (created) await unlink(file).catch(() => {});
     throw error;
@@ -449,6 +450,14 @@ export async function createPrivateFile(file: string, content: string): Promise<
     await unlink(file).catch(() => {});
     throw error;
   }
+}
+
+export function createPrivateFile(file: string, content: string): Promise<void> {
+  return createPrivateFileContent(file, content);
+}
+
+export function createPrivateBinaryFile(file: string, content: Uint8Array): Promise<void> {
+  return createPrivateFileContent(file, content);
 }
 
 /** Replaces a private file atomically on the same filesystem. */

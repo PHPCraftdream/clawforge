@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import {
   upsertEnvValue,
@@ -159,6 +159,7 @@ const EXEC_LOCKS = locksDir(EXEC_DATA_DIR);
 
 type ExecEvent =
   | { kind: "mkdirp"; path: string }
+  | { kind: "mkdirPrivate"; path: string }
   | { kind: "writePrivate"; path: string; content: string }
   | { kind: "writeFile"; path: string; content: string; mode?: string }
   | { kind: "exec"; command: string; args: string[] }
@@ -193,6 +194,9 @@ function secretsContext(
     async mkdirp(path: string): Promise<void> {
       events.push({ kind: "mkdirp", path });
     },
+    async mkdirPrivate(path: string): Promise<void> {
+      events.push({ kind: "mkdirPrivate", path });
+    },
     async exec(command: string, args: string[]): Promise<ExecResult> {
       events.push({ kind: "exec", command, args });
       if (options.failInnerExec && command === "sh" && args[0] === "-c") throw new Error("inner exec failed");
@@ -224,14 +228,16 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   const wrappers = execs.filter((event) => event.command === "sh" && event.args[0] === "-c");
   const wrapperArgs = wrappers[0]?.args ?? [];
   const script = wrapperArgs[1] ?? "";
-  const mkdirs = execs.filter((event) => event.command === "mkdir");
+  const privateDirs = events.filter((event): event is Extract<ExecEvent, { kind: "mkdirPrivate" }> => event.kind === "mkdirPrivate");
   const write = events.find((event): event is Extract<ExecEvent, { kind: "writePrivate" }> => event.kind === "writePrivate");
   const directory = write === undefined ? "" : parentOf(write.path);
   const innerCommand = "node";
   const innerArgs = ["run.js", "--flag"];
 
   checkExec("exactly one sh -c wrapper reaches the transport", wrappers.length, 1);
-  checkExec("the wrapper script sources the env file", script.includes('. "$1"'), true);
+  checkExec("the wrapper reads the env file path only from its positional argument", script.includes("file=$1"), true);
+  checkExec("the wrapper sources the resolved env file", script.includes('. "$file"'), true);
+  checkExec("Windows path conversion quotes the positional value", script.includes('cygpath -u -- "$file"'), true);
   checkExec("the wrapper script never contains the marker", script.includes(MARKER), false);
   checkExec("the env file path reaches the wrapper args", wrapperArgs.includes(write?.path ?? " never"), true);
   checkExec(
@@ -244,8 +250,8 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
 
   checkExec("the locks dir itself is mkdirped", events.some((event) => event.kind === "mkdirp" && event.path === EXEC_LOCKS), true);
   checkExec(
-    "exactly one mkdir -m 700 creates the private directory",
-    mkdirs.length === 1 && JSON.stringify(mkdirs[0].args) === JSON.stringify(["-m", "700", directory]),
+    "Transport.mkdirPrivate creates the private directory",
+    privateDirs.length === 1 && privateDirs[0]?.path === directory,
     true,
   );
   checkExec("the private directory is fresh under the locks dir", directory.startsWith(`${EXEC_LOCKS}/recipe-exec-`), true);
@@ -271,9 +277,9 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   const { ctx: execCtx, events } = secretsContext();
   await execWithSecrets(execCtx, "sh", ["-c", "exit 0"], { env: { CF_PROBE: MARKER } });
   await execWithSecrets(execCtx, "sh", ["-c", "exit 0"], { env: { CF_PROBE: MARKER } });
-  const directories = execEvents(events)
-    .filter((event) => event.command === "mkdir")
-    .map((event) => event.args[2]);
+  const directories = events
+    .filter((event): event is Extract<ExecEvent, { kind: "mkdirPrivate" }> => event.kind === "mkdirPrivate")
+    .map((event) => event.path);
   checkExec("two calls create two different private directories", directories.length === 2 && directories[0] !== directories[1], true);
   checkExec(
     "both live under the locks dir as recipe-exec-*",
@@ -384,19 +390,16 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   checkExec("validation rejects before any transport call", events.length, 0);
 }
 
-// --- the real transport: the marker arrives only through the sourced env file -----------------
+// --- the real POSIX transport: the marker arrives only through the sourced env file -----------
 
 {
-  const dataDir = resolve(tmpdir(), `clawforge-exec-secrets-${randomBytes(4).toString("hex")}`).replaceAll("\\", "/");
-  const locks = `${dataDir}-locks`;
-  const execCtx = { settings: { dataDir, env: {} }, transport: new LocalTransport() } as unknown as Context;
-  const probe = await execCtx.transport.exec("sh", ["-c", "true"]).then(
-    () => true,
-    () => false,
-  );
-  if (!probe) {
-    process.stderr.write("  skip real-transport round-trip: no sh on this machine\n");
+  const transport = await realPosixTransport();
+  if (transport === undefined) {
+    process.stderr.write("  skip real-transport round-trip: no local POSIX filesystem and no WSL distribution with a shell\n");
   } else {
+    const dataDir = `/tmp/clawforge-exec-secrets-${randomBytes(4).toString("hex")}`;
+    const locks = locksDir(dataDir);
+    const execCtx = { settings: { dataDir, env: {} }, transport } as unknown as Context;
     try {
       const result = await execWithSecrets(execCtx, "sh", ["-c", 'printf %s "$CF_PROBE"'], { env: { CF_PROBE: MARKER } });
       checkExec("the sourced env file delivers the marker", result.stdout, MARKER);
@@ -410,8 +413,27 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
         0,
       );
     } finally {
-      await rm(locks, { recursive: true, force: true });
+      await transport.remove(locks).catch(() => {});
     }
+  }
+}
+
+if (process.platform === "win32") {
+  const local = new LocalTransport();
+  const available = await local.exec("sh", ["-c", "command -v cygpath >/dev/null"], { allowFailure: true })
+    .then((result) => result.code === 0, () => false);
+  if (available) {
+    const dataDir = join(tmpdir(), `clawforge-exec-local-${randomBytes(4).toString("hex")}`).replaceAll("\\", "/");
+    const locks = locksDir(dataDir);
+    try {
+      const localCtx = { settings: { dataDir, env: {} }, transport: local } as unknown as Context;
+      const result = await execWithSecrets(localCtx, "sh", ["-c", 'printf %s "$CF_PROBE"'], { env: { CF_PROBE: MARKER } });
+      checkExec("Windows local transport sources the ACL-protected environment file", result.stdout, MARKER);
+    } finally {
+      await local.remove(locks).catch(() => {});
+    }
+  } else {
+    process.stderr.write("  skip Windows local secret round-trip: sh/cygpath unavailable\n");
   }
 }
 

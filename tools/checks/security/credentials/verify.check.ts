@@ -7,7 +7,7 @@
 import { verifySnapshot } from "#framework/commands/lifecycle/verify.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import { LocalTransport, SshTransport, WslTransport, type ExecResult } from "#framework/runtime/transport.ts";
+import { LocalTransport, SshTransport, WslTransport, spawnLocal, type ExecResult } from "#framework/runtime/transport.ts";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -588,6 +588,23 @@ for (const transport of [new WslTransport("test-distro"), new SshTransport("test
     const mode = (await stat(path)).mode & 0o777;
     check("LocalTransport creates an exclusive 700 directory", process.platform === "win32" || directoryMode === 0o700, true);
     check("LocalTransport creates a private file", process.platform === "win32" || mode === 0o600, true);
+    if (process.platform === "win32") {
+      const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+      const who = await spawnLocal(join(systemRoot, "System32", "whoami.exe"), ["/user", "/fo", "csv", "/nh"]);
+      const owner = /S-1-\d+(?:-\d+)+/.exec(who.stdout)?.[0] ?? "";
+      const saved = join(root, "private-dir.acl");
+      const acl = await spawnLocal(join(systemRoot, "System32", "icacls.exe"), [directory, "/save", saved], { allowFailure: true });
+      const sddl = acl.code === 0 ? await readFile(saved, "utf16le") : "";
+      const line = sddl.split(/\r?\n/).map((entry) => entry.trim()).find((entry) => entry.startsWith("D:")) ?? "";
+      const aces = [...line.matchAll(/\(([^()]*)\)/g)].map((match) => {
+        const [type = "", flags = "", , , , trustee = ""] = (match[1] ?? "").split(";");
+        return { type, flags, trustee };
+      });
+      const allowed = new Set([owner, "SY", "BA", "S-1-5-18", "S-1-5-32-544"]);
+      if (owner.endsWith("-500")) allowed.add("LA");
+      check("LocalTransport seals the directory DACL against inheritance", acl.code === 0 && line.startsWith("D:P") && aces.every((ace) => !ace.flags.includes("ID")), true);
+      check("LocalTransport grants its private directory only to owner, SYSTEM and Administrators", owner !== "" && aces.length > 0 && aces.every((ace) => ace.type === "A" && allowed.has(ace.trustee)), true);
+    }
     check("LocalTransport writes the exact secret", await readFile(path, "utf8"), "secret");
     check("LocalTransport refuses a colliding private file", await rejected(() => local.writePrivateFile(path, "changed")), true);
     check("the colliding file remains unchanged", await readFile(path, "utf8"), "secret");

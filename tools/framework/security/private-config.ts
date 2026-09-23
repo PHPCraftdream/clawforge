@@ -236,13 +236,19 @@ export async function execWithSecrets(
   let cleanupError: unknown;
   try {
     await ctx.transport.mkdirp(locks);
-    await ctx.transport.exec("mkdir", ["-m", "700", directory]);
+    if (ctx.transport.mkdirPrivate !== undefined) await ctx.transport.mkdirPrivate(directory);
+    else await ctx.transport.exec("mkdir", ["-m", "700", directory]);
     if (ctx.transport.writePrivateFile !== undefined) await ctx.transport.writePrivateFile(file, body);
     else {
       await ctx.transport.writeFile(file, body, "600");
       await ctx.transport.exec("chmod", ["600", file]);
     }
-    result = await ctx.transport.exec("sh", ["-c", '. "$1" && shift && exec "$@"', "sh", file, command, ...args]);
+    const sourceAndExec =
+      'file=$1; case "$file" in [A-Za-z]:*) ' +
+      'command -v cygpath >/dev/null 2>&1 || { echo PRIVATE_ENV_PATH_UNSUPPORTED >&2; exit 65; }; ' +
+      'file=$(cygpath -u -- "$file") || exit 65 ;; esac; ' +
+      '. "$file" && shift && exec "$@"';
+    result = await ctx.transport.exec("sh", ["-c", sourceAndExec, "sh", file, command, ...args]);
   } catch (error) {
     operationError = error;
   } finally {

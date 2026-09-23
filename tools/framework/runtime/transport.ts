@@ -390,19 +390,20 @@ export class LocalTransport implements Transport {
   }
 
   async writePrivateFile(path: string, content: string | Uint8Array): Promise<void> {
-    const handle = await open(path, "wx", 0o600);
-    try {
-      await handle.writeFile(content);
-      await handle.close();
-    } catch (error) {
-      await handle.close().catch(() => {});
-      await rm(path, { force: true }).catch(() => {});
-      throw error;
-    }
+    const { createPrivateBinaryFile, createPrivateFile } = await import("../security/private-file.ts");
+    if (typeof content === "string") await createPrivateFile(path, content);
+    else await createPrivateBinaryFile(path, content);
   }
 
-  mkdirPrivate(path: string): Promise<void> {
-    return mkdir(path, { mode: 0o700 });
+  async mkdirPrivate(path: string): Promise<void> {
+    await mkdir(path, { mode: 0o700 });
+    try {
+      const { protectPrivateDirectory } = await import("../security/private-file.ts");
+      await protectPrivateDirectory(path);
+    } catch (error) {
+      await rmdir(path).catch(() => {});
+      throw error;
+    }
   }
 
   /** Same distinction existsVia() makes for the exec-based transports: ENOENT (and ENOTDIR,

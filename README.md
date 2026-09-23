@@ -561,6 +561,9 @@ real recipe directory. Use the public
 env updates and checksums; the framework never prints the values. A secret is never a
 command-line argument — use `execWithSecrets` (or the private-file helpers) instead of putting
 a credential in `args`.
+`execWithSecrets` creates the temporary target directory and file with owner-only access:
+POSIX targets use modes 700/600, and local Windows targets use a sealed ACL. A Windows
+drive mounted into WSL has a separate Linux access boundary, which the framework reports.
 
 What `recipe install` waits for before calling `afterStart` and reporting success is also
 declared in `recipe.json`, under `readiness`:

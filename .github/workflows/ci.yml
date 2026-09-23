@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   checks:
-    name: Node ${{ matrix.node }} checks
+    name: Linux Node ${{ matrix.node }} checks (integration)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -17,10 +17,10 @@ jobs:
         node: [24]
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
 
@@ -29,6 +29,181 @@ jobs:
 
       - name: Run checks
         run: npm test
+
+      - name: Typecheck and lint
+        run: npm run format:check
+
+      - name: Build package
+        run: npm run build
+
+      - name: Verify package contents
+        run: npm run pack:check
+
+  windows-checks:
+    # Windows-only job: runs every tools/checks/**/*.check.ts whose verdict does not
+    # depend on WSL or Docker, plus typecheck/lint/build/pack. `npm test` (the shared
+    # runner in tools/checks/run.ts) is NOT used here: it has no capability filter, so it
+    # would also run the two checks that cannot pass without a provisioned WSL distro.
+    # The subset below was classified per file (transitive import + spawn-site audit of
+    # every check and the framework modules it reaches, then each file executed on win32):
+    # - Excluded (2): integration/mcp/mcp-server.check.ts and
+    #   integration/agent/recipe-hook-freshness-server.check.ts drive the real gate with
+    #   OC_TARGET_LOCATION=auto, which resolves to WslTransport and takes the instance
+    #   lock through wsl.exe — no availability probe, no skip.
+    # - Probe-gated (12 of the included): foundation/cli/host,
+    #   runtime/convergence/backup, runtime/convergence/inspect/checksums,
+    #   runtime/lifecycle/private-declaration-lifetime,
+    #   runtime/lifecycle/private-paths-prefix-boundary,
+    #   runtime/lifecycle/restore-symlink-boundary, runtime/private-history-restore,
+    #   runtime/service/runtime-image-identity, security/credentials/private-config,
+    #   security/credentials/private-file,
+    #   security/credentials/recipe-private-snapshot/snapshot,
+    #   security/credentials/ssh-quoting — each probes wsl.exe/docker/sh with
+    #   allowFailure and skips only its tool-dependent assertion groups when the tool is
+    #   absent, so it passes on a bare runner and asserts fully on WSL/Docker-equipped
+    #   dev machines.
+    # - The rest are pure Node + fs/logic: stub transports model exec in JS, and the
+    #   local tools some spawn (node, npm, git, tar, icacls, whoami) all ship on hosted
+    #   Windows runners.
+    # Real WSL/Docker transport behavior on win32 is still only exercised by local
+    # developer runs until a self-hosted or WSL/Docker-provisioned Windows runner exists;
+    # everything else the suite asserts about Windows (ACL sealing, drive/path bridging,
+    # locks, ledgers, archives) runs here. Adding a new check file: run
+    # `node --experimental-strip-types <file>` on Windows and audit its imports for
+    # wsl.exe/docker/compose/ssh before adding it to the list below.
+    name: Windows Node ${{ matrix.node }} checks (Windows-safe subset + typecheck/lint/build)
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24]
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install development dependencies
+        run: npm ci --include=dev
+
+      - name: Run the Windows-capable check subset
+        shell: bash
+        run: |
+          # Each file is invoked individually: the shared runner (tools/checks/run.ts) has
+          # no capability filter and would also execute the two WSL-bound checks named in
+          # the job comment above. A failure exits non-zero; the failing file is the last
+          # ::group:: header printed.
+          checks=(
+            tools/checks/foundation/cli/cli-help.check.ts
+            tools/checks/foundation/cli/cli-helper.check.ts
+            tools/checks/foundation/cli/gate-commands.check.ts
+            tools/checks/foundation/cli/host.check.ts
+            tools/checks/foundation/cli/passthrough-help.check.ts
+            tools/checks/foundation/core/app-mounts-output.check.ts
+            tools/checks/foundation/core/archive.check.ts
+            tools/checks/foundation/core/arguments.check.ts
+            tools/checks/foundation/core/deployment-names.check.ts
+            tools/checks/foundation/core/env.check.ts
+            tools/checks/foundation/core/paths.check.ts
+            tools/checks/foundation/core/requirements.check.ts
+            tools/checks/foundation/layout.check.ts
+            tools/checks/foundation/packaging/build-output.check.ts
+            tools/checks/foundation/providers/provider.check.ts
+            tools/checks/integration/agent/agent-bundle-portable-content.check.ts
+            tools/checks/integration/agent/cron-timezone.check.ts
+            tools/checks/integration/agent/provision-agent.check.ts
+            tools/checks/integration/agent/recipe-hook-freshness.check.ts
+            tools/checks/integration/agent/recipe-readiness.check.ts
+            tools/checks/integration/agent/recipe.check.ts
+            tools/checks/integration/app-hooks.check.ts
+            tools/checks/integration/app-recipes-dir.check.ts
+            tools/checks/integration/init.check.ts
+            tools/checks/integration/mcp/mcp-apply-report.check.ts
+            tools/checks/integration/mcp/mcp-mirror.check.ts
+            tools/checks/integration/mcp/mcp-project.check.ts
+            tools/checks/integration/mcp/mcp-structured-progress.check.ts
+            tools/checks/integration/mcp/openclaw-cli.check.ts
+            tools/checks/integration/mcp/transport-listing.check.ts
+            tools/checks/release/release/installed-consumer.check.ts
+            tools/checks/release/release/lock.check.ts
+            tools/checks/release/release/operations.check.ts
+            tools/checks/release/release/package-release.check.ts
+            tools/checks/release/release/rollback.check.ts
+            tools/checks/sets/artifact/set-artifact.check.ts
+            tools/checks/sets/artifact/set-build.check.ts
+            tools/checks/sets/artifact/set-diff.check.ts
+            tools/checks/sets/artifact/set-evidence.check.ts
+            tools/checks/sets/artifact/set-install.check.ts
+            tools/checks/sets/artifact/set-model.check.ts
+            tools/checks/sets/artifact/set-receipt.check.ts
+            tools/checks/sets/lifecycle/set-ledger.check.ts
+            tools/checks/sets/lifecycle/set-lifecycle/apply-rollback.check.ts
+            tools/checks/sets/lifecycle/set-lifecycle/set-try-flow.check.ts
+            tools/checks/sets/lifecycle/set-lifecycle/snapshot-transitions.check.ts
+            tools/checks/sets/lifecycle/set-rollback.check.ts
+            tools/checks/sets/lifecycle/set-try.check.ts
+            tools/checks/sets/lifecycle/set-validate.check.ts
+            tools/checks/runtime/connection-facts/operator-edit.check.ts
+            tools/checks/runtime/connection-facts/recover-env-command.check.ts
+            tools/checks/runtime/connection-facts/runtime-connection-facts.check.ts
+            tools/checks/runtime/convergence/apply-config.check.ts
+            tools/checks/runtime/convergence/apply.check.ts
+            tools/checks/runtime/convergence/backup.check.ts
+            tools/checks/runtime/convergence/inspection.check.ts
+            tools/checks/runtime/convergence/lock-home.check.ts
+            tools/checks/runtime/convergence/inspect/checksums.check.ts
+            tools/checks/runtime/convergence/inspect/drift.check.ts
+            tools/checks/runtime/convergence/inspect/egress.check.ts
+            tools/checks/runtime/convergence/inspect/folder.check.ts
+            tools/checks/runtime/convergence/inspect/lock.check.ts
+            tools/checks/runtime/convergence/inspect/recipes.check.ts
+            tools/checks/runtime/convergence/instance-lock/claims.check.ts
+            tools/checks/runtime/convergence/instance-lock/misc.check.ts
+            tools/checks/runtime/convergence/instance-lock/nesting.check.ts
+            tools/checks/runtime/convergence/instance-lock/takeover.check.ts
+            tools/checks/runtime/lifecycle/bootstrap-lock.check.ts
+            tools/checks/runtime/lifecycle/bootstrap-provider-order.check.ts
+            tools/checks/runtime/lifecycle/private-declaration-lifetime.check.ts
+            tools/checks/runtime/lifecycle/private-paths-prefix-boundary.check.ts
+            tools/checks/runtime/lifecycle/recipe-portable-content.check.ts
+            tools/checks/runtime/lifecycle/restore-symlink-boundary.check.ts
+            tools/checks/runtime/lifecycle/smoke.check.ts
+            tools/checks/runtime/plan.check.ts
+            tools/checks/runtime/private-history-restore.check.ts
+            tools/checks/runtime/service/deploy/checkout-policy.check.ts
+            tools/checks/runtime/service/deploy/root-boundary.check.ts
+            tools/checks/runtime/service/logs-bounded.check.ts
+            tools/checks/runtime/service/restart.check.ts
+            tools/checks/runtime/service/restore.check.ts
+            tools/checks/runtime/service/runtime-image-identity.check.ts
+            tools/checks/runtime/service/runtime-port.check.ts
+            tools/checks/runtime/service/state.check.ts
+            tools/checks/security/acceptance/accept.check.ts
+            tools/checks/security/acceptance/plan.check.ts
+            tools/checks/security/credentials/private-config.check.ts
+            tools/checks/security/credentials/private-file.check.ts
+            tools/checks/security/credentials/recipe-private-snapshot/pull-privacy.check.ts
+            tools/checks/security/credentials/recipe-private-snapshot/snapshot.check.ts
+            tools/checks/security/credentials/secrets.check.ts
+            tools/checks/security/credentials/secrets-command/dropped-variables.check.ts
+            tools/checks/security/credentials/secrets-command/instance-lock.check.ts
+            tools/checks/security/credentials/secrets-command/local-store.check.ts
+            tools/checks/security/credentials/secrets-command/mcp-setup.check.ts
+            tools/checks/security/credentials/secrets-command/prospective-requirements.check.ts
+            tools/checks/security/credentials/secrets-command/unreadable-input-aborts.check.ts
+            tools/checks/security/credentials/ssh-quoting.check.ts
+            tools/checks/security/credentials/verify.check.ts
+            tools/checks/security/private-paths-ledger/serialization.check.ts
+          )
+          for check in "${checks[@]}"; do
+            echo "::group::${check}"
+            node --experimental-strip-types "${check}" || { echo "::endgroup::"; exit 1; }
+            echo "::endgroup::"
+          done
+          echo "${#checks[@]} Windows-capable check file(s) passed"
 
       - name: Typecheck and lint
         run: npm run format:check

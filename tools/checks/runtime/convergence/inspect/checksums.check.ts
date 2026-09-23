@@ -190,6 +190,10 @@ try {
   } else {
     check("the executed call still carries the directory as a positional parameter", [treeCall.args[2], treeCall.args[3]], ["sh", recipeMirrorTargetDir(dataDirTree, "demo")]);
     check("the real shell checksum command succeeded", [treeCall.result?.code, treeCall.result?.stderr], [0, ""]);
+    const raw = treeCall.result?.stdout ?? "";
+    if (Object.keys(parseChecksums(raw)).length === 0) {
+      process.stderr.write(`  diagnostic checksum output shape: bytes=${raw.length}, lines=${raw.trimEnd() === "" ? 0 : raw.trimEnd().split("\n").length}, hashPrefix=${/^[0-9a-f]{64}/m.test(raw)}, posixName=${raw.includes("./")}, windowsName=${raw.includes(".\\")}, escapedLine=${raw.startsWith("\\")}\n`);
+    }
     check("the checksums describe exactly the hostile tree, bytes intact", canonical(parseChecksums(treeCall.result?.stdout ?? "")), canonical(expected));
     check("no payload executed as shell — no marker in the command's stderr", [
       treeCall.result?.stderr.includes(CMD_SUBSTITUTION_MARKER) ?? true,

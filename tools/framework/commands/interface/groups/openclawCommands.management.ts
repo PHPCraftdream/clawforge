@@ -15,7 +15,7 @@ import { deploy } from "#src/commands/management/deploy.ts";
 import { lock } from "#src/commands/management/lock.ts";
 import { secrets } from "#src/commands/management/secrets.ts";
 import { recoverEnv } from "#src/commands/recover-env/index.ts";
-import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe.ts";
+import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe/index.ts";
 import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
 
 export const managementCommands: Record<string, AppCommand> = {
@@ -236,9 +236,17 @@ export const managementCommands: Record<string, AppCommand> = {
       "The file is rewritten with the same owner-only protection secrets --apply uses, because " +
       "OPENCLAW_GATEWAY_TOKEN lives beside these lines and protection is per-file; unrelated " +
       "lines pass through untouched.\n" +
+      "A plain recover-env fills only the fact names the file is missing entirely and reports " +
+      "the ones both sides carry differently without writing over them; --adopt-runtime is the " +
+      "container-authoritative direction that also merges those over the file's existing values.\n" +
       "--dry-run prints what would change and writes nothing.",
     arguments: [
       { name: "dry-run", description: "Print what would change without writing", kind: "flag" },
+      {
+        name: "adopt-runtime",
+        description: "Take the running container as authoritative: merge its facts over the file's existing values too, not just fill the names it is missing",
+        kind: "flag",
+      },
     ],
     readOnlyWhen: (args) => args.includes("--dry-run"),
   },
@@ -275,6 +283,14 @@ export const managementCommands: Record<string, AppCommand> = {
       "verify.ts and onboard.ts hooks expose app-owned checks and onboarding through MCP, " +
       "gated as mutations — confirm and the instance lock — because the framework cannot " +
       "know what an app-owned hook touches; " +
+      "install does not report success the moment up returns: recipe.json may declare " +
+      "readiness — services, the compose services that must be running (healthy where they " +
+      "declare a healthcheck), and timeoutMs, how long to wait, two minutes by default — and " +
+      "install proceeds to afterStart only once every listed service has held that state for a " +
+      "five-second grace window; otherwise install fails, naming what never came up " +
+      "(missing / not running / not healthy), skips afterStart, and leaves the stack for " +
+      "diagnose. A recipe with no readiness declaration still gets a five-second check of every " +
+      "service compose reports for the project, but no per-service wait to hold a slow starter to. " +
       "import copies <source> — a directory with its own recipe.json — into recipes/ under " +
       "new-name, defaulting to the source directory's own name, and refuses to overwrite; " +
       "the framework does not interpret domain-specific fields.\n" +

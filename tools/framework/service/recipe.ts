@@ -57,6 +57,23 @@ export interface RecipePort {
   readonly description?: string;
 }
 
+/** What `recipe install` must see before it treats the stack as up: every named compose
+ *  service running and, where that service declares a healthcheck, healthy — not just
+ *  "some container from this project is alive", which one surviving sidecar satisfies even
+ *  while the recipe's own main service is down (audit 2026-09-23, P2-04). Declaring this is
+ *  optional: a recipe without it still gets a short grace check against whatever services
+ *  compose reports for the project (management/recipe/index.ts), just without a name to hold a
+ *  slow starter to. */
+export interface RecipeReadiness {
+  /** Compose service names that must all be running (and healthy, if they declare a
+   *  healthcheck) before install proceeds to afterStart. Required and non-empty: a
+   *  declaration with no services would trivially always pass. */
+  readonly services: string[];
+  /** How long install waits for every listed service to reach that state, in milliseconds.
+   *  Absent means the caller's own default. */
+  readonly timeoutMs?: number;
+}
+
 export interface Recipe {
   /** Directory name, also the compose project suffix. */
   readonly name: string;
@@ -72,6 +89,9 @@ export interface Recipe {
    *  already carry them, and private-config.ts refuses private writes anywhere else.
    *  full deliberately still contains them — it is credential-complete by design. */
   readonly privatePaths?: string[];
+  /** What install waits for before calling afterStart and reporting success. See
+   *  RecipeReadiness. */
+  readonly readiness?: RecipeReadiness;
   /** Absolute path of the recipe directory on our side. */
   readonly directory: string;
   /** The stack definition inside it. Part of the recipe format, so applications do not
@@ -124,6 +144,83 @@ function parsePrivatePaths(recipe: string, value: unknown): string[] | undefined
   });
 }
 
+function isPortNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+
+/** Validates one declared port mapping: describe() in management/recipe/index.ts renders
+ *  port.host/port.container unconditionally for every entry in a recipe's listing, so a
+ *  malformed element here — null, a non-integer, an out-of-range host — used to reach
+ *  render unchecked and crash the WHOLE catalog rather than staying isolated to its own
+ *  recipe (the care privatePath takes with a path, applied to a port). Validated and
+ *  returned as-is rather than reconstructed, so an already-well-formed entry's key order
+ *  survives untouched. */
+function parsePort(recipe: string, value: unknown, index: number): RecipePort {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`recipes/${recipe}/recipe.json: ports[${index}] must be an object`);
+  }
+  const { host, container, description } = value as Record<string, unknown>;
+  if (!isPortNumber(host)) {
+    throw new Error(`recipes/${recipe}/recipe.json: ports[${index}].host must be an integer between 1 and 65535`);
+  }
+  if (!isPortNumber(container)) {
+    throw new Error(`recipes/${recipe}/recipe.json: ports[${index}].container must be an integer between 1 and 65535`);
+  }
+  if (description !== undefined && typeof description !== "string") {
+    throw new Error(`recipes/${recipe}/recipe.json: ports[${index}].description must be a string`);
+  }
+  return value as RecipePort;
+}
+
+function parsePorts(recipe: string, value: unknown): RecipePort[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error(`recipes/${recipe}/recipe.json: ports must be an array`);
+  return value.map((entry, index) => parsePort(recipe, entry, index));
+}
+
+/** Validates the variables map: a plain object — Array.isArray excluded explicitly, since
+ *  typeof [] === "object" passes the loose check this replaces — with every value a
+ *  string. install (management/recipe/index.ts) reads each value as the human-readable reason
+ *  it prints when the variable is unset; a non-string value turned that warning into
+ *  "[object Object]" or worse, and also becomes the literal environment variable's
+ *  intended value once set. Returned as-is so an already-valid object's key order and any
+ *  extra own properties survive untouched. */
+function parseVariables(recipe: string, value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`recipes/${recipe}/recipe.json: variables must be an object`);
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry !== "string") throw new Error(`recipes/${recipe}/recipe.json: variables.${key} must be a string`);
+  }
+  return value as Record<string, string>;
+}
+
+/** Validates the optional readiness declaration: read strictly, like privatePaths above — a
+ *  malformed declaration must stop the load rather than quietly readiness-check nothing,
+ *  which would put install back where the audit found it. */
+function parseReadiness(recipe: string, value: unknown): RecipeReadiness | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`recipes/${recipe}/recipe.json: readiness must be an object`);
+  }
+  const services = (value as { services?: unknown }).services;
+  if (!Array.isArray(services) || services.length === 0) {
+    throw new Error(`recipes/${recipe}/recipe.json: readiness.services must be a non-empty array of compose service names`);
+  }
+  const names = services.map((entry) => {
+    if (typeof entry !== "string" || entry === "") {
+      throw new Error(`recipes/${recipe}/recipe.json: readiness.services entries must be non-empty strings`);
+    }
+    return entry;
+  });
+  const timeoutMs = (value as { timeoutMs?: unknown }).timeoutMs;
+  if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+    throw new Error(`recipes/${recipe}/recipe.json: readiness.timeoutMs must be a positive number of milliseconds`);
+  }
+  return { services: names, timeoutMs: typeof timeoutMs === "number" ? timeoutMs : undefined };
+}
+
 export async function loadRecipe(name: string): Promise<Recipe> {
   // The name arrives from the command line and becomes both a path and a compose project.
   safeName("recipe", name);
@@ -149,11 +246,10 @@ export async function loadRecipe(name: string): Promise<Recipe> {
     enabled: parsed.enabled !== false,
     disabledReason: typeof parsed.disabledReason === "string" ? parsed.disabledReason : undefined,
     source: typeof parsed.source === "string" ? parsed.source : undefined,
-    ports: Array.isArray(parsed.ports) ? (parsed.ports as RecipePort[]) : undefined,
-    variables: typeof parsed.variables === "object" && parsed.variables !== null
-      ? (parsed.variables as Record<string, string>)
-      : undefined,
+    ports: parsePorts(name, parsed.ports),
+    variables: parseVariables(name, parsed.variables),
     privatePaths: parsePrivatePaths(name, parsed.privatePaths),
+    readiness: parseReadiness(name, parsed.readiness),
     directory,
     definitionPath: resolve(directory, "compose.yml"),
     preparePath: await access(resolve(directory, "prepare.ts")).then(() => resolve(directory, "prepare.ts"), () => undefined),
@@ -178,11 +274,49 @@ export async function listRecipes(): Promise<Recipe[]> {
       recipes.push(await loadRecipe(name));
     } catch {
       // The listing's rule, and only the listing's: a catalogue must not break — or hide the
-      // working recipes — over one broken manifest (`./clawforge recipe <name>` reports the
-      // specific problem). Policy readers use installedRecipePrivatePaths(), which does not.
+      // working recipes — over one broken manifest. Dropped from THIS array on purpose — a
+      // caller after installable recipes has no use for one that failed to load — but not
+      // hidden altogether: listBrokenRecipes() below runs the same scan to surface it as a
+      // named entry (`./clawforge recipe <name>` also reports the specific problem). Policy
+      // readers use installedRecipePrivatePaths(), which does not.
     }
   }
   return recipes;
+}
+
+export interface BrokenRecipe {
+  readonly name: string;
+  readonly error: string;
+}
+
+/** The listing's other half: every recipe directory whose recipe.json exists but fails to
+ *  load, with the reason, so `recipe list` can name the problem instead of the directory
+ *  quietly vanishing from the catalog (P3-01: a broken manifest becoming a silent omission
+ *  is exactly the gap that let one bad `ports` entry masquerade as "no such recipe").
+ *  Directories without a recipe.json are not broken recipes — an agent/MCP bundle or
+ *  unrelated directory, already accounted for by listAgentBundleRecipes — so they are
+ *  excluded here rather than reported. */
+export async function listBrokenRecipes(): Promise<BrokenRecipe[]> {
+  let entries: string[];
+  try {
+    entries = (await readdir(recipesDirectory(), { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+
+  const broken: BrokenRecipe[] = [];
+  for (const name of entries) {
+    const hasManifest = await access(resolve(recipesDirectory(), name, "recipe.json")).then(() => true, () => false);
+    if (!hasManifest) continue;
+    try {
+      await loadRecipe(name);
+    } catch (error) {
+      broken.push({ name, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return broken;
 }
 
 /** Strict enumeration behind installedRecipePrivatePaths. */

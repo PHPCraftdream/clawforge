@@ -1,5 +1,5 @@
 // Checks recipe loading and listing (tools/framework/service/recipe.ts) plus the guard rails in the
-// `install` branch of tools/framework/commands/management/recipe.ts — a disabled recipe refuses to build
+// `install` branch of tools/framework/commands/management/recipe/index.ts — a disabled recipe refuses to build
 // without --force-disabled, and a declared variable that is not set refuses before it does.
 //
 // Since the mutating recipe actions run under the instance lock, this file also covers that gating:
@@ -14,7 +14,7 @@
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { recipe, recipeActionIsReadOnly } from "#framework/commands/management/recipe.ts";
+import { recipe, recipeActionIsReadOnly } from "#framework/commands/management/recipe/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { guarded, lockPath, readLockHolder, takeLock, withInstanceLock } from "#framework/runtime/instance-lock.ts";
 import { withOutputSink } from "#framework/core/output.ts";
@@ -93,6 +93,19 @@ function stubContext(env: Record<string, string>): {
         if (command === "test" && args[0] === "-d") {
           return { code: dirs.has(args[1]) ? 0 : 1, stdout: "", stderr: "" };
         }
+        if (command === "mv") {
+          const [source, dest] = args; // atomic move: fails once the source is gone, like real `rename`
+          if (!dirs.has(source)) return { code: 1, stdout: "", stderr: "No such file or directory" };
+          for (const d of [...dirs].filter((e) => e === source || e.startsWith(`${source}/`))) { dirs.delete(d); dirs.add(dest + d.slice(source.length)); }
+          for (const [k, v] of [...files].filter(([k]) => k === source || k.startsWith(`${source}/`))) { files.delete(k); files.set(dest + k.slice(source.length), v); }
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "rm") {
+          const target = args[args.length - 1];
+          for (const d of [...dirs].filter((e) => e === target || e.startsWith(`${target}/`))) dirs.delete(d);
+          for (const k of [...files.keys()].filter((e) => e === target || e.startsWith(`${target}/`))) files.delete(k);
+          return { code: 0, stdout: "", stderr: "" };
+        }
         return { code: 0, stdout: "", stderr: "" };
       },
       async readFile(path: string): Promise<string> {
@@ -131,6 +144,9 @@ function stubContext(env: Record<string, string>): {
           },
           async isRunning() {
             return false;
+          },
+          async serviceStates() {
+            return { app: { running: true } };
           },
         };
       },

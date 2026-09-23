@@ -10,7 +10,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { logs, takeTail } from "#framework/commands/lifecycle/lifecycle.ts";
-import { recipe } from "#framework/commands/management/recipe.ts";
+import { recipe } from "#framework/commands/management/recipe/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
 import { monorepoRoot } from "#framework/core/env.ts";

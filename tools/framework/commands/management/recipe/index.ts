@@ -6,17 +6,28 @@
 
 import { cp, access, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, relative, resolve } from "node:path";
+import { register } from "node:module";
+import { basename, dirname, relative, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/log.ts";
 import { pathToFileURL } from "node:url";
 import type { Context } from "#src/core/context.ts";
-import { listAgentBundleRecipes, listRecipes, loadRecipe, projectName, recipesDirectory, type Recipe } from "#src/service/recipe.ts";
+import {
+  listAgentBundleRecipes,
+  listBrokenRecipes,
+  listRecipes,
+  loadRecipe,
+  projectName,
+  recipesDirectory,
+  type Recipe,
+  type RecipeReadiness,
+} from "#src/service/recipe.ts";
 import { SENSITIVE_RECIPE_NAME, declaredPortablePrivateFiles, excludesPortablePath } from "#src/security/recipe-portable-content.ts";
 import { safeName } from "#src/core/names.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
+import type { Stack, StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit } from "#src/core/output.ts";
-import { takeTail } from "../lifecycle/lifecycle.ts";
+import { takeTail } from "../../lifecycle/lifecycle.ts";
 
 /** The action a bare `recipe` runs. */
 export const RECIPE_DEFAULT_ACTION = "list";
@@ -78,32 +89,144 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
   return running;
 }
 
-/** App-owned hook modules, cached against the checksum of the file each was loaded from.
+/** App-owned hook modules, cached against the checksum of the hook's whole local import
+ *  graph.
  *
  *  `import()` answers from the process-wide module map keyed by URL, so in a long-lived
  *  process — every MCP session — re-importing the same hook file returned the first load
  *  forever: a hook edited on disk kept running its previous code on the next tool call,
  *  while a freshly started CLI process picked the new one up (audit 2026-09-22 round 3,
- *  P2-04). Each load re-reads the small hook file and compares checksums; a changed file
- *  re-imports under a query parameter derived from the new checksum. That URL is
- *  deterministic per content, so the module map stays bounded and identical content keeps
- *  one instance.
+ *  P2-04). A relative import graph made that worse — editing a helper without touching
+ *  prepare.ts/verify.ts left a session running the helper's old code (round 4, P2-06) —
+ *  so the gate that decides whether a reload is due hashes the whole local import graph,
+ *  not just the entry file: dependencyGraphChecksum below.
  *
- *  Versioned is the hook file itself only. Relative imports inside the recipe directory
- *  resolve to unversioned URLs and stay cached for the process lifetime, so a hook split
- *  into local modules needs an MCP restart after those are edited; the documented hook
- *  shape is one self-contained file, whose only sanctioned external import
- *  (@clawforge/framework/private-config) is installed node_modules content that does not
- *  change mid-session. */
+ *  The graph checksum decides *whether* a reload is due; a versioned URL decides *what
+ *  gets re-executed*. importHookModule imports the hook's real file URL with that
+ *  checksum as a `?g=` query parameter (`file://…/prepare.ts?g=<checksum>`), and the
+ *  resolve hook in ./hook-loader.ts re-stamps the same version onto every
+ *  specifier the graph reaches through relative resolution. Because the checksum is
+ *  computed before the import, the version is known up front — every module in the
+ *  graph, cycles included, carries it, so a change anywhere changes every versioned URL
+ *  at once and Node re-executes the whole graph, while an unchanged graph answers from
+ *  this map without importing at all.
+ *
+ *  Hooks execute from their real location, so nothing about resolution changes for the
+ *  recipe author: bare imports (`@clawforge/framework/private-config`, the recipe app's
+ *  own dependencies) and `#imports` resolve against the recipe's own package scope,
+ *  `import.meta.url` points at the real file, and sibling assets sit where relative
+ *  reads expect them. Nothing is copied to temp storage, so there is no shared cache
+ *  directory to win a race against, no pre-existing file to silently adopt, and no
+ *  bytes of framework-controlled temp state at all (audit 2026-09-23 round 6, P1-08,
+ *  P2-01; the copy machinery this replaces also deadlocked on genuine A→B→A cycles —
+ *  P2-02 — which ESM now handles natively). */
 const hookModules = new Map<string, { checksum: string; loaded: Record<string, unknown> }>();
 
-async function importHookModule(path: string): Promise<Record<string, unknown>> {
-  const checksum = createHash("sha256").update(await readFile(path, "utf8")).digest("hex");
+interface ImportSpan { readonly start: number; readonly end: number; readonly specifier: string }
+
+/** Relative (`./`, `../`) import specifiers a hook file's source references, whether via
+ *  static `import`/`export ... from`, a side-effect `import "..."`, or a dynamic
+ *  `import("...")` — with the exact offsets of the specifier text (not the surrounding
+ *  quotes), so a caller can splice a replacement in without disturbing anything else in the
+ *  file. Deliberately loose regex matching rather than a full parse: this only needs the
+ *  specifier text, and hook files are small, framework-authored TypeScript. */
+function relativeImportSpans(source: string): ImportSpan[] {
+  const pattern = /\bfrom\s*["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']\s*\)|\bimport\s+["']([^"']+)["']/gd;
+  const spans: ImportSpan[] = [];
+  for (const match of source.matchAll(pattern)) {
+    const groupIndex = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : match[3] !== undefined ? 3 : undefined;
+    if (groupIndex === undefined) continue;
+    const specifier = match[groupIndex] as string;
+    if (!specifier.startsWith(".")) continue;
+    const indices = (match as RegExpExecArray & { indices?: Array<[number, number] | undefined> }).indices;
+    const span = indices?.[groupIndex];
+    if (span === undefined) continue;
+    spans.push({ start: span[0], end: span[1], specifier });
+  }
+  return spans;
+}
+
+/** One checksum over the hook file and every file it transitively reaches through relative
+ *  imports — cheap enough to compute on every call since hook files are small, and the
+ *  gate that decides whether importHookModule needs to do anything at all this time. Node's
+ *  ESM resolver requires relative specifiers to carry their own extension, so each
+ *  specifier resolves directly against its importer's directory with no extension
+ *  guessing. A specifier that does not resolve to a readable file (a typo, or a package
+ *  import that happens to start with `.` in some other way) is skipped rather than failing
+ *  the load — the checksum degrades to covering only what it could read, never throws. */
+async function dependencyGraphChecksum(entryPath: string): Promise<string> {
+  const files = new Map<string, string>();
+  const queue = [entryPath];
+  while (queue.length > 0) {
+    const current = queue.shift() as string;
+    if (files.has(current)) continue;
+    let content: string;
+    try {
+      content = await readFile(current, "utf8");
+    } catch {
+      continue;
+    }
+    files.set(current, content);
+    for (const span of relativeImportSpans(content)) {
+      const dependency = resolve(dirname(current), span.specifier);
+      if (!files.has(dependency)) queue.push(dependency);
+    }
+  }
+  const graph = [...files.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([path, content]) => `${path}\n${content}`)
+    .join("\u0000");
+  return createHash("sha256").update(graph).digest("hex");
+}
+
+/** Query parameter carrying the hook graph's checksum on every versioned hook URL. */
+const HOOK_GRAPH_VERSION_PARAM = "g";
+
+const HOOK_IMPORT_TIMEOUT_MS_DEFAULT = 30_000;
+
+/** The deadline is a backstop against evaluation that never settles — the loader's own
+ *  promise graph cannot deadlock anymore (there is none), but a hook's top-level await
+ *  still could, and a hung import means a hung MCP call holding the instance lock. The
+ *  environment override exists so a check can exercise the timeout path in seconds
+ *  instead of half a minute. */
+function hookImportTimeoutMs(): number {
+  const override = Number(process.env.CLAWFORGE_HOOK_IMPORT_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0 ? override : HOOK_IMPORT_TIMEOUT_MS_DEFAULT;
+}
+
+let hookResolveHooksRegistered = false;
+
+export async function importHookModule(path: string): Promise<Record<string, unknown>> {
+  const checksum = await dependencyGraphChecksum(path);
   const cached = hookModules.get(path);
   if (cached?.checksum === checksum) return cached.loaded;
-  const loaded = (await import(`${pathToFileURL(path).href}?hook=${checksum}`)) as Record<string, unknown>;
-  hookModules.set(path, { checksum, loaded });
-  return loaded;
+  if (!hookResolveHooksRegistered) {
+    register(new URL("./hook-loader.ts", import.meta.url).href, import.meta.url);
+    hookResolveHooksRegistered = true;
+  }
+  const versionedURL = `${pathToFileURL(path).href}?${HOOK_GRAPH_VERSION_PARAM}=${checksum}`;
+  const evaluation = import(versionedURL) as Promise<Record<string, unknown>>;
+  // If the deadline ever wins the race the evaluation is still pending in the background;
+  // a rejection from it must not surface as an unhandled rejection and crash the process.
+  evaluation.catch(() => {});
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      evaluation,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(
+            new Error(
+              `recipe hook ${path}: module evaluation did not settle within ${hookImportTimeoutMs()}ms — ` +
+                "the hook's top-level code (a top-level await across its relative imports, typically) never resolves",
+            ),
+          );
+        }, hookImportTimeoutMs());
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /** Loads app-owned hooks without teaching the framework what the recipe means. */
@@ -147,6 +270,134 @@ async function runRecipeHook(ctx: Context, spec: Recipe, kind: "verify" | "onboa
   else log(`${spec.name} ${kind}: ${JSON.stringify(payload)}`);
 }
 
+/** Grace period for the implicit readiness check on a recipe with no `readiness` declared —
+ *  long enough to catch a container that starts and exits moments later (the gap the old
+ *  immediate-after-`up` check missed entirely), short enough that a plain recipe's install
+ *  never waits on a service it never described. The same window is also the minimum a stack
+ *  must HOLD a ready verdict before install believes it, declared readiness or not: the
+ *  first ready answer says nothing about the next moment, and a container that reports
+ *  running for one poll and crashes before the next must fail (audit 2026-09-23, P2-09). */
+const DEFAULT_READINESS_GRACE_MS = 5000;
+
+/** Default timeout for a recipe that declares readiness but not its own timeoutMs — long
+ *  enough for a real healthcheck (a database's first boot, say) to turn healthy. */
+const DEFAULT_DECLARED_READINESS_TIMEOUT_MS = 120_000;
+
+const READINESS_POLL_INTERVAL_MS = 500;
+
+interface RecipeReadinessResult {
+  readonly status: "ready" | "degraded" | "unknown";
+  readonly detail: string;
+  readonly services: Record<string, StackServiceState>;
+}
+
+/** Which of `required` are missing from `services` entirely, present but not running, or
+ *  running with a healthcheck that has not turned healthy. */
+function readinessProblems(
+  services: Record<string, StackServiceState>,
+  required: string[],
+): { missing: string[]; notRunning: string[]; unhealthy: string[] } {
+  const missing = required.filter((name) => services[name] === undefined);
+  const notRunning = required.filter((name) => services[name] !== undefined && !services[name].running);
+  const unhealthy = required.filter((name) => {
+    const health = services[name]?.health;
+    return health !== undefined && health !== "healthy";
+  });
+  return { missing, notRunning, unhealthy };
+}
+
+/** Joins the three problem lists into one readable detail line. */
+function readinessProblemDetail(problems: { missing: string[]; notRunning: string[]; unhealthy: string[] }): string {
+  return [
+    problems.missing.length > 0 ? `missing: ${problems.missing.join(", ")}` : undefined,
+    problems.notRunning.length > 0 ? `not running: ${problems.notRunning.join(", ")}` : undefined,
+    problems.unhealthy.length > 0 ? `not healthy: ${problems.unhealthy.join(", ")}` : undefined,
+  ].filter((entry): entry is string => entry !== undefined).join("; ");
+}
+
+/** Bounds one awaited operation to `budgetMs`: a hung service-state probe must not outwait
+ *  the readiness deadline that is supposed to bound the whole loop (audit 2026-09-23,
+ *  P2-09). The underlying operation keeps running past the timeout — there is no way to
+ *  cancel it — but this caller stops waiting on it. */
+function bounded<T>(operation: Promise<T>, budgetMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const wait = Math.max(1, budgetMs);
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${wait}ms`)), wait);
+    operation.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error: unknown) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+/** Polls the stack's own per-service state until every service that must be up — the
+ *  recipe's declared `readiness.services`, or every service compose currently reports for
+ *  the project when nothing is declared — is running and (where it declares a healthcheck)
+ *  healthy, KEEPS that verdict for the full grace period, or `timeoutMs` runs out. The
+ *  first ready answer only starts the observation window: during it the required set stays
+ *  frozen at the one that first answered ready, so a default-derived set cannot quietly
+ *  lose a member whose container disappears, and any service that leaves the ready state
+ *  inside the window fails readiness by name. Each state probe is bounded by its phase's
+ *  remaining budget, so a hung probe cannot defeat the deadline. Replaces the old
+ *  immediate `isRunning()` probe, which read as ready the instant `up --detach` returned,
+ *  before a container had any chance to crash, and which one live sidecar satisfied even
+ *  with the recipe's main service down (audit 2026-09-23, P2-04; grace window and probe
+ *  bound: P2-09). */
+async function waitForRecipeReadiness(stack: Stack, readiness: RecipeReadiness | undefined, timeoutMs: number): Promise<RecipeReadinessResult> {
+  const deadline = Date.now() + timeoutMs;
+  // Set when the first fully-ready answer lands; the grace floor keeps the window wide
+  // enough for at least two confirming polls even if the constants are tuned closer
+  // together than they are today.
+  const graceMs = Math.max(DEFAULT_READINESS_GRACE_MS, READINESS_POLL_INTERVAL_MS * 2);
+  let graceEndsAt: number | undefined;
+  let required: string[] | undefined;
+  let readyDetail = "";
+  let lastServices: Record<string, StackServiceState> = {};
+
+  for (;;) {
+    if (graceEndsAt !== undefined && Date.now() >= graceEndsAt) {
+      return { status: "ready", detail: readyDetail, services: lastServices };
+    }
+    const phaseEnd = graceEndsAt ?? deadline;
+    let services: Record<string, StackServiceState>;
+    try {
+      services = await bounded(stack.serviceStates(), phaseEnd - Date.now(), "the service state probe");
+    } catch (error) {
+      return { status: "unknown", detail: `could not read service state: ${error instanceof Error ? error.message : String(error)}`, services: lastServices };
+    }
+    lastServices = services;
+    // Default derivation reads the COMPLETE listing (serviceStates reports stopped
+    // containers too), so a failed service joins the required set instead of shrinking
+    // it. Frozen once ready, so a replica that crashes out of the listing mid-grace is
+    // reported by name rather than silently dropping out of the requirement set.
+    const names = required ?? readiness?.services ?? Object.keys(services);
+    if (names.length === 0) {
+      if (Date.now() >= phaseEnd) {
+        return { status: "unknown", detail: "compose reported no services for this stack", services: lastServices };
+      }
+    } else {
+      const problems = readinessProblems(services, names);
+      const ready = problems.missing.length === 0 && problems.notRunning.length === 0 && problems.unhealthy.length === 0;
+      if (graceEndsAt === undefined) {
+        if (ready) {
+          graceEndsAt = Date.now() + graceMs;
+          required = names;
+          readyDetail = `required service(s) running: ${names.join(", ")}`;
+        } else if (Date.now() >= deadline) {
+          return { status: "degraded", detail: readinessProblemDetail(problems), services: lastServices };
+        }
+      } else if (!ready) {
+        return {
+          status: "degraded",
+          detail: `left the ready state during the ${graceMs}ms grace window: ${readinessProblemDetail(problems)}`,
+          services: lastServices,
+        };
+      }
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, Math.min(READINESS_POLL_INTERVAL_MS, Math.max(0, phaseEnd - Date.now()))));
+  }
+}
+
 export async function recipe(ctx: Context, args: string[]): Promise<void> {
   const [action, name, ...rest] = args;
 
@@ -156,13 +407,18 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
     // drops it and inspect reports it. Answering "no recipes yet" over one sent an operator
     // reading code to explain a discrepancy their own deployment showed.
     const bundles = await listAgentBundleRecipes();
-    if (recipes.length === 0 && bundles.length === 0) {
+    // A recipe.json that exists but fails to load (bad shape, invalid ports/variables — the
+    // P3-01 case). listRecipes() drops these so one broken manifest cannot take the working
+    // recipes down with it; this is the other half — the same manifest still gets a named,
+    // visible entry in the catalog instead of quietly not existing.
+    const broken = await listBrokenRecipes();
+    if (recipes.length === 0 && bundles.length === 0 && broken.length === 0) {
       info("no recipes yet — add one under recipes/<name>/");
       return;
     }
-    if (recipes.length === 0) {
+    if (recipes.length === 0 && broken.length === 0) {
       info("no service recipes yet — `recipe install` needs a recipes/<name>/recipe.json");
-    } else {
+    } else if (recipes.length > 0) {
       log("available recipes");
       for (const entry of recipes) describe(entry);
       info("");
@@ -170,6 +426,9 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
     }
     for (const name of bundles) {
       info(`${name.padEnd(16)} agent/MCP bundle — not installable; visible with ./clawforge inspect, provisioned with ./clawforge provision-agent`);
+    }
+    for (const entry of broken) {
+      warn(`${entry.name.padEnd(16)} broken recipe.json: ${entry.error}`);
     }
     return;
   }
@@ -321,8 +580,36 @@ async function runRecipeAction(ctx: Context, action: string, name: string, rest:
       log(`building ${spec.name} (this compiles from source and can take minutes)`);
       await stack.build();
       log(`starting ${spec.name}`);
-      await stack.up();
+      const readinessTimeoutMs = spec.readiness === undefined
+        ? DEFAULT_READINESS_GRACE_MS
+        : spec.readiness.timeoutMs ?? DEFAULT_DECLARED_READINESS_TIMEOUT_MS;
+      // --wait is only requested when the recipe itself declared readiness: without a bound
+      // from the recipe, a healthcheck that never turns healthy would otherwise hang install
+      // on compose's own unbounded wait.
+      await stack.up(
+        spec.readiness !== undefined ? { wait: true, timeoutSeconds: Math.ceil(readinessTimeoutMs / 1000) } : undefined,
+      );
+
+      // Checked before afterStart, not the instant `up --detach` returns: a container that
+      // starts and crashes moments later, or a multi-service recipe whose main service never
+      // came up while a sidecar did, used to be reported "running" regardless (audit
+      // 2026-09-23, P2-04).
+      const readiness = await waitForRecipeReadiness(stack, spec.readiness, readinessTimeoutMs);
+      const report = { recipe: spec.name, status: readiness.status, detail: readiness.detail, services: readiness.services };
+
+      if (readiness.status !== "ready") {
+        if (isCaptured()) emit(`${JSON.stringify(report)}\n`);
+        warn(`${spec.name} started but is not ready (${readiness.status}): ${readiness.detail}`);
+        info(`diagnose with: ./clawforge recipe diagnose ${spec.name}`);
+        die(`recipe ${spec.name} did not reach a ready state — afterStart was skipped`);
+      }
+
       if (typeof hooks.afterStart === "function") await hooks.afterStart(ctx, spec);
+
+      if (isCaptured()) {
+        emit(`${JSON.stringify(report)}\n`);
+        return;
+      }
       log(`${spec.name} is running`);
       for (const port of spec.ports ?? []) {
         info(`port ${port.host} -> ${port.container}${port.description ? ` (${port.description})` : ""}`);

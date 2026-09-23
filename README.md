@@ -551,11 +551,40 @@ A recipe can sit in the repository switched off — `"enabled": false` in `recip
 
 An app-owned recipe may also contain `prepare.ts`, `verify.ts` and `onboard.ts`. The framework
 runs these hooks around the service lifecycle and exposes `recipe verify`/`recipe onboard` over
-MCP, while each hook owns its domain-specific config and checks. Use the public
+MCP, while each hook owns its domain-specific config and checks. Hooks are plain ESM TypeScript
+executed from their real path in the recipe directory: relative imports stay in the recipe and
+refresh on edit — the whole local import graph is checksummed, so editing any helper takes
+effect on the next call of a long-lived MCP session — while bare imports resolve against the
+recipe's own `node_modules` and `import.meta.url` and neighbouring files keep pointing at the
+real recipe directory. Use the public
 `@clawforge/framework/private-config` helpers for generated credentials, atomic owner-only files,
 env updates and checksums; the framework never prints the values. A secret is never a
 command-line argument — use `execWithSecrets` (or the private-file helpers) instead of putting
 a credential in `args`.
+
+What `recipe install` waits for before calling `afterStart` and reporting success is also
+declared in `recipe.json`, under `readiness`:
+
+```json
+{ "readiness": { "services": ["app", "worker"], "timeoutMs": 60000 } }
+```
+
+`services` names the compose services that must all be running — and healthy, where the
+service declares a healthcheck — before install proceeds; `timeoutMs` bounds the wait, two
+minutes when a recipe declares readiness without it. A recipe that declares nothing still
+gets a check: every service compose reports for the project, stopped containers included,
+against a five-second window — enough to catch one that starts and exits at once, with no
+name to hold a slower starter to.
+
+The wait is not one poll, and neither case reports success on a lucky instant. The first
+fully ready answer only starts a five-second observation window in which every required
+service must stay ready — the required set is frozen at that answer, so a container that
+crashes inside the window fails install by name. If the deadline passes first, install
+fails instead of proceeding: it names what never came up (`missing` / `not running` /
+`not healthy`, with the service names), leaves the stack in place, points at `recipe
+diagnose`, and skips `afterStart` — a hook never runs against a stack that is not actually
+up. A malformed declaration (an empty service list, a non-positive `timeoutMs`) is refused
+when the manifest loads, not discovered at install time.
 
 ### Private files: `privatePaths` and `privateFiles`
 

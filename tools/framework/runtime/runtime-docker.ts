@@ -9,7 +9,7 @@ import { composeFile, locksDir, toSettings, loadEnv, type Settings } from "../co
 import { deploymentDir, composeProjectName } from "./deployment.ts";
 import type { PathBridge } from "../core/paths.ts";
 import type { ExecResult, Transport } from "./transport.ts";
-import { HelperNotRunning, type Runtime, type RunOneOffOptions, type Stack } from "./runtime.ts";
+import { HelperNotRunning, type Runtime, type RunOneOffOptions, type Stack, type StackServiceState } from "./runtime.ts";
 
 /** Which service this runtime operates. Supplied by the application: the framework has no
  *  opinion about what the managed service is called.
@@ -51,6 +51,44 @@ export function serializeComposeEnv(env: Record<string, string>): string {
   return entries
     .map(([name, value]) => `${name}=${JSON.stringify(value).replaceAll("$", "$$$$")}`)
     .join("\n") + "\n";
+}
+
+/** Parses `compose ps --format json`: one JSON object per line for multiple containers, a
+ *  single bare object for one, and empty for none. A line that fails to parse is dropped
+ *  rather than failing the whole read — readiness treats an unparsable/missing entry for a
+ *  required service the same as one compose never reported at all. */
+function parseComposePs(stdout: string): Array<{ Service?: unknown; State?: unknown; Health?: unknown }> {
+  const trimmed = stdout.trim();
+  if (trimmed === "") return [];
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) return parsed as Array<{ Service?: unknown; State?: unknown; Health?: unknown }>;
+    if (parsed !== null && typeof parsed === "object") return [parsed as { Service?: unknown; State?: unknown; Health?: unknown }];
+  } catch {
+    // Not one JSON value — try newline-delimited below.
+  }
+  const entries: Array<{ Service?: unknown; State?: unknown; Health?: unknown }> = [];
+  for (const line of trimmed.split("\n")) {
+    const text = line.trim();
+    if (text === "") continue;
+    try {
+      entries.push(JSON.parse(text) as { Service?: unknown; State?: unknown; Health?: unknown });
+    } catch {
+      // Skipped: a single malformed line must not hide the services compose did report.
+    }
+  }
+  return entries;
+}
+
+/** The replica-aggregated health for one service: a defined non-healthy verdict from any
+ *  replica fails the service, a healthy one only holds when no replica reports otherwise,
+ *  and a replica with no health opinion at all neither passes nor fails the aggregate. */
+function worstHealth(left: string | undefined, right: string | undefined): string | undefined {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  if (left === "healthy") return right;
+  if (right === "healthy") return left;
+  return left;
 }
 
 export class DockerRuntime implements Runtime {
@@ -521,7 +559,14 @@ export class DockerRuntime implements Runtime {
 
     return {
       build: () => voidly(["build"]),
-      up: () => voidly(["up", "--detach"]),
+      up: (options) =>
+        voidly([
+          "up",
+          "--detach",
+          ...(options?.wait === true
+            ? ["--wait", ...(options.timeoutSeconds !== undefined ? ["--wait-timeout", String(options.timeoutSeconds)] : [])]
+            : []),
+        ]),
       down: (removeVolumes = false) => voidly(["down", ...(removeVolumes ? ["--volumes"] : [])]),
       status: () => voidly(["ps"]),
       followLogs: () => voidly(["logs", "--follow", "--tail", "100"]),
@@ -533,6 +578,31 @@ export class DockerRuntime implements Runtime {
           { allowFailure: true },
         );
         return result.code === 0 && result.stdout.trim() !== "";
+      },
+      serviceStates: async () => {
+        // --all: without it compose lists only running containers, and the recipe installer
+        // derives the required set from this very response when a recipe declares none — a
+        // crashed service absent from the listing would shrink the requirement set to
+        // whichever sidecars happened to survive. (audit 2026-09-23, P2-09)
+        const result = await compose(["ps", "--all", "--format", "json"], false).catch(() => undefined);
+        if (result === undefined) return {};
+        const states: Record<string, StackServiceState> = {};
+        for (const entry of parseComposePs(result.stdout)) {
+          if (typeof entry.Service !== "string" || entry.Service === "") continue;
+          const running = entry.State === "running";
+          const health = typeof entry.Health === "string" && entry.Health !== "" ? entry.Health : undefined;
+          // Replicas of one service arrive as separate entries under the same name.
+          // Requiring every replica to be running (and healthy, where a healthcheck
+          // exists) keeps the last-enumerated replica from answering for its dead
+          // siblings. A state that is not exactly "running" counts as not running, so
+          // the caller reports the service by name instead of dropping it from the
+          // requirement set.
+          const existing = states[entry.Service];
+          states[entry.Service] = existing === undefined
+            ? { running, health }
+            : { running: existing.running && running, health: worstHealth(existing.health, health) };
+        }
+        return states;
       },
     };
   }

@@ -157,16 +157,41 @@ export interface Runtime {
   stack(project: string, definitionPath: string): Stack;
 }
 
+/** One compose service's state, as `serviceStates()` reports it. */
+export interface StackServiceState {
+  /** True when the container's own state is "running" — not "exited", "created" or
+   *  missing entirely. */
+  readonly running: boolean;
+  /** Compose's own healthcheck verdict ("healthy", "unhealthy", "starting"), or undefined
+   *  when the service declares no healthcheck at all — compose then has no health opinion,
+   *  distinct from a healthcheck that has not settled yet. */
+  readonly health?: string;
+}
+
 export interface Stack {
   /** Builds images defined by the stack. */
   build(): Promise<void>;
-  /** Starts it in the background. */
-  up(): Promise<void>;
+  /** Starts it in the background. `wait` asks compose itself to block until every service is
+   *  running (and healthy, where a healthcheck is declared) or `timeoutSeconds` elapses —
+   *  only requested by a caller that already has a bounded readiness declaration for this
+   *  stack, so a recipe with no such declaration and a healthcheck that never turns healthy
+   *  cannot hang install indefinitely (audit 2026-09-23, P2-04). */
+  up(options?: { wait?: boolean; timeoutSeconds?: number }): Promise<void>;
   /** Stops and removes it; --volumes only when explicitly asked. */
   down(removeVolumes?: boolean): Promise<void>;
   status(): Promise<void>;
   followLogs(): Promise<void>;
   /** Same bound as Runtime.readLogs, for a recipe's own stack. */
   readLogs(tail: string): Promise<string>;
+  /** True when ANY container from this project is up — the historical, coarse probe that
+   *  `recipe status` and the backup/restore warnings (runningRecipeStacks) still read: a
+   *  single live sidecar satisfies it even while the recipe's main service is down. Kept as
+   *  is for those readers; install's own readiness check uses serviceStates() instead, which
+   *  does not have that blind spot. */
   isRunning(): Promise<boolean>;
+  /** Per-service state, keyed by compose service name, for every service compose currently
+   *  reports for this project — the readiness primitive isRunning() cannot be: a caller can
+   *  require ALL of a multi-service recipe's declared services instead of being satisfied by
+   *  one live container. */
+  serviceStates(): Promise<Record<string, StackServiceState>>;
 }

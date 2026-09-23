@@ -27,16 +27,25 @@
 // The inherent limit, stated plainly: this is for a stale or half-filled .env. A wholly
 // ABSENT .env cannot be repaired here, because reaching the target to inspect its container
 // already requires the .env that names the target and its transport — bootstrap creates it.
+//
+// Two entry points share the one merge. recoverEnv runs against a full Context — the
+// journal's recovery steps and MCP's dispatch go this way. recoverEnvBeforeContext is the
+// recovery-first dispatch (entry/cli.ts): with OC_DATA_DIR absent, the Context the normal
+// dispatch builds first cannot be constructed, and the command that exists to fill that
+// fact would die in the settings parser before it started (P2-10). It builds only what the
+// container read genuinely needs — see ./bootstrap.ts.
 
 import { access, readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/log.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { envFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
+import type { Transport } from "#src/runtime/transport.ts";
 import { replacePrivateFile } from "#src/security/private-file.ts";
 import { upsertEnvValue } from "#src/security/private-config.ts";
 import { CONNECTION_FACTS, connectionFactDiffs, unrecoverableConnectionFacts } from "./facts.ts";
-import type { ConnectionFactDiff } from "./facts.ts";
+import type { ConnectionFactDiff, ConnectionFacts } from "./facts.ts";
+import { createRecoveryTransport, runningConnectionFactsWithoutContext } from "./bootstrap.ts";
 
 /** Reports the facts Docker's own answer did not carry — left as they are, never guessed.
  *  Shared by every exit path, so a dry run names exactly the gaps a real write would. */
@@ -60,12 +69,10 @@ function reportDirectionChoice(diverged: ConnectionFactDiff[]): void {
   info("keep .env's values (the edit is the intent): ./clawforge up recreates the container from the file as it now reads");
 }
 
-/** Merges the running container's connection facts into the deployment's .env — the names
- *  the file is missing entirely by default, every differing fact under --adopt-runtime. The
- *  file mixes these non-secret plumbing values with a real secret (OPENCLAW_GATEWAY_TOKEN),
- *  so the raw content passes through upsertEnvValue for exactly the four names and is never
- *  printed, parsed out, or reported beyond them. */
-export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
+/** The one argument grammar, parsed once for both entry points: a dry run names what would
+ *  change and writes nothing; --adopt-runtime takes the container as the authoritative
+ *  side; anything else is refused rather than guessed at. */
+function parseRecoveryArgs(args: string[]): { dryRun: boolean; adoptRuntime: boolean } {
   let dryRun = false;
   let adoptRuntime = false;
 
@@ -75,7 +82,12 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
     else die(`unknown argument: ${arg}`);
   }
 
-  const path = envFile();
+  return { dryRun, adoptRuntime };
+}
+
+/** A wholly absent .env is the command's one stated limit: reaching the target to inspect
+ *  its container already requires the .env that says which target and transport to use. */
+async function readEnvFile(path: string): Promise<string> {
   const exists = await access(path).then(
     () => true,
     () => false,
@@ -87,21 +99,22 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
         "a missing .env has nothing to recover against. Run ./clawforge bootstrap to create one.",
     );
   }
+  return readFile(path, "utf8");
+}
 
-  if (typeof ctx.runtime.runningConnectionFacts !== "function") {
-    die(`${ctx.runtime.description} cannot introspect its running container, so the connection facts cannot be recovered here`);
-  }
-
-  const facts = await ctx.runtime.runningConnectionFacts!();
-  if (facts === undefined) {
-    die(
-      `${ctx.runtime.description} is not running, or its container could not be inspected — the connection ` +
-        "facts are recoverable only from a running container, since that is where compose's resolved " +
-        "values live. Start it and try again: ./clawforge up",
-    );
-  }
-
-  const raw = await readFile(path, "utf8");
+/** The merge both entry points share: the running container's facts classified against the
+ *  file as it reads now — missing names filled by default, diverged values written only
+ *  under --adopt-runtime — and written in place. The file mixes these non-secret plumbing
+ *  values with a real secret (OPENCLAW_GATEWAY_TOKEN), so the raw content passes through
+ *  upsertEnvValue for exactly the four names and is never printed, parsed out, or reported
+ *  beyond them. */
+async function mergeRecoveredFacts(
+  facts: ConnectionFacts,
+  path: string,
+  raw: string,
+  dryRun: boolean,
+  adoptRuntime: boolean,
+): Promise<void> {
   const current = parseEnv(raw);
 
   const diffs = connectionFactDiffs(facts, current);
@@ -146,4 +159,68 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
   }
   if (!adoptRuntime) reportDirectionChoice(diverged);
   reportUnrecoverable(unrecoverable);
+}
+
+/** The full-context entry point: facts from the Context's own runtime. Refusals are the
+ *  established ones — a runtime that cannot introspect, and a container that is not
+ *  running. */
+export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
+  const { dryRun, adoptRuntime } = parseRecoveryArgs(args);
+
+  const path = envFile();
+  const raw = await readEnvFile(path);
+
+  if (typeof ctx.runtime.runningConnectionFacts !== "function") {
+    die(`${ctx.runtime.description} cannot introspect its running container, so the connection facts cannot be recovered here`);
+  }
+
+  const facts = await ctx.runtime.runningConnectionFacts!();
+  if (facts === undefined) {
+    die(
+      `${ctx.runtime.description} is not running, or its container could not be inspected — the connection ` +
+        "facts are recoverable only from a running container, since that is where compose's resolved " +
+        "values live. Start it and try again: ./clawforge up",
+    );
+  }
+
+  await mergeRecoveredFacts(facts, path, raw, dryRun, adoptRuntime);
+}
+
+export interface RecoveryBootstrapOptions {
+  /** The compose service the deployment operates; the context defaults an application's
+   *  unnamed service to "app", and so does this. */
+  service?: string;
+  /** The checks' seam, the way ContextOptions.transport is: a stubbed transport answering
+   *  for Docker instead of one selected from .env. */
+  transport?: Transport;
+}
+
+/** The recovery-first entry point (P2-10): everything the container read genuinely needs,
+ *  built without the validated Context the dispatcher would otherwise demand first. Where
+ *  the missing fact is OC_DATA_DIR, that Context cannot be constructed at all — dying in
+ *  the settings parser before the one command that could fill it runs was the bug. The
+ *  file is read here rather than inherited from a Context, so the run merges against the
+ *  file as it is on disk, and the facts land in it before any later context is built. */
+export async function recoverEnvBeforeContext(args: string[], options: RecoveryBootstrapOptions = {}): Promise<void> {
+  const { dryRun, adoptRuntime } = parseRecoveryArgs(args);
+
+  const path = envFile();
+  const raw = await readEnvFile(path);
+  const env = parseEnv(raw);
+
+  const transport = options.transport ?? (await createRecoveryTransport(env));
+  const facts = await runningConnectionFactsWithoutContext({
+    env,
+    transport,
+    service: options.service ?? "app",
+  });
+  if (facts === undefined) {
+    die(
+      "docker is not running, or its container could not be inspected — the connection " +
+        "facts are recoverable only from a running container, since that is where compose's resolved " +
+        "values live. Start it and try again: ./clawforge up",
+    );
+  }
+
+  await mergeRecoveredFacts(facts, path, raw, dryRun, adoptRuntime);
 }

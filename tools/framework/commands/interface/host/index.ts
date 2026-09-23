@@ -6,13 +6,17 @@
 // together are what elevate it, each alone doing nothing. Where the context itself has no
 // other user — Docker Desktop's engine distro runs everything as root — the same two flags
 // are the consent required before the command runs at all: the gate sits where the
-// privilege arrives, not where it is named.
+// privilege arrives, not where it is named. Arrival as root is not assumed from the backend's
+// reputation: docker-desktop declares it, and everywhere else the effective identity is probed
+// before the command runs — `id -u` over the transport for target and engine, this process's
+// own uid (Windows: the shell's integrity level) for local. A probe that cannot answer does
+// not gate, and that gap is named in the code, not papered over.
 
 import { die, info } from "#src/core/log.ts";
 import { emit, shouldFollow } from "#src/core/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecOptions } from "#src/runtime/transport.ts";
-import { realHostEnvironment, resolveHostContext, type HostContextName, type HostEnvironment } from "./contexts.ts";
+import { probeHostIdentity, realHostEnvironment, resolveHostContext, type HostContextName, type HostEnvironment } from "./contexts.ts";
 
 export interface HostInvocation {
   readonly context: HostContextName;
@@ -77,11 +81,23 @@ export async function host(ctx: Context, args: string[], environment: HostEnviro
   const elevate = rootElevationRequested(parsed.root, parsed.confirmRoot);
   const execution = await resolveHostContext(ctx, parsed.context, environment);
   if (execution.note !== undefined) info(execution.note);
-  if (!elevate && execution.arrivesAsRoot === true) {
+  // The gate answers "will this command arrive as root", not "do we recognize this backend
+  // as root-granting": statically where the place has no other user (docker-desktop),
+  // probed before the command runs everywhere else. An unanswered probe runs ungated —
+  // an honest unknown, documented here rather than disguised as a pass.
+  let arrivesAsRoot = execution.arrivesAsRoot === true;
+  let evidence = "the place it runs has no other login user";
+  if (execution.arrivesAsRoot !== true) {
+    const probe = await probeHostIdentity(execution, environment);
+    if (probe.arrivesAsRoot !== undefined) {
+      arrivesAsRoot = probe.arrivesAsRoot;
+      evidence = probe.evidence;
+    }
+  }
+  if (!elevate && arrivesAsRoot) {
     die(
       `host ${parsed.context} runs as root (uid 0) on this host (${execution.description}) — ` +
-      `the place it runs has no other login user, so the privilege arrives with the command: ` +
-      `add --root --confirm-root to consent, or use the target or local context`,
+      `${evidence}: add --root --confirm-root to consent`,
     );
   }
 
@@ -91,7 +107,11 @@ export async function host(ctx: Context, args: string[], environment: HostEnviro
   const follow = shouldFollow();
   const options: ExecOptions = follow ? { stream: true } : { input: "", allowFailure: true };
 
-  const run = elevate ? execution.elevate : execution.exec;
+  // Consent where the command is already root wraps nothing: sudo -n or -u root around a
+  // command that runs as root anyway adds a failure mode, not a privilege, and the local
+  // context on Windows has no elevation to request at all. The flags are honored where
+  // elevation is still missing.
+  const run = elevate && !arrivesAsRoot ? execution.elevate : execution.exec;
   const result = await run(parsed.command[0], parsed.command.slice(1), options);
 
   if (!follow) {

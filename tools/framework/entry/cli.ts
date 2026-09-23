@@ -6,6 +6,7 @@
 
 import { reportError, UserError, log, info } from "../core/log.ts";
 import { createContext } from "../core/context.ts";
+import { recoverEnv, recoverEnvBeforeContext } from "../commands/recover-env/index.ts";
 import { clearRecipesDir } from "../service/recipe.ts";
 import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "../integration/provision.ts";
@@ -155,6 +156,19 @@ export async function runApp(
   // Configure this before building the context; set sources still take precedence in recipesDir().
   useApplicationRecipesDir(app.recipesDir);
   clearRecipesDir();
+
+  // Recovery repairs the very facts a Context is validated from, so it cannot owe its own
+  // dispatch to a built one: with OC_DATA_DIR absent, createContext dies in the settings
+  // parser before the command that exists to fill that fact can even start (P2-10). Its
+  // bootstrap builds only what the container read needs — transport and project identity
+  // (commands/recover-env/bootstrap.ts). Compared by identity so the declaration stays the
+  // single source of truth: if the declaration ever wires a different run, this branch
+  // stops firing and the recover-env dispatch regression fails on the settings parser's
+  // refusal instead of recovery's own.
+  if (command.run === recoverEnv) {
+    await recoverEnvBeforeContext(args, { service: app.service?.name });
+    return 0;
+  }
 
   // Before the context: it parses .env and builds the runtime around it, so a command that
   // is supposed to create that file cannot be the one to run afterwards.

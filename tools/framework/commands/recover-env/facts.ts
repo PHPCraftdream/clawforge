@@ -69,3 +69,50 @@ export function staleConnectionFacts(
 export function unrecoverableConnectionFacts(facts: ConnectionFacts): { name: string }[] {
   return CONNECTION_FACTS.filter((fact) => facts[fact.field] === undefined).map((fact) => ({ name: fact.name }));
 }
+
+/** The connection facts one whole-object `docker inspect` document carries, and those it
+ *  refuses to guess: the data dir only from the config bind mount whose Source ends in
+ *  "/config", the port only from a published 18789/tcp with a host port, the project from
+ *  Docker's own compose label, and the image from .Config.Image — never the top-level
+ *  .Image, which is a resolved ID no .env ever wrote. Undefined when the container is not
+ *  running.
+ *
+ *  This is the recovery bootstrap's parser (bootstrap.ts, which reaches the container by
+ *  Docker's own compose labels because the full Context may be exactly what cannot be
+ *  built); the runtime's own runningConnectionFacts() reads the same four fields from the
+ *  same document, reached through compose ps. One document, two ways in — the fields and
+ *  their refusals-to-guess are pinned by checks on both sides. */
+export function connectionFactsFromInspect(parsed: unknown): ConnectionFacts | undefined {
+  if (parsed === null || typeof parsed !== "object") return undefined;
+  const container = parsed as {
+    State?: { Running?: boolean };
+    Mounts?: unknown;
+    NetworkSettings?: { Ports?: Record<string, unknown> };
+    Config?: { Labels?: Record<string, string>; Image?: unknown };
+  };
+  if (container.State?.Running !== true) return undefined;
+  const facts: ConnectionFacts = {};
+  if (Array.isArray(container.Mounts)) {
+    const mount = container.Mounts.find(
+      (entry) =>
+        typeof entry === "object" && entry !== null &&
+        (entry as { Destination?: unknown }).Destination === "/home/node/.openclaw",
+    );
+    const source = typeof mount === "object" && mount !== null ? (mount as { Source?: unknown }).Source : undefined;
+    // The config bind mount is "<dataDir>/config"; only a Source carrying that exact suffix
+    // yields the data dir — any other shape stays absent rather than guessed.
+    if (typeof source === "string" && source.endsWith("/config") && source.length > "/config".length) {
+      facts.dataDir = source.slice(0, -"/config".length);
+    }
+  }
+  const ports = container.NetworkSettings?.Ports?.["18789/tcp"];
+  if (Array.isArray(ports)) {
+    const hostPort = (ports[0] as { HostPort?: unknown } | undefined)?.HostPort;
+    if (typeof hostPort === "string" && hostPort !== "") facts.port = hostPort;
+  }
+  const project = container.Config?.Labels?.["com.docker.compose.project"];
+  if (typeof project === "string" && project !== "") facts.composeProject = project;
+  const image = container.Config?.Image;
+  if (typeof image === "string" && image !== "") facts.image = image;
+  return facts;
+}

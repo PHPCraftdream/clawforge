@@ -126,10 +126,7 @@ const CHECKSUM_SCRIPT =
 /** The same checksums for what is actually on the target, computed there — one command for
  *  the whole tree rather than reading every file back over the transport.
  *
- *  A tree that lists as empty is answered before any command runs, so a nonzero exit here
- *  can only mean a tree that listed as non-empty whose checksums could not be computed. {}
- *  then reads as drift in both callers — every declared file differs or is missing — which
- *  is loud, where an agreement would have been silent. */
+ *  An empty listing needs no command; a failed or malformed checksum result is an error. */
 async function targetFileChecksums(ctx: Context, dir: string): Promise<Record<string, string>> {
   const listed = await ctx.transport.listFiles(dir);
   if (listed.length === 0) return {};
@@ -142,10 +139,17 @@ async function targetFileChecksums(ctx: Context, dir: string): Promise<Record<st
     throw new Error(`could not checksum target files (exit ${result.code})${detail === "" ? "" : `: ${detail}`}`);
   }
 
+  return parseChecksumOutput(result.stdout);
+}
+
+/** Parses GNU sha256sum's text and Windows binary-mode filename markers. */
+export function parseChecksumOutput(stdout: string): Record<string, string> {
   const checksums: Record<string, string> = {};
-  for (const line of result.stdout.split("\n")) {
-    const match = /^([0-9a-f]{64})\s+\.\/(.+)$/.exec(line.trim());
-    if (match !== null) checksums[match[2]] = match[1];
+  for (const line of stdout.split(/\r?\n/)) {
+    if (line === "") continue;
+    const match = /^([0-9a-f]{64}) [ *]\.\/(.+)$/.exec(line);
+    if (match === null) throw new Error("target returned malformed checksum output");
+    checksums[match[2]] = match[1];
   }
   return checksums;
 }

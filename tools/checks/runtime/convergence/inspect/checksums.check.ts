@@ -14,6 +14,7 @@ import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { gatherInspection } from "#framework/commands/orchestration/inspect/gather.ts";
+import { parseChecksumOutput } from "#framework/commands/orchestration/inspect/observe.ts";
 import { recipeMirrorTargetDir } from "#framework/commands/management/provision-agent/index.ts";
 import { spawnLocal, SshTransport } from "#framework/runtime/transport.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport.ts";
@@ -97,7 +98,7 @@ function recordingContext(
 function parseChecksums(stdout: string): Record<string, string> {
   const sums: Record<string, string> = {};
   for (const line of stdout.split("\n")) {
-    const match = /^([0-9a-f]{64})\s+\.\/(.+)$/.exec(line.trim());
+    const match = /^([0-9a-f]{64}) [ *]\.\/(.+)$/.exec(line.trim());
     if (match !== null) sums[match[2]] = match[1];
   }
   return sums;
@@ -131,6 +132,10 @@ async function shAvailable(): Promise<boolean> {
 }
 
 const { deployment, goodChecksums, goodPrompts, stubContext } = await setupFixtureDeployment();
+const formatHash = "a".repeat(64);
+check("the target parser accepts GNU text-mode checksums", parseChecksumOutput(`${formatHash}  ./page.md\n`)["page.md"], formatHash);
+check("the target parser accepts Windows binary-mode checksums", parseChecksumOutput(`${formatHash} *./page.md\n`)["page.md"], formatHash);
+check("the target parser preserves spaces at the end of a filename", parseChecksumOutput(`${formatHash} *./page.md \n`)["page.md "], formatHash);
 const root = await mkdtemp(join(tmpdir(), "clawforge-inspect-checksums-"));
 const sh = await shAvailable();
 
@@ -190,10 +195,6 @@ try {
   } else {
     check("the executed call still carries the directory as a positional parameter", [treeCall.args[2], treeCall.args[3]], ["sh", recipeMirrorTargetDir(dataDirTree, "demo")]);
     check("the real shell checksum command succeeded", [treeCall.result?.code, treeCall.result?.stderr], [0, ""]);
-    const raw = treeCall.result?.stdout ?? "";
-    if (Object.keys(parseChecksums(raw)).length === 0) {
-      process.stderr.write(`  diagnostic checksum output shape: bytes=${raw.length}, lines=${raw.trimEnd() === "" ? 0 : raw.trimEnd().split("\n").length}, hashPrefix=${/^[0-9a-f]{64}/m.test(raw)}, posixName=${raw.includes("./")}, windowsName=${raw.includes(".\\")}, escapedLine=${raw.startsWith("\\")}\n`);
-    }
     check("the checksums describe exactly the hostile tree, bytes intact", canonical(parseChecksums(treeCall.result?.stdout ?? "")), canonical(expected));
     check("no payload executed as shell — no marker in the command's stderr", [
       treeCall.result?.stderr.includes(CMD_SUBSTITUTION_MARKER) ?? true,

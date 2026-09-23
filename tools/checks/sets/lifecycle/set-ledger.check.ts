@@ -6,23 +6,33 @@
 // an MCP server or cron job (it carries none); `./clawforge apply` — and a coder running the same
 // command by hand — actually remove it and stop tracking it, through the identical runner.
 
+import { access, mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   LEDGER_VERSION,
   readLedger,
+  readLedgerStrict,
+  LedgerUnreadableError,
   recordOwned,
   forgetOwned,
+  updateOwnedPromptFiles,
   owns,
   orphanedBy,
   foreign,
 } from "#framework/set/ownership/ledger.ts";
 import type { Ledger, OwnedObject, OwnedKind } from "#framework/set/ownership/ledger.ts";
-import { removeOwnedObject, agentsDeleteArgv, mcpUnsetArgv, cronRmArgv } from "#framework/commands/management/provision-agent/index.ts";
-import { runSteps } from "#framework/commands/orchestration/apply.ts";
+import { provisionAgent, removeOwnedObject, agentsDeleteArgv, mcpUnsetArgv, cronRmArgv } from "#framework/commands/management/provision-agent/index.ts";
+import { apply, runSteps } from "#framework/commands/orchestration/apply.ts";
 import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { problem } from "#framework/service/inspection.ts";
 import type { Inspection, Problem } from "#framework/service/inspection.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
+import { InstalledSetUnreadableError, readInstalledSetStrict } from "#framework/set/artifacts/install.ts";
+import { buildSet } from "#framework/commands/sets/set.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { createFixture } from "./set-lifecycle/fixture.ts";
 
 let failed = 0;
 
@@ -39,6 +49,21 @@ function check(name: string, actual: unknown, expected: unknown): void {
 
 function jsonResult(value: unknown) {
   return { code: 0, stdout: JSON.stringify(value), stderr: "" };
+}
+
+async function checkThrows(name: string, body: () => Promise<unknown>): Promise<void> {
+  try {
+    await body();
+    failed += 1;
+    process.stderr.write(`  FAIL ${name}\n    expected a throw, got none\n`);
+  } catch (error) {
+    if (error instanceof LedgerUnreadableError) {
+      process.stderr.write(`  ok   ${name}\n`);
+    } else {
+      failed += 1;
+      process.stderr.write(`  FAIL ${name}\n    expected LedgerUnreadableError, got ${(error as Error)?.name ?? error}\n`);
+    }
+  }
 }
 
 function owned(kind: OwnedKind, name: string, recipe: string): OwnedObject {
@@ -104,15 +129,116 @@ function fakeCtx(files: Map<string, string>, calls: string[][], cronJobs: { id: 
   check("forgetting removes it", (await readLedger(ctx)).objects, []);
 
   // An object this framework cannot prove it created must never become a deletion
-  // candidate — including when the proof itself cannot be read.
+  // candidate — including when the proof itself cannot be read. This tolerant reading is
+  // for OBSERVATION only: recordOwned/forgetOwned/updateOwnedPromptFiles never see it, because
+  // proceeding on it would overwrite the corrupt file with a ledger that lost every entry it
+  // could not prove — see the strict-refuse checks right below.
   files.set("/srv/clawforge/clawforge-managed.json", "not json at all");
   check("a corrupt ledger reads as empty rather than throwing", await readLedger(ctx), { version: LEDGER_VERSION, objects: [] });
+
+  // The strict reader used by every mutating path refuses instead — and none of them may
+  // overwrite the corrupt bytes on the way there.
+  await checkThrows("readLedgerStrict refuses a corrupt current ledger", () => readLedgerStrict(ctx));
+  await checkThrows(
+    "recordOwned refuses rather than overwriting a corrupt ledger with a single new entry",
+    () => recordOwned(ctx, { kind: "agent", name: "new-agent", recipe: "demo" }),
+  );
+  await checkThrows(
+    "forgetOwned refuses rather than silently discarding a corrupt ledger",
+    () => forgetOwned(ctx, "agent", "demo-agent"),
+  );
+  await checkThrows(
+    "updateOwnedPromptFiles refuses rather than silently discarding a corrupt ledger",
+    () => updateOwnedPromptFiles(ctx, "demo-agent", ["a.md"]),
+  );
+  check(
+    "none of the refused writes touched the corrupt file",
+    files.get("/srv/clawforge/clawforge-managed.json"),
+    "not json at all",
+  );
 
   files.clear();
   files.set("/srv/clawforge/oc-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("agent", "legacy-agent", "legacy")] }));
   check("the old oc ledger remains readable", (await readLedger(ctx)).objects[0]?.name, "legacy-agent");
   files.set("/srv/clawforge/clawforge-managed.json", "not json at all");
   check("a malformed current ledger is authoritative over the legacy ledger", (await readLedger(ctx)).objects, []);
+}
+
+// --- the ledger write path is atomic: an interrupted write cannot create a corrupt ledger --
+
+/** Same shape as the atomicCtx in set-install.check.ts: records every write target, moves
+ *  files on exec `mv` the way a real target does, and `failWrite` simulates a write
+ *  interrupted after partial bytes reached the disk. */
+function atomicCtx(
+  files: Map<string, string>,
+  writes: string[],
+  moves: [string, string][],
+  failWrite = false,
+): Context {
+  return {
+    settings: { dataDir: "/srv/clawforge" },
+    transport: {
+      async exists(path: string): Promise<boolean> { return files.has(path); },
+      async readFile(path: string): Promise<string> {
+        const content = files.get(path);
+        if (content === undefined) throw new Error(`no such file: ${path}`);
+        return content;
+      },
+      async writeFile(path: string, content: string): Promise<void> {
+        writes.push(path);
+        if (failWrite) {
+          files.set(path, content.slice(0, 16));
+          throw new Error("interrupted mid-write");
+        }
+        files.set(path, content);
+      },
+      async remove(path: string): Promise<void> {
+        files.delete(path);
+      },
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        if (command !== "mv") return { code: 0, stdout: "", stderr: "" };
+        const source = args[args.length - 2]!;
+        const destination = args[args.length - 1]!;
+        moves.push([source, destination]);
+        const content = files.get(source);
+        if (content === undefined) return { code: 1, stdout: "", stderr: `no such file: ${source}` };
+        files.set(destination, content);
+        files.delete(source);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+}
+
+{
+  const files = new Map<string, string>();
+  const writes: string[] = [];
+  const moves: [string, string][] = [];
+  const ledgerPath = "/srv/clawforge/clawforge-managed.json";
+  const ctx = atomicCtx(files, writes, moves);
+
+  await recordOwned(ctx, { kind: "agent", name: "atomic-agent", recipe: "demo" });
+  check("the ledger published through the staged-rename route reads back", (await readLedgerStrict(ctx)).objects[0]?.name, "atomic-agent");
+  check("the publish moved a staged sibling over the final name", moves.length, 1);
+  check("the rename landed at the ledger path", moves[0]?.[1], ledgerPath);
+  check("the staged sibling sat beside the ledger, same directory", (moves[0]?.[0] ?? "").startsWith(ledgerPath), true);
+  check("nothing was ever written directly at the ledger path", writes.includes(ledgerPath), false);
+
+  // An interrupted publish: the staged write lands partial and then fails. The previous
+  // valid ledger must still be exactly what it was — never the partial bytes.
+  const previousBytes = files.get(ledgerPath);
+  const interrupted = atomicCtx(files, writes, moves, true);
+  let threw = false;
+  try { await recordOwned(interrupted, { kind: "agent", name: "second-agent", recipe: "demo" }); } catch { threw = true; }
+  check("an interrupted ledger publish fails loudly", threw, true);
+  check("the interrupted write's partial bytes never reached the ledger path", files.get(ledgerPath), previousBytes);
+  check("the previous valid ledger is still readable afterwards", (await readLedgerStrict(ctx)).objects.map((entry) => entry.name), ["atomic-agent"]);
+  check("the failed publish cleaned up its staged sibling", [...files.keys()].filter((path) => path !== ledgerPath), []);
+
+  // A publish killed outright leaves its staged sibling behind — a stray that must be
+  // invisible to every reader of the real name, not read as a corrupt ledger.
+  files.set(`${ledgerPath}.clawforge-staged-deadbeefdeadbeef`, "{\"version\":1,\"ob");
+  check("a leftover staged sibling from a killed publish does not read as a corrupt ledger", (await readLedgerStrict(ctx)).objects.map((entry) => entry.name), ["atomic-agent"]);
 }
 
 // --- orphanedBy: a recipe dropped, a recipe renaming what it declares, a recipe unchanged --
@@ -301,6 +427,135 @@ function inspectionWith(problems: Problem[]): Inspection {
   await removeOwnedObject(ctx, "agent", "old-agent");
   check("running the plan's own command removes the old agent", calls[0], agentsDeleteArgv("old-agent"));
   check("and the ledger agrees with the current declaration again", owns(await readLedger(ctx), "agent", "old-agent"), false);
+}
+
+// --- preflight ordering: a corrupt marker refuses before ANY live work happens -------------
+//
+// The unit refusals earlier in this file prove the strict readers and writers. These prove
+// the orchestration order: the strict read is the first thing under the instance lock, so a
+// corrupt marker refuses a run with the target byte-for-byte unchanged — no mirror, no
+// prompt writes, no OpenClaw CLI calls, no apply steps, no stored rollback artifact.
+
+{
+  const fixture = await createFixture();
+  const recipeRoot = await mkdtemp(join(tmpdir(), "clawforge-ledger-preflight-"));
+  try {
+    await mkdir(join(recipeRoot, "recipes", "demo", "agent"), { recursive: true });
+    await writeFile(join(recipeRoot, "recipes", "demo", "server.ts"), "export const server = 'demo';\n");
+    await writeFile(join(recipeRoot, "recipes", "demo", "agent", "config.json"), JSON.stringify({ agentId: "preflight-agent", mcpServerName: "preflight-mcp" }));
+    await writeFile(join(recipeRoot, "recipes", "demo", "agent", "INTRO.md"), "# preflight\n");
+
+    // The fixture's own data dir for everything, so the markers provisioning writes, the
+    // markers apply corrupts, and the paths apply's own preflight reads are all one target.
+    const dataDir = fixture.sourceData;
+    const ledgerPath = `${dataDir}/clawforge-managed.json`;
+    const markerPath = `${dataDir}/clawforge-installed-set.json`;
+    fixture.state.running = true;
+    const base = fixture.context({ ...fixture.baseEnv });
+    const cliCalls: string[][] = [];
+    const ctx = {
+      ...base,
+      runtime: {
+        ...base.runtime,
+        runOneOff: async (service: string, args: string[]) => {
+          cliCalls.push(args);
+          return base.runtime.runOneOff(service, args);
+        },
+      },
+    } as unknown as Context;
+
+    // Recipe sources are host-side files read with node:fs directly (never through the
+    // transport), so provisioning needs the deployment pointed at the recipe fixture.
+    useDeployment(recipeRoot);
+
+    // Corrupt ledger: the preflight must refuse before any live call.
+    fixture.files.set(ledgerPath, "not json at all");
+    const beforeFiles = JSON.stringify([...fixture.files]);
+    const beforeEvents = fixture.events.length;
+    const refused = await fixture.captured(() => provisionAgent(ctx, ["demo"]));
+    check("provisionAgent refuses a corrupt ownership ledger", refused.error instanceof LedgerUnreadableError, true);
+    check("the refused provisioning left the target byte-for-byte unchanged", JSON.stringify([...fixture.files]), beforeFiles);
+    check(
+      "the refused provisioning made no live call — no CLI call, no mirror or prompt write, no ledger publish",
+      cliCalls.length === 0 && fixture.events.slice(beforeEvents).filter((event) => !event.includes("operation.lock")).join("|"),
+      "",
+    );
+
+    // Positive control: the same provisioning with a readable ledger runs its live calls and
+    // records ownership through an atomic publish.
+    fixture.files.delete(ledgerPath);
+    cliCalls.length = 0;
+    const ran = await fixture.captured(() => provisionAgent(ctx, ["demo"]));
+    check("provisionAgent with a readable ledger succeeds", ran.error, undefined);
+    check("the recipe mirror was written", fixture.files.has(`${dataDir}/workspace/mcp-demo/server.ts`), true);
+    check("the workspace prompt file was written", fixture.files.has(`${dataDir}/workspace/preflight-agent/INTRO.md`), true);
+    check("the agent was created through the CLI", cliCalls.some((args) => args[0] === "agents" && args[1] === "add"), true);
+    check("the MCP server was registered through the CLI", cliCalls.some((args) => args[0] === "mcp" && args[1] === "add"), true);
+    check(
+      "the ownership ledger was recorded through an atomic publish (mv over the final name)",
+      fixture.events.some((event) => event.startsWith("mv:") && event.endsWith(`=>${ledgerPath}`)),
+      true,
+    );
+    check("and the recorded ledger reads back through the strict reader", owns(await readLedgerStrict(ctx), "agent", "preflight-agent"), true);
+
+    // apply --set: a corrupt installed-set marker must refuse before any apply step and
+    // before the rollback artifact is stored. buildSet leaves its artifact in sets/ — moved
+    // out of the way first, exactly like apply-rollback.check.ts, so a store during apply is
+    // detectable.
+    useDeployment(fixture.root);
+    const built = await buildSet(base, "lifecycle");
+    const artifact = join(fixture.root, "incoming.tar.gz");
+    await rename(built.artifact, artifact);
+    const setsDir = join(fixture.root, "sets");
+
+    // Corrupt marker: the preflight must refuse before anything is stored or executed.
+    fixture.files.set(markerPath, "not json at all");
+    cliCalls.length = 0;
+    const beforeApplyFiles = JSON.stringify([...fixture.files]);
+    const beforeApplyEvents = fixture.events.length;
+    const corruptMarker = await fixture.captured(() => apply(ctx, ["--set", artifact, "--json"]));
+    check("apply --set refuses a corrupt installed-set marker", corruptMarker.error instanceof InstalledSetUnreadableError, true);
+    check("the refused apply --set left the target byte-for-byte unchanged", JSON.stringify([...fixture.files]), beforeApplyFiles);
+    check(
+      "the refused apply --set stored no rollback artifact and made no live call",
+      cliCalls.length === 0
+        && (await access(join(setsDir, `lifecycle-${built.id}.tar.gz`)).then(() => true, () => false)) === false
+        && fixture.events.slice(beforeApplyEvents).filter((event) => !event.includes("operation.lock")).join("|") === "",
+      true,
+    );
+
+    // Corrupt ledger instead (marker absent again): same refusal, same untouched target.
+    fixture.files.delete(markerPath);
+    fixture.files.set(ledgerPath, "not json at all");
+    cliCalls.length = 0;
+    const beforeLedgerRefusal = JSON.stringify([...fixture.files]);
+    const beforeLedgerEvents = fixture.events.length;
+    const corruptLedger = await fixture.captured(() => apply(ctx, ["--set", artifact, "--json"]));
+    check("apply --set refuses a corrupt ownership ledger", corruptLedger.error instanceof LedgerUnreadableError, true);
+    check("that refusal also left the target byte-for-byte unchanged", JSON.stringify([...fixture.files]), beforeLedgerRefusal);
+    check(
+      "and made no live call either",
+      cliCalls.length === 0 && fixture.events.slice(beforeLedgerEvents).filter((event) => !event.includes("operation.lock")).join("|") === "",
+      true,
+    );
+
+    // Positive control: readable control markers — apply --set installs for real and records
+    // the marker through the atomic publish route.
+    fixture.files.delete(ledgerPath);
+    cliCalls.length = 0;
+    const beforeInstall = fixture.events.length;
+    const installed = await fixture.captured(() => apply(ctx, ["--set", artifact, "--json"]));
+    check("apply --set with readable control markers installs", installed.error, undefined);
+    check("the set is recorded as installed", (await readInstalledSetStrict(ctx))?.id, built.id);
+    check(
+      "the installed-set marker was recorded through an atomic publish (mv over the final name)",
+      fixture.events.slice(beforeInstall).some((event) => event.startsWith("mv:") && event.endsWith(`=>${markerPath}`)),
+      true,
+    );
+  } finally {
+    await fixture.teardown();
+    await rm(recipeRoot, { recursive: true, force: true });
+  }
 }
 
 process.stderr.write(failed === 0 ? "all set ledger checks passed\n" : `${failed} failed\n`);

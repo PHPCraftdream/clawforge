@@ -23,6 +23,7 @@ import { parseAgentConfig } from "#src/commands/management/provision-agent/index
 import { acceptanceSpecError } from "#src/commands/orchestration/accept.ts";
 import { safeName } from "#src/core/names.ts";
 import { problem } from "#src/service/inspection.ts";
+import { writeFileAtomic } from "../ownership/ledger.ts";
 import { validateSet } from "../ownership/validate.ts";
 import { withSetSource } from "./source.ts";
 import type { Problem } from "#src/service/inspection.ts";
@@ -90,18 +91,29 @@ async function readInstalledSetCandidate(ctx: Context, path: string): Promise<{ 
   catch { return { present: false }; }
 }
 
-function parseInstalledSet(text: string | undefined): InstalledSet | undefined {
-  if (text === undefined) return undefined;
+type InstalledSetParseResult = { readonly ok: true; readonly set: InstalledSet } | { readonly ok: false };
+
+/** Pure parse+validate, shared by the tolerant reader (readInstalledSet) and the strict one
+ *  (readInstalledSetStrict) below — the only difference between them is what each does with an
+ *  `ok: false` result: the tolerant reader treats it as "nothing installed", the strict one
+ *  refuses. */
+function parseInstalledSetResult(text: string): InstalledSetParseResult {
   try {
     const parsed = JSON.parse(text) as InstalledSet;
-    if (!isSetId(parsed.id) || typeof parsed.name !== "string") return undefined;
+    if (!isSetId(parsed.id) || typeof parsed.name !== "string") return { ok: false };
     safeName("set", parsed.name);
-    if (parsed.previous !== undefined && (!isSetId(parsed.previous.id) || typeof parsed.previous.name !== "string")) return undefined;
+    if (parsed.previous !== undefined && (!isSetId(parsed.previous.id) || typeof parsed.previous.name !== "string")) return { ok: false };
     if (parsed.previous !== undefined) safeName("set", parsed.previous.name);
-    return parsed;
+    return { ok: true, set: parsed };
   } catch {
-    return undefined;
+    return { ok: false };
   }
+}
+
+function parseInstalledSet(text: string | undefined): InstalledSet | undefined {
+  if (text === undefined) return undefined;
+  const result = parseInstalledSetResult(text);
+  return result.ok ? result.set : undefined;
 }
 
 export async function readInstalledSet(ctx: Context): Promise<InstalledSet | undefined> {
@@ -110,6 +122,46 @@ export async function readInstalledSet(ctx: Context): Promise<InstalledSet | und
   for (const path of legacyInstalledSetFiles(ctx)) {
     const candidate = await readInstalledSetCandidate(ctx, path);
     if (candidate.present) return parseInstalledSet(candidate.text);
+  }
+  return undefined;
+}
+
+/** Thrown by readInstalledSetStrict() when the installed-set marker is PRESENT but unreadable
+ *  or fails validation — bytes exist that this process cannot prove are safe to discard. */
+export class InstalledSetUnreadableError extends Error {
+  readonly path: string;
+  constructor(path: string) {
+    super(
+      `${path} exists but could not be read as a valid installed-set marker. Recording a newly installed ` +
+        "set here would silently overwrite it, discarding the rollback chain (the \"previous\" set) it " +
+        `carries — the bytes at ${path} have not been touched. Repair or restore this file, or import a ` +
+        "known-good marker, before installing.",
+    );
+    this.name = "InstalledSetUnreadableError";
+    this.path = path;
+  }
+}
+
+/** Like readInstalledSet(), but for recordInstalledSet() below, which is about to WRITE a
+ *  replacement marker: a marker file that is PRESENT but unreadable or invalid must stop the
+ *  caller rather than read as "nothing installed". Reading it that way here is exactly what
+ *  turns "the marker is corrupt" into "the rollback chain it carried is gone", permanently, the
+ *  moment the write lands. A file that is legitimately absent (no primary, no legacy) still
+ *  reads as "nothing installed" — there is nothing to lose there. */
+export async function readInstalledSetStrict(ctx: Context): Promise<InstalledSet | undefined> {
+  const primary = await readInstalledSetCandidate(ctx, installedSetFile(ctx));
+  if (primary.present) {
+    const result = primary.text === undefined ? { ok: false as const } : parseInstalledSetResult(primary.text);
+    if (!result.ok) throw new InstalledSetUnreadableError(installedSetFile(ctx));
+    return result.set;
+  }
+  for (const path of legacyInstalledSetFiles(ctx)) {
+    const candidate = await readInstalledSetCandidate(ctx, path);
+    if (candidate.present) {
+      const result = candidate.text === undefined ? { ok: false as const } : parseInstalledSetResult(candidate.text);
+      if (!result.ok) throw new InstalledSetUnreadableError(path);
+      return result.set;
+    }
   }
   return undefined;
 }
@@ -129,7 +181,7 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
     throw new Error("refusing to record an installed set whose id does not match its manifest");
   }
   safeName("set", manifest.name);
-  const current = await readInstalledSet(ctx);
+  const current = await readInstalledSetStrict(ctx);
   const sameSet = current !== undefined && current.id === id;
   const previous: PreviousSet | undefined = current === undefined || sameSet
     ? current?.previous
@@ -149,7 +201,7 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
     ...(effectiveOperationId === undefined ? {} : { operationId: effectiveOperationId }),
     ...(previous === undefined ? {} : { previous }),
   };
-  await ctx.transport.writeFile(installedSetFile(ctx), `${JSON.stringify(record, null, 2)}\n`);
+  await writeFileAtomic(ctx, installedSetFile(ctx), `${JSON.stringify(record, null, 2)}\n`);
 }
 
 interface ArchiveEntry {

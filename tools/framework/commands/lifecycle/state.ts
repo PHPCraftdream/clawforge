@@ -9,7 +9,7 @@ import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
-import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
+import { sudoFor, runMaybePrivileged, needsOwnerEscalation, secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { archiveRoot, isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { requirements, template } from "#src/service/secrets.ts";
@@ -234,7 +234,10 @@ async function writePrivate(ctx: Context, path: string, content: string): Promis
  *  written in place: an in-place write exists at the process umask until the chmod lands,
  *  and one interrupted mid-flight leaves the half file as the only copy of the keys.
  *  Beside the final path means the same filesystem, so the rename is atomic and replaces
- *  the previous file wholesale — a failed update cannot touch it. */
+ *  the previous file wholesale — a failed update cannot touch it. The chown is forced
+ *  because owning the staging file is not the right to hand it to a different uid, so the
+ *  target owner is compared against the current identity first, exactly like datadir.ts's
+ *  own chowns. */
 export async function loadSecrets(ctx: Context, content: string): Promise<void> {
   if (content.trim() === "") die("refusing to install an empty secrets file");
   const path = secretsFileOnTarget(ctx);
@@ -246,7 +249,7 @@ export async function loadSecrets(ctx: Context, content: string): Promise<void> 
     await writePrivate(ctx, staging, content);
     // Owner before publication: the gateway user must be able to read the keys the moment
     // they appear at the final path, not after a follow-up chown gets around to it.
-    await runMaybePrivileged(ctx, staging, "chown", ["1000:1000", staging]);
+    await runMaybePrivileged(ctx, staging, "chown", ["1000:1000", staging], { force: await needsOwnerEscalation(ctx, "1000:1000") });
     // Probed against the staging path so sudoFor asks about the directory the rename
     // actually needs, not the file being replaced.
     await runMaybePrivileged(ctx, staging, "mv", ["-fT", "--", staging, path]);
@@ -262,7 +265,14 @@ export async function loadSecrets(ctx: Context, content: string): Promise<void> 
 
 // --- pull ---------------------------------------------------------------------
 
-export async function pull(ctx: Context, args: string[]): Promise<void> {
+/** Not part of the CLI surface: a caller already holding the instance lock across a larger
+ *  transaction (smoke's round-trip check) that must not let the gateway come back up
+ *  between this pull and the restore that follows it. Ordinary callers never pass this. */
+export interface PullTransactionOptions {
+  leaveStopped?: boolean;
+}
+
+export async function pull(ctx: Context, args: string[], transaction: PullTransactionOptions = {}): Promise<void> {
   let profile: Profile = "migrate";
   let hot = false;
 
@@ -280,13 +290,13 @@ export async function pull(ctx: Context, args: string[]): Promise<void> {
   }
 
   // Validate argv before creating the lock or touching the target.
-  return guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot));
+  return guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot, transaction.leaveStopped === true));
 }
 
 /** Captures the archive and sidecars under one instance lock. */
-async function pullLocked(ctx: Context, profile: Profile, hot: boolean): Promise<void> {
+async function pullLocked(ctx: Context, profile: Profile, hot: boolean, leaveStopped: boolean): Promise<void> {
   const snapshotDir = await ensureSnapshotDir(ctx);
-  const archive = await createBackup(ctx, { profile, hot });
+  const archive = await createBackup(ctx, { profile, hot, leaveStopped });
   const snapshot = `${snapshotDir}/${deploymentName()}-state-${stamp()}.tar.gz`;
   const snapshotTemplate = `${snapshot}.template.env`;
   const snapshotSecrets = `${snapshot}${SECRETS_SUFFIX}`;

@@ -265,6 +265,12 @@ check("both the backup and the share copy were removed", removed.length, 2);
         }
         if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
+        // The instance lock's release now empties its directory with `rmdir` (round 6,
+        // P2-03), not a recursive remove of the whole lock path.
+        if (command === "rmdir") {
+          if (args[0]?.endsWith("operation.lock")) lockExists = false;
+          return { code: 0, stdout: "", stderr: "" };
+        }
         if (command === "test" && args[0] === "-e") {
           const path = args[1] ?? "";
           return {
@@ -358,6 +364,12 @@ check("both the backup and the share copy were removed", removed.length, 2);
         if (command === "test" && args[0] === "-d") return { code: lockExists ? 0 : 1, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
+        // The instance lock's release now empties its directory with `rmdir` (round 6,
+        // P2-03), not a recursive remove of the whole lock path.
+        if (command === "rmdir") {
+          if (args[0]?.endsWith("operation.lock")) lockExists = false;
+          return { code: 0, stdout: "", stderr: "" };
+        }
         if (command === "tar" && args.includes("-tzf")) return { code: 0, stdout: "data/\ndata/config/openclaw.json\n", stderr: "" };
         if (command === "sh" && args.some((arg) => arg.includes("ls -1t"))) return { code: 0, stdout: "", stderr: "" };
         if (command === "cp" && failCopy) { failCopy = false; throw new Error("copy failed"); }
@@ -428,15 +440,22 @@ const SECRETS_FINAL = "/srv/openclaw/data/config/.env";
 const SECRETS_PREVIOUS = "ANTHROPIC_API_KEY=previous-key-value-0123456789\n";
 const SECRETS_UPDATED = "ANTHROPIC_API_KEY=updated-key-value-0123456789\nOPENAI_API_KEY=second-key-value-0123456789\n";
 
-function secretsScenario(options: { privateFile?: boolean; fail?: SecretFailure }): {
+function secretsScenario(options: { privateFile?: boolean; fail?: SecretFailure; identity?: string; noSudo?: boolean }): {
   ctx: Context;
   files: Map<string, { content: string; mode: string; owner: string }>;
   events: string[];
+  sudoCalls: string[][];
   output: string[];
 } {
   const files = new Map<string, { content: string; mode: string; owner: string }>();
   const events: string[] = [];
+  const sudoCalls: string[][] = [];
   const output: string[] = [];
+  // Who runs the tooling ON THE TARGET. needsOwnerEscalation() reads it through `id -u`/`id -g`
+  // before every chown, so the stubbed answer is what decides whether the chown below
+  // escalates. The default is the gateway identity, under which nothing about the existing
+  // scenarios changes: no force, the `test -w` probe answers writable, no sudo.
+  const [uid, gid] = (options.identity ?? "1000:1000").split(":");
   files.set(SECRETS_FINAL, { content: SECRETS_PREVIOUS, mode: "600", owner: "1000:1000" });
 
   // Both private-write shapes create at 0600 (umask 077, exclusive) — recorded as such, so a
@@ -446,6 +465,66 @@ function secretsScenario(options: { privateFile?: boolean; fail?: SecretFailure 
     if (options.fail === "write") throw new Error("staging write failed");
     files.set(target, { content, mode: "600", owner: "runner" });
   };
+
+  // Hoisted, not a method on the transport literal below: the sudo unwrap inside re-dispatches
+  // into these very branches, and an object-literal method has no name to call itself by.
+  async function execStub(command: string, args: string[], execOptions?: { input?: string | Uint8Array; allowFailure?: boolean }): Promise<ExecResult> {
+    const finish = (result: ExecResult): ExecResult => {
+      if (result.code !== 0 && execOptions?.allowFailure !== true) throw new Error(`${command} exited ${result.code}: ${result.stderr.trim()}`);
+      return result;
+    };
+
+    // An invocation that arrived wrapped in sudo: recorded as made, then run as its inner
+    // command so every branch below judges the real chown/mv/rm unchanged. sudoFor's own
+    // `sudo -n true` availability probe is answered before the recording — it is a
+    // capability check, not a command this scenario ran.
+    if (command === "sudo") {
+      if (args[0] === "-n" && args[1] === "true") {
+        return finish(options.noSudo === true ? { code: 1, stdout: "", stderr: "sudo: a password is required" } : { code: 0, stdout: "", stderr: "" });
+      }
+      sudoCalls.push(args);
+      return execStub(args[1] ?? "", args.slice(2), execOptions);
+    }
+    // The identity every chown-escalation decision starts from.
+    if (command === "id") return { code: 0, stdout: args[0] === "-u" ? (uid ?? "") : (gid ?? ""), stderr: "" };
+    if (command === "test") return { code: 0, stdout: "", stderr: "" };
+    // sudoFor's availability probe, answered before the fallback-write check: an escalation
+    // forced by the identity comparison reaches `command -v sudo` from here.
+    if (command === "sh" && args[0] === "-c") {
+      if (args[1]?.includes("command -v sudo")) {
+        return finish(options.noSudo === true ? { code: 1, stdout: "", stderr: "sudo: not found" } : { code: 0, stdout: "/usr/bin/sudo\n", stderr: "" });
+      }
+      if (!args[1]?.includes("umask 077") || !args[1]?.includes("set -C")) throw new Error("fallback staging write is not private and exclusive");
+      stage(args[1].split("'")[1] ?? "", typeof execOptions?.input === "string" ? execOptions.input : "");
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (command === "chown") {
+      const owner = args[0] ?? "";
+      const target = args[1] ?? "";
+      events.push(`chown:${owner}:${target}`);
+      if (options.fail === "chown") return finish({ code: 1, stdout: "", stderr: "chown: operation not permitted" });
+      const entry = files.get(target);
+      if (entry !== undefined) entry.owner = owner;
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (command === "mv") {
+      const source = args[args.length - 2] ?? "";
+      const destination = args[args.length - 1] ?? "";
+      events.push(`mv:${source}=>${destination}`);
+      if (options.fail === "mv") return finish({ code: 1, stdout: "", stderr: "mv: cannot move" });
+      const entry = files.get(source);
+      if (entry !== undefined) {
+        files.set(destination, entry);
+        files.delete(source);
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (command === "rm") {
+      files.delete(args[args.length - 1] ?? "");
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    return { code: 0, stdout: "", stderr: "" };
+  }
 
   const ctx = {
     settings: { dataDir: "/srv/openclaw/data", backupDir: "/srv/openclaw/backups", snapshotDir: "/srv/openclaw/snapshots", env: {} },
@@ -482,48 +561,12 @@ function secretsScenario(options: { privateFile?: boolean; fail?: SecretFailure 
             },
           }),
       async exec(command: string, args: string[], execOptions?: { input?: string | Uint8Array; allowFailure?: boolean }): Promise<ExecResult> {
-        const finish = (result: ExecResult): ExecResult => {
-          if (result.code !== 0 && execOptions?.allowFailure !== true) throw new Error(`${command} exited ${result.code}: ${result.stderr.trim()}`);
-          return result;
-        };
-        if (command === "test") return { code: 0, stdout: "", stderr: "" };
-        // The fallback private write; `set -C` is the exclusivity this scenario depends on.
-        if (command === "sh" && args[0] === "-c") {
-          if (!args[1]?.includes("umask 077") || !args[1]?.includes("set -C")) throw new Error("fallback staging write is not private and exclusive");
-          stage(args[1].split("'")[1] ?? "", typeof execOptions?.input === "string" ? execOptions.input : "");
-          return { code: 0, stdout: "", stderr: "" };
-        }
-        if (command === "chown") {
-          const owner = args[0] ?? "";
-          const target = args[1] ?? "";
-          events.push(`chown:${owner}:${target}`);
-          if (options.fail === "chown") return finish({ code: 1, stdout: "", stderr: "chown: operation not permitted" });
-          const entry = files.get(target);
-          if (entry !== undefined) entry.owner = owner;
-          return { code: 0, stdout: "", stderr: "" };
-        }
-        if (command === "mv") {
-          const source = args[args.length - 2] ?? "";
-          const destination = args[args.length - 1] ?? "";
-          events.push(`mv:${source}=>${destination}`);
-          if (options.fail === "mv") return finish({ code: 1, stdout: "", stderr: "mv: cannot move" });
-          const entry = files.get(source);
-          if (entry !== undefined) {
-            files.set(destination, entry);
-            files.delete(source);
-          }
-          return { code: 0, stdout: "", stderr: "" };
-        }
-        if (command === "rm") {
-          files.delete(args[args.length - 1] ?? "");
-          return { code: 0, stdout: "", stderr: "" };
-        }
-        return { code: 0, stdout: "", stderr: "" };
+        return execStub(command, args, execOptions);
       },
     },
     runtime: { async isRunning(): Promise<boolean> { return false; } },
   } as unknown as Context;
-  return { ctx, files, events, output };
+  return { ctx, files, events, sudoCalls, output };
 }
 
 async function runLoadSecrets(scenario: ReturnType<typeof secretsScenario>): Promise<boolean> {
@@ -568,6 +611,53 @@ for (const fail of ["write", "chown", "mv"] as SecretFailure[]) {
   check(`secrets (${fail} failure) leave the previous keys byte-for-byte intact`, JSON.stringify(scenario.files.get(SECRETS_FINAL)), previous);
   check(`secrets (${fail} failure) leave no file at the final path that is not the previous one`, [...scenario.files.keys()].filter((path) => path !== SECRETS_FINAL).length, 0);
   check(`secrets (${fail} failure) leave no staging file behind`, [...scenario.files.keys()].length, 1);
+}
+
+// --- P2-05: owning the staging file is not the right to hand it to another uid ------------
+//
+// chown 1000:1000 is a privileged operation whenever the current identity is not 1000:1000,
+// no matter who owns the file being handed over — POSIX lets an owner keep or drop their own
+// uid, never give the file away. The writability probe answers "can I write the file I just
+// created" and always says yes here, so the escalation decision must compare the target
+// owner against the current identity instead (the datadir.ts pattern).
+
+{
+  const scenario = secretsScenario({});
+  const threw = await runLoadSecrets(scenario);
+  check("P2-05: a runner whose own identity is the gateway's chowns without escalating", scenario.sudoCalls.length, 0);
+  check("P2-05: that install still succeeds", threw, false);
+  check("P2-05: the owner still ends 1000:1000", scenario.files.get(SECRETS_FINAL)?.owner, "1000:1000");
+}
+
+{
+  const scenario = secretsScenario({ identity: "1001:1001" });
+  const threw = await runLoadSecrets(scenario);
+  const stageEvent = scenario.events.find((event) => event.startsWith("stage:0600:")) ?? "";
+  const stagedPath = stageEvent.slice("stage:0600:".length);
+  const chownIndex = scenario.events.indexOf(`chown:1000:1000:${stagedPath}`);
+  const mvEvents = scenario.events.filter((event) => event.startsWith("mv:"));
+  check("P2-05: another identity makes exactly one sudo call", scenario.sudoCalls.length, 1);
+  check(
+    "P2-05: that sudo call wraps the real chown to the gateway's owner",
+    scenario.sudoCalls[0]?.includes("chown") === true && scenario.sudoCalls[0]?.includes("1000:1000") === true,
+    true,
+  );
+  check("P2-05: the escalated install still succeeds", threw, false);
+  check("P2-05: the final file is owned by the gateway user", scenario.files.get(SECRETS_FINAL)?.owner, "1000:1000");
+  check(
+    "P2-05: the chown still precedes the single rename",
+    mvEvents.length === 1 && chownIndex > -1 && chownIndex < scenario.events.indexOf(mvEvents[0] ?? ""),
+    true,
+  );
+}
+
+{
+  const scenario = secretsScenario({ identity: "1001:1001", noSudo: true });
+  const threw = await runLoadSecrets(scenario);
+  check("P2-05: the install is refused when sudo is unavailable", threw, true);
+  check("P2-05: the refusal leaves the previous keys byte-for-byte intact", JSON.stringify(scenario.files.get(SECRETS_FINAL)), JSON.stringify({ content: SECRETS_PREVIOUS, mode: "600", owner: "1000:1000" }));
+  check("P2-05: the refusal leaves no file at the final path that is not the previous one", [...scenario.files.keys()].filter((path) => path !== SECRETS_FINAL).length, 0);
+  check("P2-05: the refusal publishes nothing, not even a rename", scenario.events.some((event) => event.startsWith("mv:")), false);
 }
 
 process.stderr.write(failed === 0 ? "all state checks passed\n" : `${failed} failed\n`);

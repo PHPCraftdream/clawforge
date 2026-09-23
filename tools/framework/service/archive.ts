@@ -10,7 +10,8 @@
 
 import type { Context } from "../core/context.ts";
 import { sudoFor } from "../runtime/datadir.ts";
-import { publishPrivatePathsHistory } from "../security/private-paths-ledger.ts";
+import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "../runtime/transport.ts";
+import { publishPrivatePathsHistory, reconcilePrivatePathsHistory } from "../security/private-paths-ledger.ts";
 import { installedRecipePrivatePaths } from "./recipe.ts";
 
 const LEGACY_PREFIXES = ["oc", "cf"] as const;
@@ -88,6 +89,16 @@ function baseExcludes(dataName: string): string[] {
     // Provider-key staging is private from creation and normally removed after rename, but a
     // process can die between those steps. It is credential material, never instance state.
     `${dataName}/config/.env.clawforge-*`,
+    // The tooling's own temp-sibling staging families (transport.ts) are the same story one
+    // layer out: the real bytes sit in the sibling from the first byte written, and a process
+    // that dies before the rename — or a cleanup that fails — leaves them beside the target
+    // under a name no declared path matches. An exact-file privatePaths entry in a public
+    // subtree is the exposed case: under workspace/ the leftover passes the share allow-list
+    // entirely. The markers are written only by the writers themselves, so the globs cannot
+    // reach an unrelated public file that merely sits nearby (GNU tar exclusion globs match
+    // slashes, verified against GNU tar 1.35+).
+    `${dataName}/*${PRIVATE_STAGING_MARKER}*`,
+    `${dataName}/*${PUBLISH_STAGING_MARKER}*`,
     `${dataName}/clawforge-operation.lock`,
     ...LEGACY_PREFIXES.flatMap((prefix) => [
       `${dataName}/config/${prefix}-desired.json`,
@@ -211,18 +222,6 @@ export interface ArchiveProblem {
   readonly fatal: boolean;
 }
 
-/** Whether a symlink target, resolved against its own directory, stays inside the root. */
-function symlinkEscapes(source: string, target: string): boolean {
-  if (target.startsWith("/")) return true;
-  let depth = source.split("/").length - 1;
-  for (const segment of target.split("/")) {
-    if (segment === "..") depth -= 1;
-    else if (segment !== "." && segment !== "") depth += 1;
-    if (depth < 1) return true;
-  }
-  return false;
-}
-
 /** Whether a hard-link target — given root-relative, the same coordinate space as every
  *  other archive member — names something outside that root. Unlike a symlink, there is no
  *  "dangling but harmless" case: extraction performs `link()` immediately, so an out-of-root
@@ -241,6 +240,64 @@ function hardlinkEscapes(target: string, root: string): boolean {
 export interface ArchiveLink {
   readonly target: string;
   readonly kind: "symlink" | "hardlink";
+}
+
+type ChainResolution = { readonly kind: "resolved" } | { readonly kind: "escaped" } | { readonly kind: "cycle" };
+
+/** One canonical spelling of an archive-relative path: "./" prefixes (repeated), internal
+ *  "./" segments, doubled slashes and a trailing slash all name the same file and must key
+ *  and compare as one — a link registered as "./data//a/" and a listing entry "data/a/file"
+ *  otherwise disagree about whether content is written through the link. ".." is a real
+ *  segment with meaning, not noise, and is preserved; the degenerate spellings of the root
+ *  normalize to "". */
+function normalizeArchivePath(path: string): string {
+  return path.split("/").filter((segment) => segment !== "" && segment !== ".").join("/");
+}
+
+/** Resolves an archive-relative path segment by segment, in order, through every link
+ *  standing in it. `resolved` holds only segments already proven link-free — a link among
+ *  them was substituted before any later segment was appended — so a `..` popping from it
+ *  is genuinely lexical: there is no unresolved link left to pop across. Substituting a
+ *  link splices its target in front of the pending remainder, so the target's own segments
+ *  are walked by the same rules: an intermediate target segment that names a link is
+ *  resolved (its own target visited) BEFORE a following `..` consumes it, which is what
+ *  makes `b/../safe` mean what the kernel means by it rather than the lexically simplified
+ *  `safe` (audit 2026-09-23, P2-07: `b` registered as a link to `../../outside` used to be
+ *  popped off unread, and a chain written through the first link read as safely inside the
+ *  root). A link key visited twice is a cycle; the substitution counter restates the old
+ *  loop bound, though `seen` alone already caps substitutions at the number of links. */
+function resolveLinkChain(segments: readonly string[], links: ReadonlyMap<string, ArchiveLink>, root: string): ChainResolution {
+  const resolved: string[] = [];
+  const pending = [...segments];
+  const seen = new Set<string>();
+
+  for (let substitutions = 0; pending.length > 0; ) {
+    const segment = pending.shift()!;
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      resolved.pop();
+      if (resolved.length < 1) return { kind: "escaped" };
+      continue;
+    }
+    const key = [...resolved, segment].join("/");
+    const link = links.get(key);
+    if (link === undefined) {
+      resolved.push(segment);
+      continue;
+    }
+    if (seen.has(key)) return { kind: "cycle" };
+    seen.add(key);
+    if (++substitutions > links.size) return { kind: "cycle" };
+    if (link.kind === "hardlink") {
+      // Root-relative, the same coordinate space as every archive member: a hard link that
+      // fails this literal check is refused before its target is walked.
+      if (hardlinkEscapes(link.target, root)) return { kind: "escaped" };
+    } else if (link.target.startsWith("/")) {
+      return { kind: "escaped" };
+    }
+    pending.unshift(...link.target.split("/"));
+  }
+  return { kind: "resolved" };
 }
 
 /** Finds what an unpack of this archive could do outside the directory it is aimed at.
@@ -274,15 +331,26 @@ export function inspectArchive(entries: string[], links: Map<string, ArchiveLink
     }
   }
 
-  for (const [rawSource, link] of links) {
-    // Same normalization as `paths` above, and for the same reason: a real archive's
-    // `tar -tv` listing carries the same "./" prefix on every entry, links included (GNU
-    // tar always does when the archive was made by tarring "." rather than a named
-    // subdirectory) — left un-normalized here, it broke both symlinkEscapes()'s own depth
-    // arithmetic (source.split("/").length counts one segment too many) and the
-    // writesThrough prefix match below, in the same direction: a real escaping symlink
-    // read as safe.
-    const source = rawSource.replace(/^\.\//, "");
+  // Full canonicalization, where `paths` above deliberately keeps its raw spelling: the
+  // structural checks must still see a leading "/" and every real ".." segment. Here, one
+  // name must key one map entry — a real archive's `tar -tv` listing carries the same "./"
+  // prefix on every entry, links included (GNU tar always does when the archive was made by
+  // tarring "." rather than a named subdirectory), and another producer can spell the same
+  // member with an internal "./", a doubled slash or a trailing slash. Left un-normalized,
+  // resolveLinkChain's own lookups (which key into this same map while walking a chain) and
+  // the writesThrough prefix match below disagree about whether content is written through a
+  // link — in the direction that reads a real escaping symlink as safe. A key canonicalizing
+  // to "" is a degenerate spelling of the root itself: it holds no name, and the root-as-link
+  // check below compares against `root` by name rather than by map key.
+  const normalizedLinks = new Map(
+    [...links]
+      .map(([rawSource, link]) => [normalizeArchivePath(rawSource), link] as const)
+      .filter(([source]) => source !== ""),
+  );
+
+  const normalizedPaths = paths.map(normalizeArchivePath);
+
+  for (const [source, link] of normalizedLinks) {
     // The root is the one entry every later restore step is relative to — the fresh-identity
     // deletion, the standard subdirectories, the ownership and permission pass. An archive
     // that ships it as a link would put a symlink where an ordinary directory belongs, and
@@ -295,17 +363,29 @@ export function inspectArchive(entries: string[], links: Map<string, ArchiveLink
       });
       continue;
     }
+
     if (link.kind === "hardlink") {
-      if (!hardlinkEscapes(link.target, root)) continue;
-      problems.push({
-        message: `hard link points outside the archive: ${source} -> ${link.target}`,
-        fatal: true,
-      });
+      if (hardlinkEscapes(link.target, root)) {
+        problems.push({ message: `hard link points outside the archive: ${source} -> ${link.target}`, fatal: true });
+        continue;
+      }
+      // The target names another archive member, not a bare filesystem path — and that
+      // member can itself be a link (symlink or a further hard link) whose own chain leaves
+      // the root. link() aliases whatever the chain ultimately names the moment extraction
+      // runs, so this is refused just as unconditionally as a literal out-of-root target.
+      const resolution = resolveLinkChain(link.target.split("/"), normalizedLinks, root);
+      if (resolution.kind !== "resolved") {
+        problems.push({ message: `hard link points outside the archive: ${source} -> ${link.target}`, fatal: true });
+      }
       continue;
     }
 
-    if (!symlinkEscapes(source, link.target)) continue;
-    const writesThrough = paths.some((path) => path.startsWith(`${source}/`));
+    // Walk the symlink's own chain rather than just its first hop: `data/a -> b` alone
+    // never leaves the root, but if `data/b` is itself a link that does, content nested
+    // under `data/a` in this archive is written through both.
+    const resolution = resolveLinkChain(source.split("/"), normalizedLinks, root);
+    if (resolution.kind === "resolved") continue;
+    const writesThrough = normalizedPaths.some((path) => path.startsWith(`${source}/`));
     problems.push({
       message: writesThrough
         ? `content is written through a link that leaves the archive: ${source} -> ${link.target}`
@@ -328,11 +408,30 @@ export function dataDirParent(dataDir: string): string {
   return parent === "" ? "/" : parent;
 }
 
+/** The privilege prefix for one archive command, decided per path the command touches.
+ *
+ *  Reading and writing are different capabilities: the archive destination being writable
+ *  says nothing about whether the identity can read the tree tar is about to read (auth-secrets
+ *  is locked to 1000:1000 mode 700 by ensureDataDirs regardless of who may write the archive
+ *  file — the shape that made a real migrate archive fail with "tar: data/auth-secrets:
+ *  Cannot open: Permission denied" on GitHub Actions), and an archive being readable says
+ *  nothing about the destination it is unpacked into. Every path involved is asked
+ *  individually — sources first, destination last — and the first path that demands
+ *  escalation decides the prefix for the whole invocation; sudoFor itself falls back to the
+ *  nearest existing ancestor for paths that do not exist yet. */
+async function privilegePrefixFor(ctx: Context, readPaths: readonly string[], writePath?: string): Promise<string[]> {
+  for (const path of readPaths) {
+    const prefix = await sudoFor(ctx, path);
+    if (prefix.length > 0) return prefix;
+  }
+  return writePath === undefined ? [] : sudoFor(ctx, writePath);
+}
+
 /** Lists an archive's entries. Read in full on purpose: the shell version piped tar into
  *  `head`, which killed tar with SIGPIPE and — under `set -o pipefail` — turned a healthy
  *  archive into a failure. */
 export async function listArchive(ctx: Context, archive: string): Promise<string[]> {
-  const prefix = await sudoFor(ctx, archive);
+  const prefix = await privilegePrefixFor(ctx, [archive]);
   const [head, ...rest] = [...prefix, "tar", "-tzf", archive];
   const result = await ctx.transport.exec(head, rest);
   return result.stdout.split("\n").filter((line) => line !== "");
@@ -348,7 +447,7 @@ const LISTING_ROW = /^(\S)\S*\s+\S+\s+\S+\s+\S+\s+\S+\s+(.*)$/;
 /** Symlinks and hard links in the archive. Read from tar's verbose listing, which is the
  *  only place a link's target appears — `-tzf` alone lists names only. */
 export async function listArchiveLinks(ctx: Context, archive: string): Promise<Map<string, ArchiveLink>> {
-  const prefix = await sudoFor(ctx, archive);
+  const prefix = await privilegePrefixFor(ctx, [archive]);
   const [head, ...rest] = [...prefix, "tar", "-tvzf", archive];
   const result = await ctx.transport.exec(head, rest);
 
@@ -407,10 +506,19 @@ export async function createArchive(
       `refusing to archive ${dataDir}: it is a symlink to ${linkTarget}, and tar would store the link itself — none of the data behind it`,
     );
   }
+  // Taken before the policy read and before a full publish: migrate and share never publish,
+  // so this is the one point a deployment folder pointed at already-existing target data —
+  // no restore, no full backup yet — learns what the target alone still remembers. A history
+  // that exists but cannot be read refuses the backup loudly (audit 2026-09-23 XXA round 6,
+  // P1-04).
+  await reconcilePrivatePathsHistory(ctx);
   // The privacy history must be inside the tree before tar runs, so a full backup carries
   // it physically and a restore can hand it back to whichever deployment directory manages
   // the target next (audit 2026-09-22 round 3, P1-02). Full only: migrate and share exclude
-  // the copy — instance-local metadata does not travel with the profile-limited snapshots.
+  // the copy from their archives — instance-local metadata does not travel with the
+  // profile-limited snapshots — though they reconcile with it first (above).
+  // publishPrivatePathsHistory adopts an existing target copy instead of erasing it when this
+  // deployment folder never recorded anything locally (audit 2026-09-23, XS round 4, P2-01).
   if (options.profile === "full") await publishPrivatePathsHistory(ctx);
   const name = dataDirName(dataDir);
   const parent = dataDirParent(dataDir);
@@ -425,17 +533,7 @@ export async function createArchive(
   const excludeArgs = excludesFor(options.profile, name, privatePaths).map((pattern) =>
     `--exclude=${declared.has(pattern) ? escapeTarGlob(pattern) : pattern}`,
   );
-  // Two different paths could each demand escalation and neither says anything about the
-  // other: the archive's own destination (an ordinary writability question) and
-  // auth-secrets inside the tree tar is about to read, which ensureDataDirs locks to
-  // 1000:1000 mode 700 regardless of who is allowed to write the archive file (audit
-  // 2026-09-23, XS round 4 fallout from the chown fix one layer up: a data root the current
-  // identity can create files in is not one it can read auth-secrets out of). Asking
-  // sudoFor about auth-secrets specifically — the one subpath known to carry that
-  // restriction — falls back to dataDir itself when auth-secrets does not exist yet, same
-  // as any other absent path, so a fresh or pre-1000 tree asks exactly what it always did.
-  const authSecretsPrefix = await sudoFor(ctx, `${dataDir}/auth-secrets`);
-  const prefix = authSecretsPrefix.length > 0 ? authSecretsPrefix : await sudoFor(ctx, options.archive);
+  const prefix = await privilegePrefixFor(ctx, [`${dataDir}/auth-secrets`, dataDir], options.archive);
 
   // --numeric-owner keeps uid/gid 1000 meaningful on a host with different user names.
   const [head, ...rest] = [
@@ -453,7 +551,7 @@ export async function createArchive(
 }
 
 export async function extractArchive(ctx: Context, archive: string, destination: string): Promise<void> {
-  const prefix = await sudoFor(ctx, destination);
+  const prefix = await privilegePrefixFor(ctx, [archive], destination);
   const [head, ...rest] = [...prefix, "tar", "--numeric-owner", "-xzf", archive, "-C", destination];
   await ctx.transport.exec(head, rest);
 }

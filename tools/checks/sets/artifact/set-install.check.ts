@@ -8,7 +8,14 @@
 import { resolve } from "node:path";
 import { useDeployment, recipesDir, desiredStateFile, envFile, secretStoreFile } from "#framework/runtime/deployment.ts";
 import { useSetSource, clearSetSource, withSetSource, setSourceDir } from "#framework/set/artifacts/source.ts";
-import { requirementProblems, readInstalledSet, recordInstalledSet, installedSetFile } from "#framework/set/artifacts/install.ts";
+import {
+  requirementProblems,
+  readInstalledSet,
+  readInstalledSetStrict,
+  InstalledSetUnreadableError,
+  recordInstalledSet,
+  installedSetFile,
+} from "#framework/set/artifacts/install.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { SetManifest } from "#framework/set/artifacts/model.ts";
@@ -25,6 +32,21 @@ function check(name: string, actual: unknown, expected: unknown): void {
   process.stderr.write(
     `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
   );
+}
+
+async function checkThrows(name: string, body: () => Promise<unknown>): Promise<void> {
+  try {
+    await body();
+    failed += 1;
+    process.stderr.write(`  FAIL ${name}\n    expected a throw, got none\n`);
+  } catch (error) {
+    if (error instanceof InstalledSetUnreadableError) {
+      process.stderr.write(`  ok   ${name}\n`);
+    } else {
+      failed += 1;
+      process.stderr.write(`  FAIL ${name}\n    expected InstalledSetUnreadableError, got ${(error as Error)?.name ?? error}\n`);
+    }
+  }
 }
 
 // --- the source override moves the set half and only the set half -------------------------
@@ -135,8 +157,18 @@ function check(name: string, actual: unknown, expected: unknown): void {
   check("and what it required", recorded?.requires.framework, "0.1.0");
   check("stored beside the instance's data, not inside the set", installedSetFile(ctx), "/srv/clawforge/clawforge-installed-set.json");
 
+  // Tolerant reading is for OBSERVATION only: recordInstalledSet() never sees it, because
+  // proceeding on it would overwrite the corrupt marker and discard the rollback chain it
+  // carries — see the strict-refuse checks right below.
   files.set(installedSetFile(ctx), "not json at all");
   check("an unreadable record reads as none rather than throwing", await readInstalledSet(ctx), undefined);
+
+  await checkThrows("readInstalledSetStrict refuses a corrupt current marker", () => readInstalledSetStrict(ctx));
+  await checkThrows(
+    "recordInstalledSet refuses rather than starting the rollback chain over from a corrupt marker",
+    () => recordInstalledSet(ctx, manifest, setManifestId(manifest)),
+  );
+  check("the refused install did not touch the corrupt marker", files.get(installedSetFile(ctx)), "not json at all");
 
   files.clear();
   files.set("/srv/clawforge/oc-installed-set.json", JSON.stringify({
@@ -190,6 +222,91 @@ function check(name: string, actual: unknown, expected: unknown): void {
   const thirdId = setManifestId(third);
   await recordInstalledSet(ctx, third, thirdId);
   check("a genuinely new set moves previous forward by one, not further", (await readInstalledSet(ctx))?.previous?.id, secondId);
+}
+
+// --- the marker is published atomically: a partial write can never become the marker -------
+//
+// The strict-refuse checks above prove corrupt bytes are never overwritten. These prove the
+// other half: the write that REPLACES a valid marker cannot itself create the corrupt-marker
+// scenario when it is interrupted mid-flight, because the bytes are staged in a sibling and
+// renamed over the final name in one step.
+
+/** A transport that mirrors a real target's publish route: writeFile goes to whatever path it
+ *  is given (recorded), exec `mv` moves a file the way a real target does (recorded), and
+ *  `failWrite` simulates a write interrupted after partial bytes reached the disk. */
+function atomicCtx(
+  files: Map<string, string>,
+  writes: string[],
+  moves: [string, string][],
+  failWrite = false,
+): Context {
+  return {
+    settings: { dataDir: "/srv/clawforge" },
+    transport: {
+      async exists(path: string): Promise<boolean> { return files.has(path); },
+      async readFile(path: string): Promise<string> {
+        const content = files.get(path);
+        if (content === undefined) throw new Error(`no such file: ${path}`);
+        return content;
+      },
+      async writeFile(path: string, content: string): Promise<void> {
+        writes.push(path);
+        if (failWrite) {
+          files.set(path, content.slice(0, 16));
+          throw new Error("interrupted mid-write");
+        }
+        files.set(path, content);
+      },
+      async remove(path: string): Promise<void> {
+        files.delete(path);
+      },
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        if (command !== "mv") return { code: 0, stdout: "", stderr: "" };
+        const source = args[args.length - 2]!;
+        const destination = args[args.length - 1]!;
+        moves.push([source, destination]);
+        const content = files.get(source);
+        if (content === undefined) return { code: 1, stdout: "", stderr: `no such file: ${source}` };
+        files.set(destination, content);
+        files.delete(source);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+}
+
+{
+  const files = new Map<string, string>();
+  const writes: string[] = [];
+  const moves: [string, string][] = [];
+  const ctx = atomicCtx(files, writes, moves);
+  const manifest = { name: "atomic", requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw@sha256:aaa" } } as SetManifest;
+  const id = setManifestId(manifest);
+
+  await recordInstalledSet(ctx, manifest, id);
+  check("the marker published through the staged-rename route reads back", (await readInstalledSetStrict(ctx))?.id, id);
+  check("the publish moved a staged sibling over the final name", moves.length, 1);
+  check("the rename landed at the marker path", moves[0]?.[1], installedSetFile(ctx));
+  check("the staged sibling sat beside the marker, same directory", (moves[0]?.[0] ?? "").startsWith(installedSetFile(ctx)), true);
+  check("nothing was ever written directly at the final path", writes.includes(installedSetFile(ctx)), false);
+
+  // An interrupted publish: the staged write lands partial and then fails. The previous
+  // valid marker must still be exactly what it was — never the partial bytes.
+  const previousBytes = files.get(installedSetFile(ctx));
+  const interrupted = atomicCtx(files, writes, moves, true);
+  const next = { name: "atomic-two", requires: manifest.requires } as SetManifest;
+  let threw = false;
+  try { await recordInstalledSet(interrupted, next, setManifestId(next)); } catch { threw = true; }
+  check("an interrupted publish fails loudly", threw, true);
+  check("the interrupted write's partial bytes never reached the final path", files.get(installedSetFile(ctx)), previousBytes);
+  check("the previous valid marker is still readable afterwards", (await readInstalledSetStrict(ctx))?.id, id);
+  check("the failed publish cleaned up its staged sibling", [...files.keys()].filter((path) => path !== installedSetFile(ctx)), []);
+
+  // A publish killed outright leaves its staged sibling behind — a stray that must be
+  // invisible to every reader of the real name, not read as a corrupt marker.
+  files.set(`${installedSetFile(ctx)}.clawforge-staged-deadbeefdeadbeef`, "{\"id\":\"par");
+  check("a leftover staged sibling from a killed publish does not read as a corrupt marker", (await readInstalledSetStrict(ctx))?.id, id);
+  check("and the tolerant reader still sees the real marker", (await readInstalledSet(ctx))?.id, id);
 }
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));

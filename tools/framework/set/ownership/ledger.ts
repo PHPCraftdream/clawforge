@@ -16,6 +16,7 @@
 // would, after a restore from another host, describe objects that are not there and miss the
 // ones that are.
 
+import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 
 /** The kinds of instance object this framework creates. Cron jobs, agents and MCP server
@@ -78,16 +79,20 @@ async function readCandidate(ctx: Context, path: string): Promise<{ present: boo
   catch { return { present: false }; }
 }
 
-function parseLedger(text: string | undefined): Ledger {
-  if (text === undefined) return { version: LEDGER_VERSION, objects: [] };
+type LedgerParseResult = { readonly ok: true; readonly ledger: Ledger } | { readonly ok: false };
+
+/** Pure parse+validate, shared by the tolerant reader (readLedger) and the strict one
+ *  (readLedgerStrict) below — the only difference between them is what each does with an
+ *  `ok: false` result: the tolerant reader treats it as empty, the strict one refuses. */
+function parseLedgerResult(text: string): LedgerParseResult {
   try {
     const parsed = JSON.parse(text) as Ledger;
     if (parsed === null || typeof parsed !== "object" || parsed.version !== LEDGER_VERSION || !Array.isArray(parsed.objects)) {
-      return { version: LEDGER_VERSION, objects: [] };
+      return { ok: false };
     }
     // A partially written or hand-edited ledger is not proof of ownership. Discarding the
-    // entire record is the safe direction: callers may report objects as foreign, but can
-    // never turn malformed data into a deletion or an adoption decision.
+    // entire record is the safe direction for a READER: it may report objects as foreign, but
+    // can never turn malformed data into a deletion or an adoption decision on its own.
     const seen = new Set<string>();
     const valid = parsed.objects.every((entry) => {
       if (entry === null || typeof entry !== "object") return false;
@@ -104,13 +109,21 @@ function parseLedger(text: string | undefined): Ledger {
           || (Array.isArray(candidate.promptFiles)
             && candidate.promptFiles.every((name) => typeof name === "string" && /^[^/\\]+\.md$/.test(name))));
     });
-    return valid ? parsed : { version: LEDGER_VERSION, objects: [] };
+    return valid ? { ok: true, ledger: parsed } : { ok: false };
   } catch {
-    // No ledger yet: an instance provisioned before this existed owns nothing as far as
-    // anyone can prove. Treating it as empty is the safe reading — it means the framework
-    // will not remove anything it cannot show it created.
-    return { version: LEDGER_VERSION, objects: [] };
+    return { ok: false };
   }
+}
+
+function parseLedger(text: string | undefined): Ledger {
+  if (text === undefined) return { version: LEDGER_VERSION, objects: [] };
+  // No ledger yet, or one that cannot be trusted: an instance provisioned before this existed
+  // (or whose ledger was hand-edited into something unrecognizable) owns nothing as far as
+  // anyone can prove. Treating it as empty is the safe reading for OBSERVATION — it means the
+  // framework will not remove anything it cannot show it created. It is NOT safe for a caller
+  // that is about to overwrite this file: see readLedgerStrict().
+  const result = parseLedgerResult(text);
+  return result.ok ? result.ledger : { version: LEDGER_VERSION, objects: [] };
 }
 
 export async function readLedger(ctx: Context): Promise<Ledger> {
@@ -123,8 +136,73 @@ export async function readLedger(ctx: Context): Promise<Ledger> {
   return { version: LEDGER_VERSION, objects: [] };
 }
 
+/** Thrown by readLedgerStrict() when a ledger file is PRESENT but unreadable or fails
+ *  validation — bytes exist that this process cannot prove are safe to discard. */
+export class LedgerUnreadableError extends Error {
+  readonly path: string;
+  constructor(path: string) {
+    super(
+      `${path} exists but could not be read as a valid ownership ledger. Recording or forgetting an ` +
+        "object here would silently overwrite it with a ledger that has lost every entry it could not " +
+        `prove — the bytes at ${path} have not been touched. Repair or restore this file, or import a ` +
+        "known-good ledger, before retrying.",
+    );
+    this.name = "LedgerUnreadableError";
+    this.path = path;
+  }
+}
+
+/** Like readLedger(), but for callers about to WRITE a replacement (recordOwned, forgetOwned,
+ *  updateOwnedPromptFiles): a ledger file that is PRESENT but unreadable or invalid must stop
+ *  the caller rather than read as empty. Reading it as empty here is exactly what turns "the
+ *  ledger is corrupt" into "the ledger has now genuinely lost every entry it could not prove",
+ *  permanently, the moment the caller's own write lands. A file that is legitimately absent
+ *  (no primary, no legacy) still reads as an empty ledger — there is nothing to lose there. */
+export async function readLedgerStrict(ctx: Context): Promise<Ledger> {
+  const primary = await readCandidate(ctx, ledgerFile(ctx));
+  if (primary.present) {
+    const result = primary.text === undefined ? { ok: false as const } : parseLedgerResult(primary.text);
+    if (!result.ok) throw new LedgerUnreadableError(ledgerFile(ctx));
+    return result.ledger;
+  }
+  for (const path of legacyLedgerFiles(ctx)) {
+    const candidate = await readCandidate(ctx, path);
+    if (candidate.present) {
+      const result = candidate.text === undefined ? { ok: false as const } : parseLedgerResult(candidate.text);
+      if (!result.ok) throw new LedgerUnreadableError(path);
+      return result.ledger;
+    }
+  }
+  return { version: LEDGER_VERSION, objects: [] };
+}
+
+/** Publishes content at `path` so an interrupted write can never leave partial bytes under
+ *  the final name — a half-written control ledger is exactly the corrupt marker the strict
+ *  readers refuse, so the write that creates one must not be possible. The bytes land in a
+ *  temporary sibling in the SAME directory (same filesystem, so the rename is atomic), and
+ *  one `mv` moves them over the final name: a crash before the rename leaves the previous
+ *  file intact plus a stray staged sibling every reader of the real name ignores. Transports
+ *  without an exec capability (minimal test adapters) fall back to a direct write. */
+export async function writeFileAtomic(ctx: Context, path: string, content: string): Promise<void> {
+  if (typeof ctx.transport.exec !== "function") {
+    await ctx.transport.writeFile(path, content);
+    return;
+  }
+  const temporary = `${path}.clawforge-staged-${randomBytes(8).toString("hex")}`;
+  try {
+    await ctx.transport.writeFile(temporary, content);
+    const moved = await ctx.transport.exec("mv", ["-f", "--", temporary, path]);
+    if (moved.code !== 0) {
+      throw new Error(`could not publish ${path}: ${(moved.stderr || moved.stdout).trim()}`);
+    }
+  } catch (error) {
+    if (typeof ctx.transport.remove === "function") await ctx.transport.remove(temporary).catch(() => {});
+    throw error;
+  }
+}
+
 async function writeLedger(ctx: Context, ledger: Ledger): Promise<void> {
-  await ctx.transport.writeFile(ledgerFile(ctx), `${JSON.stringify(ledger, null, 2)}\n`);
+  await writeFileAtomic(ctx, ledgerFile(ctx), `${JSON.stringify(ledger, null, 2)}\n`);
 }
 
 /** Records an object this framework just created, replacing any earlier entry for the same
@@ -134,14 +212,14 @@ export async function recordOwned(
   ctx: Context,
   entry: Omit<OwnedObject, "createdAt"> & { createdAt?: string },
 ): Promise<void> {
-  const ledger = await readLedger(ctx);
+  const ledger = await readLedgerStrict(ctx);
   const objects = ledger.objects.filter((owned) => !(owned.kind === entry.kind && owned.name === entry.name));
   objects.push({ ...entry, createdAt: entry.createdAt ?? new Date().toISOString() });
   await writeLedger(ctx, { version: LEDGER_VERSION, objects });
 }
 
 export async function forgetOwned(ctx: Context, kind: OwnedKind, name: string): Promise<void> {
-  const ledger = await readLedger(ctx);
+  const ledger = await readLedgerStrict(ctx);
   await writeLedger(ctx, {
     version: LEDGER_VERSION,
     objects: ledger.objects.filter((owned) => !(owned.kind === kind && owned.name === name)),
@@ -152,7 +230,7 @@ export async function forgetOwned(ctx: Context, kind: OwnedKind, name: string): 
  *  needed when a recipe removes one of its prompt files: the old list is the only safe proof
  *  that the file was ours, while the new list is what the next reconciliation must use. */
 export async function updateOwnedPromptFiles(ctx: Context, name: string, promptFiles: readonly string[]): Promise<void> {
-  const ledger = await readLedger(ctx);
+  const ledger = await readLedgerStrict(ctx);
   const index = ledger.objects.findIndex((owned) => owned.kind === "agent" && owned.name === name);
   if (index === -1) return;
   const objects = [...ledger.objects];

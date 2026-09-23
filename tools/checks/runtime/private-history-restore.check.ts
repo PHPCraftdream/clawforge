@@ -32,6 +32,7 @@ import { withOutputSink } from "#framework/core/output.ts";
 import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport.ts";
 import { createArchive, listArchive } from "#framework/service/archive.ts";
+import { sudoFor } from "#framework/runtime/datadir.ts";
 import {
   clearRecipesDir,
   installedRecipePrivatePaths,
@@ -361,8 +362,15 @@ try {
       false,
     );
 
-    // Defense in depth, the snapshot.check shape: an archive with no exclusions at all.
-    await transport.exec("tar", ["--numeric-owner", "-czf", `${ARCHIVES}/raw.tar.gz`, "-C", PARENT, DATA_NAME]);
+    // Defense in depth, the snapshot.check shape: an archive with no exclusions at all — so,
+    // unlike createArchive, this deliberately walks straight into sidecar-private too. Real
+    // read access to it needs the same escalation createArchive now asks for on its own
+    // restricted subpath (XS round 4 CI fallout): a CI identity that owns this tree's other
+    // files outright still cannot open a directory ensurePrivateTargetDirectory locked to
+    // 1000:1000 mode 700.
+    const rawPrefix = await sudoFor(ctx, `${DATA}/sidecar-private`);
+    const [rawHead, ...rawRest] = [...rawPrefix, "tar", "--numeric-owner", "-czf", `${ARCHIVES}/raw.tar.gz`, "-C", PARENT, DATA_NAME];
+    await transport.exec(rawHead, rawRest);
     check(
       "verify refuses the raw archive as share",
       await withOutputSink(() => {}, () => verifySnapshot(ctx, `${ARCHIVES}/raw.tar.gz`, "share")),

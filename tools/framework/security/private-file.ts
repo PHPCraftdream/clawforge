@@ -100,7 +100,7 @@ async function grantWindowsAcl(file: string): Promise<string> {
     (await savedAces(file)).aces
       .filter((ace) => !ace.flags.includes("ID"))
       .map((ace) => ace.trustee)
-      .filter((trustee) => ![owner, SYSTEM_SID, ADMINISTRATORS_SID].includes(trusteeSid(trustee))),
+      .filter((trustee) => ![owner, SYSTEM_SID, ADMINISTRATORS_SID].includes(resolvedTrustee(trustee, owner))),
   );
   const grant = await runTool(
     systemTool("icacls.exe"),
@@ -151,13 +151,27 @@ function trusteeSid(trustee: string): string {
   return SDDL_TRUSTEE_SIDS[trustee.toUpperCase()] ?? trustee;
 }
 
+/** Resolves a trustee against a known owner SID, folding icacls's "LA" alias into the owner
+ *  it actually names. LA is the well-known SDDL alias for a machine's built-in Administrator
+ *  account (relative ID 500) — not a fixed SID like SYSTEM or the Administrators group, so it
+ *  cannot live in SDDL_TRUSTEE_SIDS, but it is still locale-independent and unambiguous: when
+ *  the owner IS that RID-500 account (a CI runner routinely runs as it), icacls prints the
+ *  owner's own ACE as "LA" instead of the raw SID, and a byte-for-byte comparison against the
+ *  owner then reads the owner's own grant as a foreign trustee. Only resolved when the owner
+ *  actually is RID 500 — an LA grant on a file some other account owns names a different,
+ *  genuinely foreign account and must still be reported. */
+function resolvedTrustee(trustee: string, owner: string): string {
+  if (trustee.toUpperCase() === "LA" && owner.endsWith("-500")) return owner;
+  return trusteeSid(trustee);
+}
+
 /** Proves the grant instead of trusting it: only the allowed trustees may appear, the DACL
  *  must be sealed against inheritance, and the owner must hold full access. A leftover
  *  trustee is reported by SID — the one spelling of its name that does not move. */
 async function assertDaclOwnerOnly(file: string, owner: string): Promise<void> {
   const { daclProtected, aces } = await savedAces(file);
   const allowed = new Set([owner, SYSTEM_SID, ADMINISTRATORS_SID]);
-  const foreign = aces.filter((ace) => !allowed.has(trusteeSid(ace.trustee)));
+  const foreign = aces.filter((ace) => !allowed.has(resolvedTrustee(ace.trustee, owner)));
   if (foreign.length > 0) {
     throw new Error(
       `the ACL on ${file} still grants access to ${foreign.map((ace) => ace.trustee).join(", ")} — ` +
@@ -170,7 +184,7 @@ async function assertDaclOwnerOnly(file: string, owner: string): Promise<void> {
   if (!daclProtected || aces.some((ace) => ace.flags.includes("ID"))) {
     throw new Error(`the ACL on ${file} still inherits entries from its parent directory`);
   }
-  if (!aces.some((ace) => trusteeSid(ace.trustee) === owner && /^FA$/i.test(ace.rights))) {
+  if (!aces.some((ace) => resolvedTrustee(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights))) {
     throw new Error(`the ACL on ${file} does not give the owner full access`);
   }
 }

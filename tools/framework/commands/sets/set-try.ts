@@ -285,7 +285,9 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
       if (conflict !== undefined) die(`throwaway port ${port} is already used on the target by ${conflict}`);
       await runMaybePrivileged(tryCtx, dataRoot, "mkdir", [dataRoot]);
       ownsTarget = true;
-      await ensureDataDirs(tryCtx);
+      // trustExisting: dataRoot is the mkdir this call just ran, not a directory found
+      // pre-existing from outside this operation.
+      await ensureDataDirs(tryCtx, { trustExisting: true });
       await ensureSecretsFile(tryCtx);
 
       // Values only, and never the gateway token: this instance generated its own above,

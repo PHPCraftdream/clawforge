@@ -294,7 +294,10 @@ export async function restoreArchive(
       ]);
     }
 
-    await ensureDataDirs(ctx);
+    // trustExisting: this tree was just extracted from an archive verifyRestoredLayout has
+    // already proven contained, not found lying around — it must not read as an unrelated
+    // pre-existing directory this run merely stumbled onto.
+    await ensureDataDirs(ctx, { trustExisting: true });
   } catch (error) {
     // A half-unpacked or rejected directory is worse than nothing: this operation's own
     // staging root must never survive its own failure, whether or not there was previous

@@ -210,7 +210,10 @@ async function dataDirSymlinkTarget(ctx: Context, dataDir: string): Promise<stri
  *  dies with the one command that adopts it explicitly, so a directory that merely looks
  *  like a data directory (/var/lib passes the string-level depth check on purpose) cannot
  *  be handed to the container's uid by a bootstrap that stumbled onto it. */
-export async function ensureDataDirs(ctx: Context): Promise<void> {
+export async function ensureDataDirs(
+  ctx: Context,
+  options: { trustExisting?: boolean } = {},
+): Promise<void> {
   const { dataDir } = ctx.settings;
   const marker = `${dataDir}/${DATA_DIR_MARKER}`;
 
@@ -228,7 +231,15 @@ export async function ensureDataDirs(ctx: Context): Promise<void> {
   // created/pre-existing split below is the whole ownership policy, so it is read, not
   // assumed.
   const rootExisted = await ctx.transport.exists(dataDir);
-  const ours = rootExisted && (await ctx.transport.exists(marker));
+  const markerExists = rootExisted && (await ctx.transport.exists(marker));
+  // trustExisting is for a caller that itself just created or extracted the tree earlier in
+  // the SAME operation — restore right after a verified extraction, set-try right after its
+  // own throwaway mkdir — where "pre-existing" only means "this call didn't create it", not
+  // "some unrelated directory predates this deployment". Without it, a freshly restored tree
+  // (owned by whatever uid ran tar, not 1000) reads exactly like an untrusted adoption and
+  // restore refuses its own trusted output. Bootstrap passes nothing, so the provenance gate
+  // below still applies at full strength to a directory it merely found.
+  const ours = markerExists || options.trustExisting === true;
   const existed = new Map<string, boolean>();
   for (const sub of DATA_SUBDIRS) {
     existed.set(sub, await ctx.transport.exists(`${dataDir}/${sub}`));
@@ -283,10 +294,11 @@ export async function ensureDataDirs(ctx: Context): Promise<void> {
 
   await chownToOwner(ctx, created, "created by this run");
   if (ours) {
-    // Ownership drift on a proven tree: the marker is this framework's own record, so the
+    // Ownership drift on a proven (or, via trustExisting, this-same-operation) tree: the
     // standard paths may be re-owned — naming exactly these paths, never recursing.
     await chownToOwner(ctx, preExisting, "ownership drift on a proven clawforge data directory");
-  } else {
+  }
+  if (!markerExists) {
     await ctx.transport.writeFile(marker, DATA_DIR_MARKER_CONTENT, "644");
     log(`recorded provenance in ${marker}`);
   }

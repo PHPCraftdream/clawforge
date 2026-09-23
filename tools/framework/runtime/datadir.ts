@@ -296,15 +296,20 @@ export async function ensureDataDirs(
     created.push(dir);
   }
 
+  // Written BEFORE either chown below: both can re-own dataDir itself (created covers it on
+  // a fresh tree, preExisting on a proven or trusted one), and this run's own identity — not
+  // necessarily the fixed owner — is what has to still be able to write into it to leave this
+  // record. Writing it after either chown regularly died EACCES the moment ownership actually
+  // differed from this identity, invisible wherever the two already matched.
+  if (!markerExists) {
+    await ctx.transport.writeFile(marker, DATA_DIR_MARKER_CONTENT, "644");
+    log(`recorded provenance in ${marker}`);
+  }
   await chownToOwner(ctx, created, "created by this run");
   if (ours) {
     // Ownership drift on a proven (or, via trustExisting, this-same-operation) tree: the
     // standard paths may be re-owned — naming exactly these paths, never recursing.
     await chownToOwner(ctx, preExisting, "ownership drift on a proven clawforge data directory");
-  }
-  if (!markerExists) {
-    await ctx.transport.writeFile(marker, DATA_DIR_MARKER_CONTENT, "644");
-    log(`recorded provenance in ${marker}`);
   }
 
   // auth-secrets holds encryption keys; keep it owner-only.

@@ -24,10 +24,15 @@ import { SshTransport } from "#src/runtime/transport.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 import {
   importRestoredPrivatePathsHistory,
+  mutatePrivatePathsLedgerState,
   persistedPrivatePaths,
   privatePathsHistoryFile,
+  privatePathsLedgerFile,
+  privatePathsLedgerState,
+  removePrivatePathsLedger,
+  type PrivatePathsLedgerState,
 } from "#src/security/private-paths-ledger.ts";
-import { runningRecipeStacks } from "../management/recipe.ts";
+import { runningRecipeStacks } from "../management/recipe/index.ts";
 
 export interface RestoreOptions {
   force?: boolean;
@@ -251,6 +256,8 @@ export async function restoreArchive(
 
   log(`unpacking into ${parent}`);
   await runMaybePrivileged(ctx, parent, "mkdir", ["-p", parent]);
+  let historyImported = false;
+  let ledgerBefore: PrivatePathsLedgerState | undefined;
   try {
     await extractArchive(ctx, archive, parent);
 
@@ -262,9 +269,19 @@ export async function restoreArchive(
     log("verifying the restored layout");
     await verifyRestoredLayout(ctx, dataDir);
 
+    // The ledger state this restore's history import may change, taken right before
+    // that import runs: fresh-identity and ensureDataDirs run AFTER the import, so a
+    // failure there must undo the import along with the data tree, or the old instance
+    // keeps policy boundaries from an archive that was never actually accepted (audit
+    // 2026-09-23 round 4, P2-02). Inside the try, so a snapshot read that itself fails
+    // (an unreadable existing ledger) is handled by the same data-tree rollback below —
+    // historyImported stays false, so no ledger write is attempted on the way out.
+    ledgerBefore = await privatePathsLedgerState();
+
     // Before the fresh-identity deletion and ensureDataDirs' writes, and inside the try
     // whose catch puts the previous data back: the import is part of "the archive is good".
     await importRestoredHistory(ctx, name, entries, dataDir);
+    historyImported = true;
 
     // Cloning rather than moving: two instances must not share one identity, or both will
     // claim the same device and paired-device records.
@@ -279,14 +296,38 @@ export async function restoreArchive(
 
     await ensureDataDirs(ctx);
   } catch (error) {
-    // A half-unpacked directory is worse than the old one: put the instance back the way
-    // it was and let the caller see why the archive failed. A refused layout lands here
-    // too — the unpacked tree is then something the steps below must not touch, and the
-    // previous data goes back in its place.
+    // A half-unpacked or rejected directory is worse than nothing: this operation's own
+    // staging root must never survive its own failure, whether or not there was previous
+    // data to put back in its place — a clean target left with a failed extraction's
+    // leftovers reads as existing state to the next bootstrap/restore (audit 2026-09-23
+    // round 4, P2-02).
+    warn(aside !== undefined ? "restore failed — restoring the previous data" : "restore failed — removing the unpacked tree");
+    await runMaybePrivileged(ctx, parent, "rm", ["-rf", dataDir]);
     if (aside !== undefined) {
-      warn("restore failed — restoring the previous data");
-      await runMaybePrivileged(ctx, parent, "rm", ["-rf", dataDir]);
       await runMaybePrivileged(ctx, parent, "mv", [aside, dataDir]);
+    }
+    // The import already landed in the operator-side ledger before this failure: put it back
+    // to exactly what it held before this restore touched it, not just "whatever the merge
+    // added" — a concurrent change during the same held lock is not expected, and this is the
+    // rollback of THIS restore's own effect, nothing else's. The rollback restores that state
+    // FAITHFULLY, absence included: writing an empty ledger when none existed before used to
+    // fabricate a forget-shaped file — a witness to a forget this operator never asked for
+    // (audit 2026-09-23 XXA round 6, P1-04).
+    if (historyImported) {
+      warn("restore failed after privacy history was imported — reverting the ledger");
+      const snapshot = ledgerBefore;
+      // historyImported is only ever true after the snapshot succeeded, so the undefined case
+      // is unreachable today; it stays a plain no-op rather than a non-null assertion.
+      if (snapshot !== undefined) {
+        if (snapshot.existed) {
+          await mutatePrivatePathsLedgerState(privatePathsLedgerFile(), () => ({
+            next: { paths: snapshot.paths, forgotten: snapshot.forgotten },
+            value: undefined,
+          }));
+        } else {
+          await removePrivatePathsLedger(privatePathsLedgerFile());
+        }
+      }
     }
     throw error;
   }

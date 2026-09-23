@@ -10,8 +10,10 @@
 // and the next migrate/share built its exclusions from an empty record: fail-closed for a
 // ledger that exists but cannot be read is still fail-open for one that is simply not there.
 //
-// Part A drives the ledger/history contract itself — the publish unit, the empty-ledger
-// removal, the import's merge and its two refusals. It needs no target and runs everywhere.
+// Part A drives the ledger/history contract itself — the publish unit (including the
+// adopt-existing-target and explicit-forget-still-clears-both-copies scenarios of P2-01,
+// docs/review-2026-09-23-xs-round-4.md), the import's merge and its two refusals. It needs no
+// target and runs everywhere.
 // Part B is the whole scenario over real GNU tar and a real POSIX filesystem (LocalTransport
 // off Windows, a WSL distribution on it): a real private write through the fixture recipe's
 // prepare hook, a full backup, then a restore through a DIFFERENT, fresh operator-side
@@ -42,6 +44,7 @@ import {
   type Recipe,
 } from "#framework/service/recipe.ts";
 import {
+  forgetPrivatePaths,
   importRestoredPrivatePathsHistory,
   persistedPrivatePaths,
   privatePathsHistoryFile,
@@ -168,9 +171,9 @@ try {
   } as unknown as Context;
   await publishPrivatePathsHistory(publishCtx);
   check("the copy is written exactly once", privateWrites.length + plainWrites.length, 1);
-  check("it went into the data root's config/", privateWrites[0]?.path, "/tgt/data/config/clawforge-private-paths.json");
-  check("and it was written as a private file", privateWrites.length === 1 && plainWrites.length === 0, true);
-  const published = JSON.parse(privateWrites[0]?.body ?? "null") as { privatePaths?: string[] } | null;
+  check("it went into the data root's config/", plainWrites[0]?.path, "/tgt/data/config/clawforge-private-paths.json");
+  check("and it was written owner-only through the atomic publish path", plainWrites.length === 1 && plainWrites[0]?.mode === "600", true);
+  const published = JSON.parse(plainWrites[0]?.body ?? "null") as { privatePaths?: string[] } | null;
   check(
     "it names the recorded paths",
     sorted(published?.privatePaths ?? []),
@@ -180,26 +183,72 @@ try {
   // ledger and expects exactly RECORDED there.
   await rm(privatePathsLedgerFile(), { force: true });
 
-  // An empty ledger publishes nothing and REMOVES a stale copy instead: forget is
-  // deliberate, and a copy left behind would resurrect forgotten entries at the next restore.
+  // P2-01 of docs/review-2026-09-23-xs-round-4.md: an empty LOCAL ledger used to make
+  // publishPrivatePathsHistory remove any target copy outright — which does not distinguish
+  // "the operator explicitly forgot this history" from "this deployment folder never wrote a
+  // ledger of its own, and the target is the only surviving record" (a lost or freshly
+  // recreated deployment folder adopting an existing instance). A single stateful fake target
+  // — exists()/exec("cat")/writePrivateFile()/remove() all read and write the same `body` slot
+  // — carries the target-side file across the three publishes below the way a real one would.
   useDeployment(deploymentB);
   check("the fresh deployment B starts with no ledger of its own", sorted(await persistedPrivatePaths()), "[]");
+  const fakeTarget: { body: string | undefined } = { body: undefined };
   const removals: string[] = [];
-  const emptyLedgerWrites: { path: string; body?: string; mode?: string }[] = [];
-  const removeCtx = {
-    settings: { dataDir: "/tgt/data", env: {} },
-    transport: {
-      async exists(): Promise<boolean> { return true; },
-      async remove(path: string): Promise<void> { removals.push(path); },
-      async mkdirp(): Promise<void> {},
-      async writePrivateFile(path: string, body: string): Promise<void> { emptyLedgerWrites.push({ path, body }); },
-      async writeFile(path: string, body: string, mode?: string): Promise<void> { emptyLedgerWrites.push({ path, body, mode }); },
-    },
-  } as unknown as Context;
-  await publishPrivatePathsHistory(removeCtx);
-  check("an empty ledger removes a stale copy instead of publishing nothing", removals.length, 1);
+  const writes: { path: string; body: string }[] = [];
+  const publishAgainstFakeTarget = (): Context =>
+    ({
+      settings: { dataDir: "/tgt/data", env: {} },
+      transport: {
+        async exists(): Promise<boolean> { return fakeTarget.body !== undefined; },
+        async remove(path: string): Promise<void> { removals.push(path); fakeTarget.body = undefined; },
+        async mkdirp(): Promise<void> {},
+        async writePrivateFile(path: string, body: string): Promise<void> {
+          writes.push({ path, body });
+          fakeTarget.body = body;
+        },
+        async writeFile(path: string, body: string): Promise<void> {
+          writes.push({ path, body });
+          fakeTarget.body = body;
+        },
+        async exec(command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+          if (command === "cat") return { code: 0, stdout: fakeTarget.body ?? "", stderr: "" };
+          // sudoFor's own probes ("test -w", "sh -c command -v sudo") never need to escalate here.
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      },
+    }) as unknown as Context;
+
+  // Scenario 0: nothing anywhere. Publish must neither write nor remove.
+  await publishPrivatePathsHistory(publishAgainstFakeTarget());
+  check("nothing recorded and no target copy publishes nothing", removals.length + writes.length, 0);
+
+  // Scenario 1 (adopt-existing-target): the local ledger file was never written on this
+  // deployment folder, but the target already carries a history from elsewhere. Publish must
+  // NOT delete it — it adopts it into the local ledger and republishes it.
+  const ADOPTED = ["orphan-private", "orphan-private/secret.env"];
+  fakeTarget.body = `${JSON.stringify({ privatePaths: ADOPTED })}\n`;
+  await publishPrivatePathsHistory(publishAgainstFakeTarget());
+  check("an existing target copy is NOT deleted when the local ledger was never written", removals.length, 0);
+  check("it is republished instead", writes.length, 1);
+  check(
+    "and adopted into the local ledger",
+    sorted(await persistedPrivatePaths()),
+    sorted(ADOPTED),
+  );
+  check("the target copy still exists after adoption", fakeTarget.body !== undefined, true);
+
+  // Scenario 2 (explicit forget still works): once the operator actually calls
+  // forgetPrivatePaths, the local ledger file exists with zero entries — real proof of a
+  // deliberate forget, not silence. The next publish now removes the target copy too, so both
+  // sides end up cleared.
+  await forgetPrivatePaths(ADOPTED);
+  check("forgetPrivatePaths empties the local ledger", sorted(await persistedPrivatePaths()), "[]");
+  writes.length = 0;
+  await publishPrivatePathsHistory(publishAgainstFakeTarget());
+  check("an explicit forget removes the target copy on the next publish", removals.length, 1);
   check("the removal names the published copy's path", removals[0], "/tgt/data/config/clawforge-private-paths.json");
-  check("and nothing was written for an empty ledger", emptyLedgerWrites.length, 0);
+  check("and nothing was (re)written for the now-forgotten history", writes.length, 0);
+  check("the target copy is gone after the forget propagates", fakeTarget.body, undefined);
 
   // The import, against deployment B's real ledger: sudoFor probes first (`test -w` answers
   // "writable" for everything here), and only `cat` carries the restored copy's bytes.
@@ -436,6 +485,92 @@ try {
       "and the ledger still holds exactly the recorded paths",
       sorted(await persistedPrivatePaths()),
       sorted(RECORDED),
+    );
+  }
+
+  // === PART C — P2-02 (audit 2026-09-23 round 4): a failure staged AFTER the history import
+  // succeeded must undo that import along with the data tree =========================================
+  //
+  // importRestoredHistory runs before fresh-identity and ensureDataDirs, inside the try whose
+  // catch puts the data tree back from `aside` — but nothing put the ledger back too. A
+  // failure in ensureDataDirs (after a successful import) used to leave deployment B's ledger
+  // holding entries from an archive the restore ultimately rejected, so the OLD instance came
+  // out of a failed restore with policy boundaries from an unaccepted archive. Driven with a
+  // stub transport — the failure pinned down here is ensureDataDirs' own chmod, which no real
+  // archive can trigger on demand, so this is genuinely a different failure point than Part
+  // B's corrupt-history case above (which fails INSIDE the import, before anything is written).
+  useDeployment(deploymentB);
+  {
+    const STUB_DATA_DIR = "/synthetic/pp-rollback/data";
+    const STUB_PARENT = "/synthetic/pp-rollback";
+    const STUB_ARCHIVE = `${STUB_PARENT}/backups/pp-rollback.tar.gz`;
+    const RESTORED_ONLY = ["restored-only-path"];
+    // Whatever this deployment's ledger already holds (Part B may have left RECORDED there,
+    // or it may be empty if Part B was skipped) is the state a correct rollback must return to
+    // — not merely "empty".
+    const baseline = await persistedPrivatePaths();
+
+    const stubCtx = {
+      settings: { dataDir: STUB_DATA_DIR, env: {} },
+      transport: {
+        description: "stub",
+        async exists(): Promise<boolean> { return true; },
+        async readFile(): Promise<string> { return ""; },
+        async writeFile(): Promise<void> {},
+        async mkdirp(): Promise<void> {},
+        async remove(): Promise<void> {},
+        async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+          if (command === "tar" && args.includes("-tzf")) {
+            return {
+              code: 0,
+              stdout:
+                "data/\ndata/config/\ndata/config/openclaw.json\ndata/config/clawforge-private-paths.json\n" +
+                "data/workspace/\ndata/auth-secrets/\n",
+              stderr: "",
+            };
+          }
+          if (command === "tar" && args.includes("-tvzf")) return { code: 0, stdout: "", stderr: "" };
+          // The restored history copy: a valid, parseable payload, so the import really
+          // succeeds and really writes to deployment B's ledger before the later failure.
+          if (command === "cat") return { code: 0, stdout: JSON.stringify({ privatePaths: RESTORED_ONLY }), stderr: "" };
+          if (command === "stat" && args[1] === "%u:%g") return { code: 0, stdout: "1000:1000", stderr: "" };
+          // Anything but "700": forces ensureDataDirs to attempt the chmod below.
+          if (command === "stat" && args[1] === "%a") return { code: 0, stdout: "755", stderr: "" };
+          if (command === "chmod" && args[0] === "700" && args[1] === `${STUB_DATA_DIR}/auth-secrets`) {
+            throw new Error("simulated ensureDataDirs failure: chmod auth-secrets");
+          }
+          if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+          if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
+          if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: args[1] ?? "", stderr: "" };
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      },
+      runtime: {
+        async stop(): Promise<void> {},
+        async start(): Promise<void> {
+          throw new Error("the gateway must never start from this restore");
+        },
+        async waitForHealth(): Promise<void> {},
+      },
+    } as unknown as Context;
+
+    let stubThrew = false;
+    await withOutputSink(
+      () => {},
+      async () => {
+        try {
+          await restoreArchive(stubCtx, STUB_ARCHIVE, { force: true });
+        } catch {
+          stubThrew = true;
+        }
+      },
+    );
+
+    check("a failure staged after a successful history import still fails the restore", stubThrew, true);
+    check(
+      "the ledger reverts to what it held before this restore, not the rejected entries",
+      sorted(await persistedPrivatePaths()),
+      sorted(baseline),
     );
   }
 } finally {

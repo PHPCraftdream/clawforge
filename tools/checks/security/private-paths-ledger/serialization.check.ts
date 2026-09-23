@@ -237,7 +237,7 @@ try {
     });
   // Waits for a merge whose entry the queue itself guarantees — its predecessor has already
   // settled — with a hard cap, so a broken queue fails loudly instead of hanging the run.
-  const untilEntered = async (name: "b" | "c"): Promise<void> => {
+  const untilEntered = async (name: "a" | "b" | "c"): Promise<void> => {
     for (let turn = 0; turn < 200 && !order.includes(name); turn += 1) {
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
@@ -247,6 +247,11 @@ try {
   const mutationA = queued("a", "a-entry");
   const mutationB = queued("b", "b-entry");
   const mutationC = queued("c", "c-entry");
+  // a's own read is real fs I/O (mutatePrivatePathsLedger reads the file before invoking the
+  // merge), not just a microtask — under load from a full concurrent suite run, that read can
+  // take longer than a fixed handful of setImmediate turns. Waiting for it to actually enter
+  // is what makes the assertion below about serialization rather than about scheduling luck.
+  await untilEntered("a");
   await settle();
   check("only a entered its merge; b and c are registered but strictly queued", order.join(","), "a");
 

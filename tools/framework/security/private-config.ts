@@ -4,10 +4,10 @@ import { randomBytes } from "node:crypto";
 import { checksumOf } from "../service/checksums.ts";
 import { installedRecipePrivatePaths } from "../service/recipe.ts";
 import { recordPrivateWrite } from "./private-paths-ledger.ts";
-import { locksDir } from "../core/env.ts";
+import { locksDir, serializeEnvLine } from "../core/env.ts";
 import type { Context } from "../core/context.ts";
 import { registerSecret } from "../core/log.ts";
-import type { ExecResult } from "../runtime/transport.ts";
+import { PRIVATE_STAGING_MARKER, type ExecResult } from "../runtime/transport.ts";
 
 export interface PrivateFileResult {
   readonly path: string;
@@ -164,7 +164,14 @@ export async function ensurePrivateTargetDirectory(ctx: Context, path: string): 
   await createPrivateDirectory(ctx, target);
 }
 
-/** Atomically replaces a target file with mode 600, preserving the old file on a failed write. */
+/** Atomically replaces a target file with mode 600, preserving the old file on a failed write.
+ *
+ *  The staging sibling carries the real bytes from the first one written, so a process (or a
+ *  cleanup) interrupted before the mv leaves them beside the target under a name the
+ *  declaration's exact path never matches. The sibling therefore stays name-adjacent to the
+ *  verified target on purpose: the whole `.clawforge-private-` family is what the snapshot
+ *  policy excludes and verify refuses (service/archive.ts, commands/lifecycle/verify.ts), and
+ *  a successful run removes it here. */
 export async function replacePrivateTargetFile(ctx: Context, path: string, content: string): Promise<PrivateFileResult> {
   if (!path.startsWith("/")) throw new Error(`private target file must be absolute: ${path}`);
   const { ledger, boundary, target } = await assertDeclaredPrivatePath(ctx, path, "file");
@@ -177,7 +184,7 @@ export async function replacePrivateTargetFile(ctx: Context, path: string, conte
   await createPrivateDirectory(ctx, parentPath(target));
   // The staging file and the mv both use the verified path: with the symlink contract
   // above enforced, this is the only path any part of the write touches.
-  const temporary = `${target}.clawforge-private-${randomBytes(8).toString("hex")}`;
+  const temporary = `${target}${PRIVATE_STAGING_MARKER}${randomBytes(8).toString("hex")}`;
   try {
     if (ctx.transport.writePrivateFile !== undefined) await ctx.transport.writePrivateFile(temporary, content);
     else await ctx.transport.writeFile(temporary, content, "600");
@@ -252,18 +259,23 @@ export async function execWithSecrets(
   return result;
 }
 
-/** Replaces one KEY=VALUE entry while preserving unrelated target-env lines. */
+/** Replaces one KEY=VALUE entry while preserving unrelated target-env lines.
+ *
+ *  The written line comes from serializeEnvLine — the lossless inverse of parseEnv — so a
+ *  value with edge whitespace or embedded quotes survives the next read byte-identically
+ *  instead of being rewritten bare and trimmed (P2-13). Name and value are validated by
+ *  that call before any line is touched; the refusal messages are the same ones this
+ *  function has always thrown. */
 export function upsertEnvValue(content: string, name: string, value: string): string {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`invalid environment variable name: ${name}`);
-  if (/[\r\n]/.test(value)) throw new Error(`environment value for ${name} contains a newline`);
+  const line = serializeEnvLine(name, value);
   const lines = content.split(/\r?\n/);
   while (lines.at(-1) === "") lines.pop();
   let replaced = false;
-  const next = lines.map((line) => {
-    if (!line.startsWith(`${name}=`)) return line;
+  const next = lines.map((existing) => {
+    if (!existing.startsWith(`${name}=`)) return existing;
     replaced = true;
-    return `${name}=${value}`;
+    return line;
   });
-  if (!replaced) next.push(`${name}=${value}`);
+  if (!replaced) next.push(line);
   return `${next.join("\n")}\n`;
 }

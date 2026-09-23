@@ -14,6 +14,7 @@ import JSON5 from "json5";
 import { log, info, warn, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { sudoFor } from "#src/runtime/datadir.ts";
+import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "#src/runtime/transport.ts";
 import {
   archiveRoot,
   inspectArchive,
@@ -43,10 +44,19 @@ import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
  *  DELIBERATELY: `config/.env.clawforge-` is the staging name loadSecrets() appends a random
  *  suffix to (state.ts) — credential material that is never instance state, and a family, not
  *  one path. No recipe-declared path belongs in this list; the split exists so the staging
- *  family keeps its prefix semantics without dragging declared paths into bare-prefix matching. */
+ *  family keeps its prefix semantics without dragging declared paths into bare-prefix matching.
+ *
+ *  `fragments` name the tooling's own temp-sibling staging markers (transport.ts), matched as a
+ *  substring because the marker sits MID-name: a crashed private write leaves
+ *  `<declared-path>.clawforge-private-<hex>` (optionally nested with a further
+ *  `.clawforge-publish-<hex>` from the transport fallback chain) beside the target, where no
+ *  literal or prefix rule can see it — and under a public subtree like workspace/ the leftover
+ *  passes the share allow-list entirely. Only the writers create these names, so a fragment
+ *  match is always one of ours or a pre-fix archive that must be refused. */
 export interface ForbiddenRules {
   literals: readonly string[];
   prefixes: readonly string[];
+  fragments: readonly string[];
 }
 
 export function forbiddenRules(profile: Profile, recipePrivatePaths: readonly string[]): ForbiddenRules {
@@ -54,12 +64,17 @@ export function forbiddenRules(profile: Profile, recipePrivatePaths: readonly st
     return {
       literals: [...recipePrivatePaths, "config/.env", "config/identity/", "config/devices/", "config/state/", "config/agents/"],
       prefixes: ["config/.env.clawforge-"],
+      fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
     };
   }
   if (profile === "migrate") {
-    return { literals: [...recipePrivatePaths, "config/.env"], prefixes: ["config/.env.clawforge-"] };
+    return {
+      literals: [...recipePrivatePaths, "config/.env"],
+      prefixes: ["config/.env.clawforge-"],
+      fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
+    };
   }
-  return { literals: [], prefixes: [] };
+  return { literals: [], prefixes: [], fragments: [] };
 }
 
 /** True when an archive entry IS the declared path or lives inside it: equality, or a '/'
@@ -72,10 +87,11 @@ function violatesLiteralPath(entry: string, declared: string): boolean {
 }
 
 /** The declared rules these archive entries violate — literals by path boundary
- *  (violatesLiteralPath), staging prefixes by the string prefix that defines the family.
- *  verifySnapshot and pull's migrate publish check must judge the same declaration the same
- *  way over the same listing, so this comparison lives here and nowhere else. Returns the
- *  violated rules as written, for the warnings to name. */
+ *  (violatesLiteralPath), staging prefixes by the string prefix that defines the family,
+ *  staging markers by the substring that defines theirs. verifySnapshot and pull's migrate
+ *  publish check must judge the same declaration the same way over the same listing, so this
+ *  comparison lives here and nowhere else. Returns the violated rules as written, for the
+ *  warnings to name. */
 export function forbiddenViolations(
   profile: Profile,
   recipePrivatePaths: readonly string[],
@@ -88,6 +104,9 @@ export function forbiddenViolations(
   }
   for (const stem of rules.prefixes) {
     if (entries.some((entry) => entry.startsWith(stem))) violated.push(stem);
+  }
+  for (const marker of rules.fragments) {
+    if (entries.some((entry) => entry.includes(marker))) violated.push(marker);
   }
   return violated;
 }

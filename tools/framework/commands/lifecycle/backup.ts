@@ -12,11 +12,21 @@ import { deploymentName } from "#src/runtime/deployment.ts";
 import { archiveCarriesContent, createArchive, fileSize, isProfile, backupArchiveName, listArchive, parseBackupArchive, symlinkedDataRoot, type Profile } from "#src/service/archive.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { SshTransport } from "#src/runtime/transport.ts";
-import { runningRecipeStacks } from "../management/recipe.ts";
+import { runningRecipeStacks } from "../management/recipe/index.ts";
+import { quiesceRecipeStacks, resumeRecipeStacks } from "../management/recipe/lifecycle.ts";
+import type { Recipe } from "#src/service/recipe.ts";
 
 export interface BackupOptions {
   hot?: boolean;
   profile?: Profile;
+  /** Skip the restart this would otherwise do once the archive is published. For a caller
+   *  that is about to restore right back into the same data directory (smoke's round-trip
+   *  check): restarting here just to have restore's own `ctx.runtime.stop()` stop it again
+   *  a moment later opens exactly the window the gateway being paused is meant to close —
+   *  live writes landing between this backup and that restore, silently lost when the
+   *  restore replaces the tree. The caller owns starting it back up once its own
+   *  transaction is done. */
+  leaveStopped?: boolean;
 }
 
 // UTC, not local time: state.ts's snapshot names and restore.ts's <data>.replaced-<stamp>
@@ -112,21 +122,6 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     );
   }
 
-  // Recipes are their own Compose projects, so stopping the gateway stops none of
-  // them: a sidecar bind-mounting a file under the data directory keeps writing
-  // straight through the snapshot, outside the lock this command holds. Until a
-  // lifecycle-participant mechanism exists to quiesce them, the guarantee is
-  // explicitly bounded to the main service, and the stacks left outside it are named
-  // rather than silently uncovered (audit 2026-09-22 round 2, P2-04).
-  const sidecars = await runningRecipeStacks(ctx);
-  if (sidecars.length > 0) {
-    warn(
-      `recipe stack(s) still running, not quiesced for this backup: ${sidecars.map((recipe) => recipe.name).join(", ")} — ` +
-        `the snapshot's consistency guarantee covers the gateway only; what these stacks write under ${dataDir} ` +
-        "can be caught mid-write and is not guaranteed consistent in the archive",
-    );
-  }
-
   const mkdirPrefix = await sudoFor(ctx, backupDir);
   const [mkHead, ...mkRest] = [...mkdirPrefix, "mkdir", "-p", backupDir];
   await ctx.transport.exec(mkHead, mkRest);
@@ -143,6 +138,35 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   } else if (wasRunning) {
     log("stopping the gateway for a consistent snapshot");
     await ctx.runtime.pause();
+  }
+
+  // Recipes are their own Compose projects, so stopping the gateway stops none of them:
+  // a sidecar bind-mounting a file under the data directory keeps writing straight
+  // through the snapshot, outside the lock this command holds. A recipe that declares
+  // the lifecycle hooks (management/recipe/lifecycle.ts) is quiesced NOW — inside the
+  // window the gateway is paused for — and resumed on every exit path once the archive
+  // work is done; every stack still left outside the window is named rather than
+  // silently uncovered (audit 2026-09-22 round 2, P2-04; the hook contract: P2-12).
+  //
+  // The window is deliberately exactly the gateway's own pause window. --hot accepts a
+  // torn snapshot by definition. A leaveStopped caller (pull, smoke's round trip) owns
+  // a transaction continuing past this function: quiescing here with nobody left to
+  // resume would trade a torn snapshot for stacks left stopped. Both keep the pre-hook
+  // behavior — the running stacks are named, nothing is called.
+  const sidecars = await runningRecipeStacks(ctx);
+  const quiesced: Recipe[] = [];
+  let uncovered = sidecars;
+  if (options.hot !== true && options.leaveStopped !== true && sidecars.length > 0) {
+    const outcome = await quiesceRecipeStacks(ctx, sidecars);
+    quiesced.push(...outcome.quiesced);
+    uncovered = outcome.unquiesced;
+  }
+  if (uncovered.length > 0) {
+    warn(
+      `recipe stack(s) still running, not quiesced for this backup: ${uncovered.map((recipe) => recipe.name).join(", ")} — ` +
+        `the snapshot's consistency guarantee covers the gateway only; what these stacks write under ${dataDir} ` +
+        "can be caught mid-write and is not guaranteed consistent in the archive",
+    );
   }
 
   let stagingCreated = false;
@@ -193,16 +217,26 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
         warn(`could not remove backup staging directory ${stagingDir}`);
       }
     }
-    // Bring the gateway back even if tar failed. Waited for, not just started: up(),
-    // push() and restore() all confirm health before returning — this used to be the one
-    // command that handed control back while the container was still merely "Starting",
-    // and a caller doing something right after that assumed the gateway was already
-    // answering could lose that race.
-    if (options.hot !== true && wasRunning) {
-      log("starting the gateway again");
-      await ctx.runtime.start();
-      await ctx.runtime.waitForHealth();
-      log("gateway is healthy");
+    try {
+      // Bring the gateway back even if tar failed. Waited for, not just started: up(),
+      // push() and restore() all confirm health before returning — this used to be the one
+      // command that handed control back while the container was still merely "Starting",
+      // and a caller doing something right after that assumed the gateway was already
+      // answering could lose that race.
+      if (options.hot !== true && wasRunning && options.leaveStopped !== true) {
+        log("starting the gateway again");
+        await ctx.runtime.start();
+        await ctx.runtime.waitForHealth();
+        log("gateway is healthy");
+      } else if (options.leaveStopped === true && wasRunning) {
+        info("leaving the gateway stopped — the caller restarts it once its own transaction is done");
+      }
+    } finally {
+      // Resumed on every exit path — including a restart above that threw: a quiesce
+      // whose compensation is skipped by an earlier failure leaves the stack stopped
+      // with nothing in the output saying so. resumeRecipeStacks never throws (a failed
+      // resume is warned, not raised), so this cannot mask the archive's own error.
+      if (quiesced.length > 0) await resumeRecipeStacks(ctx, quiesced);
     }
   }
 

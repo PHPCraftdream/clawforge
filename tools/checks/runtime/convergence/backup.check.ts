@@ -18,7 +18,7 @@ import { withOutputSink } from "#framework/core/output.ts";
 import { UserError } from "#framework/core/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport, type ExecResult } from "#framework/runtime/transport.ts";
-import { ensureDataDirs } from "#framework/runtime/datadir.ts";
+import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/datadir.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
 
@@ -210,6 +210,17 @@ function stubBackupCtx(
   const archive = await withOutputSink(() => {}, () => createBackup(ctx, {}));
   check("with no competing lock, backup runs and returns the archive path", typeof archive === "string" && archive.length > 0, true);
   check("and it does pause/start the gateway around the archive", calls.includes("pause") && calls.includes("start"), true);
+}
+
+// leaveStopped is for a caller (smoke's round-trip check) about to restore right back into
+// the same data directory: restarting here just to have restore stop it again a moment later
+// reopens the window a paused gateway is meant to close (audit 2026-09-23, P1-02).
+{
+  const { ctx, calls } = stubBackupCtx(false);
+  await withOutputSink(() => {}, () => createBackup(ctx, { leaveStopped: true }));
+  check("a leaveStopped backup still pauses the gateway for the snapshot", calls.includes("pause"), true);
+  check("a leaveStopped backup does not restart the gateway", calls.includes("start"), false);
+  check("a leaveStopped backup does not wait for health either", calls.includes("waitForHealth"), false);
 }
 
 // --- retention counts each profile on its own -----------------------------------------------
@@ -550,6 +561,11 @@ if (p202Transport === undefined) {
       await p202Transport.mkdirp(`${dataDir}/workspace`);
       await p202Transport.writeFile(`${dataDir}/config/openclaw.json`, '{"provider":{}}\n');
       await p202Transport.writeFile(`${dataDir}/workspace/SOUL.md`, "fixture\n");
+      // The provenance marker a clawforge-created tree carries (P1-09): it travels with the
+      // archive, so the restore's ensureDataDirs sees a tree of this framework's own making
+      // and may narrow its ownership work to the standard paths instead of refusing a tree
+      // it cannot vouch for.
+      await p202Transport.writeFile(`${dataDir}/${DATA_DIR_MARKER}`, "clawforge data directory\n");
 
       const outcome = await attemptBackup(p202Transport, dataDir, `${root}/backups`);
       check("a backup over a real data directory still succeeds", outcome.refused, false);
@@ -581,62 +597,48 @@ if (p202Transport === undefined) {
   // (audit 2026-09-23, XS round 4): a CI runner whose own uid is not 1000 owns its /tmp
   // fixtures outright — `test -w` says yes — but POSIX still refuses an unprivileged
   // `chown 1000:1000` on a file that uid does not already own, exactly the shape that made
-  // this round-trip fail for real on GitHub Actions (runner uid 1001, not 1000). The stub
-  // answers "writable" and "wrong owner" together, the one combination the old writability
-  // check could not tell apart from "no escalation needed".
+  // this round-trip fail for real on GitHub Actions (runner uid 1001, not 1000). P1-09 pins
+  // the shape of the escalation too: one chown naming exactly the paths this run created,
+  // never -R — the blanket recursive chown of whatever pre-existed is the bug this round
+  // removes.
   {
+    const dataDir = "/srv/owner-check/data";
     const calls: { command: string; args: string[] }[] = [];
     const ownerStub = {
       description: "stub",
-      async exists(): Promise<boolean> { return true; },
+      async exists(): Promise<boolean> { return false; },
+      async writeFile(): Promise<void> {},
       async exec(command: string, args: string[]): Promise<ExecResult> {
         calls.push({ command, args });
         if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
+        // Not a symlink — ensureDataDirs' root guard (P1-01) checks this before anything
+        // else, and the default "everything else succeeds" fallback below would otherwise
+        // misread it as one.
+        if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+        // The canonical-ancestry check (P1-09) resolves through the ancestors; nothing here
+        // is a link, so every path resolves to itself.
+        if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: `${args[1] ?? ""}\n`, stderr: "" };
         if (command === "id" && args[0] === "-u") return { code: 0, stdout: "1001\n", stderr: "" };
         if (command === "id" && args[0] === "-g") return { code: 0, stdout: "1001\n", stderr: "" };
         if (command === "stat" && args[0] === "-c" && args[1] === "%u:%g") return { code: 0, stdout: "1001:1001\n", stderr: "" };
-        if (command === "stat" && args[0] === "-c" && args[1] === "%a") return { code: 0, stdout: "700\n", stderr: "" };
+        if (command === "stat" && args[0] === "-c" && args[1] === "%a") return { code: 0, stdout: "755\n", stderr: "" };
         if (command === "sh" && args.some((arg) => arg.includes("command -v sudo"))) return { code: 0, stdout: "/usr/bin/sudo\n", stderr: "" };
         if (command === "sudo" && args[0] === "-n" && args[1] === "true") return { code: 0, stdout: "", stderr: "" };
         return { code: 0, stdout: "", stderr: "" };
       },
     } as unknown as Transport;
-    await ensureDataDirs({ settings: { dataDir: "/srv/owner-check/data", env: {} }, transport: ownerStub } as unknown as Context);
-    const chownCall = calls.find((call) => call.args.includes("chown"));
-    check("a directory-writable-but-wrong-owner target still escalates the chown", chownCall?.command, "sudo");
-    check("the escalated call still carries the real chown", chownCall?.args.includes("chown"), true);
-    check("the fixed owner travels unchanged", chownCall?.args.includes("1000:1000"), true);
-  }
-
-  // createArchive must escalate for what tar actually reads, not only the archive's own
-  // destination (XS round 4 fallout from the chown fix above): a locked-down auth-secrets
-  // needs tar to run under its owner even when the destination is freely writable — the
-  // shape that made a real migrate archive fail with "tar: data/auth-secrets: Cannot open:
-  // Permission denied" on GitHub Actions right after that fix landed.
-  {
-    const calls: { command: string; args: string[] }[] = [];
-    const archiveStub = {
-      description: "stub",
-      async exec(command: string, args: string[]): Promise<ExecResult> {
-        calls.push({ command, args });
-        if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
-        if (command === "test" && args[0] === "-w" && args[1] === "/srv/archive-owner-check/data/auth-secrets") {
-          return { code: 1, stdout: "", stderr: "" };
-        }
-        if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
-        if (command === "sh" && args.some((arg) => arg.includes("command -v sudo"))) return { code: 0, stdout: "/usr/bin/sudo\n", stderr: "" };
-        if (command === "sudo" && args[0] === "-n" && args[1] === "true") return { code: 0, stdout: "", stderr: "" };
-        return { code: 0, stdout: "", stderr: "" };
-      },
-      async exists(path: string): Promise<boolean> { return path === "/srv/archive-owner-check/data/auth-secrets"; },
-    } as unknown as Transport;
-    await createArchive(
-      { settings: { dataDir: "/srv/archive-owner-check/data", env: {} }, transport: archiveStub } as unknown as Context,
-      { archive: "/srv/archive-owner-check/backups/out.tar.gz", profile: "share" },
+    await ensureDataDirs({ settings: { dataDir, env: {} }, transport: ownerStub } as unknown as Context);
+    const chownCalls = calls.filter((call) => call.command === "sudo" && call.args.includes("chown"));
+    check("a directory-writable-but-wrong-owner target still escalates the chown", chownCalls.length, 1);
+    check("the escalated call still carries the real chown", chownCalls[0]?.args.includes("chown"), true);
+    check("the fixed owner travels unchanged", chownCalls[0]?.args.includes("1000:1000"), true);
+    check("the ownership change is never recursive", calls.some((call) => call.args.includes("-R")), false);
+    check(
+      "exactly the paths this run created are named, nothing else",
+      JSON.stringify(chownCalls[0]?.args.slice(chownCalls[0]!.args.indexOf("1000:1000") + 1)),
+      JSON.stringify([dataDir, `${dataDir}/config`, `${dataDir}/workspace`, `${dataDir}/auth-secrets`]),
     );
-    const tarCall = calls.find((call) => call.args.includes("tar"));
-    check("a writable-destination archive still escalates for an unreadable auth-secrets", tarCall?.command, "sudo");
-    check("the escalated call still runs the real tar", tarCall?.args.includes("tar"), true);
+    check("no unprivileged chown is attempted either", calls.some((call) => call.command === "chown"), false);
   }
 }
 

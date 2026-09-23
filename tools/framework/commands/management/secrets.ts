@@ -7,7 +7,7 @@
 import { writeFile, readFile, access } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/log.ts";
 import { emit } from "#src/core/output.ts";
-import { parseEnv } from "#src/core/env.ts";
+import { parseEnv, serializeEnvLine } from "#src/core/env.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
@@ -105,7 +105,7 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   }
 
   if (targetSupplied.length > 0) {
-    const content = targetSupplied.map((entry) => `${entry.name}=${values[entry.name] ?? ""}`).join("\n");
+    const content = targetSupplied.map((entry) => serializeEnvLine(entry.name, values[entry.name] ?? "")).join("\n");
     await loadSecrets(ctx, `${content}\n`);
     log(`applied ${targetSupplied.length} target value(s) from ${path}`);
     // Target values are on disk but nothing running has READ them: config/.env is a file
@@ -204,7 +204,7 @@ function renderRecoveredStore(entries: SecretRequirement[], values: Record<strin
     lines.push(`# --- ${location} ---`);
     for (const entry of group) {
       lines.push(`# used by: ${entry.usedBy}`);
-      lines.push(`${entry.name}=${values[entry.name] ?? ""}`);
+      lines.push(serializeEnvLine(entry.name, values[entry.name] ?? ""));
     }
     lines.push("");
   }

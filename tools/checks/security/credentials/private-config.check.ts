@@ -12,7 +12,7 @@ import {
   execWithSecrets,
 } from "#framework/security/private-config.ts";
 import { clearRecipesDir, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
-import { locksDir } from "#framework/core/env.ts";
+import { locksDir, parseEnv } from "#framework/core/env.ts";
 import { LocalTransport, WslTransport, spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -21,6 +21,11 @@ assert.equal(upsertEnvValue("A=1\nB=2\n", "B", "updated"), "A=1\nB=updated\n");
 assert.equal(upsertEnvValue("A=1\n", "B", "added"), "A=1\nB=added\n");
 assert.throws(() => upsertEnvValue("", "BAD-NAME", "x"), /invalid environment variable name/);
 assert.throws(() => upsertEnvValue("", "GOOD", "line\nbreak"), /contains a newline/);
+// P2-13: the write side is parseEnv's exact inverse — a padded value used to be written
+// back bare and silently trimmed by the next read. Probe shapes below, not credentials.
+assert.equal(upsertEnvValue("A=1\nPADDED=x\n", "PADDED", " padded "), "A=1\nPADDED=' padded '\n");
+assert.deepEqual(parseEnv(upsertEnvValue("A=1\nPADDED=x\n", "PADDED", " padded ")), { A: "1", PADDED: " padded " });
+assert.equal(upsertEnvValue("A=1\n", "QUOTED", `a"b`), `A=1\nQUOTED='a"b'\n`);
 assert.equal(generatePrivateSecret(16).length > 0, true);
 registerPrivateSecret("synthetic-private-secret");
 assert.throws(() => generatePrivateSecret(8), /at least 16/);

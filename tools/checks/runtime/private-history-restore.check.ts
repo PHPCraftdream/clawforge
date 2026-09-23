@@ -99,6 +99,15 @@ async function realPosixTransport(): Promise<Transport | undefined> {
   return undefined;
 }
 
+/** Writes test-fixture content into a real target path that a prior restore may already have
+ *  re-owned to the fixed container uid (round 6/7 P1-09): the content travels as a positional
+ *  shell argument, never interpolated, so it needs no quoting regardless of what it contains. */
+async function privilegedWrite(ctx: Context, transport: Transport, path: string, content: string): Promise<void> {
+  const prefix = await sudoFor(ctx, path);
+  const [head, ...rest] = [...prefix, "sh", "-c", 'printf %s "$1" > "$2"', "sh", content, path];
+  await transport.exec(head, rest);
+}
+
 const previousRecipes = (() => {
   try { return recipesDirectory(); } catch { return undefined; }
 })();
@@ -362,8 +371,9 @@ try {
     let restoreThrew = false;
     try {
       await withOutputSink((chunk) => { restoreOutput += chunk; }, () => restoreArchive(restoreCtx, fullBackup, { force: true }));
-    } catch {
+    } catch (error) {
       restoreThrew = true;
+      process.stderr.write(`  (diagnostic) fresh-deployment restore threw: ${(error as Error).message}\n`);
     }
     check("the restore through the fresh deployment succeeds", restoreThrew, false);
     check("its ledger now holds the restored history", sorted(await persistedPrivatePaths()), sorted(RECORDED));
@@ -433,7 +443,7 @@ try {
 
     // A corrupt history copy must fail the restore — with the previous data put back and the
     // ledger untouched.
-    await transport.writeFile(`${DATA}/workspace/live-marker.md`, "previous data\n");
+    await privilegedWrite(ctx, transport, `${DATA}/workspace/live-marker.md`, "previous data\n");
     // A separate archive tree, so its markers differ from the live ones.
     await transport.mkdirp(`${PARENT}/corrupt-src/data/config`);
     await transport.mkdirp(`${PARENT}/corrupt-src/data/workspace`);

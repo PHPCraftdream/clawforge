@@ -61,6 +61,10 @@ async function windowsOwnerSid(): Promise<string> {
   return /S-1-\d+(?:-\d+)+/.exec(result.stdout)?.[0] ?? "";
 }
 
+function ownerAlias(trustee: string, owner: string): string {
+  return trustee === "LA" && owner.endsWith("-500") ? owner : trustee;
+}
+
 async function savedAces(file: string): Promise<{ daclProtected: boolean; aces: { type: string; flags: string; rights: string; trustee: string }[] }> {
   const saved = join(tmpdir(), `clawforge-store-check-dacl-${randomBytes(6).toString("hex")}.txt`);
   const result = await icacls([file, "/save", saved]);
@@ -430,8 +434,8 @@ try {
       const allowed = [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"];
       const storeDacl = await savedAces(sealedStore);
       check("the fresh store's DACL is sealed against inheritance", storeDacl.daclProtected && storeDacl.aces.every((ace) => !ace.flags.includes("ID")), true);
-      check("the fresh store names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ace.trustee)), true);
-      check("the fresh store gives the owner full access", storeDacl.aces.some((ace) => ace.trustee === owner && /^FA$/i.test(ace.rights)), true);
+      check("the fresh store names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ownerAlias(ace.trustee, owner))), true);
+      check("the fresh store gives the owner full access", storeDacl.aces.some((ace) => ownerAlias(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights)), true);
       const dirDacl = await savedAces(secretsDirectory);
       check("secrets/ itself is sealed against inheritance", dirDacl.daclProtected && dirDacl.aces.every((ace) => !ace.flags.includes("ID")), true);
       check("secrets/ no longer grants the planted Guests access", dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)), true);
@@ -458,7 +462,7 @@ try {
       const allowed = [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"];
       const storeDacl = await savedAces(sealedStore);
       check("--force's replacement keeps the DACL sealed against inheritance", storeDacl.daclProtected && storeDacl.aces.every((ace) => !ace.flags.includes("ID")), true);
-      check("--force's replacement names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ace.trustee)), true);
+      check("--force's replacement names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ownerAlias(ace.trustee, owner))), true);
       const dirDacl = await savedAces(secretsDirectory);
       check("--force seals secrets/ again despite the planted Guests ACE", dirDacl.daclProtected && dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)), true);
     } else {

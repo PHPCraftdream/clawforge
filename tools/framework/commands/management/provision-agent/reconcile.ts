@@ -28,6 +28,7 @@ import {
   agentsDeleteArgv,
 } from "./declaration.ts";
 import type { AgentConfig, RecipeAgentBundle, CronJob } from "./declaration.ts";
+import { assertTargetContained } from "./target-boundary.ts";
 
 /** Mirrors the recipe's runtime files onto the target, deletions included.
  *
@@ -58,6 +59,14 @@ export async function syncRecipeFiles(
 
   const declared = new Set(relPaths);
   const stale = alreadyThere.filter((rel) => !declared.has(rel));
+  // P1-02 (docs/review-2026-09-23-xxa-round-6.md): the target workspace is reachable by the
+  // instance, so every path this sync will touch — creations, stale deletions, shape
+  // changes — must physically resolve inside the data directory before anything is mutated.
+  await assertTargetContained(ctx.transport, ctx.settings.dataDir, [
+    targetDir,
+    ...relPaths.map((rel) => `${targetDir}/${rel}`),
+    ...stale.map((rel) => `${targetDir}/${rel}`),
+  ]);
   const removed = new Set<string>();
   const isBelow = (parent: string, child: string): boolean => child.startsWith(`${parent}/`);
 
@@ -124,12 +133,18 @@ export async function writeWorkspacePromptFiles(
   const existing = await ctx.transport.listFiles(targetDir);
   const declared = new Set(Object.keys(promptFiles));
   const managed = new Set(managedPromptFiles);
+  const stale = existing.filter((rel) => !rel.includes("/") && rel.endsWith(".md") && !declared.has(rel) && managed.has(rel));
+  // Same target boundary as the recipe mirror: a prompt name comes from the recipe, and the
+  // workspace is reachable by the instance, so the same planted-link threat applies.
+  await assertTargetContained(ctx.transport, ctx.settings.dataDir, [
+    targetDir,
+    ...Object.keys(promptFiles).map((name) => `${targetDir}/${name}`),
+    ...stale.map((rel) => `${targetDir}/${rel}`),
+  ]);
   // Keep nested state (especially memory/) and all files with no ownership proof untouched.
   // Only a top-level markdown file this agent creation recorded can be withdrawn safely.
-  for (const rel of existing) {
-    if (!rel.includes("/") && rel.endsWith(".md") && !declared.has(rel) && managed.has(rel)) {
-      await ctx.transport.remove(`${targetDir}/${rel}`);
-    }
+  for (const rel of stale) {
+    await ctx.transport.remove(`${targetDir}/${rel}`);
   }
   await ctx.transport.mkdirp(targetDir);
   for (const [name, content] of Object.entries(promptFiles)) {

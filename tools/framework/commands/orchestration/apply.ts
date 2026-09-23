@@ -22,13 +22,14 @@ import { secrets } from "../management/secrets.ts";
 import { up, restart } from "../lifecycle/lifecycle.ts";
 import { provisionAgent, removeOwnedObject } from "../management/provision-agent/index.ts";
 import { recoverEnv } from "../recover-env/index.ts";
+import { readLedgerStrict } from "#src/set/ownership/ledger.ts";
 import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
 import type { StepStatus } from "#src/service/operations.ts";
 import { runOwning, takeLock, withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
-import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
+import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest, readInstalledSetStrict } from "#src/set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
@@ -46,6 +47,18 @@ export async function runningImageUnconfirmed(ctx: Context): Promise<boolean> {
   // runtime backend that does not implement this). Only checking the former let a fully
   // unknown image identity sail through as if it were confirmed.
   return running === undefined || running.digests.length === 0;
+}
+
+/** Strict control-marker preflight for `--set`, taken under the instance lock before the
+ *  first live mutation: a corrupt installed-set marker or ownership ledger refuses the whole
+ *  install while the target is still untouched. The strict reads inside
+ *  recordInstalledSet()/recordOwned() already protect the bytes — but by the time they run,
+ *  the rollback artifact is stored, the apply steps have executed and any provisioning has
+ *  created objects, so a late failure leaves live state the markers can never describe.
+ *  Refusing first keeps "the marker is corrupt" from also becoming "the instance drifted". */
+export async function preflightControlMarkers(ctx: Context): Promise<void> {
+  await readInstalledSetStrict(ctx);
+  await readLedgerStrict(ctx);
 }
 
 /** How each executable step is actually performed. Commands are called directly rather than
@@ -296,6 +309,10 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
       // (rollback --set) that already holds the instance lock for the whole operation must
       // not have this acquire refuse itself as "another operation changing this instance".
       await withLockUnlessHeld(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock") }, async () => {
+        // First thing under the lock, before storeArtifactForRollback — the first bytes this
+        // run writes anywhere. A corrupt control marker must stop the run here, not after
+        // the steps have changed the instance.
+        await preflightControlMarkers(ctx);
         await storeArtifactForRollback(artifact, verified);
         const ranSteps = await applyFromSource(ctx, args, operationId);
 

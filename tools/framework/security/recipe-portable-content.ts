@@ -36,6 +36,14 @@
 // elsewhere; the audit's recommendation verbatim is to refuse or verify the resolved
 // target stays inside the source root before reading through.
 //
+// The walk ROOT is inside this rule too (round 6, P1-05): containment used to be asked
+// only of entries whose Dirent reported "symlink", so a walk root that was itself the
+// escape — an `agent/` that is really a link to a directory outside the recipe — had that
+// directory's files walk in as ordinary children. The root is now resolved and
+// containment-vetted before the first readdir, every resolved path is contained whatever
+// the Dirent claims, and a root that exists but does not resolve fails loudly instead of
+// reading as an absent bundle.
+//
 // Staying inside is necessary but not sufficient, and that gap was the round-3 P1-01: an
 // INTERNAL link whose own name is public and whose target is a declared private file or
 // directory read through the alias as if the target had never been declared — by checksums,
@@ -46,7 +54,7 @@
 // never against the alias name a private target happens to be reachable by — and a link that
 // resolves to a directory the walk is already inside is refused instead of recursed into.
 
-import { access, readdir, realpath, stat } from "node:fs/promises";
+import { access, lstat, readdir, realpath, stat } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { warn } from "../core/log.ts";
 import { declaredPrivateFiles } from "../service/recipe.ts";
@@ -92,7 +100,11 @@ export function excludesPortablePath(relativePath: string, declared: readonly st
  *
  *  A symlink resolving outside the recipe directory throws — a link is followed only once
  *  its target is proven to stay inside the recipe's own tree; a directory that points
- *  inside is walked, anything else verified-inside is carried as a file. INSIDE is not the
+ *  inside is walked, anything else verified-inside is carried as a file. The WALK ROOT is
+ *  held to the same rule before anything is listed (P1-05): it is resolved and contained
+ *  first, because when the root itself is the escape — an `agent/` that is really a link
+ *  to elsewhere — no child Dirent can ever report it; and containment is decided on the
+ *  resolved path of every entry, whatever type the Dirent reports. INSIDE is not the
  *  whole rule, though: privacy is decided on the resolved path as well as the logical one,
  *  so a link whose own name is public but whose target is a declared private file, a
  *  private directory or a sensitive-named target is held back exactly as the target itself
@@ -137,7 +149,17 @@ export async function collectPortableRecipeFiles(
       // checks above must hold for the real path too. A public name pointing at a private
       // target is still the private target, and a declaration written against the real path
       // must not be dodgeable by reaching the same directory under an alias (round 3, P1-01).
-      const real = entry.isSymbolicLink() ? await realpath(full) : resolve(realCurrent, entry.name);
+      const real = entry.isSymbolicLink()
+        ? await realpath(full).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") {
+              // A child link that resolves nowhere is a broken bundle, not an absent one:
+              // fail the walk under the link's own name rather than a bare ENOENT a caller
+              // could misread as "nothing here" (P1-05).
+              throw new Error(`${recipeRelative} is a symlink that does not resolve`);
+            }
+            throw error;
+          })
+        : resolve(realCurrent, entry.name);
       const realRecipeRelative = relative(realRoot, real).replaceAll("\\", "/");
       if (realRecipeRelative !== recipeRelative) {
         if (excludesPortablePath(realRecipeRelative, declared)) {
@@ -149,14 +171,17 @@ export async function collectPortableRecipeFiles(
           continue;
         }
       }
+      // Containment is decided on the RESOLVED path of every entry, whatever the Dirent
+      // reports (P1-05): the type bit is the walk's own bookkeeping, not evidence of where
+      // the bytes live. Inside a contained walk a plain entry is contained by
+      // construction, so this only fires once the walk itself has already escaped — the
+      // same refusal a symlink earns, without first asking the Dirent's opinion.
+      if (real !== realRoot && !real.startsWith(realRoot + sep)) {
+        throw new Error(
+          `${recipeRelative} resolves outside the recipe directory — refusing to follow it to ${real}`,
+        );
+      }
       if (entry.isSymbolicLink()) {
-        // A link is read through only once its target is proven to stay inside the recipe:
-        // excluding a path by name means nothing if the name leads somewhere else.
-        if (real !== realRoot && !real.startsWith(realRoot + sep)) {
-          throw new Error(
-            `${recipeRelative} is a symlink resolving outside the recipe directory — refusing to follow it to ${real}`,
-          );
-        }
         const stats = await stat(real);
         if (stats.isDirectory()) await walkInto(full, relativePath, real, recipeRelative, realRecipeRelative, activeDirs);
         else files.push(relativePath);
@@ -192,7 +217,30 @@ export async function collectPortableRecipeFiles(
     }
   }
 
-  const realWalkRoot = await realpath(walkRoot);
+  let realWalkRoot: string;
+  try {
+    realWalkRoot = await realpath(walkRoot);
+  } catch (error) {
+    // A root that is genuinely not there rethrows for the caller to interpret (the agent
+    // bundle reads a plain missing agent/ as an honest undefined); a root that EXISTS but
+    // does not resolve — a dangling link — is untrusted, not absent (P1-05), and must fail
+    // the walk instead of reading as "no files".
+    if (
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+      && (await lstat(walkRoot).catch(() => undefined))?.isSymbolicLink()
+    ) {
+      throw new Error(`walk root ${walkRoot} is a symlink that does not resolve — refusing to walk it`);
+    }
+    throw error;
+  }
+  // The root itself is vetted before the first readdir: a walk root that resolves outside
+  // the recipe would have every file under it arrive as an ordinary child — no Dirent can
+  // report an escape that IS the root. Fail the whole walk, identically for every carrier.
+  if (realWalkRoot !== realRoot && !realWalkRoot.startsWith(realRoot + sep)) {
+    throw new Error(
+      `walk root ${walkRoot} resolves outside the recipe directory — refusing to walk it to ${realWalkRoot}`,
+    );
+  }
   await walk(walkRoot, "", realWalkRoot, new Set([realRoot, realWalkRoot]));
 
   if (excluded.length > 0) {
@@ -201,4 +249,34 @@ export async function collectPortableRecipeFiles(
     );
   }
   return { files, excluded };
+}
+
+/** The one walk of a recipe's `agent/` bundle, shared by every reader that needs it:
+ *  agentBundleChecksums (service/checksums.ts) and loadRecipeAgentBundle
+ *  (commands/management/provision-agent/declaration.ts) used to each answer "what agent
+ *  files exist and may this carrier touch them" with their own walk — one policy-checked,
+ *  one a raw readdir — which is exactly how a declared-private prompt file stayed out of the
+ *  checksum map while direct provisioning copied it anyway (audit 2026-09-23, P1-03). Both
+ *  now call this instead: same walkRoot trick as collectPortableRecipeFiles (declarations
+ *  stay recipe-relative even though the walk is rooted at `agent/`), and the same answer to
+ *  "no agent bundle at all" — undefined, not a thrown ENOENT, since a plain service recipe
+ *  with no agent/ directory is a normal shape, not a failure — and that verdict is the
+ *  walk root's OWN absence and nothing else (P1-05): the wrapper probes agent/ directly
+ *  and nets no ENOENT around the walk, so a dangling link named agent/, a child link that
+ *  does not resolve, or an entry that vanishes mid-walk stops the caller instead of
+ *  reading as an honestly-empty bundle. Any other error (an escaping or unresolvable
+ *  link, an escaped walk root, an unreadable tree) still throws: that is the policy
+ *  actually firing, and must stop the caller exactly as collectPortableRecipeFiles
+ *  already does for served content. */
+export async function collectPortableAgentBundleFiles(
+  recipeDirectory: string,
+): Promise<{ files: string[]; excluded: { path: string; reason: string }[] } | undefined> {
+  const agentDir = resolve(recipeDirectory, "agent");
+  try {
+    await lstat(agentDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  return collectPortableRecipeFiles(recipeDirectory, { walkRoot: agentDir });
 }

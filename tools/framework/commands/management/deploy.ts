@@ -9,10 +9,20 @@
 // rsync and ssh run on the target side (inside WSL when the tooling is on Windows), because
 // that is where the SSH keys and the tools live.
 //
-// A gate stands before either delivery: every tree about to travel — the recipes and the
-// deployment's own config/ — is walked with the same portable-content policy the other
-// carriers of recipe bytes use, and a file that policy holds private refuses the whole
-// deploy instead of being left for rsync globs to guess at (audit 2026-09-22 round 3, P1-03).
+// A gate stands before either delivery: every tree about to travel — the checkout root
+// itself, the recipes and the deployment's own config/ — is walked with the same
+// portable-content policy the other carriers of recipe bytes use (the checkout root only
+// against the generic sensitive-NAME half of it, having no recipe.json to declare files
+// against), and a file that policy holds private refuses the whole deploy instead of being
+// left for rsync globs to guess at (audit 2026-09-22 round 3, P1-03; audit 2026-09-23
+// round 4, P1-05 closed the checkout-root gap in that gate).
+//
+// Two more gates stood up in audit 2026-09-23 round 6. The destructive mirror may only run
+// in a remote root deploy itself created — marked, symlink-canonical and probed before
+// every sync, adoptable only on purpose (P1-06: --path reached `mkdir -p` and rsync
+// --delete with no validation at all). And the checkout scan's tracked-path exemption now
+// requires byte identity, not a reviewed PATH: git status decides whether the bytes there
+// now are the committed ones (P1-07).
 //
 // Prerequisites on the server are the user's responsibility, as everywhere else — this
 // installs nothing and reports precisely what is missing.
@@ -31,34 +41,26 @@
 import { log, info, die } from "#src/core/log.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, recipesDir, applicationRecipesSetting } from "#src/runtime/deployment.ts";
-import { SshTransport } from "#src/runtime/transport.ts";
-import { collectPortableRecipeFiles } from "#src/security/recipe-portable-content.ts";
+import { collectPortableRecipeFiles, SENSITIVE_RECIPE_NAME } from "#src/security/recipe-portable-content.ts";
+import {
+  EXCLUDES,
+  MARKER_FILE,
+  MARKER_PREFIX,
+  collectSensitiveCheckoutNames,
+  markerWriteScript,
+  parseRootProbe,
+  quoted,
+  rootInventoryScript,
+  rootProbeScript,
+  validatedRemoteRoot,
+} from "#src/security/deploy-boundary.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport.ts";
 import { readdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
 
-/** Never leaves this machine. Local state, credentials, and every deployment directory —
- *  the deployment's own files are delivered separately and by name. */
-const EXCLUDES = [
-  ".env",
-  ".mcp.json",
-  ".git/",
-  "apps/",
-  "backups/",
-  "data/",
-  "snapshots/",
-  "secrets/",
-  "*.tar.gz",
-  "*.tar.zst",
-  "*.token",
-];
-
-/** Quotes a value for the remote shell: ssh joins its arguments into one command line, so
- *  a path with a space would otherwise arrive as two. */
-function quoted(value: string): string {
-  return SshTransport.quote(value);
-}
+export { collectSensitiveCheckoutNames, rootProbeScript, parseRootProbe, markerWriteScript };
 
 /** Runs a script on the target through ssh.
  *
@@ -145,12 +147,15 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   let target: string | undefined;
   let remotePath = "/opt/openclaw";
   let bootstrapRemote = true;
+  let adopt = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--path") {
       remotePath = args[index + 1] ?? die("--path needs a directory");
       index += 1;
+    } else if (arg === "--adopt") {
+      adopt = true;
     } else if (arg === "--no-bootstrap") {
       bootstrapRemote = false;
     } else if (arg.startsWith("-")) {
@@ -160,7 +165,12 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
     }
   }
 
-  if (target === undefined) die("usage: ./clawforge deploy user@host [--path <dir>] [--no-bootstrap]");
+  if (target === undefined) die("usage: ./clawforge deploy user@host [--path <dir>] [--adopt] [--no-bootstrap]");
+
+  // The destination of a --delete mirror gets its local examination before anything
+  // remote runs — no connection, no mkdir, no rsync (audit 2026-09-23 round 6, P1-06).
+  // The marker protocol below asks the remote half of the same question.
+  remotePath = validatedRemoteRoot(remotePath);
 
   const name = deploymentName();
   const remoteApp = `${remotePath}/apps/${name}`;
@@ -189,27 +199,45 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // covers every recipe directory and the deployment's own config/, the second tree the
   // syncs below deliver. It reports only what currently EXISTS: after `recipe import` the
   // declared bytes are absent (import copies the declaration, not the files) and deploying
-  // is fine.
+  // is fine. A third tree gets the same sensitive-NAME half of the policy below, over the
+  // same names EXCLUDES cannot express: the checkout root itself, the FIRST thing that
+  // travels, below (audit 2026-09-23 round 4, P1-05).
   const recipesRoot = recipesDir();
   const carrying: string[] = [];
-  let recipeNames: string[] = [];
+  // Round 6, P1-07: this used to read the top level of the recipes root and keep only
+  // where a `.filter(entry => entry.isDirectory())` sat — so a shared.secrets.env or
+  // .env.local DIRECTLY under the root was walked by nothing (the checkout scan skips
+  // top-level apps/, where this root lives in a monorepo, and EXCLUDES has no generic
+  // pattern for either shape), while the recipes rsync below ships the whole root. Every
+  // top-level entry now gets the generic sensitive-NAME half of the same policy — files,
+  // symlinks and directories alike — and each recipe directory is then walked by the
+  // shared policy for everything inside it, exactly as before. No generic pattern is
+  // added to EXCLUDES to cover the file case: this file's doctrine is REFUSE, not exclude
+  // (P1-03), and rsync globs would compute a second, independently-divergent list —
+  // precisely the "two answers for one name" the audit keeps finding.
+  let recipeEntries: { name: string; isDirectory(): boolean }[] = [];
   try {
-    recipeNames = (await readdir(recipesRoot, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
+    recipeEntries = await readdir(recipesRoot, { withFileTypes: true });
+    recipeEntries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   } catch (error) {
     // No recipes directory: nothing synced to scan, and the later rsync of recipes/ fails
     // exactly as it does today. Any other read error is not ours to interpret.
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  for (const name of recipeNames) {
+  for (const entry of recipeEntries) {
+    // A sensitive-named top-level entry — file, link or directory — refuses on its own,
+    // before the walk below could even be reached.
+    if (SENSITIVE_RECIPE_NAME.test(entry.name)) {
+      carrying.push(`recipes/${entry.name} (sensitive-name policy)`);
+      continue;
+    }
+    if (!entry.isDirectory()) continue;
     // One walk of each recipe by the shared policy: every held-back entry comes back with
     // its reason (declared privateFiles, sensitive-name policy, or a symlink target), which
     // subsumes the old declared-only scan rather than running beside it.
-    const walked = await collectPortableRecipeFiles(resolve(recipesRoot, name));
-    for (const entry of walked.excluded) {
-      carrying.push(`recipes/${name}/${entry.path} (${entry.reason})`);
+    const walked = await collectPortableRecipeFiles(resolve(recipesRoot, entry.name));
+    for (const excluded of walked.excluded) {
+      carrying.push(`recipes/${entry.name}/${excluded.path} (${excluded.reason})`);
     }
   }
   try {
@@ -224,6 +252,15 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  // The tree the FIRST rsync below sends wholesale — the checkout root itself — is not a
+  // recipe and carries no privateFiles declaration, but the generic sensitive-NAME half of
+  // the same policy still applies to it: a stray tools/local/.env.production or
+  // notes/service.secrets.env outside apps/ and secrets/ must refuse exactly like the same
+  // name would one directory over, inside a recipe or config/ (audit 2026-09-23 round 4,
+  // P1-05 — EXCLUDES below is a fixed glob list with no `.env.*` or `*.secrets.env`).
+  for (const entry of await collectSensitiveCheckoutNames(sourceRoot)) {
+    carrying.push(`${entry.path} (${entry.reason})`);
+  }
   if (carrying.length > 0) {
     die(
       "deploy refuses to send files the portable-content policy holds private:\n" +
@@ -234,11 +271,11 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
         "declaration like vault[1] would either leak or over-exclude an undeclared sibling " +
         "(audit 2026-09-22, P1-03, the two failure directions P1-02 fixed for tar) — and " +
         "these bytes land on another host, with nothing left to review. The scan covers the " +
-        "recipes tree and the synced config/ directory alike, whether or not anything " +
-        "declares the name. A declaration whose files are absent does not refuse — that is " +
-        "the normal state after `recipe import`. Keep credentials in the deployment's .env " +
-        "or secrets/ (they stay here), or have the recipe's prepare hook create them on the " +
-        "target.",
+        "whole checkout the first sync sends, the recipes tree and the synced config/ " +
+        "directory alike, whether or not anything declares the name. A declaration whose " +
+        "files are absent does not refuse — that is the normal state after `recipe import`. " +
+        "Keep credentials in the deployment's .env or secrets/ (they stay here), or have the " +
+        "recipe's prepare hook create them on the target.",
     );
   }
 
@@ -292,6 +329,103 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
       `cannot create ${remotePath} on ${target}: it needs root and sudo asks for a password.\n` +
         `Prepare it once there:  sudo install -d -o "$USER" ${remotePath}`,
     );
+  }
+
+  // The remote root is examined before its first --delete (audit 2026-09-23 round 6,
+  // P1-06). The doctrine: only a directory CREATED for this deployment may receive the
+  // mirror — `mkdir -p` above proves a path can exist, never that it was made for this,
+  // that it is empty, or that anything else owns it. Adoption of an existing tree is an
+  // explicit --adopt operation that first lists what the mirror would replace, and a root
+  // carrying a FOREIGN marker is never adoptable at all: it belongs to another deployment,
+  // and --delete in it would erase that deployment's framework, its apps/ and all. The
+  // local half of the question (shape, width, data/backups) was answered by
+  // validatedRemoteRoot before anything remote ran; this is the remote half.
+  const markerPath = `${remotePath}/${MARKER_FILE}`;
+  const expectedMarker = `${MARKER_PREFIX}${name}`;
+  log(`checking that ${remotePath} on ${target} is a deploy root`);
+  const probed = await runRemote(ctx, target, rootProbeScript(remotePath, markerPath), {
+    allowFailure: true,
+  });
+  if (probed.code !== 0) {
+    // A probe that cannot run answers nothing, and "nothing" is never authorization for
+    // --delete in a directory nobody could look at.
+    die(
+      `could not inspect ${remotePath} on ${target} (exit ${probed.code}): ${probed.stderr.trim()}`,
+    );
+  }
+  const probe = parseRootProbe(probed.stdout);
+  if (probe.state === "missing") {
+    die(
+      `${remotePath} does not exist on ${target}.\n` +
+        `Prepare it once there:  sudo install -d -o "$USER" ${remotePath}`,
+    );
+  }
+  if (probe.canonical === undefined) {
+    die(
+      `could not read the canonical path of ${remotePath} on ${target} — refusing to ` +
+        "mirror with --delete into a directory whose real location is unknown.",
+    );
+  }
+  if (probe.canonical !== remotePath) {
+    // Every component must be a real directory: --delete on the target follows links, so a
+    // symlinked component turns "delete what the mirror carries" into "delete whatever the
+    // link points at" — including the deploy root of something else that shares it.
+    die(
+      `${remotePath} on ${target} is reached through a symlink: its canonical path is ` +
+        `${probe.canonical}. Every component of a deploy root must be a real directory so ` +
+        "deletions cannot escape through a link — deploy to the canonical path instead, or " +
+        "replace the link with a real directory.",
+    );
+  }
+  if (probe.marker !== "absent" && probe.marker !== expectedMarker) {
+    die(
+      `${remotePath} on ${target} belongs to something else: it carries the marker\n` +
+        `  ${probe.marker}\n` +
+        `(this deployment would write ${expectedMarker}). A foreign marker is never ` +
+        "adoptable — choose a different --path, or remove the other deployment from that " +
+        "root properly.",
+    );
+  }
+  if (probe.marker === "absent") {
+    // No marker: either deploy created this root (proven by the probe's emptiness), or an
+    // operator says --adopt — and --adopt puts the affected inventory on screen first, so
+    // taking the root over can never be a surprise to whoever runs it.
+    if (probe.empty !== "yes" && !adopt) {
+      die(
+        `${remotePath} on ${target} already holds files and is not marked as a deploy ` +
+          "root. The first deploy may only mirror into a directory deploy created for it — " +
+          "mkdir -p above proves the path exists, nothing more. Re-run with --adopt to list " +
+          "what is there and take the root over on purpose.",
+      );
+    }
+    if (probe.empty !== "yes") {
+      const inventory = await runRemote(ctx, target, rootInventoryScript(remotePath), {
+        allowFailure: true,
+      });
+      if (inventory.code !== 0) {
+        die(
+          `could not list ${remotePath} on ${target} (exit ${inventory.code}): ` +
+            `${inventory.stderr.trim()} — refusing to adopt a root whose contents cannot ` +
+            "be shown",
+        );
+      }
+      if (inventory.stdout.trim() !== "") info(inventory.stdout.trim());
+    }
+    const written = await runRemote(
+      ctx,
+      target,
+      markerWriteScript(markerPath, expectedMarker, `created=${new Date().toISOString()} id=${randomUUID()}`),
+      { allowFailure: true },
+    );
+    if (written.code !== 0) {
+      // An unmarkable root is not a root this deploy may mirror into: the next run would
+      // find it non-empty and unmarked and rightly refuse — unless this run erased
+      // something first, which is exactly the order the marker exists to prevent.
+      die(
+        `could not mark ${remotePath} on ${target} (exit ${written.code}): ${written.stderr.trim()}`,
+      );
+    }
+    log(`marked ${remotePath} on ${target} as the root of this deployment`);
   }
 
   const source = await ctx.paths.toTarget(sourceRoot);

@@ -6,13 +6,13 @@
 // name, so provision-agent.ts's own barrel re-export means none of those import sites
 // need to change.
 
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { die } from "#src/core/log.ts";
 import { recipesDir } from "#src/runtime/deployment.ts";
 import { containerPaths } from "#src/runtime/mounts.ts";
 import { safeName } from "#src/core/names.ts";
-import { collectPortableRecipeFiles } from "#src/security/recipe-portable-content.ts";
+import { collectPortableAgentBundleFiles, collectPortableRecipeFiles } from "#src/security/recipe-portable-content.ts";
 
 const DEFAULT_CRON_SCHEDULE = "17 3 * * *"; // daily, off-peak, off the :00/:30 pileup minutes
 const DEFAULT_CRON_TIMEOUT_SECONDS = 900;
@@ -79,18 +79,48 @@ export async function collectRecipeFiles(dir: string, excludeDir: string): Promi
 
 /** Exported so `inspect` compares the SAME declaration provisioning acts on: two readers of
  *  one config.json, each with its own defaults, is how an inspection comes to disagree with
- *  the command it is supposed to be checking. */
+ *  the command it is supposed to be checking.
+ *
+ *  Reads through the SAME canonical walker as the set manifest and agentBundleChecksums
+ *  (audit 2026-09-23, P1-03): a raw `readdir`+`readFile` here used to bypass the
+ *  portable-content policy entirely, so `privateFiles: ["agent/private.md"]` kept the file
+ *  out of the manifest and the checksum map while direct provisioning copied it into the
+ *  agent's workspace anyway, and a public-named symlink was read straight through with no
+ *  containment check. The walk runs once, before any file is read, so containment and
+ *  exclusion are both settled before a single byte moves. The walk root itself is vetted
+ *  the same way (round 6, P1-05): an `agent/` that is itself a link out of the recipe — or
+ *  one that does not resolve — refuses provisioning exactly as an escaping child link
+ *  does, while a plainly absent agent/ stays the honest "no bundle" case. config.json and — when the recipe
+ *  declares a cron job — cron-message.txt are treated as mandatory: if the policy holds
+ *  either back, provisioning refuses instead of silently reading it anyway or silently
+ *  dropping the cron job the recipe declared. */
 export async function loadRecipeAgentBundle(recipeName: string): Promise<RecipeAgentBundle> {
   const recipeDir = resolve(recipesDir(), recipeName);
   const agentDir = resolve(recipeDir, "agent");
 
+  const walked = await collectPortableAgentBundleFiles(recipeDir);
+  if (walked === undefined) {
+    die(`recipe "${recipeName}" has no agent bundle — expected recipes/${recipeName}/agent/config.json`);
+  }
+  const { files, excluded } = walked;
+  // `files` is walk-root-relative (bare "config.json"); `excluded` is recipe-relative
+  // ("agent/config.json") — collectPortableRecipeFiles applies the policy against the
+  // recipe-relative path even when walkRoot is the agent/ subdirectory. Look up with the
+  // same prefix `excluded` actually carries, or a declared-private mandatory file (config.json,
+  // cron-message.txt) never matches and the refusal below never fires.
+  const reasonFor = (name: string): string | undefined => excluded.find((entry) => entry.path === `agent/${name}`)?.reason;
+
+  const configExcluded = reasonFor("config.json");
+  if (configExcluded !== undefined) {
+    die(`recipe "${recipeName}": agent/config.json is excluded by the portable-content policy (${configExcluded}) — the agent bundle cannot be provisioned`);
+  }
+  if (!files.includes("config.json")) {
+    die(`recipe "${recipeName}" has no agent bundle — expected recipes/${recipeName}/agent/config.json`);
+  }
   let configRaw: string;
   try {
     configRaw = await readFile(resolve(agentDir, "config.json"), "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      die(`recipe "${recipeName}" has no agent bundle — expected recipes/${recipeName}/agent/config.json`);
-    }
     throw new Error(`recipe "${recipeName}" agent/config.json could not be read: ${(error as Error).message}`);
   }
   let parsed: unknown;
@@ -101,19 +131,21 @@ export async function loadRecipeAgentBundle(recipeName: string): Promise<RecipeA
   }
   const config = parseAgentConfig(parsed);
 
+  // Top-level *.md only, exactly as the previous non-recursive readdir did — a file the
+  // walker already excluded (declared private or sensitive-named) never reaches `files`, so
+  // it never reaches promptFiles or the workspace it gets written to.
   const promptFiles: Record<string, string> = {};
-  for (const name of await readdir(agentDir)) {
-    if (!name.endsWith(".md")) continue;
-    promptFiles[name] = await readFile(resolve(agentDir, name), "utf8");
+  for (const rel of files) {
+    if (rel.includes("/") || !rel.endsWith(".md")) continue;
+    promptFiles[rel] = await readFile(resolve(agentDir, rel), "utf8");
   }
 
+  const cronExcluded = reasonFor("cron-message.txt");
   let cronMessage: string | undefined;
-  try {
+  if (files.includes("cron-message.txt")) {
     cronMessage = (await readFile(resolve(agentDir, "cron-message.txt"), "utf8")).trim();
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw new Error(`recipe "${recipeName}" agent/cron-message.txt could not be read: ${(error as Error).message}`);
-    }
+  } else if (cronExcluded !== undefined) {
+    die(`recipe "${recipeName}": agent/cron-message.txt is excluded by the portable-content policy (${cronExcluded}) — a declared-private or sensitive-named cron message cannot be provisioned`);
   }
   if (cronMessage !== undefined && config.cronJobName === undefined) {
     die(`recipe "${recipeName}": agent/cron-message.txt exists but config.json has no "cronJobName"`);

@@ -5,6 +5,7 @@
 //     decisions, argv, and the scope-upgrade self-heal retry) against a stubbed Context —
 //     same idiom as tools/checks/cli-helper.check.ts.
 
+import { randomBytes } from "node:crypto";
 import { mkdtemp, readFile as readBytes, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
@@ -27,7 +28,8 @@ import {
   cronRmArgv,
 } from "#framework/commands/management/provision-agent/index.ts";
 import type { Context } from "#framework/core/context.ts";
-import { LocalTransport } from "#framework/runtime/transport.ts";
+import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport.ts";
+import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { checksumOf } from "#framework/service/checksums.ts";
 
 let failed = 0;
@@ -46,6 +48,15 @@ function check(name: string, actual: unknown, expected: unknown): void {
 
 function checkTrue(name: string, actual: boolean): void {
   check(name, actual, true);
+}
+
+async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefined> {
+  try {
+    await run();
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 const CONFIG = {
@@ -252,6 +263,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
     const ctx = {
       settings: { dataDir: "/srv/clawforge" },
       transport: {
+        description: "local",
         // What a previous run left: one file the recipe still declares, and two it no
         // longer does — one of them nested, since a stale path is not always at the top.
         async listFiles(target: string): Promise<string[]> {
@@ -294,6 +306,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
     const ctx = {
       settings: { dataDir: "/srv/clawforge" },
       transport: {
+        description: "local",
         async listFiles(): Promise<string[]> {
           return [];
         },
@@ -322,6 +335,7 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
   const ctx = {
     settings: { dataDir: "/srv/clawforge" },
     transport: {
+      description: "local",
       async listFiles(): Promise<string[]> {
         return ["MEMORY.md", "custom.md", "AGENTS.md", "memory/old.md"];
       },
@@ -479,6 +493,150 @@ function stubContext(listAnswer: unknown) {
 
 // The scope-upgrade self-heal these commands rely on lives in openclaw-cli.ts and is
 // covered by openclaw-cli.check.ts — not duplicated here.
+
+// --- P1-02 (docs/review-2026-09-23-xxa-round-6.md): provisioning never writes through a
+// target symlink ---------------------------------------------------------------------------
+//
+// syncRecipeFiles/writeWorkspacePromptFiles validated the SOURCE inventory but handed the
+// target path straight to mkdirp/writeFile, both of which follow the final symlink, and
+// nothing checked the target's ancestors. A process inside the instance can leave a link in
+// its own workspace before the operator runs provisioning; the framework then overwrote
+// whatever the link pointed at, with the operator's privileges, outside the data mount.
+//
+// These scenarios need a real POSIX filesystem with real symlinks: local off Windows, a WSL
+// distribution on it — the same idiom as restore-symlink-boundary.check.ts. The recipe
+// source is read by Node directly, so on Windows it stays on the Windows side while only
+// the target lives in the distribution.
+
+async function realPosixTarget(): Promise<Transport | undefined> {
+  if (process.platform !== "win32") return new LocalTransport();
+  try {
+    const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
+    for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {
+      const candidate = new WslTransport(distro);
+      const shell = await candidate
+        .exec("sh", ["-c", "true"], { allowFailure: true, timeoutMs: 30_000 })
+        .then((result) => result.code === 0, () => false);
+      if (shell) return candidate;
+    }
+  } catch {
+    // wsl.exe missing or unlaunchable — reported as the skip below.
+  }
+  return undefined;
+}
+
+const linkTransport = await realPosixTarget();
+if (linkTransport === undefined) {
+  check("provision symlink-boundary checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
+} else {
+  // A one-shot target root with an `outside/` directory beside the data dir, plus a recipe
+  // directory Node can read directly. Cleanup removes both sides.
+  const stage = async (label: string) => {
+    const recipeDir = await mkdtemp(join(tmpdir(), `clawforge-prov-${label}-recipe-`));
+    const root = process.platform === "win32"
+      ? `/tmp/clawforge-prov-${label}-${randomBytes(4).toString("hex")}`
+      : await mkdtemp(join(tmpdir(), `clawforge-prov-${label}-root-`));
+    const dataDir = `${root}/data`;
+    const outside = `${root}/outside`;
+    await linkTransport.mkdirp(outside);
+    return {
+      root,
+      recipeDir,
+      dataDir,
+      outside,
+      async cleanup(): Promise<void> {
+        await rm(recipeDir, { recursive: true, force: true });
+        await linkTransport.remove(root).catch(() => {});
+      },
+    };
+  };
+
+  const linkContext = (dataDir: string) => ({ settings: { dataDir }, transport: linkTransport }) as unknown as Context;
+
+  // Scenario 1: the wanted file's name is already a symlink to a file outside the data
+  // dir. Before the fix, writeFile/tee followed it and clobbered the victim.
+  {
+    const s = await stage("alias");
+    try {
+      await linkTransport.writeFile(`${s.outside}/victim.txt`, "operator data\n");
+      const mirror = recipeMirrorTargetDir(s.dataDir, "alias-recipe");
+      await linkTransport.mkdirp(mirror);
+      await linkTransport.exec("ln", ["-s", `${s.outside}/victim.txt`, `${mirror}/server.ts`]);
+      await writeFile(resolve(s.recipeDir, "server.ts"), "export default 1;\n");
+
+      const message = await rejectionOf(() => syncRecipeFiles(linkContext(s.dataDir), "alias-recipe", s.recipeDir));
+      checkTrue("a target file name that is a symlink to outside the data dir is refused", message !== undefined);
+      checkTrue("the refusal names the containment boundary", (message ?? "").includes("outside the target root"));
+      check("the linked external file was never written through", await linkTransport.readFile(`${s.outside}/victim.txt`), "operator data\n");
+      checkTrue(
+        "the planted link itself survives the refused write",
+        (await linkTransport.exec("test", ["-h", `${mirror}/server.ts`], { allowFailure: true })).code === 0,
+      );
+    } finally {
+      await s.cleanup();
+    }
+  }
+
+  // Scenario 2: an ancestor of the wanted file — here the whole mirror directory — is a
+  // symlink escaping the data dir. Before the fix, mkdirp/writeFile landed in the target.
+  {
+    const s = await stage("nested");
+    try {
+      const mirror = recipeMirrorTargetDir(s.dataDir, "nested-recipe");
+      await linkTransport.mkdirp(`${s.dataDir}/workspace`);
+      await linkTransport.exec("ln", ["-s", s.outside, mirror]);
+      await writeFile(resolve(s.recipeDir, "server.ts"), "export default 1;\n");
+
+      const message = await rejectionOf(() => syncRecipeFiles(linkContext(s.dataDir), "nested-recipe", s.recipeDir));
+      checkTrue("a target ancestor that is a symlink to outside the data dir is refused", message !== undefined);
+      checkTrue("that refusal also names the containment boundary", (message ?? "").includes("outside the target root"));
+      check("the external directory received no files", await linkTransport.listFiles(s.outside), []);
+      checkTrue(
+        "the planted ancestor link itself survives",
+        (await linkTransport.exec("test", ["-h", mirror], { allowFailure: true })).code === 0,
+      );
+    } finally {
+      await s.cleanup();
+    }
+  }
+
+  // Scenario 3: the happy path — no symlinks anywhere — must still work exactly as before.
+  {
+    const s = await stage("plain");
+    try {
+      await mkdir(resolve(s.recipeDir, "data"), { recursive: true });
+      await writeFile(resolve(s.recipeDir, "server.ts"), "export default 1;\n");
+      await writeFile(resolve(s.recipeDir, "data", "page.md"), "# page\n");
+
+      const result = await syncRecipeFiles(linkContext(s.dataDir), "plain-recipe", s.recipeDir);
+      check("a link-free mirror still syncs", result, { written: 2, removed: [] });
+      const mirror = recipeMirrorTargetDir(s.dataDir, "plain-recipe");
+      check("the mirrored server file lands with its content", await linkTransport.readFile(`${mirror}/server.ts`), "export default 1;\n");
+      check("the mirrored nested page lands with its content", await linkTransport.readFile(`${mirror}/data/page.md`), "# page\n");
+    } finally {
+      await s.cleanup();
+    }
+  }
+
+  // Scenario 4: the same contract for prompt writes — AGENTS.md planted as an external
+  // link must be refused, not written through.
+  {
+    const s = await stage("prompt");
+    try {
+      await linkTransport.writeFile(`${s.outside}/victim.txt`, "operator data\n");
+      const workspace = agentWorkspaceTargetDir(s.dataDir, "demo-agent");
+      await linkTransport.mkdirp(workspace);
+      await linkTransport.exec("ln", ["-s", `${s.outside}/victim.txt`, `${workspace}/AGENTS.md`]);
+
+      const message = await rejectionOf(() => writeWorkspacePromptFiles(linkContext(s.dataDir), CONFIG, { "AGENTS.md": "# prompt\n" }));
+      checkTrue("a prompt file name that is a symlink to outside the data dir is refused", message !== undefined);
+      checkTrue("the prompt refusal names the containment boundary", (message ?? "").includes("outside the target root"));
+      check("the prompt write never reached the external file", await linkTransport.readFile(`${s.outside}/victim.txt`), "operator data\n");
+    } finally {
+      await s.cleanup();
+    }
+  }
+}
 
 process.stderr.write(failed === 0 ? "all provision-agent checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

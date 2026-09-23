@@ -112,6 +112,24 @@ function recordingDeployCtx(calls: { command: string; args: string[] }[]): Conte
       description: "stub",
       async exec(command: string, args: string[]): Promise<ExecResult> {
         calls.push({ command, args });
+        // deploy() probes the remote root before its first --delete (round 6, P1-06) —
+        // this stub answers it as an already-empty, unmarked, canonical root, so deploy
+        // proceeds exactly as it did before that probe existed. Not this file's scope
+        // (root adoption has its own dedicated coverage); this only keeps the P1-03
+        // private-declaration scenario below reachable.
+        // deploy() probes the remote root before its first --delete (round 6, P1-06) —
+        // this stub answers it as an already-empty, unmarked, canonical root, so deploy
+        // proceeds exactly as it did before that probe existed. Not this file's scope
+        // (root adoption has its own dedicated coverage); this only keeps the P1-03
+        // private-declaration scenario below reachable.
+        if (command === "ssh" && args.includes("sh") && args.includes("-c")) {
+          const script = args.at(-1) ?? "";
+          // deploy() never receives --path in this file's scenarios, so the remote root is
+          // always its fixed default.
+          if (script.includes("# clawforge-root-probe")) {
+            return { code: 0, stdout: "canonical=/opt/openclaw\nmarker=absent\nempty=yes\n", stderr: "" };
+          }
+        }
         return { code: 0, stdout: "", stderr: "" };
       },
     },

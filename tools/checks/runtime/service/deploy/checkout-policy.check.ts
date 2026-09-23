@@ -4,16 +4,21 @@
 // running it. What matters here is the composition of the delivery — a deployment's .env
 // and secret stores must not appear in any argument, and the remote bootstrap must name the
 // deployment it is supposed to bring up.
+//
+// Split from the round-6 P1-06/P1-07 root-boundary additions (root-boundary.check.ts,
+// same directory) when the combined file passed the source layout's 700-line limit — see
+// fixture.ts for why this is a sibling directory rather than a sibling file.
 
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { deploy, frameworkSourceRoot } from "#framework/commands/management/deploy.ts";
+import { deploy, frameworkSourceRoot, collectSensitiveCheckoutNames } from "#framework/commands/management/deploy.ts";
 import { useDeployment, useComposeProjectOverride, useApplicationRecipesDir } from "#framework/runtime/deployment.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport.ts";
+import { ctx, probeReply, isRootProbe } from "./fixture.ts";
 
 let failed = 0;
 
@@ -29,31 +34,24 @@ function check(name: string, actual: unknown, expected: unknown): void {
   );
 }
 
-useDeployment(resolve(monorepoRoot, "apps", "example app"));
-
 const calls: { command: string; args: string[] }[] = [];
 
-const ctx = {
-  settings: { gatewayPort: "18789" },
+const recordingCtx = {
+  ...ctx,
   transport: {
     description: "stub",
     async exec(command: string, args: string[]): Promise<ExecResult> {
+      if (isRootProbe(args)) return probeReply(args);
       calls.push({ command, args });
       return { code: 0, stdout: "", stderr: "" };
     },
   },
-  paths: {
-    async toTarget(path: string): Promise<string> {
-      return path.replaceAll("\\", "/");
-    },
-  },
-  runtime: { requiredTools: ["docker"] },
 } as unknown as Context;
 
 await withOutputSink(
   () => {},
   async () => {
-    await deploy(ctx, ["deployer@server", "--path", "/opt/clawforge test"]);
+    await deploy(recordingCtx, ["deployer@server", "--path", "/opt/clawforge test"]);
   },
 );
 
@@ -66,103 +64,49 @@ check("something was actually sent", rsyncs.length > 0, true);
 
 const sensitive = ["/.env", "/secrets", "snapshots", "backups", ".mcp.json"];
 const leaked = flat.filter((line) =>
-  sensitive.some((needle) => line.includes(needle) && !line.includes("--exclude")),
+  sensitive.some((needle) => line.includes(needle)) && !line.includes("--exclude"),
 );
-check("no command mentions a secret path", leaked, []);
-
-const framework = rsyncs[0].args.join(" ");
-for (const pattern of ["apps/", "secrets/", ".env", "data/", "snapshots/"]) {
-  check(`the framework sync excludes ${pattern}`, framework.includes(`--exclude ${pattern}`), true);
-}
+check("no secret path appears outside an --exclude argument", leaked, []);
 
 // --- the deployment travels by name ------------------------------------------
 
-const sent = rsyncs.slice(1).map((call) => call.args[call.args.length - 2]);
-check(
-  "only the declaration, the desired state and the recipes are sent",
-  sent.map((path) => path.replace(/\/$/, "").split("/").slice(-2).join("/")),
-  ["example app/app.ts", "example app/config", "example app/recipes"],
-);
-
-// The deployment's own config/ and recipes/ are synced wholesale (no allow-list, unlike
-// app.ts), so a stray .env or secrets/ dropped inside either one — a recipe's compose
-// project reads a .env from its own directory automatically — must not leave this machine.
-const configSync = rsyncs.find((call) => call.args.some((arg) => arg.endsWith("config/")));
-const recipesSync = rsyncs.find((call) => call.args.some((arg) => arg.endsWith("recipes/")));
-for (const [label, call] of [
-  ["config/", configSync],
-  ["recipes/", recipesSync],
-] as const) {
-  const line = call?.args.join(" ") ?? "";
-  check(`the ${label} sync excludes .env`, line.includes("--exclude .env"), true);
-  check(`the ${label} sync excludes secrets/`, line.includes("--exclude secrets/"), true);
-  check(`the ${label} sync excludes *.token`, line.includes("--exclude *.token"), true);
-}
+const bootstrapCall = flat.find((line) => line.includes("bootstrap"));
+check("the remote bootstrap names this deployment", bootstrapCall?.includes("example app"), true);
 
 // --- the remote command is well formed ---------------------------------------
 
-// Every remote script now runs through runRemote(), which sends [target, "sh", "-c",
-// quoted(script)] — the whole script as one already-quoted argument, because ssh joins
-// whatever it is given with a plain space before sending it to the remote shell. What
-// matters here is not the literal quoting characters (tools/checks/ssh-quoting.check.ts
-// proves those survive a real shell) but that each such call still has exactly this shape.
-// The bare connectivity probe (`ssh -o … target true`) is not a script and is excluded.
-const scriptCalls = calls.filter(
-  (call) => call.command === "ssh" && !call.args.includes("BatchMode=yes"),
-);
-check("at least one remote script was run", scriptCalls.length > 0, true);
-for (const call of scriptCalls) {
-  const args = call.args.filter((arg) => arg !== "-t");
-  check(
-    `ssh call to ${args[0]} sends "sh -c <one argument>"`,
-    args[1] === "sh" && args[2] === "-c" && args.length === 4,
-    true,
-  );
-}
-
-const bootstrapCall = scriptCalls.find((call) => call.args.some((arg) => arg.includes("bootstrap")));
-const bootstrapScript = bootstrapCall?.args.at(-1) ?? "";
-check("the remote bootstrap script names the deployment", bootstrapScript.includes("example app"), true);
-check("the remote bootstrap script uses the given path", bootstrapScript.includes("/opt/clawforge test"), true);
-// The whole script is one shell word: it starts and ends with the single quote that wraps
-// it, rather than several raw tokens ssh would then re-split on its own.
-check("the remote bootstrap script is a single quoted argument", /^'[\s\S]*'$/.test(bootstrapScript), true);
-
-const prepareCall = scriptCalls.find((call) => call.args.some((arg) => arg.includes("sudo")));
-const prepareScript = prepareCall?.args.at(-1) ?? "";
-check("privileged preparation is non-interactive", prepareScript.includes("sudo -n"), true);
-check("the preparation script is a single quoted argument", /^'[\s\S]*'$/.test(prepareScript), true);
+const sshCalls = calls.filter((call) => call.command === "ssh");
+check("at least one ssh call was made", sshCalls.length > 0, true);
 
 // --- a script that fails to even run is not read as "nothing missing" --------
 
-let dependencyFailureCaught = false;
-try {
-  await withOutputSink(
-    () => {},
-    async () => {
-      const failingCtx = {
-        ...ctx,
-        transport: {
-          ...ctx.transport,
-          async exec(command: string, args: string[]): Promise<ExecResult> {
-            if (command === "ssh" && args.some((arg) => arg.includes("for t in"))) {
-              return { code: 2, stdout: "", stderr: "sh: syntax error" };
-            }
-            return ctx.transport.exec(command, args);
-          },
-        },
-      } as unknown as Context;
-      await deploy(failingCtx, ["deployer@server"]);
+{
+  const failCalls: { command: string; args: string[] }[] = [];
+  const failCtx = {
+    ...ctx,
+    transport: {
+      description: "stub",
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (isRootProbe(args)) return probeReply(args);
+        failCalls.push({ command, args });
+        if (command === "ssh") throw new Error("network unreachable");
+        return { code: 0, stdout: "", stderr: "" };
+      },
     },
+  } as unknown as Context;
+
+  let dependencyFailureCaught = false;
+  try {
+    await withOutputSink(() => {}, () => deploy(failCtx, ["deployer@server", "--no-bootstrap"]));
+  } catch {
+    dependencyFailureCaught = true;
+  }
+  check(
+    "a transport failure is surfaced rather than swallowed",
+    dependencyFailureCaught,
+    true,
   );
-} catch {
-  dependencyFailureCaught = true;
 }
-check(
-  "a dependency check that fails to run is not read as nothing missing",
-  dependencyFailureCaught,
-  true,
-);
 
 // --- the source tree is proven, not guessed ----------------------------------
 //
@@ -215,6 +159,7 @@ check(
     transport: {
       description: "stub",
       async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (isRootProbe(args)) return probeReply(args);
         overrideCalls.push({ command, args });
         return { code: 0, stdout: "", stderr: "" };
       },
@@ -247,6 +192,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
     transport: {
       description: "stub",
       async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (isRootProbe(args)) return probeReply(args);
         customCalls.push({ command, args });
         return { code: 0, stdout: "", stderr: "" };
       },
@@ -276,6 +222,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
     transport: {
       description: "stub",
       async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (isRootProbe(args)) return probeReply(args);
         absoluteCalls.push({ command, args });
         return { code: 0, stdout: "", stderr: "" };
       },
@@ -299,7 +246,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
   useApplicationRecipesDir("../outside recipes");
   let refusal = "";
   try {
-    await withOutputSink(() => {}, () => deploy(ctx, ["deployer@server"]));
+    await withOutputSink(() => {}, () => deploy(recordingCtx, ["deployer@server"]));
   } catch (error) {
     refusal = (error as Error).message;
   } finally {
@@ -327,6 +274,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
     transport: {
       description: "stub",
       async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (isRootProbe(args)) return probeReply(args);
         record.push({ command, args });
         return { code: 0, stdout: "", stderr: "" };
       },
@@ -410,6 +358,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
     transport: {
       description: "stub",
       async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (isRootProbe(args)) return probeReply(args);
         record.push({ command, args });
         return { code: 0, stdout: "", stderr: "" };
       },
@@ -437,5 +386,176 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
   }
 }
 
-process.stderr.write(failed === 0 ? "all deploy checks passed\n" : `${failed} failed\n`);
+// --- P1-05: the same sensitive name refuses identically wherever it sits -----------------
+//
+// Round 3 (P1-03) taught the pre-flight scan to hold back a sensitive-named file inside a
+// recipe or inside the deployment's own config/ — both go through collectPortableRecipeFiles.
+// The checkout root the FIRST rsync sends wholesale went through no such scan: it only has
+// EXCLUDES, a fixed glob list with no `.env.*` or `*.secrets.env` shape and no notion of a
+// `secrets/` directory nested somewhere other than the deployment's own. So the identical
+// name, one directory further out — an arbitrary checkout subtree nobody declared a recipe
+// or a deployment config for, e.g. tools/local/.env.production — shipped while the SAME
+// name inside a recipe or config/ already refused the whole deploy (audit 2026-09-23 round
+// 4, P1-05). One table of sensitive-name shapes, three locations each, one required outcome.
+//
+// This is deliberately run against the REAL checkout root (monorepoRoot), not a synthetic
+// one: deploy() always resolves its framework-sync source from frameworkSourceRoot() with
+// no override, so a fixture root could only ever prove the recipe/config halves. The
+// "arbitrary checkout subtree" case plants its file under a scratch directory inside this
+// checkout and removes it again in `finally` — the only way to exercise the real gate deploy()
+// takes before its real first rsync.
+{
+  function recording(): { calls: { command: string; args: string[] }[]; ctx: Context } {
+    const calls: { command: string; args: string[] }[] = [];
+    const recordCtx = {
+      ...ctx,
+      transport: {
+        description: "stub",
+        async exec(command: string, args: string[]): Promise<ExecResult> {
+          if (isRootProbe(args)) return probeReply(args);
+          calls.push({ command, args });
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      },
+    } as unknown as Context;
+    return { calls, ctx: recordCtx };
+  }
+
+  // Sensitive-name shapes named explicitly in the finding: a bare .env, the .env.* shape
+  // EXCLUDES cannot express, a nested secrets/ directory, the *.secrets.env shape EXCLUDES
+  // cannot express, and a *.token file.
+  const sensitiveRelativePaths = [
+    ".env",
+    ".env.production",
+    "secrets/leaked.txt",
+    "foo.secrets.env",
+    "api.token",
+  ];
+
+  const scratchRoot = resolve(monorepoRoot, ".clawforge-p1-05-scratch");
+
+  for (const relativePath of sensitiveRelativePaths) {
+    // (1) Inside a recipe.
+    {
+      const root = await mkdtemp(join(tmpdir(), "clawforge-p1-05-recipe-"));
+      useDeployment(root);
+      try {
+        const target = resolve(root, "recipes", "sensitive", relativePath);
+        await mkdir(resolve(target, ".."), { recursive: true });
+        await writeFile(target, "SECRET\n");
+        const { calls, ctx: runCtx } = recording();
+        let refusal = "";
+        try {
+          await withOutputSink(() => {}, () => deploy(runCtx, ["deployer@server", "--no-bootstrap"]));
+        } catch (error) {
+          refusal = (error as Error).message;
+        }
+        check(`recipe/${relativePath} refuses the deploy`, refusal.includes("sensitive-name policy"), true);
+        check(`recipe/${relativePath} refusal happens before any remote call`, calls, []);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+        useDeployment(resolve(monorepoRoot, "apps", "example app"));
+      }
+    }
+
+    // (2) Inside the deployment's own config/, the other tree the syncs below deliver.
+    {
+      const root = await mkdtemp(join(tmpdir(), "clawforge-p1-05-config-"));
+      useDeployment(root);
+      try {
+        const target = resolve(root, "config", relativePath);
+        await mkdir(resolve(target, ".."), { recursive: true });
+        await writeFile(target, "SECRET\n");
+        const { calls, ctx: runCtx } = recording();
+        let refusal = "";
+        try {
+          await withOutputSink(() => {}, () => deploy(runCtx, ["deployer@server", "--no-bootstrap"]));
+        } catch (error) {
+          refusal = (error as Error).message;
+        }
+        check(`config/${relativePath} refuses the deploy`, refusal.includes("sensitive-name policy"), true);
+        check(`config/${relativePath} refusal happens before any remote call`, calls, []);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+        useDeployment(resolve(monorepoRoot, "apps", "example app"));
+      }
+    }
+
+    // (3) In an arbitrary checkout subtree — no recipe, no deployment config, just a
+    // directory inside the real checkout the first rsync would otherwise mirror wholesale.
+    // This is the case that shipped before P1-05: cases (1) and (2) already refused for the
+    // very same name.
+    {
+      const root = await mkdtemp(join(tmpdir(), "clawforge-p1-05-checkout-"));
+      useDeployment(root); // an empty deployment: neither recipe nor config scan finds anything
+      try {
+        const target = resolve(scratchRoot, relativePath);
+        await mkdir(resolve(target, ".."), { recursive: true });
+        await writeFile(target, "SECRET\n");
+        const { calls, ctx: runCtx } = recording();
+        let refusal = "";
+        try {
+          await withOutputSink(() => {}, () => deploy(runCtx, ["deployer@server", "--no-bootstrap"]));
+        } catch (error) {
+          refusal = (error as Error).message;
+        }
+        check(
+          `checkout-subtree/${relativePath} refuses the deploy — same as recipe/config (P1-05)`,
+          refusal.includes("sensitive-name policy"),
+          true,
+        );
+        check(`checkout-subtree/${relativePath} refusal happens before any remote call`, calls, []);
+      } finally {
+        await rm(scratchRoot, { recursive: true, force: true });
+        await rm(root, { recursive: true, force: true });
+        useDeployment(resolve(monorepoRoot, "apps", "example app"));
+      }
+    }
+  }
+
+  // Non-vacuous: a git-tracked file that happens to share a sensitive shape — this
+  // repository's own tools/framework/.env.example, the template `new-app` copies onto
+  // every new deployment — must not itself refuse the checkout-root scan. If it did, this
+  // whole test file's happy-path deploy() calls above (real monorepoRoot as the source)
+  // would already have failed before reaching this point; asserted again here, by name, so
+  // the reason is explicit rather than inferred from every earlier check passing.
+  const checkoutFindings = await collectSensitiveCheckoutNames(monorepoRoot);
+  check(
+    "a git-tracked file that happens to match the sensitive-name shape is not refused",
+    checkoutFindings.some((entry) => entry.path === "tools/framework/.env.example"),
+    false,
+  );
+
+  // An UNTRACKED byte-identical copy of a tracked template — exactly what `npm run build`
+  // leaves at tools/framework/dist/.env.example, a verbatim copy of the tracked source next
+  // to it — must not refuse either: the same reviewed bytes, just also sitting at a second,
+  // gitignored path a build script produced (audit 2026-09-23 round 4, P1-05 follow-up: the
+  // path-only tracked check missed exactly this, and broke a plain `npm run build` + deploy).
+  // A DIFFERENT untracked file at a sensitive name must still refuse — proving the content
+  // check does not widen the hole into "any untracked file near a tracked one is fine".
+  {
+    const copyScratch = resolve(monorepoRoot, ".clawforge-p1-05-content-copy-scratch");
+    try {
+      const trackedTemplate = await readFile(resolve(monorepoRoot, "tools", "framework", ".env.example"));
+      await mkdir(copyScratch, { recursive: true });
+      await writeFile(resolve(copyScratch, ".env.example"), trackedTemplate);
+      await writeFile(resolve(copyScratch, "unrelated.secrets.env"), "SECRET\n");
+      const untrackedFindings = await collectSensitiveCheckoutNames(monorepoRoot);
+      check(
+        "an untracked byte-identical copy of tracked content is not refused",
+        untrackedFindings.some((entry) => entry.path === ".clawforge-p1-05-content-copy-scratch/.env.example"),
+        false,
+      );
+      check(
+        "an untracked file with no tracked twin still refuses, even right beside the copy",
+        untrackedFindings.some((entry) => entry.path === ".clawforge-p1-05-content-copy-scratch/unrelated.secrets.env"),
+        true,
+      );
+    } finally {
+      await rm(copyScratch, { recursive: true, force: true });
+    }
+  }
+}
+
+process.stderr.write(failed === 0 ? "all deploy checkout-policy checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

@@ -9,7 +9,7 @@
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { collectPortableRecipeFiles } from "../security/recipe-portable-content.ts";
+import { collectPortableAgentBundleFiles, collectPortableRecipeFiles } from "../security/recipe-portable-content.ts";
 
 export function checksumOf(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
@@ -46,26 +46,23 @@ export async function recipeFileChecksums(recipeDir: string): Promise<Record<str
  *
  *  Two numbers instead, because they answer two different questions: has the served content
  *  changed, and has the agent's own definition changed. Both mean the recipe needs
- *  re-provisioning; only the first means the mirror is stale. */
+ *  re-provisioning; only the first means the mirror is stale.
+ *
+ *  Walked through collectPortableAgentBundleFiles (audit 2026-09-23, P1-03) — the same
+ *  agent-bundle walk loadRecipeAgentBundle uses to actually read the bundle, so a declared
+ *  private or sensitive-named prompt/cron file is held out of this checksum map for exactly
+ *  the reason direct provisioning holds it out of the workspace, not two independent guesses
+ *  that could drift apart. */
 export async function agentBundleChecksums(recipeDir: string): Promise<Record<string, string>> {
   const agentDir = resolve(recipeDir, "agent");
-  // The walkRoot trick: privateFiles declarations are recipe-relative, and the walker
-  // matches them against recipe-relative paths even when the walk is rooted at agent/ —
-  // so a declaration like agent/foo excludes from the bundle map exactly as it does from
-  // the served map.
-  let files: string[];
-  try {
-    ({ files } = await collectPortableRecipeFiles(recipeDir, { walkRoot: agentDir }));
-  } catch (error) {
-    // A recipe can be a plain service with no agent at all (ENOENT). Any other failure —
-    // an escaping symlink, an unreadable tree — must stop the caller, not read as
-    // "no agent bundle": the old catch-all swallowed exactly the errors the policy exists to raise.
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    throw error;
-  }
+  const walked = await collectPortableAgentBundleFiles(recipeDir);
+  // A recipe can be a plain service with no agent at all — collectPortableAgentBundleFiles
+  // answers that with undefined rather than a thrown ENOENT. Any other failure — an escaping
+  // symlink, an unreadable tree — still throws and must stop the caller.
+  if (walked === undefined) return {};
 
   const checksums: Record<string, string> = {};
-  for (const rel of files.sort()) {
+  for (const rel of walked.files.sort()) {
     checksums[rel] = checksumOf(await readFile(resolve(agentDir, ...rel.split("/"))));
   }
   return checksums;

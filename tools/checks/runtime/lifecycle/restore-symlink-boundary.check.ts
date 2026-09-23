@@ -19,7 +19,7 @@
 
 import { randomBytes } from "node:crypto";
 import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
-import { inspectArchive } from "#framework/service/archive.ts";
+import { inspectArchive, listArchive, listArchiveLinks } from "#framework/service/archive.ts";
 import { UserError } from "#framework/core/log.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport.ts";
@@ -147,6 +147,62 @@ if (transport === undefined) {
     }
   }
 
+  // --- a composite link chain, real tar included: P1-04 of docs/review-2026-09-23-xs-round-4.md
+  //
+  // `data/a -> b` alone never leaves the root; `data/b -> ../../outside` alone is only a
+  // dangling warning when nothing is written through it directly. Chained, content nested
+  // under `data/a` is written through both. inspectArchive() used to judge each link on its
+  // own single hop and let exactly this through as a non-fatal warning; the fix walks a
+  // link's own chain to wherever it ultimately lands. This is a real GNU tar archive with
+  // real symlinks — `--transform` renames a real nested file onto the symlink's name without
+  // requiring the source tree to actually be walked through the link, the same way a crafted
+  // archive would arrive over the wire.
+  {
+    const root = `/tmp/clawforge-restore-link-chain-${randomBytes(4).toString("hex")}`;
+    const outside = `${root}/outside`;
+    const payload = `${root}/payload`;
+    const archive = `${root}/archive.tar.gz`;
+    try {
+      await transport.mkdirp(outside);
+      await transport.mkdirp(`${payload}/data/content`);
+      await transport.writeFile(`${payload}/data/content/file`, "escaping payload\n");
+      await transport.exec("ln", ["-s", "b", `${payload}/data/a`]);
+      await transport.exec("ln", ["-s", "../../outside", `${payload}/data/b`]);
+      await transport.exec("tar", [
+        "--numeric-owner",
+        "-czf",
+        archive,
+        "--transform",
+        "s#^data/content/#data/a/#",
+        "-C",
+        payload,
+        "data/a",
+        "data/b",
+        "data/content/file",
+      ]);
+
+      const listContext = { transport } as unknown as Context;
+      const realEntries = await listArchive(listContext, archive);
+      const realLinks = await listArchiveLinks(listContext, archive);
+      check("the fixture archive really holds the chained entries", realEntries.includes("data/a/file"), true);
+      check("the fixture archive really holds both links", realLinks.size, 2);
+
+      const problems = inspectArchive(realEntries, realLinks);
+      check(
+        "inspecting the real archive finds a fatal problem, not only the old dangling warning",
+        problems.some((problem) => problem.fatal),
+        true,
+      );
+
+      const outcome = await attemptRestore(transport, `${root}/data`, archive);
+      check("restore refuses a real archive with a composite escaping link chain", outcome.refused, true);
+      const leaked = await code0(transport, "test", ["-e", `${outside}/file`]);
+      check("nothing was extracted through the chain into the external directory", leaked, false);
+    } finally {
+      await transport.remove(root).catch(() => {});
+    }
+  }
+
   // --- the ensureDataDirs() chmod path: auth-secrets shipped as an external link -------------
   {
     const root = `/tmp/clawforge-restore-chmod-${randomBytes(4).toString("hex")}`;
@@ -176,6 +232,17 @@ if (transport === undefined) {
       const outcome = await attemptRestore(transport, `${root}/data`, archive);
       check("an archive with an external auth-secrets link is refused", outcome.refused, true);
       check("chmod 700 of auth-secrets never reached the external directory", await modeOf(transport, outside), "755");
+      // P2-02 (audit 2026-09-23 round 4): unlike the root-link case above, this refusal
+      // happens INSIDE verifyRestoredLayout, AFTER a real extraction actually created
+      // `${root}/data` — and `${root}/data` never existed before this attempt, so `aside`
+      // stays undefined the whole way through. A catch that only cleans up when there was
+      // previous data to put back leaves this half-unpacked, rejected tree on disk, where the
+      // next bootstrap/restore finds it and treats it as already-existing state.
+      check(
+        "a failed restore on a clean target leaves no unpacked root behind either",
+        await code0(transport, "test", ["-e", `${root}/data`]),
+        false,
+      );
     } finally {
       await transport.remove(root).catch(() => {});
     }

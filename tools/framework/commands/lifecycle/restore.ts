@@ -8,7 +8,7 @@ import { createInterface } from "node:readline/promises";
 import { log, info, warn, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
-import { DATA_SUBDIRS, ensureDataDirs, sudoFor, runMaybePrivileged } from "#src/runtime/datadir.ts";
+import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation } from "#src/runtime/datadir.ts";
 import {
   archiveRoot,
   inspectArchive,
@@ -305,7 +305,11 @@ export async function restoreArchive(
     // leftovers reads as existing state to the next bootstrap/restore (audit 2026-09-23
     // round 4, P2-02).
     warn(aside !== undefined ? "restore failed — restoring the previous data" : "restore failed — removing the unpacked tree");
-    await runMaybePrivileged(ctx, parent, "rm", ["-rf", dataDir]);
+    // Probed against dataDir itself, not parent: ensureDataDirs (trustExisting, above) may
+    // already have chowned children of this tree to the fixed owner before the failure that
+    // put this catch here, and a writable parent says nothing about a restrictively-owned
+    // child underneath — rm -rf then dies mid-removal instead of clearing the tree.
+    await runMaybePrivileged(ctx, dataDir, "rm", ["-rf", dataDir], { force: await needsOwnerEscalation(ctx, OWNER) });
     if (aside !== undefined) {
       await runMaybePrivileged(ctx, parent, "mv", [aside, dataDir]);
     }

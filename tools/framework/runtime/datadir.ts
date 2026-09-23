@@ -9,7 +9,11 @@ import { log, info, die } from "../core/log.ts";
 import type { Context } from "../core/context.ts";
 import { lockHome } from "./instance-lock.ts";
 
-const OWNER = "1000:1000";
+/** The fixed uid:gid the image runs as. Exported for callers outside this module that need
+ *  to force escalation against it directly — a destructive cleanup over a tree that may
+ *  contain paths this owner already holds, for instance, where a writable-probe on the tree's
+ *  own root says nothing about a restrictively-owned child underneath. */
+export const OWNER = "1000:1000";
 /** The standard layout of a data directory: what restore promises, and ensureDataDirs
  *  creates. Exported because restore must check these paths are physically inside the
  *  restored tree before creating, chmod-ing or deleting anything through them. */

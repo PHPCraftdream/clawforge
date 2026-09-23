@@ -336,6 +336,12 @@ function deniedContext(
         if (command === "sh" && args.some((arg) => arg.includes("command -v sudo"))) {
           return { code: 0, stdout: "", stderr: "" };
         }
+        // needsOwnerEscalation's own identity probe: unescalated matches the fixed owner
+        // directly (no chown ever needs to cross an identity boundary here), escalated
+        // answers a different uid/gid so its own escalation decision agrees with writable()
+        // above instead of a probe this stub never modeled defaulting to "needs sudo".
+        if (command === "id" && args[0] === "-u") return { code: 0, stdout: escalated ? "1001" : "1000", stderr: "" };
+        if (command === "id" && args[0] === "-g") return { code: 0, stdout: escalated ? "1001" : "1000", stderr: "" };
         if (command === "true") return { code: 0, stdout: "", stderr: "" };
         if (command === "tar" && args.includes("-tzf")) {
           return { code: 0, stdout: "data/\ndata/config/openclaw.json\n", stderr: "" };

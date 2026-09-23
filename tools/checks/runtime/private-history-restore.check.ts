@@ -422,12 +422,14 @@ try {
     );
 
     // Defense in depth, the snapshot.check shape: an archive with no exclusions at all — so,
-    // unlike createArchive, this deliberately walks straight into sidecar-private too. Real
-    // read access to it needs the same escalation createArchive now asks for on its own
-    // restricted subpath (XS round 4 CI fallout): a CI identity that owns this tree's other
-    // files outright still cannot open a directory ensurePrivateTargetDirectory locked to
-    // 1000:1000 mode 700.
-    const rawPrefix = await sudoFor(ctx, `${DATA}/sidecar-private`);
+    // unlike createArchive, this deliberately walks straight into sidecar-private AND
+    // auth-secrets. Real read access to either needs the same per-source escalation
+    // createArchive itself now asks for (round 6 P2-05, round 7 P2-08 CI fallout): a CI
+    // identity that owns this tree's other files outright still cannot open a directory
+    // locked to 1000:1000 mode 700 — ensureDataDirs' own auth-secrets among them once its
+    // ownership actually differs from this identity, not just the recipe's sidecar-private.
+    const sidecarPrefix = await sudoFor(ctx, `${DATA}/sidecar-private`);
+    const rawPrefix = sidecarPrefix.length > 0 ? sidecarPrefix : await sudoFor(ctx, `${DATA}/auth-secrets`);
     const [rawHead, ...rawRest] = [...rawPrefix, "tar", "--numeric-owner", "-czf", `${ARCHIVES}/raw.tar.gz`, "-C", PARENT, DATA_NAME];
     await transport.exec(rawHead, rawRest);
     check(

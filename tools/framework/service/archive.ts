@@ -425,7 +425,17 @@ export async function createArchive(
   const excludeArgs = excludesFor(options.profile, name, privatePaths).map((pattern) =>
     `--exclude=${declared.has(pattern) ? escapeTarGlob(pattern) : pattern}`,
   );
-  const prefix = await sudoFor(ctx, options.archive);
+  // Two different paths could each demand escalation and neither says anything about the
+  // other: the archive's own destination (an ordinary writability question) and
+  // auth-secrets inside the tree tar is about to read, which ensureDataDirs locks to
+  // 1000:1000 mode 700 regardless of who is allowed to write the archive file (audit
+  // 2026-09-23, XS round 4 fallout from the chown fix one layer up: a data root the current
+  // identity can create files in is not one it can read auth-secrets out of). Asking
+  // sudoFor about auth-secrets specifically — the one subpath known to carry that
+  // restriction — falls back to dataDir itself when auth-secrets does not exist yet, same
+  // as any other absent path, so a fresh or pre-1000 tree asks exactly what it always did.
+  const authSecretsPrefix = await sudoFor(ctx, `${dataDir}/auth-secrets`);
+  const prefix = authSecretsPrefix.length > 0 ? authSecretsPrefix : await sudoFor(ctx, options.archive);
 
   // --numeric-owner keeps uid/gid 1000 meaningful on a host with different user names.
   const [head, ...rest] = [

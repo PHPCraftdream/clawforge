@@ -607,6 +607,37 @@ if (p202Transport === undefined) {
     check("the escalated call still carries the real chown", chownCall?.args.includes("chown"), true);
     check("the fixed owner travels unchanged", chownCall?.args.includes("1000:1000"), true);
   }
+
+  // createArchive must escalate for what tar actually reads, not only the archive's own
+  // destination (XS round 4 fallout from the chown fix above): a locked-down auth-secrets
+  // needs tar to run under its owner even when the destination is freely writable — the
+  // shape that made a real migrate archive fail with "tar: data/auth-secrets: Cannot open:
+  // Permission denied" on GitHub Actions right after that fix landed.
+  {
+    const calls: { command: string; args: string[] }[] = [];
+    const archiveStub = {
+      description: "stub",
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        calls.push({ command, args });
+        if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+        if (command === "test" && args[0] === "-w" && args[1] === "/srv/archive-owner-check/data/auth-secrets") {
+          return { code: 1, stdout: "", stderr: "" };
+        }
+        if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
+        if (command === "sh" && args.some((arg) => arg.includes("command -v sudo"))) return { code: 0, stdout: "/usr/bin/sudo\n", stderr: "" };
+        if (command === "sudo" && args[0] === "-n" && args[1] === "true") return { code: 0, stdout: "", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      async exists(path: string): Promise<boolean> { return path === "/srv/archive-owner-check/data/auth-secrets"; },
+    } as unknown as Transport;
+    await createArchive(
+      { settings: { dataDir: "/srv/archive-owner-check/data", env: {} }, transport: archiveStub } as unknown as Context,
+      { archive: "/srv/archive-owner-check/backups/out.tar.gz", profile: "share" },
+    );
+    const tarCall = calls.find((call) => call.args.includes("tar"));
+    check("a writable-destination archive still escalates for an unreadable auth-secrets", tarCall?.command, "sudo");
+    check("the escalated call still runs the real tar", tarCall?.args.includes("tar"), true);
+  }
 }
 
 // --- P2-04 (audit 2026-09-22 round 2): recipe stacks running through a backup are named.

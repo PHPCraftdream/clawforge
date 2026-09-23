@@ -17,7 +17,8 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import { UserError } from "#framework/core/log.ts";
 import type { Context } from "#framework/core/context.ts";
-import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport.ts";
+import { LocalTransport, WslTransport, spawnLocal, type Transport, type ExecResult } from "#framework/runtime/transport.ts";
+import { ensureDataDirs } from "#framework/runtime/datadir.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
 
@@ -574,6 +575,37 @@ if (p202Transport === undefined) {
     } finally {
       await p202Transport.remove(root).catch(() => {});
     }
+  }
+
+  // ensureDataDirs' chown escalation must not be decided from directory writability alone
+  // (audit 2026-09-23, XS round 4): a CI runner whose own uid is not 1000 owns its /tmp
+  // fixtures outright — `test -w` says yes — but POSIX still refuses an unprivileged
+  // `chown 1000:1000` on a file that uid does not already own, exactly the shape that made
+  // this round-trip fail for real on GitHub Actions (runner uid 1001, not 1000). The stub
+  // answers "writable" and "wrong owner" together, the one combination the old writability
+  // check could not tell apart from "no escalation needed".
+  {
+    const calls: { command: string; args: string[] }[] = [];
+    const ownerStub = {
+      description: "stub",
+      async exists(): Promise<boolean> { return true; },
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        calls.push({ command, args });
+        if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
+        if (command === "id" && args[0] === "-u") return { code: 0, stdout: "1001\n", stderr: "" };
+        if (command === "id" && args[0] === "-g") return { code: 0, stdout: "1001\n", stderr: "" };
+        if (command === "stat" && args[0] === "-c" && args[1] === "%u:%g") return { code: 0, stdout: "1001:1001\n", stderr: "" };
+        if (command === "stat" && args[0] === "-c" && args[1] === "%a") return { code: 0, stdout: "700\n", stderr: "" };
+        if (command === "sh" && args.some((arg) => arg.includes("command -v sudo"))) return { code: 0, stdout: "/usr/bin/sudo\n", stderr: "" };
+        if (command === "sudo" && args[0] === "-n" && args[1] === "true") return { code: 0, stdout: "", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    } as unknown as Transport;
+    await ensureDataDirs({ settings: { dataDir: "/srv/owner-check/data", env: {} }, transport: ownerStub } as unknown as Context);
+    const chownCall = calls.find((call) => call.args.includes("chown"));
+    check("a directory-writable-but-wrong-owner target still escalates the chown", chownCall?.command, "sudo");
+    check("the escalated call still carries the real chown", chownCall?.args.includes("chown"), true);
+    check("the fixed owner travels unchanged", chownCall?.args.includes("1000:1000"), true);
   }
 }
 

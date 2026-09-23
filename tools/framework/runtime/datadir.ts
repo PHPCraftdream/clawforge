@@ -15,8 +15,16 @@ const OWNER = "1000:1000";
  *  restored tree before creating, chmod-ing or deleting anything through them. */
 export const DATA_SUBDIRS = ["config", "workspace", "auth-secrets"] as const;
 
-/** "sudo" when the path is not writable by the current user, "" otherwise. */
-export async function sudoFor(ctx: Context, path: string): Promise<string[]> {
+/** "sudo" when the path is not writable by the current user, "" otherwise.
+ *
+ *  `force: true` skips the writability shortcut: a directory being writable never implies
+ *  a chown to some OTHER owner will succeed — POSIX lets an unprivileged owner keep or drop
+ *  their own file, never hand it to a different uid — so a caller that already knows the
+ *  target owner differs from the current identity forces the sudo-availability path instead
+ *  of trusting `test -w` (audit 2026-09-23, XS round 4: a CI runner whose own uid is not
+ *  1000 owns its own /tmp fixtures outright, so the writability probe answered "no escalation
+ *  needed" right before an unprivileged `chown -R 1000:1000` failed on every file). */
+export async function sudoFor(ctx: Context, path: string, options: { force?: boolean } = {}): Promise<string[]> {
   let probe = path;
   while (probe !== "/" && probe !== "") {
     let present: boolean;
@@ -34,8 +42,10 @@ export async function sudoFor(ctx: Context, path: string): Promise<string[]> {
     probe = probe.slice(0, Math.max(probe.lastIndexOf("/"), 1));
   }
 
-  const writable = await ctx.transport.exec("test", ["-w", probe], { allowFailure: true });
-  if (writable.code === 0) return [];
+  if (options.force !== true) {
+    const writable = await ctx.transport.exec("test", ["-w", probe], { allowFailure: true });
+    if (writable.code === 0) return [];
+  }
 
   const hasSudo = await ctx.transport.exec("sh", ["-c", "command -v sudo"], { allowFailure: true });
   if (hasSudo.code !== 0) die(`${probe} is not writable and sudo is not available on the target`);
@@ -60,8 +70,9 @@ export async function runMaybePrivileged(
   pathNeedingAccess: string,
   command: string,
   args: string[],
+  options: { force?: boolean } = {},
 ): Promise<void> {
-  const prefix = await sudoFor(ctx, pathNeedingAccess);
+  const prefix = await sudoFor(ctx, pathNeedingAccess, options);
   const [head, ...rest] = [...prefix, command, ...args];
   await ctx.transport.exec(head, rest);
 }
@@ -69,6 +80,17 @@ export async function runMaybePrivileged(
 async function ownerOf(ctx: Context, path: string): Promise<string> {
   const result = await ctx.transport.exec("stat", ["-c", "%u:%g", path], { allowFailure: true });
   return result.code === 0 ? result.stdout.trim() : "";
+}
+
+/** Whether handing a path to `fixedOwner` needs root: true for anyone except root itself
+ *  and the owner already being asked for — the two identities POSIX lets chown that owner
+ *  without CAP_CHOWN. Read before the chown, never assumed from directory permissions. */
+async function needsOwnerEscalation(ctx: Context, fixedOwner: string): Promise<boolean> {
+  const uid = await ctx.transport.exec("id", ["-u"], { allowFailure: true });
+  if (uid.code === 0 && uid.stdout.trim() === "0") return false;
+  const gid = await ctx.transport.exec("id", ["-g"], { allowFailure: true });
+  const current = uid.code === 0 && gid.code === 0 ? `${uid.stdout.trim()}:${gid.stdout.trim()}` : undefined;
+  return current !== fixedOwner;
 }
 
 /** Creates config/, workspace/ and auth-secrets/ and makes sure uid 1000 owns them. */
@@ -91,7 +113,8 @@ export async function ensureDataDirs(ctx: Context): Promise<void> {
 
   if (owners.some((owner) => owner !== OWNER)) {
     log(`setting owner ${OWNER} on ${dataDir}`);
-    await runMaybePrivileged(ctx, dataDir, "chown", ["-R", OWNER, dataDir]);
+    const force = await needsOwnerEscalation(ctx, OWNER);
+    await runMaybePrivileged(ctx, dataDir, "chown", ["-R", OWNER, dataDir], { force });
   }
 
   // auth-secrets holds encryption keys; keep it owner-only.
@@ -187,6 +210,6 @@ export async function ensureSecretsFile(ctx: Context): Promise<void> {
     "# Provider credentials read by OpenClaw at startup, e.g.:\n# ANTHROPIC_API_KEY=...\n",
     "600",
   );
-  await runMaybePrivileged(ctx, path, "chown", [OWNER, path]);
+  await runMaybePrivileged(ctx, path, "chown", [OWNER, path], { force: await needsOwnerEscalation(ctx, OWNER) });
   info("put provider keys there, then run ./clawforge configure-provider");
 }

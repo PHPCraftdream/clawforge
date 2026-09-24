@@ -17,15 +17,12 @@ import { mkdir, writeFile, access, readdir, readFile } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { log, info, die } from "../core/log.ts";
-import { monorepoRoot, frameworkRoot, parseEnv } from "../core/env.ts";
+import { monorepoRoot, frameworkRoot, parseEnv, projectPort } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { setupProjectMcp } from "./mcp-project.ts";
 import { createPrivateFile } from "../security/private-file.ts";
 
 export const appsDir = resolve(monorepoRoot, "apps");
-
-/** Where the first deployment publishes the gateway; later ones move up from here. */
-const DEFAULT_PORT = 18789;
 
 function declarationFor(name: string): string {
   return `// The ${name} deployment.
@@ -59,7 +56,7 @@ const DESIRED_STATE = `[
 ]
 `;
 
-/** Ports already claimed by existing deployments, read from their .env files. */
+/** Ports recorded by readable sibling deployments. */
 async function usedPorts(): Promise<Set<number>> {
   const ports = new Set<number>();
 
@@ -89,12 +86,11 @@ async function usedPorts(): Promise<Set<number>> {
  *
  *  Exported because bootstrap creates the file too, when a deployment directory exists
  *  without one — both paths must produce the same isolated settings. */
-export async function deploymentEnv(name: string): Promise<string> {
+export async function deploymentEnv(name: string, portStart?: number): Promise<string> {
   const template = await readFile(resolve(frameworkRoot, ".env.example"), "utf8");
   const taken = await usedPorts();
 
-  let port = DEFAULT_PORT;
-  while (taken.has(port)) port += 1;
+  const port = projectPort(taken, portStart);
 
   return template
     .split("\n")

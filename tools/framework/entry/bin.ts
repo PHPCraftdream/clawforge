@@ -37,11 +37,12 @@ const gateCommands: GateCommand[] = [
     name: "init",
     summary: "Initialise this directory as an OpenClaw deployment",
     details:
-      "Writes app.ts, config/desired-state.json and .env (own data directory and port) " +
+      "Writes app.ts, config/desired-state.json and .env (own data directory and project-specific port) " +
       "directly into the current directory, plus config/, secrets/, recipes/, .gitignore " +
       "entries for the deployment state and node_modules/, and a committed ./clawforge entrypoint " +
       "that delegates to this package's CLI. Project MCP settings for Claude Code and Codex " +
       "are created automatically, without changing global client settings.\n" +
+      "The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
       "Refuses if app.ts already exists — run this once, then ./clawforge bootstrap.",
     run: async () => {
       await initApp(appRoot);

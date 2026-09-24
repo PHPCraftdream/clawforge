@@ -11,10 +11,10 @@ import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { archiveCarriesContent, createArchive, fileSize, isProfile, backupArchiveName, listArchive, parseBackupArchive, symlinkedDataRoot, type Profile } from "#src/service/archive.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
-import { SshTransport } from "#src/runtime/transport.ts";
 import { runningRecipeStacks } from "../management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "../management/recipe/lifecycle.ts";
 import type { Recipe } from "#src/service/recipe.ts";
+import { verifySnapshot } from "./verify.ts";
 
 export interface BackupOptions {
   hot?: boolean;
@@ -49,15 +49,34 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
   if (!Number.isFinite(keep) || keep <= 0) return;
 
   const prefix = await sudoFor(ctx, backupDir);
-  // Only this deployment's own archives: several may share one backup directory.
+  // find returns success for an empty directory and a non-zero status for an unreadable one.
+  // `ls glob 2>/dev/null` cannot distinguish those cases.
   const [head, ...rest] = [
     ...prefix,
-    "sh",
-    "-c",
-    `ls -1t ${SshTransport.quote(`${backupDir}/${deploymentName()}-`)}*.tar.gz 2>/dev/null`,
+    "find",
+    backupDir,
+    "-maxdepth",
+    "1",
+    "-type",
+    "f",
+    "-name",
+    `${deploymentName()}-*.tar.gz`,
+    "-printf",
+    "%T@\\t%p\\n",
   ];
   const listing = await ctx.transport.exec(head, rest, { allowFailure: true });
-  const archives = listing.stdout.split("\n").filter((line) => line.trim() !== "");
+  if (listing.code !== 0) throw new Error(`backup rotation could not list archives (exit ${listing.code})`);
+  const archives = listing.stdout
+    .split("\n")
+    .flatMap((line) => {
+      const separator = line.indexOf("\t");
+      if (separator < 0) return [];
+      const modified = Number(line.slice(0, separator));
+      const path = line.slice(separator + 1);
+      return Number.isFinite(modified) ? [{ path, modified }] : [];
+    })
+    .sort((left, right) => right.modified - left.modified)
+    .map(({ path }) => path);
 
   // Retention is counted per profile, and anything the glob caught that is not one of this
   // deployment's own archives is dropped here. Both for the same reason: `keep` means "how
@@ -90,7 +109,8 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
   info(name);
   const removePrefix = await sudoFor(ctx, path);
   const [rmHead, ...rmRest] = [...removePrefix, "rm", "-f", path];
-  await ctx.transport.exec(rmHead, rmRest);
+  const removed = await ctx.transport.exec(rmHead, rmRest, { allowFailure: true });
+  if (removed.code !== 0) throw new Error(`backup rotation could not remove stale archive (exit ${removed.code})`);
 }
 
 /** Creates a backup and returns the archive path on the target.
@@ -180,6 +200,9 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     // the newest backup (audit 2026-09-22 round 2, P2-02).
     if (!archiveCarriesContent(await listArchive(ctx, stagingArchive))) {
       throw new Error(`the fresh archive of ${dataDir} carries no data beneath its root — refusing to publish it as a backup`);
+    }
+    if (profile !== "full" && !(await verifySnapshot(ctx, stagingArchive, profile))) {
+      throw new Error(`the fresh '${profile}' backup failed its privacy check — refusing to publish it`);
     }
 
     const chmodPrefix = await sudoFor(ctx, stagingArchive);

@@ -147,6 +147,28 @@ async function packageJsonOf(root: string): Promise<Record<string, unknown>> {
   }
 }
 
+async function gatewayPortOf(root: string): Promise<number> {
+  const env = await readFile(resolve(root, ".env"), "utf8");
+  return Number(/^OPENCLAW_GATEWAY_PORT=(\d+)$/m.exec(env)?.[1]);
+}
+
+{
+  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const first = join(base, "project-alpha");
+  const second = join(base, "project-beta");
+  await mkdir(first, { recursive: true });
+  await mkdir(second, { recursive: true });
+  try {
+    await run(first);
+    await run(second);
+    const firstPort = await gatewayPortOf(first);
+    const secondPort = await gatewayPortOf(second);
+    check("generated ports stay in the candidate range", firstPort >= 20000 && firstPort <= 32767 && secondPort >= 20000 && secondPort <= 32767, true);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+}
+
 {
   const { base, root } = await freshRoot("deployment-no-package");
   try {

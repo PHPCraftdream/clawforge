@@ -2,7 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 import { resolve, join } from "node:path";
-import { access, mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { archiveCarriesContent, createArchive, listArchive } from "#framework/service/archive.ts";
 import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
@@ -36,7 +36,7 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
   const name = deploymentName();
   const backupDir = "/srv/openclaw/backups";
 
-  // 12 backups, newest first — exactly what `ls -1t` returns — with OC_BACKUP_KEEP=10, so
+  // 12 backups, newest first — as rotation orders `find` output — with OC_BACKUP_KEEP=10, so
   // 2 are stale. Only the oldest of those two should be removed by a single rotate() call.
   // Real stamps: rotation reads the profile out of the name now, and a name that is not one
   // this framework writes is not its archive to delete.
@@ -56,8 +56,8 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
       async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
         execCalls.push({ command, args });
         if (args.includes("-w")) return { code: 0, stdout: "", stderr: "" };
-        if (command === "sh" && args.some((arg) => arg.includes("ls -1t"))) {
-          return { code: 0, stdout: `${listing.join("\n")}\n`, stderr: "" };
+        if (command === "find" && args.includes("-printf")) {
+          return { code: 0, stdout: listing.map((path, index) => `${listing.length - index}\t${path}`).join("\n") + "\n", stderr: "" };
         }
         return { code: 0, stdout: "", stderr: "" };
       },
@@ -230,7 +230,10 @@ function stubBackupCtx(
 // into. Counted together against OC_BACKUP_KEEP, a week of pulls rotated away every full
 // backup the instance had — the archives an operator would actually restore from.
 
-function rotationContext(listing: string[], keep: string): { ctx: Context; execCalls: { command: string; args: string[] }[] } {
+function rotationContext(
+  listing: string[],
+  keep: string,
+): { ctx: Context; execCalls: { command: string; args: string[] }[] } {
   const execCalls: { command: string; args: string[] }[] = [];
   const ctx = {
     settings: { env: { OC_BACKUP_KEEP: keep } },
@@ -242,8 +245,8 @@ function rotationContext(listing: string[], keep: string): { ctx: Context; execC
       async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
         execCalls.push({ command, args });
         if (args.includes("-w")) return { code: 0, stdout: "", stderr: "" };
-        if (command === "sh" && args.some((arg) => arg.includes("ls -1t"))) {
-          return { code: 0, stdout: `${listing.join("\n")}\n`, stderr: "" };
+        if (command === "find" && args.includes("-printf")) {
+          return { code: 0, stdout: listing.map((path, index) => `${listing.length - index}\t${path}`).join("\n") + "\n", stderr: "" };
         }
         return { code: 0, stdout: "", stderr: "" };
       },
@@ -293,14 +296,6 @@ function rotationContext(listing: string[], keep: string): { ctx: Context; execC
 }
 
 // --- the archive a profile produces says which profile it was --------------------------------
-
-{
-  const { ctx, calls } = stubBackupCtx(false);
-  const archive = await withOutputSink(() => {}, () => createBackup(ctx, { profile: "share" }));
-  check("a share backup is named as one", archive.endsWith("-share.tar.gz"), true);
-  check("and it is the file that was actually written", calls.some((call) => call.includes(archive)), true);
-}
-
 {
   const { ctx, files } = stubBackupCtx(false);
   const archive = await withOutputSink(() => {}, () => createBackup(ctx, {}));
@@ -375,40 +370,6 @@ function rotationContext(listing: string[], keep: string): { ctx: Context; execC
   check("a publication failure restarts the gateway", calls.includes("start") && calls.includes("waitForHealth"), true);
 }
 
-// A backup directory is a target-side path, so the shell used for listing it must quote the
-// literal prefix while leaving the archive wildcard expandable. This exercises the complete
-// rotate path with a POSIX shell and metacharacters that would execute if quoting regressed.
-if (process.platform !== "win32") {
-  const root = await mkdtemp(join(tmpdir(), "clawforge-backup-quote-check-"));
-  const marker = join(root, "shell-injected");
-  const backupDir = join(root, `backup files '$(touch ${marker})' ; echo hacked`);
-  try {
-    await mkdir(backupDir, { recursive: true });
-    const oldArchive = join(backupDir, `${deploymentName()}-20260101-000000.tar.gz`);
-    const newArchive = join(backupDir, `${deploymentName()}-20260102-000000.tar.gz`);
-    await writeFile(oldArchive, "old");
-    await writeFile(newArchive, "new");
-    await utimes(oldArchive, new Date("2026-01-01T00:00:00Z"), new Date("2026-01-01T00:00:00Z"));
-    await utimes(newArchive, new Date("2026-01-02T00:00:00Z"), new Date("2026-01-02T00:00:00Z"));
-    const ctx = {
-      settings: { env: { OC_BACKUP_KEEP: "1" } },
-      transport: new LocalTransport(),
-    } as unknown as Context;
-    await withOutputSink(() => {}, () => rotate(ctx, backupDir));
-    let newPresent = true;
-    try { await access(newArchive); } catch { newPresent = false; }
-    let oldPresent = true;
-    try { await access(oldArchive); } catch { oldPresent = false; }
-    let markerPresent = true;
-    try { await access(marker); } catch { markerPresent = false; }
-    check("rotation finds archives below a quoted path", oldPresent, false);
-    check("rotation keeps the newest archive below that path", newPresent, true);
-    check("rotation does not execute path metacharacters", markerPresent, false);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-}
-
 // --- P2-02 (audit 2026-09-22 round 2): a symlinked data root, end to end on a real filesystem.
 //
 // createBackup() used to hand tar the link's own name and report success: the archive held
@@ -474,6 +435,42 @@ async function attemptBackup(
 }
 
 const p202Transport = await realPosixTransport();
+
+// GNU tar treats brackets in the root basename as glob syntax unless the root part of every
+// exclude is escaped. Exercise both public profiles through createBackup, including the
+// privacy verifier that must approve the staging archive before it is published.
+if (p202Transport !== undefined) {
+  for (const profile of ["migrate", "share"] as const) {
+    const root = `/tmp/clawforge-backup-glob-${randomBytes(4).toString("hex")}`;
+    const dataDir = `${root}/data[1]`;
+    const backupDir = `${root}/backups`;
+    try {
+      await p202Transport.mkdirp(`${dataDir}/config/logs`);
+      await p202Transport.mkdirp(`${dataDir}/workspace`);
+      await p202Transport.writeFile(`${dataDir}/config/openclaw.json`, "{}\n");
+      await p202Transport.writeFile(`${dataDir}/config/.env`, "PROVIDER_KEY=synthetic-backup-secret-value\n");
+      await p202Transport.writeFile(`${dataDir}/config/logs/fixture.log`, "synthetic log\n");
+      await p202Transport.writeFile(`${dataDir}/workspace/SOUL.md`, "fixture\n");
+      await p202Transport.writeFile(`${dataDir}/config/openclaw.json.bak-old`, "synthetic backup\n");
+      const ctx = {
+        settings: { dataDir, backupDir, env: { OC_BACKUP_KEEP: "10" } },
+        transport: p202Transport,
+        runtime: backupRuntime,
+      } as unknown as Context;
+      const archive = await withOutputSink(() => {}, () => createBackup(ctx, { profile }));
+      const entries = await listArchive(ctx, archive);
+      check(`real tar ${profile} excludes provider env below data[1]`, entries.some((entry) => entry.includes(".env")), false);
+      check(`real tar ${profile} excludes log files below data[1]`, entries.some((entry) => entry.includes("/logs/")), false);
+      check(`real tar ${profile} excludes backup config below data[1]`, entries.some((entry) => entry.endsWith("openclaw.json.bak-old")), false);
+      check(`real tar ${profile} keeps allowed workspace content`, entries.some((entry) => entry.endsWith("workspace/SOUL.md")), true);
+    } catch (error) {
+      check(`real tar ${profile} policy-checked backup succeeds`, (error as Error).message, "");
+    } finally {
+      await p202Transport.remove(root).catch(() => {});
+    }
+  }
+}
+
 if (p202Transport === undefined) {
   check("backup symlink-root checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
 } else {

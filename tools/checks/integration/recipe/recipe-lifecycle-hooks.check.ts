@@ -159,8 +159,11 @@ async function recipesWith(names: string[]): Promise<string> {
   return root;
 }
 
-async function run(name: string, options: BackupOptions, recipeNames: string[], failProbe = false): Promise<{ archive: string | undefined; output: string; events: string[]; probed: string[] }> {
+async function run(name: string, options: BackupOptions, recipeNames: string[], failProbe = false, malformedRecipe?: string): Promise<{ archive: string | undefined; output: string; events: string[]; probed: string[] }> {
   const root = await recipesWith(recipeNames);
+  if (malformedRecipe !== undefined) {
+    await writeFile(join(root, malformedRecipe, "recipe.json"), JSON.stringify({ description: "broken fixture", ports: [{ host: "invalid", container: 80 }] }), "utf8");
+  }
   useRecipesDir(root);
   const stubbed = stub(failProbe);
   (globalThis as unknown as Record<string, unknown>)[HOOK_LOG] = stubbed.events;
@@ -176,6 +179,16 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
     await rm(root, { recursive: true, force: true });
   }
   return { archive, output, events: stubbed.events, probed: stubbed.probed };
+}
+
+// A broken manifest still maps to its directory's compose project: if that project is live,
+// backup cannot infer or run its quiesce hooks and must refuse before tar.
+{
+  const result = await run("a running sidecar with a malformed manifest blocks the backup", {}, ["broken-sidecar"], false, "broken-sidecar");
+  check("the malformed live sidecar prevents archive publication", result.archive, undefined);
+  check("the malformed live sidecar is probed by its directory name", result.probed, [projectName(deploymentName(), "broken-sidecar")]);
+  check("the backup explains why quiescing could not be confirmed", result.output.includes("invalid manifest") && result.output.includes("ports[0].host"), true);
+  check("tar is never reached while the running sidecar is unknown", result.events.includes("tar"), false);
 }
 
 // A failed resume is a failed compensation, never a successful backup result.

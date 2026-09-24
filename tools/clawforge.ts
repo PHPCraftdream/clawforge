@@ -59,9 +59,11 @@ const gateCommands: GateCommand[] = [
     name: "new-app",
     summary: "Create a deployment under apps/",
     details:
-      "Writes apps/<name>/ with a .env (own data directory and port, first free port picked " +
-      "automatically), config/desired-state.json and an app.ts declaring every framework " +
+      "Writes apps/<name>/ with a .env (own data directory and project-specific port), " +
+      "config/desired-state.json and an app.ts declaring every framework " +
       "command.\n" +
+      "The port avoids readable sibling .env files; it is not a host availability check. " +
+      "Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
       "Refuses if the directory already exists — run this once per deployment, then " +
       "./clawforge --app <name> bootstrap.",
     arguments: [{ name: "name", description: "Deployment name", kind: "positional", required: true }],

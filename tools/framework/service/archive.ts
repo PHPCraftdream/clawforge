@@ -81,14 +81,15 @@ export function parseSnapshotArchive(fileName: string, deployment: string): { st
  *  can release, blocking the very instance the restore was meant to rescue. A lock describes
  *  a running operation on one machine and is meaningless anywhere else. */
 function baseExcludes(dataName: string): string[] {
+  const root = escapeTarGlob(dataName);
   return [
-    `${dataName}/config/logs`,
-    `${dataName}/config/openclaw.json.bak*`,
-    `${dataName}/config/openclaw.json.last-good`,
-    `${dataName}/config/clawforge-desired.json`,
+    `${root}/config/logs`,
+    `${root}/config/openclaw.json.bak*`,
+    `${root}/config/openclaw.json.last-good`,
+    `${root}/config/clawforge-desired.json`,
     // Provider-key staging is private from creation and normally removed after rename, but a
     // process can die between those steps. It is credential material, never instance state.
-    `${dataName}/config/.env.clawforge-*`,
+    `${root}/config/.env.clawforge-*`,
     // The tooling's own temp-sibling staging families (transport.ts) are the same story one
     // layer out: the real bytes sit in the sibling from the first byte written, and a process
     // that dies before the rename — or a cleanup that fails — leaves them beside the target
@@ -97,22 +98,18 @@ function baseExcludes(dataName: string): string[] {
     // entirely. The markers are written only by the writers themselves, so the globs cannot
     // reach an unrelated public file that merely sits nearby (GNU tar exclusion globs match
     // slashes, verified against GNU tar 1.35+).
-    `${dataName}/*${PRIVATE_STAGING_MARKER}*`,
-    `${dataName}/*${PUBLISH_STAGING_MARKER}*`,
-    `${dataName}/clawforge-operation.lock`,
+    `${root}/*${PRIVATE_STAGING_MARKER}*`,
+    `${root}/*${PUBLISH_STAGING_MARKER}*`,
+    `${root}/clawforge-operation.lock`,
     ...LEGACY_PREFIXES.flatMap((prefix) => [
-      `${dataName}/config/${prefix}-desired.json`,
-      `${dataName}/${prefix}-operation.lock`,
+      `${root}/config/${prefix}-desired.json`,
+      `${root}/${prefix}-operation.lock`,
     ]),
   ];
 }
 
-/** GNU tar matches --exclude patterns as globs: a declaration `vault[1]` was a character
- *  class to tar but a literal name to private-config, so the one real directory named
- *  vault[1] shipped in every migrate/share snapshot while an undeclared sibling `vault1`
- *  vanished from them. privatePaths are literal data-relative paths, so their rules escape
- *  the glob metacharacters; the base exclusions keep their wildcards — --no-wildcards would
- *  break those. Escaping verified against GNU tar 1.35. */
+/** GNU tar reads --exclude patterns as globs. Escape literal root and recipe paths while
+ *  keeping the deliberate wildcards in the base exclusion suffixes. */
 function escapeTarGlob(pattern: string): string {
   return pattern.replace(/[*?[\]\\]/g, "\\$&");
 }
@@ -125,45 +122,46 @@ function escapeTarGlob(pattern: string): string {
  *  sidecar's working state — keeps them. The parameter defaults to empty, so callers without
  *  recipe context get exactly the lists they always got. */
 export function excludesFor(profile: Profile, dataName: string, recipePrivatePaths: readonly string[] = []): string[] {
+  const root = escapeTarGlob(dataName);
   const excludes = baseExcludes(dataName);
 
   if (profile !== "full" && recipePrivatePaths.length > 0) {
-    excludes.push(...recipePrivatePaths.map((path) => `${dataName}/${path}`));
+    excludes.push(...recipePrivatePaths.map((path) => escapeTarGlob(`${dataName}/${path}`)));
   }
 
   if (profile === "migrate") {
     // Same instance, different host: keep identity, hand the keys over separately.
     excludes.push(
-      `${dataName}/config/.env`,
+      `${root}/config/.env`,
       // The privacy history is published for full backups (audit 2026-09-22 round 3, P1-02);
       // a profile-limited snapshot does not carry it, and this profile's readers do not
       // expect it — verify's SHARE_ALLOWED would refuse a share archive holding it.
-      `${dataName}/config/clawforge-private-paths.json`,
-      `${dataName}/clawforge-operations`,
-      ...LEGACY_PREFIXES.map((prefix) => `${dataName}/${prefix}-operations`),
+      `${root}/config/clawforge-private-paths.json`,
+      `${root}/clawforge-operations`,
+      ...LEGACY_PREFIXES.map((prefix) => `${root}/${prefix}-operations`),
     );
   }
 
   if (profile === "share") {
     // Handing the agent to someone else: only its personality travels.
     excludes.push(
-      `${dataName}/config/.env`,
-      `${dataName}/config/clawforge-private-paths.json`, // published for full backups only (round 3, P1-02)
-      `${dataName}/config/identity`,
-      `${dataName}/config/devices`,
-      `${dataName}/config/state`,
-      `${dataName}/config/agents`,
-      `${dataName}/auth-secrets`,
+      `${root}/config/.env`,
+      `${root}/config/clawforge-private-paths.json`, // published for full backups only (round 3, P1-02)
+      `${root}/config/identity`,
+      `${root}/config/devices`,
+      `${root}/config/state`,
+      `${root}/config/agents`,
+      `${root}/auth-secrets`,
       // Host-local history: what this machine's operations did, and copies of THIS host's
       // configuration. The receiving side has its own, and a snapshot of someone else's
       // configuration is not something a shared agent should carry.
-      `${dataName}/clawforge-operations`,
-      `${dataName}/clawforge-managed.json`,
-      `${dataName}/clawforge-installed-set.json`,
+      `${root}/clawforge-operations`,
+      `${root}/clawforge-managed.json`,
+      `${root}/clawforge-installed-set.json`,
       ...LEGACY_PREFIXES.flatMap((prefix) => [
-        `${dataName}/${prefix}-operations`,
-        `${dataName}/${prefix}-managed.json`,
-        `${dataName}/${prefix}-installed-set.json`,
+        `${root}/${prefix}-operations`,
+        `${root}/${prefix}-managed.json`,
+        `${root}/${prefix}-installed-set.json`,
       ]),
     );
   }
@@ -490,11 +488,68 @@ export async function listArchive(ctx: Context, archive: string): Promise<string
 // symlink, "h" for a hard link (GNU tar's own convention, not a POSIX file type).
 const LISTING_ROW = /^(\S)\S*\s+\S+\s+\S+\s+\S+\s+\S+\s+(.*)$/;
 
+/** Decodes one GNU tar C-quoted field, returning the unconsumed suffix. */
+function readTarListingField(value: string, separator = " -> "): { readonly field: string; readonly rest: string } | undefined {
+  if (!value.startsWith('"')) {
+    const end = value.indexOf(separator);
+    return end === -1 ? undefined : { field: value.slice(0, end), rest: value.slice(end) };
+  }
+
+  const bytes: number[] = [];
+  const append = (text: string): void => {
+    bytes.push(...Buffer.from(text));
+  };
+  for (let index = 1; index < value.length; index++) {
+    const char = value[index];
+    if (char === '"') return { field: Buffer.from(bytes).toString("utf8"), rest: value.slice(index + 1) };
+    if (char !== "\\") {
+      append(char);
+      continue;
+    }
+
+    const escaped = value[++index];
+    if (escaped === undefined) return undefined;
+    const simpleEscapes: Record<string, string> = {
+      a: "\x07", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t", v: "\x0b", "\\": "\\", '"': '"',
+    };
+    if (escaped in simpleEscapes) {
+      append(simpleEscapes[escaped]);
+      continue;
+    }
+    if (/[0-7]/.test(escaped)) {
+      let octal = escaped;
+      for (let count = 0; count < 2 && /[0-7]/.test(value[index + 1] ?? ""); count++) octal += value[++index];
+      bytes.push(Number.parseInt(octal, 8));
+      continue;
+    }
+    if (escaped === "x" && /[\da-f]/i.test(value[index + 1] ?? "")) {
+      let hex = "";
+      for (let count = 0; count < 2 && /[\da-f]/i.test(value[index + 1] ?? ""); count++) hex += value[++index];
+      bytes.push(Number.parseInt(hex, 16));
+      continue;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+/** Splits GNU tar's link description while respecting quoted member names. */
+function parseTarLinkDescription(value: string, marker: " -> " | " link to "): { name: string; target: string } | undefined {
+  const parsedName = readTarListingField(value, marker);
+  if (parsedName === undefined || !parsedName.rest.startsWith(marker)) return undefined;
+  const targetText = parsedName.rest.slice(marker.length);
+  if (!targetText.startsWith('"')) return { name: parsedName.field, target: targetText };
+  const parsedTarget = readTarListingField(targetText);
+  return parsedTarget !== undefined && parsedTarget.rest === ""
+    ? { name: parsedName.field, target: parsedTarget.field }
+    : undefined;
+}
+
 /** Symlinks and hard links in the archive. Read from tar's verbose listing, which is the
  *  only place a link's target appears — `-tzf` alone lists names only. */
 export async function listArchiveLinks(ctx: Context, archive: string): Promise<Map<string, ArchiveLink>> {
   const prefix = await privilegePrefixFor(ctx, [archive]);
-  const [head, ...rest] = [...prefix, "tar", "-tvzf", archive];
+  const [head, ...rest] = [...prefix, "tar", "--quoting-style=c", "-tvzf", archive];
   const result = await ctx.transport.exec(head, rest);
 
   const links = new Map<string, ArchiveLink>();
@@ -504,17 +559,16 @@ export async function listArchiveLinks(ctx: Context, archive: string): Promise<M
     const [, typeChar, path] = row;
 
     if (typeChar === "l") {
-      // "data/a symlink -> ../orig"
-      const arrow = path.indexOf(" -> ");
-      if (arrow === -1) continue;
-      links.set(path.slice(0, arrow), { kind: "symlink", target: path.slice(arrow + 4) });
+      const parsed = parseTarLinkDescription(path, " -> ");
+      if (parsed === undefined) throw new Error("could not parse a symlink from tar's verbose listing");
+      links.set(parsed.name, { kind: "symlink", target: parsed.target });
     } else if (typeChar === "h") {
       // "data/orig link to data/a hardlink" — GNU tar names the *later* occurrence of a
       // hard-linked file this way; the target is another archive member, not a filesystem
       // path relative to anything.
-      const marker = path.indexOf(" link to ");
-      if (marker === -1) continue;
-      links.set(path.slice(0, marker), { kind: "hardlink", target: path.slice(marker + 9) });
+      const parsed = parseTarLinkDescription(path, " link to ");
+      if (parsed === undefined) throw new Error("could not parse a hard link from tar's verbose listing");
+      links.set(parsed.name, { kind: "hardlink", target: parsed.target });
     }
   }
   return links;
@@ -572,13 +626,8 @@ export async function createArchive(
   // Read from the recipes' own privatePaths declaration before the command is built: the
   // recipes live on this side, the archive on the target.
   const privatePaths = await installedRecipePrivatePaths();
-  // The declaration contributed these exact patterns (dataDirName + declared path); they and
-  // only they are escaped, because the declaration is literal — everything else in the list
-  // is glob by design.
-  const declared = new Set(privatePaths.map((path) => `${name}/${path}`));
-  const excludeArgs = excludesFor(options.profile, name, privatePaths).map((pattern) =>
-    `--exclude=${declared.has(pattern) ? escapeTarGlob(pattern) : pattern}`,
-  );
+  // The literal root and recipe paths are escaped in excludesFor; only base suffixes use globs.
+  const excludeArgs = excludesFor(options.profile, name, privatePaths).map((pattern) => `--exclude=${pattern}`);
   const prefix = await privilegePrefixFor(ctx, [`${dataDir}/auth-secrets`, dataDir], options.archive);
 
   // --numeric-owner keeps uid/gid 1000 meaningful on a host with different user names.

@@ -9,6 +9,7 @@
 import { readFile, access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomInt } from "node:crypto";
 import { die } from "./log.ts";
 import { envFile } from "../runtime/deployment.ts";
 
@@ -102,6 +103,17 @@ export function parseEnv(text: string): Env {
     env[key] = value;
   }
   return env;
+}
+
+/** Selects a deployment port candidate outside the usual ephemeral range. */
+export function projectPort(taken: ReadonlySet<number> = new Set(), start = randomInt(12768)): number {
+  const portCount = 12768;
+  const first = 20000 + (start % portCount);
+  for (let offset = 0; offset < portCount; offset += 1) {
+    const port = 20000 + ((first - 20000 + offset) % portCount);
+    if (!taken.has(port)) return port;
+  }
+  throw new Error("no deployment port is available in the configured range (20000–32767)");
 }
 
 /** The write side of the grammar above — the exact inverse of parseEnv's per-line read:

@@ -195,10 +195,9 @@ treated as held by someone unknown and refused: a run that won it and died befor
 itself is not a reason to proceed.
 
 The takeover flag is `--break-lock` and deliberately not `--force`. `--force` already means
-"yes, I mean it" for a destructive command, and the MCP layer sets it automatically from a
-caller's `confirm` argument — there being no terminal prompt to answer. Sharing the name made
-every confirmed tool call seize whatever lock another operation was holding: two permissions
-collapsed into one, with the more dangerous granted by default.
+"yes, I mean it" for a destructive command. MCP confirmation supplies `--force` only to
+commands that explicitly use it to skip their terminal prompt; it never grants lock takeover.
+Sharing the name would collapse two permissions into one.
 
 A lock outlives a run killed by a signal — a closed pipe will do it — because a `finally`
 does not run then. That is what the staleness report and `--break-lock` are for; there is no
@@ -206,6 +205,11 @@ cleanup path that survives `SIGKILL`, and pretending otherwise would be worse th
 The short-lived `operation.mutation` guard records its owning process: a dead owner on the
 same machine is recovered automatically, and an ownerless guard can be recovered with
 `--break-lock`. A live or unverifiable guard is kept until it can be checked from its owner machine.
+If the owner was on another machine, stop that machine's operation and verify it cannot
+restart before touching the guard. Inspect the guard's `owner.json` and the operation lock
+on the target, then retire the exact stale guard through an operator-controlled maintenance
+procedure. Neither `--break-lock` nor a guessed PID proves a remote owner dead; never remove
+the guard while another host could still be mutating the deployment.
 
 A failed `mkdir` is not evidence of a lock, only of a failure. Reading every non-zero exit as
 "held" turned an unwritable directory into a confident report about a lock that did not

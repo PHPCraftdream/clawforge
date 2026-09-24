@@ -267,6 +267,7 @@ try {
       },
       paths: { toContainer: (path: string) => path },
       runtime: {
+        async portConflict(): Promise<string | undefined> { return undefined; },
         async pullImage(): Promise<void> {},
         async runOneOff(): Promise<{ code: number; stdout: string; stderr: string }> {
           return { code: 0, stdout: "", stderr: "" };

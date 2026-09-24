@@ -1,6 +1,5 @@
-// The migrate publish path-policy wiring in pullLocked (state.ts): a staged migrate archive
-// whose listing carries a recipe-declared private path is refused and deleted, never
-// published; a clean listing still publishes with the same declarations present.
+// Both backup staging and pull publication enforce recipe-declared private paths. A dirty
+// migrate archive is rejected during backup verification, before either archive is published.
 //
 // The third scenario is P2-05 (docs/review-2026-09-22-xa-round-2.md): entries that merely
 // share a string prefix with a declaration — the public sibling `vault-public` of a declared
@@ -61,9 +60,10 @@ try {
     message = (error as Error).message;
   }
   check("the migrate refusal names the declared private path", output.join("").includes("recipe-private"), true);
-  check("the migrate refusal says the snapshot was rejected and deleted", message?.includes("snapshot rejected and deleted"), true);
+  check("the migrate refusal identifies the prepublication privacy check", message?.includes("fresh 'migrate' backup failed its privacy check"), true);
   check("the refused migrate pull releases its lock", scenario.lock(), false);
   check("the refused migrate snapshot is never published", [...scenario.files.keys()].filter((p) => p.includes("-state-") && p.endsWith(".tar.gz")).length, 1);
+  check("the refused migrate backup staging archive is cleaned", [...scenario.files.keys()].some((p) => p.includes("/backups/")), false);
 
   // Over-refusal guard: the same declarations, but a listing without the declared path.
   const clean = pullScenario();
@@ -79,9 +79,8 @@ try {
     true,
   );
 
-  // P2-05: the auditor's scenario through the real command. The old bare-prefix matching
-  // read `vault-public/notes.txt` as violating the declaration `vault`, rejected the
-  // snapshot, and deleted it along with the fresh backup.
+  // P2-05: the old bare-prefix matching read `vault-public/notes.txt` as violating the
+  // declaration `vault`; shared-prefix neighbors must continue to pass backup verification.
   const neighbors = pullScenario("private-neighbor");
   let neighborsThrew = false;
   try {

@@ -6,9 +6,9 @@
 // `new URL("./x.ts", "file:///p/a.ts?g=1")` is `file:///p/x.ts` — so without this hook
 // every helper past the entry would load once and keep serving its first content
 // forever, which is exactly the staleness the graph checksum exists to fix. The hook
-// re-stamps the version onto what a relative specifier resolves to, and only that:
-// bare and `#` imports are installed package content that does not change mid-session,
-// so they resolve untouched against the recipe app's own package scope.
+// re-stamps the version onto relative resolutions. Local `#` imports fail in the graph
+// checker because their conditional import maps cannot yet be tracked safely; bare
+// installed packages remain ordinary stable dependencies.
 const VERSION_PARAM = "g";
 
 interface ResolveContext {
@@ -25,12 +25,14 @@ type NextResolve = (specifier: string, context: ResolveContext) => Promise<Resol
 
 export async function resolve(specifier: string, context: ResolveContext, nextResolve: NextResolve): Promise<ResolveResult> {
   const parentURL = context.parentURL;
-  if (parentURL === undefined || !parentURL.includes(`?${VERSION_PARAM}=`)) return nextResolve(specifier, context);
-  if (!specifier.startsWith("./") && !specifier.startsWith("../")) return nextResolve(specifier, context);
+  if (parentURL === undefined) return nextResolve(specifier, context);
+  const version = new URL(parentURL).searchParams.get(VERSION_PARAM);
+  if (version === null) return nextResolve(specifier, context);
+  if (!specifier.startsWith("./") && !specifier.startsWith("../") && !specifier.startsWith("#")) {
+    return nextResolve(specifier, context);
+  }
   const resolved = await nextResolve(specifier, context);
   if (!resolved.url.startsWith("file:")) return resolved;
-  const version = new URL(parentURL).searchParams.get(VERSION_PARAM);
-  if (version === null) return resolved;
   const versioned = new URL(resolved.url);
   versioned.searchParams.set(VERSION_PARAM, version);
   return { ...resolved, url: versioned.href };

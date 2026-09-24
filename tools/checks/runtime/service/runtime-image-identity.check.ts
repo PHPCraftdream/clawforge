@@ -22,10 +22,15 @@ useDeployment("/fixture/deployment");
 try {
   const calls: string[][]=[];
   let running=true;
+  let composePsCode = 0;
+  let composePsStdout = "container-one";
+  let dockerPsCode = 0;
   const transport={
-    exec:async(_command:string,args:string[])=>{
+    exec:async(command:string,args:string[])=>{
       calls.push(args);
-      const stdout=args[0]==="compose"?"container-one":args[0]==="inspect"
+      if(command === "docker" && args[0] === "ps") return {code:dockerPsCode,stdout:"",stderr:"synthetic daemon failure"};
+      if(args[0] === "compose") return {code:composePsCode,stdout:composePsStdout,stderr:"synthetic compose failure"};
+      const stdout=args[0]==="inspect"
         ?JSON.stringify({Image:"sha256:running-image",State:{Running:running}})
         :JSON.stringify({RepoDigests:["repo@sha256:running-digest"],Config:{Labels:{"org.opencontainers.image.version":"v1"}}});
       return {code:0,stdout,stderr:""};
@@ -42,6 +47,14 @@ try {
   assert.equal(calls.some(args=>args.includes("moving-tag")),false);
   running=false;
   assert.equal(await runtime.runningImageIdentity(),undefined);
+  composePsStdout = "";
+  assert.equal(await runtime.isRunning(), false, "a successful empty compose ps means stopped");
+  composePsCode = 125;
+  await assert.rejects(runtime.isRunning(), /synthetic compose failure/);
+  const probeStack = runtime.stack("recipe-probe", "/fixture/recipe/compose.yml");
+  assert.equal(await probeStack.isRunning(), false, "a successful empty Docker ps means no sidecar is running");
+  dockerPsCode = 125;
+  await assert.rejects(probeStack.isRunning(), /synthetic daemon failure/);
   process.stderr.write("all running image identity checks passed\n");
 
   // --- the environment reaches compose as a file, not as arguments ------------------------

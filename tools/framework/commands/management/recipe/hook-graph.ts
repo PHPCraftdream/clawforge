@@ -119,7 +119,7 @@ function relativeImportSpans(source: string): ImportSpan[] {
     if (token.value.includes("\\")) {
       throw new Error("recipe hook uses an escaped import specifier; use a plain literal so its dependency can be versioned");
     }
-    if (token.value.startsWith(".")) {
+    if (token.value.startsWith(".") || token.value.startsWith("#")) {
       const quoteLength = token.kind === "template" ? 1 : 1;
       spans.push({ start: token.start + quoteLength, end: token.end - quoteLength, specifier: token.value });
     }
@@ -171,7 +171,23 @@ function relativeImportSpans(source: string): ImportSpan[] {
   return spans;
 }
 
-/** Hash a hook and its relative import graph; missing files are left for Node to report. */
+async function packageScopeFile(path: string): Promise<string> {
+  let directory = dirname(path);
+  while (true) {
+    const candidate = resolve(directory, "package.json");
+    try {
+      await readFile(candidate, "utf8");
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) throw new Error(`cannot resolve package import from ${path}: no package.json scope`);
+    directory = parent;
+  }
+}
+
+/** Hash a hook and its local import graph; missing files are left for Node to report. */
 export async function dependencyGraphChecksum(entryPath: string): Promise<string> {
   const files = new Map<string, string>();
   const queue = [entryPath];
@@ -186,7 +202,13 @@ export async function dependencyGraphChecksum(entryPath: string): Promise<string
     }
     files.set(current, content);
     for (const span of relativeImportSpans(content)) {
-      const dependency = resolve(dirname(current), span.specifier.split(/[?#]/, 1)[0] as string);
+      let dependency: string;
+      if (span.specifier.startsWith("#")) {
+        await packageScopeFile(current);
+        throw new Error(`recipe hook package import ${span.specifier} cannot be freshness-tracked safely; use a relative import instead`);
+      } else {
+        dependency = resolve(dirname(current), span.specifier.split(/[?#]/, 1)[0] as string);
+      }
       if (!files.has(dependency)) queue.push(dependency);
     }
   }

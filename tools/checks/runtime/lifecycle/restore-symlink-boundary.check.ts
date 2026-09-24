@@ -204,6 +204,48 @@ if (transport === undefined) {
     }
   }
 
+  // --- GNU tar quoting prevents a delimiter in a member name from hiding an escaping link --
+  {
+    const root = "/tmp/clawforge-restore-arrow-link-" + randomBytes(4).toString("hex");
+    const outside = root + "/outside";
+    const payload = root + "/payload";
+    const archive = root + "/archive.tar.gz";
+    try {
+      await transport.mkdirp(outside);
+      await transport.mkdirp(payload + "/data/content");
+      await transport.writeFile(payload + "/data/content/file", "must not be restored through the link\n");
+      await transport.exec("ln", ["-s", "../../outside", payload + "/data/link -> escape"]);
+      await transport.exec("tar", [
+        "--numeric-owner",
+        "-czf",
+        archive,
+        "--transform",
+        "s#^data/content/#data/link -> escape/#",
+        "-C",
+        payload,
+        "data/link -> escape",
+        "data/content/file",
+      ]);
+
+      const realEntries = await listArchive({ transport } as unknown as Context, archive);
+      const realLinks = await listArchiveLinks({ transport } as unknown as Context, archive);
+      check("GNU tar preserves the delimiter-bearing link member", realLinks.has("data/link -> escape"), true);
+      check("the escaping target is parsed in full", realLinks.get("data/link -> escape")?.target, "../../outside");
+      check(
+        "restore rejects content written through a delimiter-bearing escaping link",
+        inspectArchive(realEntries, realLinks).some((problem) => problem.fatal),
+        true,
+      );
+
+      const destination = root + "/restore-data";
+      const outcome = await attemptRestore(transport, destination, archive);
+      check("restore refuses the delimiter-bearing escaping link before extraction", outcome.refused, true);
+      check("the external target receives no extracted file", await code0(transport, "test", ["-e", outside + "/file"]), false);
+    } finally {
+      await transport.remove(root).catch(() => {});
+    }
+  }
+
   // --- the ensureDataDirs() chmod path: auth-secrets shipped as an external link -------------
   {
     const root = `/tmp/clawforge-restore-chmod-${randomBytes(4).toString("hex")}`;

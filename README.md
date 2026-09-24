@@ -438,6 +438,14 @@ Choosing a deployment: `--app`, the `OC_APP` variable, otherwise `openclaw`. Eve
 configuration path is resolved from the deployment directory — otherwise two instances
 would silently share one set of keys.
 
+New deployments get a randomly selected project port in `20000–32767`; monorepo
+scaffolding also avoids ports recorded in readable sibling `.env` files. This reduces
+collisions between independent projects without a shared registry. The candidate is not a
+claim that the target host's socket is free: `bootstrap` checks for another active Docker
+deployment publishing that port before it prepares data or pulls an image. That check and
+the eventual bind are not atomic, and listeners outside Docker are reported by Docker when
+the service starts if the host refuses the bind.
+
 ### Installing in a separate repository (npm)
 
 The second way to get the framework: instead of cloning this repository, install the

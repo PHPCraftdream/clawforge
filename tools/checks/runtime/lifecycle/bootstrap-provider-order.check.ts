@@ -59,6 +59,7 @@ try {
   useDeployment(deployment);
 
   const calls: { kind: string; args: string[] }[] = [];
+  let conflictingContainer: string | undefined;
   const ctx = {
     settings: {
       dataDir: DATA_DIR,
@@ -98,6 +99,10 @@ try {
       toContainer: (path: string) => path,
     },
     runtime: {
+      async portConflict(): Promise<string | undefined> {
+        calls.push({ kind: "port-check", args: [] });
+        return conflictingContainer;
+      },
       async pullImage(): Promise<void> {
         calls.push({ kind: "pull", args: [] });
       },
@@ -123,6 +128,7 @@ try {
   await withOutputSink(() => {}, () => bootstrap(ctx, ["--no-pull"]));
 
   const kinds = calls.map((call) => call.kind);
+  check("port conflict is checked before pulling or mutating the instance", kinds[0], "port-check");
   check("both steps ran", kinds.includes("apply-config") && kinds.includes("configure-provider"), true);
   check(
     "declared settings are applied before the provider's apiKey is written",
@@ -135,6 +141,18 @@ try {
     true,
   );
   check("the start sequence still runs after both", kinds.indexOf("configure-provider") < kinds.indexOf("start"), true);
+
+  const callsBeforeConflict = calls.length;
+  conflictingContainer = "occupied-1 (compose project other)";
+  let refusal = "";
+  try {
+    await withOutputSink(() => {}, () => bootstrap(ctx, ["--no-pull"]));
+  } catch (error) {
+    refusal = error instanceof Error ? error.message : String(error);
+  }
+  check("bootstrap names an occupied target port", refusal.includes("occupied-1 (compose project other)"), true);
+  check("bootstrap stops at the target port check before further work", calls.length, callsBeforeConflict + 1);
+  conflictingContainer = undefined;
 } finally {
   await rm(deployment, { recursive: true, force: true });
 }

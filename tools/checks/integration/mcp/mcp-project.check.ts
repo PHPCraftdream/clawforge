@@ -5,12 +5,14 @@ import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { CLAWFORGE_CONTROL_MCP_NAME, mergeClaudeConfig, mergeCodexConfig, projectMcpEntries, setupProjectMcp } from "#framework/integration/mcp-project.ts";
 import { initApp } from "#framework/integration/init.ts";
-import { createApp, appsDir } from "#framework/integration/scaffold.ts";
+import { createApp, appsDir, deploymentEnv } from "#framework/integration/scaffold.ts";
+import { projectPort } from "#framework/core/env.ts";
 import { spawnLocal } from "#framework/runtime/transport.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-project-"));
 let monorepoApp: string | undefined;
+let claimedSibling: string | undefined;
 try {
   const entries = { demo: { command: "node", args: ["test.js", "control-mcp"] } };
   const initial = '# retain this\nmodel = "configured-model"\nnotes = """\n[mcp_servers.demo]\ncommand = "inside a string"\n"""\n' +
@@ -71,6 +73,14 @@ try {
   const name = `mcp-auto-${randomBytes(5).toString("hex")}`;
   monorepoApp = resolve(appsDir,name);
   await withOutputSink(()=>{},()=>createApp(name));
+  const candidateName = `mcp-auto-${randomBytes(5).toString("hex")}`;
+  claimedSibling = resolve(appsDir, `claim-${randomBytes(5).toString("hex")}`);
+  await mkdir(claimedSibling, { recursive: true });
+  const candidate = projectPort(new Set(), 42);
+  assert.notEqual(projectPort(new Set(), 43), candidate, "different project salts produce different candidates");
+  await writeFile(join(claimedSibling, ".env"), "OPENCLAW_GATEWAY_PORT=" + candidate + "\n", "utf8");
+  const assigned = Number(/^OPENCLAW_GATEWAY_PORT=(\d+)$/m.exec(await deploymentEnv(candidateName, 42))?.[1]);
+  assert.notEqual(assigned, candidate, "new-app avoids a port recorded in a sibling deployment");
   await readFile(join(monorepoApp,".codex/config.toml"),"utf8");
   const native = JSON.parse(await readFile(join(monorepoApp,".mcp.json"),"utf8"));
   const entry = native.mcpServers[CLAWFORGE_CONTROL_MCP_NAME];
@@ -80,6 +90,7 @@ try {
   assert.ok(reply.result.tools.some((tool: {name:string})=>tool.name==="mcp-setup"));
   process.stderr.write("all project MCP setup checks passed\n");
 } finally {
+  if(claimedSibling!==undefined)await rm(claimedSibling,{recursive:true,force:true});
   if(monorepoApp!==undefined)await rm(monorepoApp,{recursive:true,force:true});
   await rm(root,{recursive:true,force:true});
 }

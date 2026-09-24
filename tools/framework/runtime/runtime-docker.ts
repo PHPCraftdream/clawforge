@@ -261,6 +261,9 @@ export class DockerRuntime implements Runtime {
 
   async isRunning(): Promise<boolean> {
     const result = await this.#compose(["ps", "--quiet", this.#service], false, true);
+    if (result.code !== 0) {
+      throw new Error(`could not determine whether service "${this.#service}" is running: ${result.stderr.trim() || `docker compose ps exited ${result.code}`}`);
+    }
     return result.stdout.trim() !== "";
   }
 
@@ -577,7 +580,10 @@ export class DockerRuntime implements Runtime {
           ["ps", "--quiet", "--filter", `label=com.docker.compose.project=${project}`],
           { allowFailure: true },
         );
-        return result.code === 0 && result.stdout.trim() !== "";
+        if (result.code !== 0) {
+          throw new Error(`could not determine whether recipe stack "${project}" is running: ${result.stderr.trim() || `docker ps exited ${result.code}`}`);
+        }
+        return result.stdout.trim() !== "";
       },
       serviceStates: async () => {
         // --all: without it compose lists only running containers, and the recipe installer

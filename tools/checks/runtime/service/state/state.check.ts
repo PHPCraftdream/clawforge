@@ -1,9 +1,8 @@
-// Checks that a rejected share snapshot never leaves both copies behind — including when
-// the verifier itself throws instead of returning false.
+// Checks that profile verification errors leave neither a published backup nor share copy.
 //
 // No target: a stub transport drives the real pull() end to end, with the grep step inside
 // verifySnapshot made to fail outright (exit code 2, "scanning failed"), which is a genuine
-// exception rather than a structural rejection. The two copies must still be removed.
+// exception rather than a structural rejection. Backup staging must still be cleaned.
 
 import { resolve } from "node:path";
 import { loadSecrets, pull, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
@@ -83,11 +82,7 @@ check(
   "/srv/snapshots/example app-state-2026-01-12T03-04-05.tar.gz",
 );
 
-// Cleanup in state.ts runs `rm -f <path>` through exec(), not through the transport's own
-// remove() — that method is a different interface entry point verify.ts uses for its own
-// temporary files (the pattern file, the unpack directory) and gets called regardless of
-// whether the verifier throws, which made an earlier version of this check pass for the
-// wrong reason. Only rm commands count as the cleanup under test.
+// Backup staging cleanup runs `rm -rf`; verify.ts's scan temp cleanup uses transport.remove().
 const removed: string[] = [];
 const present = new Set(["/srv/openclaw/data", "/srv/openclaw/snapshots", "/srv/openclaw/data/config/.env"]);
 
@@ -139,6 +134,20 @@ const ctx = {
         present.add(args[args.length - 1] ?? "");
         return { code: 0, stdout: "", stderr: "" };
       }
+      if (command === "mkdir" && args.includes("-m")) {
+        present.add(args.at(-1) ?? "");
+        return { code: 0, stdout: "", stderr: "" };
+      }
+      if (command === "tar" && args.includes("-czf")) {
+        const archive = args[args.indexOf("-czf") + 1];
+        if (archive !== undefined) present.add(archive);
+        return { code: 0, stdout: "", stderr: "" };
+      }
+      if (command === "rm" && args.includes("-rf")) {
+        const target = args.at(-1) ?? "";
+        for (const path of present) if (path === target || path.startsWith(`${target}/`)) present.delete(path);
+        return { code: 0, stdout: "", stderr: "" };
+      }
       if (command === "tar" && args.includes("-tzf")) {
         return { code: 0, stdout: "data/\ndata/config/openclaw.json\ndata/workspace/SOUL.md\n", stderr: "" };
       }
@@ -176,7 +185,9 @@ try {
 }
 
 check("a verifier that fails outright still propagates as a failure", threw, true);
-check("both the backup and the share copy were removed", removed.length, 2);
+check("verification fails before pull creates a share copy", removed.length, 0);
+check("the failed verification removes the backup staging tree", [...present].some((path) => path.includes(".clawforge-backup-")), false);
+check("the failed verification publishes no backup", [...present].some((path) => path.startsWith("/srv/openclaw/backups/") && path.endsWith(".tar.gz")), false);
 
 // --- pull holds one lock through the archive and every sidecar ---------------------------
 

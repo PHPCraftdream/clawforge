@@ -14,12 +14,10 @@
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
 import { resolve, basename, relative } from "node:path";
 import { log, info, die } from "../core/log.ts";
-import { frameworkRoot } from "../core/env.ts";
+import { frameworkRoot, projectPort } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { setupProjectMcp } from "./mcp-project.ts";
 import { createPrivateFile } from "../security/private-file.ts";
-
-const DEFAULT_PORT = 18789;
 
 const DECLARATION = `// This deployment.
 //
@@ -123,7 +121,7 @@ async function deploymentEnv(name: string): Promise<string> {
       if (line.startsWith("OC_DATA_DIR=")) return `OC_DATA_DIR=/srv/${name}/data`;
       if (line.startsWith("OC_BACKUP_DIR=")) return `OC_BACKUP_DIR=/srv/${name}/backups`;
       if (line.startsWith("OC_SNAPSHOT_DIR=")) return `OC_SNAPSHOT_DIR=/srv/${name}/snapshots`;
-      if (line.startsWith("OPENCLAW_GATEWAY_PORT=")) return `OPENCLAW_GATEWAY_PORT=${DEFAULT_PORT}`;
+      if (line.startsWith("OPENCLAW_GATEWAY_PORT=")) return `OPENCLAW_GATEWAY_PORT=${projectPort()}`;
       return line;
     })
     .join("\n");

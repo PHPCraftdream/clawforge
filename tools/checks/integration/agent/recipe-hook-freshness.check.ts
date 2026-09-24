@@ -314,9 +314,64 @@ try {
       computedImportError = error instanceof Error ? error.message : String(error);
     }
     check("helper: computed dynamic imports fail clearly instead of escaping freshness tracking", computedImportError.includes("computed dynamic import"), true);
+
+    await writeFile(resolve(helperRoot, "helper", "deep.ts"), "export const REVISION = 10;\n", "utf8");
+    await writeFile(resolve(helperRoot, "helper", "nested.ts"), "export { REVISION } from \"./deep.ts\";\n", "utf8");
+    await writeFile(resolve(helperRoot, "helper", "bridge.ts"), "export { REVISION } from \"./nested.ts\";\n", "utf8");
+    await writeFile(
+      resolve(helperRoot, "helper", "verify.ts"),
+      "import { REVISION } from \"./bridge.ts?variant=1\";\nexport async function verify() { return { ok: true, revision: REVISION }; }\n",
+      "utf8",
+    );
+    check("helper: a query-bearing relative import starts a versioned nested graph", (await verifyOnce()).revision, 10);
+    await writeFile(resolve(helperRoot, "helper", "deep.ts"), "export const REVISION = 11;\n", "utf8");
+    check("helper: nested edits behind a query-bearing relative import are fresh", (await verifyOnce()).revision, 11);
   } finally {
     useRecipesDir(outerRecipes);
     await rm(helperRoot, { recursive: true, force: true });
+  }
+}
+
+// Conditional package import maps cannot currently be freshness-tracked with Node's exact
+// ESM resolution conditions, so local aliases fail closed before any hook code executes.
+{
+  const aliasRoot = resolve(tmpdir(), `clawforge-recipe-hook-alias-${Date.now()}`);
+  try {
+    await mkdir(resolve(aliasRoot, "alias"), { recursive: true });
+    await writeFile(resolve(aliasRoot, "alias", "package.json"), JSON.stringify({ type: "module", imports: { "#helper": "./helper.ts" } }), "utf8");
+    await writeFile(resolve(aliasRoot, "alias", "recipe.json"), JSON.stringify({ description: "Package alias freshness probe" }), "utf8");
+    const marker = resolve(aliasRoot, "alias", "evaluated.txt");
+    await writeFile(resolve(aliasRoot, "alias", "helper.ts"), `import { writeFile } from "node:fs/promises";\nawait writeFile(${JSON.stringify(marker)}, "ran");\nexport const REVISION = 20;\n`, "utf8");
+    await writeFile(
+      resolve(aliasRoot, "alias", "verify.ts"),
+      "import { REVISION } from \"#helper\";\nexport async function verify() { return { ok: true, revision: REVISION }; }\n",
+      "utf8",
+    );
+    useRecipesDir(aliasRoot);
+    const { ctx } = stubContext({});
+    const verifyOnce = async (): Promise<{ revision?: number }> => {
+      let output = "";
+      await withOutputSink((chunk) => { output += chunk; }, () => recipe(ctx, ["verify", "alias"]));
+      return JSON.parse(output) as { revision?: number };
+    };
+
+    let aliasError = "";
+    try {
+      await verifyOnce();
+    } catch (error) {
+      aliasError = error instanceof Error ? error.message : String(error);
+    }
+    check("package imports: local aliases fail closed with a clear freshness error", aliasError.includes("cannot be freshness-tracked safely"), true);
+    let hookEvaluated = true;
+    try {
+      await access(marker);
+    } catch {
+      hookEvaluated = false;
+    }
+    check("package imports: failure occurs before helper evaluation", hookEvaluated, false);
+  } finally {
+    useRecipesDir(outerRecipes);
+    await rm(aliasRoot, { recursive: true, force: true });
   }
 }
 

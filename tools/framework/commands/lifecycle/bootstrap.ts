@@ -20,6 +20,7 @@ import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/
 import { ensureBaselineConfig, configureProvider } from "../management/provider.ts";
 import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
+import { preflightPort } from "./lifecycle.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 
 export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
@@ -61,6 +62,9 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
   const live = ctx;
   const token = fresh.env.OPENCLAW_GATEWAY_TOKEN ?? "";
 
+  // Refuse a port already published by another deployment before preparing data or pulling
+  // an image. The check and Docker's later bind are not atomic.
+  await preflightPort(live);
   await ensureDataDirs(live);
   await ensureSecretsFile(live);
 

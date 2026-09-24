@@ -4,7 +4,7 @@
 // Building happens on the target: a Rust or Go build from scratch takes minutes, and the
 // output is streamed rather than swallowed — silent waiting looks like a hang.
 
-import { cp, access } from "node:fs/promises";
+import { cp, access, readdir } from "node:fs/promises";
 import { register } from "node:module";
 import { basename, relative, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/log.ts";
@@ -72,17 +72,46 @@ async function stackFor(ctx: Context, name: string) {
   return { recipe, stack: ctx.runtime.stack(projectName(deploymentName(), name), recipe.definitionPath) };
 }
 
-/** Installed recipes whose Compose stacks are currently running, via the same probe
- *  `recipe status` answers from: one Stack.isRunning() per recipe, which fails soft —
- *  an uninstalled or unreachable stack reads as "not running", never a throw. The
- *  tolerant listRecipes() read is deliberate: this names sidecars for a warning, and
- *  a broken manifest must not break the command carrying the warning (the listing's
- *  rule). Readers: backup and restore, which cannot stop another project's containers
- *  and so must say which stacks their consistency guarantee leaves out (audit
- *  2026-09-22 round 2, P2-04). */
+/** Installed recipes whose Compose stacks are currently running. A failed runtime probe
+ *  propagates because backup and restore cannot claim consistency without its answer. A
+ *  broken manifest is tolerated only when its directory's stack is proven stopped; a live
+ *  stack must not disappear from the quiesce decision. */
 export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
   const running: Recipe[] = [];
-  for (const recipe of await listRecipes()) {
+  let entries;
+  try {
+    entries = await readdir(recipesDirectory(), { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return running;
+    throw error;
+  }
+
+  for (const entry of entries.filter((candidate) => candidate.isDirectory())) {
+    const directory = resolve(recipesDirectory(), entry.name);
+    try {
+      await access(resolve(directory, "recipe.json"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+
+    let recipe: Recipe;
+    try {
+      recipe = await loadRecipe(entry.name);
+    } catch (error) {
+      // A broken declaration cannot supply hooks, but its directory still names the compose
+      // project. If that project is live, fail closed before backup can archive it unsafely.
+      const stack = ctx.runtime.stack(
+        projectName(deploymentName(), entry.name),
+        resolve(directory, "compose.yml"),
+      );
+      if (await stack.isRunning()) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`running recipe "${entry.name}" has an invalid manifest; backup cannot confirm it is quiesced: ${detail}`);
+      }
+      continue;
+    }
+
     const stack = ctx.runtime.stack(projectName(deploymentName(), recipe.name), recipe.definitionPath);
     if (await stack.isRunning()) running.push(recipe);
   }
@@ -111,9 +140,9 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
  *  at once and Node re-executes the whole graph, while an unchanged graph answers from
  *  this map without importing at all.
  *
- *  Hooks execute from their real location, so nothing about resolution changes for the
- *  recipe author: bare imports (`@clawforge/framework/private-config`, the recipe app's
- *  own dependencies) and `#imports` resolve against the recipe's own package scope,
+ *  Hooks execute from their real location, so bare imports (`@clawforge/framework/private-config`,
+ *  the recipe app's own dependencies) resolve against the recipe's package scope. Local
+ *  `#imports` fail closed until their conditional import maps can be freshness-tracked safely.
  *  `import.meta.url` points at the real file, and sibling assets sit where relative
  *  reads expect them. Nothing is copied to temp storage, so there is no shared cache
  *  directory to win a race against, no pre-existing file to silently adopt, and no

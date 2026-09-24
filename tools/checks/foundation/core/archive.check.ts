@@ -229,6 +229,31 @@ check(
   "../orig",
 );
 
+const arrowFilenameListing =
+  'lrwxrwxrwx user/user 0 2026-01-01 00:00 "data/link -> escape" -> "../../outside"\n';
+let tarUsesQuotedVerboseOutput = false;
+const arrowFilenameLinks = await listArchiveLinks(
+  {
+    transport: {
+      description: "stub",
+      async exists(): Promise<boolean> { return true; },
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        tarUsesQuotedVerboseOutput = command === "tar" && args.includes("--quoting-style=c");
+        return { code: 0, stdout: arrowFilenameListing, stderr: "" };
+      },
+    },
+  } as unknown as Context,
+  "/tmp/x.tar.gz",
+);
+check("verbose tar uses unambiguous C quoting", tarUsesQuotedVerboseOutput, true);
+check("a symlink name containing the target delimiter is preserved", arrowFilenameLinks.has("data/link -> escape"), true);
+check("a symlink target after a delimiter in the name is preserved", arrowFilenameLinks.get("data/link -> escape")?.target, "../../outside");
+check(
+  "content written through a symlink whose name contains an arrow is rejected",
+  inspectArchive(["data", "data/link -> escape", "data/link -> escape/file"], arrowFilenameLinks).some((problem) => problem.fatal),
+  true,
+);
+
 const hardlink = await listArchiveLinks(
   stubContext(
     "-rw-r--r-- user/user 4 2026-01-01 00:00 data/a hardlink\n" +
@@ -344,6 +369,12 @@ check("a recipe's private path is excluded from migrate", excludesFor("migrate",
 check("a recipe's private path is excluded from share", excludesFor("share", "data", ["sidecar-private"]).includes("data/sidecar-private"), true);
 check("a recipe's private path stays in full", excludesFor("full", "data", ["sidecar-private"]).includes("data/sidecar-private"), false);
 check("without declarations the exclude lists are unchanged", excludesFor("migrate", "data").includes("data/sidecar-private"), false);
+
+for (const profile of ["migrate", "share"] as const) {
+  const excludes = excludesFor(profile, "data[1]");
+  check(`base excludes quote a glob metacharacter in the root (${profile})`, excludes.includes("data\\[1\\]/config/.env"), true);
+  check(`base exclude wildcards remain active (${profile})`, excludes.includes("data\\[1\\]/config/.env.clawforge-*"), true);
+}
 
 // --- P2-05: the privilege prefix is chosen per capability over every path involved --------
 //

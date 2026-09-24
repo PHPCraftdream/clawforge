@@ -50,12 +50,13 @@ jobs:
     #   integration/agent/recipe-hook-freshness-server.check.ts drive the real gate with
     #   OC_TARGET_LOCATION=auto, which resolves to WslTransport and takes the instance
     #   lock through wsl.exe — no availability probe, no skip.
-    # - Probe-gated (13 of the included): foundation/cli/host,
+    # - Probe-gated (14 of the included): foundation/cli/host,
     #   runtime/convergence/backup, runtime/convergence/inspect/checksums,
     #   runtime/lifecycle/private-declaration-lifetime,
     #   runtime/lifecycle/private-paths-prefix-boundary,
     #   runtime/lifecycle/restore-symlink-boundary, runtime/private-history-restore,
-    #   runtime/service/runtime-image-identity, security/credentials/private-config,
+    #   runtime/service/runtime-image-identity, runtime/service/state/backup-policy,
+    #   security/credentials/private-config,
     #   security/credentials/private-file,
     #   security/credentials/recipe-private-snapshot/snapshot,
     #   security/credentials/ssh-quoting, security/private-paths-ledger/reconcile-history —
@@ -189,6 +190,7 @@ jobs:
             tools/checks/runtime/service/runtime-port.check.ts
             tools/checks/runtime/service/state/state.check.ts
             tools/checks/runtime/service/state/rotation.check.ts
+            tools/checks/runtime/service/state/backup-policy.check.ts
             tools/checks/security/acceptance/accept.check.ts
             tools/checks/security/acceptance/plan.check.ts
             tools/checks/security/credentials/private-config.check.ts

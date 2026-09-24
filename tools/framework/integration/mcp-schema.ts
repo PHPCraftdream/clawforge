@@ -19,6 +19,9 @@ export type Declared = {
   readonly structured?: boolean;
   readonly readOnly?: boolean;
   readonly readOnlyWhen?: (args: string[]) => boolean;
+  readonly changedWhen?: (args: string[]) => boolean;
+  readonly requiresConfirmationWhen?: (args: string[]) => boolean;
+  readonly forceOnConfirmation?: boolean;
 };
 
 /** The envelope every structured tool result carries.
@@ -51,7 +54,7 @@ export const STRUCTURED_OUTPUT_SCHEMA = {
   type: "object",
   properties: {
     operationId: { type: "string", description: "Command operation id when available; otherwise this tool call id" },
-    changed: { type: "boolean", description: "Whether the call may have changed the instance" },
+    changed: { type: "boolean", description: "Whether the call may have changed state" },
     healthy: { type: "boolean", description: "Whether the instance is doing its job, when the command knows" },
     problems: { type: "array", description: "Findings, each with a stable code, severity, detail and nextAction" },
     warnings: { type: "array", description: "The subset of problems that are not blocking" },
@@ -70,7 +73,7 @@ function isWarning(problem: unknown): boolean {
  *  Returns undefined when the output is not the single JSON document the command promised —
  *  the text result still stands, so a broken promise degrades to what every other tool
  *  returns instead of turning a working call into an error. */
-export function structuredResult(command: Declared, output: string, operationId: string): StructuredResult | undefined {
+export function structuredResult(command: Declared, output: string, operationId: string, args: string[] = []): StructuredResult | undefined {
   let payload: unknown;
   try {
     payload = JSON.parse(output);
@@ -90,7 +93,7 @@ export function structuredResult(command: Declared, output: string, operationId:
     // A read-only command changes nothing by declaration. Anything else is asked, and when
     // it does not say, taken to have changed something: an agent that re-checks
     // unnecessarily loses a call, one that skips a check it needed loses the thread.
-    changed: command.readOnly === true ? false : (typeof fields.changed === "boolean" ? fields.changed : true),
+    changed: command.changedWhen?.(args) ?? (command.readOnly === true ? false : (typeof fields.changed === "boolean" ? fields.changed : true)),
     healthy: typeof fields.healthy === "boolean" ? fields.healthy : undefined,
     problems,
     warnings: problems.filter(isWarning),
@@ -108,10 +111,10 @@ export function structuredResult(command: Declared, output: string, operationId:
  *  with the command's own output verbatim in `result` and nothing invented around it. A
  *  text action's envelope stays silent where a structured one speaks — no healthy, no
  *  problems, no nextActions — because a gap can be seen and a guess cannot be trusted. */
-export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string): StructuredResult {
-  return structuredResult(command, machineOutput ?? output, operationId) ?? {
+export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = []): StructuredResult {
+  return structuredResult(command, machineOutput ?? output, operationId, args) ?? {
     operationId,
-    changed: command.readOnly === true ? false : true,
+    changed: command.changedWhen?.(args) ?? (command.readOnly === true ? false : true),
     problems: [],
     warnings: [],
     nextActions: [],
@@ -190,7 +193,7 @@ export function inputSchema(command: Declared): Record<string, unknown> {
         ? "Must be true: this command replaces or destroys state"
         : "Must be true when the selected action replaces or destroys state",
     };
-    if (command.readOnlyWhen === undefined) required.push("confirm");
+    if (command.readOnlyWhen === undefined && command.requiresConfirmationWhen === undefined) required.push("confirm");
   }
 
   return { type: "object", properties, required };
@@ -263,10 +266,7 @@ export function toArgv(command: Declared, args: Record<string, unknown>): string
     else named.push(`--${argument.name}`, String(value));
   }
 
-  // A destructive command asks for confirmation on a terminal; over MCP the confirmation is
-  // the tool argument, so the prompt has to be waived here rather than by a second flag the
-  // caller has to know about.
-  if (command.destructive === true && declared.some((argument) => argument.name === "force")) {
+  if (command.forceOnConfirmation === true && args.confirm === true && declared.some((argument) => argument.name === "force")) {
     if (!named.includes("--force")) named.push("--force");
   }
 

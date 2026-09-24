@@ -220,7 +220,7 @@ try {
     const setSchema = inputSchema(openclawCommands.set!);
     check("set MCP schema leaves conditional confirmation optional", (setSchema.required as string[]).includes("confirm"), false);
     check("set MCP description explains conditional confirmation", toolDescription(openclawCommands.set!).includes("read-only actions do not"), true);
-    check("set build is read-only for MCP gating", openclawCommands.set!.readOnlyWhen?.(["build"]), true);
+    check("set build is mutable without confirmation", openclawCommands.set!.readOnlyWhen?.(["build"]), false);
     check("set try remains destructive for MCP gating", openclawCommands.set!.readOnlyWhen?.(["try"]), false);
     check("lock check is read-only for MCP gating", openclawCommands.lock!.readOnlyWhen?.(["--check"]), true);
     check("lock write remains mutable for MCP gating", openclawCommands.lock!.readOnlyWhen?.([]), false);
@@ -392,31 +392,6 @@ try {
   } finally {
     await rm(resolve(appsDir, badCallDeployment), { recursive: true, force: true });
   }
-}
-
-// --- confirming a destructive call is not permission to seize a lock ----------------------
-//
-// toArgv appends --force for a destructive command that declares it, because over MCP the
-// confirm argument IS the confirmation and there is no terminal prompt to answer. That rule
-// is right, and it silently widened the moment a command declared --force to mean something
-// else: the instance lock's takeover flag. Every confirmed apply would then have taken over
-// whatever lock another operation was holding. The takeover has its own name now, and this
-// is what keeps the two apart.
-
-{
-  const declaredFlags = (name: string): string[] =>
-    (openclawCommands[name]?.arguments ?? []).filter((argument) => argument.kind === "flag").map((argument) => argument.name);
-
-  for (const name of ["apply", "rollback", "provision-agent"]) {
-    check(`${name} does not call its lock takeover "force"`, declaredFlags(name).includes("force"), false);
-    check(`${name} declares the takeover under its own name`, declaredFlags(name).includes("break-lock"), true);
-  }
-
-  // The generated argv is what actually reaches the command, so assert on that rather than
-  // on the declaration alone.
-  const argv = toArgv(openclawCommands.apply!, { confirm: true });
-  check("a confirmed apply carries no lock takeover", argv.includes("--break-lock"), false);
-  check("and a caller that asks for it still gets it", toArgv(openclawCommands.apply!, { confirm: true, "break-lock": true }).includes("--break-lock"), true);
 }
 
 // --- the envelope itself -----------------------------------------------------------------

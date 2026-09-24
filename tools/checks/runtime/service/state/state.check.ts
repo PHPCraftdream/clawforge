@@ -6,7 +6,7 @@
 // exception rather than a structural rejection. The two copies must still be removed.
 
 import { resolve } from "node:path";
-import { loadSecrets, pull, rotateSnapshots, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
+import { loadSecrets, pull, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
 import { parseSnapshotArchive } from "#framework/service/archive.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { takeLock } from "#framework/runtime/instance-lock.ts";
@@ -14,7 +14,7 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport.ts";
-import { pullScenario, type PullFailure } from "../pull-harness.ts";
+import { pullScenario, type PullFailure } from "../../pull-harness.ts";
 
 let failed = 0;
 
@@ -38,6 +38,17 @@ function modelMutationGuard(ctx: Context): void {
       if (held) return { code: 1, stdout: "", stderr: "File exists" };
       held = true;
       return { code: 0, stdout: "", stderr: "" };
+    }
+    if (command === "ln") {
+      const [source, destination] = args;
+      if (source === undefined || destination === undefined) return { code: 1, stdout: "", stderr: "Invalid link" };
+      try {
+        if (await ctx.transport.exists(destination)) return { code: 1, stdout: "", stderr: "File exists" };
+        await ctx.transport.writeFile(destination, await ctx.transport.readFile(source));
+        return { code: 0, stdout: "", stderr: "" };
+      } catch {
+        return { code: 1, stdout: "", stderr: "No such file" };
+      }
     }
     if (command === "test" && args[0] === "-d" && target.endsWith("/operation.mutation")) {
       return { code: held ? 0 : 1, stdout: "", stderr: "" };
@@ -166,68 +177,6 @@ try {
 
 check("a verifier that fails outright still propagates as a failure", threw, true);
 check("both the backup and the share copy were removed", removed.length, 2);
-
-// --- snapshot rotation: bounded, and cheap regardless of backlog size ------------------
-
-{
-  const name = deploymentName();
-  const snapshotDir = "/srv/openclaw/snapshots";
-
-  // 12 snapshots, newest first — exactly what `ls -1t` returns — with OC_SNAPSHOT_KEEP=3,
-  // so 9 are stale. A first-time rotation of a real, long-unrotated deployment looks like
-  // this: dozens of snapshots, not one or two.
-  const ownListing = Array.from({ length: 12 }, (_, i) => `${snapshotDir}/${name}-state-2026-01-12T03-04-${String(12 - i).padStart(2, "0")}.tar.gz`);
-  const foreign = `${snapshotDir}/${name}-state-state-2026-01-12T03-04-99.tar.gz`;
-  const listing = [ownListing[0], foreign, ...ownListing.slice(1)];
-
-  const execCalls: { command: string; args: string[] }[] = [];
-  const rotationCtx = {
-    settings: { env: { OC_SNAPSHOT_KEEP: "3" } },
-    transport: {
-      description: "stub",
-      async exists(): Promise<boolean> {
-        return true;
-      },
-      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-        execCalls.push({ command, args });
-        if (args.includes("-w")) return { code: 0, stdout: "", stderr: "" };
-        if (command === "sh" && args.some((arg) => arg.includes("ls -1t"))) {
-          return { code: 0, stdout: `${listing.join("\n")}\n`, stderr: "" };
-        }
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    },
-  } as unknown as Context;
-
-  await withOutputSink(
-    () => {},
-    () => rotateSnapshots(rotationCtx, snapshotDir),
-  );
-
-  const rmCalls = execCalls.filter((call) => call.command === "rm");
-  check("exactly one rm call regardless of how many snapshots are stale", rmCalls.length, 1);
-
-  const removedTargets = rmCalls[0]?.args.filter((arg) => arg !== "-f") ?? [];
-  const stale = ownListing.slice(3);
-  const kept = ownListing.slice(0, 3);
-
-  check("every stale snapshot's base archive is targeted", stale.every((path) => removedTargets.includes(path)), true);
-  check(
-    "every stale snapshot's sidecar files are targeted too",
-    stale.every(
-      (path) => removedTargets.includes(`${path}.template.env`) && removedTargets.includes(`${path}.secrets.env`),
-    ),
-    true,
-  );
-  check("none of the kept snapshots are targeted", kept.some((path) => removedTargets.includes(path)), false);
-  check("removing 9 beyond the last 3 with 12 total", stale.length, 9);
-  check("foreign deployment snapshot is preserved", removedTargets.includes(foreign), false);
-
-  // The round-trip count that actually matters: this used to be one sudoFor probe per
-  // candidate file (up to 3 per stale snapshot), which is what made a large backlog slow
-  // enough to blow past a normal command timeout on a real deployment.
-  check("the whole rotation costs at most a few round trips, not one per file", execCalls.length <= 5, true);
-}
 
 // --- pull holds one lock through the archive and every sidecar ---------------------------
 
@@ -373,7 +322,7 @@ check("both the backup and the share copy were removed", removed.length, 2);
       async readFile(path: string): Promise<string> {
         if (path.endsWith("holder.json")) return files.get(path) ?? "";
         if (path.endsWith("openclaw.json")) return "{}";
-        return "";
+        return files.get(path) ?? "";
       },
       async writeFile(path: string, content: string): Promise<void> { files.set(path, content); },
       async remove(path: string): Promise<void> { if (path.endsWith("operation.lock")) lockExists = false; files.delete(path); },

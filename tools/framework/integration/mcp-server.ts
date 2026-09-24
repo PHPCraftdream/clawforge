@@ -273,7 +273,8 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
 
         const argv = toArgv(command, args);
         const readOnly = command.readOnly === true || command.readOnlyWhen?.(argv) === true;
-        if (command.destructive === true && !readOnly && args.confirm !== true) {
+        const requiresConfirmation = command.requiresConfirmationWhen?.(argv) ?? !readOnly;
+        if (command.destructive === true && requiresConfirmation && args.confirm !== true) {
           reply(request.id, {
             isError: true,
             content: [{ type: "text", text: maskSecrets(`${name} replaces or destroys state — pass confirm: true`) }],
@@ -291,7 +292,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           // envelope it declared — text included — so the declared schema is true of each
           // response rather than of the actions someone remembered to list.
           const structured = command.structured === true
-            ? toolEnvelope(effectiveCommand, output, machineOutput, `${name}-${Date.now().toString(36)}`)
+            ? toolEnvelope(effectiveCommand, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv)
             : undefined;
           // Redaction is not an error-path courtesy (audit 2026-09-22 round 3, P2-05): a
           // successful diagnostic prints the same logs, hook output and machine JSON a

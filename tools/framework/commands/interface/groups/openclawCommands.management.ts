@@ -18,6 +18,11 @@ import { recoverEnv } from "#src/commands/recover-env/index.ts";
 import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe/index.ts";
 import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
 
+function secretsWrites(args: string[]): boolean {
+  if (["--init-store", "--dump", "--apply"].some((flag) => args.includes(flag))) return true;
+  return args.includes("--template") && !args.includes("--print-template");
+}
+
 export const managementCommands: Record<string, AppCommand> = {
   status: {
     summary: "Show containers, image, health probes and data usage",
@@ -209,7 +214,9 @@ export const managementCommands: Record<string, AppCommand> = {
       "operator side's own copy was lost while the instance kept running. A name it " +
       "cannot recover is left blank and named in the report, never guessed.\n" +
       "up/bootstrap refuse to start when something required is missing, rather than let " +
-      "the gateway crash-loop.",
+      "the gateway crash-loop.\n" +
+      "Over MCP, status and template operations need no confirmation; --apply, --init-store " +
+      "and --dump require confirm: true. --force remains an explicit separate choice.",
     arguments: [
       { name: "template", description: "Write the secrets template into config/", kind: "flag" },
       { name: "print-template", description: "Print the template instead of writing it", kind: "flag" },
@@ -219,6 +226,10 @@ export const managementCommands: Record<string, AppCommand> = {
       { name: "store", description: "Store name, e.g. local or prod", kind: "option" },
       { name: "force", description: "Replace an existing store (with --init-store or --dump)", kind: "flag" },
     ],
+    destructive: true,
+    readOnlyWhen: (args) => !secretsWrites(args),
+    changedWhen: secretsWrites,
+    requiresConfirmationWhen: (args) => ["--init-store", "--apply", "--dump"].some((flag) => args.includes(flag)),
   },
   "recover-env": {
     summary: "Repair .env's connection facts from the running instance",

@@ -1,15 +1,4 @@
-// Checks recipe loading and listing (tools/framework/service/recipe.ts) plus the guard rails in the
-// `install` branch of tools/framework/commands/management/recipe/index.ts — a disabled recipe refuses to build
-// without --force-disabled, and a declared variable that is not set refuses before it does.
-//
-// Since the mutating recipe actions run under the instance lock, this file also covers that gating:
-// every action except the read-only ones and `import` refuses while another operation holds the
-// lock, rides a lock the calling chain already holds, and honours --break-lock — all against an
-// in-memory transport, so the lock's own mkdir mechanic is exercised rather than mocked away.
-//
-// Real recipe.json files under a scratch directory, so loadRecipe/listRecipes run against
-// actual disk I/O rather than a mock of node:fs. The scratch directory is removed in a
-// finally block so a failed assertion does not leave litter.
+// Recipe manifests and action guards run against isolated files and a modeled locked target.
 
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -54,16 +43,8 @@ async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string>
   return "";
 }
 
-/** A fresh stub `ctx` whose stack() returns spies recording build/up calls, and whose transport is
- *  an in-memory filesystem with just enough shell for the instance lock: plain `mkdir` of an
- *  existing directory fails, which is the entire acquisition mechanism — `mkdir -p` and `mkdir -m`
- *  only prepare directories, `rmdir` refuses a non-empty one, and `test -d` reads it back. */
-function stubContext(env: Record<string, string>): {
-  ctx: Context;
-  calls: string[];
-  files: Map<string, string>;
-  dirs: Set<string>;
-} {
+/** Models exclusive directory claims and stack calls. */
+function stubContext(env: Record<string, string>): { ctx: Context; calls: string[]; files: Map<string, string>; dirs: Set<string> } {
   const calls: string[] = [];
   const files = new Map<string, string>();
   const dirs = new Set<string>();
@@ -100,6 +81,14 @@ function stubContext(env: Record<string, string>): {
           for (const [k, v] of [...files].filter(([k]) => k === source || k.startsWith(`${source}/`))) { files.delete(k); files.set(dest + k.slice(source.length), v); }
           return { code: 0, stdout: "", stderr: "" };
         }
+        if (command === "ln") {
+          const [source, dest] = args;
+          if (source === undefined || dest === undefined || !files.has(source) || files.has(dest) || dirs.has(dest)) {
+            return { code: 1, stdout: "", stderr: "File exists" };
+          }
+          files.set(dest, files.get(source)!);
+          return { code: 0, stdout: "", stderr: "" };
+        }
         if (command === "rm") {
           const target = args[args.length - 1];
           for (const d of [...dirs].filter((e) => e === target || e.startsWith(`${target}/`))) dirs.delete(d);
@@ -125,6 +114,10 @@ function stubContext(env: Record<string, string>): {
         for (const key of dirs) {
           if (key.startsWith(`${path}/`)) dirs.delete(key);
         }
+      },
+      async listFiles(path: string): Promise<string[]> {
+        const prefix = `${path}/`;
+        return [...files.keys()].filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
       },
     },
     runtime: {
@@ -415,15 +408,7 @@ try {
     false,
   );
 
-  // --- the instance lock: every mutating action gates like apply ----------------------
-  //
-  // install and remove change the target through the runtime, and verify, onboard and diagnose
-  // run app-owned hooks with a full Context, so all of them take the instance lock the way
-  // apply does — prepare.ts has the same power over the target as the build it precedes. The
-  // refusal direction below is the audit's own reproduction: a hook writing while the holder
-  // reads. The nesting direction is the other half: a caller that already holds the lock (an
-  // orchestration step running a recipe command as its own) is served, not refused by its own
-  // step.
+  // --- mutating actions share apply's lock; nested actions reuse it --------------------
 
   {
     const { ctx, calls, files, dirs } = stubContext({});

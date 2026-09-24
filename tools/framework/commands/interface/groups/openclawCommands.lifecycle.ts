@@ -94,6 +94,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     summary: "Restore an archive over the current state",
     run: restore,
     destructive: true,
+    forceOnConfirmation: true,
     details:
       "The archive is validated before anything is stopped or overwritten —\n" +
       "every entry is checked for absolute paths, `..` escapes and links that would " +
@@ -146,6 +147,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     summary: "Push a snapshot back onto the instance",
     run: push,
     destructive: true,
+    forceOnConfirmation: true,
     details:
       "Restores the newest snapshot in the deployment's snapshot directory (or a given " +
       "path), installs whatever provider keys travelled beside it (<archive>.secrets.env, " +

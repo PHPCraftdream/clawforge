@@ -49,6 +49,8 @@ try {
   const writes: string[] = [];
   const runtimeCalls: string[] = [];
   const execCalls: string[][] = [];
+  const files = new Map<string, string>();
+  const dirs = new Set<string>();
   const lockHome = "/srv/openclaw/data-locks";
 
   const ctx = {
@@ -69,17 +71,43 @@ try {
         return !path.endsWith("config/.env");
       },
       async readFile(path: string): Promise<string> {
-        return path.endsWith("holder.json") ? holder : "";
+        if (path.endsWith("/operation.lock/holder.json")) return holder;
+        const content = files.get(path);
+        if (content === undefined) throw new Error(`no such file: ${path}`);
+        return content;
       },
-      async writeFile(path: string): Promise<void> {
-        writes.push(path);
+      async writeFile(path: string, content: string): Promise<void> {
+        if (path.endsWith("/config/.env")) writes.push(path);
+        files.set(path, content);
       },
-      async remove(): Promise<void> {},
+      async remove(path: string): Promise<void> {
+        files.delete(path);
+      },
+      async listFiles(path: string): Promise<string[]> {
+        const prefix = `${path}/`;
+        return [...files.keys()].filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
+      },
       async mkdirp(): Promise<void> {},
       async exec(command: string, args: string[], options: { allowFailure?: boolean } = {}): Promise<{ code: number; stdout: string; stderr: string }> {
         execCalls.push([command, ...args]);
+        if (command === "ln") {
+          const [source, destination] = args;
+          if (source === undefined || destination === undefined || !files.has(source)) return { code: 1, stdout: "", stderr: "No such file" };
+          if (files.has(destination)) return { code: 1, stdout: "", stderr: "File exists" };
+          files.set(destination, files.get(source)!);
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "rmdir") {
+          dirs.delete(args[args.length - 1] ?? "");
+          return { code: 0, stdout: "", stderr: "" };
+        }
         // The mutation guard is available; only the operation lock is held by the fixture.
-        if (command === "mkdir" && args[0] === `${lockHome}/operation.mutation`) return { code: 0, stdout: "", stderr: "" };
+        if (command === "mkdir" && args[0] === `${lockHome}/operation.mutation`) {
+          const target = args[0];
+          if (dirs.has(target)) return { code: 1, stdout: "", stderr: "File exists" };
+          dirs.add(target);
+          return { code: 0, stdout: "", stderr: "" };
+        }
         if (command === "mkdir" && args[0] === `${lockHome}/operation.lock`) return { code: 1, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-d") {
           return { code: args[1] === `${lockHome}/operation.lock` ? 0 : 1, stdout: "", stderr: "" };

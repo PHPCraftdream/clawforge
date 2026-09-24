@@ -48,6 +48,15 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
       async mkdirp(): Promise<void> {},
       async exec(command: string, args: string[]): Promise<ExecResult> {
         events.push(`${command}:${args.join(" ")}`);
+        if (command === "ln") {
+          const [source, destination] = args;
+          if (source === undefined || destination === undefined || !files.has(source)) {
+            return { code: 1, stdout: "", stderr: "No such file" };
+          }
+          if (files.has(destination)) return { code: 1, stdout: "", stderr: "File exists" };
+          files.set(destination, files.get(source)!);
+          return { code: 0, stdout: "", stderr: "" };
+        }
         if (command === "mkdir") {
           const path = args[0] === "-m" ? args[2] : args[0];
           if (path?.endsWith("/operation.mutation")) {

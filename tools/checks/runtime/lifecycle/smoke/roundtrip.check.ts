@@ -1,273 +1,28 @@
-// The smoke suite's outcome machinery: each check lands on one of the four shared
-// check-outcome values (commands/check-outcome.ts), the four stay distinct, and a check
-// that could not obtain a verdict can never be the reason a run reports success.
-//
-// Driven through smoke.ts's own seams — runChecks() classifies and counts, report() owns
-// the exit contract — with synthetic checks, plus the two real bodies that can run
-// without an instance (the HTTP probes and the runtime-health check) against a stub
-// runtime. The deeper bodies need a live target; `./clawforge smoke` itself is what
-// covers them.
+// Full backup and isolated restore preserve live instance state and private bytes.
 
-import { checks, report, runChecks } from "#framework/commands/lifecycle/smoke.ts";
-import type { Check, SmokeResult } from "#framework/commands/lifecycle/smoke.ts";
-import { CouldNotCheck, NotChecked } from "#framework/commands/check-outcome.ts";
 import { locksDir } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport.ts";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { checks } from "#framework/commands/lifecycle/smoke.ts";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
+import { deploymentName } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import { parseBackupArchive } from "#framework/service/archive.ts";
 import { recordPrivateWrite } from "#framework/security/private-paths-ledger.ts";
 import { installedRecipePrivatePaths } from "#framework/service/recipe.ts";
-import { deploymentName } from "#framework/runtime/deployment.ts";
 import { createHash } from "node:crypto";
 
 let failed = 0;
-
 function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
+  if (JSON.stringify(actual) === JSON.stringify(expected)) { process.stderr.write(`  ok   ${name}\n`); return; }
   failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
+  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
 }
-
-/** Captures everything report() prints, without withOutputSink(): that helper makes
- *  isCaptured() true and reroutes log() into the sink, so patching the raw writer keeps
- *  the ordinary path a real terminal run takes. */
-function capture(body: () => void): string {
-  const originalErr = process.stderr.write.bind(process.stderr);
-  let out = "";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (process.stderr.write as any) = (chunk: string): boolean => {
-    out += chunk;
-    return true;
-  };
-  try {
-    body();
-  } finally {
-    process.stderr.write = originalErr;
-  }
-  return out;
-}
-
-function stubContext(runtime: Record<string, unknown>): Context {
-  return { settings: {}, runtime } as unknown as Context;
-}
-
-check("the suite still has the eight checks the help and README promise", checks.length, 8);
-
-check("could-not-check is not a species of not-checked — the run gate depends on the difference", new CouldNotCheck("x") instanceof NotChecked, false);
-
-// --- classification: four outcomes, reachable in one run, never folded together ---------------
-
-{
-  const seen: SmokeResult[] = [];
-  const summary = await runChecks(stubContext({}), [
-    { name: "sails through", run: async () => {} },
-    { name: "assertion misses", run: () => { throw new Error("the property does not hold"); } },
-    { name: "inapplicable here", run: () => { throw new NotChecked("no drift-safe setting declared"); } },
-    { name: "instance unreachable", run: () => { throw new CouldNotCheck("could not reach the instance: no transport"); } },
-  ] satisfies Check[], (result) => seen.push(result));
-
-  check("all four outcomes are reachable in one run, spelled as themselves", summary.results.map((result) => result.status), ["passed", "failed", "not-checked", "could-not-check"]);
-  check("each outcome is counted once, as itself", [summary.passed, summary.failed, summary.notChecked, summary.couldNotCheck], [1, 1, 1, 1]);
-  check("every check reported as it finished, not at the end", seen.map((result) => result.name), ["sails through", "assertion misses", "inapplicable here", "instance unreachable"]);
-  check("a verdict-less check carries its reason", summary.results[3].detail?.includes("could not reach the instance"), true);
-  check("an inapplicable check carries its reason too", summary.results[2].detail?.includes("no drift-safe setting"), true);
-}
-
-// --- the exit contract -----------------------------------------------------------------------
-//
-// The whole reason could-not-check exists: a smoke check that cannot reach the instance
-// must not be able to report as passing — not in the counts, and not in the verdict.
-
-{
-  let message = "";
-  try {
-    report({ results: [{ name: "instance unreachable", status: "could-not-check" }], passed: 7, failed: 0, notChecked: 0, couldNotCheck: 1 }, false);
-  } catch (error) {
-    message = error instanceof Error ? error.message : String(error);
-  }
-  check("a run whose check could not be checked does not pass", message.includes("did not pass"), true);
-  check("and says so in the shared vocabulary", message.includes("could not be checked"), true);
-
-  let failedMessage = "";
-  try {
-    report({ results: [{ name: "assertion misses", status: "failed" }], passed: 7, failed: 1, notChecked: 0, couldNotCheck: 0 }, false);
-  } catch (error) {
-    failedMessage = error instanceof Error ? error.message : String(error);
-  }
-  check("an outright failed check still fails the run", failedMessage.includes("1 failed"), true);
-
-  let refused = false;
-  try {
-    report({ results: [{ name: "inapplicable here", status: "not-checked" }], passed: 7, failed: 0, notChecked: 1, couldNotCheck: 0 }, false);
-  } catch {
-    refused = true;
-  }
-  check("a run whose only non-passes are deliberate not-checked ones still passes", refused, false);
-
-  const line = capture(() => report({ results: [{ name: "inapplicable here", status: "not-checked" }], passed: 7, failed: 0, notChecked: 1, couldNotCheck: 0 }, false));
-  check("the summary line speaks the shared vocabulary, not the old SKIP", line.includes("not checked") && !line.includes("skipped"), true);
-}
-
-// --- two real check bodies, against a stub runtime --------------------------------------------
-//
-// The gateway answering is a verdict; the runtime failing to even run the probe is not.
-
-{
-  const probes = checks.find((entry) => entry.name === "gateway answers all HTTP probes");
-  const health = checks.find((entry) => entry.name === "runtime reports the container healthy");
-  if (probes === undefined || health === undefined) throw new Error("smoke.ts no longer has the probe or health check under its documented name");
-
-  const well = await runChecks(stubContext({ probe: async () => 200 }), [probes], () => {});
-  check("a gateway answering every probe passes", well.results.map((result) => result.status), ["passed"]);
-
-  const lying = await runChecks(stubContext({ probe: async () => 404 }), [probes], () => {});
-  check("a probe answered with something other than 200 is a failed verdict", lying.results.map((result) => result.status), ["failed"]);
-  check("naming the endpoint and the code", lying.results[0].detail?.includes("healthz returned 404"), true);
-
-  const unreachable = await runChecks(stubContext({ probe: () => { throw new Error("docker unreachable"); } }), [probes], () => {});
-  check("a runtime that cannot even run the probe is could-not-check, not failed", unreachable.results.map((result) => result.status), ["could-not-check"]);
-  check("naming what it could not do", unreachable.results[0].detail?.includes("could not probe healthz"), true);
-  check("and such a run refuses to report success", (() => {
-    try { report(unreachable, false); return false; } catch { return true; }
-  })(), true);
-
-  const unwell = await runChecks(stubContext({ health: async () => "unhealthy" }), [health], () => {});
-  check("an unhealthy verdict is a failed verdict", unwell.results.map((result) => result.status), ["failed"]);
-
-  const silent = await runChecks(stubContext({ health: () => { throw new Error("docker inspect failed"); } }), [health], () => {});
-  check("a runtime that cannot answer at all is could-not-check", silent.results.map((result) => result.status), ["could-not-check"]);
-}
-
-// --- the drift check's cleanup is a restore, not a question -----------------------------------
-//
-// The verdict is already in when the finally's applyConfig runs. Its failure must stay a
-// failed check that says what to repair — the instance may still hold the drifted value —
-// not could-not-check, which would report the question as never asked.
-
-{
-  const root = await mkdtemp(join(tmpdir(), "clawforge-smoke-drift-"));
-  let previous: string | undefined;
-  try { previous = deploymentDir(); } catch { /* no deployment selected in this check */ }
-  try {
-    await mkdir(join(root, "config"), { recursive: true });
-    await writeFile(join(root, "config", "desired-state.json"), JSON.stringify([
-      { path: "agents.defaults.model.primary", value: "fixture-model" },
-    ]));
-    useDeployment(root);
-
-    // The restore must be the failing call, not the declaration applying during the
-    // check: applyConfig runs once inside the try (the verdict depends on it) and once
-    // in the finally (the cleanup under test). Counting the batch calls keeps the setup
-    // honest — if the first apply had failed, this case would be testing nothing.
-    let batchCalls = 0;
-    const files = new Map<string, string>();
-    const dirs = new Set<string>();
-    const dataDir = "/srv/clawforge";
-    files.set(`${dataDir}/config/openclaw.json`, JSON.stringify({ agents: { defaults: { model: { primary: "fixture-model" } } } }));
-    const ctx = {
-      settings: { dataDir },
-      transport: {
-        async exec(command: string, args: string[]) {
-          if (command === "mkdir") {
-            const target = args[args.length - 1];
-            if (dirs.has(target)) return { code: 1, stdout: "", stderr: "File exists" };
-            dirs.add(target);
-            return { code: 0, stdout: "", stderr: "" };
-          }
-          // The instance lock's takeover/release CAS (round 6, P2-03) moves its own
-          // generation-marker directory with `mv`, then empties the lock root with `rmdir` —
-          // this fixture must track both, or a second guarded() call in the same test (the
-          // drift check's own finally re-runs applyConfig) finds the first one's lock
-          // directory still "existing" and never gets the chance to claim it.
-          if (command === "mv") {
-            const source = args[args.length - 2];
-            const destination = args[args.length - 1];
-            if (source === undefined || destination === undefined || !dirs.has(source)) {
-              return { code: 1, stdout: "", stderr: "No such file or directory" };
-            }
-            dirs.delete(source);
-            dirs.add(destination);
-            return { code: 0, stdout: "", stderr: "" };
-          }
-          if (command === "rmdir" || command === "rm") {
-            const target = args[args.length - 1];
-            for (const dir of dirs) {
-              if (dir === target || dir.startsWith(`${target}/`)) dirs.delete(dir);
-            }
-            return { code: 0, stdout: "", stderr: "" };
-          }
-          if (command === "test" && args[0] === "-d") {
-            return { code: dirs.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
-          }
-          return { code: 0, stdout: "", stderr: "" };
-        },
-        async readFile(path: string): Promise<string> {
-          const content = files.get(path);
-          if (content === undefined) throw new Error(`no such file: ${path}`);
-          return content;
-        },
-        async writeFile(path: string, content: string): Promise<void> {
-          files.set(path, content);
-        },
-        async remove(path: string): Promise<void> {
-          files.delete(path);
-          dirs.delete(path);
-        },
-      },
-      paths: { toContainer: (path: string) => path },
-      runtime: {
-        async runOneOff(_service: string, args: string[]) {
-          if (!args.includes("--batch-file")) return { code: 0, stdout: "", stderr: "" };
-          batchCalls += 1;
-          if (batchCalls === 1) return { code: 0, stdout: "", stderr: "" };
-          throw new Error("docker unreachable");
-        },
-      },
-    } as unknown as Context;
-
-    const drift = checks.find((entry) => entry.name === "desired state overrides manual drift");
-    if (drift === undefined) throw new Error("smoke.ts no longer has the drift check under its documented name");
-
-    const summary = await withOutputSink(() => {}, () => runChecks(ctx, [drift], () => {}));
-    check("the setup drove both applyConfig calls — the verdict came from the first", batchCalls, 2);
-    check("a restore that fails after the verdict stays a failed check", summary.results.map((result) => result.status), ["failed"]);
-    check("saying the instance may still hold the drifted value", summary.results[0].detail?.includes("may still hold the drifted value"), true);
-    check("naming the path it could not restore", summary.results[0].detail?.includes("agents.defaults.model.primary"), true);
-    check("naming the repair", summary.results[0].detail?.includes("apply-config"), true);
-  } finally {
-    if (previous === undefined) useDeployment(root);
-    else useDeployment(previous);
-    await rm(root, { recursive: true, force: true });
-  }
-}
-
-// --- the round trip: full backup in, isolated restore out, live root untouched --------------
-//
-// P1-01 (audit 2026-09-23, XA round 6): the check used to pull a migrate-profile snapshot
-// and push it straight back over the live data directory — dropping every declared private
-// path and part of the runtime metadata while still comparing its one marker file and
-// reporting success. Now: a FULL backup under one lock, restored into an isolated scratch
-// root beside the data directory, the live root never moved aside or written.
-//
-// P2-06 (same audit): the transaction records the gateway's initial running/stopped state
-// before touching anything and restores exactly that state on every exit path, folding a
-// compensation failure into the reported error instead of swallowing either.
-//
-// No target: the real check drives the real createBackup()/restoreArchive() chain end to
-// end against the modeled filesystem below. The modeled tar genuinely snapshots the tree
-// at backup time and replays the snapshot at extraction time, so "the private bytes came
-// back" is about what the backup actually captured, not about whatever the file map holds
-// when something later reads it.
+// --- full backup restored into an isolated root, preserving live state -----------------------
+// The modeled tar snapshots files at archive time and replays those bytes at extraction.
 
 {
   const PARENT = "/srv/openclaw";
@@ -281,6 +36,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   const SECRET_CONTENT = "generated-credential-bytes\n";
   const BINARY_CONTENT = "\u0000\u00ff\u0080\n";
   const LOCK_PATH = `${locksDir(DATA_DIR)}/operation.lock`;
+  const MUTATION_GUARD = `${locksDir(DATA_DIR)}/operation.mutation`;
 
   /** Everything below runs with a disposable deployment directory selected. */
   async function withRecordedPrivatePath<T>(body: () => Promise<T>, record = true): Promise<T> {
@@ -299,12 +55,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
     }
   }
 
-  /** The modeled filesystem keeps a read-only shadow of removed paths. The transaction's
-   *  own compensation deletes the scratch root before the assertions run, and "the private
-   *  subtree survived the isolated restore" is a question about what that restore replayed
-   *  — answerable only from what the removal took away, while keys() stays honest about
-   *  what is left on the instance. A backup that dropped the private path never puts it in
-   *  the shadow either: the bytes reach it only through the extraction replay. */
+  /** Keeps removed bytes available for assertions about the isolated restore. */
   class InstanceFiles extends Map<string, string> {
     private readonly removedContent = new Map<string, string>();
 
@@ -343,6 +94,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
     const restoreRoots: string[] = [];
     const backups: string[] = [];
     let lockExists = false;
+    let mutationGuardExists = false;
     let runningNow = options.initialRunning === true;
     let snapshot: Map<string, string> | undefined;
 
@@ -374,26 +126,46 @@ check("could-not-check is not a species of not-checked — the run gate depends 
       },
       async remove(path: string): Promise<void> {
         if (path === LOCK_PATH) lockExists = false;
+        if (path === MUTATION_GUARD) mutationGuardExists = false;
         files.delete(path);
+      },
+      async listFiles(path: string): Promise<string[]> {
+        const prefix = `${path}/`;
+        return [...files.keys()].filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
       },
       async mkdirp(): Promise<void> {},
       async exec(command: string, args: string[]): Promise<ExecResult> {
         events.push(`${command}:${args.join(" ")}`);
+        if (command === "mkdir" && args[0] === MUTATION_GUARD) {
+          if (mutationGuardExists) return { code: 1, stdout: "", stderr: "File exists" };
+          mutationGuardExists = true;
+          return { code: 0, stdout: "", stderr: "" };
+        }
         if (command === "mkdir" && args[0] === LOCK_PATH) {
-          // The one bare mkdir on this target is the instance lock claim.
+          // The bare mkdir claims the instance lock.
           if (lockExists) return { code: 1, stdout: "", stderr: "File exists" };
           lockExists = true;
           return { code: 0, stdout: "", stderr: "" };
         }
-        if (command === "test" && args[0] === "-d") return { code: lockExists ? 0 : 1, stdout: "", stderr: "" };
+        if (command === "ln") {
+          const [source, destination] = args;
+          if (source === undefined || destination === undefined || !files.has(source)) return { code: 1, stdout: "", stderr: "No such file" };
+          if (files.has(destination)) return { code: 1, stdout: "", stderr: "File exists" };
+          files.set(destination, files.get(source)!);
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "test" && args[0] === "-d") {
+          const path = args[1] ?? "";
+          return { code: path === LOCK_PATH ? Number(lockExists) : path === MUTATION_GUARD ? Number(mutationGuardExists) : 1, stdout: "", stderr: "" };
+        }
         if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-x") return { code: 0, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-e") return { code: present(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
-        // The instance lock's release now empties its directory with `rmdir` (round 6,
-        // P2-03), not a recursive remove of the whole lock path.
+        // Release removes the empty lock directory.
         if (command === "rmdir") {
           if (args[0] === LOCK_PATH) lockExists = false;
+          if (args[0] === MUTATION_GUARD) mutationGuardExists = false;
           return { code: 0, stdout: "", stderr: "" };
         }
         if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: args[1] ?? "", stderr: "" };
@@ -429,20 +201,29 @@ check("could-not-check is not a species of not-checked — the run gate depends 
         if (command === "mv") {
           const source = args[args.length - 2] ?? "";
           const destination = args[args.length - 1] ?? "";
+          if (files.has(source)) {
+            if (options.failBackup === true && destination.startsWith(`${BACKUP_DIR}/`) && destination.endsWith(".tar.gz")) {
+              return { code: 1, stdout: "", stderr: "publish failed" };
+            }
+            if (files.has(destination)) return { code: 1, stdout: "", stderr: "File exists" };
+            files.set(destination, files.get(source) ?? "");
+            files.delete(source);
+            if (destination.startsWith(`${BACKUP_DIR}/`) && destination.endsWith(".tar.gz")) backups.push(destination);
+            return { code: 0, stdout: "", stderr: "" };
+          }
           if (options.failBackup === true && destination.startsWith(`${BACKUP_DIR}/`) && destination.endsWith(".tar.gz")) {
             return { code: 1, stdout: "", stderr: "publish failed" };
           }
           files.set(destination, files.get(source) ?? "");
           files.delete(source);
-          // What gets PUBLISHED is what the mv lands in the backup directory under its final
-          // name — the tar only ever writes the private staging archive, which must not be
-          // mistaken for a backup yet (createBackup publishes by rename).
+          // Only the final rename makes this a published backup.
           if (destination.startsWith(`${BACKUP_DIR}/`) && destination.endsWith(".tar.gz")) backups.push(destination);
           return { code: 0, stdout: "", stderr: "" };
         }
         if (command === "rm") {
           for (const arg of args.filter((value) => !value.startsWith("-"))) {
             if (arg === LOCK_PATH) lockExists = false;
+            if (arg === MUTATION_GUARD) mutationGuardExists = false;
             for (const path of files.keys()) if (path === arg || path.startsWith(`${arg}/`)) files.delete(path);
           }
           return { code: 0, stdout: "", stderr: "" };
@@ -653,7 +434,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
       const outcome = await runRoundTrip(ctx);
       check("failing to read the initial service state fails the check", outcome.threw, true);
       check("and says the state could not be asked", outcome.message.includes("could not ask whether the gateway is running"), true);
-      check("nothing on the instance was written before the abort", events.some((event) => event.startsWith("write:") && !event.includes("operation.lock")), false);
+      check("nothing on the instance was written before the abort", events.some((event) => event.startsWith("write:") && !event.includes(locksDir(DATA_DIR))), false);
       check("the gateway was never touched before the abort", runtimeEvents(events), []);
       check("the lock was still released", lock(), false);
     }
@@ -688,5 +469,5 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   }, false);
 }
 
-process.stderr.write(failed === 0 ? "all smoke outcome checks passed\n" : `${failed} failed\n`);
+process.stderr.write(failed === 0 ? "all smoke round-trip checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

@@ -38,6 +38,13 @@ export function stubContext() {
           if (command === "mv") {
             // Emulates POSIX rename: fails once the source is gone — only one racing mover wins.
             const [source, dest] = args;
+            if (files.has(source)) {
+              if (files.has(dest)) return { code: 1, stdout: "", stderr: "File exists" };
+              const value = files.get(source)!;
+              files.delete(source);
+              files.set(dest, value);
+              return { code: 0, stdout: "", stderr: "" };
+            }
             if (!dirs.has(source)) return { code: 1, stdout: "", stderr: "No such file or directory" };
             for (const entry of [...dirs].filter((entry) => entry === source || entry.startsWith(`${source}/`))) {
               dirs.delete(entry);
@@ -47,6 +54,13 @@ export function stubContext() {
               files.delete(key);
               files.set(dest + key.slice(source.length), value);
             }
+            return { code: 0, stdout: "", stderr: "" };
+          }
+          if (command === "ln") {
+            const [source, dest] = args;
+            if (!files.has(source)) return { code: 1, stdout: "", stderr: "No such file or directory" };
+            if (files.has(dest) || dirs.has(dest)) return { code: 1, stdout: "", stderr: "File exists" };
+            files.set(dest, files.get(source)!);
             return { code: 0, stdout: "", stderr: "" };
           }
           if (command === "rm") {
@@ -93,6 +107,10 @@ export function stubContext() {
             return true;
           }
           return false;
+        },
+        async listFiles(path: string): Promise<string[]> {
+          const prefix = `${path}/`;
+          return [...files.keys()].filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
         },
       },
     } as unknown as Context,

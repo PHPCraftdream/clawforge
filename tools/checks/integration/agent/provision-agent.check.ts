@@ -241,6 +241,36 @@ check("recipe mirror path lives under the data dir's workspace mount", recipeMir
   }
 }
 
+// A failed listing must abort before provisioning can interpret unknown target state as empty.
+{
+  const root = await mkdtemp(join(tmpdir(), "clawforge-recipe-listing-error-check-"));
+  const targetData = resolve(root, "target-data");
+  const recipeDir = resolve(root, "recipe");
+  try {
+    await mkdir(resolve(recipeDir, "agent"), { recursive: true });
+    await writeFile(resolve(recipeDir, "agent", "server.ts"), "new server");
+    const local = new LocalTransport();
+    const transport = {
+      ...local,
+      async listFiles(): Promise<string[]> { throw new Error("Permission denied"); },
+    } as unknown as typeof local;
+    const ctx = { settings: { dataDir: targetData }, transport } as unknown as Context;
+    const mirror = recipeMirrorTargetDir(targetData, "listing-error-recipe");
+    await mkdir(mirror, { recursive: true });
+    await writeFile(resolve(mirror, "withdrawn.ts"), "keep until listing works");
+    let failedProvisioning = false;
+    try {
+      await syncRecipeFiles(ctx, "listing-error-recipe", recipeDir);
+    } catch {
+      failedProvisioning = true;
+    }
+    check("listing failure aborts recipe provisioning", failedProvisioning, true);
+    check("listing failure preserves target files", await readBytes(resolve(mirror, "withdrawn.ts")), Buffer.from("keep until listing works"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
 // --- the recipe mirror is a mirror: what the recipe dropped is dropped on the target ------
 //
 // Copying without deleting leaves a withdrawn page on the target, where the recipe's MCP

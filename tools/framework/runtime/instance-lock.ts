@@ -28,6 +28,7 @@ import { randomBytes } from "node:crypto";
 
 import { locksDir } from "../core/env.ts";
 import { log, die } from "../core/log.ts";
+import { withMutationGuard } from "../security/instance-mutation-guard.ts";
 import { newOperationId } from "../service/operations.ts";
 import type { Context } from "../core/context.ts";
 
@@ -79,30 +80,6 @@ export function lockHome(ctx: Context): string {
 
 export function lockPath(ctx: Context): string {
   return `${lockHome(ctx)}/operation.lock`;
-}
-
-function mutationGuardPath(ctx: Context): string {
-  return `${lockHome(ctx)}/operation.mutation`;
-}
-
-async function withMutationGuard<T>(ctx: Context, body: () => Promise<T>): Promise<T> {
-  const home = await ctx.transport.exec("mkdir", ["-p", lockHome(ctx)], { allowFailure: true });
-  if (home.code !== 0) {
-    const homeExists = await ctx.transport.exec("test", ["-d", lockHome(ctx)], { allowFailure: true });
-    if (homeExists.code !== 0) return body();
-  }
-  const guard = mutationGuardPath(ctx);
-  const acquired = await ctx.transport.exec("mkdir", [guard], { allowFailure: true });
-  if (acquired.code !== 0) {
-    const exists = await ctx.transport.exec("test", ["-d", guard], { allowFailure: true });
-    if (exists.code === 0) throw new Error("another instance-lock change is in progress; retry shortly");
-    throw new Error(`could not serialize instance-lock changes at ${guard}: ${(acquired.stderr || acquired.stdout).trim()}`);
-  }
-  try {
-    return await body();
-  } finally {
-    await removeEmptyDirectory(ctx, guard);
-  }
 }
 
 /** Stable resource identity for reentrancy: equal paths on different transports are different targets. */
@@ -490,7 +467,7 @@ export async function takeLock(
   operationId: string,
   options: { breakLock?: boolean } = {},
 ): Promise<HeldLock> {
-  return withMutationGuard(ctx, () => takeLockClaim(ctx, what, operationId, options));
+  return withMutationGuard(ctx, () => takeLockClaim(ctx, what, operationId, options), options.breakLock === true);
 }
 
 /** Runs `body` holding the lock, and releases it whatever happens — including when the body

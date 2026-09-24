@@ -129,6 +129,9 @@ function privatePath(recipe: string, value: string): string {
   if (segments[0] === "" || segments.at(-1) === "") {
     throw new Error(`recipes/${recipe}/recipe.json: privatePaths entries must be relative to the data directory: ${value}`);
   }
+  if (segments.some((segment) => segment === "")) {
+    throw new Error(`recipes/${recipe}/recipe.json: privatePaths entries must not contain empty path segments: ${value}`);
+  }
   if (segments.some((segment) => segment === "." || segment === "..")) {
     throw new Error(`recipes/${recipe}/recipe.json: privatePaths entries must stay inside the data directory: ${value}`);
   }

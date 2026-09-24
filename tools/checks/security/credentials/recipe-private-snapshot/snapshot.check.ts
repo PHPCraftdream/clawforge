@@ -167,6 +167,17 @@ try {
   await writeFile(manifestPath, originalManifest, "utf8");
   check("a restored manifest reads whole again", JSON.stringify([...(await installedRecipePrivatePaths())].sort()), sortedDeclarations);
 
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ description: "noncanonical path fixture", privatePaths: ["workspace//credential.txt"] })}\n`,
+    "utf8",
+  );
+  const noncanonicalRecipe = await rejectionOf(() => loadRecipe("fixture-sidecar"));
+  check("loadRecipe rejects privatePaths with an empty interior segment", /empty path segments/.test(noncanonicalRecipe ?? ""), true);
+  const noncanonicalPolicy = await rejectionOf(() => installedRecipePrivatePaths());
+  check("installedRecipePrivatePaths rejects noncanonical privatePaths", /empty path segments/.test(noncanonicalPolicy ?? ""), true);
+  await writeFile(manifestPath, originalManifest, "utf8");
+
   // --- the staging-marker rules (pure group: no WSL needed) --------------------------------------
   //
   // P1-03's policy half. A crash leftover is named AFTER the declared file, so neither a
@@ -389,13 +400,18 @@ try {
     // The pure half of this scenario ran unconditionally above; these halves drive real tar
     // and verify over the scratch tree, so they belong to the real-POSIX group.
 
-    await writeFile(manifestPath, '{ "description": broken', "utf8");
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify({ description: "noncanonical path fixture", privatePaths: ["workspace//credential.txt"] })}\n`,
+      "utf8",
+    );
 
-    const createError = await rejectionOf(() => createArchive(ctx, { archive: `${ARCHIVES}/broken.tar.gz`, profile: "migrate" }));
-    check("createArchive refuses to archive while a manifest is broken", /could not parse/.test(createError ?? ""), true);
-
-    const verifyError = await rejectionOf(() => withOutputSink(() => {}, () => verifySnapshot(ctx, share, "share")));
-    check("verifySnapshot stops while a manifest is broken (the strict read)", /could not parse/.test(verifyError ?? ""), true);
+    for (const profile of ["migrate", "share"] as const) {
+      const createError = await rejectionOf(() => createArchive(ctx, { archive: `${ARCHIVES}/broken-${profile}.tar.gz`, profile }));
+      check(`createArchive refuses a ${profile} archive with noncanonical privatePaths`, /empty path segments/.test(createError ?? ""), true);
+      const verifyError = await rejectionOf(() => withOutputSink(() => {}, () => verifySnapshot(ctx, share, profile)));
+      check(`verifySnapshot refuses a ${profile} archive with noncanonical privatePaths`, /empty path segments/.test(verifyError ?? ""), true);
+    }
 
     await writeFile(manifestPath, originalManifest, "utf8");
     const healed = `${ARCHIVES}/migrate-after-restore.tar.gz`;

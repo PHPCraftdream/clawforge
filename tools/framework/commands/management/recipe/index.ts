@@ -4,12 +4,12 @@
 // Building happens on the target: a Rust or Go build from scratch takes minutes, and the
 // output is streamed rather than swallowed — silent waiting looks like a hang.
 
-import { cp, access, readFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { cp, access } from "node:fs/promises";
 import { register } from "node:module";
-import { basename, dirname, relative, resolve } from "node:path";
+import { basename, relative, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/log.ts";
 import { pathToFileURL } from "node:url";
+import { dependencyGraphChecksum } from "./hook-graph.ts";
 import type { Context } from "#src/core/context.ts";
 import {
   listAgentBundleRecipes,
@@ -121,77 +121,6 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
  *  P2-01; the copy machinery this replaces also deadlocked on genuine A→B→A cycles —
  *  P2-02 — which ESM now handles natively). */
 const hookModules = new Map<string, { checksum: string; loaded: Record<string, unknown> }>();
-
-interface ImportSpan { readonly start: number; readonly end: number; readonly specifier: string }
-
-/** Relative (`./`, `../`) import specifiers a hook file's source references, whether via
- *  static `import`/`export ... from`, a side-effect `import "..."`, or a dynamic
- *  `import("...")` — with the exact offsets of the specifier text (not the surrounding
- *  quotes), so a caller can splice a replacement in without disturbing anything else in the
- *  file. Deliberately loose regex matching rather than a full parse: this only needs the
- *  specifier text, and hook files are small, framework-authored TypeScript. */
-function relativeImportSpans(source: string): ImportSpan[] {
-  const pattern = /\bfrom\s*["']([^"']+)["']|\bimport\s*\(\s*(?:["']([^"']+)["']|`([^`$]+)`\s*)\)|\bimport\s+["']([^"']+)["']/gd;
-  const spans: ImportSpan[] = [];
-  for (const match of source.matchAll(pattern)) {
-    const groupIndex = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : match[3] !== undefined ? 3 : match[4] !== undefined ? 4 : undefined;
-    if (groupIndex === undefined) continue;
-    const specifier = match[groupIndex] as string;
-    if (!specifier.startsWith(".")) continue;
-    const indices = (match as RegExpExecArray & { indices?: Array<[number, number] | undefined> }).indices;
-    const span = indices?.[groupIndex];
-    if (span === undefined) continue;
-    spans.push({ start: span[0], end: span[1], specifier });
-  }
-  return spans;
-}
-
-/** Computed dynamic imports cannot be included in a static checksum graph. Reject them
- *  explicitly rather than silently caching a hook whose runtime dependency can go stale. */
-function assertVersionableDynamicImports(source: string): void {
-  const dynamic = /\bimport\s*\(\s*([^)]*?)\s*\)/g;
-  for (const match of source.matchAll(dynamic)) {
-    const expression = match[1]?.trim() ?? "";
-    const literal = /^(?:"[^"\n]*"|'[^'\n]*'|`[^`$\n]*`)$/;
-    if (!literal.test(expression)) {
-      throw new Error("recipe hook uses a computed dynamic import; use a string literal so its dependency can be versioned");
-    }
-  }
-}
-
-/** One checksum over the hook file and every file it transitively reaches through relative
- *  imports — cheap enough to compute on every call since hook files are small, and the
- *  gate that decides whether importHookModule needs to do anything at all this time. Node's
- *  ESM resolver requires relative specifiers to carry their own extension, so each
- *  specifier resolves directly against its importer's directory with no extension
- *  guessing. A specifier that does not resolve to a readable file (a typo, or a package
- *  import that happens to start with `.` in some other way) is skipped rather than failing
- *  the load — the checksum degrades to covering only what it could read, never throws. */
-async function dependencyGraphChecksum(entryPath: string): Promise<string> {
-  const files = new Map<string, string>();
-  const queue = [entryPath];
-  while (queue.length > 0) {
-    const current = queue.shift() as string;
-    if (files.has(current)) continue;
-    let content: string;
-    try {
-      content = await readFile(current, "utf8");
-    } catch {
-      continue;
-    }
-    assertVersionableDynamicImports(content);
-    files.set(current, content);
-    for (const span of relativeImportSpans(content)) {
-      const dependency = resolve(dirname(current), span.specifier.split(/[?#]/, 1)[0] as string);
-      if (!files.has(dependency)) queue.push(dependency);
-    }
-  }
-  const graph = [...files.entries()]
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([path, content]) => `${path}\n${content}`)
-    .join("\u0000");
-  return createHash("sha256").update(graph).digest("hex");
-}
 
 /** Query parameter carrying the hook graph's checksum on every versioned hook URL. */
 const HOOK_GRAPH_VERSION_PARAM = "g";

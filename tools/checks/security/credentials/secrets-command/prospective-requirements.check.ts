@@ -62,6 +62,7 @@ try {
       async writeFile(path: string, content: string): Promise<void> {
         writes[path] = content;
       },
+      async remove(path: string): Promise<void> { delete writes[path]; },
       async exec(
         command: string,
         args: string[],

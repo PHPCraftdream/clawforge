@@ -203,6 +203,9 @@ collapsed into one, with the more dangerous granted by default.
 A lock outlives a run killed by a signal — a closed pipe will do it — because a `finally`
 does not run then. That is what the staleness report and `--break-lock` are for; there is no
 cleanup path that survives `SIGKILL`, and pretending otherwise would be worse than saying so.
+The short-lived `operation.mutation` guard records its owning process: a dead owner on the
+same machine is recovered automatically, and an ownerless guard can be recovered with
+`--break-lock`. A live or unverifiable guard is kept until it can be checked from its owner machine.
 
 A failed `mkdir` is not evidence of a lock, only of a failure. Reading every non-zero exit as
 "held" turned an unwritable directory into a confident report about a lock that did not

@@ -72,11 +72,28 @@ function stubContext(env: Record<string, string>): { ctx: Context; calls: string
         if (command === "mv") {
           const source = args[args.length - 2];
           const destination = args[args.length - 1];
-          if (source === undefined || destination === undefined || !dirs.has(source)) {
+          if (source === undefined || destination === undefined) {
             return { code: 1, stdout: "", stderr: "No such file or directory" };
           }
+          if (files.has(source)) {
+            if (files.has(destination)) return { code: 1, stdout: "", stderr: "File exists" };
+            const content = files.get(source)!;
+            files.delete(source);
+            files.set(destination, content);
+            return { code: 0, stdout: "", stderr: "" };
+          }
+          if (!dirs.has(source)) return { code: 1, stdout: "", stderr: "No such file or directory" };
           dirs.delete(source);
           dirs.add(destination);
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "ln") {
+          const [source, destination] = args;
+          if (source === undefined || destination === undefined || !files.has(source)) {
+            return { code: 1, stdout: "", stderr: "No such file or directory" };
+          }
+          if (files.has(destination) || dirs.has(destination)) return { code: 1, stdout: "", stderr: "File exists" };
+          files.set(destination, files.get(source)!);
           return { code: 0, stdout: "", stderr: "" };
         }
         if (command === "rm") {
@@ -105,6 +122,10 @@ function stubContext(env: Record<string, string>): { ctx: Context; calls: string
         for (const key of dirs) {
           if (key.startsWith(`${path}/`)) dirs.delete(key);
         }
+      },
+      async listFiles(path: string): Promise<string[]> {
+        const prefix = `${path}/`;
+        return [...files.keys()].filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
       },
     },
     runtime: {
@@ -243,7 +264,7 @@ try {
     await writeFile(resolve(helperRoot, "helper", "shared.ts"), "export const REVISION = 1;\n", "utf8");
     await writeFile(
       resolve(helperRoot, "helper", "verify.ts"),
-      "export async function verify() { const { REVISION } = await import(\"./shared.ts?variant=1\"); return { ok: true, revision: REVISION }; }\n",
+      "const importPattern = /import\\\\(computed\\\\)/.source;\nexport async function verify() { const { REVISION } = await import /* dynamic import comment */ ( /* specifier comment */ \"./shared.ts?variant=1\"); return { ok: true, revision: REVISION }; }\n",
       "utf8",
     );
     useRecipesDir(helperRoot);
@@ -265,7 +286,25 @@ try {
 
     await writeFile(
       resolve(helperRoot, "helper", "verify.ts"),
-      "const helper = \"./shared.ts\";\nexport async function verify() { const { REVISION } = await import(helper); return { ok: true, revision: REVISION }; }\n",
+      "import { REVISION } /* import comment */ from /* specifier comment */ \"./shared.ts\";\nexport async function verify() { return { ok: true, revision: REVISION }; }\n",
+      "utf8",
+    );
+    check("helper: comments around a static from import load and include the helper", (await verifyOnce()).revision, 2);
+    await writeFile(resolve(helperRoot, "helper", "shared.ts"), "export const REVISION = 3;\n", "utf8");
+    check("helper: a static helper edit is visible in the same process", (await verifyOnce()).revision, 3);
+
+    await writeFile(
+      resolve(helperRoot, "helper", "verify.ts"),
+      "export async function verify() { const { REVISION } = await import /* comment */ (\"./shared.ts\"); return { ok: true, revision: REVISION }; }\n",
+      "utf8",
+    );
+    check("helper: comments between import and its call do not break dynamic imports", (await verifyOnce()).revision, 3);
+    await writeFile(resolve(helperRoot, "helper", "shared.ts"), "export const REVISION = 4;\n", "utf8");
+    check("helper: a commented dynamic helper edit is visible in the same process", (await verifyOnce()).revision, 4);
+
+    await writeFile(
+      resolve(helperRoot, "helper", "verify.ts"),
+      "const helper = \"./shared.ts\";\nexport async function verify() { const { REVISION } = await import /* comment */ (helper); return { ok: true, revision: REVISION }; }\n",
       "utf8",
     );
     let computedImportError = "";

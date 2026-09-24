@@ -74,9 +74,10 @@ function check(name: string, actual: unknown, expected: unknown): void {
 {
   const { ctx, dirs } = stubContext();
   const originalWrite = ctx.transport.writeFile;
+  const holderPath = `${lockPath(ctx)}/holder.json`;
   let fail = true;
   ctx.transport.writeFile = async (path: string, content: string) => {
-    if (fail) {
+    if (path === holderPath && fail) {
       fail = false;
       throw new Error("holder write failed");
     }
@@ -94,7 +95,12 @@ function check(name: string, actual: unknown, expected: unknown): void {
 
 {
   const { ctx, files, dirs } = stubContext();
+  const holderPath = `${lockPath(ctx)}/holder.json`;
   ctx.transport.writeFile = async (path: string, content: string) => {
+    if (path !== holderPath) {
+      files.set(path, content);
+      return;
+    }
     files.set(path, content.slice(0, 24));
     throw new Error("partial holder write");
   };
@@ -171,6 +177,10 @@ for (const mode of ["throw", "nonzero"] as const) {
   dirs.add(lockPath(ctx));
   files.set(holderPath, oldHolder);
   ctx.transport.writeFile = async (path: string, content: string) => {
+    if (path !== holderPath) {
+      await originalWrite(path, content);
+      return;
+    }
     files.set(path, content);
     throw new Error("takeover write failed");
   };
@@ -187,7 +197,12 @@ for (const mode of ["throw", "nonzero"] as const) {
 
 {
   const { ctx, files, dirs } = stubContext();
+  const holderPath = `${lockPath(ctx)}/holder.json`;
   ctx.transport.writeFile = async (path: string, _content: string) => {
+    if (path !== holderPath) {
+      files.set(path, _content);
+      return;
+    }
     files.set(path, JSON.stringify({ operationId: "op-new", what: "apply", by: "new", takenAt: new Date().toISOString() }));
     throw new Error("fresh holder write failed");
   };
@@ -202,7 +217,10 @@ for (const mode of ["throw", "nonzero"] as const) {
 {
   const { ctx, dirs } = stubContext();
   const originalExec = ctx.transport.exec;
-  ctx.transport.writeFile = async () => {
+  const holderPath = `${lockPath(ctx)}/holder.json`;
+  const originalWrite = ctx.transport.writeFile;
+  ctx.transport.writeFile = async (path: string, content: string) => {
+    if (path !== holderPath) return originalWrite(path, content);
     throw new Error("holder write is the useful failure");
   };
   // The cleanup is an empty-directory rmdir of the lock root, so a failure to remove the

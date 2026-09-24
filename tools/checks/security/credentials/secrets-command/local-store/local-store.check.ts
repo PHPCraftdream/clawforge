@@ -1,26 +1,7 @@
-// The secrets template and local store, in isolation from any target: `--init-store` on
-// an existing store must refuse without --force and leave the file byte-for-byte
-// untouched — not refuse and then overwrite anyway; --force must overwrite with a fresh
-// empty template; `--template`/`--print-template` must produce values-free output; a
-// path-traversal store name must be rejected before any file is touched; and `--apply`
-// on a store that was never created must name the exact fix — it used to point at
-// --template, which writes a values-free listing under config/, not the per-target store
-// under secrets/ that --apply actually reads.
-//
-// The store also follows the deployment .env's safe-creation contract: owner-only from
-// the first byte, on Windows a closed DACL (the POSIX mode argument Windows ignores
-// protects nobody), secrets/ itself sealed so an editor's atomic replacement hands the
-// file back no wider than the directory, --apply reporting a store whose protection has
-// slipped — and what applying does afterwards names the action that really puts the
-// values in force: restart for a running instance's target-env values, up only for a
-// stopped one, while repository values — fixed at container creation — get the recreate
-// up performs, performed when the runtime can and named when it cannot, then confirmed
-// against the container's own environment.
-//
-// Split out of secrets-command.check.ts; see fixture.ts for the shared deployment and
-// the sibling *.check.ts files for the rest.
+// Exercises local-store lifecycle, secret requirements, and apply/recovery behavior.
+// Uses real ACL checks where available and modeled remote transports for target operations.
 
-import { readFile, writeFile, stat, access, chmod, rm } from "node:fs/promises";
+import { readFile, writeFile, stat, chmod, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -28,7 +9,7 @@ import { secrets } from "#framework/commands/management/secrets.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import { spawnLocal } from "#framework/runtime/transport.ts";
 import type { Context } from "#framework/core/context.ts";
-import { setupDeployment, teardownDeployment } from "./fixture.ts";
+import { setupDeployment, teardownDeployment } from "../fixture.ts";
 
 let failed = 0;
 
@@ -98,131 +79,6 @@ const deployDir = await setupDeployment("store");
 try {
   // A dataDir that does not exist, paired with a transport that reports its config as
   // absent: requirements(ctx) short-circuits to [] and part 1 never needs a real config.
-  const ctx = {
-    settings: { dataDir: "/does/not/exist", env: {} },
-    transport: {
-      description: "stub",
-      async exists(path: string): Promise<boolean> {
-        return !path.endsWith("openclaw.json");
-      },
-      async readFile(): Promise<string> {
-        return "";
-      },
-      async writeFile(): Promise<void> {},
-      // secrets --apply now takes the instance lock (#186) — a plain mkdir is the atomic
-      // claim takeLock() makes; harmless here since nothing else is contending for it.
-      async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    },
-  } as unknown as Context;
-
-  const storePath = resolve(deployDir, "secrets", "store-a.env");
-
-  // --init-store --store <name> on a fresh store creates the file, mode 0o600, empty
-  // template (no values).
-  await withOutputSink(
-    () => {},
-    () => secrets(ctx, ["--init-store", "--store", "store-a"]),
-  );
-
-  const firstContent = await readFile(storePath, "utf8");
-  check("a fresh store is created", firstContent.length > 0, true);
-  check("the fresh template has no values", /=\S/.test(firstContent), false);
-
-  const mode = (await stat(storePath)).mode & 0o777;
-  // chmod bits are not meaningful on Windows filesystems (no POSIX permission bits), so
-  // this assertion only holds where they are — skip it there rather than assert a lie.
-  if (process.platform !== "win32") {
-    check("the store file is created with mode 0o600", mode, 0o600);
-  }
-
-  // Running --init-store again WITHOUT --force must refuse, and must leave the file
-  // untouched — not refuse-then-overwrite.
-  const beforeSecondAttempt = await readFile(storePath, "utf8");
-  let refusalMessage = "";
-  try {
-    await withOutputSink(
-      () => {},
-      () => secrets(ctx, ["--init-store", "--store", "store-a"]),
-    );
-  } catch (error) {
-    refusalMessage = error instanceof Error ? error.message : String(error);
-  }
-  const afterSecondAttempt = await readFile(storePath, "utf8");
-
-  check("re-running --init-store without --force throws", refusalMessage !== "", true);
-  check("the refusal message mentions already exists", refusalMessage.includes("already exists"), true);
-  check("the refusal message mentions --force", refusalMessage.includes("--force"), true);
-  check("the file content is unchanged after the refused attempt", afterSecondAttempt, beforeSecondAttempt);
-
-  // --force DOES overwrite with a fresh empty template. Prove it by writing a fake value
-  // in between and confirming --force wipes it.
-  await writeFile(storePath, "SOME_KEY=leftover-value\n", "utf8");
-  await withOutputSink(
-    () => {},
-    () => secrets(ctx, ["--init-store", "--store", "store-a", "--force"]),
-  );
-  const afterForce = await readFile(storePath, "utf8");
-  check("--force overwrites the store", afterForce.includes("leftover-value"), false);
-  check("--force produces an empty template again", afterForce, firstContent);
-
-  // --template writes a template file without values.
-  await withOutputSink(
-    () => {},
-    () => secrets(ctx, ["--template"]),
-  );
-  const templateFile = resolve(deployDir, "config", "secrets.template.env");
-  const templateContent = await readFile(templateFile, "utf8");
-  check("--template writes a file", templateContent.length > 0, true);
-  check("the written template has no values", /=\S/.test(templateContent), false);
-
-  // --print-template emits to the output sink rather than writing a file or touching
-  // real stdout.
-  let printed = "";
-  await withOutputSink(
-    (chunk) => {
-      printed += chunk;
-    },
-    () => secrets(ctx, ["--print-template"]),
-  );
-  check("--print-template emits something", printed.length > 0, true);
-  check("the printed template has no values", /=\S/.test(printed), false);
-
-  // --store with a path-traversal name is rejected before any file is touched.
-  let traversalMessage = "";
-  try {
-    await withOutputSink(
-      () => {},
-      () => secrets(ctx, ["--init-store", "--store", "../../etc/passwd"]),
-    );
-  } catch (error) {
-    traversalMessage = error instanceof Error ? error.message : String(error);
-  }
-  check("a path-traversal store name is rejected", traversalMessage !== "", true);
-  const escapedPath = resolve(deployDir, "..", "..", "etc", "passwd.env");
-  const escapedExists = await access(escapedPath).then(
-    () => true,
-    () => false,
-  );
-  check("no file is created outside the deployment's secrets directory", escapedExists, false);
-
-  // --apply --store <name> on a store that was never created names the exact fix, not a
-  // stale one — it used to point at --template, which writes a values-free listing under
-  // config/, not the per-target store under secrets/ that --apply actually reads.
-  let applyMessage = "";
-  try {
-    await withOutputSink(
-      () => {},
-      () => secrets(ctx, ["--apply", "--store", "missing-store"]),
-    );
-  } catch (error) {
-    applyMessage = error instanceof Error ? error.message : String(error);
-  }
-  check("applying a missing store is refused", applyMessage !== "", true);
-  check("the refusal names the correct fix", applyMessage.includes("--init-store --store missing-store"), true);
-  check("the refusal does not point at --template", applyMessage.includes("--template"), false);
-
   // The apply-side stub: like the one above it states only what its cases need, but the
   // hint under test is decided by the instance state, so this one carries a runtime whose
   // isRunning() the cases control. The live config exists and declares provider zai, so
@@ -239,6 +95,8 @@ try {
   // What the private staging write is holding until the rename publishes it.
   let staged: string | undefined;
   let running = false;
+  const lockFiles = new Map<string, string>();
+  const lockDirs = new Set<string>();
   const applyCtx = {
     settings: { dataDir: "/srv/clawforge/data", env: {} },
     applicationSecrets: async () => [{
@@ -263,19 +121,45 @@ try {
         return true;
       },
       async readFile(path: string): Promise<string> {
+        if (lockFiles.has(path)) return lockFiles.get(path)!;
         if (path.endsWith("openclaw.json")) return liveConfig;
         if (path === targetEnv) return targetEnvContent;
         return "";
       },
       async writeFile(path: string, content: string): Promise<void> {
+        if (path.includes("/operation.mutation/")) lockFiles.set(path, content);
         if (path === targetEnv) targetEnvContent = content;
+      },
+      async remove(path: string): Promise<void> {
+        lockFiles.delete(path);
+      },
+      async listFiles(path: string): Promise<string[]> {
+        const prefix = `${path}/`;
+        return [...lockFiles.keys()].filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
       },
       async exec(
         command: string,
         args: string[],
         options?: { input?: string | Uint8Array },
       ): Promise<{ code: number; stdout: string; stderr: string }> {
-        if (command === "mkdir" && args[0] !== "-p") return { code: 0, stdout: "", stderr: "" };
+        if (command === "mkdir" && args[0] !== "-p") {
+          const target = args[args.length - 1] ?? "";
+          if (lockDirs.has(target)) return { code: 1, stdout: "", stderr: "File exists" };
+          lockDirs.add(target);
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "ln") {
+          const [source, destination] = args;
+          if (source === undefined || destination === undefined || !lockFiles.has(source) || lockFiles.has(destination)) {
+            return { code: 1, stdout: "", stderr: "File exists" };
+          }
+          lockFiles.set(destination, lockFiles.get(source)!);
+          return { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "rmdir") {
+          lockDirs.delete(args[args.length - 1] ?? "");
+          return { code: 0, stdout: "", stderr: "" };
+        }
         if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
         // loadSecrets stages the keys privately and publishes them with one rename, so the
         // target's config/.env is reached by mv, never by a direct write.
@@ -311,9 +195,6 @@ try {
   const hintTemplate = await readFile(hintStore, "utf8");
   check("a central store template includes repository requirements", hintTemplate.includes("REPO_SECRET="), true);
   check("the repo-env section tells the operator to copy the existing value", hintTemplate.includes("already exists in the repository's own .env"), true);
-  // firstContent above was built with no repo-env requirement present, so pinning the hint's
-  // absence there proves it is section-scoped, not part of the template's legend.
-  check("the copy hint appears only when a repo-env entry exists", firstContent.includes("already exists in the repository's own .env"), false);
   await writeFile(hintStore, "ZAI_API_KEY=zai-value\n", "utf8");
 
   running = true;

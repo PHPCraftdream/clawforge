@@ -75,7 +75,7 @@ export async function createFixture(): Promise<LifecycleFixture> {
       return files.get(path)!;
     },
     writeFile: async (path: string, content: string) => {
-      events.push(`write:${path}`);
+      if (!path.includes("/operation.mutation/")) events.push(`write:${path}`);
       writeContents.set(path, content);
       files.set(path, content);
     },
@@ -115,6 +115,12 @@ export async function createFixture(): Promise<LifecycleFixture> {
         const ancestors = segments.slice(0, -1).every((_, index) => dirs.has(`/${segments.slice(0, index + 1).join("/")}`));
         if (ancestors) stdout = target;
         else code = 1;
+      }
+      else if (command === "ln") {
+        const source = args.at(-2)!;
+        const destination = args.at(-1)!;
+        if (!files.has(source) || files.has(destination)) code = 1;
+        else files.set(destination, files.get(source)!);
       }
       else if (command === "mv") {
         const source = args.at(-2)!;

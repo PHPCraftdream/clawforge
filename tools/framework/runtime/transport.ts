@@ -12,10 +12,12 @@
 
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { readFile, mkdir, rm, rmdir, access, readdir, lstat, open, rename, type FileHandle } from "node:fs/promises";
+import { readFile, mkdir, rm, rmdir, access, readdir, stat, lstat, open, rename, type FileHandle } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { die, maskSecrets } from "../core/log.ts";
 import { outputSink } from "../core/output.ts";
+import { listFilesVia } from "../security/transport-listing.ts";
+export { listFilesVia } from "../security/transport-listing.ts";
 
 export interface ExecOptions {
   /** Bytes are passed through unchanged; strings retain the existing UTF-8 behavior. */
@@ -455,12 +457,15 @@ export class LocalTransport implements Transport {
   }
 
   async listFiles(dir: string): Promise<string[]> {
-    let entries;
     try {
-      entries = await readdir(dir, { withFileTypes: true, recursive: true });
-    } catch {
-      return [];
+      const info = await stat(dir);
+      if (!info.isDirectory()) throw new Error(`cannot list files: not a directory: ${dir}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
     }
+
+    const entries = await readdir(dir, { withFileTypes: true, recursive: true });
     return entries
       .filter((entry) => entry.isFile())
       .map((entry) => relative(dir, join(entry.parentPath, entry.name)).split(sep).join("/"));
@@ -469,26 +474,6 @@ export class LocalTransport implements Transport {
   clientInvocation(entryPath: string, args: string[]): { command: string; args: string[] } {
     return { command: entryPath, args };
   }
-}
-
-/** Shared by the two remote transports: `find` prints absolute paths, the contract is
- *  relative ones, and a missing directory is an empty listing rather than a failure.
- *
- *  Exported for testing: reaching it through a real WslTransport or SshTransport would mean
- *  a WSL distribution or a server, and the part worth checking — what is made of find's
- *  output — needs neither. */
-export async function listFilesVia(
-  exec: (command: string, args: string[], options?: ExecOptions) => Promise<ExecResult>,
-  dir: string,
-): Promise<string[]> {
-  const result = await exec("find", [dir, "-type", "f"], { allowFailure: true });
-  if (result.code !== 0) return [];
-  const prefix = `${dir.replace(/\/+$/, "")}/`;
-  return result.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith(prefix))
-    .map((line) => line.slice(prefix.length));
 }
 
 /** Target lives in a WSL distribution while the tooling runs on Windows Node.

@@ -10,7 +10,9 @@ export const setsCommands: Record<string, AppCommand> = {
   set: {
     summary: "Build or validate the set: everything a deployment installs, one artifact, one content id",
     run: set,
-    readOnlyWhen: (args) => ["build", "diff", "receipts", "validate"].includes(args[0] ?? ""),
+    readOnlyWhen: (args) => ["diff", "receipts", "validate"].includes(args[0] ?? ""),
+    changedWhen: (args) => ["build", "try", "forget"].includes(args[0] ?? ""),
+    requiresConfirmationWhen: (args) => ["try", "forget"].includes(args[0] ?? ""),
     details:
       "Collects every recipe (served content and agent bundle, each file checksummed), " +
       "config/desired-state.json, the required framework version and image digest, and the " +

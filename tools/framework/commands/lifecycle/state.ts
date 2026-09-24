@@ -179,16 +179,40 @@ export async function rotateSnapshots(ctx: Context, snapshotDir: string): Promis
 
   const prefix = await sudoFor(ctx, snapshotDir);
 
-  // The base archive only — sidecar files never end in plain .tar.gz. The parser below is
-  // still required: a glob prefix can match a sibling deployment sharing this directory.
-  const [lsHead, ...lsRest] = [
+  // Select only owned base archives; sidecars and sibling deployments are excluded.
+  const names = snapshotDeploymentNames(deploymentName());
+  const findArgs = [
     ...prefix,
-    "sh",
-    "-c",
-    `ls -1t ${snapshotGlob(snapshotDir)} 2>/dev/null`,
+    "find",
+    snapshotDir,
+    "-maxdepth",
+    "1",
+    "-type",
+    "f",
+    "(",
+    ...names.flatMap((name, index) => [...(index === 0 ? [] : ["-o"]), "-name", `${name}-state-*.tar.gz`]),
+    ")",
+    "-printf",
+    "%T@\\t%p\\n",
   ];
-  const listing = await ctx.transport.exec(lsHead, lsRest, { allowFailure: true });
-  const snapshots = selectSnapshotPaths(listing.stdout, deploymentName());
+  const [findHead, ...findRest] = findArgs;
+  const listing = await ctx.transport.exec(findHead, findRest, { allowFailure: true });
+  if (listing.code !== 0) {
+    throw new Error(`snapshot rotation could not list archives (exit ${listing.code})`);
+  }
+  const snapshots = listing.stdout
+    .split("\n")
+    .flatMap((line) => {
+      const separator = line.indexOf("\t");
+      if (separator < 0) return [];
+      const modified = Number(line.slice(0, separator));
+      const path = line.slice(separator + 1);
+      return Number.isFinite(modified) && selectSnapshotPaths(path, deploymentName()).length === 1
+        ? [{ path, modified }]
+        : [];
+    })
+    .sort((left, right) => right.modified - left.modified)
+    .map(({ path }) => path);
 
   const stale = snapshots.slice(keep);
   if (stale.length === 0) return;
@@ -203,7 +227,10 @@ export async function rotateSnapshots(ctx: Context, snapshotDir: string): Promis
     targets.push(path, `${path}.template.env`, `${path}${SECRETS_SUFFIX}`);
   }
   const [rmHead, ...rmRest] = [...prefix, "rm", "-f", ...targets];
-  await ctx.transport.exec(rmHead, rmRest, { allowFailure: true });
+  const removal = await ctx.transport.exec(rmHead, rmRest, { allowFailure: true });
+  if (removal.code !== 0) {
+    throw new Error(`snapshot rotation could not remove stale archives (exit ${removal.code})`);
+  }
 }
 
 // --- secrets ------------------------------------------------------------------

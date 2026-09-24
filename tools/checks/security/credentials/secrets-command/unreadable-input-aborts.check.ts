@@ -68,6 +68,7 @@ try {
       async writeFile(path: string, content: string): Promise<void> {
         writes[path] = content;
       },
+      async remove(path: string): Promise<void> { delete writes[path]; },
       async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
         if (command === "mkdir" && args[0] !== "-p") return { code: 0, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
@@ -111,6 +112,7 @@ try {
       async writeFile(path: string, content: string): Promise<void> {
         checkFailureWrites[path] = content;
       },
+      async remove(path: string): Promise<void> { delete checkFailureWrites[path]; },
       async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
         if (command === "mkdir" && args[0] !== "-p") return { code: 0, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };

@@ -1,0 +1,44 @@
+name: Windows full WSL Docker checks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: [self-hosted, Windows]
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Require WSL and Docker
+        shell: pwsh
+        run: |
+          wsl.exe --exec sh -lc 'command -v tar && command -v sha256sum'
+          if ($LASTEXITCODE -ne 0) { throw 'WSL distribution is unavailable or lacks required tools' }
+          docker info --format '{{.ServerVersion}}' | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Docker daemon is unavailable' }
+          docker compose version | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Docker Compose is unavailable' }
+
+      - name: Install development dependencies
+        run: npm ci --include=dev
+
+      - name: Run full checks
+        run: npm test
+
+      - name: Typecheck and lint
+        run: npm run format:check
+
+      - name: Build package
+        run: npm run build
+
+      - name: Verify package contents
+        run: npm run pack:check

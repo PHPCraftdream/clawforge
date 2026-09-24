@@ -129,6 +129,11 @@ try {
   check("a corrupt ledger fails its own cycle", /could not parse/.test(corrupt ?? ""), true);
   await rm(ledger, { force: true });
 
+  await writeFile(ledger, `${JSON.stringify({ privatePaths: ["workspace//credential.txt"] })}\n`, "utf8");
+  const noncanonical = await rejectionOf(() => persistedPrivatePaths());
+  check("the ledger rejects private paths with an empty interior segment", /must stay inside the data directory/.test(noncanonical ?? ""), true);
+  await rm(ledger, { force: true });
+
   const refused = await rejectionOf(() =>
     mutatePrivatePathsLedger(ledger, () => {
       throw new Error("merge refused");
@@ -174,6 +179,7 @@ try {
   // The restored-history import racing a record — restore imports the data root's history
   // copy while a hook may be recording, and both must survive. The transport only has to
   // answer sudoFor's writability probe (exists + test -w) and hand the copy to `cat`.
+  let importBody = `${JSON.stringify({ privatePaths: ["sidecar-private", "sidecar-private/credentials.env"] })}\n`;
   const importCtx = {
     settings: { dataDir: "/tgt/data", env: {} },
     transport: {
@@ -182,7 +188,7 @@ try {
         if (command === "cat") {
           return {
             code: 0,
-            stdout: `${JSON.stringify({ privatePaths: ["sidecar-private", "sidecar-private/credentials.env"] })}\n`,
+            stdout: importBody,
             stderr: "",
           };
         }
@@ -208,6 +214,11 @@ try {
       "workspace/notes.env",
     ]),
   );
+  importBody = `${JSON.stringify({ privatePaths: ["workspace//credential.txt"] })}\n`;
+  const invalidRestoredHistory = await rejectionOf(() =>
+    importRestoredPrivatePathsHistory(importCtx, privatePathsHistoryFile("/tgt/data")),
+  );
+  check("restored history rejects private paths with an empty interior segment", /must stay inside the data directory/.test(invalidRestoredHistory ?? ""), true);
 
   // === PART C — the queue's cleanup must not drop a live queue ====================================
   //

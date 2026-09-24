@@ -124,6 +124,7 @@ jobs:
             tools/checks/integration/app-hooks.check.ts
             tools/checks/integration/app-recipes-dir.check.ts
             tools/checks/integration/init.check.ts
+            tools/checks/integration/mcp-safety-policy.check.ts
             tools/checks/integration/mcp/mcp-apply-report.check.ts
             tools/checks/integration/mcp/mcp-mirror.check.ts
             tools/checks/integration/mcp/mcp-project.check.ts
@@ -174,7 +175,9 @@ jobs:
             tools/checks/runtime/lifecycle/private-paths-prefix-boundary.check.ts
             tools/checks/runtime/lifecycle/recipe-portable-content.check.ts
             tools/checks/runtime/lifecycle/restore-symlink-boundary.check.ts
-            tools/checks/runtime/lifecycle/smoke.check.ts
+            tools/checks/runtime/lifecycle/smoke/outcomes.check.ts
+            tools/checks/runtime/lifecycle/smoke/drift.check.ts
+            tools/checks/runtime/lifecycle/smoke/roundtrip.check.ts
             tools/checks/runtime/plan.check.ts
             tools/checks/runtime/private-history-restore.check.ts
             tools/checks/runtime/service/deploy/checkout-policy.check.ts
@@ -184,7 +187,8 @@ jobs:
             tools/checks/runtime/service/restore.check.ts
             tools/checks/runtime/service/runtime-image-identity.check.ts
             tools/checks/runtime/service/runtime-port.check.ts
-            tools/checks/runtime/service/state.check.ts
+            tools/checks/runtime/service/state/state.check.ts
+            tools/checks/runtime/service/state/rotation.check.ts
             tools/checks/security/acceptance/accept.check.ts
             tools/checks/security/acceptance/plan.check.ts
             tools/checks/security/credentials/private-config.check.ts
@@ -194,7 +198,8 @@ jobs:
             tools/checks/security/credentials/secrets.check.ts
             tools/checks/security/credentials/secrets-command/dropped-variables.check.ts
             tools/checks/security/credentials/secrets-command/instance-lock.check.ts
-            tools/checks/security/credentials/secrets-command/local-store.check.ts
+            tools/checks/security/credentials/secrets-command/local-store/local-store.check.ts
+            tools/checks/security/credentials/secrets-command/local-store/store-template.check.ts
             tools/checks/security/credentials/secrets-command/mcp-setup.check.ts
             tools/checks/security/credentials/secrets-command/prospective-requirements.check.ts
             tools/checks/security/credentials/secrets-command/unreadable-input-aborts.check.ts

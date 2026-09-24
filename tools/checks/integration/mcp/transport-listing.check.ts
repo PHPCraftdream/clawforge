@@ -138,7 +138,33 @@ function execReturning(result: ExecResult) {
   // mirror has never been written — and it must read as "nothing there yet", not as an error
   // that aborts provisioning before it starts.
   const stub = execReturning({ code: 1, stdout: "", stderr: "find: '/srv/clawforge/mirror': No such file or directory" });
-  check("a failing find lists nothing rather than throwing", await listFilesVia(stub.exec, "/srv/clawforge/mirror"), []);
+  check("a missing listing root lists nothing", await listFilesVia(stub.exec, "/srv/clawforge/mirror"), []);
+}
+
+{
+  const stub = execReturning({
+    code: 1,
+    stdout: "/srv/clawforge/mirror/server.ts\n",
+    stderr: "find: '/srv/clawforge/mirror/private': Permission denied",
+  });
+  let message = "";
+  try {
+    await listFilesVia(stub.exec, "/srv/clawforge/mirror");
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  check("permission failure after partial traversal is propagated", message.includes("Permission denied"), true);
+}
+
+{
+  const stub = execReturning({ code: 1, stdout: "", stderr: "find: '/srv/clawforge/mirror': Permission denied" });
+  let rejected = false;
+  try {
+    await listFilesVia(stub.exec, "/srv/clawforge/mirror");
+  } catch {
+    rejected = true;
+  }
+  check("an inaccessible listing root is not treated as missing", rejected, true);
 }
 
 {

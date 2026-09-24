@@ -6,6 +6,7 @@
 // a pathname re-created underneath a caller that had read it, and a release whose remove runs
 // after a takeover has finished.
 
+import { hostname } from "node:os";
 import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, STALE_AFTER_MS } from "#framework/runtime/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
 
@@ -42,6 +43,89 @@ function check(name: string, actual: unknown, expected: unknown): void {
   const taken = await takeLock(ctx, "apply", "op-new", { breakLock: true });
   check("--break-lock takes it over", (await readLockHolder(ctx))?.operationId, "op-new");
   await taken.release();
+}
+
+// --- abandoned mutation guards are recoverable only when their owner is known dead -----------
+
+{
+  const { ctx, files, dirs } = stubContext();
+  const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
+  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  dirs.add(guard);
+  files.set(`${guard}/owner.json`, JSON.stringify({ generation: "dead", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
+
+  const held = await takeLock(ctx, "apply", "op-after-crash");
+  check("a guard owned by a dead local process is recovered automatically", (await readLockHolder(ctx))?.operationId, "op-after-crash");
+  await held.release();
+  check("recovery leaves no stale guard artifacts", [...files.keys()].some((path) => path.includes("operation.mutation/")), false);
+}
+
+{
+  const { ctx, files, dirs } = stubContext();
+  const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
+  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  dirs.add(guard);
+  files.set(`${guard}/owner.json`, JSON.stringify({ generation: "dead", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
+  ctx.transport.listFiles = async () => { throw new Error("guard listing failed"); };
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-list-failure"));
+  check("a guard listing failure is reported, not treated as no claims", message.includes("guard listing failed"), true);
+  check("listing failure preserves the original guard owner", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "dead");
+  check("listing failure removes its temporary claim", [...files.keys()].some((path) => path.includes(".claim-")), false);
+}
+
+{
+  const { ctx, files, dirs } = stubContext();
+  const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
+  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  dirs.add(guard);
+  files.set(`${guard}/owner.json`, JSON.stringify({ generation: "live", pid: process.pid, machine, takenAt: new Date().toISOString() }));
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-must-wait", { breakLock: true }));
+  check("--break-lock cannot break a live mutation guard", message.includes("in progress"), true);
+  check("a live guard is left untouched", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "live");
+  check("a refused live guard creates no instance lock", dirs.has(lockPath(ctx)), false);
+}
+
+{
+  const { ctx, files, dirs } = stubContext();
+  const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
+  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  dirs.add(guard);
+  files.set(`${guard}/owner.json`, JSON.stringify({ generation: "remote", pid: 99999999, machine: `${machine}-other`, takenAt: new Date().toISOString() }));
+
+  const message = await refused(() => takeLock(ctx, "apply", "op-unverifiable", { breakLock: true }));
+  check("--break-lock keeps a guard owned by an unverifiable host", message.includes("in progress"), true);
+  check("an unverifiable guard is not replaced", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "remote");
+}
+
+{
+  const { ctx, files, dirs } = stubContext();
+  const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
+  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  dirs.add(guard);
+  files.set(`${guard}/owner.json`, JSON.stringify({ generation: "uncertain", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
+  const originalKill = process.kill;
+  process.kill = (() => { throw Object.assign(new Error("process probe failed"), { code: "EIO" }); }) as typeof process.kill;
+  let message = "";
+  try {
+    message = await refused(() => takeLock(ctx, "apply", "op-kill-probe-failure", { breakLock: true }));
+  } finally {
+    process.kill = originalKill;
+  }
+  check("a process probe error does not prove the owner is dead", message.includes("in progress"), true);
+  check("a process probe error preserves the guard", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "uncertain");
+}
+
+{
+  const { ctx, dirs } = stubContext();
+  const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
+  dirs.add(guard);
+
+  const held = await takeLock(ctx, "apply", "op-recover-empty-guard", { breakLock: true });
+  check("--break-lock recovers a guard left before owner publication", (await readLockHolder(ctx))?.operationId, "op-recover-empty-guard");
+  await held.release();
+  check("ownerless guard recovery releases its new guard", dirs.has(guard), false);
 }
 
 // --- a lock taken over by --break-lock is not removed by the run that lost it -------------------------

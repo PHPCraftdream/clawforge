@@ -30,6 +30,19 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: exit 1
 
+      - name: Require the tag to match the package version
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const { version } = JSON.parse(readFileSync("tools/framework/package.json", "utf8"));
+          const expectedTag = `v${version}`;
+          if (process.env.GITHUB_REF_NAME !== expectedTag) {
+            console.error(`release tag ${process.env.GITHUB_REF_NAME} does not match package version ${version}`);
+            process.exitCode = 1;
+          }
+          NODE
+
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:

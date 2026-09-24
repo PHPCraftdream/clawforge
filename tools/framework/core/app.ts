@@ -98,8 +98,8 @@ export interface AppCommand {
    *  still answers in the envelope, with that text as its result — because the tool
    *  declares one outputSchema for every action, and a declaration some action does not
    *  satisfy is worse than none. A mixed command therefore declares no per-action
-   *  structured metadata; per-action facts (read-only or not) belong to
-   *  readOnly/readOnlyWhen, which is what the envelope's `changed` field is built from. */
+   *  structured metadata; per-action change and confirmation facts belong to
+   *  changedWhen and requiresConfirmationWhen. */
   readonly structured?: boolean;
   /** The command observes and never changes anything. Lets a tool result state `changed:
    *  false` as a fact rather than as an assumption, which is what makes it safe for an
@@ -107,6 +107,12 @@ export interface AppCommand {
   readonly readOnly?: boolean;
   /** Refines read-only reporting for command groups with mixed subcommands. */
   readonly readOnlyWhen?: (args: string[]) => boolean;
+  /** Says whether a call made a change, independently of whether it needs confirmation. */
+  readonly changedWhen?: (args: string[]) => boolean;
+  /** Refines which calls need explicit MCP confirmation for a mixed command. */
+  readonly requiresConfirmationWhen?: (args: string[]) => boolean;
+  /** Appends an explicit command-level --force only after MCP confirmation. */
+  readonly forceOnConfirmation?: boolean;
   /** The command's successful output carries registered credential values on purpose —
    *  `mcp-creds` is the one — so the response redaction that guards every other healthy
    *  answer (audit 2026-09-22 round 3, P2-05) lets it through instead of answering with

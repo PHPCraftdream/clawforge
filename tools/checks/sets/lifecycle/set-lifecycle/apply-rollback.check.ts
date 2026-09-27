@@ -348,7 +348,9 @@ try {
     // one below is guaranteed to find real CONFIG_DRIFT and actually take a snapshot — with
     // nothing forcing drift, a config that happened to already match produces a genuine
     // no-op apply, which (correctly) takes no snapshot at all, leaving nothing to delete.
-    files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ gateway: { mode: "remote" } }));
+    // A provider stays configured (explicit apiKey, so it invents no SECRET_MISSING of its
+    // own) across this reset — this test is about the snapshot chain, not about UX-09.
+    files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ models: { providers: { zai: { apiKey: "fixture-explicit-key" } } }, gateway: { mode: "remote" } }));
     const resetToA = await fixture.captured(() => apply(ctx, ["--set", built.artifact, "--json"]));
     assert.equal(resetToA.error, undefined, resetToA.error?.message);
     const reinstallB = await fixture.captured(() => apply(ctx, ["--set", next.artifact, "--json"]));

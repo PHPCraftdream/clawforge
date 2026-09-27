@@ -56,7 +56,15 @@ export async function createFixture(): Promise<LifecycleFixture> {
     }
   })();
   const sourceData = "/tmp/set-lifecycle-real/data";
-  const files = new Map<string, string>([[`${sourceData}/config/openclaw.json`, "{}"], [`${sourceData}/workspace/MEMORY.md`, "keep me"]]);
+  // A provider already configured, with an explicit (non-env-sourced) apiKey so this does
+  // not invent a new SECRET_MISSING requirement of its own: this fixture is about
+  // apply/set/rollback mechanics, not about UX-09's PROVIDER_MISSING or secret status, and a
+  // live config with no provider configured would fail every plan/apply run here on a
+  // blocking finding these checks have nothing to do with.
+  const files = new Map<string, string>([
+    [`${sourceData}/config/openclaw.json`, JSON.stringify({ models: { providers: { zai: { apiKey: "fixture-explicit-key" } } } })],
+    [`${sourceData}/workspace/MEMORY.md`, "keep me"],
+  ]);
   const dirs = new Set<string>(["/", "/tmp", "/tmp/set-lifecycle-real", sourceData, `${sourceData}/config`]);
   const state: LifecycleFixtureState = { running: false, failPull: false, failStop: false, stopped: 0, lastTryDir: "" };
   const events: string[] = [];

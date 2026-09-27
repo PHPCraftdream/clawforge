@@ -16,6 +16,22 @@ export class HelperNotRunning extends Error {
   }
 }
 
+/** Thrown by a read-only runtime query (isRunning, health, …) when the deployment's data
+ *  directory does not exist on the target at all — a fresh deployment nobody has bootstrapped
+ *  yet, distinguished from every other reason the same query can fail. Every runtime call
+ *  that shells out to compose needs somewhere to write its own private files (the docker
+ *  runtime's per-call env file, beside the data directory), and creating that somewhere is
+ *  exactly the mkdir a still-root-owned parent refuses pre-bootstrap — surfacing as a raw
+ *  transport error instead of a clear "run bootstrap first" (UX-05). Callers that know how to
+ *  answer plainly (status, doctor, inspect) catch this specifically; anything else propagates
+ *  as before. */
+export class NotBootstrapped extends Error {
+  constructor(dataDir: string) {
+    super(`${dataDir} does not exist on the target — this deployment has never been bootstrapped`);
+    this.name = "NotBootstrapped";
+  }
+}
+
 export interface RunOneOffOptions {
   /** Compose profile or equivalent grouping. */
   profile?: string;

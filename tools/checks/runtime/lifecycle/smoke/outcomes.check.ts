@@ -122,5 +122,40 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   check("a runtime that cannot answer at all is could-not-check", silent.results.map((result) => result.status), ["could-not-check"]);
 }
 
+// --- UX-09: a silent agent names PROVIDER_MISSING as the cause, when it applies ------------
+
+{
+  const agent = checks.find((entry) => entry.name === "agent answers end to end");
+  if (agent === undefined) throw new Error("smoke.ts no longer has the agent-answers check under its documented name");
+
+  function agentContext(liveConfig: unknown, reply: string): Context {
+    return {
+      settings: { dataDir: "/srv/openclaw/data" },
+      transport: {
+        async readFile(path: string): Promise<string> {
+          if (path === "/srv/openclaw/data/config/openclaw.json") return JSON.stringify(liveConfig);
+          throw new Error(`unexpected read: ${path}`);
+        },
+      },
+      runtime: {
+        runOneOff: async () => ({ code: 0, stdout: reply, stderr: "" }),
+      },
+    } as unknown as Context;
+  }
+
+  const noProvider = await runChecks(agentContext({ models: { providers: {} } }, "(no reply)"), [agent], () => {});
+  check("a silent agent with no provider configured fails", noProvider.results.map((result) => result.status), ["failed"]);
+  check("naming PROVIDER_MISSING's own remedy", noProvider.results[0].detail?.includes("./clawforge configure-provider"), true);
+  check("and the cause in plain words", noProvider.results[0].detail?.includes("no model provider is configured"), true);
+
+  const configured = await runChecks(agentContext({ models: { providers: { zai: { apiKey: "k" } } } }, "(no reply)"), [agent], () => {});
+  check("a silent agent with a provider configured fails on the plain symptom instead", configured.results.map((result) => result.status), ["failed"]);
+  check("without inventing a provider cause that does not apply", configured.results[0].detail?.includes("configure-provider"), false);
+  check("naming what the agent actually said", configured.results[0].detail?.includes("(no reply)"), true);
+
+  const answered = await runChecks(agentContext({ models: { providers: { zai: { apiKey: "k" } } } }, "SMOKE-OK"), [agent], () => {});
+  check("an agent that actually answers still passes", answered.results.map((result) => result.status), ["passed"]);
+}
+
 process.stderr.write(failed === 0 ? "all smoke outcome checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

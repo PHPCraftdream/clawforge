@@ -20,7 +20,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { bootstrap } from "#framework/commands/lifecycle/bootstrap.ts";
-import { useDeployment } from "#framework/runtime/deployment.ts";
+import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
@@ -181,6 +181,100 @@ try {
   const configureAt = setTrySource.indexOf("await configureProvider(tryCtx, []);");
   check("set try's own bring-up makes both calls", applyAt >= 0 && configureAt >= 0, true);
   check("set try applies declared settings before configuring the provider, same as bootstrap", applyAt < configureAt, true);
+}
+
+// --- UX-09: a bootstrap that ends with no model provider configured says so in its final
+// next steps — "OpenClaw is up" read as done, while an agent could not answer a single
+// prompt until an operator noticed doctor's separate PROVIDER_MISSING finding on a LATER
+// run. Read from the live config the same way collectConfiguredProviders() (secrets.ts)
+// does, not guessed from which env vars happen to be set. --------------------------------
+//
+// A bootstrap-shaped stub distinct from the fixture above: every step succeeds
+// unconditionally, and the live config `readFile` answers with exactly what each case hands
+// in — the same file bootstrap re-reads after start() to decide whether to print the hint.
+// `targetEnv` supplies whatever conventional provider key preflightSecrets ends up
+// requiring, so each case is about the hint, never a refusal that belongs to a different
+// command.
+function providerHintContext(liveConfig: unknown, targetEnv = ""): Context {
+  return {
+    settings: {
+      dataDir: DATA_DIR,
+      env: { OPENCLAW_GATEWAY_TOKEN: "test-token" },
+      image: "ghcr.io/openclaw/openclaw:extended-stable",
+      gatewayPort: "18789",
+      bindAddress: "127.0.0.1",
+      serviceUrl: "http://127.0.0.1:18789",
+    },
+    transport: {
+      description: "stub",
+      async exists(): Promise<boolean> { return true; },
+      async readFile(path: string): Promise<string> {
+        if (path === CONFIG_PATH) return JSON.stringify(liveConfig);
+        if (path === TARGET_ENV_PATH) return targetEnv;
+        return "";
+      },
+      async writeFile(): Promise<void> {},
+      async remove(): Promise<void> {},
+      async mkdirp(): Promise<void> {},
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+        if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: `${args[1] ?? ""}\n`, stderr: "" };
+        if (command === "stat" && args[0] === "-c" && args[1] === "%u:%g") return { code: 0, stdout: "1000:1000\n", stderr: "" };
+        if (command === "stat" && args[0] === "-c" && args[1] === "%a") return { code: 0, stdout: "700\n", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+    paths: { toContainer: (path: string) => path },
+    runtime: {
+      async portConflict(): Promise<string | undefined> { return undefined; },
+      async isRunning(): Promise<boolean> { return false; },
+      async pullImage(): Promise<void> {},
+      async runOneOff(): Promise<{ code: number; stdout: string; stderr: string }> { return { code: 0, stdout: "", stderr: "" }; },
+      async start(): Promise<void> {},
+      async waitForHealth(): Promise<void> {},
+      async imageReference(): Promise<string | undefined> { return undefined; },
+    },
+  } as unknown as Context;
+}
+
+{
+  const previousHint = (() => { try { return deploymentDir(); } catch { return undefined; } })();
+  const hintDeployment = await mkdtemp(join(tmpdir(), "oc-bootstrap-provider-hint-check-"));
+  try {
+    await mkdir(resolve(hintDeployment, "config"), { recursive: true });
+    await writeFile(resolve(hintDeployment, "config", "desired-state.json"), "[]");
+    useDeployment(hintDeployment);
+
+    {
+      let output = "";
+      await withOutputSink((chunk) => { output += chunk; }, () => bootstrap(providerHintContext({ models: { providers: {} } }), ["--no-pull"]));
+      check("no provider configured prints the configure-provider hint", output.includes("./clawforge configure-provider"), true);
+      check("the hint says an agent cannot answer yet", output.includes("cannot answer"), true);
+    }
+
+    {
+      let output = "";
+      await withOutputSink(
+        (chunk) => { output += chunk; },
+        () => bootstrap(providerHintContext({ models: { providers: { zai: { apiKey: "k" } } } }), ["--no-pull"]),
+      );
+      check("a configured provider prints no hint at all", output.includes("configure-provider"), false);
+    }
+
+    {
+      // auth.profiles alone still counts, the same way collectConfiguredProviders() reads it
+      // — this must not re-derive its own, narrower guess.
+      let output = "";
+      await withOutputSink(
+        (chunk) => { output += chunk; },
+        () => bootstrap(providerHintContext({ models: { providers: {} }, auth: { profiles: { mine: { provider: "zai" } } } }, "ZAI_API_KEY=k\n"), ["--no-pull"]),
+      );
+      check("a provider named only through auth.profiles prints no hint either", output.includes("configure-provider"), false);
+    }
+  } finally {
+    if (previousHint !== undefined) useDeployment(previousHint);
+    await rm(hintDeployment, { recursive: true, force: true });
+  }
 }
 
 process.stderr.write(failed === 0 ? "all bootstrap provider-order checks passed\n" : `${failed} failed\n`);

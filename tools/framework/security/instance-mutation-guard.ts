@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 
 import { locksDir } from "../core/env.ts";
 import type { Context } from "../core/context.ts";
+import type { Transport } from "../runtime/transport.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -111,6 +112,46 @@ export async function localLiveness(record: LocalProcessRecord): Promise<Livenes
   if (actual === undefined) return "alive";
   const drift = Math.abs(Date.parse(actual) - Date.parse(record.startedAt));
   return Number.isNaN(drift) || drift <= 2000 ? "alive" : "dead";
+}
+
+/** Removes `compose-*` directories (runtime-docker.ts #withEnvFile) a PAST call left behind — a token-bearing compose.env
+ *  survives a crash between the mkdir below and this method's own finally block (crash 139
+ *  mid-command, an OOM kill, anything that skips Node's own cleanup entirely). Only ones
+ *  provably abandoned: an owner.json naming this machine and a pid that is provably gone
+ *  (never a bare "unreadable owner.json", which a sibling call still mid-write toward its
+ *  own — see the write order below — would also show for an instant; never a different
+ *  machine's own clawforge, whose pid cannot be checked from here at all). Best-effort:
+ *  a failed listing or removal here must never block the real compose call that follows. */
+export async function sweepStaleComposeEnvs(transport: Transport, directory: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await transport.listFiles(directory);
+  } catch {
+    return;
+  }
+  const names = new Set(
+    entries
+      .map((entry) => entry.split("/")[0] ?? "")
+      .filter((name) => /^compose-[0-9a-f-]+$/.test(name)),
+  );
+  for (const name of names) {
+    const path = `${directory}/${name}`;
+    let owner: { pid?: unknown; machine?: unknown; startedAt?: unknown } | undefined;
+    try {
+      owner = JSON.parse(await transport.readFile(`${path}/owner.json`)) as typeof owner;
+    } catch {
+      continue; // Unreadable or missing: cannot prove this run is gone, so it is left alone.
+    }
+    if (typeof owner !== "object" || owner === null) continue;
+    if (typeof owner.machine !== "string" || owner.machine !== machineName() || typeof owner.pid !== "number") continue;
+    const liveness = await localLiveness({
+      pid: owner.pid,
+      machine: owner.machine,
+      startedAt: typeof owner.startedAt === "string" ? owner.startedAt : undefined,
+    });
+    if (liveness !== "dead") continue;
+    await transport.remove(path).catch(() => {});
+  }
 }
 
 interface MutationOwner {

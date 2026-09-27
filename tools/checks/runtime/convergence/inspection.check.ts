@@ -65,6 +65,10 @@ check(
     "LOCK_MISSING",
     "MCP_RESTART_REQUIRED",
     "MCP_SERVER_MISSING",
+    // Reported instead of ever asking the runtime, on a deployment nobody has bootstrapped.
+    "NOT_BOOTSTRAPPED",
+    // The gateway runs, but nothing can answer a prompt without one.
+    "PROVIDER_MISSING",
     "RECIPE_MIRROR_DRIFT",
     "RESTART_REQUIRED",
     "SECRET_MISSING",

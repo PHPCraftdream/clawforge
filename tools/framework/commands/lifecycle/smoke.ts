@@ -13,24 +13,15 @@
 // The two negative checks matter most: a suite that only confirms success degrades
 // silently.
 //
-// The round-trip check is the heaviest one: it takes a FULL backup with the gateway held
-// down and restores it into an isolated scratch root beside the data directory, proving
-// the archive — private paths included — comes back byte-identical, without ever writing
-// over the live data. It runs the whole backup -> restore transaction under one outer
-// instance lock, and whatever happens, the gateway is left in the state the check found it
-// in — see the check's own comment for why. --quick exists because of this one check.
+// The round-trip check is the heaviest: a FULL backup with the gateway held down, restored
+// into an isolated scratch root beside the data directory (never over live data) and compared
+// byte for byte, private paths included. --quick exists because of it.
 //
-// Three checks below need a gateway held down for a consistent snapshot: the round-trip
-// check above, and the two verifier checks (an archive with secrets rejected, a share
-// snapshot accepted) — each takes its own archive to check. Called one at a time (as the
-// tests beside this file do), each manages its own stop/start cycle and that is the whole
-// story. Called together, through this file's own `smoke()`, they used to cost three
-// separate outages — ~70s observed on a live instance (UX-14). None of the three
-// FUNDAMENTALLY needs its own window: only taking the archive does, verifying and
-// restore-diffing one never touch the gateway. runArchiveChecks() below is what a real
-// `smoke` run uses instead: one pause, both archives this trio needs taken independently so
-// one failing does not block the other, one restart, then the slower checking work runs
-// with the gateway already back up.
+// It and the two verifier checks each need an archive taken with the gateway down. Run alone
+// (as the tests do) each manages its own stop/start; run together by smoke() they used to cost
+// three outages, ~70s (UX-14). Only taking an archive needs the window, so runArchiveChecks()
+// pauses once, takes both archives independently, restarts, then verifies and restore-diffs
+// with the gateway back up.
 //
 // Every check lands on the shared check-outcome vocabulary (commands/check-outcome.ts):
 // passed, failed, not-checked (this deployment makes the check inapplicable) or
@@ -54,6 +45,7 @@ import { applyConfig } from "../orchestration/config.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { dataDirName, dataDirParent } from "#src/service/archive.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
+import { collectConfiguredProviders } from "#src/service/secrets.ts";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { valueAt } from "../orchestration/inspect/helpers.ts";
@@ -114,9 +106,7 @@ async function sha256Of(ctx: Context, path: string): Promise<string> {
   return digest;
 }
 
-// The three archive-based checks' names, shared with runArchiveChecks()/runSmokeSuite()
-// below so the consolidated path recognises them by the same strings the checks below
-// declare themselves under — one spelling, never two to keep in sync.
+// Archive-check names, one spelling shared with runArchiveChecks()/runSmokeSuite().
 const REJECTS_SECRETS_CHECK = "verifier rejects an archive with secrets";
 const ACCEPTS_SHARE_CHECK = "verifier accepts a share snapshot";
 const ROUND_TRIP_CHECK = "snapshot round-trip is byte-identical";
@@ -148,7 +138,25 @@ export const checks: Check[] = [
           input: "",
         }),
       );
-      expect(result.stdout.includes("SMOKE-OK"), `agent replied: ${result.stdout.trim().slice(0, 120)}`);
+      if (result.stdout.includes("SMOKE-OK")) return;
+
+      // A silent agent is most often PROVIDER_MISSING (UX-09): read the same live config
+      // inspect does (collectConfiguredProviders), and name that cause instead of just the
+      // symptom, when it applies. Best effort — an unreadable or unparseable config here
+      // must not replace the check's own real failure with a different, unrelated one.
+      let noProvider = false;
+      try {
+        const config = JSON5.parse(await ctx.transport.readFile(`${ctx.settings.dataDir}/config/openclaw.json`)) as unknown;
+        noProvider = collectConfiguredProviders(config).length === 0;
+      } catch {
+        // Stays the plain symptom below.
+      }
+      expect(
+        false,
+        noProvider
+          ? `no model provider is configured — run ./clawforge configure-provider (agent replied: ${result.stdout.trim().slice(0, 120)})`
+          : `agent replied: ${result.stdout.trim().slice(0, 120)}`,
+      );
     },
   },
   {
@@ -509,21 +517,11 @@ function foldRestartFailure(result: SmokeResult, restartError: unknown): SmokeRe
   return { ...result, detail: result.detail === undefined ? note : `${result.detail}; ${note}` };
 }
 
-/** UX-14: the three archive-based checks each need the gateway paused for a consistent
- *  snapshot, and used to each take (and publish) their own archive independently through
- *  createBackup()/pull() — three separate stop/start cycles, ~70s of downtime on a live
- *  instance, for one smoke run. Run together, through runSmokeSuite() below, they share ONE
- *  stop/start cycle instead: the gateway is paused once, both archives this trio needs (a
- *  full backup — reused for the reject-check AND the round-trip restore — and a share
- *  snapshot) are taken independently so one failing does not block the other, the gateway is
- *  restarted once, and only THEN does the slower verification and restore-diff work run —
- *  none of it touches the gateway again (the isolated restore never did, even before this).
- *  Each of the three checks still exists, unchanged, in `checks` above for standalone use —
- *  the tests beside this file call them directly — each then managing its own window exactly
- *  as before.
- *
- *  `wanted` is `selected`'s own subset (e.g. --quick drops the round-trip check): a check
- *  never selected is neither run nor reported here, same as runChecks(). */
+/** UX-14: the three archive checks in ONE stop window (see the header). The full backup
+ *  serves both the reject-check and the round-trip restore; it and the share snapshot are
+ *  taken independently so one failing does not block the other; verification runs after the
+ *  restart. The checks stay in `checks` for standalone use, each managing its own window.
+ *  `wanted` is `selected`'s subset (--quick drops the round-trip): unselected = not run. */
 async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>): Promise<SmokeResult[]> {
   const wantRejects = wanted.has(REJECTS_SECRETS_CHECK);
   const wantAccepts = wanted.has(ACCEPTS_SHARE_CHECK);

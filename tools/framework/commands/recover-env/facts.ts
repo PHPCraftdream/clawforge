@@ -16,6 +16,8 @@
 // both into "stale" is how a deliberate port change got rewritten back to the container's
 // old value (P2-03, round 3).
 
+import { deploymentName } from "#src/runtime/deployment.ts";
+
 export interface ConnectionFacts {
   dataDir?: string;
   port?: string;
@@ -40,6 +42,20 @@ export interface ConnectionFactDiff {
   kind: "missing" | "diverged";
 }
 
+/** The .env value clawforge itself would use for one connection fact — not necessarily what
+ *  is literally written in the file. OC_COMPOSE_PROJECT alone defaults an empty (or absent)
+ *  value to the deployment directory's own name — deployment.ts's composeProjectName(), the
+ *  same fallback useComposeProjectOverride() applies when a Context is built, and the name
+ *  compose itself resolved into the running container's label. Comparing the raw empty
+ *  string against that label reported a difference that was never there (UX-03): a fresh
+ *  deployment's own default read back as ENV_STALE. The other three facts have no such
+ *  default — an empty OC_DATA_DIR/OPENCLAW_GATEWAY_PORT/OPENCLAW_IMAGE is not a legitimate
+ *  value, so only this one name gets the substitution. */
+function effectiveLocalValue(name: string, raw: string | undefined): string | undefined {
+  if (name === "OC_COMPOSE_PROJECT" && (raw === undefined || raw === "")) return deploymentName();
+  return raw;
+}
+
 /** The facts the container's answer carries that .env does not agree with, classified by how
  *  much the disagreement means. A fact the answer does not carry at all is not here: there
  *  is nothing to compare it against, and calling it stale would be a guess. */
@@ -50,7 +66,7 @@ export function connectionFactDiffs(
   return CONNECTION_FACTS.flatMap((fact): ConnectionFactDiff[] => {
     const value = facts[fact.field];
     if (value === undefined) return [];
-    const local = current[fact.name];
+    const local = effectiveLocalValue(fact.name, current[fact.name]);
     if (local === undefined) return [{ name: fact.name, value, kind: "missing" as const }];
     return local !== value ? [{ name: fact.name, value, kind: "diverged" as const }] : [];
   });

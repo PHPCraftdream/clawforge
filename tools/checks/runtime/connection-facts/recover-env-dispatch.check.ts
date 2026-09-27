@@ -172,11 +172,17 @@ try {
     check("the bootstrap run succeeds against a stubbed container", error, "");
     const merged = await readFile(envFile(), "utf8");
     check("the missing OC_DATA_DIR is filled from the container", merged.includes("OC_DATA_DIR=/srv/data"), true);
-    check("the missing compose project is filled", merged.includes("OC_COMPOSE_PROJECT=fresh-project"), true);
+    // OC_COMPOSE_PROJECT is absent here too, but UX-03 compares an absent (or empty) value
+    // against its own EFFECTIVE default — the directory-derived project name, exactly as
+    // composeProjectName() falls back — rather than the raw string. "fresh-project" is a
+    // genuinely different explicit value from that default, so it is diverged, not missing,
+    // and a plain run must not silently adopt it any more than the diverged port below.
+    check("a compose project genuinely different from the directory default is NOT silently filled", merged.includes("OC_COMPOSE_PROJECT=fresh-project"), false);
     check("the missing image is filled", merged.includes("OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable"), true);
     check("a diverged port is NOT written without --adopt-runtime", merged.includes("OPENCLAW_GATEWAY_PORT=9999"), true);
     check("the container's port is nowhere in the file", merged.includes("18790"), false);
     check("the direction choice is reported", output.includes("--adopt-runtime"), true);
+    check("the direction choice names the compose project too", output.includes("OC_COMPOSE_PROJECT"), true);
     check("the token line passes through untouched", merged.includes(`OPENCLAW_GATEWAY_TOKEN=${TOKEN}`), true);
     check("the read is two docker calls — no compose anywhere", dockerCalls.length, 2);
     check(

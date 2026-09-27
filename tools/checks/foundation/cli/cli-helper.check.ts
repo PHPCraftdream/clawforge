@@ -172,7 +172,11 @@ function withFileOps(transport: Transport): Transport {
     description: "stub",
     async exec(command: string, args: string[]): Promise<ExecResult> {
       calls.push([command, ...args]);
-      if (args[0] === "compose") return { code: 0, stdout: "abc123\n", stderr: "" };
+      // #containerId() (runtime-docker.ts, UX-17) asks Docker directly by label instead of
+      // through `docker compose ... ps` — same simulated container, a different call shape.
+      if (args[0] === "compose" || args.some((arg) => arg.startsWith("label=com.docker.compose.service="))) {
+        return { code: 0, stdout: "abc123\n", stderr: "" };
+      }
       return { code: 0, stdout: "OpenClaw 2026.6.34\n", stderr: "" };
     },
   } as unknown as Transport;
@@ -215,7 +219,11 @@ function withFileOps(transport: Transport): Transport {
     description: "stub",
     async exec(command: string, args: string[]): Promise<ExecResult> {
       calls.push([command, ...args]);
-      if (args[0] === "compose") return { code: 0, stdout: "abc123\n", stderr: "" };
+      // #containerId() (runtime-docker.ts, UX-17) asks Docker directly by label instead of
+      // through `docker compose ... ps` — same simulated container, a different call shape.
+      if (args[0] === "compose" || args.some((arg) => arg.startsWith("label=com.docker.compose.service="))) {
+        return { code: 0, stdout: "abc123\n", stderr: "" };
+      }
       return { code: 0, stdout: "ok\n", stderr: "" };
     },
   } as unknown as Transport;

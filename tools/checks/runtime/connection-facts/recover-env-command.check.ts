@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { recoverEnv } from "#framework/commands/recover-env/index.ts";
 import { withOutputSink } from "#framework/core/output.ts";
-import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
+import { useDeployment, deploymentDir, deploymentName, envFile } from "#framework/runtime/deployment.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
@@ -158,6 +158,20 @@ try {
     const { output } = await capture(() => recoverEnv(ctx, []));
     check("matching facts leave the file byte-identical", await readFile(envFile(), "utf8"), SEED);
     check("a full match is reported as nothing to recover", output.includes("nothing to recover"), true);
+  }
+
+  // --- UX-03: an empty OC_COMPOSE_PROJECT is the directory-derived default, not a divergence -
+
+  {
+    const emptyProjectEnv = SEED.replace("OC_COMPOSE_PROJECT=old-project", "OC_COMPOSE_PROJECT=");
+    await writeFile(envFile(), emptyProjectEnv, "utf8");
+    // The runtime falls back to deploymentName() for an unset override — the fixture's
+    // container carries exactly that, the same as a fresh bootstrap's would.
+    facts = { dataDir: "/old/data", port: "9999", composeProject: deploymentName(), image: "ghcr.io/openclaw/openclaw:old-tag" };
+    const { output } = await capture(() => recoverEnv(ctx, ["--dry-run"]));
+    check("an empty OC_COMPOSE_PROJECT matching the directory name asks for no direction", output.includes("--adopt-runtime"), false);
+    check("it is reported as nothing to recover", output.includes("nothing to recover"), true);
+    await resetEnv();
   }
 
   // --- plain recover-env fills a missing NAME, never a diverged value -----------------------

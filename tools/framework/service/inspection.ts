@@ -23,11 +23,13 @@ export type Severity = "blocking" | "warning";
  *  meant to be matched on: renaming one is a breaking change for anything that branched on
  *  it, the same as renaming a command. */
 export type ProblemCode =
+  | "NOT_BOOTSTRAPPED"
   | "GATEWAY_DOWN"
   | "GATEWAY_UNHEALTHY"
   | "EGRESS_UNREACHABLE"
   | "CONFIG_DRIFT"
   | "SECRET_MISSING"
+  | "PROVIDER_MISSING"
   | "RESTART_REQUIRED"
   | "MCP_RESTART_REQUIRED"
   | "RECIPE_MIRROR_DRIFT"
@@ -58,6 +60,17 @@ interface CodeMeaning {
 }
 
 export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
+  NOT_BOOTSTRAPPED: {
+    severity: "blocking",
+    // Reported instead of ever asking the runtime: on a fresh deployment the target has no
+    // data directory yet, and every compose invocation (even a read like `compose ps`) writes
+    // its private env file into a directory beside it — a write a still-root-owned parent
+    // refuses, surfacing as a raw transport error ("mkdir ... Permission denied") in place of
+    // an answer (UX-05). The data directory's own absence is read first and answers this
+    // without ever reaching for the runtime.
+    summary: "this deployment has never been bootstrapped — there is nothing on the target yet",
+    nextAction: "./clawforge bootstrap",
+  },
   GATEWAY_DOWN: {
     severity: "blocking",
     summary: "the gateway container is not running",
@@ -90,6 +103,15 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     severity: "blocking",
     summary: "a required secret has no value where the instance expects to read it",
     nextAction: "./clawforge secrets --apply",
+  },
+  PROVIDER_MISSING: {
+    // A warning, not blocking: detection reads models.providers and auth.profiles only, and
+    // OpenClaw also answers through a built-in provider keyed from the environment, a
+    // subscription login or a CLI backend — none of which need to appear there. A false
+    // "blocking" would fail doctor and every apply on an instance that answers fine.
+    severity: "warning",
+    summary: "no model provider is configured — the gateway runs, but nothing can answer a prompt",
+    nextAction: "./clawforge configure-provider",
   },
   RESTART_REQUIRED: {
     severity: "blocking",

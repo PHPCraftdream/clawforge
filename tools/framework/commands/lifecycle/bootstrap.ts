@@ -14,6 +14,7 @@
 //   6. the provider, from the key in config/.env
 //   7. only then start and wait for /healthz
 
+import JSON5 from "json5";
 import { log, info, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
@@ -22,6 +23,7 @@ import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { preflightPort } from "./lifecycle.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
+import { collectConfiguredProviders } from "#src/service/secrets.ts";
 
 export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
   const noPull = args.includes("--no-pull");
@@ -112,4 +114,19 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
   // wanted — which is the moment the operator chose, not every bootstrap.
   info(`token:   ${token === "" ? "(not generated)" : "in .env — print it with ./clawforge mcp-creds --token"}`);
   info(`data:    ${fresh.dataDir}`);
+
+  // "up" and "healthy" are not the job: answering a prompt is, and with no provider key
+  // configureProvider() above had nothing to reference. Read the same way inspect does
+  // (collectConfiguredProviders against the live config), not guessed from which env vars
+  // happen to be set — doctor would otherwise say "nothing blocking" over an instance that
+  // cannot actually do its one job (UX-09). Best effort: an unreadable or unparseable config
+  // here is doctor's finding to make, not a reason to fail a bootstrap that just succeeded.
+  try {
+    const liveConfig = JSON5.parse(await live.transport.readFile(`${fresh.dataDir}/config/openclaw.json`)) as unknown;
+    if (collectConfiguredProviders(liveConfig).length === 0) {
+      info("provider: none configured yet — an agent cannot answer until one is: ./clawforge configure-provider");
+    }
+  } catch {
+    // Doctor's own read of the same file reports a broken config; this is only a bonus hint.
+  }
 }

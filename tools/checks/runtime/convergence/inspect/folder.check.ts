@@ -6,16 +6,22 @@
 // store mix a real secret with the plumbing, so nothing parsed from them is printable. See
 // fixture.ts for the shared stub and on-disk deployment.
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { gatherInspection, renderJson, doctor } from "#framework/commands/orchestration/inspect/gather.ts";
+import { status } from "#framework/commands/interface/status.ts";
+import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
 import { blockingProblems } from "#framework/service/inspection.ts";
 import { withOutputSink } from "#framework/core/output.ts";
-import { secretStoreFile } from "#framework/runtime/deployment.ts";
+import { secretStoreFile, deploymentName, useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes } from "./fixture.ts";
 import type { TargetSpec } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ConnectionFacts } from "#framework/commands/recover-env/facts.ts";
+import type { ExecResult, Transport } from "#framework/runtime/transport.ts";
+import type { Settings } from "#framework/core/env.ts";
+import type { PathBridge } from "#framework/core/paths.ts";
 
 let failed = 0;
 
@@ -157,6 +163,39 @@ try {
     ]);
   }
 
+  // --- B2. UX-03: an empty OC_COMPOSE_PROJECT is the directory-derived default, not drift -----
+
+  {
+    await reset();
+    await writeEnv(MATCHING_ENV.replace("OC_COMPOSE_PROJECT=folder-check", "OC_COMPOSE_PROJECT="));
+    await writeStore(COMPLETE_STORE);
+    // The container the runtime computes for an unset override IS deploymentName() (deployment.ts's
+    // composeProjectName()) — the same directory-derived name a fresh bootstrap's container carries.
+    const facts = { ...CONTAINER_FACTS, composeProject: deploymentName() };
+    const inspection = await gatherInspection(folderContext(CLEAN, facts));
+    allJson += JSON.stringify(renderJson(inspection));
+    check("an empty OC_COMPOSE_PROJECT matching the directory-derived name is not ENV_STALE", inspection.problems, []);
+    check("the fact is observed as a match, not stale", inspection.observed.connectionFacts, [
+      { name: "OC_DATA_DIR", state: "match" },
+      { name: "OPENCLAW_GATEWAY_PORT", state: "match" },
+      { name: "OC_COMPOSE_PROJECT", state: "match" },
+      { name: "OPENCLAW_IMAGE", state: "match" },
+    ]);
+  }
+
+  // --- B3. an empty OC_COMPOSE_PROJECT still reports a genuinely different running project ----
+
+  {
+    await reset();
+    await writeEnv(MATCHING_ENV.replace("OC_COMPOSE_PROJECT=folder-check", "OC_COMPOSE_PROJECT="));
+    await writeStore(COMPLETE_STORE);
+    const facts = { ...CONTAINER_FACTS, composeProject: "genuinely-different-project" };
+    const inspection = await gatherInspection(folderContext(CLEAN, facts));
+    allJson += JSON.stringify(renderJson(inspection));
+    check("an empty OC_COMPOSE_PROJECT still reports a genuinely different running project", codes(inspection.problems), ["ENV_STALE"]);
+    check("the finding names the compose project", inspection.problems[0]?.detail.includes("OC_COMPOSE_PROJECT") ?? false, true);
+  }
+
   // --- C. a store that exists but is missing a required value ---------------------------------
 
   {
@@ -275,6 +314,132 @@ try {
 
 check("no .env value reached any inspection answer", allJson.includes(TOKEN), false);
 check("no .env value reached any doctor output", allOutput.includes(TOKEN), false);
+
+// --- K. UX-05: a deployment nobody has bootstrapped yet ------------------------------------
+//
+// Every runtime call that shells out to compose — even a read like `compose ps` — writes its
+// own private env file into a directory beside the data directory (runtime-docker.ts's
+// #withEnvFile). On a fresh deployment the data directory does not exist, and creating a
+// place beside it is exactly the mkdir a still-root-owned parent refuses — before the fix a
+// raw transport error ("wsl.exe ... mkdir -p <data>-locks failed (exit 1): ... Permission
+// denied"), not an answer. Driven against a REAL DockerRuntime with a stubbed transport —
+// the seam a hand-built Runtime stub (this file's own stubContext) cannot exercise, since the
+// bug lives inside #withEnvFile itself.
+{
+  const NOT_BOOTSTRAPPED_DATA_DIR = "/srv/clawforge/data";
+
+  function preBootstrapTransport(options: { dataDirExists: boolean; mkdirDetail?: string }): { transport: Transport; execLog: string[][] } {
+    const execLog: string[][] = [];
+    const transport = {
+      description: "stub-target",
+      async exists(path: string): Promise<boolean> {
+        return options.dataDirExists && (path === NOT_BOOTSTRAPPED_DATA_DIR || path.startsWith(`${NOT_BOOTSTRAPPED_DATA_DIR}/`));
+      },
+      async readFile(path: string): Promise<string> {
+        throw new Error(`ENOENT: ${path}`);
+      },
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        execLog.push([command, ...args]);
+        if (command === "stat") return { code: 1, stdout: "", stderr: "no such file" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      async mkdirp(path: string): Promise<void> {
+        execLog.push(["mkdir", "-p", path]);
+        throw new Error(
+          `mkdir -p ${path} failed (exit 1): ${options.mkdirDetail ?? `mkdir: cannot create directory '${path}': Permission denied`}`,
+        );
+      },
+      async writeFile(): Promise<void> {},
+      async remove(): Promise<void> {},
+      async listFiles(): Promise<string[]> { return []; },
+    } as unknown as Transport;
+    return { transport, execLog };
+  }
+
+  function notBootstrappedContext(transport: Transport): Context {
+    const settings = {
+      dataDir: NOT_BOOTSTRAPPED_DATA_DIR,
+      image: "ghcr.io/openclaw/openclaw:extended-stable",
+      env: {},
+      serviceUrl: "http://127.0.0.1:18789",
+    } as Settings;
+    const paths = { toTarget: async (path: string) => path, toContainer: (path: string) => path } as unknown as PathBridge;
+    const runtime = new DockerRuntime(transport, settings, paths, { service: "gateway" });
+    return { settings, transport, paths, runtime } as unknown as Context;
+  }
+
+  const previousNotBootstrapped = (() => { try { return deploymentDir(); } catch { return undefined; } })();
+  const notBootstrappedDeployment = await mkdtemp(join(tmpdir(), "clawforge-not-bootstrapped-check-"));
+  useDeployment(notBootstrappedDeployment);
+  try {
+    {
+      const { transport, execLog } = preBootstrapTransport({ dataDirExists: false });
+      const ctx = notBootstrappedContext(transport);
+      const inspection = await gatherInspection(ctx);
+      check("the answer is a clean finding, not a thrown transport error", inspection.problems.map((entry) => entry.code), ["NOT_BOOTSTRAPPED"]);
+      check("the finding is blocking", inspection.problems[0]?.severity, "blocking");
+      check("the remedy is bootstrap, not up", inspection.problems[0]?.nextAction, "./clawforge bootstrap");
+      check("GATEWAY_DOWN is not ALSO reported — up is not a working remedy pre-bootstrap", inspection.problems.some((entry) => entry.code === "GATEWAY_DOWN"), false);
+      check("the raw transport error never reaches the finding's detail", inspection.problems[0]?.detail.includes("Permission denied"), false);
+      check("the mkdir this bug is about really was attempted (proving the mechanism)", execLog.some((call) => call[0] === "mkdir" && call.includes("-p")), true);
+    }
+
+    {
+      const { transport } = preBootstrapTransport({ dataDirExists: false });
+      const ctx = notBootstrappedContext(transport);
+      let doctorOutput = "";
+      let doctorError = "";
+      try {
+        await withOutputSink((chunk) => { doctorOutput += chunk; }, () => doctor(ctx, ["--json"]));
+      } catch (caught) {
+        doctorError = caught instanceof Error ? caught.message : String(caught);
+      }
+      check("doctor fails (NOT_BOOTSTRAPPED is blocking)", doctorError !== "", true);
+      check("doctor's refusal names the code and the remedy", doctorError.includes("NOT_BOOTSTRAPPED") && doctorError.includes("./clawforge bootstrap"), true);
+      check("doctor's refusal never carries the raw transport error", doctorError.includes("Permission denied"), false);
+      const payload = JSON.parse(doctorOutput) as { problems: { code: string }[] };
+      check("the JSON payload carries exactly the one finding", payload.problems.map((entry) => entry.code), ["NOT_BOOTSTRAPPED"]);
+    }
+
+    {
+      const { transport, execLog } = preBootstrapTransport({ dataDirExists: false });
+      const ctx = notBootstrappedContext(transport);
+      let statusOutput = "";
+      let statusError = "";
+      try {
+        await withOutputSink((chunk) => { statusOutput += chunk; }, () => status(ctx, []));
+      } catch (caught) {
+        statusError = caught instanceof Error ? caught.message : String(caught);
+      }
+      check("status does not throw", statusError, "");
+      check("status says nothing is deployed yet", statusOutput.includes("nothing deployed yet"), true);
+      check("status points at bootstrap", statusOutput.includes("./clawforge bootstrap"), true);
+      check("status never prints the raw transport error", statusOutput.includes("Permission denied"), false);
+      check("status stops after the first failed runtime call", execLog.filter((call) => call[0] === "mkdir").length, 1);
+    }
+
+    {
+      // The boundary: a data directory that DOES exist is a different failure, never hidden
+      // behind NOT_BOOTSTRAPPED.
+      const { transport } = preBootstrapTransport({
+        dataDirExists: true,
+        mkdirDetail: "mkdir: cannot create directory '/srv/clawforge/data-locks': No space left on device",
+      });
+      const ctx = notBootstrappedContext(transport);
+      let threw: unknown;
+      try {
+        await gatherInspection(ctx);
+      } catch (error) {
+        threw = error;
+      }
+      check("a mkdir failure with the data directory already present is NOT read as NOT_BOOTSTRAPPED", threw instanceof Error, true);
+      check("its real cause still reaches the caller", (threw as Error | undefined)?.message.includes("No space left on device"), true);
+    }
+  } finally {
+    if (previousNotBootstrapped !== undefined) useDeployment(previousNotBootstrapped);
+    await rm(notBootstrappedDeployment, { recursive: true, force: true });
+  }
+}
 
 process.stderr.write(failed === 0 ? "all inspect folder checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

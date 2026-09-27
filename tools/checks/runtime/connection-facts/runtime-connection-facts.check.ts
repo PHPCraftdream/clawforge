@@ -4,8 +4,10 @@
 // compose label, and the image from .Config.Image — never the top-level .Image, which is a
 // resolved ID a .env never wrote.
 //
-// No docker and no network: the transport is a stub answering the compose ps lookup with a
-// canned container id and the inspect with canned JSON.
+// No docker and no network: the transport is a stub answering the container lookup (a bare
+// `docker ps --filter label=...`, UX-17 — no compose invocation and no environment file
+// needed to ask Docker about its own labels) with a canned container id, and the inspect
+// with canned JSON.
 
 import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
@@ -49,9 +51,9 @@ function goodInspect(): InspectAnswer {
   };
 }
 
-/** Builds a DockerRuntime whose compose ps answers "container-one" and whose inspect answers
- *  with (`code`, `stdout`) — or, with `composePsStdout` emptied, never inspects at all. Every
- *  exec's argument vector is recorded, so the call shapes can be asserted on. */
+/** Builds a DockerRuntime whose container lookup answers "container-one" and whose inspect
+ *  answers with (`code`, `stdout`) — or, with `composePsStdout` emptied, never inspects at
+ *  all. Every exec's argument vector is recorded, so the call shapes can be asserted on. */
 function runtimeReturning(
   code: number,
   stdout: string,
@@ -65,7 +67,7 @@ function runtimeReturning(
     async exec(command: string, args: string[]): Promise<ExecResult> {
       execArgs.push(args);
       if (command === "mkdir") return { code: 0, stdout: "", stderr: "" };
-      if (command === "docker" && args[0] === "compose") return { code: 0, stdout: composePsStdout, stderr: "" };
+      if (command === "docker" && args[0] === "ps") return { code: 0, stdout: composePsStdout, stderr: "" };
       if (command === "docker" && args[0] === "inspect") return inspect;
       throw new Error(`unexpected exec: ${command} ${args.join(" ")}`);
     },
@@ -106,9 +108,7 @@ try {
       ["inspect", "--format", "{{json .}}", "container-one"],
     );
     check("the inspect never names the configured image", inspects(execArgs)[0].join(" ").includes("x"), false);
-    // writes also carries the temporary env-file's owner record (pid, machine — task #33),
-    // written beside compose.env; only the env-file write is this assertion's concern.
-    check("the lookup still runs through compose's own environment file", writes.filter((path) => path.endsWith("/compose.env")).length, 1);
+    check("the container lookup needs no compose environment file at all (UX-17)", writes.length, 0);
   }
 
   {
@@ -213,8 +213,8 @@ try {
 
   {
     const { runtime, execArgs } = runtimeReturning(0, JSON.stringify(goodInspect()), "   \n");
-    check("an empty compose ps answer means no facts", await runtime.runningConnectionFacts(), undefined);
-    check("an empty compose ps answer means no inspect call at all", inspects(execArgs).length, 0);
+    check("an empty container lookup answer means no facts", await runtime.runningConnectionFacts(), undefined);
+    check("an empty container lookup answer means no inspect call at all", inspects(execArgs).length, 0);
   }
 
   {

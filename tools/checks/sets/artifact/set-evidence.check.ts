@@ -26,7 +26,12 @@ const ctx = {
   settings: { dataDir: "/tmp/evidence-data", env: {}, image: "moving-tag" },
   transport: {
     exists: async () => true,
-    readFile: async (path: string) => path.endsWith("openclaw.json") ? "{}" : "",
+    // A provider already configured, with an explicit (non-env-sourced) apiKey so this does
+    // not invent a NEW SECRET_MISSING requirement of its own: this fixture is about
+    // evidence/verdict computation, not about UX-09's PROVIDER_MISSING or secret status, and
+    // an empty config would fail every gatherInspection here on a blocking finding unrelated
+    // to what these checks exercise.
+    readFile: async (path: string) => path.endsWith("openclaw.json") ? JSON.stringify({ models: { providers: { zai: { apiKey: "fixture-explicit-key" } } } }) : "",
     exec: async () => ({ code: 0, stdout: "0", stderr: "" }),
     listFiles: async () => [],
   },

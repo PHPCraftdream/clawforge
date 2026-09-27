@@ -28,7 +28,9 @@ try {
     fixture.state.running = true;
     // A clean, known state: live config forced to something neither set below declares, so
     // installing A first is guaranteed to find real drift and take a real snapshot.
-    files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ gateway: { mode: "remote" } }));
+    // A provider stays configured (explicit apiKey, so it invents no SECRET_MISSING of its
+    // own): these tests are about the snapshot chain, not about UX-09.
+    files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ models: { providers: { zai: { apiKey: "fixture-explicit-key" } } }, gateway: { mode: "remote" } }));
     await writeFile(join(root, "config", "desired-state.json"), '[{"path":"gateway.mode","value":"local"}]');
     const setA = await buildSet(ctx, "lifecycle-noop-a");
     const installA = await fixture.captured(() => apply(ctx, ["--set", setA.artifact, "--json"]));
@@ -69,7 +71,9 @@ try {
   // that already included B's own setting, i.e. undid nothing. --------------------------------
   {
     fixture.state.running = true;
-    files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ gateway: { mode: "remote" } }));
+    // A provider stays configured (explicit apiKey, so it invents no SECRET_MISSING of its
+    // own): these tests are about the snapshot chain, not about UX-09.
+    files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ models: { providers: { zai: { apiKey: "fixture-explicit-key" } } }, gateway: { mode: "remote" } }));
     await writeFile(join(root, "config", "desired-state.json"), '[{"path":"gateway.mode","value":"local"}]');
     const setA2 = await buildSet(ctx, "lifecycle-transient-a");
     const installA2 = await fixture.captured(() => apply(ctx, ["--set", setA2.artifact, "--json"]));

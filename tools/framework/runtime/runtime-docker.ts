@@ -7,10 +7,10 @@
 import { randomUUID } from "node:crypto";
 import { composeFile, locksDir, toSettings, loadEnv, type Settings } from "../core/env.ts";
 import { deploymentDir, composeProjectName } from "./deployment.ts";
-import { machineName, ownProcessStartedAt, localLiveness } from "../security/instance-mutation-guard.ts";
+import { machineName, ownProcessStartedAt, sweepStaleComposeEnvs } from "../security/instance-mutation-guard.ts";
 import type { PathBridge } from "../core/paths.ts";
 import type { ExecResult, Transport } from "./transport.ts";
-import { HelperNotRunning, type Runtime, type RunOneOffOptions, type Stack, type StackServiceState } from "./runtime.ts";
+import { HelperNotRunning, NotBootstrapped, type Runtime, type RunOneOffOptions, type Stack, type StackServiceState } from "./runtime.ts";
 
 /** Which service this runtime operates. Supplied by the application: the framework has no
  *  opinion about what the managed service is called.
@@ -117,46 +117,6 @@ export class DockerRuntime implements Runtime {
     this.#reconcileSettings = options.reconcileSettings;
   }
 
-  /** Removes `compose-*` directories a PAST call left behind — a token-bearing compose.env
-   *  survives a crash between the mkdir below and this method's own finally block (crash 139
-   *  mid-command, an OOM kill, anything that skips Node's own cleanup entirely). Only ones
-   *  provably abandoned: an owner.json naming this machine and a pid that is provably gone
-   *  (never a bare "unreadable owner.json", which a sibling call still mid-write toward its
-   *  own — see the write order below — would also show for an instant; never a different
-   *  machine's own clawforge, whose pid cannot be checked from here at all). Best-effort:
-   *  a failed listing or removal here must never block the real compose call that follows. */
-  async #sweepStaleComposeEnvs(directory: string): Promise<void> {
-    let entries: string[];
-    try {
-      entries = await this.#transport.listFiles(directory);
-    } catch {
-      return;
-    }
-    const names = new Set(
-      entries
-        .map((entry) => entry.split("/")[0] ?? "")
-        .filter((name) => /^compose-[0-9a-f-]+$/.test(name)),
-    );
-    for (const name of names) {
-      const path = `${directory}/${name}`;
-      let owner: { pid?: unknown; machine?: unknown; startedAt?: unknown } | undefined;
-      try {
-        owner = JSON.parse(await this.#transport.readFile(`${path}/owner.json`)) as typeof owner;
-      } catch {
-        continue; // Unreadable or missing: cannot prove this run is gone, so it is left alone.
-      }
-      if (typeof owner !== "object" || owner === null) continue;
-      if (typeof owner.machine !== "string" || owner.machine !== machineName() || typeof owner.pid !== "number") continue;
-      const liveness = await localLiveness({
-        pid: owner.pid,
-        machine: owner.machine,
-        startedAt: typeof owner.startedAt === "string" ? owner.startedAt : undefined,
-      });
-      if (liveness !== "dead") continue;
-      await this.#transport.remove(path).catch(() => {});
-    }
-  }
-
   /** Supplies one operation's environment by file and removes it on completion. Defaults
    *  to the settings this runtime was built with; reconcile() is the one caller that hands
    *  in fresh ones read from disk. */
@@ -173,8 +133,21 @@ export class DockerRuntime implements Runtime {
     let cleanupError: unknown;
     let result!: T;
     try {
-      await this.#transport.mkdirp(directory);
-      await this.#sweepStaleComposeEnvs(directory);
+      try {
+        await this.#transport.mkdirp(directory);
+      } catch (error) {
+        // Distinguished from every other reason this mkdir can fail: a data directory that
+        // genuinely does not exist means nobody ever bootstrapped this deployment, and the
+        // sibling "-locks" directory this call is trying to create shares that parent — the
+        // exact write a still-root-owned parent refuses. Anything else (the parent exists,
+        // but permissions or disk space are wrong for some other reason) is a real failure
+        // and propagates as before.
+        if (!(await this.#transport.exists(settings.dataDir))) {
+          throw new NotBootstrapped(settings.dataDir);
+        }
+        throw error;
+      }
+      await sweepStaleComposeEnvs(this.#transport, directory);
       // Keep file creation private even before writeFile applies its mode.
       await this.#transport.exec("mkdir", ["-m", "700", privateDirectory]);
       cleanupNeeded = true;
@@ -235,11 +208,32 @@ export class DockerRuntime implements Runtime {
     ];
   }
 
-  /** The service's container id, or undefined when it does not exist. Asked of compose
-   *  rather than matched by name: `docker ps --filter name=x` is a substring match, so a
-   *  second deployment's container answers for the first. */
-  async #containerId(): Promise<string | undefined> {
-    const result = await this.#compose(["ps", "--quiet", "--all", this.#service], false, true);
+  /** The service's container id, or undefined when it does not exist. Matched by the two
+   *  labels compose itself writes on the container (project and service) rather than by
+   *  name — `docker ps --filter name=x` is a substring match, so a second deployment's
+   *  container would answer for the first — and asked of Docker directly rather than
+   *  through `#compose()`: finding a container by Docker's own labels needs no environment
+   *  interpolation at all, so it skips #withEnvFile's whole setup/teardown (five execs, one
+   *  wsl.exe spawn each) for a fact plain `docker ps` answers in one (UX-17). The same
+   *  shortcut recover-env's own bootstrap.ts already takes, for the same reason — reaching
+   *  a container this way needs no compose invocation. Asked fresh every call, never cached:
+   *  this runtime instance can outlive an external state change (an operator's own `docker
+   *  stop` while this same process is still running). */
+  async #containerId(service = this.#service, all = true): Promise<string | undefined> {
+    const result = await this.#transport.exec(
+      "docker",
+      [
+        "ps",
+        ...(all ? ["--all"] : []),
+        "--quiet",
+        "--filter",
+        `label=com.docker.compose.project=${composeProjectName()}`,
+        "--filter",
+        `label=com.docker.compose.service=${service}`,
+      ],
+      { allowFailure: true },
+    );
+    if (result.code !== 0) return undefined;
     const id = result.stdout.trim().split("\n")[0]?.trim();
     return id === undefined || id === "" ? undefined : id;
   }
@@ -315,16 +309,27 @@ export class DockerRuntime implements Runtime {
     return result.stdout.trim() !== "";
   }
 
+  /** "missing" — no container at all (never created, or removed). "stopped" — the container
+   *  exists but its own process is not running: `.State.Health.Status` alone cannot tell this
+   *  apart from a running-but-unhealthy one, because Docker leaves the last healthcheck
+   *  verdict in place after a plain `docker stop` rather than clearing it — so a container
+   *  stopped while healthy, or one that failed its LAST check before stopping, both read
+   *  "unhealthy" for as long as they sit stopped (UX-16). Checked first, before the health
+   *  verdict is even asked about. "starting"/"healthy"/"unhealthy"/"none" — Docker's own
+   *  verdict for a container that IS running, same as before. */
   async health(): Promise<string> {
     const id = await this.#containerId();
     if (id === undefined) return "missing";
 
     const result = await this.#transport.exec(
       "docker",
-      ["inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", id],
+      ["inspect", "--format", "{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", id],
       { allowFailure: true },
     );
-    return result.code === 0 ? result.stdout.trim() : "missing";
+    if (result.code !== 0) return "missing";
+    const [running, health] = result.stdout.trim().split(" ");
+    if (running !== "true") return "stopped";
+    return health ?? "none";
   }
 
   /** Refuses to start when the published port already belongs to another compose project.
@@ -508,9 +513,11 @@ export class DockerRuntime implements Runtime {
     args: string[],
     options: { input?: string; allowFailure?: boolean; timeoutMs?: number },
   ): Promise<ExecResult> {
-    const result = await this.#compose(["ps", "--quiet", service], false, true);
-    const id = result.stdout.trim().split("\n")[0]?.trim();
-    if (id === undefined || id === "") {
+    // Only a RUNNING container (all=false): this is about to exec into it, and the same
+    // direct-label lookup #containerId() otherwise uses for this.#service serves any
+    // service name asked of it, helper containers included.
+    const id = await this.#containerId(service, false);
+    if (id === undefined) {
       throw new HelperNotRunning(service);
     }
 

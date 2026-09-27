@@ -39,30 +39,35 @@ try {
       const declarationPath = resolve(fixture.root, "config", "desired-state.json");
       let restarts = 0;
       fixture.ctx.runtime.restart = async () => { restarts += 1; };
+      // A provider already configured, with an explicit (non-env-sourced) apiKey: these
+      // scenarios are about declaration-merge semantics, not about UX-09's PROVIDER_MISSING
+      // or secret status, and a live config with none configured would fail apply on a
+      // blocking finding none of them are testing.
+      const PROVIDER = { models: { providers: { zai: { apiKey: "fixture-explicit-key" } } } };
       const cases = [
         {
           name: "repeated assignments and unrelated live settings",
-          live: { gateway: { mode: "local", bind: "lan" } },
+          live: { ...PROVIDER, gateway: { mode: "local", bind: "lan" } },
           declared: [{ path: "gateway.mode", value: "remote" }, { path: "gateway.mode", value: "local" }],
         },
         {
           name: "parent followed by child",
-          live: { gateway: { mode: "local" } },
+          live: { ...PROVIDER, gateway: { mode: "local" } },
           declared: [{ path: "gateway", value: { mode: "remote" } }, { path: "gateway.mode", value: "local" }],
         },
         {
           name: "parent replacing a child",
-          live: { gateway: { mode: "local" } },
+          live: { ...PROVIDER, gateway: { mode: "local" } },
           declared: [{ path: "gateway.controlUi", value: { enabled: true } }, { path: "gateway", value: { mode: "local" } }],
         },
         {
           name: "equivalent path aliases",
-          live: { gateway: { mode: "local" } },
+          live: { ...PROVIDER, gateway: { mode: "local" } },
           declared: [{ path: 'gateway["mode"]', value: "remote" }, { path: "gateway.mode", value: "local" }],
         },
         {
           name: "reordered object keys",
-          live: { gateway: { controlUi: { enabled: true, allowedOrigins: ["http://127.0.0.1:18789"] } } },
+          live: { ...PROVIDER, gateway: { controlUi: { enabled: true, allowedOrigins: ["http://127.0.0.1:18789"] } } },
           declared: [{ path: "gateway.controlUi", value: { allowedOrigins: ["http://127.0.0.1:18789"], enabled: true } }],
         },
       ];
@@ -75,7 +80,7 @@ try {
         check(`apply leaves ${scenario.name} unchanged`, fixture.files.get(configPath), original);
         check(`apply does not restart for ${scenario.name}`, restarts, 0);
       }
-      fixture.files.set(configPath, JSON.stringify({ gateway: { mode: "remote" } }));
+      fixture.files.set(configPath, JSON.stringify({ ...PROVIDER, gateway: { mode: "remote" } }));
       await writeFile(declarationPath, JSON.stringify(cases[0].declared));
       const repaired = await fixture.captured(() => apply(fixture.ctx, ["--json"]));
       check("a different final value still applies successfully", repaired.error?.message, undefined);
@@ -446,6 +451,55 @@ try {
     const secret = inspection.problems.find((entry) => entry.code === "SECRET_MISSING");
     check("a missing provider key is found", secret?.detail.includes("ZAI_API_KEY"), true);
     check("and it says where the value belongs", secret?.detail.includes("<data>/config/.env"), true);
+  }
+
+  // --- UX-09: no model provider configured at all ---------------------------------------
+
+  {
+    // "OpenClaw is up" after a bootstrap with no provider key: the gateway container runs
+    // and answers every probe, but an agent cannot answer a single prompt. Read from the
+    // live config the way secrets.ts's own collectConfiguredProviders does, not guessed
+    // from which env vars happen to be set.
+    const inspection = await gatherInspection(
+      stubContext({
+        targetEnv: "ZAI_API_KEY=k\n",
+        mirrorChecksums: goodChecksums,
+        liveConfig: {
+          gateway: { mode: "local", auth: { token: { source: "env", id: "OPENCLAW_GATEWAY_TOKEN" } } },
+          agents: { defaults: { model: { primary: "zai/glm-5.3-flash" } } },
+          models: { providers: {} },
+        },
+      }),
+    );
+    check("no provider configured is reported", codes(inspection.problems), ["PROVIDER_MISSING"]);
+    const finding = inspection.problems.find((entry) => entry.code === "PROVIDER_MISSING");
+    check("it is a warning — detection cannot see env-keyed, subscription or CLI-backend providers", finding?.severity, "warning");
+    check("the remedy is configure-provider", finding?.nextAction, "./clawforge configure-provider");
+  }
+
+  {
+    // A provider named only through auth.profiles (never models.providers) still counts —
+    // collectConfiguredProviders() reads both, and this must not re-derive its own guess.
+    const inspection = await gatherInspection(
+      stubContext({
+        targetEnv: "ZAI_API_KEY=k\n",
+        mirrorChecksums: goodChecksums,
+        liveConfig: {
+          gateway: { mode: "local", auth: { token: { source: "env", id: "OPENCLAW_GATEWAY_TOKEN" } } },
+          agents: { defaults: { model: { primary: "zai/glm-5.3-flash" } } },
+          models: { providers: {} },
+          auth: { profiles: { "my-zai": { provider: "zai" } } },
+        },
+      }),
+    );
+    check("a provider named only through auth.profiles is still configured", codes(inspection.problems).includes("PROVIDER_MISSING"), false);
+  }
+
+  {
+    // The default fixture config already declares models.providers.zai — the ordinary,
+    // configured case must never carry this finding.
+    const inspection = await gatherInspection(stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums }));
+    check("a configured provider carries no PROVIDER_MISSING", codes(inspection.problems).includes("PROVIDER_MISSING"), false);
   }
 
   {

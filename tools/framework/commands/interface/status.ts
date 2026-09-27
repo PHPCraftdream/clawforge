@@ -6,13 +6,26 @@
 // while the gateway serves traffic.
 
 import { log, info } from "#src/core/log.ts";
+import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 
 export async function status(ctx: Context, _args: string[]): Promise<void> {
   info(`target: ${ctx.transport.description} / runtime: ${ctx.runtime.description}`);
 
   log("containers");
-  await ctx.runtime.showStatus();
+  // showStatus() shells out to compose, which needs somewhere to write its own private env
+  // file beside the data directory — absent pre-bootstrap, which is exactly the mkdir a
+  // still-root-owned parent refuses. NotBootstrapped is how the runtime says so instead of a
+  // raw transport error (UX-05); caught here so status answers plainly instead of crashing,
+  // and every other runtime call below is skipped — there is nothing to report on any of
+  // them either.
+  try {
+    await ctx.runtime.showStatus();
+  } catch (error) {
+    if (!(error instanceof NotBootstrapped)) throw error;
+    info("nothing deployed yet — run ./clawforge bootstrap");
+    return;
+  }
 
   log("image");
   const reference = await ctx.runtime.imageReference();

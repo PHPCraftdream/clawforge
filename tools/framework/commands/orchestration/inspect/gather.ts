@@ -28,7 +28,8 @@
 import { log, info, warn, die } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
-import { requirementsForConfig, statusForRequirements } from "#src/service/secrets.ts";
+import { NotBootstrapped } from "#src/runtime/runtime.ts";
+import { requirementsForConfig, statusForRequirements, collectConfiguredProviders } from "#src/service/secrets.ts";
 import { compareLock, readLock, currentComposition } from "#src/commands/management/lock.ts";
 import { readInstalledSet, requirementProblems, runningDigests, matchRequiredDigest } from "#src/set/artifacts/install.ts";
 import {
@@ -48,7 +49,22 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   const problems: Problem[] = [];
   const declared = await declaredState(ctx, problems);
 
-  const running = await ctx.runtime.isRunning();
+  // isRunning() shells out to compose, which needs somewhere to write its own private env
+  // file beside the data directory — and on a deployment nobody has bootstrapped yet, that
+  // data directory does not exist, so creating a place beside it is exactly the mkdir a
+  // still-root-owned parent refuses. NotBootstrapped is DockerRuntime's own way of saying so
+  // (runtime-docker.ts's #withEnvFile) instead of a raw transport error (UX-05); caught here
+  // rather than left to crash a read-only command, and reported as its own finding rather
+  // than folded into GATEWAY_DOWN — "./clawforge up" is not a working remedy pre-bootstrap.
+  let running: boolean;
+  let notBootstrapped: NotBootstrapped | undefined;
+  try {
+    running = await ctx.runtime.isRunning();
+  } catch (error) {
+    if (!(error instanceof NotBootstrapped)) throw error;
+    running = false;
+    notBootstrapped = error;
+  }
   // Asked of the PROSPECTIVE configuration (live + declared overlay), not the live one
   // alone: a SecretRef the declaration is about to add is a real requirement before
   // CONFIG_DRIFT ever gets applied, and plan.ts's "secrets" step is gated on exactly the
@@ -78,6 +94,18 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
     }
   }
 
+  // The same config secrets --apply and provision-agent already read providers from
+  // (collectConfiguredProviders), not a guess from environment variable names: a bootstrap
+  // with no provider key ends "OpenClaw is up" and doctor "nothing blocking" while every
+  // agent turn fails at the first model call (UX-09) — a gap this loop's own SECRET_MISSING
+  // above never reports, because a provider's apiKey is inferred from the configured id, and
+  // with no id configured at all there is no requirement yet to be missing. Skipped pre-
+  // bootstrap (notBootstrapped): configure-provider needs config/.env on the target, which
+  // does not exist yet, and NOT_BOOTSTRAPPED above already names the one remedy that applies.
+  if (notBootstrapped === undefined && collectConfiguredProviders(prospective).length === 0) {
+    problems.push(problem("PROVIDER_MISSING", "models.providers declares no provider, and no auth.profiles entry names one either"));
+  }
+
   // The operator side reads while the instance is down, and matters most then: the store
   // is the only place a stopped instance's values can still be re-read from, since the
   // container that carries repo-env values is gone.
@@ -88,7 +116,11 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   const configState = await observeConfig(ctx, declared, problems);
 
   if (!running) {
-    problems.push(problem("GATEWAY_DOWN", `no running container for deployment "${declared.deployment}"`));
+    problems.push(
+      notBootstrapped !== undefined
+        ? problem("NOT_BOOTSTRAPPED", notBootstrapped.message)
+        : problem("GATEWAY_DOWN", `no running container for deployment "${declared.deployment}"`),
+    );
     return {
       declared,
       observed: {

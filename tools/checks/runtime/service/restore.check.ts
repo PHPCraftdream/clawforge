@@ -9,6 +9,7 @@ import { resolve } from "node:path";
 import { access, mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { restoreArchive, newestArchive } from "#framework/commands/lifecycle/restore.ts";
+import { NATIVE_MANIFEST_NAME } from "#framework/commands/lifecycle/backup.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
@@ -16,6 +17,8 @@ import { UserError } from "#framework/core/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, type ExecResult } from "#framework/runtime/transport.ts";
 import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
+import { mountPoints } from "#framework/runtime/mounts.ts";
+import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
 
 let failed = 0;
 
@@ -562,6 +565,82 @@ function deniedContext(
     calls.some((call) => call.command === "rm" && call.args[0] === "-rf" && call.args[1] === DATA_DIR),
     true,
   );
+}
+
+// --- a native archive's embedded manifest is re-verified before anything is unpacked -------
+//
+// createNativeArchive (backup.ts) reshapes a native backup into this same classic layout,
+// with the pristine OpenClaw archive embedded at NATIVE_MANIFEST_NAME. restoreArchive must
+// feed that back to `openclaw backup verify` and refuse before touching any data (task #7).
+
+{
+  const dataName = "data"; // dataDirName(DATA_DIR) — the archive root restoreArchive expects
+  const nativeEntry = `${dataName}/${NATIVE_MANIFEST_NAME}`;
+  const mounts = mountPoints(DATA_DIR);
+
+  function makeNativeCtx(verifyOk: boolean): { ctx: Context; calls: string[] } {
+    const calls: string[] = [];
+    const ctx = {
+      settings: { dataDir: DATA_DIR, env: {} },
+      paths: {
+        toContainer: (path: string) => toContainerPath(path, mounts),
+        fromContainer: (path: string) => fromContainerPath(path, mounts),
+      },
+      transport: {
+        description: "stub",
+        async exists(): Promise<boolean> { return true; },
+        async readFile(path: string): Promise<string> {
+          return path === CONFIG_PATH ? "{}" : "";
+        },
+        async writeFile(): Promise<void> {},
+        async mkdirp(): Promise<void> {},
+        async remove(): Promise<void> {},
+        async exec(command: string, args: string[]): Promise<ExecResult> {
+          calls.push(`exec ${command} ${args.join(" ")}`);
+          if (command === "tar" && args.includes("-tzf")) {
+            return { code: 0, stdout: `${dataName}/\n${dataName}/config/openclaw.json\n${nativeEntry}\n`, stderr: "" };
+          }
+          if (command === "tar" && args.includes("-tvzf")) return { code: 0, stdout: "", stderr: "" };
+          if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+          if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: args[1] ?? "", stderr: "" };
+          if (command === "stat") return { code: 0, stdout: "1000:1000", stderr: "" };
+          return { code: 0, stdout: "", stderr: "" };
+        },
+      },
+      runtime: {
+        async isRunning(): Promise<boolean> { return true; },
+        async stop(): Promise<void> {},
+        async start(): Promise<void> {},
+        async waitForHealth(): Promise<void> {},
+        async runOneOff(service: string, cliArgs: string[]): Promise<ExecResult> {
+          calls.push(`runOneOff ${service} ${cliArgs.join(" ")}`);
+          return { code: verifyOk ? 0 : 1, stdout: verifyOk ? '{"ok":true}' : "", stderr: verifyOk ? "" : "manifest is corrupt" };
+        },
+      },
+    } as unknown as Context;
+    return { ctx, calls };
+  }
+
+  {
+    const { ctx, calls } = makeNativeCtx(true);
+    let failure: unknown;
+    await withOutputSink(() => {}, async () => {
+      try { await restoreArchive(ctx, ARCHIVE, { force: true, noStart: true }); } catch (error) { failure = error; }
+    });
+    check("a native archive with a passing embedded manifest restores", failure, undefined);
+    check("openclaw backup verify ran against the embedded manifest", calls.some((call) => call.startsWith("runOneOff cli backup verify")), true);
+  }
+
+  {
+    const { ctx, calls } = makeNativeCtx(false);
+    let failure: unknown;
+    await withOutputSink(() => {}, async () => {
+      try { await restoreArchive(ctx, ARCHIVE, { force: true, noStart: true }); } catch (error) { failure = error; }
+    });
+    check("a failing embedded manifest refuses the restore", failure instanceof UserError, true);
+    check("the refusal names the verification failure", failure instanceof Error && failure.message.includes("manifest is corrupt"), true);
+    check("nothing destructive ran before the refusal", calls.some((call) => call.startsWith("exec mv") || call.startsWith("exec tar --numeric-owner -xzf")), false);
+  }
 }
 
 process.stderr.write(failed === 0 ? "all restore checks passed\n" : `${failed} failed\n`);

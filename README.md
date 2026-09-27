@@ -256,8 +256,9 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `configure-provider` | `[--provider <id>] [--env <VAR>] [--force]` | Configure any provider from a target-side SecretRef; key values never enter `openclaw.json` |
 | `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force]` | The manifest of required secrets, the template, the local store of values; `--apply` puts repo-env values in force itself — recreating the running container, since restart cannot change an environment compose interpolated at creation — and confirms them without printing them; `--dump` recovers a lost store from a running instance |
 | `recover-env` | `[--dry-run]` | Repair `.env`'s four connection facts from the running container; a wholly absent `.env` is not repairable — reaching the target already requires it |
-| `backup` | `[--profile full\|migrate\|share] [--share] [--migrate] [--with-secrets] [--hot]` | Snapshot the data directory; the gateway is stopped for the duration by default. Defaults to full, unlike `pull`, which defaults to migrate; the shorthand flags are the same vocabulary both commands accept |
-| `restore` | `[<archive>] [--force] [--fresh-identity] [--no-start] [--break-lock]` | Restore an archive; the structural check runs before anything is stopped, the secrets check before anything is started |
+| `backup` | `[--profile full\|migrate\|share] [--share] [--migrate] [--with-secrets] [--hot] [--native]` | Snapshot the data directory; the gateway is stopped for the duration by default. Defaults to full, unlike `pull`, which defaults to migrate; the shorthand flags are the same vocabulary both commands accept. `--native` (full profile only) takes a consistent snapshot WITHOUT stopping the gateway, via OpenClaw's own `backup create --verify` in the sidecar rather than a raw tar over live state; the archive it publishes is an ordinary full backup, with the pristine OpenClaw archive embedded inside for `restore` to re-verify. `auth-secrets/` and any live file OpenClaw's own backup left out (session transcripts, in the pinned image) are copied in afterwards, the count reported |
+| `restore` | `[<archive>] [--force] [--fresh-identity] [--no-start] [--break-lock]` | Restore an archive; the structural check runs before anything is stopped, the secrets check before anything is started. An archive produced by `backup --native` is additionally re-verified with `openclaw backup verify` before anything is unpacked |
+| `upgrade` | `[--image <ref>] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>]` | Resolve the target image (`--image`, or the deployment's own `OPENCLAW_IMAGE`) to a digest and pull that digest specifically — a shared local tag never moves. Records the running digest, takes a pre-upgrade backup (`backup --native` when available, else a stopped full backup), recreates the gateway on the new digest, waits for `/startupz` then `/readyz`, and runs `openclaw doctor --lint`; on any failure it recreates on the previous digest, restoring the backup too when the failure was the container exiting during migrations (upstream: code 78). On success it pins `OPENCLAW_IMAGE` to the digest in `.env` — re-pin with `./clawforge lock` afterwards. `--dry-run` prints the plan and changes nothing |
 | `pull` | `[--profile ...] [--share] [--with-secrets] [--migrate] [--hot] [--break-lock]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
 | `push` | `[<snapshot>] [--force] [--fresh-identity] [--break-lock]` | Push a snapshot back: restore → install keys if any travelled with it → check → start |
 | `verify` | `<archive> [--profile ...]` | Check an archive for credentials before sharing it — what `pull --share` does on its own |
@@ -430,6 +431,9 @@ more of them than fit here:
 | `passthrough-help.check.ts` | `cli` is marked `passesThroughHelp` — `--help` reaches OpenClaw instead of being intercepted here |
 | `cli-helper.check.ts` | the persistent CLI container: `startHelper`/`stopHelper`/`execInHelper`, `cli()`/`mcpServe()` falling back to `runOneOff` only on `HelperNotRunning` and not on any error; `runOneOff` forwarding `allowFailure` |
 | `backup.check.ts` | rotation removes one archive per run, the oldest, counted per profile, and never a sibling deployment's |
+| `runtime/service/state/native-backup.check.ts` | `--native` invokes `openclaw backup create --verify --json --output` in the sidecar and parses its result; refuses to publish on `verified: false`; the published archive keeps the ordinary full-backup name and location, so rotation needs no native-specific case; `--native` refuses any profile but full; an image without native support raises a distinct error rather than a generic failure; neither an unsupported attempt nor a failed verify ever leaves a half archive under a normal-looking name; and a live file OpenClaw's own backup left out (a session transcript) is copied into the archive, with the count reported |
+| `runtime/service/restore.check.ts` (native section) | a restored archive carrying a native backup's embedded manifest is re-verified with `openclaw backup verify` before anything is unpacked, and a failing verification refuses the restore before any destructive step runs |
+| `runtime/connection-facts/upgrade.check.ts` | the target tag is resolved to a digest and pulled by digest, never the tag itself; the running digest is recorded before anything changes; a healthy upgrade takes a pre-upgrade backup, recreates on the target digest, and passes `openclaw doctor --lint`; a generic health failure recreates back on the previous digest without touching data; a container exit during migrations (code 78) additionally restores the pre-upgrade backup; a blocking `doctor --lint` finding rolls back the same way a health failure does; `--dry-run` resolves the digest to report the plan but changes nothing; and an instance already on the resolved digest is a no-op |
 | `provision-agent.check.ts` | path and argv builders, `collectRecipeFiles` excluding `agent/`, the create-vs-skip decisions, and cron reconciliation against the declaration |
 | `mcp-mirror.check.ts` | the promise itself: every command `./clawforge help` lists is a tool or an explained exemption, and every tool is a command the console offers — both surfaces read from real processes |
 | `gate-commands.check.ts` | the gate's own commands: dispatch, `--help` from the declaration, and the same schema/argv derivation the deployment's commands get |
@@ -975,15 +979,64 @@ list beats a gateway crash-looping on `SecretRefResolutionError`.
 ```bash
 ./clawforge backup                 # the gateway is stopped for the duration of the snapshot
 ./clawforge backup --hot           # no stop, at the risk of catching a partial write
+./clawforge backup --native        # no stop, consistent anyway: OpenClaw's own backup mechanism
 ./clawforge restore                # from the newest archive, with a confirmation
 ```
 
 The stop is not caution for its own sake: state lives in SQLite with a multi-megabyte
-`-wal`, and a copy taken mid-write does not restore. `restore` does not delete the current
-data — it renames the directory to `<data>.replaced-<timestamp>`.
+`-wal`, and a copy taken mid-write does not restore. `--hot` accepts that risk to avoid the
+stop; `--native` avoids both, by running `openclaw backup create --verify` inside the
+running instance's own sidecar instead of tarring the data directory directly — OpenClaw's
+own mechanism is what actually gets to decide when its state is quiescent, not a stopped
+container. It only covers the full profile: `migrate`/`share` still use the framework's own
+tar path, since they subtract things (provider keys, identity) OpenClaw's own backup format
+does not know how to leave out. The archive it publishes is, structurally, an ordinary full
+backup — same name, same place in rotation — with OpenClaw's own pristine archive embedded
+inside it; `restore` finds that and re-verifies it with `openclaw backup verify` before
+unpacking anything else.
+
+Precisely what `--native` guarantees: the SQLite state itself (`config/state`, the config,
+identity and device records) is a genuine point-in-time snapshot, taken by OpenClaw's own
+backup mechanism rather than by stopping the container — this is the property `--hot` cannot
+offer. Two things OpenClaw's own `backup create` (verified against the pinned image,
+2026.6.34) does not itself cover are made whole afterwards, not left as a silent gap:
+`auth-secrets/` (the encryption keys) lives outside `$OPENCLAW_STATE_DIR` entirely, so it is
+copied in directly from the live data directory — safe hot, since it is static key material,
+not a database. Session transcripts (`config/agents/<id>/sessions/*.jsonl`, and any `.log`
+file there) are, in this image version, listed as a directory but not actually included by
+OpenClaw's own archive; closed the same way, but computed generically as whatever exists live
+under the state directory or workspace and is absent from OpenClaw's own payload — not a
+hardcoded pattern, so a future image version excluding something else is still covered, and
+one that stops excluding sessions copies nothing extra. Because a transcript is an
+append-only log, still being written, the copy is taken hot: the newest transcript's very
+last line can be truncated if a write lands mid-copy, the same partial-write risk `--hot`
+accepts for the whole data directory, but narrowed here to log tails rather than the
+database. `backup` reports how many such files it added. `restore` does not delete the
+current data — it renames the directory to `<data>.replaced-<timestamp>`.
 
 Rotation removes one archive per run, the oldest beyond `OC_BACKUP_KEEP`, rather than the
-whole backlog at once.
+whole backlog at once — the same rotation and naming for a native archive as for any other
+full backup.
+
+### Upgrading the image: `upgrade`
+
+```bash
+./clawforge upgrade                       # to the deployment's own OPENCLAW_IMAGE, by digest
+./clawforge upgrade --image <ref>         # to a specific reference instead
+./clawforge upgrade --dry-run             # print the plan, change nothing
+```
+
+The target is resolved to a digest and pulled by that digest — never the tag, because
+another deployment on the same Docker daemon may use the same tag, and pulling it would
+silently change what that deployment gets on its own next recreate. A pre-upgrade backup is
+taken (the native path above when the image supports it, else a stopped full backup), the
+gateway is recreated on the new digest, and `/startupz`/`/readyz` plus `openclaw doctor
+--lint` decide whether it stuck. Any failure recreates on the digest that was running
+before; a container that exited during migrations (upstream: exit code 78) also gets the
+pre-upgrade backup restored, since the data may already have changed. On success
+`OPENCLAW_IMAGE` in `.env` is pinned to the digest — `apply` never rewrites `config/deployment.lock.json`
+(see [Instance settings as code](#instance-settings-as-code)), so re-pin it deliberately with
+`./clawforge lock` afterwards.
 
 ## Moving state and sharing agents
 

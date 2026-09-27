@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { composeFile, locksDir, toSettings, loadEnv, type Settings } from "../core/env.ts";
 import { deploymentDir, composeProjectName } from "./deployment.ts";
 import { machineName, ownProcessStartedAt, sweepStaleComposeEnvs } from "../security/instance-mutation-guard.ts";
+import { resolveImageDigest, lastExitCode } from "../diagnostics/image-digest.ts";
 import type { PathBridge } from "../core/paths.ts";
 import type { ExecResult, Transport } from "./transport.ts";
 import { HelperNotRunning, NotBootstrapped, type Runtime, type RunOneOffOptions, type Stack, type StackServiceState } from "./runtime.ts";
@@ -358,6 +359,18 @@ export class DockerRuntime implements Runtime {
       return `${container.trim()} (compose project ${project === "" ? "none" : project})`;
     }
     return undefined;
+  }
+
+  async resolveImageDigest(reference: string): Promise<string | undefined> {
+    return resolveImageDigest(this.#transport, reference);
+  }
+  /** reconcile(), pinned to a digest for this one call — compose pulls it, .env stays untouched. */
+  async recreateWithImage(reference: string): Promise<void> {
+    const current = this.#reconcileSettings !== undefined ? await this.#reconcileSettings() : toSettings(await loadEnv());
+    await this.#compose(["up", "--detach", this.#service], true, false, { ...current, image: reference, env: { ...current.env, OPENCLAW_IMAGE: reference } });
+  }
+  async lastExitCode(): Promise<number | undefined> {
+    return lastExitCode(this.#transport, await this.#containerId());
   }
 
   async imageReference(): Promise<string | undefined> {

@@ -88,6 +88,20 @@ export interface Runtime {
   showStatus(): Promise<void>;
   /** Fetches the image without starting anything. */
   pullImage(): Promise<void>;
+  /** The digest a reference resolves to on its registry, read without pulling any layer and
+   *  without moving any local tag — a shared tag another deployment on the same Docker also
+   *  uses must not start pointing at different content just because this deployment checked
+   *  it. Undefined when the registry cannot be asked (offline, unknown reference, no tool to
+   *  ask with) — never guessed. */
+  resolveImageDigest?(reference: string): Promise<string | undefined>;
+  /** Recreates the service pinned to `reference` (normally a digest) for this one call only —
+   *  the deployment's own .env is read but never rewritten, so a rollback to the previous
+   *  reference needs no undo of this step. */
+  recreateWithImage?(reference: string): Promise<void>;
+  /** The running (or last) container's own exit code, or undefined when it cannot be read —
+   *  a migration that exits during startup (upstream docs: code 78) is otherwise
+   *  indistinguishable from one still starting. */
+  lastExitCode?(): Promise<number | undefined>;
 
   /** True when the instance's main process is up. */
   isRunning(): Promise<boolean>;

@@ -173,7 +173,7 @@ assumption otherwise — a mutating command that says nothing is taken to have c
 something, because an agent that re-checks needlessly loses a call while one that skips a
 check it needed loses the thread.
 
-## Two rollbacks, kept apart
+## Two rollbacks, kept apart — and a third, for the image
 
 `./clawforge rollback` restores one file: the configuration a run replaced. `./clawforge push` restores the
 data directory from a snapshot: configuration, workspaces, agent memory, transcripts — the
@@ -184,6 +184,19 @@ The distinction is what makes the cheap one cheap. Because `apply` only has to c
 file aside, it can do so on every run without asking, which means the undo is always
 available. If undoing a bad configuration cost an agent a week of accumulated notes, nobody
 would use it, and the transaction would exist on paper only.
+
+`./clawforge upgrade` adds a third kind, at the image layer rather than the configuration or the
+data: it records the digest running before the change, and on any failure recreates on that
+exact digest — never the tag, which may have moved again since. Whether the data also needs
+putting back is not asked once, up front; it is answered by what actually failed. A container
+that exits mid-startup for an ordinary reason gets the digest rollback alone, the same as a
+plain health-check failure — nothing suggests the data changed, so nothing about it is
+touched. A container that exits with the specific code OpenClaw's own migrations use when
+they refuse to proceed (78) gets the pre-upgrade backup restored too, because a migration
+reaching that far may already have written to the data directory before deciding it could not
+finish safely. Conflating the two would either restore data unnecessarily after a failure that
+never touched it, or — worse — recreate on the old digest while leaving half-migrated data in
+place, silently, because nothing more disruptive seemed warranted.
 
 ## A stale lock is reported, not taken
 

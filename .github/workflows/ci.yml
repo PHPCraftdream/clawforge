@@ -155,6 +155,7 @@ jobs:
             tools/checks/runtime/connection-facts/recover-env-command.check.ts
             tools/checks/runtime/connection-facts/recover-env-dispatch.check.ts
             tools/checks/runtime/connection-facts/runtime-connection-facts.check.ts
+            tools/checks/runtime/connection-facts/upgrade.check.ts
             tools/checks/runtime/convergence/apply-config.check.ts
             tools/checks/runtime/convergence/apply.check.ts
             tools/checks/runtime/convergence/backup.check.ts
@@ -194,6 +195,7 @@ jobs:
             tools/checks/runtime/service/state/rotation.check.ts
             tools/checks/runtime/service/state/backup-policy.check.ts
             tools/checks/runtime/service/state/backup-pull-flags.check.ts
+            tools/checks/runtime/service/state/native-backup.check.ts
             tools/checks/security/acceptance/accept.check.ts
             tools/checks/security/acceptance/plan.check.ts
             tools/checks/security/credentials/private-config.check.ts

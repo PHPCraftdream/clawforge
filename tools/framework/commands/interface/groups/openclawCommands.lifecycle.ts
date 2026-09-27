@@ -3,7 +3,7 @@
 
 import type { AppCommand } from "#src/core/app.ts";
 
-import { up, down, logs, restart } from "#src/commands/lifecycle/lifecycle.ts";
+import { up, down, logs, restart, upgrade } from "#src/commands/lifecycle/lifecycle.ts";
 import { bootstrap } from "#src/commands/lifecycle/bootstrap.ts";
 import { backup } from "#src/commands/lifecycle/backup.ts";
 import { restore } from "#src/commands/lifecycle/restore.ts";
@@ -88,10 +88,25 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "--profile controls what travels in the archive (see `./clawforge help pull` for what each " +
       "profile excludes); --share, --migrate and --with-secrets are shorthands for it, the " +
       "same vocabulary `pull` accepts — plain backups default to full, unlike `pull`, which " +
-      "defaults to migrate.",
+      "defaults to migrate.\n" +
+      "--native takes a consistent snapshot WITHOUT stopping the gateway instead, via " +
+      "OpenClaw's own `backup create --verify` in the running instance's sidecar rather than " +
+      "a raw tar over live state — full profile only. The archive it publishes is still an " +
+      "ordinary full backup (rotate/restore need no native-specific case), with the pristine " +
+      "OpenClaw archive embedded inside so `restore` can re-verify it before unpacking " +
+      "anything else.\n" +
+      "What this actually guarantees: the SQLite state (config/state, config, identity, " +
+      "devices) is a genuine point-in-time snapshot from OpenClaw's own mechanism, not from " +
+      "stopping the container. auth-secrets/ and any live file OpenClaw's own backup left out " +
+      "(in the pinned image: session transcripts under agents/<id>/sessions/) are copied in " +
+      "afterwards, computed generically — whatever exists live and is absent from OpenClaw's " +
+      "own payload, never a hardcoded name — and the count is reported. Those copies are hot: " +
+      "an append-only transcript's last line can be truncated by a write landing mid-copy, the " +
+      "same partial-write risk --hot accepts for the whole tree, narrowed here to log tails.",
     arguments: [
       PROFILE_ARGUMENT,
       { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
+      { name: "native", description: "Consistent snapshot without stopping the gateway (full profile only); auth-secrets/ and anything OpenClaw's own backup omits are copied in, hot", kind: "flag" },
       { name: "share", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
       { name: "migrate", description: "Migrate profile: no provider keys (same as --profile migrate)", kind: "flag" },
       { name: "with-secrets", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
@@ -197,6 +212,33 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       { name: "archive", description: "Archive to inspect", kind: "positional", required: true },
       PROFILE_ARGUMENT,
     ],
+  },
+  upgrade: {
+    summary: "Update the image by digest, with automatic rollback on failure",
+    run: upgrade,
+    destructive: true,
+    details:
+      "Resolves the target (--image <ref>, or the deployment's own OPENCLAW_IMAGE) to a " +
+      "digest and pulls that digest specifically — a shared tag another deployment on the " +
+      "same Docker may also use never moves.\n" +
+      "Records the currently running digest, takes a consistent pre-upgrade backup (the " +
+      "native path from `backup --native` when the image supports it, else a stopped full " +
+      "backup), recreates the gateway on the new digest, waits for /startupz then /readyz, " +
+      "and runs `openclaw doctor --lint`.\n" +
+      "On any failure it recreates on the previous digest; when the failure was the " +
+      "container exiting during migrations (upstream: code 78), it also restores the " +
+      "pre-upgrade backup, since the data may already have changed.\n" +
+      "On success it pins the deployment's OPENCLAW_IMAGE to the digest reference, so a " +
+      "later recreate stays on it — re-pin the deployment's own record with ./clawforge " +
+      "lock afterwards.\n" +
+      "--dry-run prints the plan and changes nothing, not even taking the instance lock.",
+    arguments: [
+      { name: "image", description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE", kind: "option" },
+      { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
+      BREAK_LOCK_ARGUMENT,
+      BREAK_FOREIGN_LOCK_ARGUMENT,
+    ],
+    readOnlyWhen: (args) => args.includes("--dry-run"),
   },
   smoke: {
     summary: "Acceptance run: health, agent, config, snapshots, MCP",

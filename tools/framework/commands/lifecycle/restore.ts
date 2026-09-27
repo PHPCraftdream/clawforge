@@ -4,6 +4,7 @@
 //   - the current data is moved aside, never deleted, so a wrong restore is recoverable
 //   - the archive is validated BEFORE anything is stopped or overwritten
 
+import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline/promises";
 import { log, info, warn, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
@@ -22,6 +23,8 @@ import {
 } from "#src/service/archive.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { SshTransport } from "#src/runtime/transport.ts";
+import { openclawCli } from "#src/service/openclaw-cli.ts";
+import { NATIVE_MANIFEST_NAME } from "./backup.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 import {
   importRestoredPrivatePathsHistory,
@@ -225,6 +228,42 @@ async function importRestoredHistory(ctx: Context, name: string, entries: readon
   );
 }
 
+/** Re-verifies a native backup's own pristine archive (createNativeArchive embeds one at
+ *  NATIVE_MANIFEST_NAME) with `openclaw backup verify`, before anything else in this archive
+ *  is trusted or unpacked — this one may have aged, moved, or been tampered with since the
+ *  --verify createNativeArchive ran at creation, which this does not merely repeat. Extracted
+ *  under the data directory's own state mount so the sidecar can reach it (the only mounted
+ *  path available before restore has put anything back), and removed again whatever happens. */
+async function verifyEmbeddedNativeManifest(ctx: Context, archive: string, manifestEntry: string): Promise<void> {
+  log("this archive embeds OpenClaw's own native backup manifest — verifying it before unpacking anything else");
+  const session = `${ctx.settings.dataDir}/config/.clawforge-restore-verify-${randomBytes(6).toString("hex")}`;
+  const prefix = await sudoFor(ctx, archive);
+  let created = false;
+  try {
+    await runMaybePrivileged(ctx, session, "mkdir", ["-p", session]);
+    created = true;
+    const [exHead, ...exRest] = [...prefix, "tar", "-xzf", archive, "-C", session, manifestEntry];
+    await ctx.transport.exec(exHead, exRest);
+    const extracted = `${session}/${manifestEntry}`;
+    if (!(await ctx.transport.exists(extracted))) {
+      die(`refusing to restore ${archive}: its embedded native manifest (${manifestEntry}) did not extract`);
+    }
+    let containerPath: string;
+    try {
+      containerPath = ctx.paths.toContainer(extracted);
+    } catch (error) {
+      die(`refusing to restore ${archive}: cannot reach its embedded native manifest from the sidecar — ${(error as Error).message}`);
+    }
+    try {
+      await openclawCli(ctx, ["backup", "verify", "--json", containerPath]);
+    } catch (error) {
+      die(`refusing to restore ${archive}: its embedded native manifest failed verification — ${(error as Error).message}`);
+    }
+  } finally {
+    if (created) await runMaybePrivileged(ctx, session, "rm", ["-rf", "--", session]).catch(() => {});
+  }
+}
+
 export async function restoreArchive(
   ctx: Context,
   archive: string,
@@ -258,6 +297,11 @@ export async function restoreArchive(
   const root = archiveRoot(entries);
   if (root !== name) {
     die(`archive holds '${root}/' but the data directory is '${name}/' — restoring it would misplace every file`);
+  }
+
+  const nativeManifestEntry = `${name}/${NATIVE_MANIFEST_NAME}`;
+  if (entries.some((entry) => entry.replace(/^\.\//, "") === nativeManifestEntry)) {
+    await verifyEmbeddedNativeManifest(ctx, archive, nativeManifestEntry);
   }
 
   await verifyDataDirAncestry(ctx, dataDir);

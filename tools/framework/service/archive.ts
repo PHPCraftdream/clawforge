@@ -472,7 +472,7 @@ export function dataDirParent(dataDir: string): string {
  *  individually — sources first, destination last — and the first path that demands
  *  escalation decides the prefix for the whole invocation; sudoFor itself falls back to the
  *  nearest existing ancestor for paths that do not exist yet. */
-async function privilegePrefixFor(ctx: Context, readPaths: readonly string[], writePath?: string): Promise<string[]> {
+export async function privilegePrefixFor(ctx: Context, readPaths: readonly string[], writePath?: string): Promise<string[]> {
   for (const path of readPaths) {
     let present: boolean;
     try { present = await ctx.transport.exists(path); }

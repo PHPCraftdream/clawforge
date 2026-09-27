@@ -9,12 +9,16 @@ import type { Context } from "#src/core/context.ts";
 import { randomUUID } from "node:crypto";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { archiveCarriesContent, createArchive, fileSize, isProfile, backupArchiveName, listArchive, parseBackupArchive, symlinkedDataRoot, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive.ts";
+import {
+  archiveCarriesContent, archiveRoot, createArchive, dataDirName, excludesFor, fileSize, isProfile, backupArchiveName,
+  listArchive, parseBackupArchive, privilegePrefixFor, symlinkedDataRoot, PROFILE_SHORTHAND_FLAGS, type Profile,
+} from "#src/service/archive.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { runningRecipeStacks } from "../management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "../management/recipe/lifecycle.ts";
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "./verify.ts";
+import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 
 export interface BackupOptions {
   hot?: boolean;
@@ -27,7 +31,22 @@ export interface BackupOptions {
    *  restore replaces the tree. The caller owns starting it back up once its own
    *  transaction is done. */
   leaveStopped?: boolean;
+  /** Consistent snapshot without stopping the gateway, via OpenClaw's own `backup create`
+   *  in the running instance's sidecar instead of a raw tar over live state. Full profile
+   *  only (see createNativeArchive). */
+  native?: boolean;
 }
+
+/** Thrown when native mode cannot be attempted at all — the caller (createBackup itself for
+ *  a direct `--native` request, and ./clawforge upgrade for its pre-upgrade backup) falls
+ *  back to the classic stopped tar path rather than treating it as a hard failure. Any other
+ *  error out of the native path is a real failure and propagates as-is. */
+export class NativeBackupUnsupportedError extends Error {}
+
+/** The pristine archive `openclaw backup create` wrote, kept inside the published archive at
+ *  this name so restore can feed it back to `openclaw backup verify` before trusting the
+ *  rest — see createNativeArchive and restore.ts. */
+export const NATIVE_MANIFEST_NAME = ".clawforge-native-manifest.tar.gz";
 
 // UTC, not local time: state.ts's snapshot names and restore.ts's <data>.replaced-<stamp>
 // both already are, and a backup taken the same moment as a pull used to land two hours
@@ -113,6 +132,128 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
   if (removed.code !== 0) throw new Error(`backup rotation could not remove stale archive (exit ${removed.code})`);
 }
 
+/** Runs `openclaw backup create --verify` inside the sidecar and reshapes its output into
+ *  the classic archive layout (root = the data directory's own name) at `stagingArchive`, so
+ *  rotate(), newestArchive() and restore's extraction need no native-specific case — the
+ *  archive this publishes is, structurally, an ordinary full backup.
+ *
+ *  auth-secrets/ is not part of what OpenClaw's own backup covers (it lives outside
+ *  $OPENCLAW_STATE_DIR, at a separate bind mount) — copied in directly from the live target,
+ *  safe to do while the gateway keeps running since it is static key material, not a
+ *  database. The pristine OpenClaw archive travels along too, embedded at
+ *  NATIVE_MANIFEST_NAME, so restore can re-verify it with `openclaw backup verify` before
+ *  trusting anything else in the archive.
+ *
+ *  Failures asking OpenClaw for the archive are reported as NativeBackupUnsupportedError, so
+ *  createBackup (and ./clawforge upgrade) can fall back to the classic path; a failure in the
+ *  reshape itself is a real bug/environment problem and propagates unchanged. */
+/** Paths, relative to their own root, of every file under `liveDir` that `assembledDir` does
+ *  not have — either directory may not exist yet, and that reads as an empty listing rather
+ *  than an error. */
+/** Live files the set difference must never re-add: SQLite sidecars (a hot -wal/-shm/-journal
+ *  beside the native point-in-time database would be replayed onto it on restore and corrupt
+ *  it), Chromium profile locks, and this run's own native archive, which sits in config/
+ *  while the difference is taken. */
+const NEVER_COPY_LIVE = [/-(wal|shm|journal)$/, /(^|\/)Singleton(Lock|Cookie|Socket)$/, /(^|\/)\.clawforge-native-[^/]*\.tar\.gz$/];
+
+export function omittedOnPurpose(relative: string): boolean {
+  return NEVER_COPY_LIVE.some((pattern) => pattern.test(relative));
+}
+
+async function missingRelativeFiles(ctx: Context, liveDir: string, assembledDir: string): Promise<string[]> {
+  const listing = async (dir: string): Promise<Set<string>> => {
+    if (!(await ctx.transport.exists(dir))) return new Set();
+    const prefix = await sudoFor(ctx, dir);
+    const [head, ...rest] = [...prefix, "find", dir, "-type", "f", "-printf", "%P\\n"];
+    const result = await ctx.transport.exec(head, rest, { allowFailure: true });
+    if (result.code !== 0) throw new Error(`could not list ${dir} (exit ${result.code})`);
+    return new Set(result.stdout.split("\n").filter((line) => line !== ""));
+  };
+  const [live, assembled] = await Promise.all([listing(liveDir), listing(assembledDir)]);
+  return [...live].filter((relative) => !assembled.has(relative) && !omittedOnPurpose(relative));
+}
+
+/** Copies whatever `openclaw backup create` left out of its own payload — in the pinned
+ *  image (2026.6.34), verified against a real archive, that is every session transcript
+ *  under `agents/<id>/sessions/` (the directory itself is listed, the `.jsonl`/`.log` files
+ *  in it are not; upstream docs confirm `.log` there is excluded by design). Computed
+ *  generically as the set difference between the live tree and what the native archive
+ *  actually carries, never a hardcoded name, so a future image excluding something else is
+ *  still covered and one that stops excluding sessions copies nothing extra.
+ *
+ *  These are live, append-only logs, copied while the gateway keeps writing them — a
+ *  trailing partial line in the newest one is possible. That risk does not extend to the
+ *  instance's SQLite state: that part of the archive came from OpenClaw's own point-in-time
+ *  mechanism, not from this copy. Returns how many files were added, for the caller to
+ *  report. */
+async function copyOmittedLiveFiles(ctx: Context, liveDir: string, assembledDir: string): Promise<number> {
+  const missing = await missingRelativeFiles(ctx, liveDir, assembledDir);
+  for (const relative of missing) {
+    const destination = `${assembledDir}/${relative}`;
+    const destinationDir = destination.slice(0, destination.lastIndexOf("/"));
+    await runMaybePrivileged(ctx, destinationDir, "mkdir", ["-p", destinationDir]);
+    await runMaybePrivileged(ctx, destination, "cp", ["-p", "--", `${liveDir}/${relative}`, destination]);
+  }
+  return missing.length;
+}
+
+async function createNativeArchive(ctx: Context, stagingDir: string, stagingArchive: string, name: string): Promise<void> {
+  const { dataDir } = ctx.settings;
+  const nativeTarget = `${dataDir}/config/.clawforge-native-${randomUUID()}.tar.gz`;
+  let containerOutput: string;
+  try {
+    containerOutput = ctx.paths.toContainer(nativeTarget);
+  } catch (error) {
+    throw new NativeBackupUnsupportedError(`${ctx.runtime.description} cannot address ${nativeTarget} inside the sidecar: ${(error as Error).message}`);
+  }
+
+  let outcome: { verified?: boolean; archivePath?: string };
+  try {
+    outcome = await openclawCliJson(ctx, ["backup", "create", "--verify", "--json", "--output", containerOutput]);
+  } catch (error) {
+    throw new NativeBackupUnsupportedError((error as Error).message);
+  }
+  if (outcome.verified !== true) throw new Error("openclaw backup create did not report a verified archive");
+  const nativeArchive = outcome.archivePath === undefined ? nativeTarget : ctx.paths.fromContainer(outcome.archivePath);
+
+  const nativeEntries = await listArchive(ctx, nativeArchive);
+  const nativeRoot = archiveRoot(nativeEntries);
+  const nativeWorkdir = `${stagingDir}/native`;
+  const payload = `${nativeWorkdir}/${nativeRoot}/payload/posix/home/node/.openclaw`;
+  const assembled = `${stagingDir}/${name}`;
+
+  await runMaybePrivileged(ctx, nativeWorkdir, "mkdir", ["-p", nativeWorkdir]);
+  const extractPrefix = await sudoFor(ctx, nativeArchive);
+  const [exHead, ...exRest] = [...extractPrefix, "tar", "--numeric-owner", "-xzf", nativeArchive, "-C", nativeWorkdir];
+  await ctx.transport.exec(exHead, exRest);
+  if (!(await ctx.transport.exists(payload))) {
+    throw new Error(`native archive ${nativeArchive} carries no ${nativeRoot}/payload/posix/home/node/.openclaw`);
+  }
+
+  await runMaybePrivileged(ctx, assembled, "mkdir", ["-p", assembled]);
+  await runMaybePrivileged(ctx, assembled, "mv", [payload, `${assembled}/config`]);
+  const nestedWorkspace = `${assembled}/config/workspace`;
+  if (await ctx.transport.exists(nestedWorkspace)) {
+    await runMaybePrivileged(ctx, assembled, "mv", [nestedWorkspace, `${assembled}/workspace`]);
+  }
+
+  const omitted = await copyOmittedLiveFiles(ctx, `${dataDir}/config`, `${assembled}/config`)
+    + await copyOmittedLiveFiles(ctx, `${dataDir}/workspace`, `${assembled}/workspace`);
+  if (omitted > 0) {
+    log(`copied ${omitted} file(s) present live but left out of openclaw's own backup (e.g. session transcripts)`);
+  }
+
+  if (await ctx.transport.exists(`${dataDir}/auth-secrets`)) {
+    await runMaybePrivileged(ctx, assembled, "cp", ["-a", `${dataDir}/auth-secrets`, `${assembled}/auth-secrets`]);
+  }
+  await runMaybePrivileged(ctx, assembled, "mv", [nativeArchive, `${assembled}/${NATIVE_MANIFEST_NAME}`]);
+
+  const excludeArgs = excludesFor("full", name).map((pattern) => `--exclude=${pattern}`);
+  const packPrefix = await privilegePrefixFor(ctx, [`${assembled}/auth-secrets`, assembled], stagingArchive);
+  const [head, ...rest] = [...packPrefix, "tar", "--numeric-owner", ...excludeArgs, "-czf", stagingArchive, "-C", stagingDir, name];
+  await ctx.transport.exec(head, rest);
+}
+
 /** Creates a backup and returns the archive path on the target.
  *
  *  Guarded like every other mutating command: it stops the gateway, archives the data
@@ -129,6 +270,10 @@ export async function createBackup(ctx: Context, options: BackupOptions = {}): P
 async function createBackupLocked(ctx: Context, options: BackupOptions): Promise<string> {
   const profile: Profile = options.profile ?? "full";
   const { dataDir, backupDir } = ctx.settings;
+
+  if (options.native === true && profile !== "full") {
+    die("--native only supports the full profile — migrate/share stay on the framework's own tar path");
+  }
 
   if (!(await ctx.transport.exists(dataDir))) die(`data directory ${dataDir} does not exist`);
 
@@ -160,7 +305,9 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   let resultError: unknown;
 
   try {
-    if (options.hot === true) {
+    if (options.native === true) {
+      log("native backup: OpenClaw's own point-in-time mechanism — the gateway keeps running throughout");
+    } else if (options.hot === true) {
       warn("hot backup: the gateway keeps writing, the archive may catch a partial sqlite write");
     } else if (wasRunning) {
       log("stopping the gateway for a consistent snapshot");
@@ -168,9 +315,11 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     }
 
     // Every operation after pause, including sidecar discovery, belongs to this
-    // compensation scope: discovery and hook loading can both fail.
+    // compensation scope: discovery and hook loading can both fail. Native never pauses in
+    // the first place, so quiescing recipe stacks buys it nothing either — same reasoning
+    // --hot already applies below.
     const sidecars = await runningRecipeStacks(ctx);
-    if (options.hot !== true && options.leaveStopped !== true && sidecars.length > 0) {
+    if (options.hot !== true && options.native !== true && options.leaveStopped !== true && sidecars.length > 0) {
       const outcome = await quiesceRecipeStacks(ctx, sidecars);
       quiesced.push(...outcome.quiesced);
       if (outcome.unquiesced.length > 0) {
@@ -195,7 +344,11 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     await ctx.transport.exec(mkdirStageHead, mkdirStageRest);
     stagingCreated = true;
 
-    await createArchive(ctx, { archive: stagingArchive, profile });
+    if (options.native === true) {
+      await createNativeArchive(ctx, stagingDir, stagingArchive, dataDirName(dataDir));
+    } else {
+      await createArchive(ctx, { archive: stagingArchive, profile });
+    }
     // tar exiting 0 and the file landing are not evidence the data is inside: an archive
     // that holds nothing beneath its root — what a symlinked root used to produce —
     // restores nothing anywhere. Checked on the staging archive, before it can become
@@ -235,7 +388,7 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
       compensationErrors.push(new Error(`could not remove backup staging directory ${stagingDir}`, { cause: error }));
     }
   }
-  if (options.hot !== true && wasRunning && options.leaveStopped !== true) {
+  if (options.hot !== true && options.native !== true && wasRunning && options.leaveStopped !== true) {
     try {
       log("starting the gateway again");
       await ctx.runtime.start();
@@ -278,6 +431,8 @@ export async function backup(ctx: Context, args: string[]): Promise<void> {
     const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
     if (arg === "--hot") {
       options.hot = true;
+    } else if (arg === "--native") {
+      options.native = true;
     } else if (shorthand !== undefined) {
       // --share, --with-secrets, --migrate: the same shorthand vocabulary `pull` accepts
       // (UX-13), so a script that passes one to either command gets the same profile.

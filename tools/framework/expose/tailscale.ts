@@ -68,6 +68,20 @@ export function tailscaleServeCommand(gatewayPort: string): string[] {
   return ["tailscale", "serve", "--bg", `http://127.0.0.1:${gatewayPort}`];
 }
 
+/** Whether `tailscale serve` is proxying anything on the target right now — the same read
+ *  `./clawforge expose status` prints verbatim. Read-only; false on any non-zero exit, which
+ *  is also what "nothing configured" answers with. */
+export async function tailscaleServeActive(ctx: Context): Promise<boolean> {
+  const result = await ctx.transport.exec("tailscale", ["serve", "status"], { allowFailure: true });
+  return result.code === 0 && result.stdout.trim() !== "";
+}
+
+/** Turns off every `tailscale serve` mapping on the target — incident response's "contain"
+ *  step undoing exposeTailscale's own --apply. */
+export function tailscaleServeResetCommand(): string[] {
+  return ["tailscale", "serve", "reset"];
+}
+
 function parseArgs(args: string[]): { apply: boolean } {
   let apply = false;
   for (let index = 0; index < args.length; index += 1) {

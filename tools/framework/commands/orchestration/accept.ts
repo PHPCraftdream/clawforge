@@ -31,7 +31,8 @@ import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import { gatherInspection } from "./inspect/gather.ts";
-import { isHealthy } from "#src/service/inspection.ts";
+import { isHealthy, blockingProblems } from "#src/service/inspection.ts";
+import { runSecurityAudit, type SecurityFinding } from "#src/security-audit/index.ts";
 
 /** One declared check. `kind` selects what the framework does; everything else is that
  *  kind's own arguments, kept loose because each kind reads different ones. */
@@ -77,6 +78,10 @@ export interface AcceptanceReport {
    *  a broken deployment to report success. */
   readonly healthy: boolean;
   readonly receipt?: { id: string; setId: string; verdict: string };
+  /** The security gate (security-audit/index.ts): OpenClaw's own audits plus what only
+   *  the host side can see. Present whenever the gate ran, even with zero findings — a
+   *  reader must be able to tell "ran clean" from "field not implemented yet". */
+  readonly security: { findings: readonly SecurityFinding[]; blocking: number; warnings: number };
 }
 
 /** The one sentence both the prose and the JSON output carry. Exported so `set try`'s own
@@ -421,6 +426,13 @@ async function acceptFromSource(ctx: Context, args: string[], verified?: Verifie
     report[recipe] = results;
   }
 
+  // The security gate: only doctor and accept run it (each audit is a container exec) — see
+  // security-audit/index.ts. A blocking finding fails acceptance the same way a failed
+  // check does; a warning is reported but does not.
+  const security = await runSecurityAudit(ctx);
+  const securityBlocking = blockingProblems(security.problems).length;
+  const securityWarnings = security.problems.length - securityBlocking;
+
   let answer: AcceptanceReport = {
     deployment: deploymentName(),
     recipes: report,
@@ -429,7 +441,8 @@ async function acceptFromSource(ctx: Context, args: string[], verified?: Verifie
     notChecked,
     couldNotCheck,
     summary: summarize(passed, failedCount, notChecked, couldNotCheck),
-    healthy: passed > 0 && failedCount === 0 && notChecked === 0 && couldNotCheck === 0,
+    healthy: passed > 0 && failedCount === 0 && notChecked === 0 && couldNotCheck === 0 && securityBlocking === 0,
+    security: { findings: security.findings, blocking: securityBlocking, warnings: securityWarnings },
   };
 
   if (verified !== undefined && before !== undefined) {
@@ -455,11 +468,22 @@ async function acceptFromSource(ctx: Context, args: string[], verified?: Verifie
         else info(line);
       }
     }
+    if (security.findings.length > 0) {
+      log("security");
+      for (const finding of security.findings) {
+        const label = finding.suppressed ? "SUPPRESSED" : finding.severity === "blocking" ? "BLOCKING" : "WARN";
+        const line = `${label.padEnd(10)} ${finding.source} ${finding.checkId}  ${finding.message}` +
+          (finding.suppressed ? ` (suppressed: ${finding.suppressedReason})` : "");
+        if (finding.severity === "blocking" && !finding.suppressed) warn(line);
+        else info(line);
+      }
+    }
     log(answer.summary);
     if (notChecked > 0 && !withModel) info("the not-checked ones call the model: ./clawforge accept --with-model");
   }
 
-  if (failedCount > 0 || couldNotCheck > 0) {
-    throw new Error(`${failedCount + couldNotCheck} acceptance check(s) did not pass`);
+  if (failedCount > 0 || couldNotCheck > 0 || securityBlocking > 0) {
+    const securityNote = securityBlocking > 0 ? `; ${securityBlocking} blocking security finding(s)` : "";
+    throw new Error(`${failedCount + couldNotCheck} acceptance check(s) did not pass${securityNote}`);
   }
 }

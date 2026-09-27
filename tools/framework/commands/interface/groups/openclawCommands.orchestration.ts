@@ -64,7 +64,14 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "an incomplete local store — are warnings for the same reason: the instance is doing " +
       "its job, and a folder that is merely behind must not fail a build. " +
       "A check that fails on everything it has an opinion about " +
-      "stops being consulted.",
+      "stops being consulted.\n" +
+      "Also runs the security gate — `openclaw security audit` and `openclaw secrets audit` " +
+      "inside the instance, plus what only the host side can see: the gateway published on " +
+      "every interface (blocking unless acknowledged in config/security-suppressions.json), " +
+      "a public port that Docker's DOCKER-USER chain may let bypass an active UFW, and the " +
+      "deployment's own secret file permissions. Never every ./clawforge inspect/plan call — " +
+      "each audit is a container exec — only doctor and accept. Suppress a finding by upstream " +
+      "checkId in config/security-suppressions.json; it stays visible but stops counting.",
     arguments: [{ name: "json", description: "Emit the verdict, problems and next actions as JSON", kind: "flag" }],
     structured: true,
     readOnly: true,
@@ -149,7 +156,10 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "A check that was attempted but got no verdict — the server would not start, the " +
       "instance refused the call — is reported as \"could-not-check\" with the reason, never " +
       "as passed.\n" +
-      "Exits non-zero when a check fails or could not be checked.",
+      "Also runs the security gate — see `./clawforge doctor`'s own description — and fails on a " +
+      "blocking finding the same way a failed check does.\n" +
+      "Exits non-zero when a check fails, could not be checked, or the security gate finds a " +
+      "blocking issue.",
     arguments: [
       { name: "recipe", description: "Recipe to check (default: every recipe that declares checks)", kind: "positional" },
       { name: "set", description: "Check this verified artifact's declarations and save an acceptance receipt", kind: "option" },

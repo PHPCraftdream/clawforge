@@ -388,13 +388,15 @@ try {
     assert.ok(up, "reconcile runs compose up");
     assert.ok(up.includes("--detach"), "detached, like start()");
     assert.equal(up.includes("restart"), false, "restart keeps a container's environment and cannot deliver a rotated value");
-    // The distinction itself: start() keeps interpolating the built-in snapshot.
+    // After reconcile, later calls keep the fresh values (a stale snapshot reverted incident's token).
     freshWrites.length = 0;
-    freshCalls.length = 0;
     await reconcileRuntime.start();
-    const startEnvWrite = freshWrites.find((write) => write.path.endsWith("compose.env"));
-    assert.ok(startEnvWrite, "start() writes a temporary environment file too");
-    assert.ok(startEnvWrite.content.includes(`${NAME}=${JSON.stringify(OLD)}`), "start() still speaks the process-start snapshot — the two verbs stay distinct");
+    const after = freshWrites.find((write) => write.path.endsWith("compose.env"))?.content ?? "";
+    assert.ok(after.includes(`${NAME}=${JSON.stringify(NEW)}`) && !after.includes(OLD), "after reconcile, later calls keep the fresh value");
+    freshWrites.length = 0;
+    await new DockerRuntime(reconcileTransport, staleSettings, { toTarget: async (path: string) => path } as PathBridge, { service: "gateway" }).start();
+    const snapshot = freshWrites.find((write) => write.path.endsWith("compose.env"))?.content ?? "";
+    assert.ok(snapshot.includes(`${NAME}=${JSON.stringify(OLD)}`), "start() without reconcile speaks the process-start snapshot");
     process.stderr.write("all reconcile freshness checks passed\n");
   } finally {
     await rm(root, { recursive: true, force: true });

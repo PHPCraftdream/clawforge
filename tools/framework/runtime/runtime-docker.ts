@@ -270,17 +270,17 @@ export class DockerRuntime implements Runtime {
     await this.#compose(["restart", this.#service], true);
   }
 
-  /** `up` against the deployment .env as it is on disk NOW. start() would interpolate the
-   *  env snapshot this process was built from — the values the operator is rotating away
-   *  from when secrets --apply rewrites .env and then calls this in the same breath — and
-   *  compose would then converge on the stale container instead of recreating it. With a
-   *  settings builder supplied, the rebuild is layered: the application's computed settings
-   *  are applied on top of the fresh .env read, the way the context itself builds them. */
+  /** `up` against the deployment .env as it is on disk NOW, not this process's start-time
+   *  snapshot (secrets --apply and incident rewrite .env, then call this). A settings builder,
+   *  when supplied, layers the app's computed settings over the fresh read, as the context does.
+   *  The fresh settings are then kept: a later compose call with the old ones would make
+   *  compose recreate the service with them (a rotated token silently reverted). */
   async reconcile(): Promise<void> {
     const current = this.#reconcileSettings !== undefined
       ? await this.#reconcileSettings()
       : toSettings(await loadEnv());
     await this.#compose(["up", "--detach", this.#service], true, false, current);
+    this.#settings = current;
   }
 
   async followLogs(extraArgs: string[] = []): Promise<void> {

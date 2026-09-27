@@ -198,6 +198,7 @@ jobs:
             tools/checks/runtime/service/state/native-backup.check.ts
             tools/checks/security/acceptance/accept.check.ts
             tools/checks/security/acceptance/plan.check.ts
+            tools/checks/security/audit/security-audit.check.ts
             tools/checks/security/credentials/private-config.check.ts
             tools/checks/security/credentials/private-file.check.ts
             tools/checks/security/credentials/recipe-private-snapshot/pull-privacy.check.ts
@@ -220,6 +221,7 @@ jobs:
             tools/checks/security/watch/check.check.ts
             tools/checks/security/watch/install.check.ts
             tools/checks/security/watch/status.check.ts
+            tools/checks/security/incident/incident.check.ts
             tools/checks/security/private-paths-ledger/serialization.check.ts
             tools/checks/security/private-paths-ledger/reconcile-history.check.ts
           )

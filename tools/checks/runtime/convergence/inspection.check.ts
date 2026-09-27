@@ -60,6 +60,9 @@ check(
     // Operator-side findings: the deployment folder against the instance.
     "ENV_STALE",
     "GATEWAY_DOWN",
+    // Host-side: what only the operator's own view of Docker/the target can see, not OpenClaw.
+    "GATEWAY_EXPOSURE_ACKNOWLEDGED",
+    "GATEWAY_PUBLICLY_BOUND",
     "GATEWAY_UNHEALTHY",
     "LOCK_DRIFT",
     "LOCK_MISSING",
@@ -67,11 +70,15 @@ check(
     "MCP_SERVER_MISSING",
     // Reported instead of ever asking the runtime, on a deployment nobody has bootstrapped.
     "NOT_BOOTSTRAPPED",
+    "PRIVATE_FILE_INSECURE",
     // The gateway runs, but nothing can answer a prompt without one.
     "PROVIDER_MISSING",
     "RECIPE_MIRROR_DRIFT",
     "RESTART_REQUIRED",
     "SECRET_MISSING",
+    // The security gate (doctor/accept only): OpenClaw's own audits, normalized to two codes.
+    "SECURITY_AUDIT_CRITICAL",
+    "SECURITY_AUDIT_WARN",
     // Set-level findings: separate mistakes with separate fixes, so separate codes.
     "SET_DECLARATION_INVALID",
     "SET_IMAGE_UNPINNED",
@@ -82,6 +89,7 @@ check(
     "SET_SCHEDULE_INVALID",
     "SET_SECRET_UNDECLARED",
     "STORE_INCOMPLETE",
+    "UFW_DOCKER_BYPASS",
   ],
 );
 

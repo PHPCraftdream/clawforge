@@ -48,7 +48,13 @@ export type ProblemCode =
   | "SET_DECLARATION_INVALID"
   | "SET_IMAGE_UNPINNED"
   | "SET_REQUIREMENT_UNMET"
-  | "SET_OBJECT_ORPHANED";
+  | "SET_OBJECT_ORPHANED"
+  | "SECURITY_AUDIT_CRITICAL"
+  | "SECURITY_AUDIT_WARN"
+  | "GATEWAY_PUBLICLY_BOUND"
+  | "GATEWAY_EXPOSURE_ACKNOWLEDGED"
+  | "UFW_DOCKER_BYPASS"
+  | "PRIVATE_FILE_INSECURE";
 
 interface CodeMeaning {
   readonly severity: Severity;
@@ -253,6 +259,43 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     // says so and leaves the decision to whoever reads it.
     summary: "this framework created something a recipe in the set no longer declares",
     nextAction: "./clawforge plan",
+  },
+
+  // The security gate (doctor/accept only — security-audit/index.ts): OpenClaw's own
+  // audits read from inside the instance, plus a few things only the host side can see.
+  SECURITY_AUDIT_CRITICAL: {
+    severity: "blocking",
+    summary: "openclaw security audit or secrets audit found a critical/error-severity issue",
+    nextAction: "./clawforge cli security audit --json",
+  },
+  SECURITY_AUDIT_WARN: {
+    severity: "warning",
+    summary: "openclaw security audit or secrets audit found a warning-severity issue",
+    nextAction: "./clawforge cli security audit --json",
+  },
+  GATEWAY_PUBLICLY_BOUND: {
+    severity: "blocking",
+    // OpenClaw itself never sees this: gateway.bind inside the container can say loopback
+    // while Docker still publishes the port on every host interface.
+    summary: "the gateway is published on every interface (0.0.0.0/::), not loopback-only",
+    nextAction: "./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and ./clawforge up to recreate, or acknowledge it in config/security-suppressions.json)",
+  },
+  GATEWAY_EXPOSURE_ACKNOWLEDGED: {
+    severity: "warning",
+    summary: "the gateway is published on every interface, and the deployment explicitly acknowledged it",
+    nextAction: "./clawforge expose status",
+  },
+  UFW_DOCKER_BYPASS: {
+    severity: "warning",
+    // Docker's own iptables rules feed the DOCKER-USER chain ahead of UFW's, so a UFW rule
+    // that looks like it protects a published port never runs at all.
+    summary: "UFW is active and the gateway is public, but DOCKER-USER has no rule restricting it — or this could not be checked",
+    nextAction: "./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use ./clawforge expose)",
+  },
+  PRIVATE_FILE_INSECURE: {
+    severity: "warning",
+    summary: "a deployment secret file (.env, secrets/*) is not owner-only protected",
+    nextAction: "./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)",
   },
 };
 

@@ -42,6 +42,7 @@ import type { Problem, Inspection } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { prospectiveConfig, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
 import { declaredState, observeConfig, observeLive, observeConnectionFacts, observeSecretStore, observeDeclarationFile } from "./observe.ts";
+import { runSecurityAudit } from "#src/security-audit/index.ts";
 
 /** The whole picture. Exported because doctor, plan and apply all read it rather than
  *  gathering their own — three gatherers would be three answers to one question. */
@@ -260,30 +261,39 @@ export async function doctor(ctx: Context, args: string[]): Promise<void> {
   }
 
   const inspection = await gatherInspection(ctx);
-  const blocking = blockingProblems(inspection.problems);
-  const warnings = inspection.problems.filter((entry) => entry.severity === "warning");
+  // The security gate: only doctor and accept run it — a container exec per audit, twice —
+  // so its findings are merged in here rather than gathered inside gatherInspection() itself.
+  const security = await runSecurityAudit(ctx);
+  const problems = [...inspection.problems, ...security.problems];
+  const blocking = blockingProblems(problems);
+  const warnings = problems.filter((entry) => entry.severity === "warning");
 
   if (jsonOnly || isCaptured()) {
     emit(
       `${JSON.stringify(
         {
           deployment: inspection.declared.deployment,
-          healthy: isHealthy(inspection),
-          problems: inspection.problems,
-          nextActions: nextActions(inspection.problems),
+          healthy: isHealthy(inspection) && blockingProblems(security.problems).length === 0,
+          problems,
+          security: security.findings,
+          nextActions: nextActions(problems),
         },
         null,
         2,
       )}\n`,
     );
-  } else if (inspection.problems.length === 0) {
+  } else if (problems.length === 0) {
     log(`${inspection.declared.deployment} is what this repository declares`);
     info(`state  running (${inspection.observed.health ?? "unknown"})`);
   } else {
     // Reported before the failure below, not instead of it: a reader who only sees "3
     // problems" learns nothing, and the whole point of the codes is that they travel.
     log(`${inspection.declared.deployment}: ${blocking.length} blocking, ${warnings.length} warning(s)`);
-    for (const entry of inspection.problems) printProblem(entry);
+    for (const entry of problems) printProblem(entry);
+    const suppressed = security.findings.filter((finding) => finding.suppressed);
+    for (const finding of suppressed) {
+      info(`SUPPRESSED  ${finding.source} ${finding.checkId}: ${finding.message} (${finding.suppressedReason})`);
+    }
     if (blocking.length === 0) info("nothing blocking — the instance is doing its job");
   }
 

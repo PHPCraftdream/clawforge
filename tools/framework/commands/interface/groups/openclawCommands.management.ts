@@ -19,6 +19,7 @@ import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe/
 import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
 import { expose, exposeActionIsReadOnly } from "#src/expose/index.ts";
 import { watch, watchActionIsReadOnly } from "#src/watch/index.ts";
+import { incident } from "#src/incident/index.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 function secretsWrites(args: string[]): boolean {
@@ -500,6 +501,36 @@ export const managementCommands: Record<string, AppCommand> = {
       BREAK_LOCK_ARGUMENT,
       BREAK_FOREIGN_LOCK_ARGUMENT,
     ],
+  },
+  incident: {
+    summary: "Incident response: contain exposure, rotate the gateway token, audit, collect evidence",
+    run: incident,
+    destructive: true,
+    readOnlyWhen: (args) => args.includes("--dry-run"),
+    details:
+      "OpenClaw's own incident runbook, in order: contain — turn off `tailscale serve` on the " +
+      "target when it is active; refuses the whole run outright while the gateway is published " +
+      "on every interface (0.0.0.0/::), unless --keep-exposure says that is already handled " +
+      "elsewhere. rotate — a fresh OPENCLAW_GATEWAY_TOKEN, written to .env and recreated into " +
+      "the running container so it actually takes effect (a repo-env value like this one is " +
+      "fixed at container-creation time); every MCP client paired against the old token needs " +
+      "./clawforge mcp-creds again. audit — the same security gate `./clawforge doctor`/`./clawforge accept` " +
+      "run, plus `openclaw doctor --lint`, both reported here rather than gating the run. collect " +
+      "— a bounded log tail, both audit outputs and a short status summary into a private, " +
+      "owner-only apps/<name>/incidents/<timestamp>/ directory with a manifest — never inside " +
+      "the repository's tracked tree (apps/ is gitignored wholesale); every file is masked for " +
+      "known secrets before it is written.\n" +
+      "Mutating (rotate recreates the gateway) — takes the instance lock. --dry-run prints the " +
+      "plan and performs none of it, not even taking the lock.",
+    arguments: [
+      { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
+      { name: "keep-exposure", description: "Proceed even though the gateway is published on every interface", kind: "flag" },
+      { name: "tail", description: "Lines of log to collect (default 500)", kind: "option" },
+      { name: "json", description: "Emit the report as JSON", kind: "flag" },
+      BREAK_LOCK_ARGUMENT,
+      BREAK_FOREIGN_LOCK_ARGUMENT,
+    ],
+    structured: true,
   },
   "mcp-creds": {
     summary: "Print service URL, token and MCP client config for both servers",

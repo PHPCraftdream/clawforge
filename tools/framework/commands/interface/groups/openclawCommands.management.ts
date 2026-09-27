@@ -17,6 +17,8 @@ import { secrets } from "#src/commands/management/secrets.ts";
 import { recoverEnv } from "#src/commands/recover-env/index.ts";
 import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe/index.ts";
 import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
+import { expose, exposeActionIsReadOnly } from "#src/expose/index.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 function secretsWrites(args: string[]): boolean {
   if (["--init-store", "--dump", "--apply"].some((flag) => args.includes(flag))) return true;
@@ -422,6 +424,38 @@ export const managementCommands: Record<string, AppCommand> = {
       { name: "json", kind: "flag", description: "Report changed files as JSON" },
     ],
     structured: true,
+  },
+  expose: {
+    summary: "Reach a loopback-bound gateway from outside this host: SSH tunnel, tailscale serve, or a status report",
+    run: expose,
+    destructive: true,
+    readOnlyWhen: exposeActionIsReadOnly,
+    changedWhen: (args) => !exposeActionIsReadOnly(args),
+    requiresConfirmationWhen: (args) => !exposeActionIsReadOnly(args),
+    details:
+      "Three actions, narrowest scope first.\n" +
+      "ssh — for OC_TARGET_LOCATION=ssh deployments, prints the exact `ssh -N -L <local>:127.0.0.1:<gatewayPort> " +
+      "<OC_SSH_HOST>` tunnel and the http://127.0.0.1:<local> URL it opens; --run runs it in the foreground " +
+      "through the local ssh client (needs a real terminal — refused under MCP or a plain pipe) until Ctrl+C. " +
+      "wsl/local targets are told no tunnel is needed: Docker Desktop's WSL2 integration already forwards the " +
+      "published port to this machine's own loopback.\n" +
+      "tailscale — probes, on the target, whether `tailscale` exists and is logged in (`tailscale status --json`), " +
+      "then prints the exact `tailscale serve --bg http://127.0.0.1:<gatewayPort>` command — tailnet-only HTTPS, " +
+      "never `tailscale funnel` (refused outright, with the reason, whether or not --apply is given). --apply runs " +
+      "it on the target through the transport — mutating, so it needs MCP confirmation and the instance lock " +
+      "(guarded()), same as every other mutating command.\n" +
+      "status — the published bind address/port read back from the RUNNING container (never just .env, which can " +
+      "be stale the moment OC_BIND_ADDRESS is edited without a recreate), whether that is loopback-only, and — if " +
+      "tailscale is present — a summary of `tailscale serve status`. Warns loudly when the bind address is " +
+      "0.0.0.0 or ::. The same one-line summary appears in `./clawforge status`.",
+    arguments: [
+      { name: "action", description: "ssh, tailscale or status", kind: "positional", required: true, choices: ["ssh", "tailscale", "status"] },
+      { name: "local-port", description: "With ssh: local port to bind (defaults to the gateway's own port)", kind: "option" },
+      { name: "run", description: "With ssh: open the tunnel in the foreground until Ctrl+C; needs a real terminal", kind: "flag" },
+      { name: "apply", description: "With tailscale: run the printed `tailscale serve` command on the target instead of only printing it", kind: "flag" },
+      BREAK_LOCK_ARGUMENT,
+      BREAK_FOREIGN_LOCK_ARGUMENT,
+    ],
   },
   "mcp-creds": {
     summary: "Print service URL, token and MCP client config for both servers",

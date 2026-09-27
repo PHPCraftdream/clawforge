@@ -1,8 +1,8 @@
 // What DockerRuntime.runningConnectionFacts() reads out of ONE whole-object `docker inspect`,
 // and what it refuses to guess: the data dir only from the config bind mount whose Source ends
-// in "/config", the port only from the published 18789/tcp, the project from Docker's own
-// compose label, and the image from .Config.Image — never the top-level .Image, which is a
-// resolved ID a .env never wrote.
+// in "/config", the port and bind address only from the published 18789/tcp entry's HostPort
+// and HostIp, the project from Docker's own compose label, and the image from .Config.Image —
+// never the top-level .Image, which is a resolved ID a .env never wrote.
 //
 // No docker and no network: the transport is a stub answering the container lookup (a bare
 // `docker ps --filter label=...`, UX-17 — no compose invocation and no environment file
@@ -99,7 +99,7 @@ try {
     check(
       "a complete inspect answer yields every connection fact",
       facts,
-      { dataDir: "/srv/data", port: "18790", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
+      { dataDir: "/srv/data", port: "18790", bindAddress: "127.0.0.1", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
     );
     check("exactly one inspect call is made", inspects(execArgs).length, 1);
     check(
@@ -118,7 +118,7 @@ try {
     check(
       "no /home/node/.openclaw mount leaves the data dir absent and the rest present",
       await runtime.runningConnectionFacts(),
-      { port: "18790", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
+      { port: "18790", bindAddress: "127.0.0.1", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
     );
   }
 
@@ -129,7 +129,7 @@ try {
     check(
       "a mount Source without the /config suffix is not guessed into a data dir",
       await runtime.runningConnectionFacts(),
-      { port: "18790", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
+      { port: "18790", bindAddress: "127.0.0.1", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
     );
   }
 
@@ -140,7 +140,7 @@ try {
     check(
       "a Source of exactly /config would strip to nothing, so it stays absent",
       await runtime.runningConnectionFacts(),
-      { port: "18790", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
+      { port: "18790", bindAddress: "127.0.0.1", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
     );
   }
 
@@ -182,9 +182,31 @@ try {
     body.NetworkSettings = { Ports: { "18789/tcp": [{ HostIp: "127.0.0.1" }] } };
     const { runtime } = runtimeReturning(0, JSON.stringify(body));
     check(
-      "a published port without a HostPort leaves the port absent",
+      "a published port without a HostPort leaves the port absent, independently of the bind address",
       await runtime.runningConnectionFacts(),
-      { dataDir: "/srv/data", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
+      { dataDir: "/srv/data", bindAddress: "127.0.0.1", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
+    );
+  }
+
+  {
+    const body = goodInspect();
+    body.NetworkSettings = { Ports: { "18789/tcp": [{ HostPort: "18790" }] } };
+    const { runtime } = runtimeReturning(0, JSON.stringify(body));
+    check(
+      "a published port without a HostIp leaves the bind address absent, independently of the port",
+      await runtime.runningConnectionFacts(),
+      { dataDir: "/srv/data", port: "18790", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
+    );
+  }
+
+  {
+    const body = goodInspect();
+    body.NetworkSettings = { Ports: { "18789/tcp": [{ HostIp: "", HostPort: "18790" }] } };
+    const { runtime } = runtimeReturning(0, JSON.stringify(body));
+    check(
+      "an empty HostIp string leaves the bind address absent rather than blank",
+      await runtime.runningConnectionFacts(),
+      { dataDir: "/srv/data", port: "18790", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
     );
   }
 
@@ -195,7 +217,7 @@ try {
     check(
       "a container without Docker's compose label leaves the project absent",
       await runtime.runningConnectionFacts(),
-      { dataDir: "/srv/data", port: "18790", image: "ghcr.io/openclaw/openclaw:extended-stable" },
+      { dataDir: "/srv/data", port: "18790", bindAddress: "127.0.0.1", image: "ghcr.io/openclaw/openclaw:extended-stable" },
     );
   }
 
@@ -207,7 +229,7 @@ try {
     check(
       "a missing .Config.Image is never filled from the top-level resolved ID",
       await runtime.runningConnectionFacts(),
-      { dataDir: "/srv/data", port: "18790", composeProject: "proj-a" },
+      { dataDir: "/srv/data", port: "18790", bindAddress: "127.0.0.1", composeProject: "proj-a" },
     );
   }
 
@@ -246,9 +268,9 @@ try {
     body.Mounts = undefined;
     const { runtime } = runtimeReturning(0, JSON.stringify(body));
     check(
-      "no Mounts at all leaves only the port, label and image — without throwing",
+      "no Mounts at all leaves only the port, bind address, label and image — without throwing",
       await runtime.runningConnectionFacts(),
-      { port: "18790", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
+      { port: "18790", bindAddress: "127.0.0.1", composeProject: "proj-a", image: "ghcr.io/openclaw/openclaw:extended-stable" },
     );
   }
 
@@ -257,9 +279,9 @@ try {
     body.Config = undefined;
     const { runtime } = runtimeReturning(0, JSON.stringify(body));
     check(
-      "no Config at all leaves only the data dir and port — without throwing",
+      "no Config at all leaves only the data dir, port and bind address — without throwing",
       await runtime.runningConnectionFacts(),
-      { dataDir: "/srv/data", port: "18790" },
+      { dataDir: "/srv/data", port: "18790", bindAddress: "127.0.0.1" },
     );
   }
 } finally {

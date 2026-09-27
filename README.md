@@ -268,6 +268,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `mcp-serve` | — | stdio bridge to OpenClaw's channels — what a client from `.mcp.json` starts, not something to run by hand; execs into the persistent CLI container when it is up |
 | `mcp-setup` | `[--client <name>] [--json]` | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
 | `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
+| `expose` | `<ssh\|tailscale\|status> [--local-port <n>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Reach a loopback-bound gateway from outside this host, narrowest scope first: `ssh` prints (and, with `--run`, opens) the SSH tunnel; `tailscale` prints (and, with `--apply`, runs) a tailnet-only `tailscale serve` — never `funnel`; `status` reports what is actually published right now, read back from the running container |
 | `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
 | `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
 | `check` | — | Framework checks with no instance — paths, archives, arguments, what a server delivery contains |
@@ -306,6 +307,33 @@ the checks has the distro, `foundation/cli/host.check.ts` runs the audit's own r
 consent, and the consented run. Where it cannot — Linux CI has no `docker-desktop` to ask —
 that leg prints a skip, names the limit, and the arrival declaration plus the consent gate are
 pinned hermetically instead.
+
+## Reaching a loopback-bound gateway: `expose`
+
+The gateway is published on `OC_BIND_ADDRESS` (default `127.0.0.1`) so it is reachable only
+from this host — see `.env.example`. `./clawforge expose` covers the ways to reach it from
+somewhere else anyway, narrowest scope first:
+
+* `./clawforge expose ssh` — for `OC_TARGET_LOCATION=ssh` deployments, prints the exact
+  `ssh -N -L <localPort>:127.0.0.1:<gatewayPort> <OC_SSH_HOST>` tunnel and the
+  `http://127.0.0.1:<localPort>` URL it opens (`--local-port` to pick a different local port);
+  `--run` opens it in the foreground through the local `ssh` client until Ctrl+C — that needs
+  a real terminal, and is refused under MCP or a plain pipe rather than blocking one forever.
+  `wsl`/`local` targets are told no tunnel is needed: Docker Desktop's WSL2 integration already
+  forwards the published port to this machine's own loopback.
+* `./clawforge expose tailscale` — probes, on the target, whether `tailscale` exists and is
+  logged in, then prints the exact `tailscale serve --bg http://127.0.0.1:<gatewayPort>`
+  command: a tailnet-only HTTPS proxy, reachable to tailnet members only. `--apply` runs it on
+  the target through the transport — mutating, so it takes the instance lock and needs MCP
+  confirmation like any other mutating command. `tailscale funnel` (the public-internet
+  sibling) is refused outright, with the reason, whether or not `--apply` is given — this
+  framework's whole security posture keeps the gateway off public ports.
+* `./clawforge expose status` — the bind address and port actually published right now, read
+  back from the running container rather than trusted from `.env` (which can be stale the
+  moment `OC_BIND_ADDRESS` is edited without a recreate), whether that is loopback-only, and a
+  summary of `tailscale serve status` when tailscale is present. Warns loudly when the bind
+  address is `0.0.0.0` or `::` — reachable from every interface on the host, not just loopback.
+  The same one-line summary appears in `./clawforge status`.
 
 ## How it is put together
 
@@ -357,6 +385,11 @@ near their theme without creating a flat catalogue.
 - `tools/framework/integration`: gates, scaffolding and MCP setup
 - `tools/framework/commands`: lifecycle, orchestration, management, sets and interface
 - `tools/framework/set`: artifact and ownership concerns
+- `tools/framework/expose`: `./clawforge expose` — SSH tunnel, `tailscale serve` and exposure
+  status. A top-level module rather than nested under `commands/management/`: every
+  command-family directory already sits at the seven-entry cap, and `tools/framework/` itself
+  has no direct source file of its own, so it is exempt from the cap and the one place a new
+  command family fits without relocating something unrelated just to free a slot
 - `tools/checks`: foundation, runtime, integration, security, sets and release checks
 
 Run `npm run format:check` for the native TypeScript check and Oxlint before opening a

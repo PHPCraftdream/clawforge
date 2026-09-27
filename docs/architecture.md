@@ -335,6 +335,27 @@ A command receives the context: `ctx.transport` (access to the target), `ctx.pat
 translation), `ctx.runtime` (operating the service). Where the target lives and what
 runtime is there is none of its business.
 
+### `expose`: narrowest scope first, and why it lives outside `commands/`
+
+`./clawforge expose` reaches a loopback-bound gateway from outside this host without ever
+publishing it: `ssh` prints (and, with `--run`, opens) the SSH tunnel for
+`OC_TARGET_LOCATION=ssh` deployments; `tailscale` prints (and, with `--apply`, applies) a
+tailnet-only `tailscale serve` — `tailscale funnel`, the public-internet sibling, is refused
+outright, with the reason, because it is exactly what `OC_BIND_ADDRESS`'s loopback default and
+`.env.example`'s own guidance exist to avoid; `status` reads the bind address and port back
+from the running container rather than trusting `.env`, which can be stale the moment
+`OC_BIND_ADDRESS` is edited without a recreate — the same class of drift `recover-env` exists
+to catch for the other connection facts.
+
+Its implementation lives at `tools/framework/expose/`, not nested under
+`commands/management/`: every command-family directory in this repository (`commands/` itself,
+`management/`, `orchestration/`, `lifecycle/`, `sets/`, `interface/`) already sits exactly at
+`layout.check.ts`'s seven-direct-entry cap, and `tools/framework/` has no direct source file of
+its own, so the cap does not apply to it — the one place a new command family fits without
+relocating something unrelated just to free a slot (`tools/framework/diagnostics/` took the
+same route). It is still wired into `managementCommands` exactly like every other command's
+`run`, resolved through the same `#src/*` import map every other module uses.
+
 ## Recipes, and agents built from them
 
 A recipe is a `recipes/<name>/` directory in a deployment. It can be a service (its own

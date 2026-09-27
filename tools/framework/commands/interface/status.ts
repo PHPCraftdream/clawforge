@@ -8,9 +8,11 @@
 import { log, info } from "#src/core/log.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
+import { summarizeExposure, exposureOneLiner } from "#src/expose/index.ts";
 
 export async function status(ctx: Context, _args: string[]): Promise<void> {
   info(`target: ${ctx.transport.description} / runtime: ${ctx.runtime.description}`);
+  info(`exposure: ${exposureOneLiner(summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.()))} — details: ./clawforge expose status`);
 
   log("containers");
   // showStatus() shells out to compose, which needs somewhere to write its own private env

@@ -105,16 +105,18 @@ export interface Runtime {
    *  instance is not running or this runtime cannot introspect it. */
   runningEnvironment?(): Promise<Record<string, string> | undefined>;
   /** The running container's connection facts — the plumbing values (data dir, gateway port,
-   *  compose project, image reference) that tell this deployment how to reach its own
-   *  instance, read back from Docker the same way runningEnvironment() reads the environment.
-   *  They live in the deployment's .env, so a stale or half-filled copy is repairable from
-   *  the instance still running. Deliberately NOT a secret — that is runningEnvironment()'s
-   *  job (the gateway token); these fields are all safe to print. Undefined when the instance
-   *  is not running or this runtime cannot introspect it, while an individual field absent
-   *  inside a successful result means Docker's own answer did not carry that fact, which is
-   *  reported, never guessed. */
+   *  bind address, compose project, image reference) that tell this deployment how to reach
+   *  its own instance, read back from Docker the same way runningEnvironment() reads the
+   *  environment. They live in the deployment's .env, so a stale or half-filled copy is
+   *  repairable from the instance still running. Deliberately NOT a secret — that is
+   *  runningEnvironment()'s job (the gateway token); these fields are all safe to print.
+   *  Undefined when the instance is not running or this runtime cannot introspect it, while
+   *  an individual field absent inside a successful result means Docker's own answer did not
+   *  carry that fact, which is reported, never guessed. bindAddress is read from the same
+   *  published-port entry port already is (`./clawforge expose status` needs both to say
+   *  whether the gateway is actually loopback-only right now, not just what .env claims). */
   runningConnectionFacts?(): Promise<
-    { dataDir?: string; port?: string; composeProject?: string; image?: string } | undefined
+    { dataDir?: string; port?: string; bindAddress?: string; composeProject?: string; image?: string } | undefined
   >;
   /** When the running instance started, as epoch milliseconds, or undefined when it is not
    *  running.

@@ -210,6 +210,10 @@ jobs:
             tools/checks/security/credentials/secrets-command/unreadable-input-aborts.check.ts
             tools/checks/security/credentials/ssh-quoting.check.ts
             tools/checks/security/credentials/verify.check.ts
+            tools/checks/security/expose/index.check.ts
+            tools/checks/security/expose/ssh.check.ts
+            tools/checks/security/expose/status.check.ts
+            tools/checks/security/expose/tailscale.check.ts
             tools/checks/security/private-paths-ledger/serialization.check.ts
             tools/checks/security/private-paths-ledger/reconcile-history.check.ts
           )

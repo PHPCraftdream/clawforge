@@ -425,11 +425,12 @@ export class DockerRuntime implements Runtime {
    *  are what reach the instance however stale the operator's own copy has become. One
    *  whole-object inspect, the same call runningImageIdentity() already makes; each field
    *  keeps its provenance: the config bind mount strips to the data dir, the published
-   *  18789/tcp gives the port, Docker's own compose label — which portConflict() already
-   *  reads — gives the project, and .Config.Image keeps the original tag where the top-level
-   *  .Image is the resolved ID and would pin .env to a digest it never wrote. */
+   *  18789/tcp gives the port and (from the same entry's HostIp) the bind address, Docker's
+   *  own compose label — which portConflict() already reads — gives the project, and
+   *  .Config.Image keeps the original tag where the top-level .Image is the resolved ID and
+   *  would pin .env to a digest it never wrote. */
   async runningConnectionFacts(): Promise<
-    { dataDir?: string; port?: string; composeProject?: string; image?: string } | undefined
+    { dataDir?: string; port?: string; bindAddress?: string; composeProject?: string; image?: string } | undefined
   > {
     const containerId = await this.#containerId();
     if (containerId === undefined) return undefined;
@@ -447,7 +448,7 @@ export class DockerRuntime implements Runtime {
       return undefined;
     }
     if (parsed?.State?.Running !== true) return undefined;
-    const facts: { dataDir?: string; port?: string; composeProject?: string; image?: string } = {};
+    const facts: { dataDir?: string; port?: string; bindAddress?: string; composeProject?: string; image?: string } = {};
     if (Array.isArray(parsed.Mounts)) {
       const mount = parsed.Mounts.find(
         (entry) =>
@@ -463,8 +464,12 @@ export class DockerRuntime implements Runtime {
     }
     const ports = parsed.NetworkSettings?.Ports?.["18789/tcp"];
     if (Array.isArray(ports)) {
-      const hostPort = (ports[0] as { HostPort?: unknown } | undefined)?.HostPort;
-      if (typeof hostPort === "string" && hostPort !== "") facts.port = hostPort;
+      const entry = ports[0] as { HostIp?: unknown; HostPort?: unknown } | undefined;
+      if (typeof entry?.HostPort === "string" && entry.HostPort !== "") facts.port = entry.HostPort;
+      // Same entry, same "never guess" rule as port: absent or empty stays absent rather
+      // than defaulting to 127.0.0.1 — a caller asking "is this really loopback-only right
+      // now" must not be told so on the strength of a guess.
+      if (typeof entry?.HostIp === "string" && entry.HostIp !== "") facts.bindAddress = entry.HostIp;
     }
     const project = parsed.Config?.Labels?.["com.docker.compose.project"];
     if (typeof project === "string" && project !== "") facts.composeProject = project;

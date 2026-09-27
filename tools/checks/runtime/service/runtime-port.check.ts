@@ -10,6 +10,7 @@ import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { preflightPort } from "#framework/commands/lifecycle/lifecycle.ts";
+import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult, Transport } from "#framework/runtime/transport.ts";
 import type { Settings } from "#framework/core/env.ts";
@@ -89,12 +90,36 @@ function runtimeWith(psResult: ExecResult): DockerRuntime {
 
 // --- preflightPort ---------------------------------------------------------------
 
-function contextWithConflict(holder: string | undefined): Context {
+interface PortFixture {
+  isRunning?: boolean;
+  ss?: ExecResult;
+  /** `ss` fails to even launch (e.g. no such binary on a local transport) rather than
+   *  exiting non-zero — both must fall through to netstat the same way. */
+  ssThrows?: boolean;
+  netstat?: ExecResult;
+}
+
+/** `ss` succeeds and finds nothing by default — the ordinary "free port" case — so a caller
+ *  only has to script the one tool answer its scenario actually cares about. */
+function contextWithConflict(holder: string | undefined, fixture: PortFixture = {}): Context {
   return {
-    settings: { gatewayPort: "18789" },
+    settings: { gatewayPort: "18789", bindAddress: "127.0.0.1" },
     runtime: {
       async portConflict(): Promise<string | undefined> {
         return holder;
+      },
+      async isRunning(): Promise<boolean> {
+        return fixture.isRunning ?? false;
+      },
+    },
+    transport: {
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (command === "ss") {
+          if (fixture.ssThrows === true) throw new Error("spawn ss ENOENT");
+          return fixture.ss ?? { code: 0, stdout: "", stderr: "" };
+        }
+        if (command === "netstat") return fixture.netstat ?? { code: 1, stdout: "", stderr: "" };
+        throw new Error(`unexpected exec: ${command} ${args.join(" ")}`);
       },
     },
   } as unknown as Context;
@@ -120,7 +145,115 @@ function contextWithConflict(holder: string | undefined): Context {
   } catch {
     threw = true;
   }
-  check("no conflict means preflightPort does not throw", threw, false);
+  check("no conflict and a free port means preflightPort does not throw", threw, false);
+}
+
+// --- R9-07 residual: a non-Docker listener on the same address:port ---------------------
+
+{
+  // ss finds something listening that Docker never published — a bare process squatting
+  // the port, the exact gap portConflict() (Docker-only) cannot see.
+  const ctx = contextWithConflict(undefined, {
+    ss: { code: 0, stdout: "LISTEN 0 128 127.0.0.1:18789 0.0.0.0:*\n", stderr: "" },
+  });
+  let message: string | undefined;
+  try {
+    await preflightPort(ctx);
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check("a non-Docker listener makes preflightPort throw", message !== undefined, true);
+  check("the message names the address and port", message?.includes("127.0.0.1:18789"), true);
+  check("the message says Docker never saw it", message?.includes("not through Docker"), true);
+  check("the message names the check-then-bind race honestly", message?.includes("not atomic"), true);
+}
+
+{
+  // A wildcard bind (0.0.0.0/*) collides with a specific address the same way two specific
+  // binds would — ss reports it against "*" or "0.0.0.0", never against our own address.
+  const ctx = contextWithConflict(undefined, {
+    ss: { code: 0, stdout: "LISTEN 0 128 0.0.0.0:18789 0.0.0.0:*\n", stderr: "" },
+  });
+  let threw = false;
+  try {
+    await preflightPort(ctx);
+  } catch {
+    threw = true;
+  }
+  check("a wildcard bind on the same port is still a conflict", threw, true);
+}
+
+{
+  // Neither tool answers (both missing on the target) — an explicit warning, never a silent
+  // "must be free".
+  const ctx = contextWithConflict(undefined, {
+    ss: { code: 127, stdout: "", stderr: "ss: not found" },
+    netstat: { code: 127, stdout: "", stderr: "netstat: not found" },
+  });
+  let warned = "";
+  let threw = false;
+  await withOutputSink(
+    (chunk) => {
+      warned += chunk;
+    },
+    async () => {
+      try {
+        await preflightPort(ctx);
+      } catch {
+        threw = true;
+      }
+    },
+  );
+  check("neither ss nor netstat available does not refuse the run", threw, false);
+  check("but it is warned about, not silently treated as free", warned.includes("neither ss nor netstat"), true);
+}
+
+{
+  // ss itself cannot even be launched (e.g. no such binary on a local transport) — same
+  // "unavailable" outcome as a nonzero exit, by falling through to netstat and then warning.
+  const ctx = contextWithConflict(undefined, {
+    ssThrows: true,
+    netstat: { code: 127, stdout: "", stderr: "netstat: not found" },
+  });
+  let warned = "";
+  await withOutputSink(
+    (chunk) => {
+      warned += chunk;
+    },
+    () => preflightPort(ctx),
+  );
+  check("ss throwing outright is treated the same as it exiting non-zero", warned.includes("neither ss nor netstat"), true);
+}
+
+{
+  // The target's own gateway is already running and (necessarily) already holds the port —
+  // an ordinary bootstrap re-run, not a conflict. The raw probe must not even be consulted:
+  // scripting it to "always occupied" and still passing proves that.
+  const ctx = contextWithConflict(undefined, {
+    isRunning: true,
+    ss: { code: 0, stdout: "LISTEN 0 128 127.0.0.1:18789 0.0.0.0:*\n", stderr: "" },
+  });
+  let threw = false;
+  try {
+    await preflightPort(ctx);
+  } catch {
+    threw = true;
+  }
+  check("the deployment's own already-running gateway is never a conflict with itself", threw, false);
+}
+
+{
+  // A listener on some other address:port must not be mistaken for one on ours.
+  const ctx = contextWithConflict(undefined, {
+    ss: { code: 0, stdout: "LISTEN 0 128 127.0.0.1:19999 0.0.0.0:*\n", stderr: "" },
+  });
+  let threw = false;
+  try {
+    await preflightPort(ctx);
+  } catch {
+    threw = true;
+  }
+  check("a listener on a different port is not a conflict", threw, false);
 }
 
 process.stderr.write(failed === 0 ? "all runtime-port checks passed\n" : `${failed} failed\n`);

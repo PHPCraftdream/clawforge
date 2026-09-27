@@ -7,7 +7,7 @@
 // calls of one real stdio server lives in
 // tools/checks/integration/agent/recipe-hook-freshness-server.check.ts.
 
-import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
@@ -17,6 +17,22 @@ import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
+
+function skip(name: string): void {
+  process.stderr.write(`  skip ${name}\n`);
+}
+
+/** Creates a symlink, answering false instead of throwing — Windows without developer mode
+ *  (or elevated privileges) refuses link creation, and the symlink-escape probe must skip
+ *  there, not fail (same degrade as recipe-portable-content.check.ts's trySymlink). */
+async function trySymlink(target: string, path: string): Promise<boolean> {
+  try {
+    await symlink(target, path, "file");
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function check(name: string, actual: unknown, expected: unknown): void {
   const same = JSON.stringify(actual) === JSON.stringify(expected);
@@ -332,16 +348,25 @@ try {
   }
 }
 
-// Conditional package import maps cannot currently be freshness-tracked with Node's exact
-// ESM resolution conditions, so local aliases fail closed before any hook code executes.
+// Package-internal `#imports` (round 9, R9-05): resolved through the recipe's own nearest
+// package.json `imports` map — a supported string or node/import/default target inside the
+// recipe directory is folded into the freshness graph (package.json AND its resolved
+// target), so editing the helper OR repointing the import map is picked up on the very next
+// call of the same process, exactly like a plain relative import. Anything the graph cannot
+// safely track — a bare package target, an absolute path, an escape via `..` or a symlink,
+// an unsupported condition — is refused before the hook ever executes; this closed the P2-03
+// refusal by actually supporting the shape instead of always failing closed.
 {
   const aliasRoot = resolve(tmpdir(), `clawforge-recipe-hook-alias-${Date.now()}`);
   try {
     await mkdir(resolve(aliasRoot, "alias"), { recursive: true });
-    await writeFile(resolve(aliasRoot, "alias", "package.json"), JSON.stringify({ type: "module", imports: { "#helper": "./helper.ts" } }), "utf8");
     await writeFile(resolve(aliasRoot, "alias", "recipe.json"), JSON.stringify({ description: "Package alias freshness probe" }), "utf8");
-    const marker = resolve(aliasRoot, "alias", "evaluated.txt");
-    await writeFile(resolve(aliasRoot, "alias", "helper.ts"), `import { writeFile } from "node:fs/promises";\nawait writeFile(${JSON.stringify(marker)}, "ran");\nexport const REVISION = 20;\n`, "utf8");
+    await writeFile(
+      resolve(aliasRoot, "alias", "package.json"),
+      JSON.stringify({ type: "module", imports: { "#helper": "./helper.ts" } }),
+      "utf8",
+    );
+    await writeFile(resolve(aliasRoot, "alias", "helper.ts"), "export const REVISION = 1;\n", "utf8");
     await writeFile(
       resolve(aliasRoot, "alias", "verify.ts"),
       "import { REVISION } from \"#helper\";\nexport async function verify() { return { ok: true, revision: REVISION }; }\n",
@@ -355,20 +380,119 @@ try {
       return JSON.parse(output) as { revision?: number };
     };
 
-    let aliasError = "";
+    check("package imports: #helper resolves through the recipe's own package.json imports map", (await verifyOnce()).revision, 1);
+
+    await writeFile(resolve(aliasRoot, "alias", "helper.ts"), "export const REVISION = 2;\n", "utf8");
+    check("package imports: an edit to the #helper target is picked up in the same process", (await verifyOnce()).revision, 2);
+
+    await writeFile(resolve(aliasRoot, "alias", "helper-two.ts"), "export const REVISION = 3;\n", "utf8");
+    await writeFile(
+      resolve(aliasRoot, "alias", "package.json"),
+      JSON.stringify({ type: "module", imports: { "#helper": "./helper-two.ts" } }),
+      "utf8",
+    );
+    check("package imports: repointing the import map itself is picked up in the same process", (await verifyOnce()).revision, 3);
+
+    // Nested `#` from a helper: helper-two.ts itself imports through a second alias.
+    await writeFile(resolve(aliasRoot, "alias", "nested.ts"), "export const REVISION = 10;\n", "utf8");
+    await writeFile(resolve(aliasRoot, "alias", "helper-two.ts"), "export { REVISION } from \"#nested\";\n", "utf8");
+    await writeFile(
+      resolve(aliasRoot, "alias", "package.json"),
+      JSON.stringify({ type: "module", imports: { "#helper": "./helper-two.ts", "#nested": "./nested.ts" } }),
+      "utf8",
+    );
+    check("package imports: a #specifier reached from another helper resolves too", (await verifyOnce()).revision, 10);
+    await writeFile(resolve(aliasRoot, "alias", "nested.ts"), "export const REVISION = 11;\n", "utf8");
+    check("package imports: an edit behind a nested #specifier is picked up in the same process", (await verifyOnce()).revision, 11);
+
+    // node/import/default conditions: the first key present wins, matching Node's own
+    // resolver for a plain ESM hook running under Node with no custom --conditions.
+    await writeFile(resolve(aliasRoot, "alias", "helper-node.ts"), "export const REVISION = 20;\n", "utf8");
+    await writeFile(resolve(aliasRoot, "alias", "helper-default.ts"), "export const REVISION = 21;\n", "utf8");
+    await writeFile(
+      resolve(aliasRoot, "alias", "package.json"),
+      JSON.stringify({ type: "module", imports: { "#helper": { node: "./helper-node.ts", default: "./helper-default.ts" } } }),
+      "utf8",
+    );
+    check("package imports: a {node,default} conditional target resolves through the node condition", (await verifyOnce()).revision, 20);
+    await writeFile(resolve(aliasRoot, "alias", "helper-node.ts"), "export const REVISION = 22;\n", "utf8");
+    check("package imports: an edit behind a conditional target is picked up in the same process", (await verifyOnce()).revision, 22);
+
+    // Unsupported condition: rejected explicitly rather than guessed at.
+    await writeFile(
+      resolve(aliasRoot, "alias", "package.json"),
+      JSON.stringify({ type: "module", imports: { "#helper": { browser: "./helper-node.ts", default: "./helper-default.ts" } } }),
+      "utf8",
+    );
+    let unsupportedConditionError = "";
     try {
       await verifyOnce();
     } catch (error) {
-      aliasError = error instanceof Error ? error.message : String(error);
+      unsupportedConditionError = error instanceof Error ? error.message : String(error);
     }
-    check("package imports: local aliases fail closed with a clear freshness error", aliasError.includes("cannot be freshness-tracked safely"), true);
-    let hookEvaluated = true;
+    check(
+      "package imports: an unsupported condition (e.g. browser) is rejected with a clear message",
+      unsupportedConditionError.includes("unsupported condition"),
+      true,
+    );
+
+    // Escape attempts: each rejected explicitly, and never evaluated.
+    const escapeMarker = resolve(aliasRoot, "escape-evaluated.txt");
+    await writeFile(
+      resolve(aliasRoot, "outside.ts"),
+      `import { writeFile } from "node:fs/promises";\nawait writeFile(${JSON.stringify(escapeMarker)}, "ran");\nexport const REVISION = 666;\n`,
+      "utf8",
+    );
+    const rejects = async (importsMap: Record<string, unknown>): Promise<string> => {
+      await writeFile(resolve(aliasRoot, "alias", "package.json"), JSON.stringify({ type: "module", imports: importsMap }), "utf8");
+      try {
+        await verifyOnce();
+        return "";
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    };
+
+    check(
+      "package imports: a target escaping via .. is rejected",
+      (await rejects({ "#helper": "../outside.ts" })).includes("escapes the recipe directory"),
+      true,
+    );
+    let escapeEvaluated = true;
     try {
-      await access(marker);
+      await access(escapeMarker);
     } catch {
-      hookEvaluated = false;
+      escapeEvaluated = false;
     }
-    check("package imports: failure occurs before helper evaluation", hookEvaluated, false);
+    check("package imports: the rejected .. escape target was never evaluated", escapeEvaluated, false);
+
+    const absoluteTarget = process.platform === "win32" ? "C:\\Windows\\win.ini" : "/etc/passwd";
+    check(
+      "package imports: an absolute path target is rejected",
+      (await rejects({ "#helper": absoluteTarget })).includes("absolute path"),
+      true,
+    );
+
+    check(
+      "package imports: a bare package target is rejected",
+      (await rejects({ "#helper": "some-installed-package" })).includes("bare package specifier"),
+      true,
+    );
+
+    // Symlink escape: skipped where the platform/privileges refuse symlink creation
+    // (Windows without developer mode) — same degrade-not-fail pattern as
+    // recipe-portable-content.check.ts's trySymlink.
+    const linkPath = resolve(aliasRoot, "alias", "escape-link.ts");
+    const linked = await trySymlink(resolve(aliasRoot, "outside.ts"), linkPath);
+    if (linked) {
+      check(
+        "package imports: a target resolving through a symlink out of the recipe directory is rejected",
+        (await rejects({ "#helper": "./escape-link.ts" })).includes("symlink"),
+        true,
+      );
+    } else {
+      skip("package imports: symlink escape is rejected (symlink creation unavailable on this machine)");
+    }
   } finally {
     useRecipesDir(outerRecipes);
     await rm(aliasRoot, { recursive: true, force: true });

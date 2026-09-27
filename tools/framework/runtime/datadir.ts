@@ -70,10 +70,12 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
   // failing. Better to say plainly what to do.
   const passwordless = await ctx.transport.exec("sudo", ["-n", "true"], { allowFailure: true });
   if (passwordless.code !== 0) {
+    const advice = await prepareFamilyAdvice(ctx);
     die(
       `${probe} needs root and sudo asks for a password, which cannot be typed here.\n` +
-        `Prepare it once on the target:  sudo install -d -o 1000 -g 1000 ${path}\n` +
-        "or point OC_DATA_DIR at a directory you already own.",
+        "Prepare it once on the target — everything this deployment will need, not just this path:\n" +
+        advice.map((line) => `  ${line}`).join("\n") +
+        "\nor point OC_DATA_DIR (and OC_BACKUP_DIR/OC_SNAPSHOT_DIR) at directories you already own.",
     );
   }
   return ["sudo", "-n"];
@@ -90,6 +92,69 @@ export async function runMaybePrivileged(
   const prefix = await sudoFor(ctx, pathNeedingAccess, options);
   const [head, ...rest] = [...prefix, command, ...args];
   await ctx.transport.exec(head, rest);
+}
+
+/** Splits an immediate parent from a path, on whichever separator it uses — mirrors
+ *  core/env.ts's own pathSeparator/lastSeparator pair, kept local since this module has no
+ *  other reason to import env.ts. */
+function parentOf(path: string): string {
+  const separator = path.includes("\\") ? "\\" : "/";
+  const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return cut < 0 ? "" : path.slice(0, cut) || separator;
+}
+
+/** One "sudo install -d" line for a group of paths that all need the same owner. Collapsed
+ *  to their shared parent when there is more than one and they all sit directly under the
+ *  same one — the default layout (data, backups, snapshots as siblings under OC_DATA_DIR's
+ *  own parent, the lock home named as a sibling too) — rather than naming each path by hand.
+ *  A single path is named as itself: re-chowning a shared parent to an owner the OTHER group
+ *  needs it to keep would undo that group's own preparation. */
+function prepareCommand(owner: string, paths: string[]): string {
+  const [uid, gid] = owner.split(":");
+  const parents = new Set(paths.map(parentOf));
+  const target = paths.length > 1 && parents.size === 1 ? [...parents][0] : paths.join(" ");
+  return `sudo install -d -o ${uid} -g ${gid} ${target}`;
+}
+
+/** Every directory this deployment eventually needs prepared with elevated privileges,
+ *  grouped by the owner each family needs: the container's fixed uid (data, backups,
+ *  snapshots — OWNER) and whoever runs the tooling (the lock home, instance-lock.ts). Read
+ *  from ctx.settings so the advice always matches the ctx that hit the refusal — set-try's
+ *  throwaway instance included, which has its own isolated paths. */
+async function dataFamily(ctx: Context): Promise<Map<string, string[]>> {
+  const groups = new Map<string, string[]>();
+  const add = (owner: string, path: string | undefined): void => {
+    if (path === undefined || path === "") return;
+    const existing = groups.get(owner) ?? [];
+    if (!existing.includes(path)) groups.set(owner, [...existing, path]);
+  };
+  add(OWNER, ctx.settings.dataDir);
+  add(OWNER, ctx.settings.backupDir);
+  add(OWNER, ctx.settings.snapshotDir);
+  let current: string | undefined;
+  try {
+    current = await targetOwner(ctx);
+  } catch {
+    // Best effort: this is an advisory message about to accompany a refusal that is already
+    // happening, not a reason to fail differently than the caller already is. Falling back
+    // to OWNER merges the lock home into the same group, which is still a correct command in
+    // the common case (a WSL default user already at uid 1000) and a harmless suggestion
+    // otherwise — the operator still sees a plain "sudo install -d" line for it.
+    current = undefined;
+  }
+  add(current ?? OWNER, lockHome(ctx));
+  return groups;
+}
+
+/** The commands to hand the operator so one pass covers every directory this deployment
+ *  will need, not just the one path that happened to fail first — bootstrap used to refuse
+ *  on the lock home alone, then again on the data directory, then again on backups and
+ *  snapshots the first time each was touched. Whenever whoever runs the tooling already IS
+ *  uid 1000 (a WSL distribution's default user typically is), every group collapses into
+ *  the exact same owner and this returns a single line for the whole family. */
+async function prepareFamilyAdvice(ctx: Context): Promise<string[]> {
+  const groups = await dataFamily(ctx);
+  return [...groups.entries()].map(([owner, paths]) => prepareCommand(owner, paths));
 }
 
 async function ownerOf(ctx: Context, path: string): Promise<string> {
@@ -355,10 +420,12 @@ export async function ensureLockHome(ctx: Context): Promise<void> {
   // the lock cannot be created in, and that resurfaces later as a failed claim on an
   // unrelated command. Said here, where the reason is still in view.
   if (!(await isWritable(ctx, home))) {
+    const advice = await prepareFamilyAdvice(ctx);
     die(
       `${home} is still not writable after preparing it.\n` +
         `The instance lock is created there, so nothing that changes this deployment can run.\n` +
-        `Prepare it once on the target:  sudo install -d -o "$(id -u)" -g "$(id -g)" ${home}`,
+        "Prepare it once on the target — everything this deployment will need, not just this path:\n" +
+        advice.map((line) => `  ${line}`).join("\n"),
     );
   }
 }

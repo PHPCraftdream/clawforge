@@ -18,6 +18,8 @@ import { die, maskSecrets } from "../core/log.ts";
 import { outputSink } from "../core/output.ts";
 import { listFilesVia } from "../security/transport-listing.ts";
 export { listFilesVia } from "../security/transport-listing.ts";
+import { meaningfulLines, describeInvocation } from "../diagnostics/spawn-failure.ts";
+export { describeInvocation } from "../diagnostics/spawn-failure.ts";
 
 export interface ExecOptions {
   /** Bytes are passed through unchanged; strings retain the existing UTF-8 behavior. */
@@ -35,6 +37,11 @@ export interface ExecResult {
   code: number;
   stdout: string;
   stderr: string;
+}
+
+/** A rejected spawnLocal() call: `fullCommand` (masked) is the argv `message`'s headline was shortened from; read by entry/cli.ts under OC_DEBUG=1. */
+export interface CommandFailure extends Error {
+  fullCommand?: string;
 }
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -140,11 +147,13 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
   return new Promise((resolvePromise, rejectPromise) => {
     validateEnvNames(Object.keys(options.env ?? {}));
     validateEnvNames(options.unsetEnv ?? []);
-    // Streaming means "let the user watch it happen", which is only true on a terminal.
-    // When output is being captured, inheriting stdout would put the child's output into
-    // the middle of a JSON-RPC message; it is piped and forwarded to the sink instead.
+    // Streaming means "let the user watch it happen" on a real terminal, not merely "no sink":
+    // a plain pipe (`./clawforge status | cat`) has no sink either, but inheriting stdio onto it
+    // wires wsl.exe straight to an MSYS pipe on Windows — Node dies with exit 139 the moment the
+    // child writes. isTTY is undefined (not false) off a terminal, hence === true below.
     const sink = outputSink();
-    const streamToTerminal = options.stream === true && sink === undefined && options.input === undefined;
+    const streamToTerminal = options.stream === true && sink === undefined && options.input === undefined
+      && process.stdout.isTTY === true && process.stderr.isTTY === true;
 
     const environment = { ...process.env, ...options.env };
     unsetInheritedEnvironment(environment, options.unsetEnv ?? []);
@@ -201,16 +210,19 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
         return;
       }
       if (result.code !== 0 && options.allowFailure !== true) {
-        const detail = (stderr.trim() || stdout.trim()).split("\n").slice(0, 5).join("\n");
-        // Both halves are masked: the arguments may carry a token (onboarding takes one)
-        // and the child's own output may echo it back.
-        rejectPromise(
-          new Error(
-            maskSecrets(
-              `${command} ${args.join(" ")} failed (exit ${result.code})${detail ? `: ${detail}` : ""}`,
-            ),
-          ),
-        );
+        // Prefer stderr over stdout, but only past Compose's noise: a stderr left with
+        // nothing else must not shadow a stdout that has the real reason.
+        const stderrLines = meaningfulLines(stderr);
+        const stdoutLines = meaningfulLines(stdout);
+        const detail = (stderrLines.length > 0 ? stderrLines : stdoutLines).slice(0, 5).join("\n");
+        // Masked: the arguments may carry a token, and the child's own output may echo it back.
+        const error = new Error(
+          maskSecrets(`${describeInvocation(command, args)} failed (exit ${result.code})${detail ? `: ${detail}` : ""}`),
+        ) as CommandFailure;
+        // Full argv, not in the message by default (Compose plumbing saying nothing about the
+        // failure) but never discarded: OC_DEBUG=1 (entry/cli.ts) prints it.
+        error.fullCommand = maskSecrets(`${command} ${args.join(" ")}`);
+        rejectPromise(error);
         return;
       }
       if (inputError !== undefined && result.code === 0) {

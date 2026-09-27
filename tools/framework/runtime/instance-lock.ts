@@ -30,6 +30,7 @@ import { locksDir } from "../core/env.ts";
 import { log, die } from "../core/log.ts";
 import { withMutationGuard } from "../security/instance-mutation-guard.ts";
 import { newOperationId } from "../service/operations.ts";
+import { machineName, ownProcessStartedAt } from "../security/instance-mutation-guard.ts";
 import type { Context } from "../core/context.ts";
 
 /** After this, a lock is described as stale — long enough that no ordinary operation is
@@ -49,6 +50,36 @@ export interface LockHolder {
    *  to `undefined`, so a takeover of an unnamed lock is still checked against the one it
    *  read. */
   readonly generation?: string;
+  /** This host's own identity, as machineName() computes it — set by every acquisition since
+   *  this field existed, absent on a holder written before it did. `pid` is only askable
+   *  against THIS machine's own process table when `host` matches it: every pid this
+   *  framework records is the CLI's own process.pid, never anything living on a WSL/SSH
+   *  transport target (security/instance-mutation-guard.ts). */
+  readonly host?: string;
+  /** The acquiring process's own pid. */
+  readonly pid?: number;
+  /** This process's own approximate start time, recorded to catch pid reuse — nothing here
+   *  compares it yet (see isProvablyDeadHere's own note), but a later reader can. */
+  readonly startedAt?: string;
+}
+
+/** Whether `holder`'s process is provably gone: recorded on THIS machine — never a WSL/SSH
+ *  target, see security/instance-mutation-guard.ts — and signalling it fails with ESRCH. A different machine,
+ *  no pid recorded, a live process, or a probe error that proves nothing are all "not
+ *  provable", and the refusal stays silent about them: this only ever adds a fact on top of
+ *  the human's own judgment call, never substitutes for it. Deliberately synchronous and
+ *  ESRCH-only — no pid-reuse cross-check against `startedAt` here, since that needs shelling
+ *  out to `ps`/`wmic` and this runs on every ordinary refusal, most of which are against a
+ *  genuinely running peer; a reused pid on this exact host is rare enough that the safe,
+ *  unenhanced message ("wait, or --break-lock if you are sure") is an acceptable fallback. */
+function isProvablyDeadHere(holder: LockHolder): boolean {
+  if (holder.host !== machineName() || holder.pid === undefined) return false;
+  try {
+    process.kill(holder.pid, 0);
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ESRCH";
+  }
 }
 
 /** The lock itself is a DIRECTORY, and that is the whole mechanism.
@@ -258,35 +289,53 @@ function humanAge(ms: number): string {
   return `${Math.floor(minutes / 60)} hour(s)`;
 }
 
+/** Every command that supports break-lock must actually accept it (checks/.../advice.check.ts
+ *  cross-references this against openclawCommands' own declarations). A command that does
+ *  not passes `false` here (via guarded()'s own options) so the advice never names a flag it
+ *  will then reject as unknown — pointing instead at one that does accept it. */
+function breakLockAdvice(breakLockSupported: boolean): string {
+  return breakLockSupported
+    ? "take it over with --break-lock"
+    : "this command does not accept --break-lock — run one that does (for example ./clawforge up --break-lock) to take it over";
+}
+
 /** The message a blocked run gets. Exported so the checks can assert what it tells the
  *  reader — a refusal that does not say who holds the lock leaves them with nothing to do
  *  but delete files and hope. */
-export function refusalMessage(holder: LockHolder, now = Date.now()): string {
+export function refusalMessage(holder: LockHolder, now = Date.now(), breakLockSupported = true): string {
   const age = ageMs(holder, now);
   const lines = [
     `another operation is changing this instance: ${holder.what} (${holder.operationId})`,
     `started by ${holder.by}, ${humanAge(age)} ago`,
   ];
-  if (isStale(holder, now)) {
+  const stale = isStale(holder, now);
+  // A fact, not a guess: recorded on this machine and the pid is provably gone. Independent
+  // of staleness — a crash seconds ago is just as dead as one thirty minutes ago, and the
+  // reader should not have to wait out the clock to be told the process itself already is.
+  const deadHere = isProvablyDeadHere(holder);
+  if (stale) {
     // Described, not acted on. Whoever is reading can tell whether that run is really gone;
-    // this process cannot.
-    lines.push(
-      "That is longer than any operation should take, so it may be left over from a run that died.",
-      "If you are sure nothing is running, take it over with --break-lock.",
-    );
-  } else {
-    lines.push("Wait for it to finish, or --break-lock if you are sure it is not running.");
+    // this process cannot, short of the pid check above.
+    lines.push("That is longer than any operation should take, so it may be left over from a run that died.");
   }
+  if (deadHere) {
+    lines.push("Its recorded process is not running on this machine anymore — not a guess, the pid itself is gone.");
+  }
+  lines.push(
+    stale || deadHere
+      ? `If you are sure nothing is running, ${breakLockAdvice(breakLockSupported)}.`
+      : `Wait for it to finish, or ${breakLockAdvice(breakLockSupported)} if you are sure it is not running.`,
+  );
   return lines.join("\n");
 }
 
 /** Held by something that never said what it was. Worth its own message: the reader needs to
  *  know there is no name to look for, rather than assuming the report lost it. */
-export function unreadableLockMessage(ctx: Context): string {
+export function unreadableLockMessage(ctx: Context, breakLockSupported = true): string {
   return [
     `this instance is locked by an operation that did not record who it is (${lockPath(ctx)})`,
     "Most likely a run that won the lock and stopped before naming itself.",
-    "If you are sure nothing is running, take it over with --break-lock.",
+    `If you are sure nothing is running, ${breakLockAdvice(breakLockSupported)}.`,
   ].join("\n");
 }
 
@@ -330,7 +379,7 @@ async function takeLockClaim(
   ctx: Context,
   what: string,
   operationId: string,
-  options: { breakLock?: boolean } = {},
+  options: { breakLock?: boolean; breakLockSupported?: boolean; breakForeignLockHost?: string } = {},
 ): Promise<HeldLock> {
   const claim = await claimDirectory(ctx);
 
@@ -351,7 +400,11 @@ async function takeLockClaim(
       // An existing directory with no readable holder is still someone's — a run that won
       // the directory and died before writing its name, most likely. Refusing on it is the
       // safe reading; proceeding would be assuming the best about a state nobody understands.
-      die(existing === undefined ? unreadableLockMessage(ctx) : refusalMessage(existing));
+      die(
+        existing === undefined
+          ? unreadableLockMessage(ctx, options.breakLockSupported)
+          : refusalMessage(existing, undefined, options.breakLockSupported),
+      );
     }
 
     const takeover = await claimTakeover(ctx, existing?.generation);
@@ -382,9 +435,12 @@ async function takeLockClaim(
   const holder: LockHolder = {
     operationId,
     what,
-    by: `${process.env.USERNAME ?? process.env.USER ?? "unknown"}@${process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? "unknown"} pid ${process.pid}`,
+    by: `${process.env.USERNAME ?? process.env.USER ?? "unknown"}@${machineName()} pid ${process.pid}`,
     takenAt: new Date().toISOString(),
     generation,
+    host: machineName(),
+    pid: process.pid,
+    startedAt: ownProcessStartedAt(),
   };
 
   // A fresh mkdir — an uncontested claim's own, or the one a won takeover just repeated —
@@ -460,14 +516,36 @@ async function takeLockClaim(
   return handle;
 }
 
+/** Options every lock-taking entry point threads through unchanged, down to the mutation
+ *  guard that serializes the claim itself.
+ *
+ *  `breakLockSupported` is not something a caller decides per-call — it is a fact about which
+ *  command is asking, set once at the command's own `guarded()`/`withLockUnlessHeld()` call
+ *  site (default true; a command that genuinely does not accept --break-lock passes false so
+ *  the refusal never names a flag it will then reject as unknown).
+ *
+ *  `breakForeignLockHost` is the exact host id an operator has confirmed as an orphaned
+ *  mutation-guard owner's own machine (R9-R1; instance-mutation-guard.ts, runbook in
+ *  docs/architecture.md) — never inferred, always typed out by a human. */
+export interface LockOptions {
+  readonly breakLock?: boolean;
+  readonly breakLockSupported?: boolean;
+  readonly breakForeignLockHost?: string;
+}
+
 /** Serializes every path-changing claim from the initial read through holder publication. */
 export async function takeLock(
   ctx: Context,
   what: string,
   operationId: string,
-  options: { breakLock?: boolean } = {},
+  options: LockOptions = {},
 ): Promise<HeldLock> {
-  return withMutationGuard(ctx, () => takeLockClaim(ctx, what, operationId, options), options.breakLock === true);
+  return withMutationGuard(
+    ctx,
+    () => takeLockClaim(ctx, what, operationId, options),
+    options.breakLock === true,
+    options.breakForeignLockHost,
+  );
 }
 
 /** Runs `body` holding the lock, and releases it whatever happens — including when the body
@@ -477,7 +555,7 @@ export async function withInstanceLock<T>(
   ctx: Context,
   what: string,
   operationId: string,
-  options: { breakLock?: boolean },
+  options: LockOptions,
   body: () => Promise<T>,
 ): Promise<T> {
   const held = await takeLock(ctx, what, operationId, options);
@@ -516,7 +594,7 @@ export async function withLockUnlessHeld<T>(
   ctx: Context,
   what: string,
   operationId: string,
-  options: { breakLock?: boolean },
+  options: LockOptions,
   body: () => Promise<T>,
 ): Promise<T> {
   if (lockHeldHere(ctx)) return body();
@@ -528,15 +606,45 @@ export async function withLockUnlessHeld<T>(
   }
 }
 
+/** Pulls the confirmed host id out of `--break-foreign-lock <hostId>`, for the commands that
+ *  parse their own argv well enough to leave it in place — see R9-R1 and
+ *  instance-mutation-guard.ts. Exported so the few direct `withLockUnlessHeld()`/`takeLock()`
+ *  callers (apply.ts, provision-agent, set.ts) read it the same way `guarded()` does below. */
+export function parseBreakForeignLockHost(args: string[]): string | undefined {
+  const index = args.indexOf("--break-foreign-lock");
+  return index === -1 ? undefined : args[index + 1];
+}
+
 /** What every mutating command wraps its work in.
  *
  *  A lock only two commands respected was a lock in name: `apply` took it while `restart`,
  *  `apply-config` and `push` changed the same instance beside it, which is the interleaving
  *  it exists to prevent. This is the one line each of them needs, and it reads the takeover
- *  flag from that command's own argv so no caller has to remember to pass it on.
+ *  flags from that command's own argv so no caller has to remember to pass them on.
  *
  *  Nested calls are a no-op: `apply` runs several of these commands as its steps and is
- *  already holding the lock, so acquiring again would refuse the run that started them. */
-export async function guarded<T>(ctx: Context, what: string, args: string[], body: () => Promise<T>): Promise<T> {
-  return withLockUnlessHeld(ctx, what, newOperationId(what), { breakLock: args.includes("--break-lock") }, body);
+ *  already holding the lock, so acquiring again would refuse the run that started them.
+ *
+ *  `options.breakLockSupported` is the one thing a call site still states explicitly: a
+ *  command whose own parser refuses --break-lock (backup, configure-provider, secrets, the
+ *  internal smoke round-trip step) passes false so its refusal never offers a flag it cannot
+ *  accept (UX-04). */
+export async function guarded<T>(
+  ctx: Context,
+  what: string,
+  args: string[],
+  body: () => Promise<T>,
+  options: { breakLockSupported?: boolean } = {},
+): Promise<T> {
+  return withLockUnlessHeld(
+    ctx,
+    what,
+    newOperationId(what),
+    {
+      breakLock: args.includes("--break-lock"),
+      breakLockSupported: options.breakLockSupported,
+      breakForeignLockHost: parseBreakForeignLockHost(args),
+    },
+    body,
+  );
 }

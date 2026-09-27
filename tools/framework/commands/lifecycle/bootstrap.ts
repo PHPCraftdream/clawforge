@@ -25,8 +25,14 @@ import { guarded } from "#src/runtime/instance-lock.ts";
 
 export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
   const noPull = args.includes("--no-pull");
-  for (const arg of args) {
-    if (arg !== "--no-pull") die(`unknown argument: ${arg}`);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--no-pull" || arg === "--break-lock") continue;
+    if (arg === "--break-foreign-lock") {
+      index += 1;
+      continue;
+    }
+    die(`unknown argument: ${arg}`);
   }
 
   // Structurally ahead of the lock, not inside it: the lock lives in a directory of its own
@@ -82,7 +88,9 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
   // apiKey first leaves that provider's entry incomplete and OpenClaw refuses the write,
   // which stopped bootstrap before this step ever ran. Built-in providers (zai and the
   // rest) are exempt from that requirement, so this order costs them nothing.
-  await applyConfig(live, []);
+  // restartAdvice: false — the gateway starts a few lines below, in this same run; the
+  // default "restart to pick it up" line would contradict that (UX-10).
+  await applyConfig(live, [], { restartAdvice: false });
   await configureProvider(live, []);
 
   await preflightSecrets(live);

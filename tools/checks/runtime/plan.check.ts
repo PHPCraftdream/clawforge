@@ -10,9 +10,10 @@
 // these steps recover exist nowhere else, and the flags and the order here are the
 // difference between a recovery and a wipe.
 
-import { planActions } from "#framework/commands/orchestration/plan.ts";
+import { planActions, planNextStepLine } from "#framework/commands/orchestration/plan.ts";
 import { problem } from "#framework/service/inspection.ts";
 import type { Inspection, Problem } from "#framework/service/inspection.ts";
+import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
 
 let failed = 0;
 
@@ -105,6 +106,29 @@ function ids(problems: Problem[], running = true): string[] {
   const withDrift = ids([problem("DECLARATION_MISSING", "x"), problem("CONFIG_DRIFT", "y")]);
   check("the declaration dump precedes the apply-config that writes the target", withDrift.slice(0, 2), ["apply-config-dump", "apply-config"]);
 }
+
+// --- UX-11: "apply it" only when apply would actually run something -----------------------
+
+function action(advisory: boolean): PlanAction {
+  return { id: "x", summary: "x", because: [], advisory: advisory ? true : undefined };
+}
+
+check("with at least one executable step, apply is the next step", planNextStepLine([action(false)]), "apply it: ./clawforge apply");
+check(
+  "with only advisory steps, apply is never suggested",
+  planNextStepLine([action(true), action(true)]).includes("apply it"),
+  false,
+);
+check(
+  "...and it says what apply would do instead: nothing",
+  planNextStepLine([action(true)]).includes("./clawforge apply would run nothing"),
+  true,
+);
+check(
+  "a mix of advisory and executable steps still points at apply",
+  planNextStepLine([action(true), action(false)]),
+  "apply it: ./clawforge apply",
+);
 
 process.stderr.write(failed === 0 ? "all plan checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

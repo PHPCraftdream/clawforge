@@ -173,6 +173,7 @@ try {
         dataDir: DATA_DIR,
         env: { OPENCLAW_GATEWAY_TOKEN: "test-token" },
         image: "ghcr.io/openclaw/openclaw:extended-stable",
+        bindAddress: "127.0.0.1",
         gatewayPort: "18789",
         serviceUrl: "http://127.0.0.1:18789",
       },
@@ -268,6 +269,11 @@ try {
       paths: { toContainer: (path: string) => path },
       runtime: {
         async portConflict(): Promise<string | undefined> { return undefined; },
+        // R9-07 residual: preflightPort now also probes raw listening sockets unless the
+        // deployment's own gateway is already running. A fresh host is not, so this must
+        // answer false rather than be missing — undefined-as-a-function threw here before
+        // ss/netstat were even asked, well short of the summary this test checks for.
+        async isRunning(): Promise<boolean> { return false; },
         async pullImage(): Promise<void> {},
         async runOneOff(): Promise<{ code: number; stdout: string; stderr: string }> {
           return { code: 0, stdout: "", stderr: "" };

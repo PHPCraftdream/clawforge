@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { composeFile, locksDir, toSettings, loadEnv, type Settings } from "../core/env.ts";
 import { deploymentDir, composeProjectName } from "./deployment.ts";
+import { machineName, ownProcessStartedAt, localLiveness } from "../security/instance-mutation-guard.ts";
 import type { PathBridge } from "../core/paths.ts";
 import type { ExecResult, Transport } from "./transport.ts";
 import { HelperNotRunning, type Runtime, type RunOneOffOptions, type Stack, type StackServiceState } from "./runtime.ts";
@@ -116,6 +117,46 @@ export class DockerRuntime implements Runtime {
     this.#reconcileSettings = options.reconcileSettings;
   }
 
+  /** Removes `compose-*` directories a PAST call left behind — a token-bearing compose.env
+   *  survives a crash between the mkdir below and this method's own finally block (crash 139
+   *  mid-command, an OOM kill, anything that skips Node's own cleanup entirely). Only ones
+   *  provably abandoned: an owner.json naming this machine and a pid that is provably gone
+   *  (never a bare "unreadable owner.json", which a sibling call still mid-write toward its
+   *  own — see the write order below — would also show for an instant; never a different
+   *  machine's own clawforge, whose pid cannot be checked from here at all). Best-effort:
+   *  a failed listing or removal here must never block the real compose call that follows. */
+  async #sweepStaleComposeEnvs(directory: string): Promise<void> {
+    let entries: string[];
+    try {
+      entries = await this.#transport.listFiles(directory);
+    } catch {
+      return;
+    }
+    const names = new Set(
+      entries
+        .map((entry) => entry.split("/")[0] ?? "")
+        .filter((name) => /^compose-[0-9a-f-]+$/.test(name)),
+    );
+    for (const name of names) {
+      const path = `${directory}/${name}`;
+      let owner: { pid?: unknown; machine?: unknown; startedAt?: unknown } | undefined;
+      try {
+        owner = JSON.parse(await this.#transport.readFile(`${path}/owner.json`)) as typeof owner;
+      } catch {
+        continue; // Unreadable or missing: cannot prove this run is gone, so it is left alone.
+      }
+      if (typeof owner !== "object" || owner === null) continue;
+      if (typeof owner.machine !== "string" || owner.machine !== machineName() || typeof owner.pid !== "number") continue;
+      const liveness = await localLiveness({
+        pid: owner.pid,
+        machine: owner.machine,
+        startedAt: typeof owner.startedAt === "string" ? owner.startedAt : undefined,
+      });
+      if (liveness !== "dead") continue;
+      await this.#transport.remove(path).catch(() => {});
+    }
+  }
+
   /** Supplies one operation's environment by file and removes it on completion. Defaults
    *  to the settings this runtime was built with; reconcile() is the one caller that hands
    *  in fresh ones read from disk. */
@@ -123,6 +164,8 @@ export class DockerRuntime implements Runtime {
     const directory = locksDir(settings.dataDir);
     const privateDirectory = `${directory}/compose-${randomUUID()}`;
     const path = `${privateDirectory}/compose.env`;
+    const ownerPath = `${privateDirectory}/owner.json`;
+    const owner = JSON.stringify({ pid: process.pid, machine: machineName(), startedAt: ownProcessStartedAt() });
     const body = serializeComposeEnv(settings.env);
     let cleanupNeeded = false;
     let operationFailed = false;
@@ -131,9 +174,14 @@ export class DockerRuntime implements Runtime {
     let result!: T;
     try {
       await this.#transport.mkdirp(directory);
+      await this.#sweepStaleComposeEnvs(directory);
       // Keep file creation private even before writeFile applies its mode.
       await this.#transport.exec("mkdir", ["-m", "700", privateDirectory]);
       cleanupNeeded = true;
+      // Owner recorded before the token-bearing file, not after: a crash between these two
+      // writes then leaves owner.json in place, which is exactly what the sweep above needs
+      // to prove the directory abandoned on a later run rather than leave it unowned forever.
+      await this.#transport.writeFile(ownerPath, owner, "600");
       await this.#transport.writeFile(path, body, "600");
       result = await action(path);
     } catch (error) {

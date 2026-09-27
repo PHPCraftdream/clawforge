@@ -6,10 +6,27 @@
 // `new URL("./x.ts", "file:///p/a.ts?g=1")` is `file:///p/x.ts` — so without this hook
 // every helper past the entry would load once and keep serving its first content
 // forever, which is exactly the staleness the graph checksum exists to fix. The hook
-// re-stamps the version onto relative resolutions. Local `#` imports fail in the graph
-// checker because their conditional import maps cannot yet be tracked safely; bare
-// installed packages remain ordinary stable dependencies.
+// re-stamps the version (and the recipe directory, `?r=`, carried alongside it) onto every
+// relative resolution.
+//
+// Package-internal `#specifier` imports (a supported string or node/import/default target
+// inside the recipe directory; hook-graph.ts's checksum refuses anything else before this
+// hook ever runs) are NOT handed to `nextResolve`: Node caches a package.json's parsed
+// content per real path for the life of the process, an internal cache this framework does
+// not control, so delegating would keep answering an edited import map with its first-read
+// target — the same staleness the query-versioned URL exists to prevent, one level up from
+// the module cache. Instead this hook recomputes the target itself, fresh off disk, with
+// hook-graph.ts's resolvePackageImport — the identical resolution the checksum already
+// proved safe — and short-circuits straight to its versioned URL. Bare installed packages
+// remain ordinary stable dependencies, resolved by `nextResolve` as always.
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolvePackageImport } from "./hook-graph.ts";
+
 const VERSION_PARAM = "g";
+/** The recipe directory a versioned hook graph is bounded to, carried alongside the
+ *  checksum so a `#specifier` reached at any depth in the graph can be resolved and
+ *  re-validated without threading the recipe directory through every resolve() call. */
+const RECIPE_PARAM = "r";
 
 interface ResolveContext {
   readonly parentURL?: string;
@@ -26,8 +43,19 @@ type NextResolve = (specifier: string, context: ResolveContext) => Promise<Resol
 export async function resolve(specifier: string, context: ResolveContext, nextResolve: NextResolve): Promise<ResolveResult> {
   const parentURL = context.parentURL;
   if (parentURL === undefined) return nextResolve(specifier, context);
-  const version = new URL(parentURL).searchParams.get(VERSION_PARAM);
+  const parentParams = new URL(parentURL).searchParams;
+  const version = parentParams.get(VERSION_PARAM);
   if (version === null) return nextResolve(specifier, context);
+  const recipeDirectory = parentParams.get(RECIPE_PARAM);
+
+  if (specifier.startsWith("#") && recipeDirectory !== null) {
+    const { targetPath } = await resolvePackageImport(specifier, fileURLToPath(parentURL), recipeDirectory);
+    const versioned = new URL(pathToFileURL(targetPath).href);
+    versioned.searchParams.set(VERSION_PARAM, version);
+    versioned.searchParams.set(RECIPE_PARAM, recipeDirectory);
+    return { url: versioned.href, shortCircuit: true };
+  }
+
   if (!specifier.startsWith("./") && !specifier.startsWith("../") && !specifier.startsWith("#")) {
     return nextResolve(specifier, context);
   }
@@ -35,5 +63,6 @@ export async function resolve(specifier: string, context: ResolveContext, nextRe
   if (!resolved.url.startsWith("file:")) return resolved;
   const versioned = new URL(resolved.url);
   versioned.searchParams.set(VERSION_PARAM, version);
+  if (recipeDirectory !== null) versioned.searchParams.set(RECIPE_PARAM, recipeDirectory);
   return { ...resolved, url: versioned.href };
 }

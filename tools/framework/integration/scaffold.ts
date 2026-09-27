@@ -104,6 +104,46 @@ export async function deploymentEnv(name: string, portStart?: number): Promise<s
     .join("\n");
 }
 
+const GITIGNORE_APPEND = `
+# OpenClaw deployment state — the gateway token and provider secrets, never framework
+# config (.mcp.json / .codex/ are handled separately, by setupProjectMcp below).
+.env
+secrets/
+`;
+
+/** Appended, not overwritten — mirrors init.ts's own updateGitignore, minus the
+ *  node_modules/ line an installed deployment needs and this one does not (there is no
+ *  package installed under apps/<name>/).
+ *
+ *  This repository's own .gitignore excludes apps/ entirely (root .gitignore,
+ *  docs/architecture.md), so nothing here is ever read by IT — this file only matters once
+ *  the deployment directory becomes a git repository of its own (the next: note below), and
+ *  that repository needs its secrets kept out of its history the same way init.ts's does. */
+async function updateGitignore(directory: string): Promise<void> {
+  const file = resolve(directory, ".gitignore");
+  let existing = "";
+  try {
+    existing = await readFile(file, "utf8");
+  } catch {
+    // No .gitignore yet — start from nothing.
+  }
+  if (existing.includes("secrets/")) return;
+  await writeFile(file, `${existing}${GITIGNORE_APPEND}`, "utf8");
+}
+
+/** Printed as part of createApp's next-steps, and its own constant so lock.ts's COMMIT_ADVICE
+ *  can be checked for staying consistent with it (UX-12). apps/ is entirely gitignored at
+ *  the monorepo root, so this directory has no git history of its own yet — deliberately not
+ *  run automatically here (`git init` is the operator's call, not this command's), but named
+ *  so "commit it" (lock.ts) has somewhere to point. */
+export function gitInitAdvice(name: string): string {
+  return (
+    `apps/ is entirely in this repository's own .gitignore, so apps/${name} has no git history ` +
+    `of its own — make it one if you want "./clawforge lock" committed: cd apps/${name} && git init ` +
+    "(the .gitignore just written here already keeps .env and secrets/ out of it)"
+  );
+}
+
 export async function createApp(name: string): Promise<void> {
   safeName("deployment", name);
 
@@ -124,6 +164,7 @@ export async function createApp(name: string): Promise<void> {
   await writeFile(resolve(directory, "app.ts"), declarationFor(name), "utf8");
   await writeFile(resolve(directory, "config", "desired-state.json"), DESIRED_STATE, "utf8");
   await createPrivateFile(resolve(directory, ".env"), await deploymentEnv(name));
+  await updateGitignore(directory);
   await setupProjectMcp(directory, "monorepo");
 
   log(`created ${directory}`);
@@ -132,4 +173,5 @@ export async function createApp(name: string): Promise<void> {
   info(`  2. ./clawforge --app ${name} bootstrap`);
   info("open the deployment directory in Claude Code or Codex; project MCP settings are already prepared");
   info("secrets and snapshots stay inside this directory, so deployments never share them");
+  info(gitInitAdvice(name));
 }

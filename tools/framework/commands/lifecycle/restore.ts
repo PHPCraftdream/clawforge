@@ -18,6 +18,7 @@ import {
   listArchive,
   listArchiveLinks,
   parseBackupArchive,
+  reportableProblems,
 } from "#src/service/archive.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { SshTransport } from "#src/runtime/transport.ts";
@@ -242,7 +243,12 @@ export async function restoreArchive(
   // Every entry, not just the first: one absolute path or one .. among thousands is enough
   // to write outside the data directory, and this runs before anything is stopped.
   const problems = inspectArchive(entries, await listArchiveLinks(ctx, archive));
-  for (const problem of problems.filter((entry) => !entry.fatal)) warn(problem.message);
+  // OpenClaw's own links into the container image are expected on every real snapshot
+  // (UX-15) — folded into one summary line instead of one warning per plugin-skill and
+  // codex-home tool shim; anything else, fatal or not, is still named exactly as before.
+  const { toReport, foldedImageLinks } = reportableProblems(problems);
+  for (const problem of toReport.filter((entry) => !entry.fatal)) warn(problem.message);
+  if (foldedImageLinks > 0) warn(`${foldedImageLinks} expected link(s) into the OpenClaw image`);
   const fatal = problems.filter((problem) => problem.fatal);
   if (fatal.length > 0) {
     for (const problem of fatal) warn(problem.message);

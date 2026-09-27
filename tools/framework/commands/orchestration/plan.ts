@@ -316,5 +316,16 @@ export async function plan(ctx: Context, args: string[]): Promise<void> {
     info(`${index + 1}. ${action.summary}`);
     info(`     ${action.advisory === true ? "(you)" : action.command}   because ${action.because.join(", ")}`);
   });
-  log("apply it: ./clawforge apply");
+  log(planNextStepLine(computed.actions));
+}
+
+/** What to tell the reader once the numbered steps are printed: apply runs the executable
+ *  ones, so advising it when there are none would send them to a command that does nothing —
+ *  UX-10/11/12 found this exact case (a plan of entirely advisory steps still said "apply
+ *  it"). Exported so the checks can pin the wording without a live instance. */
+export function planNextStepLine(actions: readonly PlanAction[]): string {
+  const executable = actions.filter((action) => action.advisory !== true);
+  return executable.length > 0
+    ? "apply it: ./clawforge apply"
+    : "every step above is advisory — ./clawforge apply would run nothing; carry them out yourself";
 }

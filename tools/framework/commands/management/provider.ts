@@ -45,8 +45,9 @@ function parseArgs(args: string[]): { force: boolean; provider?: string; env?: s
 /** Configure every selected provider using a target-side SecretRef. */
 export async function configureProvider(ctx: Context, args: string[]): Promise<void> {
   // No --break-lock support here (same choice backup.ts's own guarded() fix made): this
-  // command does not declare that flag, so nothing in args is read by guarded() either.
-  return guarded(ctx, "configure-provider", [], () => configureProviderLocked(ctx, args));
+  // command does not declare that flag, so nothing in args is read by guarded() either —
+  // and breakLockSupported: false keeps a refusal here from offering it anyway (UX-04).
+  return guarded(ctx, "configure-provider", [], () => configureProviderLocked(ctx, args), { breakLockSupported: false });
 }
 
 async function configureProviderLocked(ctx: Context, args: string[]): Promise<void> {

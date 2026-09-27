@@ -22,6 +22,7 @@ import { forbiddenRules, forbiddenViolations, verifySnapshot } from "#framework/
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
 import { withOutputSink } from "#framework/core/output.ts";
+import { DATA_DIR_MARKER } from "#framework/runtime/datadir.ts";
 import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport.ts";
 import { archiveRoot, createArchive, listArchive } from "#framework/service/archive.ts";
@@ -196,6 +197,8 @@ try {
     await transport.writeFile(`${DATA}/config/private.env`, "PRIVATE=exact-file\n");
     await transport.writeFile(`${DATA}/config/private.env.example`, "EXAMPLE=not-a-secret\n");
     await transport.writeFile(`${DATA}/workspace/SOUL.md`, "# fixture\n");
+    // UX-02: ensureDataDirs' own provenance marker, exactly as it leaves it on a real tree.
+    await transport.writeFile(`${DATA}/${DATA_DIR_MARKER}`, "clawforge data directory\n");
     const ctx = { settings: { dataDir: DATA, env: {} }, transport } as unknown as Context;
 
     check(
@@ -215,6 +218,7 @@ try {
     check("the archiver keeps the .example neighbor", migrateListing.includes("data/config/private.env.example"), true);
     check("the archiver still leaves the declared vault out", migrateListing.includes("data/vault/secret.env"), false);
     check("the archiver still leaves the declared exact file out", migrateListing.includes("data/config/private.env"), false);
+    check("migrate excludes the data-dir provenance marker (UX-02)", migrateListing.includes(`data/${DATA_DIR_MARKER}`), false);
     check(
       "the migrate publish gate sees no violation in a neighbors archive",
       JSON.stringify(forbiddenViolations("migrate", await installedRecipePrivatePaths(), relativeOf(migrateListing))),
@@ -230,6 +234,7 @@ try {
     await createArchive(ctx, { archive: shareArchive, profile: "share" });
     const shareListing = await listArchive(ctx, shareArchive);
     check("the share archive keeps both neighbors too", shareListing.includes("data/vault-public/notes.txt") && shareListing.includes("data/config/private.env.example"), true);
+    check("share excludes the data-dir provenance marker (UX-02)", shareListing.includes(`data/${DATA_DIR_MARKER}`), false);
     check(
       "the share gate sees no violation in a neighbors archive",
       JSON.stringify(forbiddenViolations("share", await installedRecipePrivatePaths(), relativeOf(shareListing))),
@@ -276,6 +281,30 @@ try {
     );
     check("the share refusal names the declared vault", rawOutput.join("").includes("vault"), true);
     check("the share refusal names the declared exact file", rawOutput.join("").includes("config/private.env"), true);
+
+    // UX-02, isolated from the vault-public/allowlist noise above: a data dir carrying only
+    // the marker and SHARE_ALLOWED content must pass share's own privacy check outright —
+    // this is the exact shape `smoke` hit on every fresh bootstrap before the fix.
+    const CLEAN = `${PARENT}/clean-data`;
+    await transport.mkdirp(`${CLEAN}/config`);
+    await transport.mkdirp(`${CLEAN}/workspace`);
+    await transport.writeFile(`${CLEAN}/config/openclaw.json`, JSON.stringify({ models: { providers: {} } }));
+    await transport.writeFile(`${CLEAN}/workspace/SOUL.md`, "# fixture\n");
+    await transport.writeFile(`${CLEAN}/${DATA_DIR_MARKER}`, "clawforge data directory\n");
+    const cleanCtx = { settings: { dataDir: CLEAN, env: {} }, transport } as unknown as Context;
+
+    const cleanShare = `${ARCHIVES}/clean-share.tar.gz`;
+    await createArchive(cleanCtx, { archive: cleanShare, profile: "share" });
+    check(
+      "a marker-only share archive passes its own privacy check",
+      await withOutputSink(() => {}, () => verifySnapshot(cleanCtx, cleanShare, "share")),
+      true,
+    );
+
+    const cleanFull = `${ARCHIVES}/clean-full.tar.gz`;
+    await createArchive(cleanCtx, { archive: cleanFull, profile: "full" });
+    const cleanFullListing = await listArchive(cleanCtx, cleanFull);
+    check("full keeps the data-dir provenance marker", cleanFullListing.includes(`clean-data/${DATA_DIR_MARKER}`), true);
 
     await transport.remove(PARENT).catch(() => {});
   }

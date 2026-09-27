@@ -7,6 +7,7 @@
 // after a takeover has finished.
 
 import { hostname } from "node:os";
+import { machineName, localLiveness } from "#framework/security/instance-mutation-guard.ts";
 import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, STALE_AFTER_MS } from "#framework/runtime/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
 
@@ -50,7 +51,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
 {
   const { ctx, files, dirs } = stubContext();
   const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
-  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  const machine = machineName();
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "dead", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
 
@@ -63,7 +64,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
 {
   const { ctx, files, dirs } = stubContext();
   const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
-  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  const machine = machineName();
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "dead", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
   ctx.transport.listFiles = async () => { throw new Error("guard listing failed"); };
@@ -77,7 +78,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
 {
   const { ctx, files, dirs } = stubContext();
   const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
-  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  const machine = machineName();
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "live", pid: process.pid, machine, takenAt: new Date().toISOString() }));
 
@@ -90,7 +91,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
 {
   const { ctx, files, dirs } = stubContext();
   const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
-  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  const machine = machineName();
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "remote", pid: 99999999, machine: `${machine}-other`, takenAt: new Date().toISOString() }));
 
@@ -99,10 +100,50 @@ function check(name: string, actual: unknown, expected: unknown): void {
   check("an unverifiable guard is not replaced", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "remote");
 }
 
+// --- R9-R1: an explicit, host-confirmed takeover of a foreign guard --------------------------
+//
+// Plain --break-lock never breaks a foreign owner (proven above: "an unverifiable guard is not
+// replaced"). --break-foreign-lock <hostId> is the separate, explicit path: it must refuse on
+// any host id that does not match the recorded owner's machine exactly, take over only on an
+// exact match, and leave a durable, readable record of who did it, when, and which foreign
+// owner it replaced — since the guard directory itself is gone once the takeover completes.
+
+{
+  const { ctx, files, dirs } = stubContext();
+  const home = lockPath(ctx).replace(/\/operation\.lock$/, "");
+  const guard = `${home}/operation.mutation`;
+  const machine = machineName();
+  const foreignOwner = { generation: "remote", pid: 424242, machine: `${machine}-other`, takenAt: new Date().toISOString() };
+  dirs.add(guard);
+  files.set(`${guard}/owner.json`, JSON.stringify(foreignOwner));
+
+  const message = await refused(() =>
+    takeLock(ctx, "apply", "op-wrong-host", { breakLock: true, breakForeignLockHost: `${machine}-not-it` }),
+  );
+  check("the wrong host id is refused", message !== "", true);
+  check("naming the host id that was actually recorded", message.includes(`${machine}-other`), true);
+  check("and the one that was typed", message.includes(`${machine}-not-it`), true);
+  check("a wrong host id never takes the guard", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "remote");
+  check("and never appends an audit record", files.has(`${home}/foreign-lock-takeovers.jsonl`), false);
+
+  const held = await takeLock(ctx, "apply", "op-right-host", { breakLock: true, breakForeignLockHost: `${machine}-other` });
+  check("the exact host id takes over the guard", (await readLockHolder(ctx))?.operationId, "op-right-host");
+
+  const audit = files.get(`${home}/foreign-lock-takeovers.jsonl`) ?? "";
+  const entries = audit.trim().split("\n").filter((line) => line !== "").map((line) => JSON.parse(line) as Record<string, unknown>);
+  check("exactly one takeover is recorded", entries.length, 1);
+  check("naming the confirmed host", entries[0]?.confirmedHost, `${machine}-other`);
+  check("and the exact foreign owner it replaced", entries[0]?.foreignOwner, foreignOwner);
+  check("recording when it happened", typeof entries[0]?.at === "string" && (entries[0].at as string).length > 0, true);
+  check("recording who did it", typeof entries[0]?.by === "string" && (entries[0].by as string).includes(`@${machine} `), true);
+
+  await held.release();
+}
+
 {
   const { ctx, files, dirs } = stubContext();
   const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
-  const machine = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  const machine = machineName();
   dirs.add(guard);
   files.set(`${guard}/owner.json`, JSON.stringify({ generation: "uncertain", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
   const originalKill = process.kill;
@@ -115,6 +156,28 @@ function check(name: string, actual: unknown, expected: unknown): void {
   }
   check("a process probe error does not prove the owner is dead", message.includes("in progress"), true);
   check("a process probe error preserves the guard", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "uncertain");
+}
+
+// A probe error on an owner already recorded as THIS machine must never be read as a foreign
+// one, even if --break-foreign-lock happens to name this exact machine: there is nothing
+// foreign here to confirm, and treating "cannot verify" as "confirmed foreign" would let a
+// local probe hiccup take over a guard that may still be genuinely held.
+{
+  const { ctx, files, dirs } = stubContext();
+  const guard = `${lockPath(ctx).replace(/\/operation\.lock$/, "")}/operation.mutation`;
+  const machine = machineName();
+  dirs.add(guard);
+  files.set(`${guard}/owner.json`, JSON.stringify({ generation: "uncertain-local", pid: 99999999, machine, takenAt: new Date(0).toISOString() }));
+  const originalKill = process.kill;
+  process.kill = (() => { throw Object.assign(new Error("process probe failed"), { code: "EIO" }); }) as typeof process.kill;
+  let message = "";
+  try {
+    message = await refused(() => takeLock(ctx, "apply", "op-local-probe-failure", { breakLock: true, breakForeignLockHost: machine }));
+  } finally {
+    process.kill = originalKill;
+  }
+  check("--break-foreign-lock naming this machine does not rescue a local probe error", message.includes("in progress"), true);
+  check("the guard is preserved", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "uncertain-local");
 }
 
 {
@@ -274,6 +337,16 @@ function check(name: string, actual: unknown, expected: unknown): void {
   releaseOwnership();
   await releasing;
   check("the release removes its own lock after the guard clears", dirs.has(lockPath(ctx)), false);
+}
+
+// Windows Node and a WSL distro Node on one PC share a host name, not pids: machineName()
+// carries the pid scope, so the other side's pid is never probed (and never called dead) here.
+{
+  const host = process.env.COMPUTERNAME ?? process.env.HOSTNAME ?? hostname();
+  check("machineName scopes the host by pid space", machineName().startsWith(`${host}:`) && machineName() !== `${host}:`, true);
+  const otherScope = `${host}:${process.platform === "win32" ? "linux-4026531836" : "win32"}`;
+  check("a same-host record from another pid space is unknown, not dead", await localLiveness({ pid: 99999999, machine: otherScope }), "unknown");
+  check("an own-scope record with a gone pid is dead", await localLiveness({ pid: 99999999, machine: machineName() }), "dead");
 }
 
 process.stderr.write(failed === 0 ? "all instance lock takeover checks passed\n" : `${failed} failed\n`);

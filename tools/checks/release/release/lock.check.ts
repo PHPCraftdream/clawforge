@@ -5,7 +5,8 @@
 // tag that stayed the same while the image behind it moved, a framework version bump, a
 // declaration replaced wholesale, a secret the instance did not use to need.
 
-import { compareLock, LOCK_VERSION, declarationChecksum } from "#framework/commands/management/lock.ts";
+import { compareLock, COMMIT_ADVICE, LOCK_VERSION, declarationChecksum } from "#framework/commands/management/lock.ts";
+import { gitInitAdvice } from "#framework/integration/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
 
@@ -183,6 +184,21 @@ check(
   checksumOfFileMap({ "a.md": "1".repeat(64), "b.md": "2".repeat(64) }),
   checksumOfFileMap({ "b.md": "2".repeat(64), "a.md": "1".repeat(64) }),
 );
+
+// --- UX-12: lock's "commit it" and new-app's own next-steps agree on the model --------------
+//
+// apps/ is entirely gitignored at the monorepo root (root .gitignore, docs/architecture.md),
+// so a bare "commit it" reads as if this repository's own history was the target — which
+// that ignore rule makes impossible. Both sides name the same model: a deployment directory
+// is meant to become its own git repository.
+
+check("lock's advice does not read as committable in THIS repository", COMMIT_ADVICE.includes("commit it"), true);
+check("it says the deployment's own repository, not an unqualified one", COMMIT_ADVICE.includes("own git repository"), true);
+
+const initAdvice = gitInitAdvice("demo");
+check("new-app's own note explains why (apps/ is gitignored here)", initAdvice.includes("gitignore"), true);
+check("and names the concrete command, not just the idea", initAdvice.includes("git init"), true);
+check("and confirms secrets are already kept out of that new repository", initAdvice.includes(".env") && initAdvice.includes("secrets/"), true);
 
 process.stderr.write(failed === 0 ? "all lock checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

@@ -6,7 +6,7 @@
 
 import { cp, access, readdir } from "node:fs/promises";
 import { register } from "node:module";
-import { basename, relative, resolve } from "node:path";
+import { basename, dirname, relative, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/log.ts";
 import { pathToFileURL } from "node:url";
 import { dependencyGraphChecksum } from "./hook-graph.ts";
@@ -142,7 +142,11 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
  *
  *  Hooks execute from their real location, so bare imports (`@clawforge/framework/private-config`,
  *  the recipe app's own dependencies) resolve against the recipe's package scope. Local
- *  `#imports` fail closed until their conditional import maps can be freshness-tracked safely.
+ *  `#imports` resolve through the recipe's own package.json `imports` map — a string or
+ *  node/import/default target that stays inside the recipe directory (hook-graph.ts folds
+ *  both the package.json and the resolved target into the checksum); anything the graph
+ *  cannot safely track (a bare package target, an absolute path, an escape via `..` or a
+ *  symlink, an unsupported condition) is refused before the hook ever executes.
  *  `import.meta.url` points at the real file, and sibling assets sit where relative
  *  reads expect them. Nothing is copied to temp storage, so there is no shared cache
  *  directory to win a race against, no pre-existing file to silently adopt, and no
@@ -153,6 +157,11 @@ const hookModules = new Map<string, { checksum: string; loaded: Record<string, u
 
 /** Query parameter carrying the hook graph's checksum on every versioned hook URL. */
 const HOOK_GRAPH_VERSION_PARAM = "g";
+
+/** Query parameter carrying the recipe directory alongside the checksum — hook-loader.ts
+ *  reads it back to resolve (and re-validate) a `#specifier` at any depth in the graph
+ *  without needing the recipe directory threaded through every resolve() call. */
+const HOOK_GRAPH_RECIPE_PARAM = "r";
 
 const HOOK_IMPORT_TIMEOUT_MS_DEFAULT = 30_000;
 
@@ -176,7 +185,10 @@ export async function importHookModule(path: string): Promise<Record<string, unk
     register(new URL("./hook-loader.ts", import.meta.url).href, import.meta.url);
     hookResolveHooksRegistered = true;
   }
-  const versionedURL = `${pathToFileURL(path).href}?${HOOK_GRAPH_VERSION_PARAM}=${checksum}`;
+  const versioned = new URL(pathToFileURL(path).href);
+  versioned.searchParams.set(HOOK_GRAPH_VERSION_PARAM, checksum);
+  versioned.searchParams.set(HOOK_GRAPH_RECIPE_PARAM, dirname(path));
+  const versionedURL = versioned.href;
   const evaluation = import(versionedURL) as Promise<Record<string, unknown>>;
   // If the deadline ever wins the race the evaluation is still pending in the background;
   // a rejection from it must not surface as an unhandled rejection and crash the process.

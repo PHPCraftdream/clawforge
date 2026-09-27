@@ -9,7 +9,7 @@ import type { Context } from "#src/core/context.ts";
 import { randomUUID } from "node:crypto";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { archiveCarriesContent, createArchive, fileSize, isProfile, backupArchiveName, listArchive, parseBackupArchive, symlinkedDataRoot, type Profile } from "#src/service/archive.ts";
+import { archiveCarriesContent, createArchive, fileSize, isProfile, backupArchiveName, listArchive, parseBackupArchive, symlinkedDataRoot, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { runningRecipeStacks } from "../management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "../management/recipe/lifecycle.ts";
@@ -121,7 +121,9 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
  *  so pull() and smoke() calling this while already holding the lock for their own
  *  operation cost nothing extra here. */
 export async function createBackup(ctx: Context, options: BackupOptions = {}): Promise<string> {
-  return guarded(ctx, "backup", [], () => createBackupLocked(ctx, options));
+  // No --break-lock support: its own parser (backup() below) rejects it, so a refusal here
+  // must not offer a flag it will then reject as unknown (UX-04).
+  return guarded(ctx, "backup", [], () => createBackupLocked(ctx, options), { breakLockSupported: false });
 }
 
 async function createBackupLocked(ctx: Context, options: BackupOptions): Promise<string> {
@@ -273,8 +275,13 @@ export async function backup(ctx: Context, args: string[]): Promise<void> {
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
     if (arg === "--hot") {
       options.hot = true;
+    } else if (shorthand !== undefined) {
+      // --share, --with-secrets, --migrate: the same shorthand vocabulary `pull` accepts
+      // (UX-13), so a script that passes one to either command gets the same profile.
+      options.profile = shorthand;
     } else if (arg === "--profile") {
       const value = args[index + 1];
       if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");

@@ -20,6 +20,18 @@
 // instance lock, and whatever happens, the gateway is left in the state the check found it
 // in — see the check's own comment for why. --quick exists because of this one check.
 //
+// Three checks below need a gateway held down for a consistent snapshot: the round-trip
+// check above, and the two verifier checks (an archive with secrets rejected, a share
+// snapshot accepted) — each takes its own archive to check. Called one at a time (as the
+// tests beside this file do), each manages its own stop/start cycle and that is the whole
+// story. Called together, through this file's own `smoke()`, they used to cost three
+// separate outages — ~70s observed on a live instance (UX-14). None of the three
+// FUNDAMENTALLY needs its own window: only taking the archive does, verifying and
+// restore-diffing one never touch the gateway. runArchiveChecks() below is what a real
+// `smoke` run uses instead: one pause, both archives this trio needs taken independently so
+// one failing does not block the other, one restart, then the slower checking work runs
+// with the gateway already back up.
+//
 // Every check lands on the shared check-outcome vocabulary (commands/check-outcome.ts):
 // passed, failed, not-checked (this deployment makes the check inapplicable) or
 // could-not-check (the check could not obtain a verdict). The last never reads as passing
@@ -102,6 +114,14 @@ async function sha256Of(ctx: Context, path: string): Promise<string> {
   return digest;
 }
 
+// The three archive-based checks' names, shared with runArchiveChecks()/runSmokeSuite()
+// below so the consolidated path recognises them by the same strings the checks below
+// declare themselves under — one spelling, never two to keep in sync.
+const REJECTS_SECRETS_CHECK = "verifier rejects an archive with secrets";
+const ACCEPTS_SHARE_CHECK = "verifier accepts a share snapshot";
+const ROUND_TRIP_CHECK = "snapshot round-trip is byte-identical";
+const ARCHIVE_CHECK_NAMES: ReadonlySet<string> = new Set([REJECTS_SECRETS_CHECK, ACCEPTS_SHARE_CHECK, ROUND_TRIP_CHECK]);
+
 export const checks: Check[] = [
   {
     name: "gateway answers all HTTP probes",
@@ -182,7 +202,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: "verifier rejects an archive with secrets",
+    name: REJECTS_SECRETS_CHECK,
     run: async (ctx) => {
       const archive = await reach("take a backup to verify", () => createBackup(ctx, { profile: "full" }));
       const passed = await verifySnapshot(ctx, archive, "share");
@@ -190,7 +210,7 @@ export const checks: Check[] = [
     },
   },
   {
-    name: "verifier accepts a share snapshot",
+    name: ACCEPTS_SHARE_CHECK,
     run: async (ctx) => {
       try {
         await pull(ctx, ["--share"]);
@@ -231,43 +251,57 @@ export const checks: Check[] = [
     // 2026-09-23, XA round 6, P1-01). A live overwrite-and-restore drill, if anyone wants
     // one, is an explicit, separately confirmed operation — not a side effect of `smoke`.
     //
-    // The whole thing runs under a single outer instance lock (guarded() below) that
-    // createBackup() then finds already held on its own async chain and treats as a no-op —
-    // see withLockUnlessHeld() in runtime/instance-lock.ts. Without that outer lock, the
-    // backup would take and release the lock on its own, and another framework run could
-    // slip into the gap while the gateway is held down.
-    //
-    // The gateway is paused for the consistent snapshot and, with leaveStopped, only comes
-    // back at the very end of the transaction: roundTripCheck records the initial
-    // running/stopped state before touching anything and restores exactly that state on
-    // every exit path, folding any compensation failure into the reported error instead of
-    // swallowing either (audit 2026-09-23, XA round 6, P2-06).
-    //
-    // The full backup itself stays behind and follows the usual retention.
-    name: "snapshot round-trip is byte-identical",
+    // Self-contained on purpose: called directly (as the tests beside this file do), it
+    // manages its own single stop/start cycle. Called together with its two sibling
+    // archive-based checks through the real `smoke` command, runArchiveChecks() (below,
+    // near runSmokeSuite()) runs the offline half of this same check — roundTripUsingArchive
+    // — against an archive the shared window already took, so the whole trio costs one
+    // outage instead of three (UX-14).
+    name: ROUND_TRIP_CHECK,
     run: async (ctx) => {
-      await guarded(ctx, "smoke round-trip", [], () => roundTripCheck(ctx));
+      // `smoke` itself declares no --break-lock (only --quick): a refusal from this internal
+      // step must not offer a flag the command has nowhere to read it from (UX-04).
+      await guarded(ctx, "smoke round-trip", [], () => roundTripCheck(ctx), { breakLockSupported: false });
     },
   },
 ];
 
-async function roundTripCheck(ctx: Context): Promise<void> {
-  // P2-06: the initial service state is read before anything is touched. This read cannot
-  // be compensated if it fails — but it is also the only thing that happens before the
-  // first mutation, so a failure here aborts the check with the instance exactly as it
-  // was found.
-  const initialRunning = await reach("ask whether the gateway is running", () => ctx.runtime.isRunning());
-
+/** Hashes the live witnesses a round-trip restore must reproduce byte-for-byte: the
+ *  required config file, plus whatever private paths are declared. Read on the LIVE data
+ *  directory, so what gets hashed is what the archive about to be taken will actually
+ *  contain — every caller below reads this before the archive that has to match it. */
+async function collectRoundTripWitnesses(ctx: Context): Promise<Map<string, string>> {
   const dataDir = ctx.settings.dataDir;
-  // The scratch root keeps the data directory's own basename — restore refuses an archive
-  // whose root does not match the data directory's name — under a scratch parent of its own.
+  const witnesses = new Map<string, string>();
+  const paths = new Set(["config/openclaw.json", ...await installedRecipePrivatePaths()]);
+  for (const relative of paths) {
+    const live = `${dataDir}/${relative}`;
+    if (!(await reach(`look for ${relative}`, () => ctx.transport.exists(live)))) {
+      if (relative === "config/openclaw.json") throw new CouldNotCheck("required smoke witness config/openclaw.json is missing");
+      continue;
+    }
+    witnesses.set(relative, await sha256Of(ctx, live));
+  }
+  return witnesses;
+}
+
+interface RoundTripScratch {
+  readonly scratch: string;
+  readonly restored: string;
+  readonly isolated: Context;
+}
+
+/** The scratch root keeps the data directory's own basename — restore refuses an archive
+ *  whose root does not match the data directory's name — under a scratch parent of its own.
+ *  The restore must not reach the live gateway: restoreArchive stops "the" runtime before
+ *  unpacking, but the scratch root has no compose project behind it. Everything else the
+ *  restore asks of the runtime (the recipe stacks' state) passes through to the real one —
+ *  bound to it, so private state keeps working — and the live service state is the caller's
+ *  own compensation to manage, not this function's. */
+function roundTripScratch(ctx: Context): RoundTripScratch {
+  const dataDir = ctx.settings.dataDir;
   const scratch = `${dataDirParent(dataDir)}/.clawforge-smoke-roundtrip-${randomBytes(4).toString("hex")}`;
   const restored = `${scratch}/${dataDirName(dataDir)}`;
-  // The restore must not reach the live gateway: restoreArchive stops "the" runtime before
-  // unpacking, but the scratch root has no compose project behind it. Everything else the
-  // restore asks of the runtime (the recipe stacks' state) passes through to the real one —
-  // bound to it, so private state keeps working — and the live service state belongs to
-  // this transaction's compensation alone (P2-06).
   const isolated: Context = {
     ...ctx,
     settings: { ...ctx.settings, dataDir: restored },
@@ -279,22 +313,57 @@ async function roundTripCheck(ctx: Context): Promise<void> {
       },
     }),
   } as unknown as Context;
+  return { scratch, restored, isolated };
+}
+
+/** Confirms every witness in `witnesses` came back byte-identical under the isolated root
+ *  `restored`. */
+async function compareRestoredWitnesses(ctx: Context, restored: string, witnesses: Map<string, string>): Promise<void> {
+  for (const [relative, digest] of witnesses) {
+    const copy = `${restored}/${relative}`;
+    expect(await reach(`look for ${relative} in the isolated root`, () => ctx.transport.exists(copy)), `the restore lost the smoke witness ${relative}`);
+    expect((await sha256Of(ctx, copy)) === digest, `the restore changed the smoke witness ${relative}`);
+  }
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Folds compensation failures into whatever the body already decided: never swallowed — a
+ *  compensation error always surfaces — and never allowed to replace the body's own verdict
+ *  either (P2-06). Shared by the round-trip check's standalone and offline-consolidated
+ *  shapes below, since both owe the same discipline to their own scratch-root cleanup. */
+function settleWithCompensation(bodyError: unknown, compensationErrors: unknown[]): void {
+  if (bodyError !== undefined) {
+    if (compensationErrors.length === 0) throw bodyError;
+    throw new AggregateError(
+      [bodyError, ...compensationErrors],
+      `the round-trip check failed and its cleanup also failed: ${describeError(bodyError)}; ${compensationErrors.map(describeError).join("; ")}`,
+    );
+  }
+  if (compensationErrors.length > 0) {
+    throw new AggregateError(compensationErrors, `the round-trip check passed but its cleanup failed: ${compensationErrors.map(describeError).join("; ")}`);
+  }
+}
+
+/** The round-trip check's standalone shape: reads the gateway's own starting state,
+ *  collects the witnesses, pauses (via createBackup's own leaveStopped-aware pause) to take
+ *  the full backup, restores into an isolated root and compares, then always restarts to the
+ *  state it found the gateway in (P2-06) — its own single stop/start cycle, unrelated to any
+ *  other check. This is what `checks` above runs, and what the tests beside this file call
+ *  directly. */
+async function roundTripCheck(ctx: Context): Promise<void> {
+  // P2-06: the initial service state is read before anything is touched. This read cannot
+  // be compensated if it fails — but it is also the only thing that happens before the
+  // first mutation, so a failure here aborts the check with the instance exactly as it
+  // was found.
+  const initialRunning = await reach("ask whether the gateway is running", () => ctx.runtime.isRunning());
+  const { scratch, restored, isolated } = roundTripScratch(ctx);
 
   let bodyError: unknown;
-
   try {
-    // The live config is always the read-only witness; private paths add coverage when
-    // declared. Tar keeps byte streams on the target and supports files and directories.
-    const witnesses = new Map<string, string>();
-    const paths = new Set(["config/openclaw.json", ...await installedRecipePrivatePaths()]);
-    for (const relative of paths) {
-      const live = `${dataDir}/${relative}`;
-      if (!(await reach(`look for ${relative}`, () => ctx.transport.exists(live)))) {
-        if (relative === "config/openclaw.json") throw new CouldNotCheck("required smoke witness config/openclaw.json is missing");
-        continue;
-      }
-      witnesses.set(relative, await sha256Of(ctx, live));
-    }
+    const witnesses = await collectRoundTripWitnesses(ctx);
 
     // FULL, not migrate: full is the only profile that keeps privatePaths, identity and
     // keys — the only restore that is a round trip.
@@ -306,14 +375,7 @@ async function roundTripCheck(ctx: Context): Promise<void> {
       restoreArchive(isolated, archive, { force: true, noStart: true }),
     );
 
-    for (const [relative, digest] of witnesses) {
-      const copy = `${restored}/${relative}`;
-      expect(
-        await reach(`look for ${relative} in the isolated root`, () => ctx.transport.exists(copy)),
-        `the restore lost the smoke witness ${relative}`,
-      );
-      expect((await sha256Of(ctx, copy)) === digest, `the restore changed the smoke witness ${relative}`);
-    }
+    await compareRestoredWitnesses(ctx, restored, witnesses);
   } catch (error) {
     bodyError = error;
   }
@@ -340,22 +402,34 @@ async function roundTripCheck(ctx: Context): Promise<void> {
   // the backup only ever pauses it, and the restore runs with noStart against the no-op
   // runtime — so "stopped" already is the initial state.
 
-  const describe = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-  if (bodyError !== undefined) {
-    // Whatever broke the round trip is the headline; a compensation that also failed is
-    // folded in, never swallowed — and never allowed to replace the body error either.
-    if (compensationErrors.length === 0) throw bodyError;
-    throw new AggregateError(
-      [bodyError, ...compensationErrors],
-      `the round-trip check failed and its cleanup also failed: ${describe(bodyError)}; ${compensationErrors.map(describe).join("; ")}`,
+  settleWithCompensation(bodyError, compensationErrors);
+}
+
+/** The round-trip check's offline shape: everything roundTripCheck() does AFTER an archive
+ *  and its witnesses already exist, and none of it touches the gateway — used by
+ *  runArchiveChecks() once the shared stop/start window has already produced both. The
+ *  scratch root is still this call's own litter and is still cleaned up unconditionally. */
+async function roundTripUsingArchive(ctx: Context, archive: string, witnesses: Map<string, string>): Promise<void> {
+  const { scratch, restored, isolated } = roundTripScratch(ctx);
+
+  let bodyError: unknown;
+  try {
+    await reachVerdict("restore the backup into the isolated root", () =>
+      restoreArchive(isolated, archive, { force: true, noStart: true }),
     );
+    await compareRestoredWitnesses(ctx, restored, witnesses);
+  } catch (error) {
+    bodyError = error;
   }
-  if (compensationErrors.length > 0) {
-    throw new AggregateError(
-      compensationErrors,
-      `the round-trip check passed but its cleanup failed: ${compensationErrors.map(describe).join("; ")}`,
-    );
+
+  const compensationErrors: unknown[] = [];
+  try {
+    await runMaybePrivileged(ctx, scratch, "rm", ["-rf", scratch]);
+  } catch (cleanupError) {
+    compensationErrors.push(cleanupError);
   }
+
+  settleWithCompensation(bodyError, compensationErrors);
 }
 
 export interface SmokeResult {
@@ -378,6 +452,34 @@ function printResult(result: SmokeResult): void {
   else info(line);
 }
 
+/** Classifies a thrown error into the shared four-outcome vocabulary. A throw a check did
+ *  not classify itself (NotChecked/CouldNotCheck) stays a failure — the reading it has
+ *  always had. Shared by runChecks()'s per-check loop and runArchiveChecks()'s consolidated
+ *  one, so both classify an outcome exactly the same way. */
+function toResult(name: string, error: unknown): SmokeResult {
+  const message = describeError(error);
+  if (error instanceof NotChecked) return { name, status: "not-checked", detail: message };
+  if (error instanceof CouldNotCheck) return { name, status: "could-not-check", detail: message };
+  return { name, status: "failed", detail: message };
+}
+
+/** Runs one check's body and turns its outcome (return, or a throw) into a SmokeResult. */
+async function evaluate(name: string, run: () => Promise<void>): Promise<SmokeResult> {
+  try {
+    await run();
+    return { name, status: "passed" };
+  } catch (error) {
+    return toResult(name, error);
+  }
+}
+
+function tally(counts: { passed: number; failed: number; notChecked: number; couldNotCheck: number }, result: SmokeResult): void {
+  if (result.status === "passed") counts.passed += 1;
+  else if (result.status === "failed") counts.failed += 1;
+  else if (result.status === "not-checked") counts.notChecked += 1;
+  else counts.couldNotCheck += 1;
+}
+
 /** Runs the checks, classifying every outcome into the shared vocabulary. Never throws:
  *  the counts are the answer. A throw a check did not classify itself stays a failure —
  *  the reading it has always had. */
@@ -386,26 +488,179 @@ export async function runChecks(ctx: Context, selected: Check[], onResult: (resu
   const counts = { passed: 0, failed: 0, notChecked: 0, couldNotCheck: 0 };
 
   for (const check of selected) {
-    let result: SmokeResult;
+    const result = await evaluate(check.name, () => check.run(ctx));
+    results.push(result);
+    tally(counts, result);
+    onResult(result);
+  }
+
+  return { results, ...counts };
+}
+
+/** A restart failure never hides behind a check that otherwise looked fine, and never
+ *  replaces a verdict the check already reached either — the same never-swallow discipline
+ *  settleWithCompensation() applies to the round-trip check's own cleanup, extended here to
+ *  the whole shared window: a passed verdict downgrades to failed, anything already failed
+ *  or could-not-check just gains the extra detail. */
+function foldRestartFailure(result: SmokeResult, restartError: unknown): SmokeResult {
+  if (restartError === undefined) return result;
+  const note = `gateway restart failed after this check ran: ${describeError(restartError)}`;
+  if (result.status === "passed") return { name: result.name, status: "failed", detail: note };
+  return { ...result, detail: result.detail === undefined ? note : `${result.detail}; ${note}` };
+}
+
+/** UX-14: the three archive-based checks each need the gateway paused for a consistent
+ *  snapshot, and used to each take (and publish) their own archive independently through
+ *  createBackup()/pull() — three separate stop/start cycles, ~70s of downtime on a live
+ *  instance, for one smoke run. Run together, through runSmokeSuite() below, they share ONE
+ *  stop/start cycle instead: the gateway is paused once, both archives this trio needs (a
+ *  full backup — reused for the reject-check AND the round-trip restore — and a share
+ *  snapshot) are taken independently so one failing does not block the other, the gateway is
+ *  restarted once, and only THEN does the slower verification and restore-diff work run —
+ *  none of it touches the gateway again (the isolated restore never did, even before this).
+ *  Each of the three checks still exists, unchanged, in `checks` above for standalone use —
+ *  the tests beside this file call them directly — each then managing its own window exactly
+ *  as before.
+ *
+ *  `wanted` is `selected`'s own subset (e.g. --quick drops the round-trip check): a check
+ *  never selected is neither run nor reported here, same as runChecks(). */
+async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>): Promise<SmokeResult[]> {
+  const wantRejects = wanted.has(REJECTS_SECRETS_CHECK);
+  const wantAccepts = wanted.has(ACCEPTS_SHARE_CHECK);
+  const wantRoundTrip = wanted.has(ROUND_TRIP_CHECK);
+  const names = [REJECTS_SECRETS_CHECK, ACCEPTS_SHARE_CHECK, ROUND_TRIP_CHECK].filter((name) => wanted.has(name));
+  if (names.length === 0) return [];
+
+  return guarded(ctx, "smoke archives", [], async (): Promise<SmokeResult[]> => {
+    let initialRunning: boolean;
     try {
-      await check.run(ctx);
-      result = { name: check.name, status: "passed" };
-      counts.passed += 1;
+      initialRunning = await reach("ask whether the gateway is running", () => ctx.runtime.isRunning());
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (error instanceof NotChecked) {
-        result = { name: check.name, status: "not-checked", detail: message };
-        counts.notChecked += 1;
-      } else if (error instanceof CouldNotCheck) {
-        result = { name: check.name, status: "could-not-check", detail: message };
-        counts.couldNotCheck += 1;
-      } else {
-        result = { name: check.name, status: "failed", detail: message };
-        counts.failed += 1;
+      // Nothing has been touched yet — the same boundary the standalone round-trip check's
+      // own initial read draws (P2-06): abort every archive check the same unanswered way
+      // rather than guess at a starting state to restore later.
+      return names.map((name) => toResult(name, error));
+    }
+
+    if (initialRunning) {
+      log("stopping the gateway once for this run's archive-based checks");
+      try {
+        await reach("pause the gateway", () => ctx.runtime.pause());
+      } catch (error) {
+        // Never paused, so nothing to restart either — same as above.
+        return names.map((name) => toResult(name, error));
       }
     }
+
+    // From here the gateway is stopped (or was never running). Each artifact is attempted
+    // independently so one failing does not block work that does not need it.
+    let witnesses: Map<string, string> | undefined;
+    let witnessError: unknown;
+    if (wantRoundTrip) {
+      try {
+        witnesses = await collectRoundTripWitnesses(ctx);
+      } catch (error) {
+        witnessError = error;
+      }
+    }
+
+    let fullArchive: string | undefined;
+    let fullError: unknown;
+    if (wantRejects || wantRoundTrip) {
+      try {
+        // FULL, not migrate: full is the only profile that keeps privatePaths, identity and
+        // keys — the only archive the round-trip restore below is a genuine round trip of,
+        // and the only one guaranteed to still carry whatever the reject-check needs to see
+        // rejected. leaveStopped: true — this shared window restarts the gateway itself,
+        // once, below; createBackup would otherwise restart it the moment this call returns.
+        fullArchive = await reachVerdict("take the full backup", () => createBackup(ctx, { profile: "full", leaveStopped: true }));
+      } catch (error) {
+        fullError = error;
+      }
+    }
+
+    let shareError: unknown;
+    if (wantAccepts) {
+      try {
+        // Same leaveStopped reasoning as the full backup above — and harmless either way
+        // here, since createBackup()/pull() already skip re-pausing a gateway they find
+        // already stopped (isRunning() is read fresh on every call).
+        await pull(ctx, ["--share"], { leaveStopped: true });
+      } catch (error) {
+        // pull's own die() IS the verdict — a rejected snapshot is a failed check, not an
+        // unreachable instance. Anything else never got far enough to judge anything. Same
+        // distinction the standalone check draws.
+        shareError = error instanceof UserError ? error : new CouldNotCheck(`could not take a share snapshot: ${describeError(error)}`);
+      }
+    }
+
+    let restartError: unknown;
+    if (initialRunning) {
+      try {
+        log("starting the gateway again");
+        await ctx.runtime.start();
+        await ctx.runtime.waitForHealth();
+        log("gateway is healthy");
+      } catch (error) {
+        restartError = error;
+      }
+    }
+
+    // Offline from here: verification and the restore-diff never touch the gateway again.
+    const results: SmokeResult[] = [];
+
+    if (wantRejects) {
+      const result = fullError !== undefined
+        ? toResult(REJECTS_SECRETS_CHECK, fullError)
+        : await evaluate(REJECTS_SECRETS_CHECK, async () => {
+            const passed = await verifySnapshot(ctx, fullArchive as string, "share");
+            expect(!passed, "the verifier accepted an archive containing credentials");
+          });
+      results.push(foldRestartFailure(result, restartError));
+    }
+
+    if (wantAccepts) {
+      const result = shareError !== undefined ? toResult(ACCEPTS_SHARE_CHECK, shareError) : { name: ACCEPTS_SHARE_CHECK, status: "passed" as const };
+      results.push(foldRestartFailure(result, restartError));
+    }
+
+    if (wantRoundTrip) {
+      const priorError = witnessError ?? fullError;
+      const result = priorError !== undefined
+        ? toResult(ROUND_TRIP_CHECK, priorError)
+        : await evaluate(ROUND_TRIP_CHECK, () => roundTripUsingArchive(ctx, fullArchive as string, witnesses as Map<string, string>));
+      results.push(foldRestartFailure(result, restartError));
+    }
+
+    return results;
+  });
+}
+
+/** The whole selected run: ordinary checks one at a time, exactly as runChecks() does; the
+ *  three archive-based checks, wherever they appear in `selected`, consolidated into one
+ *  stop/start cycle via runArchiveChecks() (UX-14) — their results are emitted together at
+ *  the position the first of them holds. This is what smoke() below runs; runChecks() stays
+ *  as it always was for anything that runs a check (or a stand-in one) on its own. */
+export async function runSmokeSuite(ctx: Context, selected: Check[], onResult: (result: SmokeResult) => void = printResult): Promise<SmokeSummary> {
+  const results: SmokeResult[] = [];
+  const counts = { passed: 0, failed: 0, notChecked: 0, couldNotCheck: 0 };
+  const record = (result: SmokeResult): void => {
     results.push(result);
+    tally(counts, result);
     onResult(result);
+  };
+
+  const wanted = new Set(selected.filter((check) => ARCHIVE_CHECK_NAMES.has(check.name)).map((check) => check.name));
+  let archiveGroupDone = false;
+
+  for (const check of selected) {
+    if (ARCHIVE_CHECK_NAMES.has(check.name)) {
+      if (archiveGroupDone) continue;
+      archiveGroupDone = true;
+      for (const result of await runArchiveChecks(ctx, wanted)) record(result);
+      continue;
+    }
+    record(await evaluate(check.name, () => check.run(ctx)));
   }
 
   return { results, ...counts };
@@ -430,9 +685,9 @@ export async function smoke(ctx: Context, args: string[]): Promise<void> {
   for (const arg of args) {
     if (arg !== "--quick") die(`unknown argument: ${arg}`);
   }
-  const selected = quick ? checks.filter((check) => !check.name.includes("round-trip")) : checks;
+  const selected = quick ? checks.filter((check) => check.name !== ROUND_TRIP_CHECK) : checks;
 
   log(`smoke run against ${ctx.settings.serviceUrl}`);
 
-  report(await runChecks(ctx, selected), quick);
+  report(await runSmokeSuite(ctx, selected), quick);
 }

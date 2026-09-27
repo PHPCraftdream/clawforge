@@ -313,7 +313,9 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
       // Same order as bootstrap, same reason: a new custom provider's baseUrl and models
       // come from the set's own desired-state.json, and OpenClaw's schema requires them
       // before it accepts an apiKey for a provider id it does not already know.
-      await applyConfig(tryCtx, []);
+      // Same reason as bootstrap's own call: this throwaway instance starts a few lines
+      // below, so the default "restart to pick it up" advice would contradict that.
+      await applyConfig(tryCtx, [], { restartAdvice: false });
       await configureProvider(tryCtx, []);
       await preflightSecrets(tryCtx);
 

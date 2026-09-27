@@ -106,7 +106,9 @@ try {
       ["inspect", "--format", "{{json .}}", "container-one"],
     );
     check("the inspect never names the configured image", inspects(execArgs)[0].join(" ").includes("x"), false);
-    check("the lookup still runs through compose's own environment file", writes.length, 1);
+    // writes also carries the temporary env-file's owner record (pid, machine — task #33),
+    // written beside compose.env; only the env-file write is this assertion's concern.
+    check("the lookup still runs through compose's own environment file", writes.filter((path) => path.endsWith("/compose.env")).length, 1);
   }
 
   {

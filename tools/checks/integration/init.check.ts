@@ -111,6 +111,16 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
     check("desired-state.json was written", await readFile(resolve(root, "config", "desired-state.json"), "utf8").then(() => true, () => false), true);
     check(".env was written", await readFile(resolve(root, ".env"), "utf8").then(() => true, () => false), true);
 
+    // The published image (2026.6.x) rejects the whole config write on an unknown key
+    // ("Unrecognized key: \"telemetry\""), so a template key the image does not know breaks
+    // every fresh bootstrap. The template holds only keys that image accepts.
+    const desiredState = JSON.parse(await readFile(resolve(root, "config", "desired-state.json"), "utf8")) as { path: string; value: unknown }[];
+    check(
+      "a fresh deployment declares no telemetry key the published image rejects",
+      desiredState.some((entry) => entry.path.startsWith("telemetry")),
+      false,
+    );
+
     // The shim invokes node with script_path as an ARGUMENT ("node dist/entry/bin.js"),
     // which bypasses bin.js's own shebang entirely — Node reads a shebang line only when the
     // OS resolves the file as an executable, not when it is handed a path to run. Without

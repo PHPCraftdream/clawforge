@@ -63,7 +63,8 @@ const gateCommands: GateCommand[] = [
       "config/desired-state.json and an app.ts declaring every framework " +
       "command.\n" +
       "The port avoids readable sibling .env files; it is not a host availability check. " +
-      "Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
+      "Bootstrap checks active Docker deployments AND raw listening sockets (ss/netstat) on the target " +
+      "before preparing data or pulling an image.\n" +
       "Refuses if the directory already exists — run this once per deployment, then " +
       "./clawforge --app <name> bootstrap.",
     arguments: [{ name: "name", description: "Deployment name", kind: "positional", required: true }],

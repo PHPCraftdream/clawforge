@@ -16,6 +16,15 @@ follows from the boundary rather than being a separate decision — a deployment
 consists of one host's paths, its keys and its snapshots, which is exactly what must not be
 committed. A fresh clone therefore starts with `./clawforge new-app <name>`.
 
+That leaves the question `./clawforge lock` raises — its committed output is a promise of
+reproducibility, and a promise needs somewhere to live. The answer: a deployment directory is
+meant to become a git repository of its own, separate from this one — `setupProjectMcp`
+already writes it a *nested* `.gitignore` (`.mcp.json`, `.codex/`), which means nothing at all
+to the monorepo's own blanket ignore and only makes sense once the directory has a `.git` of
+its own. `new-app` writes that `.gitignore` too (`.env`, `secrets/`) and names the `git init`
+step in its own next-steps; it does not run it automatically — that decision, like the
+directory's whole existence, stays the operator's.
+
 ```
 tools/framework/          package metadata and shared service definition
   core/                    types, environment, paths and output
@@ -202,14 +211,58 @@ Sharing the name would collapse two permissions into one.
 A lock outlives a run killed by a signal — a closed pipe will do it — because a `finally`
 does not run then. That is what the staleness report and `--break-lock` are for; there is no
 cleanup path that survives `SIGKILL`, and pretending otherwise would be worse than saying so.
-The short-lived `operation.mutation` guard records its owning process: a dead owner on the
-same machine is recovered automatically, and an ownerless guard can be recovered with
-`--break-lock`. A live or unverifiable guard is kept until it can be checked from its owner machine.
-If the owner was on another machine, stop that machine's operation and verify it cannot
-restart before touching the guard. Inspect the guard's `owner.json` and the operation lock
-on the target, then retire the exact stale guard through an operator-controlled maintenance
-procedure. Neither `--break-lock` nor a guessed PID proves a remote owner dead; never remove
-the guard while another host could still be mutating the deployment.
+Every pid a lock or guard records is the CLI process's own — wherever `clawforge` itself runs,
+never anything living on a WSL or SSH transport's target — so liveness is always checked
+locally, with the tool's own `process.kill(pid, 0)`, regardless of which transport reaches the
+deployment. When the outer instance lock's holder was recorded on this same machine and its
+pid is provably gone, the refusal says so plainly instead of only reporting age; `--break-lock`
+is still required either way — a provable fact added to the report is not the same thing as
+taking the lock automatically, which this design refuses to do under any condition.
+
+The short-lived `operation.mutation` guard records its owning process the same way: a dead
+owner on the same machine is recovered automatically, and an ownerless guard can be recovered
+with `--break-lock`. A live or unverifiable guard is kept until it can be checked from its
+owner machine — including a guard whose recorded owner is a **different** machine, since a
+remote pid's liveness cannot be probed from here at all, and neither `--break-lock` nor a
+guessed PID proves it dead.
+
+**Runbook — taking over a guard orphaned on another machine.** First, actually verify: reach
+the recorded machine (`owner.json`'s `machine` field) and confirm its `clawforge` process is
+gone — a crashed run, not a slow one. Only once that is certain, run any lock-taking command
+(`up`, `restart`, `down`, `bootstrap` today) with
+`--break-foreign-lock <hostId>`, where `<hostId>` is exactly that recorded `machine` value.
+That value is the host name plus its pid space (`PC:win32`, `PC:linux-4026531836`): Windows
+Node and a WSL distro's Node on one PC share a host name but not pids, so each treats the
+other's records as foreign rather than probing a pid that means nothing on its side.
+A mismatch refuses outright, naming what was actually recorded, so a copy-pasted wrong host id
+cannot silently take over the wrong guard. A match takes it over and appends one line to
+`<data>-locks/foreign-lock-takeovers.jsonl` — who did it, when, and the exact foreign owner
+record it replaced — a durable audit trail beside the lock home, since the guard directory
+itself is removed once the takeover completes. This is never automatic and never inferred from
+age or a guessed pid: it exists only for an operator who has already confirmed the other
+machine is not running that operation anymore.
+
+A failed `mkdir` is not evidence of a lock, only of a failure. Reading every non-zero exit as
+"held" turned an unwritable directory into a confident report about a lock that did not
+exist, complete with a `--break-lock` suggestion that removes nothing and then fails
+identically. Probing the directory afterwards separates the two, and the unexplained case
+keeps its own error text rather than being given someone else's story.
+
+Not every lock-taking command accepts `--break-lock`: `backup`, `configure-provider`, `secrets`
+and the internal round-trip step inside `smoke` guard a single operation each time they run
+and take no takeover flag at all — their own parsers reject it, by design, the same way
+`--force` is not accepted everywhere either. A refusal from one of these never advises
+`--break-lock`; it names a command that does accept it instead (`up --break-lock`, the
+simplest one), so the advice a reader gets is always something they can actually run.
+
+Every crash that can leave `operation.lock`/`operation.mutation` behind can leave a Docker
+runtime's own temporary compose env-file directory (`<data>-locks/compose-<uuid>/`) behind
+too — it carries `OPENCLAW_GATEWAY_TOKEN` in plain text for the one `docker compose` call it
+was made for. Each such directory now records its own creator (pid and machine, written before
+the token-bearing file, not after) so a later call can tell a genuinely abandoned one — same
+machine, pid provably gone — from one a concurrent call is still using, and sweep only the
+former. An unreadable or missing owner record is left alone rather than guessed at, the same
+"report, never silently act" rule as everywhere else in this file.
 
 A failed `mkdir` is not evidence of a lock, only of a failure. Reading every non-zero exit as
 "held" turned an unwritable directory into a confident report about a lock that did not
@@ -304,6 +357,34 @@ build the workspace and the job, and the container has no use for them.
 Re-running the command is the same contract `apply-config` has: declared state wins.
 Workspace prompt files and mirrored recipe data are rewritten to match the repository;
 whatever the agent has written into its own workspace since is never touched.
+
+### Recipe hooks are loaded fresh, not once per process
+
+A recipe's own `prepare.ts`/`verify.ts`/`onboard.ts`/`quiesce.ts`/`resume.ts` execute from
+their real location under the recipe directory — normal Node module resolution applies, so
+a hook can import its own dependencies (`node_modules` in the recipe's package scope) and
+relative helper files the way any other module would.
+
+The one thing normal `import()` gets wrong here is a long-lived process: Node's module map
+is keyed by URL and never invalidated, so an MCP session that imports the same hook twice
+would answer the second call with the first call's module even after the file changed on
+disk. The framework works around this by hashing the hook's whole local import graph —
+itself, every relative import it reaches, transitively — before each load, and re-importing
+under a checksum-derived query parameter whenever that hash changes; an unchanged graph
+answers from the checksum-keyed cache without importing at all. Editing a helper two levels
+deep is therefore visible on the very next call in the same process, the same as editing the
+hook file itself.
+
+A recipe's own package-internal `#specifier` imports (Node subpath imports, resolved through
+the nearest `package.json`'s `"imports"` field inside the recipe directory) are supported the
+same way: both the `package.json` and the file it resolves to join the hashed graph, so
+editing the target, or repointing the import map to a different file, is picked up exactly
+like a relative import. Only a target the graph can fully account for is accepted — a string
+or a `{node, import, default}` conditional object resolving to a package-relative path that
+stays inside the recipe directory, even through a symlink. A bare package target, an
+absolute path, an escape via `..` or a symlink, a subpath pattern, or any other condition
+name is refused before the hook ever executes: the checksum cannot promise freshness for an
+import shape it does not fully understand, so it fails closed rather than guessing.
 
 ## Ordering on a first run
 

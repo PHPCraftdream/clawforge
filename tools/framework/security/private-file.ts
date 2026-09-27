@@ -1,7 +1,7 @@
 import { chmod, mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnLocal } from "../runtime/transport.ts";
 import { createPathBridge } from "../core/paths.ts";
 import { info, warn } from "../core/log.ts";
@@ -277,21 +277,45 @@ export async function probeWslOpen(distro: string, targetPath: string): Promise<
   return `no verdict (exit ${result.code})`;
 }
 
+/** Directories already reported this process. reportWslBoundary spawns wsl.exe once per
+ *  installed distribution — not cheap — and every write of a deployment's .env used to run
+ *  it fresh regardless: the temporary file AND the final rename each went through
+ *  protectPrivateFile, so generating a token alone printed the same warning twice before
+ *  bootstrap said anything useful, once per installed distribution each time. Keyed on the
+ *  containing directory — the boundary a Windows-mounted drive creates is a property of
+ *  where the deployment sits, not of which file inside it triggered the check — and kept for
+ *  the life of the process only: a later run (a different day, a distribution installed or
+ *  removed meanwhile) checks again. */
+const reportedBoundaryDirs = new Set<string>();
+
+/** Test-only seam: the checks below script the same probe repeatedly against different
+ *  answers and need it un-throttled, unlike every real caller. */
+export function resetWslBoundaryDedupe(): void {
+  reportedBoundaryDirs.clear();
+}
+
 /** The Windows half is only half the protection when WSL is installed: every drive is
  *  automounted into every distribution, and across that boundary a Windows ACL carries no
  *  weight between Linux users. Where the deployment sits is the operator's decision, not a
  *  fault of this call, so the boundary is reported rather than enforced: each installed
  *  distribution is probed about the file itself, and whatever it can open — or whatever this probe
  *  could not answer, up to and including a distribution listing that failed outright — is said
- *  out loud instead of silently claimed as owner-only. */
+ *  out loud instead of silently claimed as owner-only. At most once per process per directory
+ *  (see reportedBoundaryDirs above), and never for a temporary file (protectPrivateFile's
+ *  `boundary: false` skips the call before it reaches here) — a value nobody will ever read
+ *  under that name is not a boundary worth reporting. */
 async function reportWslBoundary(file: string): Promise<void> {
+  const directory = dirname(resolve(file));
+  if (reportedBoundaryDirs.has(directory)) return;
+  reportedBoundaryDirs.add(directory);
+
   const listing = await installedWslDistros();
   if (listing.state === "absent") return;
   const unverified: string[] = [];
+  const exposed: { distro: string; targetPath: string }[] = [];
   if (listing.state === "unlisted") {
     unverified.push(`the installed distributions could not be listed (${listing.reason})`);
   }
-  let exposed = false;
   for (const distro of listing.state === "listed" ? listing.distros : []) {
     const targetPath = await automountedPath(distro, file);
     if (targetPath === undefined) {
@@ -301,19 +325,24 @@ async function reportWslBoundary(file: string): Promise<void> {
     const verdict = await probeWslOpen(distro, targetPath);
     if (verdict === "DENIED") continue;
     if (verdict === "OPEN") {
-      exposed = true;
-      warn(
-        `${file} is owner-only on the Windows side only: distribution "${distro}" opens it as an unprivileged ` +
-          `Linux user via ${targetPath} — a Windows ACL does not separate Linux users on a mounted drive`,
-      );
+      exposed.push({ distro, targetPath });
       continue;
     }
     unverified.push(`"${distro}" at ${targetPath}: ${verdict}`);
   }
-  if (exposed) {
+  // One line naming every exposed distribution, not one line each: this used to run once per
+  // installed distribution and flood the output before anything else printed. Running from
+  // Windows stays the supported setup either way — this is a hardening option, not a verdict
+  // that the setup is wrong.
+  if (exposed.length > 0) {
+    warn(
+      `${file} is owner-only on the Windows side only: ` +
+        `${exposed.map(({ distro, targetPath }) => `"${distro}" opens it as an unprivileged Linux user via ${targetPath}`).join("; ")} — ` +
+        "a Windows ACL does not separate Linux users on a mounted drive",
+    );
     info(
-      "move the deployment into the distribution's own filesystem (and run the framework from there), " +
-        "or give the drive restrictive DrvFs permissions in that distribution's /etc/wsl.conf",
+      "optional hardening: move the deployment into a distribution's own filesystem (and run the framework from " +
+        "there), or give the drive restrictive DrvFs permissions in that distribution's /etc/wsl.conf",
     );
   }
   if (unverified.length > 0) {
@@ -327,12 +356,17 @@ async function reportWslBoundary(file: string): Promise<void> {
 
 /** Ensures a credential-bearing file is owner-only, and can prove it: POSIX modes where they
  *  apply; on Windows a rebuilt SID-exact ACL plus an honest report of what the WSL boundary
- *  can and cannot verify. */
-export async function protectPrivateFile(file: string): Promise<void> {
+ *  can and cannot verify.
+ *
+ *  `boundary: false` skips that report — for a temporary file on its way to replacing the
+ *  real one (replacePrivateFile's own createPrivateFile call): nobody will ever read a
+ *  credential under that name, so a boundary report about it would be pure noise, printed
+ *  before the report for the file that actually matters. */
+export async function protectPrivateFile(file: string, options: { boundary?: boolean } = {}): Promise<void> {
   if (process.platform === "win32") {
     const owner = await grantWindowsAcl(file);
     await assertDaclOwnerOnly(file, owner);
-    await reportWslBoundary(file);
+    if (options.boundary !== false) await reportWslBoundary(file);
     return;
   }
 
@@ -423,8 +457,12 @@ export async function unprotectedPrivateFile(file: string): Promise<string | und
   return (mode & 0o077) === 0 ? undefined : `mode is ${mode.toString(8)}, expected 600`;
 }
 
-/** Creates a private file without exposing its first byte under the process umask. */
-async function createPrivateFileContent(file: string, content: string | Uint8Array): Promise<void> {
+/** Creates a private file without exposing its first byte under the process umask.
+ *  `temp: true` (replacePrivateFile's own call for its temporary file) skips the WSL
+ *  boundary report on both of protectPrivateFile's calls below — never for a name nothing
+ *  will read a credential under. */
+async function createPrivateFileContent(file: string, content: string | Uint8Array, options: { temp?: boolean } = {}): Promise<void> {
+  const boundary = options.temp !== true;
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   let created = false;
   try {
@@ -433,7 +471,7 @@ async function createPrivateFileContent(file: string, content: string | Uint8Arr
     if (process.platform === "win32") {
       await handle.close();
       handle = undefined;
-      await protectPrivateFile(file);
+      await protectPrivateFile(file, { boundary });
       handle = await open(file, "r+");
     }
     if (typeof content === "string") await handle.writeFile(content, "utf8");
@@ -445,15 +483,15 @@ async function createPrivateFileContent(file: string, content: string | Uint8Arr
     await handle?.close();
   }
   try {
-    if (process.platform !== "win32") await protectPrivateFile(file);
+    if (process.platform !== "win32") await protectPrivateFile(file, { boundary });
   } catch (error) {
     await unlink(file).catch(() => {});
     throw error;
   }
 }
 
-export function createPrivateFile(file: string, content: string): Promise<void> {
-  return createPrivateFileContent(file, content);
+export function createPrivateFile(file: string, content: string, options?: { temp?: boolean }): Promise<void> {
+  return createPrivateFileContent(file, content, options);
 }
 
 export function createPrivateBinaryFile(file: string, content: Uint8Array): Promise<void> {
@@ -469,7 +507,7 @@ export async function replacePrivateFile(file: string, content: string): Promise
   const temporary = `${file}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
   let created = false;
   try {
-    await createPrivateFile(temporary, content);
+    await createPrivateFile(temporary, content, { temp: true });
     created = true;
     await rename(temporary, file);
   } catch (error) {

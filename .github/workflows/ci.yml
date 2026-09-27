@@ -166,6 +166,7 @@ jobs:
             tools/checks/runtime/convergence/inspect/folder.check.ts
             tools/checks/runtime/convergence/inspect/lock.check.ts
             tools/checks/runtime/convergence/inspect/recipes.check.ts
+            tools/checks/runtime/convergence/instance-lock/advice.check.ts
             tools/checks/runtime/convergence/instance-lock/claims.check.ts
             tools/checks/runtime/convergence/instance-lock/misc.check.ts
             tools/checks/runtime/convergence/instance-lock/nesting.check.ts
@@ -179,6 +180,7 @@ jobs:
             tools/checks/runtime/lifecycle/smoke/outcomes.check.ts
             tools/checks/runtime/lifecycle/smoke/drift.check.ts
             tools/checks/runtime/lifecycle/smoke/roundtrip.check.ts
+            tools/checks/runtime/lifecycle/smoke/archive-window.check.ts
             tools/checks/runtime/plan.check.ts
             tools/checks/runtime/private-history-restore.check.ts
             tools/checks/runtime/service/deploy/checkout-policy.check.ts
@@ -191,6 +193,7 @@ jobs:
             tools/checks/runtime/service/state/state.check.ts
             tools/checks/runtime/service/state/rotation.check.ts
             tools/checks/runtime/service/state/backup-policy.check.ts
+            tools/checks/runtime/service/state/backup-pull-flags.check.ts
             tools/checks/security/acceptance/accept.check.ts
             tools/checks/security/acceptance/plan.check.ts
             tools/checks/security/credentials/private-config.check.ts

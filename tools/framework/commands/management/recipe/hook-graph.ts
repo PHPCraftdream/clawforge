@@ -1,8 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 
-/** Hash a hook and every relative module it statically reaches. */
+/** Hash a hook and every relative or package-internal (`#specifier`) module it statically
+ *  reaches. */
 interface ImportSpan { readonly start: number; readonly end: number; readonly specifier: string }
 
 interface HookToken {
@@ -171,7 +172,11 @@ function relativeImportSpans(source: string): ImportSpan[] {
   return spans;
 }
 
-async function packageScopeFile(path: string): Promise<string> {
+/** Nearest `package.json` at or above `path`, never searched for past `boundary` (the
+ *  recipe directory): a scope declared outside the recipe is not the recipe's to trust,
+ *  and walking past it would let an unrelated ancestor manifest decide where a recipe's
+ *  `#specifier` lands. */
+async function packageScopeFileWithin(path: string, boundary: string): Promise<string> {
   let directory = dirname(path);
   while (true) {
     const candidate = resolve(directory, "package.json");
@@ -181,14 +186,116 @@ async function packageScopeFile(path: string): Promise<string> {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+    if (directory === boundary) break;
     const parent = dirname(directory);
-    if (parent === directory) throw new Error(`cannot resolve package import from ${path}: no package.json scope`);
+    if (parent === directory) break;
     directory = parent;
   }
+  throw new Error(`cannot resolve package import from ${path}: no package.json scope inside the recipe directory ${boundary}`);
 }
 
-/** Hash a hook and its local import graph; missing files are left for Node to report. */
+/** The only conditions a recipe hook actually runs under: plain ESM, under Node, with no
+ *  custom `--conditions`. All three are active for that exact shape, so — once every other
+ *  key has been rejected — the first key an object declares is the one Node's own resolver
+ *  would pick too, and no separate priority order needs reimplementing. */
+const SUPPORTED_IMPORT_CONDITIONS = new Set(["node", "import", "default"]);
+
+/** Resolves one `imports` map entry to its string target. Rejects (rather than guesses at)
+ *  any condition outside node/import/default, any non-string/non-object target, and an
+ *  empty condition object — the checksum cannot promise freshness for a shape it does not
+ *  fully understand, so it fails closed instead of silently picking a branch. */
+function resolveConditionalTarget(entry: unknown, key: string, packageJsonPath: string): string {
+  if (typeof entry === "string") return entry;
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    throw new Error(`recipe hook package import ${key}: ${packageJsonPath} target must be a string or a {node,import,default} object`);
+  }
+  const record = entry as Record<string, unknown>;
+  const keys = Object.keys(record);
+  const unsupported = keys.filter((condition) => !SUPPORTED_IMPORT_CONDITIONS.has(condition));
+  if (unsupported.length > 0) {
+    throw new Error(
+      `recipe hook package import ${key}: ${packageJsonPath} uses unsupported condition(s) ${unsupported.join(", ")} (only node/import/default can be freshness-tracked)`,
+    );
+  }
+  if (keys.length === 0) {
+    throw new Error(`recipe hook package import ${key}: ${packageJsonPath} declares an empty condition object`);
+  }
+  return resolveConditionalTarget(record[keys[0] as string], key, packageJsonPath);
+}
+
+export interface PackageImportResolution {
+  readonly packageJsonPath: string;
+  readonly targetPath: string;
+}
+
+/** Resolves a `#specifier` against the nearest package.json `imports` map, reading the
+ *  manifest fresh off disk every call. Exported so hook-loader.ts's resolve hook can reuse
+ *  the exact same, already-validated resolution at actual import time instead of handing the
+ *  specifier to Node's own resolver: Node caches a package.json's parsed content per real
+ *  path for the life of the process (an internal cache this framework does not control), so
+ *  after an edit to the import map, `nextResolve` keeps answering with the map's first-read
+ *  target — the same staleness this whole loader exists to prevent, one level up from the
+ *  module cache. A target is accepted only when it is a package-relative path (`./…`) that
+ *  resolves — even through a symlink — inside the recipe directory; bare package targets,
+ *  absolute paths, and any escape via `..` are rejected explicitly rather than silently
+ *  followed. */
+export async function resolvePackageImport(specifier: string, fromFile: string, recipeDirectory: string): Promise<PackageImportResolution> {
+  const key = specifier.split("?")[0] as string;
+  const packageJsonPath = await packageScopeFileWithin(fromFile, recipeDirectory);
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(await readFile(packageJsonPath, "utf8"));
+  } catch (error) {
+    throw new Error(`recipe hook package import ${specifier}: ${packageJsonPath} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const imports = (manifest as { imports?: unknown } | null)?.imports;
+  if (imports === undefined || imports === null || typeof imports !== "object" || Array.isArray(imports)) {
+    throw new Error(`recipe hook package import ${specifier}: ${packageJsonPath} declares no "imports" map`);
+  }
+  const entry = (imports as Record<string, unknown>)[key];
+  if (entry === undefined) {
+    throw new Error(
+      `recipe hook package import ${specifier}: ${packageJsonPath} has no exact "imports" entry for ${key} (subpath patterns are not supported for freshness tracking)`,
+    );
+  }
+  const target = resolveConditionalTarget(entry, key, packageJsonPath);
+  const packageDirectory = dirname(packageJsonPath);
+
+  if (/^[A-Za-z]:[\\/]/.test(target) || target.startsWith("/") || target.startsWith("\\")) {
+    throw new Error(`recipe hook package import ${specifier}: target "${target}" is an absolute path; only paths inside the recipe directory are supported`);
+  }
+  if (!target.startsWith("./") && !target.startsWith("../")) {
+    throw new Error(`recipe hook package import ${specifier}: target "${target}" is a bare package specifier; only relative paths inside the recipe directory are supported`);
+  }
+
+  const targetPath = resolve(packageDirectory, target);
+  const withinRecipe = relative(recipeDirectory, targetPath);
+  if (withinRecipe.startsWith("..") || isAbsolute(withinRecipe)) {
+    throw new Error(`recipe hook package import ${specifier}: target "${target}" escapes the recipe directory`);
+  }
+
+  try {
+    const [realTarget, realRecipe] = await Promise.all([realpath(targetPath), realpath(recipeDirectory)]);
+    const realWithinRecipe = relative(realRecipe, realTarget);
+    if (realWithinRecipe.startsWith("..") || isAbsolute(realWithinRecipe)) {
+      throw new Error(`recipe hook package import ${specifier}: target "${target}" resolves through a symlink outside the recipe directory`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    // Missing target: left for Node to report when the hook is actually imported.
+  }
+
+  return { packageJsonPath, targetPath };
+}
+
+/** Hash a hook and its local import graph — relative imports and package-internal
+ *  `#specifier` imports alike; missing files are left for Node to report. */
 export async function dependencyGraphChecksum(entryPath: string): Promise<string> {
+  // prepare.ts/verify.ts/onboard.ts/quiesce.ts/resume.ts all resolve as
+  // resolve(recipe.directory, "<phase>.ts") (service/recipe.ts, lifecycle.ts), so the
+  // entry's own directory is always the recipe directory — the boundary every
+  // `#specifier` resolution below must stay inside.
+  const recipeDirectory = dirname(entryPath);
   const files = new Map<string, string>();
   const queue = [entryPath];
   while (queue.length > 0) {
@@ -202,13 +309,13 @@ export async function dependencyGraphChecksum(entryPath: string): Promise<string
     }
     files.set(current, content);
     for (const span of relativeImportSpans(content)) {
-      let dependency: string;
       if (span.specifier.startsWith("#")) {
-        await packageScopeFile(current);
-        throw new Error(`recipe hook package import ${span.specifier} cannot be freshness-tracked safely; use a relative import instead`);
-      } else {
-        dependency = resolve(dirname(current), span.specifier.split(/[?#]/, 1)[0] as string);
+        const { packageJsonPath, targetPath } = await resolvePackageImport(span.specifier, current, recipeDirectory);
+        if (!files.has(packageJsonPath)) queue.push(packageJsonPath);
+        if (!files.has(targetPath)) queue.push(targetPath);
+        continue;
       }
+      const dependency = resolve(dirname(current), span.specifier.split(/[?#]/, 1)[0] as string);
       if (!files.has(dependency)) queue.push(dependency);
     }
   }

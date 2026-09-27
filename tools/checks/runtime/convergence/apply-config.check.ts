@@ -5,7 +5,7 @@
 // instance fail for no reason — so it must not write that shared file: a dry run concurrent
 // with a real apply would replace the payload the real one is about to hand to the CLI.
 
-import { applyConfig, stagedFileName } from "#framework/commands/orchestration/config.ts";
+import { applyConfig, appliedHeadline, stagedFileName } from "#framework/commands/orchestration/config.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
@@ -282,6 +282,28 @@ check("and stays a .json file", dry.endsWith(".json"), true);
   } finally {
     await rm(deployment, { recursive: true, force: true });
   }
+}
+
+// --- UX-10: the restart advice is suppressed exactly when a caller starts/restarts itself ----
+
+check("by default (a bare ./clawforge apply-config), the restart advice is printed", appliedHeadline(true), "desired state applied — restart to pick it up: ./clawforge restart");
+check("with restartAdvice: false, it is not — the caller starts/restarts itself", appliedHeadline(false).includes("restart to pick it up"), false);
+check("...but the headline still confirms the write happened", appliedHeadline(false), "desired state applied");
+
+{
+  // Every internal caller that runs applyConfig one step before starting or restarting the
+  // gateway itself must pass restartAdvice: false — a plain source check, same reasoning as
+  // bootstrap-provider-order.check.ts's own set-try source check: proving the two calls stay
+  // in the right relationship costs nothing here, next to fully faking each caller's lock and
+  // transport just to observe the same two-argument call.
+  const read = async (path: string): Promise<string> =>
+    (await import("node:fs/promises")).readFile(new URL(path, import.meta.url), "utf8");
+  const bootstrapSource = await read("../../../framework/commands/lifecycle/bootstrap.ts");
+  const setTrySource = await read("../../../framework/commands/sets/set-try.ts");
+  const applySource = await read("../../../framework/commands/orchestration/apply.ts");
+  check("bootstrap suppresses the restart advice (it starts the gateway itself)", bootstrapSource.includes("applyConfig(live, [], { restartAdvice: false })"), true);
+  check("set try suppresses it too (same reason, a throwaway instance)", setTrySource.includes("applyConfig(tryCtx, [], { restartAdvice: false })"), true);
+  check("apply's own plan runner suppresses it (always paired with up/restart in the same plan)", applySource.includes("applyConfig(ctx, [], { restartAdvice: false })"), true);
 }
 
 process.stderr.write(failed === 0 ? "all apply-config checks passed\n" : `${failed} failed\n`);

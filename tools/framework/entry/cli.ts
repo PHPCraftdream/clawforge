@@ -201,6 +201,12 @@ export async function main(
     // A UserError is an expected, explained failure; anything else is a bug worth a trace.
     if (!(error instanceof UserError) && process.env.OC_DEBUG === "1") {
       console.error(error);
+      // spawnLocal shortens a failed command's headline to what failed rather than the full
+      // argv (a wsl.exe/env/Compose call can run ~600 characters of distro, path and
+      // project-identity plumbing that says nothing about the reason); the argv it was
+      // shortened from rides along on the error for exactly this branch.
+      const fullCommand = (error as { fullCommand?: unknown }).fullCommand;
+      if (typeof fullCommand === "string") console.error(`full command: ${fullCommand}`);
     }
     process.exitCode = 1;
   }

@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { deploy, frameworkSourceRoot, collectSensitiveCheckoutNames } from "#framework/commands/management/deploy.ts";
 import { useDeployment, useComposeProjectOverride, useApplicationRecipesDir } from "#framework/runtime/deployment.ts";
+import { EXCLUDES } from "#framework/security/deploy-boundary.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -553,6 +554,28 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
       );
     } finally {
       await rm(copyScratch, { recursive: true, force: true });
+    }
+  }
+
+  // Claude Code's .claude/ (settings.local.json, agent worktrees holding whole checkout
+  // copies and their scratch files) is local state: rsync excludes it and the scan skips it,
+  // so a concurrent agent's scratch secret there neither refuses nor ships.
+  {
+    check("rsync excludes Claude Code's .claude/", EXCLUDES.includes(".claude/"), true);
+    const claudeScratch = resolve(monorepoRoot, ".claude", "clawforge-deploy-policy-scratch");
+    let planted = false;
+    try {
+      await mkdir(claudeScratch, { recursive: true });
+      planted = true;
+      await writeFile(resolve(claudeScratch, "unrelated.secrets.env"), "SECRET\n");
+      const claudeFindings = await collectSensitiveCheckoutNames(monorepoRoot);
+      check(
+        "a sensitive name under .claude/ is not scanned",
+        claudeFindings.some((entry) => entry.path.startsWith(".claude/")),
+        false,
+      );
+    } finally {
+      if (planted) await rm(claudeScratch, { recursive: true, force: true });
     }
   }
 }

@@ -29,6 +29,18 @@ import type { Context } from "#src/core/context.ts";
 
 export const LOCK_VERSION = 1;
 
+/** Printed once the lock is written. Its own constant so it can be checked against
+ *  scaffold.ts's own git-init note for staying consistent (UX-12): `apps/` is entirely
+ *  gitignored at the monorepo root (root .gitignore, docs/architecture.md), and
+ *  setupProjectMcp already writes a NESTED .gitignore into every deployment directory — the
+ *  two only make sense together if the deployment directory is meant to become a git
+ *  repository of its own. A bare "commit it" read as if this repository's own history was the
+ *  target, which apps/'s own ignore rule makes impossible in monorepo mode; installed mode's
+ *  deployment directory usually already is its own repository, which this still holds for. */
+export const COMMIT_ADVICE =
+  "commit it in this deployment's own git repository (not the framework's, if the two differ) " +
+  "— that is what makes the deployment reproducible rather than merely configured";
+
 export interface DeploymentLock {
   readonly version: number;
   readonly deployment: string;
@@ -279,5 +291,5 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
   info(`image      ${current.image.digest ?? current.image.reference}`);
   info(`recipes    ${Object.keys(current.recipes).length === 0 ? "(none)" : Object.keys(current.recipes).join(", ")}`);
   info(`secrets    ${current.secrets.length} name(s), no values`);
-  info("commit it: this is what makes the deployment reproducible rather than merely configured");
+  info(COMMIT_ADVICE);
 }

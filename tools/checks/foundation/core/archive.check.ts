@@ -12,9 +12,11 @@ import {
   listArchive,
   excludesFor,
   parseSnapshotArchive,
+  reportableProblems,
   SHARE_ALLOWED,
   type ArchiveLink,
 } from "#framework/service/archive.ts";
+import { DATA_DIR_MARKER } from "#framework/runtime/datadir.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
@@ -77,6 +79,91 @@ check(
     .join(),
   "false",
 );
+
+// --- UX-15: OpenClaw's own links into the container image are expected, not noise --------
+//
+// Matched by fixed shape AND target, never by prefix alone — a prefix match alone would let
+// a hostile link planted at the wrong depth, or under a similarly-named but different
+// directory, pass as "expected" and go unreported.
+
+function expectedImageLinkFlags(entries: string[], links: Map<string, ArchiveLink>): string {
+  return inspectArchive(entries, links).map((problem) => problem.expectedImageLink === true).join();
+}
+
+check(
+  "a plugin-skill link into the image is classified expected",
+  expectedImageLinkFlags(GOOD, new Map([["data/config/plugin-skills/example", { kind: "symlink", target: "/app/dist/extensions/example/skills/example" }]])),
+  "true",
+);
+check(
+  "a codex-home tool shim link into the image is classified expected",
+  expectedImageLinkFlags(
+    GOOD,
+    new Map([[
+      "data/config/agents/agent-1/agent/codex-home/tmp/arg0/bin/rg",
+      { kind: "symlink", target: "/app/node_modules/@vscode/ripgrep/bin/rg" },
+    ]]),
+  ),
+  "true",
+);
+check(
+  "a /app target that climbs out with .. is not classified expected",
+  expectedImageLinkFlags(GOOD, new Map([["data/config/plugin-skills/example", { kind: "symlink", target: "/app/../etc/shadow" }]])),
+  "false",
+);
+check(
+  "an expected image link is still only a non-fatal finding",
+  inspectArchive(GOOD, new Map([["data/config/plugin-skills/example", { kind: "symlink", target: "/app/dist/extensions/example/skills/example" }]]))
+    .map((problem) => problem.fatal)
+    .join(),
+  "false",
+);
+check(
+  "reportableProblems folds an expected image link into the summary count, not the list to print",
+  JSON.stringify(reportableProblems(inspectArchive(
+    GOOD,
+    new Map([["data/config/plugin-skills/example", { kind: "symlink", target: "/app/dist/extensions/example/skills/example" }]]),
+  ))),
+  JSON.stringify({ toReport: [], foldedImageLinks: 1 }),
+);
+check(
+  "an ordinary dangling link outside the archive is not classified expected",
+  expectedImageLinkFlags(GOOD, new Map([["data/link", { kind: "symlink", target: "/app" }]])),
+  "false",
+);
+check(
+  "a link matching the target but not the known source shape still warns individually",
+  JSON.stringify(reportableProblems(inspectArchive(GOOD, new Map([["data/config/link", { kind: "symlink", target: "/app/something" }]])))
+    .toReport.map((problem) => problem.fatal)),
+  JSON.stringify([false]),
+);
+check(
+  "a plugin-skills-shaped source with a target OUTSIDE /app still warns individually",
+  JSON.stringify(reportableProblems(inspectArchive(
+    GOOD,
+    new Map([["data/config/plugin-skills/example", { kind: "symlink", target: "/etc/passwd" }]]),
+  )).toReport.map((problem) => problem.fatal)),
+  JSON.stringify([false]),
+);
+check(
+  "an extra path segment beneath the plugin-skills shape is not trusted by prefix alone",
+  expectedImageLinkFlags(GOOD, new Map([["data/config/plugin-skills/example/nested", { kind: "symlink", target: "/app/dist/extensions/example/skills/example" }]])),
+  "false",
+);
+checkRejects(
+  "content written through a link shaped and targeted exactly like a known image link is still fatal",
+  [...GOOD, "data/config/plugin-skills/example/evil"],
+  new Map([["data/config/plugin-skills/example", { kind: "symlink", target: "/app/dist/extensions/example/skills/example" }]]),
+);
+check(
+  "that same fatal finding is never folded away by reportableProblems",
+  reportableProblems(inspectArchive(
+    [...GOOD, "data/config/plugin-skills/example/evil"],
+    new Map([["data/config/plugin-skills/example", { kind: "symlink", target: "/app/dist/extensions/example/skills/example" }]]),
+  )).toReport.some((problem) => problem.fatal),
+  true,
+);
+
 checkRejects(
   "content written through an escaping symlink",
   [...GOOD, "data/link/evil"],
@@ -356,6 +443,21 @@ check("share allow-list does not contradict its exclusions", contradiction, unde
   );
   check("and the two lists still agree", stillContradicts, undefined);
 }
+
+// --- UX-02: ensureDataDirs' provenance marker is not agent state -------------------------
+//
+// The marker names the host that set the tree up, not anything about the agent. share and
+// migrate both leave it out — a full backup still keeps it (it is credential-complete by
+// design and restoring it restores exactly what the source host held).
+
+check("share excludes the data-dir provenance marker", excludesFor("share", "data").includes(`data/${DATA_DIR_MARKER}`), true);
+check("migrate excludes the data-dir provenance marker too", excludesFor("migrate", "data").includes(`data/${DATA_DIR_MARKER}`), true);
+check("full keeps the data-dir provenance marker", excludesFor("full", "data").includes(`data/${DATA_DIR_MARKER}`), false);
+check(
+  "the marker is not itself something SHARE_ALLOWED needs to name — it never reaches the listing",
+  SHARE_ALLOWED.some((allowed) => allowed === DATA_DIR_MARKER || allowed.startsWith(`${DATA_DIR_MARKER}/`)),
+  false,
+);
 
 // --- a recipe's declared private paths -------------------------------------------------------
 //

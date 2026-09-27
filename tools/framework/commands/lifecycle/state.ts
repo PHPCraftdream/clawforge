@@ -10,7 +10,7 @@ import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, needsOwnerEscalation, secretsFileOnTarget } from "#src/runtime/datadir.ts";
-import { archiveRoot, isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, type Profile } from "#src/service/archive.ts";
+import { archiveRoot, isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { requirements, template } from "#src/service/secrets.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
@@ -305,9 +305,12 @@ export async function pull(ctx: Context, args: string[], transaction: PullTransa
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    // --migrate is a no-op alongside the default, kept only so backup and pull accept the
+    // identical shorthand vocabulary (UX-13).
+    const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
     if (arg === "--hot") hot = true;
-    else if (arg === "--with-secrets") profile = "full";
-    else if (arg === "--share") profile = "share";
+    else if (shorthand !== undefined) profile = shorthand;
+    else if (arg === "--break-lock") continue;
     else if (arg === "--profile") {
       const value = args[index + 1];
       if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");

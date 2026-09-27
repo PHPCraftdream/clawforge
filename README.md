@@ -148,7 +148,22 @@ is reported as stale, with its age, and still refused. Silently taking it is the
 layer down: the run that lost it has no idea. `--break-lock` overrides, deliberately by hand,
 and deliberately not `--force`: `--force` means "yes, I mean it" for a destructive command and
 is set automatically from an MCP caller's `confirm`, so sharing the name would have made every
-confirmed tool call seize whatever lock someone else was holding.
+confirmed tool call seize whatever lock someone else was holding. Every pid a lock records is
+this tool's own — wherever `clawforge` itself runs, never anything on a WSL or SSH transport's
+target — so when the holder was recorded on this same machine and its pid is provably gone,
+the refusal says so plainly; `--break-lock` is still required either way. Not every
+lock-taking command accepts `--break-lock` (`backup`, `configure-provider` and `secrets` guard
+a single operation each run and take no takeover flag); a refusal from one of those names a
+command that does instead, rather than advising a flag it will then reject.
+
+A shorter-lived internal guard around the lock's own bookkeeping can end up recording its
+owner on a *different* machine (two operators, one crashing mid-release) — a case
+`--break-lock` deliberately never breaks, since a remote pid's liveness cannot be checked from
+here. `--break-foreign-lock <hostId>` is the explicit, human-confirmed override: reach the
+recorded machine, verify its `clawforge` is actually gone, then pass its exact recorded id to
+`up`, `restart`, `down` or `bootstrap`. A wrong id is refused outright; a match takes over and
+appends who/when/which foreign owner to `<data>-locks/foreign-lock-takeovers.jsonl`. Never
+automatic, never guessed.
 
 ### Does this deployment's own work work
 
@@ -201,10 +216,10 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 
 | Command | Arguments | Purpose |
 | --- | --- | --- |
-| `bootstrap` | `[--no-pull]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance |
-| `up` | `[--break-lock]` | Start and wait for `/healthz`; secrets and port availability are checked before the start, not after |
-| `restart` | `[--break-lock]` | Restart in place so the instance re-reads its configuration — what `apply-config` and `configure-provider` need, and what `up` cannot do. It re-reads files the container can see (bind-mounted config) and nothing compose baked into it: the environment was interpolated from `.env` at creation, so a rotated repo-env secret needs the recreate `secrets --apply` performs, or `up` |
-| `down` | `[--break-lock]` | Stop and remove the containers; data in bind mounts is untouched |
+| `bootstrap` | `[--no-pull] [--break-lock] [--break-foreign-lock <hostId>]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance |
+| `up` | `[--break-lock] [--break-foreign-lock <hostId>]` | Start and wait for `/healthz`; secrets and port availability are checked before the start, not after |
+| `restart` | `[--break-lock] [--break-foreign-lock <hostId>]` | Restart in place so the instance re-reads its configuration — what `apply-config` and `configure-provider` need, and what `up` cannot do. It re-reads files the container can see (bind-mounted config) and nothing compose baked into it: the environment was interpolated from `.env` at creation, so a rotated repo-env secret needs the recreate `secrets --apply` performs, or `up` |
+| `down` | `[--break-lock] [--break-foreign-lock <hostId>]` | Stop and remove the containers; data in bind mounts is untouched |
 | `logs` | `[--tail <n>]` | Follow the service log on a terminal; called as a tool, read the last `n` lines and return them |
 | `status` | — | Containers, image, health probes (HTTP probes and Docker's own verdict side by side — they can disagree), disk usage |
 | `inspect` | `[--json]` | What is declared, what is running, and where they disagree — one answer, every finding carrying a stable code. Also probes, from inside the container, the outbound endpoints the live config names, and compares the deployment folder itself — `.env`'s connection facts, the desired-state file, the default secret store — against the instance, as warnings. Read-only |
@@ -222,9 +237,9 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `configure-provider` | `[--provider <id>] [--env <VAR>] [--force]` | Configure any provider from a target-side SecretRef; key values never enter `openclaw.json` |
 | `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force]` | The manifest of required secrets, the template, the local store of values; `--apply` puts repo-env values in force itself — recreating the running container, since restart cannot change an environment compose interpolated at creation — and confirms them without printing them; `--dump` recovers a lost store from a running instance |
 | `recover-env` | `[--dry-run]` | Repair `.env`'s four connection facts from the running container; a wholly absent `.env` is not repairable — reaching the target already requires it |
-| `backup` | `[--profile full\|migrate\|share] [--hot]` | Snapshot the data directory; the gateway is stopped for the duration by default |
+| `backup` | `[--profile full\|migrate\|share] [--share] [--migrate] [--with-secrets] [--hot]` | Snapshot the data directory; the gateway is stopped for the duration by default. Defaults to full, unlike `pull`, which defaults to migrate; the shorthand flags are the same vocabulary both commands accept |
 | `restore` | `[<archive>] [--force] [--fresh-identity] [--no-start] [--break-lock]` | Restore an archive; the structural check runs before anything is stopped, the secrets check before anything is started |
-| `pull` | `[--profile ...] [--share] [--with-secrets] [--hot]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
+| `pull` | `[--profile ...] [--share] [--with-secrets] [--migrate] [--hot] [--break-lock]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
 | `push` | `[<snapshot>] [--force] [--fresh-identity] [--break-lock]` | Push a snapshot back: restore → install keys if any travelled with it → check → start |
 | `verify` | `<archive> [--profile ...]` | Check an archive for credentials before sharing it — what `pull --share` does on its own |
 | `recipe` | `<list\|import\|install\|remove\|status\|logs\|verify\|onboard\|diagnose> <name> [new-name] [--volumes] [--tail <n>] [--force-disabled] [--break-lock]` | App-owned services beside the instance, each its own compose project and optional lifecycle hooks. install, remove and the hook-running actions take the instance lock for their whole run — install across its build; list/status/logs and import (a repository-side copy) take none. With import, `<name>` is the source directory and `[new-name]` the name to import under — the source's own name by default; the copy leaves out the generic credential-shaped names (`.env*`, `secrets/`, `*.token`, `*.secrets.env`) plus what the source's own `recipe.json` declares under `privateFiles` — a filter over file names, not a guarantee; `privatePaths` in the same file declares where the running recipe keeps generated credentials (data-relative), which migrate/share snapshots exclude and full keeps |
@@ -369,7 +384,7 @@ more of them than fit here:
 | `logs-bounded.check.ts` | `logs` and `recipe logs` follow on a terminal and read a bounded tail under a sink, with `--tail` parsed rather than passed on |
 | `openclaw-cli.check.ts` | the shared wrapper around OpenClaw's CLI: capture, the scope-upgrade approve-and-retry, and that an unrelated failure is not retried into a second error |
 | `restart.check.ts` | `restart` refuses a stopped instance, does not restart into a config with missing secrets, and waits for health |
-| `runtime/service/runtime-image-identity.check.ts` | what compose is handed — a private env file, never `env VAR=…` arguments; `reconcile()` re-reading the deployment `.env` from disk rather than the process-start snapshot; and, where this machine can run a container, a synthetic rotation proven live: `restart` keeping the created environment in force, `reconcile` replacing the container, the rotated value read back from `docker inspect` |
+| `runtime/service/runtime-image-identity.check.ts` | what compose is handed — a private env file, never `env VAR=…` arguments; `reconcile()` re-reading the deployment `.env` from disk rather than the process-start snapshot; and, where this machine can run a container, a synthetic rotation proven live: `restart` keeping the created environment in force, `reconcile` replacing the container, the rotated value read back from `docker inspect`; each temporary environment file's owner record (pid, machine) written before the token-bearing file itself; and a crash-abandoned `compose-<uuid>` directory — an owner recorded on this machine, its pid provably gone — swept before the next call, while one still owned by a live pid, one whose owner cannot be read at all, and one recorded on a different machine are each left alone |
 | `inspection.check.ts` | the problem-code table: every code has a severity and a runnable remedy, a caller cannot downgrade a blocking one, and "healthy" means serving rather than silent |
 | `runtime/convergence/inspect/*.check.ts` | every finding `inspect` can report, provoked one at a time against a stubbed target and a real temp deployment; and `doctor`'s exit contract in both directions |
 | `runtime/convergence/inspect/egress.check.ts` | the outbound probe runs through the container exec and never `Runtime.probe()`, one exec on stdin for exactly the endpoints the live config names (none named — none asked), a name that does not resolve and an endpoint that does not answer are separate findings naming endpoint and config path, credentials in a proxy URL never reach the output, `doctor` still exits zero, and a stopped instance is asked nothing |
@@ -381,7 +396,7 @@ more of them than fit here:
 | `operations.check.ts` | the journal is on disk before the next step starts, an unfinished run keeps every step it managed and gains no invented outcome, and a target that cannot be written to does not fail the run it is recording |
 | `rollback.check.ts` | choosing what to undo: the newest run that took a snapshot, never one that took none, and every refusal saying where to look instead |
 | `apply-config.check.ts` | a dry run does not stage under the shared file name a real run writes, and two dry runs do not collide; `--dump` recovers exactly the curated paths from a stubbed JSON5 live config, refuses an existing declaration without `--force`, omits paths the live config never set rather than emitting nulls, and says plainly that recovered values are not the original declaration; flag combinations that mean nothing together are refused before the first read or write — `--dry-run` with `--dump` in both argv orders, `--break-lock` with either a dump or a dry run, `--force` without `--dump` — each refusal leaving the existing declaration byte-identical, with a plain `--dump --force` as the working control |
-| `instance-lock.check.ts` | a second operation is refused with the holder named, a failed run releases the lock, a stale one is described rather than stolen, and a run that lost its lock to `--break-lock` does not remove the new holder's, and a claim against an existing directory is refused |
+| `instance-lock.check.ts` | a second operation is refused with the holder named, a failed run releases the lock, a stale one is described rather than stolen, and a run that lost its lock to `--break-lock` does not remove the new holder's, and a claim against an existing directory is refused; a holder's pid provably gone on this machine is named as such, never guessed at for one recorded elsewhere; `--break-foreign-lock <hostId>` refused on a mismatch, taken over on a match with who/when/which-owner recorded, and plain `--break-lock` still refusing a foreign owner; and every command that reads `--break-lock` from real argv actually declares it, with the two that only ever appeared to (`bootstrap`, `pull`) fixed and the deliberately unsupported ones (`backup`, `configure-provider`, `secrets`) naming a command that does instead of the flag they reject |
 | `accept.check.ts` | every declared check kind in both directions, and that an unknown kind fails rather than passing quietly |
 | `foundation/cli/host.check.ts` | `host` end to end: the flag boundary, the root gate on target, context resolution per platform against injected environments, and the engine privilege contract — a context that arrives as root is refused without both flags before anything can spawn, and where this machine can answer, the real effective uid (`id -u` through the real resolution) rather than the argv |
 | `runtime/lifecycle/smoke.check.ts` | every smoke check lands as `passed`, `failed`, `not-checked` or `could-not-check` and the four stay distinct; a check that could not obtain a verdict cannot be the reason a run reports success; the two bodies that run without an instance read a verdict-less runtime apart from a failed one; and the drift check's restore failing after the verdict stays a failed check naming the drifted path and the repair |
@@ -811,6 +826,21 @@ Pinning the reasoning level per model is not possible in OpenClaw — it comes f
 `agents.defaults.thinkingDefault`; a declaration can also carry the provider parameter
 `params.reasoning_effort`, when the selected provider accepts it.
 
+### Privacy: update checks
+
+OpenClaw checks daily for a new release (`update.checkOnStart`, default `true`). A fresh
+deployment leaves that as it is — whether an instance reaches out once a day is the
+operator's call. To turn it off, declare it in `config/desired-state.json`:
+
+```json
+{ "path": "update.checkOnStart", "value": false }
+```
+
+The anonymous feature statistics described in the upstream documentation
+(`openclaw telemetry`, `telemetry.*`) do not exist in the published image this framework
+pins by default (2026.6.x): it has no such command and rejects a `telemetry` config key,
+failing the whole write. Do not declare it until the image you run accepts it.
+
 ## Data
 
 All state lives in bind mounts on the host (`/srv/openclaw/data` by default), owned by
@@ -1196,8 +1226,8 @@ integration with partial and unavailable checks, and running-image identity test
 | The container is forever `unhealthy` while the service answers | The healthcheck points at a file that does not exist; image 2026.6.34 needs `curl -fsS /healthz` |
 | `SecretRefResolutionError` and a crash loop | The config references a variable missing from `config/.env` |
 | `127.0.0.1` does not reach a service on the host | Inside the container that is the container itself — use `host.docker.internal` |
-| `... needs root and sudo asks for a password` | The data directory is owned by root and there is nowhere to type a password. Once, on the target: `sudo install -d -o 1000 -g 1000 <directory>` |
-| `port 18789 is already published by ...` | The port belongs to another deployment: set your own `OPENCLAW_GATEWAY_PORT` in `.env` |
+| `... needs root and sudo asks for a password` | A directory this deployment needs is owned by root and there is nowhere to type a password. The refusal now names every directory the deployment will need, not just the one that failed first — usually one `sudo install -d -o 1000 -g 1000 <shared root>`, run once on the target |
+| `port 18789 is already published by ...` / `... is already listening (...)` | The first is another deployment's Docker container; the second is a bare process Docker never published (`ss`/`netstat` on the target caught it, before pulling or preparing data). Either way: set your own `OPENCLAW_GATEWAY_PORT` in `.env`, or stop whatever is using this one |
 | The Control UI reports "Browser origin not allowed" | The gateway was never told this origin: declare it in `gateway.controlUi.allowedOrigins`, apply, and restart the gateway (`docker compose up` alone will not recreate a healthy container) |
 
 ## License

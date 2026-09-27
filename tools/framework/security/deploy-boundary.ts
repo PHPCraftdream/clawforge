@@ -23,6 +23,9 @@ export const EXCLUDES = [
   ".env",
   ".mcp.json",
   ".git/",
+  // Claude Code's local state: settings.local.json, session artefacts and agent worktrees
+  // (whole checkout copies, with their own scratch files) — never part of what a server runs.
+  ".claude/",
   "apps/",
   "backups/",
   "data/",
@@ -242,7 +245,7 @@ export async function collectSensitiveCheckoutNames(root: string): Promise<{ pat
   async function walk(current: string, base: string): Promise<void> {
     const entries = await readEntries(current);
     for (const entry of entries) {
-      if (base === "" && entry.isDirectory() && (entry.name === "apps" || entry.name === ".git")) continue;
+      if (base === "" && entry.isDirectory() && (entry.name === "apps" || entry.name === ".git" || entry.name === ".claude")) continue;
       const relativePath = base === "" ? entry.name : `${base}/${entry.name}`;
       if (SENSITIVE_RECIPE_NAME.test(relativePath)) {
         const trackedHere = tracked?.has(relativePath) === true;

@@ -22,6 +22,7 @@ import {
   listArchive,
   listArchiveLinks,
   isProfile,
+  reportableProblems,
   SHARE_ALLOWED,
   type Profile,
 } from "#src/service/archive.ts";
@@ -254,10 +255,16 @@ export async function verifySnapshot(
   const entries = await listArchive(ctx, archive);
 
   const structural = inspectArchive(entries, await listArchiveLinks(ctx, archive));
-  for (const problem of structural) {
+  // OpenClaw's own links into the container image (a plugin's skill, a codex-home tool
+  // shim) are an ordinary artefact of installing inside it — real snapshots carry dozens,
+  // and naming each individually buried the warnings worth reading (UX-15). Folded into one
+  // summary line instead; anything else, fatal or not, is still named exactly as before.
+  const { toReport, foldedImageLinks } = reportableProblems(structural);
+  for (const problem of toReport) {
     if (problem.fatal) warn(problem.message);
     else info(problem.message);
   }
+  if (foldedImageLinks > 0) info(`${foldedImageLinks} expected link(s) into the OpenClaw image`);
 
   // A fatal structural problem (absolute path, .. escape, a link written through) means
   // unpacking this archive can write outside the destination. Nothing below this point may

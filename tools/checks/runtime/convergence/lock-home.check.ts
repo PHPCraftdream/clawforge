@@ -180,5 +180,73 @@ async function run(ctx: Context): Promise<string> {
   );
 }
 
+// --- UX-07: the "no passwordless sudo" refusal advises the whole family, not just one path ---
+//
+// The bug: bootstrap refused on the lock home alone ("sudo install -d ... data-locks"), and
+// once that was done by hand it refused again the same way on the data directory, then again
+// on backups and snapshots the first time each was touched — four manual sudo rounds where
+// one should do. sudoFor's own die() now asks datadir.ts's prepareFamilyAdvice for every
+// command to print instead of naming just the path that happened to fail first.
+
+/** A target with no passwordless sudo, dataDir/backupDir/snapshotDir sharing one root
+ *  (scaffold.ts's/init.ts's own default layout), and a configurable identity for whoever
+ *  runs the tooling — the fact that decides whether the lock home's own group merges with
+ *  the data family's or stays separate. */
+function familyContext(owner: string): Context {
+  const [uid, gid] = owner.split(":");
+  return {
+    settings: {
+      dataDir: "/srv/openclaw/data",
+      backupDir: "/srv/openclaw/backups",
+      snapshotDir: "/srv/openclaw/snapshots",
+    },
+    transport: {
+      async exists(): Promise<boolean> {
+        return false;
+      },
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (command === "id") return { code: 0, stdout: args[0] === "-u" ? `${uid}\n` : `${gid}\n`, stderr: "" };
+        if (command === "test" && args[0] === "-w") return { code: 1, stdout: "", stderr: "" };
+        // sudo IS on the target ("sh -c command -v sudo" below succeeds)...
+        if (command === "sh") return { code: 0, stdout: "", stderr: "" };
+        // ...but it always asks for a password ("sudo -n true" fails).
+        if (command === "sudo") return { code: 1, stdout: "", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+}
+
+async function familyRefusal(owner: string): Promise<string> {
+  try {
+    await sudoFor(familyContext(owner), "/srv/openclaw/data");
+    return "(did not refuse)";
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
+
+{
+  // The WSL-default-user case (task UX-07's part b): whoever runs the tooling already is
+  // uid 1000, same as the container — every directory this deployment needs collapses into
+  // one owner, and the advice is one line for the whole family instead of one per path.
+  const message = await familyRefusal("1000:1000");
+  const commands: string[] = message.match(/sudo install -d[^\n]*/g) ?? [];
+  check("when the tooling's own user already is uid 1000, one command covers the family", commands.length, 1);
+  check("naming the shared root, not each path", commands[0], "sudo install -d -o 1000 -g 1000 /srv/openclaw");
+}
+
+{
+  // A real server: whoever runs the tooling is not uid 1000. The container-owned family
+  // (data/backups/snapshots) still collapses to their shared root; the lock home — owned by
+  // the invoking identity, never the container's — is named on its own so this command
+  // cannot re-chown the shared root out from under the other group.
+  const message = await familyRefusal("1000:1001");
+  const commands: string[] = message.match(/sudo install -d[^\n]*/g) ?? [];
+  check("otherwise, one command per owner", commands.length, 2);
+  check("the container-owned family still names the shared root", commands.includes("sudo install -d -o 1000 -g 1000 /srv/openclaw"), true);
+  check("the lock home keeps the tooling's own identity, not the container's", commands.includes("sudo install -d -o 1000 -g 1001 /srv/openclaw/data-locks"), true);
+}
+
 process.stderr.write(failed === 0 ? "all lock home checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

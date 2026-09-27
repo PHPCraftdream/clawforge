@@ -10,7 +10,7 @@ import { restore } from "#src/commands/lifecycle/restore.ts";
 import { verify } from "#src/commands/lifecycle/verify.ts";
 import { pull, push } from "#src/commands/lifecycle/state.ts";
 import { smoke } from "#src/commands/lifecycle/smoke.ts";
-import { PROFILE_ARGUMENT, FORCE_ARGUMENT } from "./shared-arguments.ts";
+import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 export const lifecycleCommands: Record<string, AppCommand> = {
   bootstrap: {
@@ -28,12 +28,14 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "regenerates an existing token or touches data already on disk.",
     arguments: [
       { name: "no-pull", description: "Use the image already present locally", kind: "flag" },
+      BREAK_LOCK_ARGUMENT,
+      BREAK_FOREIGN_LOCK_ARGUMENT,
     ],
   },
   up: {
     summary: "Start the service and wait until it serves",
     run: up,
-    arguments: [{ name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" }],
+    arguments: [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT],
     details:
       "Checks secrets and the gateway port before starting, not after —\n" +
       "a missing SecretRef or a port already held by another deployment otherwise " +
@@ -55,13 +57,13 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "performs itself, or `./clawforge up`.\n" +
       "Secrets are checked first, same as `up`; the port is not, since the container keeps " +
       "the binding it already holds.",
-    arguments: [{ name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" }],
+    arguments: [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT],
   },
   down: {
     summary: "Stop and remove the containers (data is kept)",
     run: down,
     details: "Data lives in host bind mounts, not in runtime-managed volumes, so this never touches it.",
-    arguments: [{ name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" }],
+    arguments: [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT],
   },
   logs: {
     summary: "Follow the service log, or read a bounded tail of it",
@@ -84,10 +86,15 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "a multi-megabyte -wal sibling, and a copy taken mid-write is not restorable.\n" +
       "--hot skips the stop for those who accept that risk.\n" +
       "--profile controls what travels in the archive (see `./clawforge help pull` for what each " +
-      "profile excludes) — plain backups default to full.",
+      "profile excludes); --share, --migrate and --with-secrets are shorthands for it, the " +
+      "same vocabulary `pull` accepts — plain backups default to full, unlike `pull`, which " +
+      "defaults to migrate.",
     arguments: [
       PROFILE_ARGUMENT,
       { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
+      { name: "share", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
+      { name: "migrate", description: "Migrate profile: no provider keys (same as --profile migrate)", kind: "flag" },
+      { name: "with-secrets", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
     ],
   },
   restore: {
@@ -109,7 +116,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     arguments: [
       { name: "archive", description: "Path to the archive; newest if omitted", kind: "positional" },
       FORCE_ARGUMENT,
-      { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+      BREAK_LOCK_ARGUMENT,
       {
         name: "fresh-identity",
         description: "Drop identity and paired devices (cloning, not moving)",
@@ -122,6 +129,8 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     summary: "Snapshot the instance state into the snapshot directory",
     run: pull,
     details:
+      "Defaults to migrate, unlike `backup`, which defaults to full: moving an instance's " +
+      "state should not silently also hand over provider keys.\n" +
       "Three profiles, and the difference is not cosmetic:\n" +
       "  full (--with-secrets)  everything, including config/.env and the operator token — never share it\n" +
       "  migrate (default)      everything except provider keys; keys travel beside the archive in <archive>.secrets.env\n" +
@@ -140,7 +149,9 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       PROFILE_ARGUMENT,
       { name: "share", description: "Shareable profile with verification", kind: "flag" },
       { name: "with-secrets", description: "Full profile: includes provider keys", kind: "flag" },
+      { name: "migrate", description: "Migrate profile (already pull's default) — accepted so backup and pull share the same flag vocabulary", kind: "flag" },
       { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
+      BREAK_LOCK_ARGUMENT,
     ],
   },
   push: {
@@ -158,7 +169,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     arguments: [
       { name: "archive", description: "Snapshot to push; newest if omitted", kind: "positional" },
       FORCE_ARGUMENT,
-      { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+      BREAK_LOCK_ARGUMENT,
       {
         name: "fresh-identity",
         description: "Drop identity and paired devices (cloning, not moving)",
@@ -206,7 +217,12 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "inapplicable) or could-not-check (it could not obtain a verdict — the instance was " +
       "unreachable, the call never answered); the run exits non-zero unless every " +
       "applicable check passed.\n" +
-      "--quick skips the slow round-trip check.",
+      "Briefly stops the gateway once, for the three archive-based checks (the shareable " +
+      "and secret-rejecting snapshots, and the round-trip backup/restore) — one outage " +
+      "window, typically well under a minute, not three; every other check runs with the " +
+      "gateway up.\n" +
+      "--quick skips the slow round-trip check, but still shares that one stop/start " +
+      "window with the two snapshot checks it does not skip.",
     arguments: [
       { name: "quick", description: "Skip the slow round-trip check", kind: "flag" },
     ],

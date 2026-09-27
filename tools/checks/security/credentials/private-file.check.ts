@@ -8,7 +8,7 @@ import { access, chmod, mkdir, mkdtemp, open, readdir, readFile, rm, stat, write
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPrivateFile, installedWslDistros, probeWslOpen, protectPrivateFile, replacePrivateFile, withToolRunner } from "#framework/security/private-file.ts";
+import { createPrivateFile, installedWslDistros, probeWslOpen, protectPrivateFile, replacePrivateFile, resetWslBoundaryDedupe, withToolRunner } from "#framework/security/private-file.ts";
 import { spawnLocal } from "#framework/runtime/transport.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 
@@ -300,6 +300,10 @@ async function hostileNameChecks(root: string, distros: string[]): Promise<void>
       }
       let refusal: string | null = null;
       let captured = "";
+      // Every iteration is a different file in the same directory — the dedupe protection
+      // real callers rely on (at most one boundary report per directory per process) would
+      // otherwise silence every iteration after the first here.
+      resetWslBoundaryDedupe();
       try {
         await withOutputSink((chunk) => {
           captured += chunk;
@@ -342,6 +346,9 @@ async function wslListingContractChecks(root: string): Promise<void> {
     let captured = "";
     let listings = 0;
     const probes: string[][] = [];
+    // Same file every call — without this, only the first of the six scenarios below would
+    // ever probe anything; the rest would silently inherit "already reported" from it.
+    resetWslBoundaryDedupe();
     await withToolRunner(async (command, args, timeoutMs) => {
       if (command.endsWith("wsl.exe")) {
         if (args[0] === "-l") {
@@ -425,6 +432,9 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
   check("a Guests ACE can be planted by SID for this test", planted.code, 0);
   let refusal: string | null = null;
   let captured = "";
+  // hostileNameChecks above already reported (or ruled out) the boundary for this same
+  // directory — reset so this file's own protection is probed fresh, not read off that one.
+  resetWslBoundaryDedupe();
   try {
     await withOutputSink((chunk) => {
       captured += chunk;
@@ -481,6 +491,9 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
 
   {
     // Creation goes through the same protection: it must succeed and report the same gap.
+    // A new file, but still this same directory — wslListingContractChecks above left its
+    // own dedupe mark on it, so this needs its own fresh probe too.
+    resetWslBoundaryDedupe();
     let created = false;
     let freshCaptured = "";
     try {
@@ -505,6 +518,70 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
   }
 
   await aclTransitionChecks(root);
+  await dedupeChecks(root);
+}
+
+/** UX-08: the boundary report used to run fresh on every protectPrivateFile call — a
+ *  bootstrap that both created and then generated a token for the same .env printed the same
+ *  three-line warning twice before anything useful. Fully scripted (no real WSL install
+ *  needed) so this runs in CI the same as everywhere else. */
+async function dedupeChecks(root: string): Promise<void> {
+  const dir = join(root, "dedupe");
+  await mkdir(dir);
+  const fileA = join(dir, "a.env");
+  const fileB = join(dir, "b.env");
+  await writeFile(fileA, "OPENCLAW_GATEWAY_TOKEN=dedupe-a\n");
+  await writeFile(fileB, "OPENCLAW_GATEWAY_TOKEN=dedupe-b\n");
+
+  const utf16ish = (text: string): string => text.split("").join("\0");
+  let listings = 0;
+  const scripted = async (command: string, args: string[], timeoutMs: number) => {
+    if (command.endsWith("wsl.exe")) {
+      if (args[0] === "-l") {
+        listings += 1;
+        return { code: 0, output: utf16ish("Ubuntu-24.04\r\n") };
+      }
+      if (args[5] === "cat") return { code: 1, output: "cat: /etc/wsl.conf: No such file or directory" };
+      if (args[5] === "sh") return { code: 0, output: "OPEN\n" };
+    }
+    const result = await spawnLocal(command, args, { allowFailure: true, timeoutMs });
+    return { code: result.code, output: `${result.stdout}${result.stderr}` };
+  };
+
+  resetWslBoundaryDedupe();
+  let firstCaptured = "";
+  await withToolRunner(scripted, async () => {
+    await withOutputSink((chunk) => {
+      firstCaptured += chunk;
+    }, () => protectPrivateFile(fileA));
+  });
+  check("the first write in a directory probes and reports", listings, 1);
+  check("naming the exposed distribution", firstCaptured.includes('"Ubuntu-24.04" opens'), true);
+  check(
+    "compactly: one warning line and one advice line, not one pair per distribution",
+    firstCaptured.split("\n").filter((line) => line.trim() !== "").length,
+    2,
+  );
+
+  let secondCaptured = "";
+  await withToolRunner(scripted, async () => {
+    await withOutputSink((chunk) => {
+      secondCaptured += chunk;
+    }, () => protectPrivateFile(fileB));
+  });
+  check("a second file in the same directory is not re-probed this process", listings, 1);
+  check("and prints nothing more about it", secondCaptured, "");
+
+  // Never for a temporary file, even in a directory this process has not reported yet.
+  resetWslBoundaryDedupe();
+  let replaceCaptured = "";
+  await withToolRunner(scripted, async () => {
+    await withOutputSink((chunk) => {
+      replaceCaptured += chunk;
+    }, () => replacePrivateFile(fileA, "OPENCLAW_GATEWAY_TOKEN=dedupe-a-2\n"));
+  });
+  check("replacing a file probes at most once — never for its own temporary write", listings, 2);
+  check("and still reports the real path once", replaceCaptured.includes('"Ubuntu-24.04" opens'), true);
 }
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-private-file-check-"));

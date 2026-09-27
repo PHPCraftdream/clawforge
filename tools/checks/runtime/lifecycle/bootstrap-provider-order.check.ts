@@ -65,6 +65,7 @@ try {
       dataDir: DATA_DIR,
       env: { OPENCLAW_GATEWAY_TOKEN: "test-token" },
       image: "ghcr.io/openclaw/openclaw:extended-stable",
+      bindAddress: "127.0.0.1",
       gatewayPort: "18789",
       serviceUrl: "http://127.0.0.1:18789",
     },
@@ -102,6 +103,11 @@ try {
       async portConflict(): Promise<string | undefined> {
         calls.push({ kind: "port-check", args: [] });
         return conflictingContainer;
+      },
+      // R9-07 residual: preflightPort also checks raw listening sockets unless this
+      // deployment's own gateway is already running, which it never is at bootstrap time.
+      async isRunning(): Promise<boolean> {
+        return false;
       },
       async pullImage(): Promise<void> {
         calls.push({ kind: "pull", args: [] });
@@ -171,7 +177,7 @@ try {
     new URL("../../../framework/commands/sets/set-try.ts", import.meta.url),
     "utf8",
   );
-  const applyAt = setTrySource.indexOf("await applyConfig(tryCtx, []);");
+  const applyAt = setTrySource.indexOf("await applyConfig(tryCtx, [], { restartAdvice: false });");
   const configureAt = setTrySource.indexOf("await configureProvider(tryCtx, []);");
   check("set try's own bring-up makes both calls", applyAt >= 0 && configureAt >= 0, true);
   check("set try applies declared settings before configuring the provider, same as bootstrap", applyAt < configureAt, true);

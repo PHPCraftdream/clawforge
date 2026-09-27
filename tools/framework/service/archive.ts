@@ -9,7 +9,7 @@
 //   - workspace/.git matters: the agent versions its own memory there
 
 import type { Context } from "../core/context.ts";
-import { sudoFor } from "../runtime/datadir.ts";
+import { DATA_DIR_MARKER, sudoFor } from "../runtime/datadir.ts";
 import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "../runtime/transport.ts";
 import { publishPrivatePathsHistory, reconcilePrivatePathsHistory } from "../security/private-paths-ledger.ts";
 import { installedRecipePrivatePaths } from "./recipe.ts";
@@ -24,6 +24,13 @@ export const PROFILES: Profile[] = ["full", "migrate", "share"];
 export function isProfile(value: string): value is Profile {
   return (PROFILES as string[]).includes(value);
 }
+
+/** Shorthand flags for `backup` and `pull` (UX-13), one map so both parsers agree. */
+export const PROFILE_SHORTHAND_FLAGS: ReadonlyMap<string, Profile> = new Map([
+  ["--share", "share"],
+  ["--with-secrets", "full"],
+  ["--migrate", "migrate"],
+]);
 
 /** What a backup archive is called, and how to read that name back.
  *
@@ -139,6 +146,7 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
       `${root}/config/clawforge-private-paths.json`,
       `${root}/clawforge-operations`,
       ...LEGACY_PREFIXES.map((prefix) => `${root}/${prefix}-operations`),
+      `${root}/${DATA_DIR_MARKER}`, // UX-02: names the OLD host; restore's trustExisting writes a fresh one
     );
   }
 
@@ -158,6 +166,7 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
       `${root}/clawforge-operations`,
       `${root}/clawforge-managed.json`,
       `${root}/clawforge-installed-set.json`,
+      `${root}/${DATA_DIR_MARKER}`, // UX-02, same reasoning as migrate above
       ...LEGACY_PREFIXES.flatMap((prefix) => [
         `${root}/${prefix}-operations`,
         `${root}/${prefix}-managed.json`,
@@ -218,6 +227,31 @@ export interface ArchiveProblem {
   /** Unpacking would write outside the destination. Anything else is worth reporting but
    *  not worth refusing an otherwise valid archive. */
   readonly fatal: boolean;
+  /** Non-fatal dangling symlink into the image (UX-15); fatal is decided by writesThrough alone. */
+  readonly expectedImageLink?: boolean;
+}
+
+/** OpenClaw's own layouts that legitimately symlink into the image — fixed shape only, never a bare prefix. */
+const OPENCLAW_IMAGE_LINK_LOCATIONS: readonly RegExp[] = [
+  /^config\/plugin-skills\/[^/]+$/, // .../<name> -> /app/dist/extensions/<ext>/skills/<name>
+  /^config\/agents\/[^/]+\/agent\/codex-home\/tmp\/arg0\/[^/]+\/[^/]+$/, // .../<dir>/<tool> -> /app/node_modules/...
+];
+
+/** Target inside /app, and source (root-stripped) exactly one of the shapes above. */
+function isOpenClawImageLink(root: string, source: string, target: string): boolean {
+  if ((target !== "/app" && !target.startsWith("/app/")) || target.split("/").includes("..")) return false;
+  if (source !== root && !source.startsWith(`${root}/`)) return false;
+  const relative = source === root ? "" : source.slice(root.length + 1);
+  return OPENCLAW_IMAGE_LINK_LOCATIONS.some((pattern) => pattern.test(relative));
+}
+
+/** What to name, and how many expected image links (UX-15) fold into one summary line instead. */
+export function reportableProblems(problems: readonly ArchiveProblem[]): { toReport: ArchiveProblem[]; foldedImageLinks: number } {
+  const folded = (problem: ArchiveProblem): boolean => !problem.fatal && problem.expectedImageLink === true;
+  return {
+    toReport: problems.filter((problem) => !folded(problem)),
+    foldedImageLinks: problems.filter(folded).length,
+  };
 }
 
 /** Whether a hard-link target — given root-relative, the same coordinate space as every
@@ -408,6 +442,8 @@ export function inspectArchive(entries: string[], links: Map<string, ArchiveLink
         ? `content is written through a link that leaves the archive: ${source} -> ${link.target}`
         : `link points outside the archive: ${source} -> ${link.target}`,
       fatal: writesThrough,
+      // Only softens reporting of an already-non-fatal finding, never the refusal itself.
+      expectedImageLink: !writesThrough && isOpenClawImageLink(root, source, link.target),
     });
   }
 

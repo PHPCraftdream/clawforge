@@ -12,8 +12,8 @@ import { mkdtemp, mkdir, writeFile, rm, chmod, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { LocalTransport, SshTransport, WslTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix } from "#framework/runtime/transport.ts";
-import type { ExecResult, ExecOptions } from "#framework/runtime/transport.ts";
+import { LocalTransport, SshTransport, WslTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix, describeInvocation } from "#framework/runtime/transport.ts";
+import type { ExecResult, ExecOptions, CommandFailure } from "#framework/runtime/transport.ts";
 
 let failed = 0;
 
@@ -438,6 +438,187 @@ if (process.platform === "win32") {
     finallyRan = true;
   }
   check("local: a missing executable rejects normally", finallyRan, true);
+}
+
+// Streaming with no sink and no input used to inherit stdio whenever the caller merely
+// asked for `stream: true` — the exact shape `./clawforge status | cat` produces (no MCP
+// sink, no input). On Windows that inherits onto an MSYS pipe, and the wsl.exe child this
+// wraps (itself relaying Docker Compose) kills the parent Node with exit 139 the moment it
+// writes. `streamToTerminal` must also require both descriptors to be a real terminal, so a
+// plain pipe always takes the piped-and-forwarded path instead of inheriting a possibly
+// unsafe descriptor. Forced false here (rather than relying on this process's own stdio,
+// which may or may not be a terminal) so the check is deterministic on every machine; the
+// genuinely-inherited branch is not exercised for real, on purpose — that would spawn a
+// child with this process's real fd 1/2 inherited, which is exactly the unsafe case above
+// when this check itself runs on Windows under a non-terminal stdout.
+{
+  const originalStdoutIsTTY = process.stdout.isTTY;
+  const originalStderrIsTTY = process.stderr.isTTY;
+
+  async function streamedWithoutInput(stdoutIsTTY: boolean | undefined, stderrIsTTY: boolean | undefined) {
+    Object.defineProperty(process.stdout, "isTTY", { value: stdoutIsTTY, configurable: true });
+    Object.defineProperty(process.stderr, "isTTY", { value: stderrIsTTY, configurable: true });
+
+    let forwardedStdout = "";
+    let forwardedStderr = "";
+    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      forwardedStdout += String(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      forwardedStderr += String(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const result = await spawnLocal(
+        process.execPath,
+        ["-e", "process.stdout.write('piped-out'); process.stderr.write('piped-err')"],
+        { stream: true },
+      );
+      return { result, forwardedStdout, forwardedStderr };
+    } finally {
+      process.stdout.write = originalStdoutWrite as typeof process.stdout.write;
+      process.stderr.write = originalStderrWrite as typeof process.stderr.write;
+      Object.defineProperty(process.stdout, "isTTY", { value: originalStdoutIsTTY, configurable: true });
+      Object.defineProperty(process.stderr, "isTTY", { value: originalStderrIsTTY, configurable: true });
+    }
+  }
+
+  // If stdio were inherited here, child.stdout/child.stderr would be null: no "data" event
+  // ever fires, so neither the forwarding write nor the captured result would see the
+  // child's bytes. Seeing them in both places is proof the descriptors stayed piped.
+  {
+    const { result, forwardedStdout, forwardedStderr } = await streamedWithoutInput(false, false);
+    check("non-tty stdout+stderr: descriptors are not inherited (output still reaches the caller)", result.stdout, "piped-out");
+    check("non-tty: stderr is captured too", result.stderr, "piped-err");
+    check("non-tty: stdout is forwarded rather than inherited", forwardedStdout, "piped-out");
+    check("non-tty: stderr is forwarded rather than inherited", forwardedStderr, "piped-err");
+  }
+
+  // isTTY is undefined off a real terminal, not false — the same non-inheriting path must
+  // be taken for that value too.
+  {
+    const { result } = await streamedWithoutInput(undefined, undefined);
+    check("undefined tty (the real off-terminal value) does not inherit either", result.stdout, "piped-out");
+  }
+
+  // Both descriptors must be a terminal, not just one: a half-piped pair (compose's stdout
+  // redirected, stderr still a console, or the reverse) is exactly the shape a pipeline like
+  // `2>&1 | cat` can produce, and inheriting only one of the pair is not meaningfully safer.
+  {
+    const { result } = await streamedWithoutInput(true, false);
+    check("tty stdout but non-tty stderr still takes the piped path", result.stdout, "piped-out");
+  }
+  {
+    const { result } = await streamedWithoutInput(false, true);
+    check("non-tty stdout but tty stderr still takes the piped path", result.stdout, "piped-out");
+  }
+
+  process.stderr.write(
+    "  skip the genuinely-inherited branch (both descriptors really a terminal): proving it " +
+      "would mean spawning a child with this process's real stdio inherited, which is the same " +
+      "unsafe shape the fix above exists to avoid whenever this check itself runs off a terminal\n",
+  );
+}
+
+// --- a failed command's headline names the action, not ~600 characters of wsl.exe/env/Compose
+// plumbing, and Compose's own harmless noise never crowds out (or hides behind) the real
+// reason -----------------------------------------------------------------------------------
+//
+// describeInvocation is pure and checked directly against the exact wrapping shape a real
+// call takes (WslTransport.exec's `wsl.exe -d <distro> --exec`, withEnvPrefix's `env -u
+// NAME...`, #composeArgs' fixed --env-file/--project-name/--file/--project-directory pairs —
+// runtime-docker.ts): unit-testing it needs no wsl.exe, no docker, and no distro, which spawning
+// the real thing would (and the hard rule against touching a live deployment forbids).
+
+check(
+  "concise action: a wsl.exe/env/compose wrapper shortens to the compose subcommand",
+  describeInvocation("wsl.exe", [
+    "-d", "Ubuntu-24.04", "--exec",
+    "env", "-u", "OPENCLAW_IMAGE", "-u", "OPENCLAW_TAG",
+    "docker", "compose",
+    "--env-file", "/srv/clawforge/data/compose-9f2a/compose.env",
+    "--project-name", "clawforge-demo",
+    "--file", "/srv/clawforge/tools/framework/docker-compose.yml",
+    "--project-directory", "/srv/clawforge/apps/demo",
+    "stop", "gateway",
+  ]),
+  "docker compose stop gateway",
+);
+check(
+  "concise action: the same shortening applies without the wsl.exe layer (a local target)",
+  describeInvocation("env", ["-u", "OC_TOKEN", "docker", "compose", "--env-file", "/x/compose.env", "--project-name", "p", "ps"]),
+  "docker compose ps",
+);
+check(
+  "concise action: a command with neither wrapper is left exactly as it was",
+  describeInvocation("rsync", ["-az", "--delete", "/a/", "user@host:/b/"]),
+  "rsync -az --delete /a/ user@host:/b/",
+);
+check(
+  "concise action: -d/--exec without a following env still reaches the real command",
+  describeInvocation("wsl.exe", ["-d", "Ubuntu-24.04", "--exec", "docker", "compose", "ps"]),
+  "docker compose ps",
+);
+
+// The noise phrase is built at runtime from split halves in the child's own source (below),
+// never spelled out contiguously in the script text itself: this spawns via process.execPath,
+// which describeInvocation does not shorten, so the source text ends up echoed verbatim into
+// the message's own action part — a contiguous literal there would make these checks pass
+// for the wrong reason (the phrase surviving in the echoed argv) rather than the right one
+// (the phrase surviving, un-filtered, in the detail actually read from stderr/stdout).
+const NOISE_LINE_SOURCE = "'time=\"2026-09-27T00:00:00Z\" level=warning msg=\"' + 'No services' + ' to build' + '\"'";
+
+{
+  // Compose's own progress warning, verbatim from the bug report, landing alone on stderr
+  // while the real reason came back on stdout: the old `stderr.trim() || stdout.trim()`
+  // never looked past the first non-empty half, so this exact shape hid the real reason
+  // completely.
+  const script =
+    `process.stderr.write(${NOISE_LINE_SOURCE} + '\\n');` +
+    "process.stdout.write('Error response from daemon: dependency failed to start: container exited (1)\\n');" +
+    "process.exit(1);";
+  let message = "";
+  try {
+    await spawnLocal(process.execPath, ["-e", script]);
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  check("noise filtered: a noise-only stderr defers to the real reason on stdout", message.includes("dependency failed to start"), true);
+  check("noise filtered: the harmless warning itself does not appear", message.includes("No services to build"), false);
+}
+
+{
+  // The real reason and the noise on the same stream: filtering must drop only the noise
+  // line, not the whole stream just because part of it is Compose's own chatter.
+  const script =
+    `process.stderr.write(${NOISE_LINE_SOURCE} + '\\n');` +
+    "process.stderr.write('Error: cannot stop container: still in use by another operation\\n');" +
+    "process.exit(1);";
+  let message = "";
+  try {
+    await spawnLocal(process.execPath, ["-e", script]);
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  check("real stderr kept: the genuine line survives alongside the noise", message.includes("cannot stop container: still in use"), true);
+  check("real stderr kept: the noise line next to it is still dropped", message.includes("No services to build"), false);
+}
+
+{
+  // The full argv is not gone, only out of the default headline: it rides on the rejected
+  // error for entry/cli.ts's OC_DEBUG=1 branch to print.
+  const args = ["-e", "process.stderr.write('boom'); process.exit(1)"];
+  let failure: CommandFailure | undefined;
+  try {
+    await spawnLocal(process.execPath, args);
+  } catch (error) {
+    failure = error as CommandFailure;
+  }
+  check("the concise headline names the action and keeps the real detail", failure?.message.includes("boom"), true);
+  check("the full argv survives on the error for OC_DEBUG", failure?.fullCommand, `${process.execPath} ${args.join(" ")}`);
 }
 
 // A deadline the child can outwait is not a deadline: spawnLocal must END the child at

@@ -1,9 +1,11 @@
 // What DockerRuntime asks the target, and what it puts on the target's command line.
 //
-// Two topics, one stubbed transport: the image identity it reports (the running container's,
-// never the configured tag) and the environment compose is given (a file, never `env VAR=…`
+// Three topics, one stubbed transport: the image identity it reports (the running container's,
+// never the configured tag), the environment compose is given (a file, never `env VAR=…`
 // arguments — the gateway token used to be visible in `ps` for the duration of every
-// container command, and longest for the ones that run longest).
+// container command, and longest for the ones that run longest), and — task #33 — that a
+// crash-abandoned temporary environment file from a PAST call is swept before the next one,
+// never a live or foreign one.
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -14,7 +16,8 @@ import { DockerRuntime, serializeComposeEnv } from "#framework/runtime/runtime-d
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import type { ExecOptions, Transport } from "#framework/runtime/transport.ts";
 import { createTransport, spawnLocal } from "#framework/runtime/transport.ts";
-import { parseEnv, type Settings } from "#framework/core/env.ts";
+import { parseEnv, locksDir, type Settings } from "#framework/core/env.ts";
+import { machineName, ownProcessStartedAt } from "#framework/security/instance-mutation-guard.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
 
 const previous=(()=>{try{return deploymentDir();}catch{return undefined;}})();
@@ -108,17 +111,33 @@ try {
   assert.equal(everyArgument.some((argument) => argument.includes(TOKEN)), false, "nor part of one");
   assert.equal(everyArgument.includes("env"), false, "and no `env VAR=value` prefix is built here either");
 
-  // Each operation owns its file, outside the replaceable data directory.
-  assert.equal(writes.length, 3, "each compose operation gets its own environment file");
+  // Each operation owns its file, outside the replaceable data directory. It also writes an
+  // owner record (pid, machine, this process's own start time) beside it, BEFORE it — so a
+  // crash between the two writes still leaves an owner a later run can judge by when sweeping
+  // an abandoned directory (task #33; runtime-docker.ts's #sweepStaleComposeEnvs).
+  const envWrites = writes.filter((write) => write.path.endsWith("/compose.env"));
+  const ownerWrites = writes.filter((write) => write.path.endsWith("/owner.json"));
+  assert.equal(envWrites.length, 3, "each compose operation gets its own environment file");
+  assert.equal(ownerWrites.length, 3, "and its own owner record");
   assert.equal(new Set(writes.map((write) => write.path)).size, writes.length, "concurrent runtimes cannot share the file");
-  for (const write of writes) {
+  for (const write of envWrites) {
     assert.match(write.path, /^\/srv\/openclaw\/data-locks\/compose-[0-9a-f-]+\/compose\.env$/);
     assert.equal(write.mode, "600");
+  }
+  for (const write of ownerWrites) {
+    assert.match(write.path, /^\/srv\/openclaw\/data-locks\/compose-[0-9a-f-]+\/owner\.json$/);
   }
   assert.equal(created.length, 3, "the temporary directory is prepared for each operation");
   assert.ok(privateDirectories.every((args) => args[0] === "-m" && args[1] === "700"));
   for (const [name, value] of Object.entries(env)) {
-    assert.ok(writes[0].content.includes(`${name}=${JSON.stringify(value)}`), `${name} must be in the environment file`);
+    assert.ok(envWrites[0].content.includes(`${name}=${JSON.stringify(value)}`), `${name} must be in the environment file`);
+  }
+  // Owner before env, not after: writes[] is in call order, so an owner write's index must
+  // precede its sibling env write's for every operation.
+  for (let index = 0; index < 3; index += 1) {
+    const ownerIndex = writes.indexOf(ownerWrites[index]);
+    const envIndex = writes.indexOf(envWrites[index]);
+    assert.ok(ownerIndex < envIndex, "the owner record is written before the token-bearing file");
   }
 
   // The flag is a compose top-level option: after the subcommand it is not one.
@@ -135,8 +154,14 @@ try {
   await stack.up();
   assert.equal(execCalls[0].args.includes("--env-file"), true, "a side stack gets the same environment file");
   assert.equal(execCalls[0].args.includes(TOKEN), false);
-  assert.equal(writes.length, 4, "the side stack gets its own temporary file");
-  assert.deepEqual(removed, writes.map((write) => write.path.slice(0, write.path.lastIndexOf("/"))), "temporary directories are removed after each operation");
+  assert.equal(writes.filter((write) => write.path.endsWith("/compose.env")).length, 4, "the side stack gets its own temporary file");
+  assert.equal(writes.filter((write) => write.path.endsWith("/owner.json")).length, 4, "and its own owner record");
+  // One removal per operation's whole temporary directory, not one per file inside it.
+  assert.deepEqual(
+    removed,
+    [...new Set(writes.map((write) => write.path.slice(0, write.path.lastIndexOf("/"))))],
+    "temporary directories are removed after each operation",
+  );
 
   const failedWrites: string[] = [];
   const failedRemovals: string[] = [];
@@ -153,8 +178,12 @@ try {
     new DockerRuntime(failingTransport, { env, dataDir: "/srv/openclaw/data", image: env.OPENCLAW_IMAGE } as unknown as Settings, { toTarget: async (path: string) => path } as PathBridge, { service: "gateway" }).start(),
     /compose failed/,
   );
-  assert.equal(failedWrites.length, 1);
-  assert.deepEqual(failedRemovals, failedWrites.map((path) => path.slice(0, path.lastIndexOf("/"))), "temporary files are removed when compose fails");
+  assert.equal(failedWrites.length, 2, "the owner record and the environment file both land before compose ever runs");
+  assert.deepEqual(
+    failedRemovals,
+    [...new Set(failedWrites.map((path) => path.slice(0, path.lastIndexOf("/"))))],
+    "the whole temporary directory is removed when compose fails, not once per file in it",
+  );
 
   // Hold A's command open while B queries the same instance.
   const activeFiles = new Map<string, string>();
@@ -166,7 +195,7 @@ try {
   const concurrent = {
     mkdirp: async () => {},
     writeFile: async (path: string, body: string) => { activeFiles.set(path, body); },
-    remove: async (path: string) => { activeFiles.delete(`${path}/compose.env`); },
+    remove: async (path: string) => { activeFiles.delete(`${path}/compose.env`); activeFiles.delete(`${path}/owner.json`); },
     exec: async (_command: string, args: string[]) => {
       if (_command !== "docker") return { code: 0, stdout: "", stderr: "" };
       const path = args[args.indexOf("--env-file") + 1];
@@ -234,7 +263,9 @@ try {
     freshWrites.length = 0;
     freshCalls.length = 0;
     await reconcileRuntime.start();
-    assert.ok(freshWrites[0].content.includes(`${NAME}=${JSON.stringify(OLD)}`), "start() still speaks the process-start snapshot — the two verbs stay distinct");
+    const startEnvWrite = freshWrites.find((write) => write.path.endsWith("compose.env"));
+    assert.ok(startEnvWrite, "start() writes a temporary environment file too");
+    assert.ok(startEnvWrite.content.includes(`${NAME}=${JSON.stringify(OLD)}`), "start() still speaks the process-start snapshot — the two verbs stay distinct");
     process.stderr.write("all reconcile freshness checks passed\n");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -388,4 +419,103 @@ if (runnableImage === undefined) {
     await rm(scratch, { recursive: true, force: true });
     if (previousLive !== undefined) useDeployment(previousLive);
   }
+}
+
+// --- task #33: a crash-abandoned compose-<uuid> directory from a PAST call is swept --------
+//
+// A crash mid `docker compose` call (crash 139, an OOM kill — anything that skips this
+// process's own finally block) used to leave `<data>-locks/compose-<uuid>/compose.env` behind
+// forever, carrying OPENCLAW_GATEWAY_TOKEN in plain text. #sweepStaleComposeEnvs removes only
+// ones whose recorded owner (pid, machine) is provably gone: this machine, and a pid that does
+// not exist. A live pid, an unreadable/missing owner (a sibling call still mid-write toward its
+// own would look the same for an instant), or a different machine's own clawforge are each
+// left alone — in-memory stub only, no docker and no network.
+{
+  const DATA_DIR = "/srv/compose-sweep/data";
+  const LOCKS = locksDir(DATA_DIR);
+
+  function sweepTransport() {
+    const files = new Map<string, string>();
+    const dirs = new Set<string>();
+    const removed: string[] = [];
+    return {
+      files,
+      dirs,
+      removed,
+      transport: {
+        description: "stub",
+        exec: async (command: string, args: string[]) => {
+          if (command === "mkdir") dirs.add(args[args.length - 1] ?? "");
+          return { code: 0, stdout: "", stderr: "" };
+        },
+        readFile: async (path: string) => {
+          const value = files.get(path);
+          if (value === undefined) throw new Error(`no such file: ${path}`);
+          return value;
+        },
+        writeFile: async (path: string, content: string | Uint8Array) => {
+          files.set(path, typeof content === "string" ? content : Buffer.from(content).toString("utf8"));
+        },
+        exists: async (path: string) => files.has(path) || dirs.has(path),
+        mkdirp: async (path: string) => { dirs.add(path); },
+        remove: async (path: string) => {
+          removed.push(path);
+          files.delete(path);
+          dirs.delete(path);
+          for (const key of files.keys()) if (key.startsWith(`${path}/`)) files.delete(key);
+        },
+        listFiles: async (dir: string) => {
+          const prefix = `${dir}/`;
+          return [...files.keys()].filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length));
+        },
+      } as unknown as Transport,
+    };
+  }
+
+  const sweepPaths = { toTarget: async (path: string) => path } as unknown as PathBridge;
+  const sweepRuntime = (transport: Transport) =>
+    new DockerRuntime(transport, { dataDir: DATA_DIR, env: {} } as Settings, sweepPaths, { service: "app" });
+
+  {
+    const { transport, files } = sweepTransport();
+    files.set(`${LOCKS}/compose-deaddead/owner.json`, JSON.stringify({ pid: 99999999, machine: machineName(), startedAt: new Date(0).toISOString() }));
+    files.set(`${LOCKS}/compose-deaddead/compose.env`, 'OPENCLAW_GATEWAY_TOKEN="leaked-token"\n');
+    await sweepRuntime(transport).start();
+    assert.equal(files.has(`${LOCKS}/compose-deaddead/compose.env`), false, "a dead-owner compose.env is swept");
+    assert.equal(files.has(`${LOCKS}/compose-deaddead/owner.json`), false, "its owner record goes with it");
+  }
+
+  {
+    const { transport, files } = sweepTransport();
+    files.set(`${LOCKS}/compose-0badf00d/compose.env`, 'OPENCLAW_GATEWAY_TOKEN="leaked-token"\n');
+    await sweepRuntime(transport).start();
+    assert.equal(files.has(`${LOCKS}/compose-0badf00d/compose.env`), true, "a directory with no readable owner is never swept");
+  }
+
+  {
+    const { transport, files } = sweepTransport();
+    // This process's own real start time, not "now": localLiveness()'s reuse check compares
+    // the recorded startedAt against the actual pid's start time queried live (ps/wmic) — a
+    // fresh "now" here would look like a pid reused moments ago rather than this same process.
+    files.set(`${LOCKS}/compose-a11e0000/owner.json`, JSON.stringify({ pid: process.pid, machine: machineName(), startedAt: ownProcessStartedAt() }));
+    files.set(`${LOCKS}/compose-a11e0000/compose.env`, 'OPENCLAW_GATEWAY_TOKEN="leaked-token"\n');
+    await sweepRuntime(transport).start();
+    assert.equal(files.has(`${LOCKS}/compose-a11e0000/compose.env`), true, "a live owner's compose.env is never swept");
+  }
+
+  {
+    const { transport, files } = sweepTransport();
+    files.set(`${LOCKS}/compose-f0e1cafe/owner.json`, JSON.stringify({ pid: 99999999, machine: `${machineName()}-elsewhere`, startedAt: new Date(0).toISOString() }));
+    files.set(`${LOCKS}/compose-f0e1cafe/compose.env`, 'OPENCLAW_GATEWAY_TOKEN="leaked-token"\n');
+    await sweepRuntime(transport).start();
+    assert.equal(files.has(`${LOCKS}/compose-f0e1cafe/compose.env`), true, "a foreign machine's directory is never swept from here");
+  }
+
+  {
+    const { transport, dirs } = sweepTransport();
+    await sweepRuntime(transport).start();
+    assert.equal([...dirs].some((path) => path.startsWith(`${LOCKS}/compose-`)), false, "no compose-* directory survives an ordinary successful call");
+  }
+
+  process.stderr.write("all compose-env sweep checks passed\n");
 }

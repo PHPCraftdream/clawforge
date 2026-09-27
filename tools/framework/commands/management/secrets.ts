@@ -353,8 +353,10 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
 
   if (apply) {
     // Writes config/.env on the target — the same class of mutation apply/restore/rollback
-    // guard against each other for, and this used to bypass entirely.
-    await guarded(ctx, "secrets", [], () => applyStore(ctx, store));
+    // guard against each other for, and this used to bypass entirely. No --break-lock support
+    // (its own parser above rejects it): breakLockSupported: false keeps a refusal from
+    // offering a flag it cannot accept (UX-04).
+    await guarded(ctx, "secrets", [], () => applyStore(ctx, store), { breakLockSupported: false });
     return;
   }
 

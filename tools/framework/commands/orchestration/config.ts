@@ -27,7 +27,24 @@ export function stagedFileName(dryRun: boolean): string {
   return dryRun ? `clawforge-desired.dry-${randomBytes(4).toString("hex")}.json` : stagedName;
 }
 
-export async function applyConfig(ctx: Context, args: string[]): Promise<void> {
+/** The headline for a real (non-dry) apply. Exported so the checks can pin the wording
+ *  without a live instance — see bootstrap.ts's/set-try.ts's/apply.ts's own calls, all of
+ *  which pass `restartAdvice: false` because each starts or restarts the gateway itself a
+ *  few lines later: printing "restart to pick it up" right before doing exactly that read as
+ *  the command contradicting itself (UX-10). */
+export function appliedHeadline(restartAdvice: boolean): string {
+  return restartAdvice
+    // Deliberately not ./clawforge up: a healthy container is already what `up` converges
+    // on, so it would report success and leave the old settings live.
+    ? "desired state applied — restart to pick it up: ./clawforge restart"
+    : "desired state applied";
+}
+
+export async function applyConfig(
+  ctx: Context,
+  args: string[],
+  options: { restartAdvice?: boolean } = {},
+): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const dump = args.includes("--dump");
   const force = args.includes("--force");
@@ -57,11 +74,11 @@ export async function applyConfig(ctx: Context, args: string[]): Promise<void> {
 
   // A dry run writes nothing, so it needs no lock — and taking one would make an inspection
   // of a busy instance fail for no reason.
-  if (dryRun) return writeDesiredState(ctx, true);
-  return guarded(ctx, "apply-config", args, () => writeDesiredState(ctx, false));
+  if (dryRun) return writeDesiredState(ctx, true, options.restartAdvice);
+  return guarded(ctx, "apply-config", args, () => writeDesiredState(ctx, false, options.restartAdvice));
 }
 
-async function writeDesiredState(ctx: Context, dryRun: boolean): Promise<void> {
+async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = true): Promise<void> {
 
   let payload: string;
   try {
@@ -107,9 +124,7 @@ async function writeDesiredState(ctx: Context, dryRun: boolean): Promise<void> {
   if (dryRun) {
     log("dry run only — nothing was written");
   } else {
-    // Deliberately not ./clawforge up: a healthy container is already what `up` converges on, so
-    // it would report success and leave the old settings live.
-    log("desired state applied — restart to pick it up: ./clawforge restart");
+    log(appliedHeadline(restartAdvice));
     info(`source: ${desiredStateFile()}`);
   }
 }

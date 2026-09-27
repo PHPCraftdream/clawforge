@@ -41,7 +41,11 @@ target through `wsl.exe`, so there is no need to install Node inside WSL.
 
 Web interface: `http://127.0.0.1:18789`, token in `.env` (`OPENCLAW_GATEWAY_TOKEN`).
 Running `./clawforge bootstrap` again is safe: it refreshes the image and restarts, and never
-touches data already on disk.
+touches data already on disk. The first time it pulls a shared tag, it pins `OPENCLAW_IMAGE` in
+`.env` to the exact digest that pull just proved — so another deployment on this Docker daemon
+later pulling the same tag can no longer silently change what THIS one runs next; a deployment
+already pinned to a digest is left alone by `bootstrap`, and `./clawforge upgrade` is the way to
+move it from there (see [Upgrading the image](#upgrading-the-image-upgrade)).
 
 ## Changing something
 
@@ -115,6 +119,22 @@ backend need not appear in either place, and a false blocking finding would fail
 and every `apply` on an instance that answers fine. `bootstrap`'s own final summary names the same gap, and
 `smoke`'s "agent answers end to end" check names it as the cause of a silent agent when it
 applies, instead of only reporting the symptom.
+
+Two findings watch `OPENCLAW_IMAGE` itself, because it names something a shared Docker daemon
+can move out from under a deployment that never asked for it: another deployment on the same
+machine, naming the same tag, pulling it for its own reasons. `IMAGE_UNPINNED` fires whenever
+`OPENCLAW_IMAGE` is still a tag rather than a digest — a warning, since the tag still resolves
+to something and the instance is doing its job, but the next recreate this deployment runs
+(`up`, `restart` after a compose change, `apply`) is one pull elsewhere away from switching what
+it gets, with nobody here having decided so. `IMAGE_TAG_MOVED` is its present-tense sibling: the
+local tag has ALREADY moved since this container was created, caught before that next recreate
+is the first place anyone notices. Both point at `./clawforge upgrade`, which resolves and pins
+by digest deliberately. `./clawforge bootstrap` prevents most of this before it starts: since
+task #32, the moment a fresh pull proves what a shared tag holds, bootstrap pins `OPENCLAW_IMAGE`
+to that exact digest in `.env` — the same write `upgrade` makes on success — so this deployment's
+own next recreate can no longer be moved by somebody else's pull. A deployment already pinned to
+a digest is left alone by a bootstrap re-run; `./clawforge upgrade` is the only way to move it
+from there.
 
 Two things `apply` will not do. It never reconnects an MCP client, because the client owns
 the server processes it started; and it never rewrites `config/deployment.lock.json`, because
@@ -235,7 +255,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 
 | Command | Arguments | Purpose |
 | --- | --- | --- |
-| `bootstrap` | `[--no-pull] [--break-lock] [--break-foreign-lock <hostId>]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance |
+| `bootstrap` | `[--no-pull] [--break-lock] [--break-foreign-lock <hostId>]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance. A fresh pull of a tag is pinned to the digest it just proved, in `.env` — an already digest-pinned deployment is left alone; `./clawforge upgrade` moves it from there |
 | `up` | `[--break-lock] [--break-foreign-lock <hostId>]` | Start and wait for `/healthz`; secrets and port availability are checked before the start, not after |
 | `restart` | `[--break-lock] [--break-foreign-lock <hostId>]` | Restart in place so the instance re-reads its configuration — what `apply-config` and `configure-provider` need, and what `up` cannot do. It re-reads files the container can see (bind-mounted config) and nothing compose baked into it: the environment was interpolated from `.env` at creation, so a rotated repo-env secret needs the recreate `secrets --apply` performs, or `up` |
 | `down` | `[--break-lock] [--break-foreign-lock <hostId>]` | Stop and remove the containers; data in bind mounts is untouched |
@@ -466,6 +486,7 @@ more of them than fit here:
 | `runtime/service/state/native-backup.check.ts` | `--native` invokes `openclaw backup create --verify --json --output` in the sidecar and parses its result; refuses to publish on `verified: false`; the published archive keeps the ordinary full-backup name and location, so rotation needs no native-specific case; `--native` refuses any profile but full; an image without native support raises a distinct error rather than a generic failure; neither an unsupported attempt nor a failed verify ever leaves a half archive under a normal-looking name; and a live file OpenClaw's own backup left out (a session transcript) is copied into the archive, with the count reported |
 | `runtime/service/restore.check.ts` (native section) | a restored archive carrying a native backup's embedded manifest is re-verified with `openclaw backup verify` before anything is unpacked, and a failing verification refuses the restore before any destructive step runs |
 | `runtime/connection-facts/upgrade.check.ts` | the target tag is resolved to a digest and pulled by digest, never the tag itself; the running digest is recorded before anything changes; a healthy upgrade takes a pre-upgrade backup, recreates on the target digest, and passes `openclaw doctor --lint`; a generic health failure recreates back on the previous digest without touching data; a container exit during migrations (code 78) additionally restores the pre-upgrade backup; a blocking `doctor --lint` finding rolls back the same way a health failure does; `--dry-run` resolves the digest to report the plan but changes nothing; and an instance already on the resolved digest is a no-op |
+| `runtime/connection-facts/bootstrap-image-pin.check.ts` | a fresh pull is pinned to the digest it just proved — `.env` rewritten, the moving tag gone, the pull itself proven to run before the digest is read; `--no-pull` asks for no digest to pin and leaves `.env` byte-identical; a deployment already pinned to a digest is never asked to re-resolve and never rewritten — `./clawforge upgrade` is the only way to move it from there; and a digest the runtime cannot resolve locally leaves the tag alone rather than guessing |
 | `provision-agent.check.ts` | path and argv builders, `collectRecipeFiles` excluding `agent/`, the create-vs-skip decisions, and cron reconciliation against the declaration |
 | `mcp-mirror.check.ts` | the promise itself: every command `./clawforge help` lists is a tool or an explained exemption, and every tool is a command the console offers — both surfaces read from real processes |
 | `gate-commands.check.ts` | the gate's own commands: dispatch, `--help` from the declaration, and the same schema/argv derivation the deployment's commands get |
@@ -476,7 +497,7 @@ more of them than fit here:
 | `inspection.check.ts` | the problem-code table: every code has a severity and a runnable remedy, a caller cannot downgrade a blocking one, and "healthy" means serving rather than silent |
 | `runtime/convergence/inspect/*.check.ts` | every finding `inspect` can report, provoked one at a time against a stubbed target and a real temp deployment; and `doctor`'s exit contract in both directions |
 | `runtime/convergence/inspect/egress.check.ts` | the outbound probe runs through the container exec and never `Runtime.probe()`, one exec on stdin for exactly the endpoints the live config names (none named — none asked), a name that does not resolve and an endpoint that does not answer are separate findings naming endpoint and config path, credentials in a proxy URL never reach the output, `doctor` still exits zero, and a stopped instance is asked nothing |
-| `runtime/convergence/inspect/folder.check.ts` | the deployment folder against the instance: each of `ENV_STALE`, `DECLARATION_MISSING`, `STORE_INCOMPLETE` provoked and distinct; a folder that matches the running instance producing no finding at all; a stale fact named by variable, never by value, and the token sharing `.env` reaching no output; the stopped-instance and absent-store non-findings pinned as the limits they are; `doctor` exiting zero with all three firing; and, against a REAL `DockerRuntime` with a stubbed transport, a deployment nobody has bootstrapped yet answering `NOT_BOOTSTRAPPED` (never a raw `mkdir` transport error, never `GATEWAY_DOWN` beside it) from `inspect`/`doctor`/`status` alike, with the boundary pinned too — a data directory that DOES exist fails for its own real reason, never swallowed as `NOT_BOOTSTRAPPED` |
+| `runtime/convergence/inspect/folder.check.ts` | the deployment folder against the instance: each of `ENV_STALE`, `DECLARATION_MISSING`, `STORE_INCOMPLETE` provoked and distinct; a folder that matches the running instance producing no finding at all; a stale fact named by variable, never by value, and the token sharing `.env` reaching no output; the stopped-instance and absent-store non-findings pinned as the limits they are; `doctor` exiting zero with all three firing; `IMAGE_UNPINNED` for a bare tag (surviving being stopped, since it is a fact about `.env` alone) and `IMAGE_TAG_MOVED` only once a running instance's own digest actually diverges from what the tag now resolves to — never paired over a tag that has not moved, never over a digest-pinned image, and never `IMAGE_TAG_MOVED` alone without `IMAGE_UNPINNED` beside it; and, against a REAL `DockerRuntime` with a stubbed transport, a deployment nobody has bootstrapped yet answering `NOT_BOOTSTRAPPED` (never a raw `mkdir` transport error, never `GATEWAY_DOWN` or `IMAGE_UNPINNED` beside it) from `inspect`/`doctor`/`status` alike, with the boundary pinned too — a data directory that DOES exist fails for its own real reason, never swallowed as `NOT_BOOTSTRAPPED` |
 | `lock.check.ts` | what the lock notices: an image that moved behind an unchanged tag, a framework bump, an edited recipe, a newly required secret — and that all of it is a warning |
 | `plan.check.ts` | the order, as rules: secrets before anything that needs the instance, configuration before the restart that reads it, start instead of start-then-restart, recipes after the gateway is up |
 | `runtime/convergence/plan.check.ts` | the recovery half of the order: recover-env before the two dumps, the dumps before the steps that write to the target, the declaration dump executable only while the declaration is absent, and the store dump advisory because the refusal is the safeguard |
@@ -1069,6 +1090,13 @@ pre-upgrade backup restored, since the data may already have changed. On success
 `OPENCLAW_IMAGE` in `.env` is pinned to the digest — `apply` never rewrites `config/deployment.lock.json`
 (see [Instance settings as code](#instance-settings-as-code)), so re-pin it deliberately with
 `./clawforge lock` afterwards.
+
+This is the deliberate, explicit move; `./clawforge bootstrap` makes the same pin happen on its
+own the first time it pulls a tag, precisely so a deployment is never left running on a moving
+one without an operator having chosen so (task #32) — see
+[Quick start](#quick-start) and `IMAGE_UNPINNED`/`IMAGE_TAG_MOVED` above. Once a deployment is
+pinned to a digest, only this command moves it; a `bootstrap` re-run leaves it exactly where it
+is.
 
 ## Moving state and sharing agents
 

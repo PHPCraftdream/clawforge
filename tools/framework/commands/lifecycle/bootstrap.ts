@@ -15,15 +15,43 @@
 //   7. only then start and wait for /healthz
 
 import JSON5 from "json5";
-import { log, info, die } from "#src/core/log.ts";
+import { log, info, warn, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
+import { refreshContext } from "#src/core/context.ts";
 import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
 import { ensureBaselineConfig, configureProvider } from "../management/provider.ts";
 import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
-import { preflightPort } from "./lifecycle.ts";
+import { preflightPort, pinImageReference } from "./lifecycle.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
+
+/** After a fresh pull, this deployment's OWN OPENCLAW_IMAGE is repointed from the moving tag
+ *  to the exact digest that tag was just proven to hold — so a LATER pull of the same shared
+ *  tag by some other deployment on this Docker daemon can no longer silently switch what THIS
+ *  deployment recreates onto next (up, restart after compose changes, apply — task #32). An
+ *  already-pinned deployment (`image` already carries "@sha256:") is left alone: only
+ *  ./clawforge upgrade moves those, deliberately, never a bootstrap re-run.
+ *
+ *  Best effort: a runtime that cannot resolve the digest the tag now holds locally right after
+ *  the pull (no RepoDigests to report) leaves it a tag rather than guessing — the same "never
+ *  guess" rule image-digest.ts documents throughout. Returns the context later steps should
+ *  keep using: refreshContext() re-derives one from the .env this just rewrote, the same way
+ *  every other step that rewrites .env does (apply.ts's REDERIVES_CONTEXT); a context this
+ *  process did not build through createContext() (a check's own stub, say) has nothing to
+ *  refresh and is returned unchanged. */
+async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
+  if (image.includes("@sha256:")) return ctx;
+  const pulled = await ctx.runtime.imageReference();
+  if (pulled === undefined) {
+    warn(`pulled ${image} but could not resolve the digest it now holds locally — OPENCLAW_IMAGE stays a moving tag`);
+    return ctx;
+  }
+  await pinImageReference(pulled);
+  info(`pinned OPENCLAW_IMAGE to ${pulled} in .env — another deployment pulling ${image} on this Docker daemon can no longer move this one; ./clawforge upgrade is how to move it from here`);
+  const refreshed = await refreshContext(ctx);
+  return refreshed?.context ?? ctx;
+}
 
 export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
   const noPull = args.includes("--no-pull");
@@ -67,7 +95,7 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
   // .env and the token exist before this runs: the CLI prepares them for commands that
   // declare preparesEnvironment, so ctx already carries the finished settings.
   const fresh = ctx.settings;
-  const live = ctx;
+  let live = ctx;
   const token = fresh.env.OPENCLAW_GATEWAY_TOKEN ?? "";
 
   // Refuse a port already published by another deployment before preparing data or pulling
@@ -79,8 +107,22 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
   if (noPull) {
     info("skipping pull (--no-pull)");
   } else {
-    log(`pulling ${fresh.image}`);
-    await live.runtime.pullImage();
+    // A tag is resolved to its digest at the registry and pinned BEFORE the pull, so the
+    // pull is by digest and never moves the shared local tag other deployments run on.
+    const resolved = fresh.image.includes("@sha256:") ? undefined : await live.runtime.resolveImageDigest?.(fresh.image);
+    if (resolved !== undefined) {
+      await pinImageReference(resolved);
+      info(`pinned OPENCLAW_IMAGE to ${resolved} in .env — pulled by digest, the shared ${fresh.image} tag stays where it is; ./clawforge upgrade moves it from here`);
+      live = (await refreshContext(live))?.context ?? live;
+      log(`pulling ${resolved}`);
+      await live.runtime.pullImage();
+    } else {
+      log(`pulling ${fresh.image}`);
+      await live.runtime.pullImage();
+      // Fallback (digest unresolvable at the registry): the pull moved the local tag for every
+      // deployment on it; at least this one is pinned to what it got (task #32).
+      live = await pinFreshPull(live, fresh.image);
+    }
   }
 
   await ensureBaselineConfig(live);

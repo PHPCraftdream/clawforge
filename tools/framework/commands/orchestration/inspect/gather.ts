@@ -66,6 +66,17 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
     running = false;
     notBootstrapped = error;
   }
+
+  // A pure fact about this deployment's OWN .env — no runtime call needed, so it costs
+  // nothing to check even here. Skipped pre-bootstrap the same way PROVIDER_MISSING is below:
+  // a deployment with nothing on the target yet has NOT_BOOTSTRAPPED naming the one remedy
+  // that applies, and ./clawforge upgrade (this finding's own remedy) needs a running instance
+  // to roll back to. A digest never moves; a tag can, and is shared with every other
+  // deployment on this Docker daemon that names it (task #32).
+  if (notBootstrapped === undefined && !declared.image.includes("@sha256:")) {
+    problems.push(problem("IMAGE_UNPINNED", `OPENCLAW_IMAGE is "${declared.image}", a tag rather than a digest`));
+  }
+
   // Asked of the PROSPECTIVE configuration (live + declared overlay), not the live one
   // alone: a SecretRef the declaration is about to add is a real requirement before
   // CONFIG_DRIFT ever gets applied, and plan.ts's "secrets" step is gated on exactly the
@@ -152,6 +163,28 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   // the displayed digest: two separate live queries for one inspection asked the runtime
   // (a container inspect, not a free read) about the same fact twice.
   const runningDigestList = await runningDigests(ctx);
+
+  // The mirror image of the requirement match's own caution just above: THERE, resolving the
+  // tag locally would wrongly answer for a container never recreated onto what it now points
+  // to (task #172). HERE, that is exactly the fact worth surfacing — asked only for a tag
+  // still in force (a digest is content-addressed and cannot move) and only while running
+  // (nothing to compare a stopped container's digest against), so a pinned deployment pays for
+  // this extra `docker image inspect` never at all.
+  if (!declared.image.includes("@sha256:") && runningDigestList.length > 0) {
+    const localTagDigest = await ctx.runtime.imageReference();
+    if (
+      localTagDigest !== undefined &&
+      !runningDigestList.some((digest) => digest.split("@").at(-1) === localTagDigest.split("@").at(-1))
+    ) {
+      problems.push(
+        problem(
+          "IMAGE_TAG_MOVED",
+          `the local tag "${declared.image}" now resolves to ${localTagDigest}, but the running container is ${runningDigestList[0]} — ` +
+            "the next recreate (up, restart after compose changes, apply) would switch images",
+        ),
+      );
+    }
+  }
 
   // Which set is installed here, and whether this machine matches what it required. Read
   // before the lock comparison because it is the more specific answer: a lock says what the

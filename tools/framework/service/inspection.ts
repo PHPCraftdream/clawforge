@@ -41,6 +41,8 @@ export type ProblemCode =
   | "ENV_STALE"
   | "DECLARATION_MISSING"
   | "STORE_INCOMPLETE"
+  | "IMAGE_UNPINNED"
+  | "IMAGE_TAG_MOVED"
   | "SET_RECIPE_INCOMPLETE"
   | "SET_REFERENCE_BROKEN"
   | "SET_SCHEDULE_INVALID"
@@ -198,6 +200,27 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     // The warning exists to be heeded inside that window.
     summary: "the instance holds a secret the deployment's default local store does not",
     nextAction: "./clawforge secrets --dump",
+  },
+  IMAGE_UNPINNED: {
+    severity: "warning",
+    // Not blocking: a tag still resolves to something and the instance is doing its job.
+    // What is at risk is invisible drift on THIS deployment's own next recreate (up, restart
+    // after compose changes, apply) — a moving tag is shared with every other deployment on
+    // the same Docker daemon that names it, and any one of them pulling it moves what all of
+    // them get next (task #32). `./clawforge bootstrap` pins this itself the moment it first
+    // pulls; an instance that still names a bare tag either predates that or was edited back
+    // to one.
+    summary: "OPENCLAW_IMAGE names a tag rather than a digest — a pull elsewhere on this Docker daemon can move what this deployment runs next",
+    nextAction: "./clawforge upgrade",
+  },
+  IMAGE_TAG_MOVED: {
+    severity: "warning",
+    // The present-tense sibling of IMAGE_UNPINNED: not merely "this could drift" but "the tag
+    // already points somewhere else". The running container still holds what it was created
+    // with — only ITS next recreate would actually switch — so this is caught here, before
+    // that recreate is the first place anyone notices.
+    summary: "the local tag OPENCLAW_IMAGE names now resolves to different content than the running container — its next recreate would switch images",
+    nextAction: "./clawforge upgrade",
   },
 
   // Set-level findings. Their remedy is always an edit to the declaration rather than a

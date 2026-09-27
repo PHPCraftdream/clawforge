@@ -151,6 +151,7 @@ jobs:
             tools/checks/sets/lifecycle/set-rollback.check.ts
             tools/checks/sets/lifecycle/set-try.check.ts
             tools/checks/sets/lifecycle/set-validate.check.ts
+            tools/checks/runtime/connection-facts/bootstrap-image-pin.check.ts
             tools/checks/runtime/connection-facts/operator-edit.check.ts
             tools/checks/runtime/connection-facts/recover-env-command.check.ts
             tools/checks/runtime/connection-facts/recover-env-dispatch.check.ts

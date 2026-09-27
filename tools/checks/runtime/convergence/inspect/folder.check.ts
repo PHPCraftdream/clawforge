@@ -15,6 +15,7 @@ import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
 import { blockingProblems, problem } from "#framework/service/inspection.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import { secretStoreFile, deploymentName, useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
+import { currentComposition, lockFile } from "#framework/commands/management/lock.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes } from "./fixture.ts";
 import type { TargetSpec } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -307,6 +308,86 @@ try {
     const inspection = await gatherInspection(stubContext({ mirrorChecksums: goodChecksums }));
     allJson += JSON.stringify(renderJson(inspection));
     check("a secret missing on the target too is SECRET_MISSING's business, not the store's", codes(inspection.problems), ["SECRET_MISSING"]);
+  }
+
+  // --- K. IMAGE_UNPINNED / IMAGE_TAG_MOVED: a tag is a name every OTHER deployment on this
+  // Docker daemon can move out from under this one (task #32). Read straight off
+  // ctx.settings.image and the runtime's own digest reads — nothing here writes anything, the
+  // same as every other finding in this file. -------------------------------------------------
+
+  const TAG = "ghcr.io/openclaw/openclaw:extended-stable";
+  const RUNNING_DIGEST = "ghcr.io/openclaw/openclaw@sha256:abc";
+  const MOVED_DIGEST = "ghcr.io/openclaw/openclaw@sha256:moved00000000000000000000000000000000000000000000000000000000";
+
+  {
+    await reset();
+    await writeEnv(MATCHING_ENV);
+    await writeStore(COMPLETE_STORE);
+    const inspection = await gatherInspection(folderContext(CLEAN, CONTAINER_FACTS));
+    allJson += JSON.stringify(renderJson(inspection));
+    check(
+      "a digest-pinned image provokes neither finding",
+      inspection.problems.some((entry) => entry.code === "IMAGE_UNPINNED" || entry.code === "IMAGE_TAG_MOVED"),
+      false,
+    );
+  }
+
+  {
+    await reset();
+    await writeEnv(MATCHING_ENV);
+    await writeStore(COMPLETE_STORE);
+    const inspection = await gatherInspection(folderContext({ ...CLEAN, image: TAG }, CONTAINER_FACTS));
+    allJson += JSON.stringify(renderJson(inspection));
+    check("a bare tag is IMAGE_UNPINNED", codes(inspection.problems), ["IMAGE_UNPINNED"]);
+    check("the finding is advisory", inspection.problems.map((entry) => entry.severity), ["warning"]);
+    check("it names the tag", inspection.problems[0]?.detail.includes(TAG) ?? false, true);
+  }
+
+  {
+    // The tag has NOT moved (imageReference() and runningImageIdentity() agree by default) —
+    // IMAGE_UNPINNED alone, never paired with IMAGE_TAG_MOVED over a fact that has not happened.
+    await reset();
+    await writeEnv(MATCHING_ENV);
+    await writeStore(COMPLETE_STORE);
+    const inspection = await gatherInspection(folderContext({ ...CLEAN, image: TAG, runningDigest: RUNNING_DIGEST }, CONTAINER_FACTS));
+    allJson += JSON.stringify(renderJson(inspection));
+    check("a tag that has not moved is not ALSO reported as moved", codes(inspection.problems), ["IMAGE_UNPINNED"]);
+  }
+
+  {
+    // The tag now resolves somewhere else than what is actually running — some OTHER
+    // deployment on this daemon pulling it is exactly how (task #32). The lock is re-pinned
+    // to the same "moved" digest first, the same way operator-edit.check.ts avoids an
+    // incidental warning crowding a case that is not testing it: lock.ts's own digest read
+    // (currentComposition's image.digest) is the identical runtime.imageReference() call this
+    // finding reads, so the fixture's plain default lock would otherwise also read as drifted
+    // here — a second, true but unrelated finding this case is not about.
+    await reset();
+    await writeEnv(MATCHING_ENV);
+    await writeStore(COMPLETE_STORE);
+    const movedSpec: TargetSpec = { ...CLEAN, image: TAG, localImageDigest: MOVED_DIGEST, runningDigest: RUNNING_DIGEST };
+    await writeFile(lockFile(), `${JSON.stringify(await currentComposition(folderContext(movedSpec, CONTAINER_FACTS)), null, 2)}\n`, "utf8");
+    const inspection = await gatherInspection(folderContext(movedSpec, CONTAINER_FACTS));
+    allJson += JSON.stringify(renderJson(inspection));
+    check("a moved tag reports both findings together", codes(inspection.problems), ["IMAGE_TAG_MOVED", "IMAGE_UNPINNED"]);
+    const moved = inspection.problems.find((entry) => entry.code === "IMAGE_TAG_MOVED");
+    check("the moved finding names the tag", moved?.detail.includes(TAG) ?? false, true);
+    check("and both digests — what it now resolves to, and what is actually running", [moved?.detail.includes(MOVED_DIGEST), moved?.detail.includes(RUNNING_DIGEST)], [true, true]);
+    check("and explains what a recreate would do", moved?.detail.includes("next recreate") ?? false, true);
+    check("both findings are warnings, not blocking", inspection.problems.every((entry) => entry.severity === "warning"), true);
+    // Restored for every case after this one.
+    await writeFile(lockFile(), `${JSON.stringify(await currentComposition(stubContext({})), null, 2)}\n`, "utf8");
+  }
+
+  {
+    // Stopped: nothing running to compare a "moved" tag against, so IMAGE_TAG_MOVED cannot
+    // fire — but IMAGE_UNPINNED is a fact about .env alone, and survives being stopped.
+    await reset();
+    await writeEnv(MATCHING_ENV);
+    await writeStore(COMPLETE_STORE);
+    const inspection = await gatherInspection(stubContext({ ...CLEAN, image: TAG, running: false }));
+    allJson += JSON.stringify(renderJson(inspection));
+    check("IMAGE_UNPINNED survives being stopped; IMAGE_TAG_MOVED needs a running instance", codes(inspection.problems), ["GATEWAY_DOWN", "IMAGE_UNPINNED"]);
   }
 } finally {
   await teardownFixtureDeployment(deployment);

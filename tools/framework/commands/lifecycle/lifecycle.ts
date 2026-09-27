@@ -263,10 +263,14 @@ async function runDoctorLint(ctx: Context): Promise<{ ok: true } | { ok: false; 
 }
 
 /** Rewrites this deployment's own .env (repo-side, not the target) so a later recreate stays
- *  pinned to the digest this upgrade confirmed healthy — never automatic for config/desired
- *  state (see README on why apply never rewrites the lock); this is the one exception, the
- *  same way secrets --apply rewrites .env for a rotated repo-env value. */
-async function pinImageReference(digestReference: string): Promise<void> {
+ *  pinned to a digest rather than the moving tag that named it — never automatic for
+ *  config/desired state (see README on why apply never rewrites the lock); this is one of two
+ *  exceptions, the same way secrets --apply rewrites .env for a rotated repo-env value.
+ *  Shared by upgrade (the digest it just confirmed healthy) and bootstrap (the digest a fresh
+ *  pull just resolved to, task #32) — the one place either command is allowed to rewrite .env
+ *  on its own, and both for the identical reason: what actually ran was just proven, by a
+ *  healthy upgrade or by the pull itself, and pinning it is recording a fact, not a decision. */
+export async function pinImageReference(digestReference: string): Promise<void> {
   const path = envFile();
   const content = upsertEnvValue(await readFile(path, "utf8"), "OPENCLAW_IMAGE", digestReference);
   await replacePrivateFile(path, content);

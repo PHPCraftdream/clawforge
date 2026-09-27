@@ -51,6 +51,17 @@ export interface TargetSpec {
   /** Overrides the deployment's data directory — for checks that need a hostile (shell-
    *  metacharacter) name inside the paths the target commands are built from. */
   dataDir?: string;
+  /** Overrides ctx.settings.image — a bare tag exercises IMAGE_UNPINNED (and, paired with
+   *  localImageDigest/runningDigest below, IMAGE_TAG_MOVED). Defaults to a digest, so a case
+   *  that says nothing about the image provokes neither finding. */
+  image?: string;
+  /** What imageReference() answers for the LOCAL tag's current resolution — the fact
+   *  IMAGE_TAG_MOVED compares against runningDigest below. Defaults to the same digest as
+   *  runningDigest, i.e. "the tag has not moved". */
+  localImageDigest?: string;
+  /** What runningImageIdentity() reports as the running container's own digest. Defaults to
+   *  the fixture's fixed digest — drift.check.ts's own assertions pin that literal value. */
+  runningDigest?: string;
 }
 
 /** The cron job as the declaration below would have created it — every field the
@@ -99,7 +110,11 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
     return {
       settings: {
         dataDir,
-        image: "ghcr.io/openclaw/openclaw:extended-stable",
+        // A digest by default: the fixture models an already-pinned deployment (what
+        // bootstrap now leaves behind, task #32), so a case that says nothing about the
+        // image provokes neither IMAGE_UNPINNED nor IMAGE_TAG_MOVED. folder.check.ts's own
+        // image-pinning section overrides this to exercise both.
+        image: spec.image ?? "ghcr.io/openclaw/openclaw@sha256:abc",
         env: { OPENCLAW_GATEWAY_TOKEN: "a-token-value" },
       },
       transport: {
@@ -152,10 +167,10 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
           return (spec.probes ?? {})[endpoint] ?? 200;
         },
         async imageReference(): Promise<string> {
-          return "ghcr.io/openclaw/openclaw@sha256:abc";
+          return spec.localImageDigest ?? "ghcr.io/openclaw/openclaw@sha256:abc";
         },
         async runningImageIdentity(): Promise<{ imageId: string; digests: string[]; containerId: string }> {
-          return { imageId: "img", digests: ["ghcr.io/openclaw/openclaw@sha256:abc"], containerId: "container-1" };
+          return { imageId: "img", digests: [spec.runningDigest ?? "ghcr.io/openclaw/openclaw@sha256:abc"], containerId: "container-1" };
         },
         async startedAt(): Promise<number> {
           return spec.startedAtMs ?? 5_000_000;

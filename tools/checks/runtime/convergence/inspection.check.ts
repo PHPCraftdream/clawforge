@@ -64,6 +64,10 @@ check(
     "GATEWAY_EXPOSURE_ACKNOWLEDGED",
     "GATEWAY_PUBLICLY_BOUND",
     "GATEWAY_UNHEALTHY",
+    // A tag that could move (IMAGE_UNPINNED) and one that already has (IMAGE_TAG_MOVED) —
+    // separate, present-vs-future facts about the same OPENCLAW_IMAGE (task #32).
+    "IMAGE_TAG_MOVED",
+    "IMAGE_UNPINNED",
     "LOCK_DRIFT",
     "LOCK_MISSING",
     "MCP_RESTART_REQUIRED",

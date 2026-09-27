@@ -369,6 +369,53 @@ relocating something unrelated just to free a slot (`tools/framework/diagnostics
 same route). It is still wired into `managementCommands` exactly like every other command's
 `run`, resolved through the same `#src/*` import map every other module uses.
 
+### `watch`: liveness only, transitions only, and one place each finding lives
+
+`./clawforge watch check` answers a narrower question than `inspect`/`doctor`: not "does the
+instance match what this repository declares", but "is it doing its job right now". It calls
+the same `gatherInspection()` those two commands do — a second gatherer would eventually
+answer the same question differently, which is exactly the reasoning `gather.ts`'s own header
+already states for `inspect` and `doctor` sharing one — and keeps only five problem codes:
+`GATEWAY_DOWN`, `GATEWAY_UNHEALTHY`, `NOT_BOOTSTRAPPED`, `EGRESS_UNREACHABLE`,
+`PROVIDER_MISSING`. Severity decides the bucket, read rather than re-decided: a blocking
+liveness finding is `down`, a warning one is `degraded`, none at all is `ok` — so `watch` can
+never disagree with `doctor` about what counts as blocking.
+
+The state that decision is compared against lives beside the deployment's own `.env`, in
+`state/watch.json` — the deployment's operator-side directory, never `<data>/config` on the
+target. That split matters here more than almost anywhere else in this framework: the whole
+point of watching an instance is noticing when it goes down, and a state file that lived on
+the target would be exactly as unreachable as everything else the moment that happens. It is
+published the way every other control file in this codebase is (`set/ownership/ledger.ts`'s
+`writeFileAtomic`, `security/private-file.ts`'s `replacePrivateFile`): written to a temporary
+sibling and renamed over the final name, so an interrupted write can never leave a state file
+a reader mistakes for valid.
+
+An alert (`OC_WATCH_WEBHOOK`, https unless the host is localhost/127.0.0.1) fires exactly on a
+transition — never on an unchanged state, never twice for the same one, and never at all on
+the very first cycle after `watch install` (there is nothing to have changed FROM yet, so it
+establishes a baseline instead of paging on one). A failed delivery leaves the persisted state
+at its OLD value on purpose: the next cycle still sees the same unreported transition and
+retries the alert, rather than quietly accepting the new state as normal. The webhook URL is
+registered with `core/log.ts`'s secret masking the same way `OPENCLAW_GATEWAY_TOKEN` is
+(`core/context.ts`), and nothing in `watch/` ever hands it to `log()`/`info()` in the first
+place — masking is the second layer, not the only one.
+
+`watch install`/`watch uninstall` only ever install a crontab entry — never a systemd --user
+timer, which needs `loginctl enable-linger` and a systemd-as-PID-1 assumption neither is
+guaranteed to hold — and only where an unattended cron can be trusted to find this tooling's
+own node and checkout at all: a real SSH host (`./clawforge deploy` already mirrored the checkout
+there) or a POSIX `local` target (tooling and target are the same machine). A WSL target's
+Docker distro is a container host, not a place this tooling is proven to also run, and Windows
+itself has neither cron nor systemd — for both, the command prints the exact command an
+operator-side scheduler would need to invoke (built from `Transport.clientInvocation()`, the
+same "how would an external client reach this target" question `mcp-setup` already asks it)
+rather than installing something that would silently never fire. Every entry is marked with a
+`# clawforge-watch:<deployment>` comment so a re-run replaces only its own line and `uninstall`
+removes only it, never a sibling deployment's or a foreign entry already in that crontab.
+
+Lives at `tools/framework/watch/`, top-level for the same reason `expose/` is.
+
 ## Recipes, and agents built from them
 
 A recipe is a `recipes/<name>/` directory in a deployment. It can be a service (its own

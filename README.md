@@ -270,6 +270,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `mcp-setup` | `[--client <name>] [--json]` | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
 | `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
 | `expose` | `<ssh\|tailscale\|status> [--local-port <n>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Reach a loopback-bound gateway from outside this host, narrowest scope first: `ssh` prints (and, with `--run`, opens) the SSH tunnel; `tailscale` prints (and, with `--apply`, runs) a tailnet-only `tailscale serve` — never `funnel`; `status` reports what is actually published right now, read back from the running container |
+| `watch` | `<check\|install\|uninstall\|status> [--json] [--interval <minutes>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change. `check` collapses the liveness-relevant findings `inspect` already computes into ok/degraded/down, alerts `OC_WATCH_WEBHOOK` only on a transition, and exits non-zero whenever the state is not ok; a failed alert leaves the persisted state at its old value so the next cycle retries it. `install`/`uninstall` print (and, with `--apply`, install through the transport) a crontab entry, only where an unattended cron can be trusted to find this tooling (a real SSH host or a POSIX `local` target) — elsewhere it prints the operator-side command instead of installing something that would silently never run. `status` shows the last persisted state and whether a webhook is configured, never the URL |
 | `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
 | `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
 | `check` | — | Framework checks with no instance — paths, archives, arguments, what a server delivery contains |
@@ -336,6 +337,35 @@ somewhere else anyway, narrowest scope first:
   address is `0.0.0.0` or `::` — reachable from every interface on the host, not just loopback.
   The same one-line summary appears in `./clawforge status`.
 
+## Health monitoring: `watch`
+
+An operator finds out the instance stopped doing its job without polling by hand.
+
+* `./clawforge watch check` — one probe cycle. Reuses exactly the findings `inspect`/`doctor`
+  already compute — `GATEWAY_DOWN`, `GATEWAY_UNHEALTHY`, `NOT_BOOTSTRAPPED`,
+  `EGRESS_UNREACHABLE`, `PROVIDER_MISSING` — and none of the rest (`CONFIG_DRIFT` and similar
+  are real findings, but not about whether the instance is serving). Collapses them into
+  `ok` / `degraded` / `down` by the same severity `service/inspection.ts` already assigns each
+  code, compares against the state persisted for this deployment (its own directory, atomic
+  write, never `<data>/config`), and POSTs `OC_WATCH_WEBHOOK` (in this deployment's `.env`;
+  https only, unless the host is localhost/127.0.0.1) only on a **transition** — an unchanged
+  state never alerts twice. A failed POST leaves the persisted state at its old value, so the
+  same unreported transition is retried next cycle rather than accepted as normal. The exit
+  code reflects the *current* state on every cycle, alert or not, for a scheduler to branch on.
+  The webhook URL is registered as a secret (masked like the gateway token) and is never
+  printed by this command, on any path, including failure.
+* `./clawforge watch install` / `watch uninstall` — print (and, with `--apply`, install through
+  the transport) a crontab entry that runs `watch check` every `--interval` minutes (default
+  5), marked so a re-run replaces only its own line and `uninstall` removes only it. Only where
+  an unattended cron can be trusted to find this tooling's own node and checkout: a real SSH
+  host (`./clawforge deploy` already mirrored the checkout there) or a POSIX `local` target. A WSL
+  target's Docker distro is not such a place, and neither is Windows itself — there this prints
+  the exact command an operator-side scheduler (Task Scheduler on Windows) would need to
+  invoke instead of installing something that would silently never run; it never creates or
+  touches a real one.
+* `./clawforge watch status` — the persisted last state, when it last changed, and whether a
+  webhook is configured — never the URL itself.
+
 ## How it is put together
 
 A command does not know where the target lives or how to reach it. It is handed a context
@@ -391,6 +421,8 @@ near their theme without creating a flat catalogue.
   command-family directory already sits at the seven-entry cap, and `tools/framework/` itself
   has no direct source file of its own, so it is exempt from the cap and the one place a new
   command family fits without relocating something unrelated just to free a slot
+- `tools/framework/watch`: `./clawforge watch` — liveness monitoring, transition-only webhook
+  alerts, and the crontab install/uninstall cycle. Top-level for the same reason `expose` is
 - `tools/checks`: foundation, runtime, integration, security, sets and release checks
 
 Run `npm run format:check` for the native TypeScript check and Oxlint before opening a

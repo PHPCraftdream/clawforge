@@ -18,6 +18,7 @@ import { recoverEnv } from "#src/commands/recover-env/index.ts";
 import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe/index.ts";
 import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
 import { expose, exposeActionIsReadOnly } from "#src/expose/index.ts";
+import { watch, watchActionIsReadOnly } from "#src/watch/index.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 function secretsWrites(args: string[]): boolean {
@@ -453,6 +454,49 @@ export const managementCommands: Record<string, AppCommand> = {
       { name: "local-port", description: "With ssh: local port to bind (defaults to the gateway's own port)", kind: "option" },
       { name: "run", description: "With ssh: open the tunnel in the foreground until Ctrl+C; needs a real terminal", kind: "flag" },
       { name: "apply", description: "With tailscale: run the printed `tailscale serve` command on the target instead of only printing it", kind: "flag" },
+      BREAK_LOCK_ARGUMENT,
+      BREAK_FOREIGN_LOCK_ARGUMENT,
+    ],
+  },
+  watch: {
+    summary: "Health monitoring with a webhook alert on state change",
+    run: watch,
+    destructive: true,
+    readOnlyWhen: watchActionIsReadOnly,
+    changedWhen: (args) => !watchActionIsReadOnly(args),
+    requiresConfirmationWhen: (args) => !watchActionIsReadOnly(args),
+    details:
+      "Four actions.\n" +
+      "check — one probe cycle, reusing exactly the findings `inspect`/`doctor` already " +
+      "compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE, " +
+      "PROVIDER_MISSING — never CONFIG_DRIFT or the rest, which are real but not about " +
+      "whether the instance is serving) and collapses them into ok / degraded / down. " +
+      "Compared against the last state persisted for this deployment (its own operator-side " +
+      "directory, never <data>/config — atomic write); a webhook POST (OC_WATCH_WEBHOOK in " +
+      "this deployment's .env, https only unless it is localhost) fires only on a TRANSITION, " +
+      "so an unchanged state never pages anyone twice. A failed POST leaves the persisted " +
+      "state at its old value on purpose, so the same unreported transition is retried next " +
+      "cycle instead of being silently accepted as normal. The exit code reflects the " +
+      "CURRENT state on every cycle, alert or not — 0 while ok, non-zero otherwise — for a " +
+      "scheduler to branch on without reading the text. The webhook URL is never printed, " +
+      "anywhere, including on failure.\n" +
+      "install / uninstall — print (and, with --apply, install through the transport) a " +
+      "crontab entry that runs `watch check` every --interval minutes (default 5), marked " +
+      "so a re-run replaces only its own line and uninstall removes only it. Only where " +
+      "this framework can actually trust an unattended cron to find this tooling's own " +
+      "node and checkout: a real SSH host (deploy already mirrored the checkout there) or a " +
+      "POSIX `local` target. A WSL target's Docker distro is not such a place, and neither " +
+      "is Windows itself (no crontab/systemd) — there this prints, instead of installing " +
+      "something that silently never runs, the exact command an operator-side scheduler " +
+      "(Task Scheduler on Windows) would need to invoke, using the transport's own " +
+      "clientInvocation(); it never creates or touches a real one.\n" +
+      "status — the persisted last state, when it last changed, and whether a webhook is " +
+      "configured — never the URL itself.",
+    arguments: [
+      { name: "action", description: "check, install, uninstall or status", kind: "positional", required: true, choices: ["check", "install", "uninstall", "status"] },
+      { name: "json", description: "With check/status: emit JSON instead of text", kind: "flag" },
+      { name: "interval", description: "With install: minutes between checks (default 5)", kind: "option" },
+      { name: "apply", description: "With install/uninstall: mutate the target's crontab instead of only printing it", kind: "flag" },
       BREAK_LOCK_ARGUMENT,
       BREAK_FOREIGN_LOCK_ARGUMENT,
     ],

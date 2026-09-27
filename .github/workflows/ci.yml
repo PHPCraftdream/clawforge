@@ -216,6 +216,10 @@ jobs:
             tools/checks/security/expose/ssh.check.ts
             tools/checks/security/expose/status.check.ts
             tools/checks/security/expose/tailscale.check.ts
+            tools/checks/security/watch/index.check.ts
+            tools/checks/security/watch/check.check.ts
+            tools/checks/security/watch/install.check.ts
+            tools/checks/security/watch/status.check.ts
             tools/checks/security/private-paths-ledger/serialization.check.ts
             tools/checks/security/private-paths-ledger/reconcile-history.check.ts
           )

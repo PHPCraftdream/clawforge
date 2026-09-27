@@ -8,7 +8,7 @@
 // So the assertions are about the shape of what reaches the target, not about the outcome
 // of a run: numeric ids, resolved before any escalation, passed as plain arguments.
 
-import { ensureLockHome, sudoFor } from "#framework/runtime/datadir.ts";
+import { ensureLockHome, needsOwnerEscalation, sudoFor } from "#framework/runtime/datadir.ts";
 import { lockHome } from "#framework/runtime/instance-lock.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -246,6 +246,32 @@ async function familyRefusal(owner: string): Promise<string> {
   check("otherwise, one command per owner", commands.length, 2);
   check("the container-owned family still names the shared root", commands.includes("sudo install -d -o 1000 -g 1000 /srv/openclaw"), true);
   check("the lock home keeps the tooling's own identity, not the container's", commands.includes("sudo install -d -o 1000 -g 1001 /srv/openclaw/data-locks"), true);
+}
+
+// A privilege probe that never ran (wsl.exe/ssh failing under load: exit 255, -1, ...) is not
+// the answer "not writable"/"not the owner": it is retried, then reported as a transport
+// failure — never turned into "needs root" plus a sudo refusal.
+{
+  function flaky(results: Record<string, number[]>): Context {
+    return {
+      settings: { dataDir: "/srv/x/data" },
+      transport: {
+        description: "stub",
+        async exists(): Promise<boolean> { return true; },
+        async exec(command: string, args: string[]): Promise<ExecResult> {
+          const queue = results[`${command} ${args[0]}`] ?? [0];
+          const code = queue.length > 1 ? queue.shift() as number : queue[0];
+          return { code, stdout: command === "id" ? "1000\n" : "", stderr: code === 255 ? "wsl: transport hiccup" : "" };
+        },
+      },
+    } as unknown as Context;
+  }
+  check("a transient probe failure is retried, and a writable path needs no sudo", (await sudoFor(flaky({ "test -w": [255, 0] }), "/srv/x/data")).length, 0);
+  let message = "";
+  try { await sudoFor(flaky({ "test -w": [255] }), "/srv/x/data"); } catch (error) { message = (error as Error).message; }
+  check("a probe that never runs is reported as the transport failing", /transport failed, not the check/.test(message), true);
+  check("and never as a sudo refusal", /needs root/.test(message), false);
+  check("an id probe hiccup is retried, not read as \"escalate\"", await needsOwnerEscalation(flaky({ "id -u": [255, 0] }), "1000:1000"), false);
 }
 
 process.stderr.write(failed === 0 ? "all lock home checks passed\n" : `${failed} failed\n`);

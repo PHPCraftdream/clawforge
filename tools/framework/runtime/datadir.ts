@@ -58,7 +58,7 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
   }
 
   if (options.force !== true) {
-    const writable = await ctx.transport.exec("test", ["-w", probe], { allowFailure: true });
+    const writable = await answeredProbe(ctx, "test", ["-w", probe], [0, 1]);
     if (writable.code === 0) return [];
   }
 
@@ -166,11 +166,24 @@ async function ownerOf(ctx: Context, path: string): Promise<string> {
  *  and the owner already being asked for — the two identities POSIX lets chown that owner
  *  without CAP_CHOWN. Read before the chown, never assumed from directory permissions. */
 export async function needsOwnerEscalation(ctx: Context, fixedOwner: string): Promise<boolean> {
-  const uid = await ctx.transport.exec("id", ["-u"], { allowFailure: true });
-  if (uid.code === 0 && uid.stdout.trim() === "0") return false;
-  const gid = await ctx.transport.exec("id", ["-g"], { allowFailure: true });
-  const current = uid.code === 0 && gid.code === 0 ? `${uid.stdout.trim()}:${gid.stdout.trim()}` : undefined;
-  return current !== fixedOwner;
+  const uid = await answeredProbe(ctx, "id", ["-u"], [0]);
+  if (uid.stdout.trim() === "0") return false;
+  const gid = await answeredProbe(ctx, "id", ["-g"], [0]);
+  return `${uid.stdout.trim()}:${gid.stdout.trim()}` !== fixedOwner;
+}
+
+/** A probe whose exit code IS the answer: `answers` are the codes the tool itself gives
+ *  (test: 0/1). Anything else means the probe never ran — wsl.exe/ssh failing under load —
+ *  and read as "no" it turned a transport hiccup into "needs root" plus a sudo refusal
+ *  (the intermittent private-history-restore failure, seen only with parallel suites).
+ *  Retried, then reported as what it is. */
+export async function answeredProbe(ctx: Context, command: string, args: string[], answers: readonly number[]): Promise<{ code: number; stdout: string }> {
+  let last = { code: -1, stdout: "", stderr: "" };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    last = await ctx.transport.exec(command, args, { allowFailure: true });
+    if (answers.includes(last.code)) return last;
+  }
+  throw new Error(`could not run \`${command} ${args.join(" ")}\` on the target (exit ${last.code}${last.stderr.trim() ? `: ${last.stderr.trim()}` : ""}) — the transport failed, not the check`);
 }
 
 /** Resolves `path` through every symlink on the target; dies when the target cannot answer

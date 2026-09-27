@@ -13,6 +13,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { recipeFileChecksums, agentBundleChecksums } from "#framework/service/checksums.ts";
+import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
 import { currentComposition, lockFile } from "#framework/commands/management/lock.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
@@ -160,16 +161,26 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
           return spec.startedAtMs ?? 5_000_000;
         },
         async runOneOff(_service: string, args: string[]): Promise<ExecResult> {
+          const agentsList = json((spec.agents ?? ["main", "onboarding"]).map((id) => ({ id })));
+          const mcpList = json(
+            Object.fromEntries((spec.mcpServers ?? ["demo-mcp"]).map((name) => [name, spec.mcpServerEntries?.[name] ?? mcpServerSpec("demo")])),
+          );
+          const cronListResult = json({ jobs: spec.cronJobs ?? [matchingJob()] });
+          const version = { code: 0, stdout: "OpenClaw 2026.6.34\n", stderr: "" };
+
+          // observeLive's own batched read (openclawCliBatch): "-c" plus a script is the
+          // shape only that call ever passes, never a plain "agents"/"mcp"/"cron" argv.
+          if (args[0] === "-c") {
+            return { code: 0, stdout: formatBatchStub([agentsList, mcpList, cronListResult, version]), stderr: "" };
+          }
+
+          // provision-agent's own reconcile.ts reads these one at a time, unbatched — same
+          // responses, kept reachable this way too.
           const key = args.slice(0, 2).join(" ");
-          if (key === "agents list") return json((spec.agents ?? ["main", "onboarding"]).map((id) => ({ id })));
-          if (key === "mcp list") {
-            const names = spec.mcpServers ?? ["demo-mcp"];
-            return json(Object.fromEntries(names.map((name) => [name, spec.mcpServerEntries?.[name] ?? mcpServerSpec("demo")])));
-          }
-          if (key === "cron list") {
-            return json({ jobs: spec.cronJobs ?? [matchingJob()] });
-          }
-          if (args[0] === "--version") return { code: 0, stdout: "OpenClaw 2026.6.34\n", stderr: "" };
+          if (key === "agents list") return agentsList;
+          if (key === "mcp list") return mcpList;
+          if (key === "cron list") return cronListResult;
+          if (args[0] === "--version") return version;
           return { code: 0, stdout: "{}", stderr: "" };
         },
       },

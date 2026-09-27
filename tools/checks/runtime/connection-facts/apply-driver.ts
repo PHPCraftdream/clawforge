@@ -9,6 +9,7 @@
 
 import { json, matchingJob, CONFIG_FILE, MIRROR, DATA } from "../convergence/inspect/fixture.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
+import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import type { ExecResult, Transport } from "#framework/runtime/transport.ts";
 
 /** The live config as the fixture's stub presents it, so the plan is quiet except for the
@@ -72,12 +73,18 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
     if (args.includes("run")) {
       const rest = args.slice(args.indexOf("run") + 1);
       const tail = rest.slice(rest.indexOf("cli") + 1);
-      if (tail[0] === "agents" && tail[1] === "list") return json((spec.agents ?? ["main", "onboarding"]).map((id) => ({ id })));
-      if (tail[0] === "mcp" && tail[1] === "list") {
-        return json(Object.fromEntries((spec.mcpServers ?? ["demo-mcp"]).map((name) => [name, spec.mcpServerEntries ?? mcpServerSpec("demo")])));
-      }
-      if (tail[0] === "cron" && tail[1] === "list") return json({ jobs: spec.cronJobs ?? [matchingJob()] });
-      if (tail.includes("--version")) return ok("OpenClaw 2026.6.34\n");
+      const agentsResult = json((spec.agents ?? ["main", "onboarding"]).map((id) => ({ id })));
+      const mcpResult = json(Object.fromEntries((spec.mcpServers ?? ["demo-mcp"]).map((name) => [name, spec.mcpServerEntries ?? mcpServerSpec("demo")])));
+      const cronResult = json({ jobs: spec.cronJobs ?? [matchingJob()] });
+      const versionResult = ok("OpenClaw 2026.6.34\n");
+      // observeLive's own batched read (openclawCliBatch): `--entrypoint sh cli -c <script>`
+      // is the shape only that call ever passes.
+      if (tail[0] === "-c") return ok(formatBatchStub([agentsResult, mcpResult, cronResult, versionResult]));
+      // provision-agent's own reconcile.ts still reads these one at a time, unbatched.
+      if (tail[0] === "agents" && tail[1] === "list") return agentsResult;
+      if (tail[0] === "mcp" && tail[1] === "list") return mcpResult;
+      if (tail[0] === "cron" && tail[1] === "list") return cronResult;
+      if (tail.includes("--version")) return versionResult;
       return ok("{}");
     }
     if (args.includes("up")) {

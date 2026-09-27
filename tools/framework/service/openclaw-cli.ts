@@ -139,3 +139,113 @@ export async function openclawCliJson<T>(ctx: Context, args: string[]): Promise<
     throw new Error(`openclaw ${args.join(" ")} did not answer with JSON: ${result.stdout.trim().slice(0, 200)}`);
   }
 }
+
+/** One command's result out of an openclawCliBatch() call: its own exit code and stdout,
+ *  never thrown — a batch exists precisely so several reads share one container, and one of
+ *  them failing must not read as the others having failed too. */
+export interface BatchedCliResult {
+  readonly code: number;
+  readonly stdout: string;
+}
+
+/** Delimits one command's output from the next inside the batch script below. Distinctive
+ *  enough that no CLI output (a version string, `--json` output) plausibly collides with it. */
+const BATCH_MARKER = "__clawforge_cli_batch__";
+
+/** Quotes one argument for the batch script's POSIX shell — the same escaping transport.ts's
+ *  own shellQuote uses, kept local rather than shared: it is a two-line rule, and importing
+ *  it across modules for that would be more surface than the duplication it avoids. */
+function quoteArg(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/** Runs several OpenClaw CLI invocations in ONE throwaway container instead of one each.
+ *  Every `docker compose run --rm` pays Compose's create/destroy cost again — measured
+ *  directly against this deployment at ~5-7s (docker-compose.yml's own note on cli-helper) —
+ *  and gatherInspection's reads (agents/mcp/cron list, --version) were paying that four
+ *  times over for one inspection, which dominated its wall time far more than any single
+ *  wsl.exe spawn does.
+ *
+ *  No scope-upgrade retry here (contrast openclawCli/run() above): every caller today is a
+ *  read-only query made without model approval, where a refused call already falls back to
+ *  an empty/absent answer — exactly the outcome a plain non-zero exit produces here too. A
+ *  write that needs that retry belongs on openclawCli, one call at a time.
+ *
+ *  The script never uses `set -e` and never chains with `&&`: one command's failure must
+ *  not skip the marker that lets its result be told apart from the next command's, and must
+ *  not stop the remaining commands from running at all. */
+export async function openclawCliBatch(ctx: Context, commands: readonly string[][]): Promise<BatchedCliResult[]> {
+  if (commands.length === 0) return [];
+
+  // Run concurrently, print in order: each OpenClaw CLI start costs seconds of its own
+  // (agents list ~4s even inside a running container), so a serial batch still paid the sum.
+  const script = [
+    "dir=$(mktemp -d)",
+    ...commands.map((args, index) =>
+      `( node dist/index.js ${args.map(quoteArg).join(" ")} > "$dir/${index}"; echo "$?" > "$dir/${index}.code" ) &`),
+    "wait",
+    ...commands.map((_, index) => [
+      `printf '%s\\n' ${quoteArg(`${BATCH_MARKER}${index}:begin`)}`,
+      `cat "$dir/${index}"`,
+      `printf '%s%d\\n' ${quoteArg(`${BATCH_MARKER}${index}:exit:`)} "$(cat "$dir/${index}.code")"`,
+    ].join("\n")),
+  ].join("\n");
+
+  let result: ExecResult;
+  try {
+    result = await ctx.runtime.runOneOff("cli", ["-c", script], {
+      profile: "cli",
+      entrypoint: "sh",
+      input: "",
+      allowFailure: true,
+    });
+  } catch {
+    // The container itself never ran (gateway unreachable, image missing, …): every command
+    // inside it is equally unanswered, the same gap a single failed runOneOff already left
+    // its one caller with.
+    return commands.map(() => ({ code: 1, stdout: "" }));
+  }
+
+  return parseBatchOutput(result.stdout, commands.length);
+}
+
+/** Splits one batch's combined stdout back into each command's own, by the markers
+ *  openclawCliBatch's script wrote around it. A command whose markers never appear (the
+ *  script itself failed before reaching that line) is reported failed rather than left to
+ *  crash the caller with a missing array entry. */
+function parseBatchOutput(stdout: string, count: number): BatchedCliResult[] {
+  const results: BatchedCliResult[] = Array.from({ length: count }, () => ({ code: 1, stdout: "" }));
+  const beginPattern = new RegExp(`^${BATCH_MARKER}(\\d+):begin$`);
+  const exitPattern = new RegExp(`^${BATCH_MARKER}(\\d+):exit:(-?\\d+)$`);
+
+  let index = -1;
+  let body: string[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const begin = beginPattern.exec(line);
+    if (begin !== null) {
+      index = Number(begin[1]);
+      body = [];
+      continue;
+    }
+    const exit = exitPattern.exec(line);
+    if (exit !== null) {
+      const exitIndex = Number(exit[1]);
+      if (exitIndex >= 0 && exitIndex < count) results[exitIndex] = { code: Number(exit[2]), stdout: body.join("\n") };
+      index = -1;
+      body = [];
+      continue;
+    }
+    if (index !== -1) body.push(line);
+  }
+  return results;
+}
+
+/** Builds the combined stdout parseBatchOutput() above expects, from each command's own
+ *  result — the marker text a fake `runOneOff` needs to answer a batched call, without a
+ *  test duplicating BATCH_MARKER itself and risking the two silently drifting apart.
+ *  Exported for testing only (tools/checks/runtime/convergence/inspect/fixture.ts). */
+export function formatBatchStub(results: readonly { code: number; stdout: string }[]): string {
+  return results
+    .map((result, index) => [`${BATCH_MARKER}${index}:begin`, result.stdout, `${BATCH_MARKER}${index}:exit:${result.code}`].join("\n"))
+    .join("\n");
+}

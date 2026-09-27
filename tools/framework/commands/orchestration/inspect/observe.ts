@@ -8,7 +8,8 @@ import { resolve } from "node:path";
 import JSON5 from "json5";
 import { deploymentName, desiredStateFile, envFile, recipesDir, secretStoreFile } from "#src/runtime/deployment.ts";
 import { parseEnv } from "#src/core/env.ts";
-import { openclawCliJson, openclawCli } from "#src/service/openclaw-cli.ts";
+import { openclawCliBatch } from "#src/service/openclaw-cli.ts";
+import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
 import { recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { readLedger, orphanedBy, foreign } from "#src/set/ownership/ledger.ts";
 import type { DeclaredOwnership } from "#src/set/ownership/ledger.ts";
@@ -481,19 +482,30 @@ export async function observeLive(
   const egress = await observeEgress(ctx, liveConfig, problems);
 
   // --- what OpenClaw itself has registered ----------------------------------------------
-  const agents = await listOrEmpty(ctx, ["agents", "list", "--json"], (parsed) =>
+  // One container for all four reads (three lists plus --version below) instead of one
+  // each: every `docker compose run --rm` pays Compose's create/destroy cost again
+  // (~5-7s, docker-compose.yml's own note on cli-helper), and paying that four times over
+  // for one inspection was the dominant cost doctor/plan measured — trimming wsl.exe spawn
+  // counts elsewhere did not move their wall time, this does.
+  const [agentsResult, mcpResult, cronResult, versionResult] = await openclawCliBatch(ctx, [
+    ["agents", "list", "--json"],
+    ["mcp", "list", "--json"],
+    ["cron", "list", "--json"],
+    ["--version"],
+  ]);
+  const agents = parseJsonOrEmpty(agentsResult, (parsed) =>
     (parsed as Array<{ id?: string }>).map((entry) => entry.id ?? "").filter((id) => id !== ""));
   // The full entries, not just names: a server present under the wrong command (or
   // disabled) is registered but broken, and the per-recipe check below needs to tell that
   // apart from genuinely missing — mcpServerMatches() is the same comparison
   // provision-agent's own reconciliation already uses.
-  const mcpServerEntries = await listOrEmpty(ctx, ["mcp", "list", "--json"], (parsed) =>
+  const mcpServerEntries = parseJsonOrEmpty(mcpResult, (parsed) =>
     Object.entries(parsed as Record<string, { command?: unknown; args?: unknown; enabled?: unknown }>));
   const mcpServers = mcpServerEntries.map(([name]) => name);
   // Whole jobs, not flattened names: the declared contract is the message, the timeout, the
   // session target and the delivery mode as well as the schedule, and a job compared on two
   // of those can differ in every other one while reporting no drift at all.
-  const liveJobs = await listOrEmpty(ctx, ["cron", "list", "--json"], (parsed) =>
+  const liveJobs = parseJsonOrEmpty(cronResult, (parsed) =>
     ((parsed as { jobs?: CronJob[] }).jobs ?? []));
   const cronJobs = liveJobs
     .map((job) => (job.schedule?.expr === undefined ? (job.name ?? "") : `${job.name ?? ""}@${job.schedule.expr}`))
@@ -617,23 +629,19 @@ export async function observeLive(
     }
   }
 
-  let openclawVersion: string | undefined;
-  try {
-    const result = await openclawCli(ctx, ["--version"]);
-    openclawVersion = result.stdout.trim().split("\n")[0];
-  } catch {
-    openclawVersion = undefined;
-  }
+  const openclawVersionLine = versionResult.code === 0 ? versionResult.stdout.trim().split("\n")[0] : "";
+  const openclawVersion = openclawVersionLine === "" ? undefined : openclawVersionLine;
 
   return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion };
 }
 
-/** A `--json` list from OpenClaw's CLI, or an empty one when the call fails. A failing list
- *  must not take the whole inspection down: the finding a coder needs is usually elsewhere,
- *  and an inspection that refuses to answer is worse than one with a gap in it. */
-async function listOrEmpty<T>(ctx: Context, args: string[], extract: (parsed: unknown) => T[]): Promise<T[]> {
+/** One batched call's `--json` list, or an empty one when that command failed. A failing
+ *  list must not take the whole inspection down: the finding a coder needs is usually
+ *  elsewhere, and an inspection that refuses to answer is worse than one with a gap in it. */
+function parseJsonOrEmpty<T>(result: BatchedCliResult, extract: (parsed: unknown) => T[]): T[] {
+  if (result.code !== 0) return [];
   try {
-    return extract(await openclawCliJson<unknown>(ctx, args));
+    return extract(JSON.parse(result.stdout));
   } catch {
     return [];
   }

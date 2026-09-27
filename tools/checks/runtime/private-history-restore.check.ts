@@ -476,6 +476,9 @@ try {
     }
     check("the restore with a corrupt history copy fails", corruptThrew, true);
     check("it fails closed on the parse", /could not parse/.test(corruptMessage), true);
+    // Seen failing once under parallel load and never reproduced since: the booleans above
+    // hide why, so a failure prints the restore's own message.
+    if (!/could not parse/.test(corruptMessage)) process.stderr.write(`    restore message: ${corruptMessage || "(none — restore did not throw)"}\n`);
     check("the previous live data was put back", await transport.exists(`${DATA}/workspace/live-marker.md`), true);
     check("the archive's own marker never landed", await transport.exists(`${DATA}/workspace/from-archive.md`), false);
     const replacedLeft = await transport.exec(

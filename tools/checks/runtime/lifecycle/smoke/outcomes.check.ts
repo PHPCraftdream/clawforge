@@ -155,6 +155,46 @@ check("could-not-check is not a species of not-checked — the run gate depends 
 
   const answered = await runChecks(agentContext({ models: { providers: { zai: { apiKey: "k" } } } }, "SMOKE-OK"), [agent], () => {});
   check("an agent that actually answers still passes", answered.results.map((result) => result.status), ["passed"]);
+
+  // Without a provider the real CLI was seen hanging 10+ minutes: the call is bounded by
+  // coreutils timeout INSIDE the container, since killing wsl.exe/ssh here leaves it running.
+  let seen: { args: string[]; entrypoint?: string } | undefined;
+  const bounded = agentContext({ models: { providers: { zai: { apiKey: "k" } } } }, "SMOKE-OK");
+  (bounded.runtime as unknown as { runOneOff: unknown }).runOneOff = async (_service: string, args: string[], options: { entrypoint?: string }) => {
+    seen = { args, entrypoint: options.entrypoint };
+    return { code: 0, stdout: "SMOKE-OK", stderr: "" };
+  };
+  await runChecks(bounded, [agent], () => {});
+  check("the agent call runs under coreutils timeout in the container", seen?.entrypoint, "timeout");
+  check("with a kill grace and a hard deadline before node", seen?.args.slice(0, 4).join(" "), "-k 10 120 node");
+  check("and OpenClaw's own --timeout below that deadline", seen?.args.includes("--timeout"), true);
+
+  // The real bug report (docs/first-hour-acceptance.md, 2026-09-27 run): the CLI itself
+  // failed before ever replying, so the check never reached the verdict branch above — the
+  // hint must still apply on THIS failure path, not just a silent reply.
+  function unreachableAgentContext(liveConfig: unknown): Context {
+    return {
+      settings: { dataDir: "/srv/openclaw/data" },
+      transport: {
+        async readFile(path: string): Promise<string> {
+          if (path === "/srv/openclaw/data/config/openclaw.json") return JSON.stringify(liveConfig);
+          throw new Error(`unexpected read: ${path}`);
+        },
+      },
+      runtime: {
+        runOneOff: async () => { throw new Error("docker compose --profile cli run --rm -T cli agent ... failed (exit 1)"); },
+      },
+    } as unknown as Context;
+  }
+
+  const unreachableNoProvider = await runChecks(unreachableAgentContext({ models: { providers: {} } }), [agent], () => {});
+  check("an unreachable agent stays could-not-check, not failed", unreachableNoProvider.results.map((result) => result.status), ["could-not-check"]);
+  check("but still names PROVIDER_MISSING when the config really has none", unreachableNoProvider.results[0].detail?.includes("./clawforge configure-provider"), true);
+  check("keeping the real symptom alongside it", unreachableNoProvider.results[0].detail?.includes("could not ask the agent"), true);
+
+  const unreachableConfigured = await runChecks(unreachableAgentContext({ models: { providers: { zai: { apiKey: "k" } } } }), [agent], () => {});
+  check("an unreachable agent with a provider configured stays could-not-check too", unreachableConfigured.results.map((result) => result.status), ["could-not-check"]);
+  check("without inventing a provider cause that does not apply", unreachableConfigured.results[0].detail?.includes("configure-provider"), false);
 }
 
 process.stderr.write(failed === 0 ? "all smoke outcome checks passed\n" : `${failed} failed\n`);

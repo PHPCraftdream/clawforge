@@ -83,6 +83,12 @@ export function warn(message: string): void {
   write(`${C.yellow}warning:${C.off} ${message}\n`);
 }
 
+/** A blocking finding — instance not doing its job, or would not survive a restart — so it
+ *  does not read as merely worth noting the way warn()'s "warning:" does. */
+export function reportBlocking(message: string): void {
+  write(`${C.red}blocking:${C.off} ${message}\n`);
+}
+
 /** Thrown rather than exiting, so callers can clean up; main() turns it into exit 1. */
 export class UserError extends Error {
   name = "UserError";

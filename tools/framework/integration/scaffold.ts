@@ -106,7 +106,7 @@ export async function deploymentEnv(name: string, portStart?: number): Promise<s
 
 const GITIGNORE_APPEND = `
 # OpenClaw deployment state — the gateway token and provider secrets, never framework
-# config (.mcp.json / .codex/ are handled separately, by setupProjectMcp below).
+# config. MCP client files (.mcp.json, .codex/) are excluded separately.
 .env
 secrets/
 `;

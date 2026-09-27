@@ -4,7 +4,7 @@
 // crafted listing and records every command it is asked to run, so the assertion is not
 // "the check reported a failure" but "tar -xzf was never invoked".
 
-import { verifySnapshot } from "#framework/commands/lifecycle/verify.ts";
+import { verifySnapshot, verifySnapshotQuietly } from "#framework/commands/lifecycle/verify.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, SshTransport, WslTransport, spawnLocal, type ExecResult } from "#framework/runtime/transport.ts";
@@ -611,6 +611,39 @@ for (const transport of [new WslTransport("test-distro"), new SshTransport("test
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+}
+
+// --- verifySnapshotQuietly: smoke's negative check gets its wanted answer (rejected) in
+// silence, and the unwanted one (accepted) with what the verifier actually saw ------------
+
+{
+  const rejectedFixture = makeCtx(
+    "data/\ndata/x\n/etc/passwd\n",
+    "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n-rw-r--r-- user/group 0 2026-01-01 00:00 data/x\n",
+  );
+  let surfaced = "";
+  const passed = await withOutputSink(
+    (chunk) => { surfaced += chunk; },
+    () => verifySnapshotQuietly(rejectedFixture.ctx, ARCHIVE, "share"),
+  );
+  check("verifySnapshotQuietly still answers rejected", passed, false);
+  check("its own explanatory warnings are captured, not printed live, on the wanted answer", surfaced, "");
+}
+
+{
+  const acceptedFixture = makeCtx(
+    "data/\ndata/config/openclaw.json\ndata/workspace/SOUL.md\n",
+    "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n" +
+      "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/openclaw.json\n" +
+      "-rw-r--r-- user/group 0 2026-01-01 00:00 data/workspace/SOUL.md\n",
+  );
+  let surfaced = "";
+  const passed = await withOutputSink(
+    (chunk) => { surfaced += chunk; },
+    () => verifySnapshotQuietly(acceptedFixture.ctx, ARCHIVE, "share"),
+  );
+  check("verifySnapshotQuietly still answers accepted", passed, true);
+  check("on the unwanted answer, what it actually saw is still shown", surfaced.includes("passed the 'share' check"), true);
 }
 
 process.stderr.write(failed === 0 ? "all verify checks passed\n" : `${failed} failed\n`);

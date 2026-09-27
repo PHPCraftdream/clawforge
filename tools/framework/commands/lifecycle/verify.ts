@@ -12,6 +12,7 @@
 import { randomBytes } from "node:crypto";
 import JSON5 from "json5";
 import { log, info, warn, die } from "#src/core/log.ts";
+import { withOutputSink, outputSink } from "#src/core/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { sudoFor } from "#src/runtime/datadir.ts";
 import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "#src/runtime/transport.ts";
@@ -408,6 +409,23 @@ export async function verifySnapshot(
   log(`passed the '${profile}' check: ${archive}`);
   info("transcripts and workspace notes are not scanned for personal content — review them yourself");
   return true;
+}
+
+/** verifySnapshot() for a caller whose WANTED answer is "rejected" (a negative check
+ *  confirming the verifier refuses an archive with secrets): its own explanatory warnings —
+ *  what it found, why the profile refuses it — are then not a problem to report but the
+ *  expected evidence, and must not print as an alarm in an otherwise-passing run. Captured via
+ *  withOutputSink and only ever surfaced if the verifier answered the other way (accepted), so
+ *  a reader still sees what it saw. */
+export async function verifySnapshotQuietly(ctx: Context, archive: string, profile: Profile): Promise<boolean> {
+  let captured = "";
+  const passed = await withOutputSink((chunk) => { captured += chunk; }, () => verifySnapshot(ctx, archive, profile));
+  if (passed) {
+    const sink = outputSink();
+    if (sink !== undefined) sink(captured);
+    else process.stderr.write(captured);
+  }
+  return passed;
 }
 
 export async function verify(ctx: Context, args: string[]): Promise<void> {

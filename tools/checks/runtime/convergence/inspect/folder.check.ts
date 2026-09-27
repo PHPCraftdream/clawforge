@@ -9,10 +9,10 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { gatherInspection, renderJson, doctor } from "#framework/commands/orchestration/inspect/gather.ts";
+import { gatherInspection, renderJson, doctor, printProblem } from "#framework/commands/orchestration/inspect/gather.ts";
 import { status } from "#framework/commands/interface/status.ts";
 import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
-import { blockingProblems } from "#framework/service/inspection.ts";
+import { blockingProblems, problem } from "#framework/service/inspection.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import { secretStoreFile, deploymentName, useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes } from "./fixture.ts";
@@ -439,6 +439,32 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
     if (previousNotBootstrapped !== undefined) useDeployment(previousNotBootstrapped);
     await rm(notBootstrappedDeployment, { recursive: true, force: true });
   }
+}
+
+// --- printProblem: a blocking finding must not read as merely a warning -----------------------
+
+{
+  // Patches the raw writer directly, not withOutputSink: that helper makes isCaptured() true,
+  // which is not what a real terminal run is — the same reasoning smoke's own outcomes check
+  // applies to report()'s text output.
+  function captureStderr(body: () => void): string {
+    const original = process.stderr.write.bind(process.stderr);
+    let out = "";
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stderr.write as any) = (chunk: string): boolean => { out += chunk; return true; };
+    try {
+      body();
+    } finally {
+      process.stderr.write = original;
+    }
+    return out;
+  }
+
+  const blockingLine = captureStderr(() => printProblem(problem("NOT_BOOTSTRAPPED", "test detail")));
+  check("a blocking finding prints blocking:, not warning:", blockingLine.includes("blocking:") && !blockingLine.includes("warning:"), true);
+
+  const warningLine = captureStderr(() => printProblem(problem("PROVIDER_MISSING", "test detail")));
+  check("a warning finding still prints warning:", warningLine.includes("warning:") && !warningLine.includes("blocking:"), true);
 }
 
 process.stderr.write(failed === 0 ? "all inspect folder checks passed\n" : `${failed} failed\n`);

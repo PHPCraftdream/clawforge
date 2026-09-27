@@ -22,6 +22,7 @@ import { machineName } from "#framework/security/instance-mutation-guard.ts";
 import { bootstrap } from "#framework/commands/lifecycle/bootstrap.ts";
 import { pull } from "#framework/commands/lifecycle/state.ts";
 import { stubContext } from "./fixture.ts";
+import { readFile } from "node:fs/promises";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
@@ -173,6 +174,17 @@ check("and is absent when the flag is not there", parseBreakForeignLockHost(["--
   check("guarded() reads --break-foreign-lock from real argv and takes the guard over", ranBody, true);
   check("without refusing", threw, undefined);
   check("and the guard it took over is cleaned up afterwards", dirs.has(guard), false);
+}
+
+// smoke declares no --break-lock, so each lock its run takes (the archive window, the
+// standalone round-trip) must say so — a merge once dropped it from the archive window.
+{
+  const smokeSource = await readFile(new URL("../../../../framework/commands/lifecycle/smoke.ts", import.meta.url), "utf8");
+  const smokeDeclares = declaresBreakLock("smoke");
+  const calls = smokeSource.split("guarded(ctx,").slice(1);
+  check("smoke still takes the instance lock somewhere", calls.length > 0, true);
+  check("every smoke lock opts out of --break-lock advice smoke cannot accept",
+    smokeDeclares || calls.every((call) => (call.split("\nasync function ")[0] ?? "").includes("breakLockSupported: false")), true);
 }
 
 process.stderr.write(failed === 0 ? "all instance lock advice checks passed\n" : `${failed} failed\n`);

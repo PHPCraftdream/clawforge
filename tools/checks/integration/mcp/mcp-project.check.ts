@@ -76,6 +76,8 @@ try {
   // Same rule as init.check.ts: no template key the published image rejects.
   const desiredState = JSON.parse(await readFile(resolve(monorepoApp, "config", "desired-state.json"), "utf8")) as { path: string; value: unknown }[];
   assert.ok(!desiredState.some((entry) => entry.path.startsWith("telemetry")), "new-app declares no telemetry key the published image rejects");
+  const appGitignore = await readFile(resolve(monorepoApp, ".gitignore"), "utf8");
+  assert.ok(!/setupProjectMcp|below/.test(appGitignore), "the .gitignore comment reads for an operator, not the source");
   const candidateName = `mcp-auto-${randomBytes(5).toString("hex")}`;
   claimedSibling = resolve(appsDir, `claim-${randomBytes(5).toString("hex")}`);
   await mkdir(claimedSibling, { recursive: true });

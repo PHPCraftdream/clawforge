@@ -3,12 +3,50 @@
 // spawnLocal's own machinery stays the file that owns process spawning.
 
 // Compose's own progress noise, sometimes the only thing on stderr; matched loosely (wording
-// can change between point releases).
-const COMPOSE_NOISE = [/msg="No services to build"/];
+// can change between point releases). The container/network lifecycle lines are anchored at
+// both ends (against the already-trimmed line) so a real error that merely mentions a
+// container in passing is never dropped alongside them.
+const COMPOSE_NOISE = [
+  /msg="No services to build"/,
+  /^Container \S+ (?:Creating|Created|Starting|Started|Running|Stopping|Stopped|Removing|Removed|Waiting|Healthy)$/,
+  /^Network \S+ (?:Creating|Created|Removing|Removed)$/,
+];
+
+/** True for a line of Compose's own progress noise. Shared by meaningfulLines() (a
+ *  rejection's detail) and spawnLocal's live streaming forwarder (transport.ts), so a
+ *  failure's detail and what the operator watched scroll by agree on exactly what counts as
+ *  noise. Trims its own input: a raw line straight off a chunk may still carry a trailing
+ *  \r Compose wrote for a TTY's cursor control. */
+export function isComposeNoiseLine(line: string): boolean {
+  return COMPOSE_NOISE.some((pattern) => pattern.test(line.trim()));
+}
 
 /** Non-empty, non-noise lines: the candidate lines for a rejection's detail. */
 export function meaningfulLines(text: string): string[] {
-  return text.split("\n").map((line) => line.trim()).filter((line) => line !== "" && !COMPOSE_NOISE.some((pattern) => pattern.test(line)));
+  return text.split("\n").map((line) => line.trim()).filter((line) => line !== "" && !isComposeNoiseLine(line));
+}
+
+/** Line-buffers a live stream's chunks (spawnLocal's piped forwarding path, runtime/transport.ts)
+ *  so a noise line split across two chunks is still recognized whole, and drops only complete
+ *  lines that are Compose's own progress noise before handing the rest to `write` exactly as
+ *  received — a real stderr line never on that precise list always survives. flush() (call at
+ *  the stream's end) forwards whatever incomplete trailing text never reached a newline, so
+ *  nothing is ever silently lost, only reordered by at most one buffered line. */
+export function noiseFilteredForwarder(write: (chunk: string) => void): { push: (chunk: string) => void; flush: () => void } {
+  let pending = "";
+  return {
+    push(chunk: string): void {
+      pending += chunk;
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      const kept = lines.filter((line) => !isComposeNoiseLine(line));
+      if (kept.length > 0) write(`${kept.join("\n")}\n`);
+    },
+    flush(): void {
+      if (pending !== "") write(pending);
+      pending = "";
+    },
+  };
 }
 
 // #composeArgs() (runtime/runtime-docker.ts) always inserts these right after "compose": real,

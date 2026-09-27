@@ -18,7 +18,7 @@ import { die, maskSecrets } from "../core/log.ts";
 import { outputSink } from "../core/output.ts";
 import { listFilesVia } from "../security/transport-listing.ts";
 export { listFilesVia } from "../security/transport-listing.ts";
-import { meaningfulLines, describeInvocation } from "../diagnostics/spawn-failure.ts";
+import { meaningfulLines, describeInvocation, noiseFilteredForwarder } from "../diagnostics/spawn-failure.ts";
 export { describeInvocation } from "../diagnostics/spawn-failure.ts";
 
 export interface ExecOptions {
@@ -167,17 +167,26 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     let stderr = "";
     let launchError: Error | undefined;
     let inputError: Error | undefined;
+    // OC_DEBUG=1 wants the undiluted byte stream (entry/cli.ts's own escape hatch for a
+    // failure's full argv). Only the piped path below is ever filtered: streamToTerminal
+    // inherits stdio directly, so these "data" handlers never fire for it.
+    const debug = process.env.OC_DEBUG === "1";
+    const forwardStdout = debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stdout.write(text); });
+    const forwardStderr = debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stderr.write(text); });
+
     child.stdout?.on("data", (chunk) => {
       stdout += String(chunk);
       if (options.stream === true) {
-        if (sink !== undefined) sink(String(chunk));
+        if (forwardStdout !== undefined) forwardStdout.push(String(chunk));
+        else if (sink !== undefined) sink(String(chunk));
         else process.stdout.write(chunk);
       }
     });
     child.stderr?.on("data", (chunk) => {
       stderr += String(chunk);
       if (options.stream === true) {
-        if (sink !== undefined) sink(String(chunk));
+        if (forwardStderr !== undefined) forwardStderr.push(String(chunk));
+        else if (sink !== undefined) sink(String(chunk));
         else process.stderr.write(chunk);
       }
     });
@@ -204,6 +213,8 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
       if (escalate !== undefined) clearTimeout(escalate);
+      forwardStdout?.flush();
+      forwardStderr?.flush();
       const result: ExecResult = { code: code ?? -1, stdout, stderr };
       if (launchError !== undefined) {
         rejectPromise(launchError);

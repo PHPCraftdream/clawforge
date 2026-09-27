@@ -40,12 +40,12 @@ import type { CheckOutcome } from "../check-outcome.ts";
 import { createBackup } from "./backup.ts";
 import { pull } from "./state.ts";
 import { restoreArchive } from "./restore.ts";
-import { verifySnapshot } from "./verify.ts";
+import { verifySnapshotQuietly } from "./verify.ts";
 import { applyConfig } from "../orchestration/config.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { dataDirName, dataDirParent } from "#src/service/archive.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
-import { collectConfiguredProviders } from "#src/service/secrets.ts";
+import { noProviderConfigured } from "#src/service/secrets.ts";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { valueAt } from "../orchestration/inspect/helpers.ts";
@@ -107,6 +107,8 @@ async function sha256Of(ctx: Context, path: string): Promise<string> {
 }
 
 // Archive-check names, one spelling shared with runArchiveChecks()/runSmokeSuite().
+/** Hard ceiling on smoke's agent round-trip, enforced inside the container. */
+const AGENT_DEADLINE_S = 120;
 const REJECTS_SECRETS_CHECK = "verifier rejects an archive with secrets";
 const ACCEPTS_SHARE_CHECK = "verifier accepts a share snapshot";
 const ROUND_TRIP_CHECK = "snapshot round-trip is byte-identical";
@@ -132,31 +134,30 @@ export const checks: Check[] = [
   {
     name: "agent answers end to end",
     run: async (ctx) => {
-      const result = await reach("ask the agent", () =>
-        ctx.runtime.runOneOff("cli", ["agent", "--agent", "main", "-m", "Reply with exactly: SMOKE-OK"], {
-          profile: "cli",
-          input: "",
-        }),
-      );
-      if (result.stdout.includes("SMOKE-OK")) return;
-
-      // A silent agent is most often PROVIDER_MISSING (UX-09): read the same live config
-      // inspect does (collectConfiguredProviders), and name that cause instead of just the
-      // symptom, when it applies. Best effort — an unreadable or unparseable config here
-      // must not replace the check's own real failure with a different, unrelated one.
-      let noProvider = false;
       try {
-        const config = JSON5.parse(await ctx.transport.readFile(`${ctx.settings.dataDir}/config/openclaw.json`)) as unknown;
-        noProvider = collectConfiguredProviders(config).length === 0;
-      } catch {
-        // Stays the plain symptom below.
+        // Bounded inside the container: without a provider the CLI was seen hanging for 10+
+        // minutes, and killing wsl.exe/ssh on this side leaves the target's compose running.
+        const result = await reach("ask the agent", () =>
+          ctx.runtime.runOneOff("cli", [
+            "-k", "10", String(AGENT_DEADLINE_S), "node", "dist/index.js",
+            "agent", "--agent", "main", "--timeout", String(AGENT_DEADLINE_S - 30), "-m", "Reply with exactly: SMOKE-OK",
+          ], {
+            profile: "cli",
+            entrypoint: "timeout",
+            input: "",
+          }),
+        );
+        if (result.stdout.includes("SMOKE-OK")) return;
+        expect(false, `agent replied: ${result.stdout.trim().slice(0, 120)}`);
+      } catch (error) {
+        // A silent OR unreachable agent is most often PROVIDER_MISSING (UX-09), whichever way
+        // this check failed — named instead of just the symptom, when the live config really
+        // configures none (best effort: noProviderConfigured() never replaces a real failure
+        // with an unrelated guess).
+        if (!(await noProviderConfigured(ctx))) throw error;
+        const message = `no model provider is configured — run ./clawforge configure-provider (${describeError(error)})`;
+        throw error instanceof CouldNotCheck ? new CouldNotCheck(message) : new Error(message);
       }
-      expect(
-        false,
-        noProvider
-          ? `no model provider is configured — run ./clawforge configure-provider (agent replied: ${result.stdout.trim().slice(0, 120)})`
-          : `agent replied: ${result.stdout.trim().slice(0, 120)}`,
-      );
     },
   },
   {
@@ -213,7 +214,7 @@ export const checks: Check[] = [
     name: REJECTS_SECRETS_CHECK,
     run: async (ctx) => {
       const archive = await reach("take a backup to verify", () => createBackup(ctx, { profile: "full" }));
-      const passed = await verifySnapshot(ctx, archive, "share");
+      const passed = await verifySnapshotQuietly(ctx, archive, "share");
       expect(!passed, "the verifier accepted an archive containing credentials");
     },
   },
@@ -611,7 +612,7 @@ async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>): Prom
       const result = fullError !== undefined
         ? toResult(REJECTS_SECRETS_CHECK, fullError)
         : await evaluate(REJECTS_SECRETS_CHECK, async () => {
-            const passed = await verifySnapshot(ctx, fullArchive as string, "share");
+            const passed = await verifySnapshotQuietly(ctx, fullArchive as string, "share");
             expect(!passed, "the verifier accepted an archive containing credentials");
           });
       results.push(foldRestartFailure(result, restartError));
@@ -631,7 +632,7 @@ async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>): Prom
     }
 
     return results;
-  });
+  }, { breakLockSupported: false });
 }
 
 /** The whole selected run: ordinary checks one at a time, exactly as runChecks() does; the

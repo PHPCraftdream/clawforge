@@ -92,6 +92,19 @@ export function collectConfiguredProviders(config: unknown): string[] {
   return [...ids];
 }
 
+/** Best-effort read of the live config for whether any model provider is configured at all —
+ *  the likely cause behind a symptom as generic as "the agent did not answer". An unreadable
+ *  or unparseable config must never replace a caller's own real failure with a different,
+ *  unrelated one, so it answers false (not a guess of "configured") rather than throwing. */
+export async function noProviderConfigured(ctx: Context): Promise<boolean> {
+  try {
+    const config = JSON5.parse(await ctx.transport.readFile(`${ctx.settings.dataDir}/config/openclaw.json`)) as unknown;
+    return collectConfiguredProviders(config).length === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** An explicit provider SecretRef wins over the conventional variable name. */
 export function providerSecretVariable(config: unknown, providerId: string): string | undefined {
   if (config === null || typeof config !== "object") return undefined;

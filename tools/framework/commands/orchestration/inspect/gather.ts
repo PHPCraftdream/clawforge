@@ -25,7 +25,7 @@
 // keeps its name and signature — apply.ts, plan.ts and the checks all import from
 // "./inspect/gather.ts" (or the barrel-free direct path, since there is no index.ts here).
 
-import { log, info, warn, die } from "#src/core/log.ts";
+import { log, info, warn, reportBlocking, die } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
@@ -239,6 +239,14 @@ export function renderJson(inspection: Inspection): Record<string, unknown> {
   };
 }
 
+/** One problem line, prefixed by what its severity actually earns — `blocking:` rather than
+ *  `warning:` for one that fails the run — so a blocking finding never reads as merely worth
+ *  noting. Shared by doctor() and renderText() so the two never drift apart on it. */
+export function printProblem(entry: Problem): void {
+  (entry.severity === "blocking" ? reportBlocking : warn)(`${entry.code}  ${entry.detail}`);
+  info(`  → ${entry.nextAction}`);
+}
+
 /** `./clawforge doctor` — the same inspection, answered as "is anything wrong, and what do I run".
  *
  *  Exits non-zero when something blocking was found, because that is the only part of the
@@ -275,10 +283,7 @@ export async function doctor(ctx: Context, args: string[]): Promise<void> {
     // Reported before the failure below, not instead of it: a reader who only sees "3
     // problems" learns nothing, and the whole point of the codes is that they travel.
     log(`${inspection.declared.deployment}: ${blocking.length} blocking, ${warnings.length} warning(s)`);
-    for (const entry of inspection.problems) {
-      warn(`${entry.code}  ${entry.detail}`);
-      info(`  → ${entry.nextAction}`);
-    }
+    for (const entry of inspection.problems) printProblem(entry);
     if (blocking.length === 0) info("nothing blocking — the instance is doing its job");
   }
 
@@ -323,8 +328,5 @@ function renderText(inspection: Inspection): void {
   }
 
   log(`${problems.length} problem(s), ${blockingProblems(problems).length} blocking`);
-  for (const entry of problems) {
-    warn(`${entry.code}  ${entry.detail}`);
-    info(`  → ${entry.nextAction}`);
-  }
+  for (const entry of problems) printProblem(entry);
 }

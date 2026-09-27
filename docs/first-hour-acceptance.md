@@ -29,7 +29,7 @@ still uses.
 Windows Git Bash, Windows Node 24, WSL2 target, Docker Desktop; image pinned by digest.
 Steps 1–10 met expectations. Findings from this run, tracked separately:
 
-- `doctor` takes ~30 s and `plan` ~24 s on this target.
+- `doctor` took ~30 s and `plan` ~24 s on this target (since cut to ~12 s and ~14 s).
 - smoke's agent check reports a Compose progress line (`Container … Running`) as the
   failure reason and does not name `PROVIDER_MISSING` when the CLI exits non-zero.
 - smoke's negative verifier check prints the share-profile refusal ("snapshot FAILED")

@@ -287,7 +287,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `recipe` | `<list\|import\|install\|remove\|status\|logs\|verify\|onboard\|diagnose> <name> [new-name] [--volumes] [--tail <n>] [--force-disabled] [--break-lock]` | App-owned services beside the instance, each its own compose project and optional lifecycle hooks. install, remove and the hook-running actions take the instance lock for their whole run — install across its build; list/status/logs and import (a repository-side copy) take none. With import, `<name>` is the source directory and `[new-name]` the name to import under — the source's own name by default; the copy leaves out the generic credential-shaped names (`.env*`, `secrets/`, `*.token`, `*.secrets.env`) plus what the source's own `recipe.json` declares under `privateFiles` — a filter over file names, not a guarantee; `privatePaths` in the same file declares where the running recipe keeps generated credentials (data-relative), which migrate/share snapshots exclude and full keeps |
 | `provision-agent` | `<recipe> [--break-lock]` | Wire a recipe's MCP server to a dedicated agent: agent, workspace prompt files, MCP registration and an optional cron job |
 | `host` | `<target\|engine\|local> [--root --confirm-root] -- <command>` | Run one command on the operator's own machine layers — the deployment's transport, the container engine's VM, or the bare host. Privilege is stated where it arrives: target and local run as the operator's own user until both root flags elevate them; Docker Desktop's `docker-desktop` engine distro has no login user but root, so both flags are the consent every engine command needs before it runs at all — without them it is refused, not downgraded |
-| `deploy` | `<user@host> [--path <dir>] [--no-bootstrap]` | Deploy to a server: the code is mirrored whole, the deployment by name and by file, credentials never leave this machine. Only from a checkout — installed as a package it refuses, since there is no checkout to mirror |
+| `deploy` | `<user@host> [--path <dir>] [--no-bootstrap] [--adopt]` | Deploy to a server: the code is mirrored whole, the deployment by name and by file, credentials never leave this machine. The first deploy to a `--path` may only mirror into a directory it created itself (proven empty, then marked); `--adopt` takes over an existing unmarked, non-empty root instead, listing what `--delete` would replace there first. Only from a checkout — installed as a package it refuses, since there is no checkout to mirror |
 | `mcp-serve` | — | stdio bridge to OpenClaw's channels — what a client from `.mcp.json` starts, not something to run by hand; execs into the persistent CLI container when it is up |
 | `mcp-setup` | `[--client <name>] [--json]` | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
 | `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
@@ -569,8 +569,13 @@ differs is the data directory, the port and the keys.
 ./clawforge --app staging status
 ```
 
-Choosing a deployment: `--app`, the `OC_APP` variable, otherwise `openclaw`. Every
-configuration path is resolved from the deployment directory — otherwise two instances
+Choosing a deployment: `--app`, the `OC_APP` variable, otherwise `openclaw`. `--app` (or
+`--app=<name>`) must lead the command line, before the command name — after it, an
+identically-spelled `--app` belongs to that command's own arguments (`exec`, `cli` and `host`
+all pass theirs through to something else verbatim). With neither set and no `openclaw`
+deployment, a checkout holding exactly one deployment under `apps/` uses it automatically and
+says so; with more than one, `./clawforge` lists them and asks for `--app <name>` or `OC_APP`.
+Every configuration path is resolved from the deployment directory — otherwise two instances
 would silently share one set of keys.
 
 New deployments get a randomly selected project port in `20000–32767`; monorepo

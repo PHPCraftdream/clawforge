@@ -85,3 +85,81 @@ export async function runGateCommand(
     return 1;
   }
 }
+
+/** What a leading `--app <name>` or `--app=<name>` split off argv, if either was there. */
+export interface AppFlagSplit {
+  /** The name after --app/--app=, absent when --app did not lead argv at all. */
+  readonly value: string | undefined;
+  /** --app led argv with no value after it (the very last token) — distinct from "absent" so
+   *  the caller can report the same "--app needs a deployment name" it always has, rather
+   *  than silently falling through to the default deployment. */
+  readonly missingValue: boolean;
+  readonly rest: string[];
+}
+
+/** Recognises `--app`/`--app=<name>` only as the very first token(s) of argv — after the
+ *  command name, an identically-spelled `--app` belongs to that command's own arguments
+ *  (`exec`, `cli` and `host` all pass theirs through to something else verbatim), and must
+ *  survive untouched rather than being cut out of the middle of argv. */
+export function splitLeadingAppFlag(argv: string[]): AppFlagSplit {
+  if (argv[0] === "--app") {
+    const value = argv[1];
+    if (value === undefined) return { value: undefined, missingValue: true, rest: argv.slice(1) };
+    return { value, missingValue: false, rest: argv.slice(2) };
+  }
+  if (argv[0] !== undefined && argv[0].startsWith("--app=")) {
+    return { value: argv[0].slice("--app=".length), missingValue: false, rest: argv.slice(1) };
+  }
+  return { value: undefined, missingValue: false, rest: argv };
+}
+
+/** Damerau-Levenshtein edit distance: a transposition of two adjacent characters (the most
+ *  common way to mistype a command name — "statsu" for "status") costs one edit, not the two
+ *  a plain Levenshtein distance would charge it. */
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const d: number[][] = Array.from({ length: rows }, () => Array.from<number>({ length: cols }).fill(0));
+  for (let i = 0; i < rows; i += 1) d[i][0] = i;
+  for (let j = 0; j < cols; j += 1) d[0][j] = j;
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + cost);
+      }
+    }
+  }
+  return d[rows - 1][cols - 1];
+}
+
+/** The nearest command name to a typed one, or undefined when nothing is close enough to be
+ *  worth guessing at. The threshold scales with length so a couple of wrong letters in a long
+ *  name still matches, while two short, unrelated names never suggest one another just for
+ *  being short. */
+export function closestCommand(input: string, candidates: string[]): string | undefined {
+  let best: string | undefined;
+  let bestDistance = Infinity;
+  for (const candidate of candidates) {
+    const distance = editDistance(input, candidate);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = candidate;
+    }
+  }
+  if (best === undefined) return undefined;
+  const threshold = Math.min(3, Math.max(1, Math.floor(Math.max(input.length, best.length) / 3)));
+  return bestDistance <= threshold ? best : undefined;
+}
+
+/** The standard answer to a command name nothing declares: the typo itself, a nearby spelling
+ *  when one is close enough to be worth guessing, and a pointer to the real list — never the
+ *  full help screen, which is what an operator was presumably trying to avoid scanning by
+ *  typing a command in the first place. */
+export function reportUnknownCommand(name: string, candidates: string[]): void {
+  reportError(`unknown command: ${name}`);
+  const suggestion = closestCommand(name, candidates);
+  if (suggestion !== undefined) info(`did you mean: ${suggestion}`);
+  info("run ./clawforge help to list every command");
+}

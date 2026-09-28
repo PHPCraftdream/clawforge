@@ -150,5 +150,23 @@ check(
 );
 check("a missing required variadic is reported", validate(openclawCommands.cli, {}), ["args is required"]);
 
+// --- deploy: every flag deploy.ts actually parses is declared, so --help and MCP agree with it ---
+
+check(
+  "deploy declares --adopt alongside --path and --no-bootstrap",
+  (openclawCommands.deploy.arguments ?? []).map((argument) => argument.name).sort(),
+  ["adopt", "no-bootstrap", "path", "target"],
+);
+check(
+  "--adopt reaches deploy's argv as a bare flag",
+  toArgv(openclawCommands.deploy, { confirm: true, target: "user@host", adopt: true }),
+  ["user@host", "--adopt"],
+);
+check(
+  "--adopt passes MCP validation",
+  validate(openclawCommands.deploy, { target: "user@host", adopt: true }),
+  [],
+);
+
 process.stderr.write(failed === 0 ? "all argument checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

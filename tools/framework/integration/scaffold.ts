@@ -171,6 +171,10 @@ export async function createApp(name: string): Promise<void> {
   info("next:");
   info(`  1. check ${resolve(directory, ".env")} — data directory, port, image`);
   info(`  2. ./clawforge --app ${name} bootstrap`);
+  info(
+    `if ${name} is the only deployment under apps/, later commands pick it automatically; ` +
+      `alongside others, select it with --app ${name} or export OC_APP=${name}`,
+  );
   info("open the deployment directory in Claude Code or Codex; project MCP settings are already prepared");
   info("secrets and snapshots stay inside this directory, so deployments never share them");
   info(gitInitAdvice(name));

@@ -11,7 +11,7 @@ import { clearRecipesDir } from "../service/recipe.ts";
 import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "../integration/provision.ts";
 import { serveMcp } from "../integration/mcp-server.ts";
-import { gateCommandHelp, type GateCommand } from "../integration/gate.ts";
+import { gateCommandHelp, reportUnknownCommand, type GateCommand } from "../integration/gate.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../core/app.ts";
 
 /** Fixed print order and heading for each CommandGroup — an operator scans intent sections
@@ -104,6 +104,13 @@ function usage(app: AppDefinition, gateHelp: string[]): void {
   info("Run `./clawforge help <command>` or `./clawforge <command> --help` for its full description.");
 }
 
+/** Every name reachable from this dispatcher: the application's own commands, the gate's
+ *  (already handled before runApp ever sees argv, but still real commands a typo can be
+ *  compared against), and the two the dispatcher itself owns outside app.commands. */
+function knownCommandNames(app: AppDefinition, gateCommands: GateCommand[]): string[] {
+  return [...Object.keys(app.commands), ...gateCommands.map((command) => command.name), "help", "control-mcp"];
+}
+
 function commandHelp(name: string, command: AppCommand): void {
   log(`${name} — ${command.summary}`);
   const signature = formatArguments(command);
@@ -160,8 +167,7 @@ export async function runApp(
         gateCommandHelp(gateCommand);
         return 0;
       }
-      reportError(`unknown command: ${target}`);
-      usage(app, gateHelp);
+      reportUnknownCommand(target, knownCommandNames(app, gateCommands));
       return 1;
     }
     commandHelp(target, helpCommand);
@@ -194,8 +200,7 @@ export async function runApp(
 
   const command = app.commands[name];
   if (command === undefined) {
-    reportError(`unknown command: ${name}`);
-    usage(app, gateHelp);
+    reportUnknownCommand(name, knownCommandNames(app, gateCommands));
     return 1;
   }
 

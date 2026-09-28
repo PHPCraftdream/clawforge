@@ -10,12 +10,21 @@
 //   ./clawforge status                    the default deployment
 //   OC_APP=staging ./clawforge status     another one
 //   ./clawforge --app staging status      same, as an argument
+//
+// With neither set and no "openclaw" deployment, a checkout holding exactly one deployment
+// under apps/ uses it automatically — there is nothing to disambiguate.
 
 import { resolve } from "node:path";
 import { access, readdir } from "node:fs/promises";
 import { main } from "./framework/entry/cli.ts";
-import { runGateCommand, gateHelpLines, type GateCommand } from "./framework/integration/gate.ts";
-import { reportError } from "./framework/core/log.ts";
+import {
+  runGateCommand,
+  gateHelpLines,
+  reportUnknownCommand,
+  splitLeadingAppFlag,
+  type GateCommand,
+} from "./framework/integration/gate.ts";
+import { reportError, info } from "./framework/core/log.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
 import { createApp } from "./framework/integration/scaffold.ts";
@@ -27,16 +36,16 @@ const argv = process.argv.slice(2);
 
 // --app wins over the environment, the environment over the default.
 let name = process.env.OC_APP ?? "openclaw";
-const flagIndex = argv.indexOf("--app");
-if (flagIndex !== -1) {
-  const value = argv[flagIndex + 1];
-  if (value === undefined) {
-    reportError("--app needs a deployment name");
-    process.exit(1);
-  }
-  name = value;
-  argv.splice(flagIndex, 2);
+let appExplicit = process.env.OC_APP !== undefined;
+const appFlag = splitLeadingAppFlag(argv);
+if (appFlag.missingValue) {
+  reportError("--app needs a deployment name");
+  process.exit(1);
+} else if (appFlag.value !== undefined) {
+  name = appFlag.value;
+  appExplicit = true;
 }
+argv.splice(0, argv.length, ...appFlag.rest);
 
 // Both of these run before a deployment is resolved — the checks describe the framework
 // rather than an instance, and new-app creates the very thing every other command needs.
@@ -90,6 +99,17 @@ const monorepoGateHelp = [
   "  --app <name>      pick another deployment (default: the OC_APP one)",
 ];
 
+// Every name this gate can dispatch without a loaded app.ts — a deployment's own app.ts may
+// declare more, which only it can answer for once loaded (see the missing-deployment branch
+// below). Used both to tell a typo from a real command here, and as the pool one is compared
+// against.
+const baseCommandNames = [
+  ...Object.keys(openclawCommands),
+  ...gateCommands.map((command) => command.name),
+  "help",
+  "control-mcp",
+];
+
 // Checked before it becomes a path: --app or OC_APP set to "../.." would take the
 // framework outside apps/ entirely, and the deployment name also becomes the compose
 // project and the archive prefix.
@@ -100,24 +120,32 @@ try {
   process.exit(1);
 }
 
-const deploymentDir = resolve(monorepoRoot, "apps", name);
+let deploymentDir = resolve(monorepoRoot, "apps", name);
 try {
   await access(deploymentDir);
 } catch {
-  // help/--help/-h must work even in a completely fresh checkout, before any deployment
-  // exists — that is exactly when someone reaches for it. Built from openclawCommands
-  // directly rather than a real app.ts (there isn't one yet): every deployment's own
-  // declaration just re-exports this same set unless it adds commands of its own, so this
-  // is the accurate answer for "what commands exist" up until one actually does that.
   // Other deployments may exist under another name: name them instead of claiming none.
   const available = (await readdir(resolve(monorepoRoot, "apps"), { withFileTypes: true }).catch(() => []))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  const pick = available.length === 0
-    ? "this checkout has no deployments yet"
-    : `no deployment "${name}" — available: ${available.join(", ")} (pick one with --app <name> or OC_APP)`;
-  if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
+
+  if (!appExplicit && available.length === 1) {
+    // Nothing to disambiguate: neither --app nor OC_APP asked for a specific (missing)
+    // deployment, and there is exactly one to have meant. Falls through to the normal load
+    // below rather than exiting, exactly as if it had been named explicitly.
+    name = available[0];
+    deploymentDir = resolve(monorepoRoot, "apps", name);
+    info(`using the only deployment: ${name}`);
+  } else if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
+    // help/--help/-h must work even in a completely fresh checkout, before any deployment
+    // exists — that is exactly when someone reaches for it. Built from openclawCommands
+    // directly rather than a real app.ts (there isn't one yet): every deployment's own
+    // declaration just re-exports this same set unless it adds commands of its own, so this
+    // is the accurate answer for "what commands exist" up until one actually does that.
+    const pick = available.length === 0
+      ? "this checkout has no deployments yet"
+      : `no deployment "${name}" — available: ${available.join(", ")} (pick one with --app <name> or OC_APP)`;
     const genericApp: AppDefinition = {
       name: "clawforge",
       description: `self-hosting framework for OpenClaw — ${pick}`,
@@ -125,12 +153,19 @@ try {
     };
     await main(genericApp, argv, monorepoGateHelp, gateCommands);
     process.exit(0);
+  } else if (!baseCommandNames.includes(argv[0])) {
+    // The typo case this all exists for: nothing declares this name in this checkout, so no
+    // deployment's app.ts could ever make it valid either — answer the typo, not "deployment
+    // not found", which sends the reader looking in the wrong place entirely.
+    reportUnknownCommand(argv[0], baseCommandNames);
+    process.exit(1);
+  } else {
+    reportError(`deployment "${name}" not found at ${deploymentDir}`);
+    reportError(available.length === 0
+      ? "create one with: ./clawforge new-app <name>"
+      : `available: ${available.join(", ")} — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>`);
+    process.exit(1);
   }
-  reportError(`deployment "${name}" not found at ${deploymentDir}`);
-  reportError(available.length === 0
-    ? "create one with: ./clawforge new-app <name>"
-    : `available: ${available.join(", ")} — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>`);
-  process.exit(1);
 }
 
 // Set before anything reads configuration: every path below resolves against it.

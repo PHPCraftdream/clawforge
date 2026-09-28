@@ -402,6 +402,13 @@ export const managementCommands: Record<string, AppCommand> = {
       { name: "target", description: "user@host", kind: "positional", required: true },
       { name: "path", description: "Remote install directory", kind: "option" },
       { name: "no-bootstrap", description: "Copy the files without starting anything", kind: "flag" },
+      {
+        name: "adopt",
+        description:
+          "Take over an existing, unmarked, non-empty remote root: lists what --delete would " +
+          "replace there before marking it as this deployment's",
+        kind: "flag",
+      },
     ],
   },
   "mcp-serve": {

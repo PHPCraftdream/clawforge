@@ -272,6 +272,12 @@ async function familyRefusal(owner: string): Promise<string> {
   check("a probe that never runs is reported as the transport failing", /transport failed, not the check/.test(message), true);
   check("and never as a sudo refusal", /needs root/.test(message), false);
   check("an id probe hiccup is retried, not read as \"escalate\"", await needsOwnerEscalation(flaky({ "id -u": [255, 0] }), "1000:1000"), false);
+  // Not writable, so sudo is asked; a hiccup there is retried, never read as "asks for a password".
+  check("a sudo probe hiccup is retried", await sudoFor(flaky({ "test -w": [1], "sudo -n": [255, 0] }), "/srv/x/data"), ["sudo", "-n"]);
+  message = "";
+  try { await sudoFor(flaky({ "test -w": [1], "sudo -n": [255] }), "/srv/x/data"); } catch (error) { message = (error as Error).message; }
+  check("a sudo probe that never runs is a transport failure", /transport failed, not the check/.test(message), true);
+  check("and never \"asks for a password\"", /asks for a password/.test(message), false);
 }
 
 process.stderr.write(failed === 0 ? "all lock home checks passed\n" : `${failed} failed\n`);

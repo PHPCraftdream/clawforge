@@ -62,13 +62,14 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
     if (writable.code === 0) return [];
   }
 
-  const hasSudo = await ctx.transport.exec("sh", ["-c", "command -v sudo"], { allowFailure: true });
+  // Both probes go through answeredProbe: a transport hiccup is not "no sudo" or "needs a password".
+  const hasSudo = await answeredProbe(ctx, "sh", ["-c", "command -v sudo"], [0, 1, 127]);
   if (hasSudo.code !== 0) die(`${probe} is not writable and sudo is not available on the target`);
 
   // -n always: commands reach the target through pipes (and often through wsl.exe or ssh),
   // so a password prompt has nowhere to appear and the run hangs forever instead of
   // failing. Better to say plainly what to do.
-  const passwordless = await ctx.transport.exec("sudo", ["-n", "true"], { allowFailure: true });
+  const passwordless = await answeredProbe(ctx, "sudo", ["-n", "true"], [0, 1]);
   if (passwordless.code !== 0) {
     const advice = await prepareFamilyAdvice(ctx);
     die(

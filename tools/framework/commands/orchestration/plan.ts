@@ -152,14 +152,9 @@ function fallbackActions(problems: readonly Problem[], resolved: ReadonlySet<Pro
   return actions;
 }
 
-/** The ordered steps. Exported so `apply` executes exactly this list and the checks can
- *  assert the order without a live instance. */
-export function planActions(inspection: Inspection): PlanAction[] {
-  const { problems } = inspection;
-  const actions: PlanAction[] = [];
-
-  // Bootstrap first. Nothing else needs suppressing: instance-side findings cannot exist
-  // before bootstrap, and the operator-side ones (SECRET_MISSING, STORE_INCOMPLETE) still apply.
+// Bootstrap first. Nothing else needs suppressing: instance-side findings cannot exist
+// before bootstrap, and the operator-side ones (SECRET_MISSING, STORE_INCOMPLETE) still apply.
+function pushNotBootstrappedAction(problems: readonly Problem[], actions: PlanAction[]): void {
   const notBootstrapped = problems.find((entry) => entry.code === "NOT_BOOTSTRAPPED");
   if (notBootstrapped !== undefined) {
     actions.push({
@@ -169,12 +164,14 @@ export function planActions(inspection: Inspection): PlanAction[] {
       advisory: true,
     });
   }
+}
 
-  // 0. Operator-side recovery, before anything repairs the instance. The group reads back
-  //    what only the target still holds, and the step that follows it in a combined plan
-  //    writes to the target: `secrets --apply` REPLACES the target's config/.env with the
-  //    names the local store supplies, so applied before the dump it would destroy exactly
-  //    the values the dump exists to recover.
+// 0. Operator-side recovery, before anything repairs the instance. The group reads back
+//    what only the target still holds, and the step that follows it in a combined plan
+//    writes to the target: `secrets --apply` REPLACES the target's config/.env with the
+//    names the local store supplies, so applied before the dump it would destroy exactly
+//    the values the dump exists to recover.
+function pushOperatorRecoveryActions(problems: readonly Problem[], actions: PlanAction[]): void {
   if (has(problems, "ENV_STALE")) {
     // Advisory, and only ever planned for an .env that exists: ENV_STALE compares facts the
     // file must already carry, and a wholly absent .env cannot be recovered at all —
@@ -225,9 +222,11 @@ export function planActions(inspection: Inspection): PlanAction[] {
       because: found(problems, "DECLARATION_MISSING"),
     });
   }
+}
 
-  // 1. Secrets before anything that needs the instance: a missing one stops the instance from
-  //    starting, so every later step would be working against something that cannot come up.
+// 1. Secrets before anything that needs the instance: a missing one stops the instance from
+//    starting, so every later step would be working against something that cannot come up.
+function pushSecretsAction(problems: readonly Problem[], actions: PlanAction[]): void {
   if (has(problems, "SECRET_MISSING")) {
     actions.push({
       id: "secrets",
@@ -236,9 +235,11 @@ export function planActions(inspection: Inspection): PlanAction[] {
       because: found(problems, "SECRET_MISSING"),
     });
   }
+}
 
-  // 2. Configuration before anything starts or restarts: it is read at startup, so applying
-  //    it afterwards would need a second restart nobody planned.
+// 2. Configuration before anything starts or restarts: it is read at startup, so applying
+//    it afterwards would need a second restart nobody planned.
+function pushConfigAction(problems: readonly Problem[], actions: PlanAction[]): void {
   if (has(problems, "CONFIG_DRIFT")) {
     actions.push({
       id: "apply-config",
@@ -247,9 +248,11 @@ export function planActions(inspection: Inspection): PlanAction[] {
       because: found(problems, "CONFIG_DRIFT"),
     });
   }
+}
 
-  // 3. Bring it up, or restart it — never both. A stopped instance reads the configuration
-  //    when it starts, so starting it is already the restart.
+// 3. Bring it up, or restart it — never both. A stopped instance reads the configuration
+//    when it starts, so starting it is already the restart.
+function pushLifecycleAction(inspection: Inspection, problems: readonly Problem[], actions: PlanAction[]): void {
   if (has(problems, "GATEWAY_DOWN")) {
     actions.push({
       id: "up",
@@ -268,8 +271,10 @@ export function planActions(inspection: Inspection): PlanAction[] {
       because: found(problems, "RESTART_REQUIRED", "CONFIG_DRIFT", "SECRET_MISSING"),
     });
   }
+}
 
-  // 4. Recipes last among the executable steps: provisioning talks to a running gateway.
+// 4. Recipes last among the executable steps: provisioning talks to a running gateway.
+function pushRecipeActions(inspection: Inspection, actions: PlanAction[]): void {
   for (const [recipe, codes] of [...recipeWork(inspection)].sort(([a], [b]) => a.localeCompare(b))) {
     actions.push({
       id: `provision-agent:${recipe}`,
@@ -278,16 +283,12 @@ export function planActions(inspection: Inspection): PlanAction[] {
       because: codes,
     });
   }
+}
 
-  // 4b. Objects this framework created for a recipe the set no longer declares this way —
-  //     dropped entirely, or renamed. After provisioning, not before: a rename shows up as
-  //     one recipe's work adding the new name and this removing the old one, and the new one
-  //     should exist before the old one goes.
-  actions.push(...orphanActions(inspection));
-
-  // 5. Advisory. Mirrored recipe files changing is precisely when a client that has been
-  //    holding that recipe's MCP server open is serving the old content — nothing here can
-  //    reconnect it, because the client owns that process.
+// 5. Advisory. Mirrored recipe files changing is precisely when a client that has been
+//    holding that recipe's MCP server open is serving the old content — nothing here can
+//    reconnect it, because the client owns that process.
+function pushReconnectMcpAction(inspection: Inspection, actions: PlanAction[]): void {
   if (recipeWork(inspection).size > 0) {
     actions.push({
       id: "reconnect-mcp",
@@ -296,9 +297,11 @@ export function planActions(inspection: Inspection): PlanAction[] {
       advisory: true,
     });
   }
+}
 
-  // The lock is never rewritten automatically. Re-pinning whatever drifted is how a
-  // reproducibility claim turns into a rubber stamp; the decision is the reader's.
+// The lock is never rewritten automatically. Re-pinning whatever drifted is how a
+// reproducibility claim turns into a rubber stamp; the decision is the reader's.
+function pushLockAction(problems: readonly Problem[], actions: PlanAction[]): void {
   if (has(problems, "LOCK_MISSING", "LOCK_DRIFT")) {
     actions.push({
       id: "lock",
@@ -307,14 +310,16 @@ export function planActions(inspection: Inspection): PlanAction[] {
       advisory: true,
     });
   }
+}
 
-  // Plugins/skills: always advisory, never one `apply` runs unattended. Third-party code is
-  // a supply-chain surface, and — unlike every other step above — this framework does not
-  // even have proof its own reinstall command names the right package: the pinned image's own
-  // `plugins list --json` already shows an npm-origin plugin's id differing from its
-  // manifest name (commands/management/extensions.ts), so a spec built from either could install something
-  // else. Each finding carries its own best-effort command (compareExtensions); this only
-  // turns it into a step the reader sees.
+// Plugins/skills: always advisory, never one `apply` runs unattended. Third-party code is
+// a supply-chain surface, and — unlike every other step above — this framework does not
+// even have proof its own reinstall command names the right package: the pinned image's own
+// `plugins list --json` already shows an npm-origin plugin's id differing from its
+// manifest name (commands/management/extensions.ts), so a spec built from either could install something
+// else. Each finding carries its own best-effort command (compareExtensions); this only
+// turns it into a step the reader sees.
+function pushExtensionDriftActions(problems: readonly Problem[], actions: PlanAction[]): void {
   for (const entry of problems.filter((candidate) => candidate.code === "PLUGIN_DRIFT" || candidate.code === "SKILL_DRIFT")) {
     actions.push({
       id: `extension-drift:${entry.code === "PLUGIN_DRIFT" ? "plugin" : "skill"}:${actions.length}`,
@@ -323,6 +328,31 @@ export function planActions(inspection: Inspection): PlanAction[] {
       advisory: true,
     });
   }
+}
+
+/** The ordered steps. Exported so `apply` executes exactly this list and the checks can
+ *  assert the order without a live instance. One function per rule below, called in the
+ *  order their numbering documents — that order is user-visible and the checks assert it. */
+export function planActions(inspection: Inspection): PlanAction[] {
+  const { problems } = inspection;
+  const actions: PlanAction[] = [];
+
+  pushNotBootstrappedAction(problems, actions);
+  pushOperatorRecoveryActions(problems, actions);
+  pushSecretsAction(problems, actions);
+  pushConfigAction(problems, actions);
+  pushLifecycleAction(inspection, problems, actions);
+  pushRecipeActions(inspection, actions);
+
+  // 4b. Objects this framework created for a recipe the set no longer declares this way —
+  //     dropped entirely, or renamed. After provisioning, not before: a rename shows up as
+  //     one recipe's work adding the new name and this removing the old one, and the new one
+  //     should exist before the old one goes.
+  actions.push(...orphanActions(inspection));
+
+  pushReconnectMcpAction(inspection, actions);
+  pushLockAction(problems, actions);
+  pushExtensionDriftActions(problems, actions);
 
   // Backstop: every code the steps above did not name is still shown.
   const resolved = new Set(actions.flatMap((action) => action.because));

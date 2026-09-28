@@ -33,6 +33,7 @@ import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { EGRESS_EXEC_TIMEOUT_MS, EGRESS_PROBE_SCRIPT } from "./egress-probe.ts";
 import { cronDifferences, egressEndpoints, redactEndpoint } from "./helpers.ts";
 import { recipeExpectations } from "./declared.ts";
+import type { RecipeExpectation } from "./declared.ts";
 import type { Context } from "#src/core/context.ts";
 
 const PROBE_ENDPOINTS = ["healthz", "startupz", "readyz"];
@@ -160,18 +161,14 @@ async function observeEgress(
   return observations;
 }
 
-export async function observeLive(
+/** Probes plus the runtime's own health verdict, and the RESTART_REQUIRED check that follows
+ *  from the same startedAt() read — the three facts observeLive needs before it ever touches
+ *  what OpenClaw itself has registered. */
+async function observeHealth(
   ctx: Context,
-  declared: DeclaredState,
   problems: Problem[],
   configMtimeMs: number | undefined,
-  liveConfig: unknown,
-  // watch check's own opt-in (gatherInspection's `channels` option): adds `channels status
-  // --json` to the same batch below instead of a second one-off container. inspect/doctor/
-  // plan/apply never pass true, so their own batch — and everything derived from it — is
-  // unchanged.
-  includeChannels = false,
-): Promise<Partial<ObservedState> & { plugins: PluginListEntry[]; skills: SkillListEntry[] }> {
+): Promise<{ probes: Record<string, number>; health: string }> {
   const probes: Record<string, number> = {};
   for (const endpoint of PROBE_ENDPOINTS) {
     try {
@@ -225,16 +222,16 @@ export async function observeLive(
     );
   }
 
-  // The outbound counterpart of the probes above, from the one vantage they lack.
-  const egress = await observeEgress(ctx, liveConfig, problems);
+  return { probes, health };
+}
 
-  // --- what OpenClaw itself has registered ----------------------------------------------
-  // One container for all six reads (four lists plus --version) instead of one each: every
-  // `docker compose run --rm` pays Compose's create/destroy cost again (~5-7s,
-  // docker-compose.yml's own note on cli-helper), and paying that four times over for one
-  // inspection was the dominant cost doctor/plan measured — trimming wsl.exe spawn counts
-  // elsewhere did not move their wall time, this does. Plugins/skills ride along in the same
-  // container rather than a second one, for the same reason (commands/management/extensions.ts).
+/** What OpenClaw itself has registered: one batched container for all six reads (four lists
+ *  plus --version) instead of one each — every `docker compose run --rm` pays Compose's
+ *  create/destroy cost again (~5-7s, docker-compose.yml's own note on cli-helper), and
+ *  paying that four times over for one inspection was the dominant cost doctor/plan
+ *  measured. Plugins/skills ride along in the same container for the same reason
+ *  (commands/management/extensions.ts). */
+async function observeRegistrations(ctx: Context, includeChannels: boolean) {
   const batchCommands: string[][] = [
     ["agents", "list", "--json"],
     ["mcp", "list", "--json"],
@@ -267,11 +264,30 @@ export async function observeLive(
     .map((job) => (job.schedule?.expr === undefined ? (job.name ?? "") : `${job.name ?? ""}@${job.schedule.expr}`))
     .filter((name) => name !== "");
 
-  // What this framework can show it created, against what every recipe in the set currently
-  // declares. An object recorded for a recipe that no longer exists, or that now names a
-  // different agent/server/job (a rename), is orphaned; anything present that the ledger
-  // never recorded is somebody else's and only ever reported, never proposed for removal.
-  const expectations = await recipeExpectations();
+  const openclawVersionLine = versionResult.code === 0 ? versionResult.stdout.trim().split("\n")[0] : "";
+  const openclawVersion = openclawVersionLine === "" ? undefined : openclawVersionLine;
+
+  // Raw (unfiltered, un-normalised) — gather.ts turns these into the same shape the lock
+  // records (pluginsForLock/skillsForLock) before comparing, so this function stays a plain
+  // read of what OpenClaw itself reports.
+  const plugins = parsePluginsList(pluginsResult);
+  const skills = parseSkillsList(skillsResult);
+
+  return { agents, mcpServerEntries, mcpServers, liveJobs, cronJobs, channels, openclawVersion, plugins, skills };
+}
+
+/** What this framework can show it created, against what every recipe in the set currently
+ *  declares. An object recorded for a recipe that no longer exists, or that now names a
+ *  different agent/server/job (a rename), is orphaned; anything present that the ledger
+ *  never recorded is somebody else's and only ever reported, never proposed for removal. */
+async function observeOwnership(
+  ctx: Context,
+  problems: Problem[],
+  expectations: RecipeExpectation[],
+  agents: string[],
+  mcpServers: string[],
+  liveJobs: CronJob[],
+) {
   const declaredOwnership: DeclaredOwnership[] = expectations.flatMap(({ recipe, bundle }) => {
     const entries: DeclaredOwnership[] = [
       { kind: "agent", name: bundle.config.agentId, recipe },
@@ -296,103 +312,135 @@ export async function observeLive(
     ...foreign(ledger, "mcp-server", mcpServers).map((name) => ({ kind: "mcp-server" as const, name })),
     ...foreign(ledger, "cron-job", liveJobs.map((job) => job.name ?? "").filter((name) => name !== "")).map((name) => ({ kind: "cron-job" as const, name })),
   ];
+  return { ledger, foreignObjects };
+}
 
-  for (const expectation of expectations) {
-    const { config, cronMessage } = expectation.bundle;
-    const agentId = config.agentId;
+/** One recipe's expectations against the instance: the agent/MCP-server/cron-job
+ *  registration checks, the mirrored recipe files by content, and the agent's own prompt
+ *  files (which the mirror does not carry — provision-agent writes them straight into the
+ *  agent's workspace instead). */
+async function checkRecipeExpectation(
+  ctx: Context,
+  problems: Problem[],
+  expectation: RecipeExpectation,
+  registrations: { agents: string[]; mcpServerEntries: [string, { command?: unknown; args?: unknown; enabled?: unknown }][]; liveJobs: CronJob[] },
+  ledger: Awaited<ReturnType<typeof readLedger>>,
+): Promise<void> {
+  const { agents, mcpServerEntries, liveJobs } = registrations;
+  const { config, cronMessage } = expectation.bundle;
+  const agentId = config.agentId;
 
-    if (!agents.includes(agentId)) {
+  if (!agents.includes(agentId)) {
+    problems.push(
+      problem("AGENT_MISSING", `recipe "${expectation.recipe}" declares agent "${agentId}", which the instance does not have`, `./clawforge provision-agent ${expectation.recipe}`),
+    );
+  }
+  const registeredServer = mcpServerEntries.find(([name]) => name === config.mcpServerName)?.[1];
+  if (registeredServer === undefined) {
+    problems.push(
+      problem("MCP_SERVER_MISSING", `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is not registered`, `./clawforge provision-agent ${expectation.recipe}`),
+    );
+  } else if (!mcpServerMatches(registeredServer, expectation.recipe)) {
+    problems.push(
+      problem(
+        "MCP_SERVER_MISSING",
+        `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is registered but does not launch the recipe's server.ts (wrong command, or disabled)`,
+        `./clawforge provision-agent ${expectation.recipe}`,
+      ),
+    );
+  }
+  if (config.cronJobName !== undefined && cronMessage !== undefined) {
+    const live = liveJobs.find((job) => job.name === config.cronJobName);
+    if (live === undefined) {
       problems.push(
-        problem("AGENT_MISSING", `recipe "${expectation.recipe}" declares agent "${agentId}", which the instance does not have`, `./clawforge provision-agent ${expectation.recipe}`),
+        problem("CRON_DRIFT", `recipe "${expectation.recipe}" declares cron job "${config.cronJobName}", which does not exist`, `./clawforge provision-agent ${expectation.recipe}`),
       );
-    }
-    const registeredServer = mcpServerEntries.find(([name]) => name === config.mcpServerName)?.[1];
-    if (registeredServer === undefined) {
+    } else if (!cronJobMatches(live, config, cronMessage)) {
+      // The same comparison provision-agent reconciles with, so the inspection cannot
+      // report agreement about a job that command would immediately replace. Named field
+      // by field: "the job differs" leaves the reader to diff it themselves.
       problems.push(
-        problem("MCP_SERVER_MISSING", `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is not registered`, `./clawforge provision-agent ${expectation.recipe}`),
-      );
-    } else if (!mcpServerMatches(registeredServer, expectation.recipe)) {
-      problems.push(
-        problem(
-          "MCP_SERVER_MISSING",
-          `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is registered but does not launch the recipe's server.ts (wrong command, or disabled)`,
-          `./clawforge provision-agent ${expectation.recipe}`,
-        ),
-      );
-    }
-    if (config.cronJobName !== undefined && cronMessage !== undefined) {
-      const live = liveJobs.find((job) => job.name === config.cronJobName);
-      if (live === undefined) {
-        problems.push(
-          problem("CRON_DRIFT", `recipe "${expectation.recipe}" declares cron job "${config.cronJobName}", which does not exist`, `./clawforge provision-agent ${expectation.recipe}`),
-        );
-      } else if (!cronJobMatches(live, config, cronMessage)) {
-        // The same comparison provision-agent reconciles with, so the inspection cannot
-        // report agreement about a job that command would immediately replace. Named field
-        // by field: "the job differs" leaves the reader to diff it themselves.
-        problems.push(
-          problem("CRON_DRIFT", `cron job "${config.cronJobName}" differs from the recipe: ${cronDifferences(live, config, cronMessage).join("; ")}`, `./clawforge provision-agent ${expectation.recipe}`),
-        );
-      }
-    }
-
-    // The mirrored recipe files, by content: a page edited in the repository and not yet
-    // mirrored is the most ordinary drift there is, and a file-name comparison would miss
-    // every instance of it.
-    const recipeDir = resolve(recipesDir(), expectation.recipe);
-    const localSums = await recipeFileChecksums(recipeDir);
-    const targetSums = await targetFileChecksums(ctx, recipeMirrorTargetDir(ctx.settings.dataDir, expectation.recipe));
-    const differing = Object.keys(localSums).filter((rel) => localSums[rel] !== targetSums[rel]);
-    const extra = Object.keys(targetSums).filter((rel) => localSums[rel] === undefined);
-
-    // The agent's own prompt files, which the mirror does not carry: provision-agent writes
-    // them into the agent's workspace instead. Comparing only the mirror meant an edited
-    // AGENTS.md changed the agent's behaviour and nothing reported it, so plan scheduled
-    // nothing and the old prompt stayed in force.
-    {
-      const bundle = await agentBundleChecksums(recipeDir);
-      const workspace = await targetFileChecksums(ctx, agentWorkspaceTargetDir(ctx.settings.dataDir, agentId));
-      const ownedPromptFiles = new Set(
-        ledger.objects.find((owned) => owned.kind === "agent" && owned.name === agentId && owned.recipe === expectation.recipe)?.promptFiles ?? [],
-      );
-      const stalePrompts = Object.keys(bundle)
-        .filter((rel) => rel.endsWith(".md"))
-        .filter((rel) => bundle[rel] !== workspace[rel]);
-      const extraPrompts = Object.keys(workspace)
-        .filter((rel) => !rel.includes("/") && rel.endsWith(".md"))
-        .filter((rel) => bundle[rel] === undefined && ownedPromptFiles.has(rel));
-      if (stalePrompts.length > 0 || extraPrompts.length > 0) {
-        const details: string[] = [];
-        if (stalePrompts.length > 0) details.push(`older or missing (${stalePrompts.join(", ")})`);
-        if (extraPrompts.length > 0) details.push(`withdrawn prompt file(s) still present (${extraPrompts.join(", ")})`);
-        problems.push(
-          problem(
-            "RECIPE_MIRROR_DRIFT",
-            `recipe "${expectation.recipe}": agent "${agentId}" has prompt drift: ${details.join("; ")}`,
-            `./clawforge provision-agent ${expectation.recipe}`,
-          ),
-        );
-      }
-    }
-
-    if (differing.length > 0 || extra.length > 0) {
-      const parts: string[] = [];
-      if (differing.length > 0) parts.push(`${differing.length} file(s) differ or are missing (${differing.slice(0, 3).join(", ")}${differing.length > 3 ? ", …" : ""})`);
-      if (extra.length > 0) parts.push(`${extra.length} file(s) on the target the recipe no longer declares (${extra.slice(0, 3).join(", ")}${extra.length > 3 ? ", …" : ""})`);
-      problems.push(
-        problem("RECIPE_MIRROR_DRIFT", `recipe "${expectation.recipe}": ${parts.join("; ")}`, `./clawforge provision-agent ${expectation.recipe}`),
+        problem("CRON_DRIFT", `cron job "${config.cronJobName}" differs from the recipe: ${cronDifferences(live, config, cronMessage).join("; ")}`, `./clawforge provision-agent ${expectation.recipe}`),
       );
     }
   }
 
-  const openclawVersionLine = versionResult.code === 0 ? versionResult.stdout.trim().split("\n")[0] : "";
-  const openclawVersion = openclawVersionLine === "" ? undefined : openclawVersionLine;
+  // The mirrored recipe files, by content: a page edited in the repository and not yet
+  // mirrored is the most ordinary drift there is, and a file-name comparison would miss
+  // every instance of it.
+  const recipeDir = resolve(recipesDir(), expectation.recipe);
+  const localSums = await recipeFileChecksums(recipeDir);
+  const targetSums = await targetFileChecksums(ctx, recipeMirrorTargetDir(ctx.settings.dataDir, expectation.recipe));
+  const differing = Object.keys(localSums).filter((rel) => localSums[rel] !== targetSums[rel]);
+  const extra = Object.keys(targetSums).filter((rel) => localSums[rel] === undefined);
 
-  // Raw (unfiltered, un-normalised) — gather.ts turns these into the same shape the lock
-  // records (pluginsForLock/skillsForLock) before comparing, so this function stays a plain
-  // read of what OpenClaw itself reports.
-  const plugins = parsePluginsList(pluginsResult);
-  const skills = parseSkillsList(skillsResult);
+  // The agent's own prompt files, which the mirror does not carry: provision-agent writes
+  // them into the agent's workspace instead. Comparing only the mirror meant an edited
+  // AGENTS.md changed the agent's behaviour and nothing reported it, so plan scheduled
+  // nothing and the old prompt stayed in force.
+  {
+    const bundle = await agentBundleChecksums(recipeDir);
+    const workspace = await targetFileChecksums(ctx, agentWorkspaceTargetDir(ctx.settings.dataDir, agentId));
+    const ownedPromptFiles = new Set(
+      ledger.objects.find((owned) => owned.kind === "agent" && owned.name === agentId && owned.recipe === expectation.recipe)?.promptFiles ?? [],
+    );
+    const stalePrompts = Object.keys(bundle)
+      .filter((rel) => rel.endsWith(".md"))
+      .filter((rel) => bundle[rel] !== workspace[rel]);
+    const extraPrompts = Object.keys(workspace)
+      .filter((rel) => !rel.includes("/") && rel.endsWith(".md"))
+      .filter((rel) => bundle[rel] === undefined && ownedPromptFiles.has(rel));
+    if (stalePrompts.length > 0 || extraPrompts.length > 0) {
+      const details: string[] = [];
+      if (stalePrompts.length > 0) details.push(`older or missing (${stalePrompts.join(", ")})`);
+      if (extraPrompts.length > 0) details.push(`withdrawn prompt file(s) still present (${extraPrompts.join(", ")})`);
+      problems.push(
+        problem(
+          "RECIPE_MIRROR_DRIFT",
+          `recipe "${expectation.recipe}": agent "${agentId}" has prompt drift: ${details.join("; ")}`,
+          `./clawforge provision-agent ${expectation.recipe}`,
+        ),
+      );
+    }
+  }
+
+  if (differing.length > 0 || extra.length > 0) {
+    const parts: string[] = [];
+    if (differing.length > 0) parts.push(`${differing.length} file(s) differ or are missing (${differing.slice(0, 3).join(", ")}${differing.length > 3 ? ", …" : ""})`);
+    if (extra.length > 0) parts.push(`${extra.length} file(s) on the target the recipe no longer declares (${extra.slice(0, 3).join(", ")}${extra.length > 3 ? ", …" : ""})`);
+    problems.push(
+      problem("RECIPE_MIRROR_DRIFT", `recipe "${expectation.recipe}": ${parts.join("; ")}`, `./clawforge provision-agent ${expectation.recipe}`),
+    );
+  }
+}
+
+export async function observeLive(
+  ctx: Context,
+  declared: DeclaredState,
+  problems: Problem[],
+  configMtimeMs: number | undefined,
+  liveConfig: unknown,
+  // watch check's own opt-in (gatherInspection's `channels` option): adds `channels status
+  // --json` to the same batch below instead of a second one-off container. inspect/doctor/
+  // plan/apply never pass true, so their own batch — and everything derived from it — is
+  // unchanged.
+  includeChannels = false,
+): Promise<Partial<ObservedState> & { plugins: PluginListEntry[]; skills: SkillListEntry[] }> {
+  const { probes, health } = await observeHealth(ctx, problems, configMtimeMs);
+
+  // The outbound counterpart of the probes above, from the one vantage they lack.
+  const egress = await observeEgress(ctx, liveConfig, problems);
+
+  // --- what OpenClaw itself has registered ----------------------------------------------
+  const registrations = await observeRegistrations(ctx, includeChannels);
+  const { agents, mcpServerEntries, mcpServers, liveJobs, cronJobs, channels, openclawVersion, plugins, skills } = registrations;
+
+  const expectations = await recipeExpectations();
+  const { ledger, foreignObjects } = await observeOwnership(ctx, problems, expectations, agents, mcpServers, liveJobs);
+
+  for (const expectation of expectations) {
+    await checkRecipeExpectation(ctx, problems, expectation, { agents, mcpServerEntries, liveJobs }, ledger);
+  }
 
   return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion, plugins, skills, channels };
 }

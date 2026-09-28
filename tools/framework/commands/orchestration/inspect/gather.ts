@@ -42,7 +42,8 @@ import {
   isHealthy,
   nextActions,
 } from "#src/service/inspection.ts";
-import type { Problem, Inspection } from "#src/service/inspection.ts";
+import type { Problem, Inspection, SecretStoreObservation } from "#src/service/inspection.ts";
+import type { SecretStatus } from "#src/service/secrets.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { prospectiveConfig, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
@@ -91,12 +92,29 @@ export async function gatherInspection(ctx: Context, options?: GatherInspectionO
   }
 }
 
-async function gatherReachedInspection(
+/** observeConfig()'s own return shape, named here so the preflight/running split below can
+ *  pass it along without re-stating the inline object type at every boundary. */
+interface ConfigState {
+  readonly config: Record<string, unknown>;
+  readonly mtimeMs?: number;
+}
+
+/** Everything gatherReachedInspection needs before it can even tell whether the instance is
+ *  running: isRunning() itself, the image-pin check, secrets against the prospective config,
+ *  the provider check, and the two target reads (secret store, live config on disk) that are
+ *  no more expensive to take on a stopped instance than a running one. */
+async function gatherPreflight(
   ctx: Context,
   declared: Inspection["declared"],
   problems: Problem[],
-  options: GatherInspectionOptions | undefined,
-): Promise<Inspection> {
+): Promise<{
+  running: boolean;
+  notBootstrapped: NotBootstrapped | undefined;
+  liveConfig: unknown;
+  secrets: SecretStatus[];
+  secretStore: SecretStoreObservation | undefined;
+  configState: ConfigState;
+}> {
   // isRunning() shells out to compose, which needs somewhere to write its own private env
   // file beside the data directory — and on a deployment nobody has bootstrapped yet, that
   // data directory does not exist, so creating a place beside it is exactly the mkdir a
@@ -177,30 +195,24 @@ async function gatherReachedInspection(
   // the target, and a stopped instance is exactly when someone is about to start one.
   const configState = await observeConfig(ctx, declared, problems);
 
-  if (!running) {
-    problems.push(
-      notBootstrapped !== undefined
-        ? problem("NOT_BOOTSTRAPPED", notBootstrapped.message)
-        : problem("GATEWAY_DOWN", `no running container for deployment "${declared.deployment}"`),
-    );
-    return {
-      declared,
-      observed: {
-        running: false,
-        probes: {},
-        config: configState.config,
-        secrets,
-        secretStore: secretStore,
-        agents: [],
-        mcpServers: [],
-        cronJobs: [],
-        foreignObjects: [],
-        frameworkVersion: await frameworkVersion(),
-      },
-      problems,
-    };
-  }
+  return { running, notBootstrapped, liveConfig, secrets, secretStore, configState };
+}
 
+/** Everything that needs an actually-running instance to answer: declaration/connection
+ *  facts, the live observation (agents/mcp/cron/plugins/skills/health), the image-digest
+ *  comparison, the installed-set requirement check and the lock comparison — assembled into
+ *  the final Inspection. Split out of gatherReachedInspection so that function stays a short
+ *  dispatch between "not running" and this. */
+async function gatherRunningInspection(
+  ctx: Context,
+  declared: Inspection["declared"],
+  problems: Problem[],
+  configState: ConfigState,
+  liveConfig: unknown,
+  secrets: SecretStatus[],
+  secretStore: SecretStoreObservation | undefined,
+  options: GatherInspectionOptions | undefined,
+): Promise<Inspection> {
   // These two need an instance. DECLARATION_MISSING is a fact about the folder, but it is
   // only a finding while something is running to be re-declared — the whole point of its
   // name — and the facts ENV_STALE compares against exist only in a running container.
@@ -304,6 +316,41 @@ async function gatherReachedInspection(
     },
     problems,
   };
+}
+
+async function gatherReachedInspection(
+  ctx: Context,
+  declared: Inspection["declared"],
+  problems: Problem[],
+  options: GatherInspectionOptions | undefined,
+): Promise<Inspection> {
+  const { running, notBootstrapped, liveConfig, secrets, secretStore, configState } = await gatherPreflight(ctx, declared, problems);
+
+  if (!running) {
+    problems.push(
+      notBootstrapped !== undefined
+        ? problem("NOT_BOOTSTRAPPED", notBootstrapped.message)
+        : problem("GATEWAY_DOWN", `no running container for deployment "${declared.deployment}"`),
+    );
+    return {
+      declared,
+      observed: {
+        running: false,
+        probes: {},
+        config: configState.config,
+        secrets,
+        secretStore: secretStore,
+        agents: [],
+        mcpServers: [],
+        cronJobs: [],
+        foreignObjects: [],
+        frameworkVersion: await frameworkVersion(),
+      },
+      problems,
+    };
+  }
+
+  return gatherRunningInspection(ctx, declared, problems, configState, liveConfig, secrets, secretStore, options);
 }
 
 export async function inspect(ctx: Context, args: string[]): Promise<void> {

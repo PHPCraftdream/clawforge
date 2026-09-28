@@ -65,11 +65,11 @@ export async function applyConfig(
   const breakLock = parsed["break-lock"] === true;
   const breakForeignLockHost = parseBreakForeignLockHost(args);
 
-  // Which flags mean anything is decided from the mode here, not left to branch order: the
-  // dump branch used to run first, so --dry-run --dump --force reached it with the dry run
-  // never consulted — and the recovered file, which holds only RECOVERABLE_PATHS, replaced a
-  // declaration that named settings no dump ever attempts. A preview must not be able to
-  // destroy what it previews.
+  // Which flags mean anything is decided from the mode here, not left to branch order:
+  // branch order alone would let --dry-run --dump --force reach the dump branch with the
+  // dry run never consulted — and the recovered file, which holds only RECOVERABLE_PATHS,
+  // would replace a declaration that names settings no dump ever attempts. A preview must
+  // not be able to destroy what it previews.
   if (dump && dryRun) die("--dry-run cannot be combined with --dump — a dump has no dry-run form: it writes the recovered declaration or it does nothing");
   if (dump && breakLock) die("--break-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
   if (dump && breakForeignLockHost !== undefined) die("--break-foreign-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");

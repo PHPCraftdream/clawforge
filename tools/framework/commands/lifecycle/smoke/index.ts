@@ -104,9 +104,9 @@ export const checks: Check[] = [
       }[];
 
       // Any declared string setting will do, and which one is the deployment's business —
-      // this used to insist on agents.defaults.model.primary, which the template for a new
-      // deployment does not contain. gateway.* is left alone: drifting it takes the service
-      // down for as long as the check runs.
+      // insisting on a specific path like agents.defaults.model.primary would break on a
+      // template that does not declare it. gateway.* is left alone: drifting it takes the
+      // service down for as long as the check runs.
       const subject = declared.find(
         (entry) => typeof entry.value === "string" && !entry.path.startsWith("gateway."),
       );

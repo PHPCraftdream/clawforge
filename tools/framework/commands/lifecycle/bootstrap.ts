@@ -84,11 +84,11 @@ export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
   // write still run only after the lock is held.
   await ensureLockHome(ctx);
 
-  // One lock for the whole sequence, not one per sub-command: ensureDataDirs/
-  // ensureSecretsFile used to run with no lock at all, and applyConfig/configureProvider
-  // each took and released their own separately — a run refused by another operation
-  // already holding the lock still got to WRITE config/.env (ensureSecretsFile) before the
-  // refusal ever surfaced, only failing later at applyConfig's own internal takeLock().
+  // One lock for the whole sequence, not one per sub-command: taking separate locks per
+  // sub-command (ensureDataDirs/ensureSecretsFile with none at all, applyConfig/
+  // configureProvider each their own) would let a run refused by another operation already
+  // holding the lock still WRITE config/.env (ensureSecretsFile) before the refusal ever
+  // surfaced, only failing later at applyConfig's own internal takeLock().
   // guarded() is nesting-safe (instance-lock.ts), so the inner applyConfig()/
   // configureProvider() calls below just run inside this one outer hold instead of each
   // acquiring their own.

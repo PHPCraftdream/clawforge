@@ -108,9 +108,9 @@ export class NativeBackupUnsupportedError extends Error {}
 export const NATIVE_MANIFEST_NAME = ".clawforge-native-manifest.tar.gz";
 
 // UTC, not local time: state.ts's snapshot names and restore.ts's <data>.replaced-<stamp>
-// both already are, and a backup taken the same moment as a pull used to land two hours
-// apart by name on a UTC+2 host — correlating "which backup was this snapshot copied from"
-// meant doing the arithmetic by hand.
+// both already are, and local time would put a backup taken the same moment as a pull two
+// hours apart by name on a UTC+2 host — correlating "which backup was this snapshot copied
+// from" would mean doing the arithmetic by hand.
 function timestamp(): string {
   const now = new Date();
   const pad = (value: number): string => String(value).padStart(2, "0");
@@ -433,10 +433,10 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     } else {
       await createArchive(ctx, { archive: stagingArchive, profile });
     }
-    // tar exiting 0 and the file landing are not evidence the data is inside: an archive
-    // that holds nothing beneath its root — what a symlinked root used to produce —
-    // restores nothing anywhere. Checked on the staging archive, before it can become
-    // the newest backup.
+    // tar exiting 0 and the file landing are not evidence the data is inside: a symlinked
+    // root can produce an archive that holds nothing beneath its root, which restores
+    // nothing anywhere. Checked on the staging archive, before it can become the newest
+    // backup.
     if (!archiveCarriesContent(await listArchive(ctx, stagingArchive))) {
       throw new Error(`the fresh archive of ${dataDir} carries no data beneath its root — refusing to publish it as a backup`);
     }

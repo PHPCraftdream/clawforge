@@ -245,8 +245,8 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
 /** Turns tool arguments back into the argv the command already knows how to parse.
  *
  *  Positionals come first and in declaration order, because that is how the parsers read
- *  them; options keep their name, which is what used to be lost — `--profile share` arrived
- *  as a bare `share` and was taken for a file name. */
+ *  them; options keep their name — losing it would turn `--profile share` into a bare
+ *  `share`, taken for a file name. */
 export function toArgv(command: Declared, args: Record<string, unknown>): string[] {
   const declared = command.arguments ?? [];
   const positional: string[] = [];

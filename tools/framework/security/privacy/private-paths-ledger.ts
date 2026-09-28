@@ -33,8 +33,8 @@
 // The record has a twin inside the data directory itself: config/clawforge-private-paths.json.
 // The deployment-side ledger describes the target but lives on the operator side, so a full
 // backup restored through a different deployment directory — a new folder, a lost one,
-// another machine managing the same target — used to arrive with the data and none of its
-// history: fail-closed for a ledger that exists but cannot
+// another machine managing the same target — needs its own copy of the history to arrive
+// with the data: fail-closed for a ledger that exists but cannot
 // be read is still fail-open for one that is simply not there. createArchive() publishes the
 // current ledger into the data root before a full backup, so the history travels physically
 // with the data it describes — the ownership ledger clawforge-managed.json lives in the data
@@ -43,20 +43,17 @@
 // instance's paths and travels with full backups only. A history the archive does not carry
 // is said at restore time, never silently read as "nothing to protect".
 //
-// publishPrivatePathsHistory used to treat an empty local ledger as a completed forget and
-// remove the target copy outright — which also fired on a deployment folder that simply never
-// recorded anything locally: a lost or freshly recreated one adopting a target that already
-// carried the only surviving history. Emptiness alone
-// cannot tell "forgotten" from "never recorded here", so publish now keys off whether the
-// local ledger FILE exists at all — it is only ever written, even with zero entries, by an
-// actual forgetPrivatePaths call — and adopts an existing target history instead of erasing
-// it when the local file was never written. The readers that never publish — migrate and
-// share — no longer leave the target's copy unread either: createArchive() reconciles it into
-// the deployment-side ledger before the policy is read, so a deployment folder pointed at
-// already-existing target data learns what the target alone still remembers. Publish
-// itself now replaces the copy atomically and skips
-// the write when the bytes are already identical, where the exclusive create it used made
-// every second full backup fail against the copy the first one had just written.
+// publishPrivatePathsHistory keys off whether the local ledger FILE exists at all, not
+// whether it is empty: only forgetPrivatePaths ever writes an empty ledger, so emptiness
+// alone cannot tell "forgotten" from "never recorded here" — a lost or freshly recreated
+// deployment folder adopting a target that already carries the only surviving history. A
+// local file that was never written adopts the existing target history instead of erasing
+// it. The readers that never publish — migrate and share — still see the target's copy:
+// createArchive() reconciles it into the deployment-side ledger before the policy is read,
+// so a deployment folder pointed at already-existing target data learns what the target
+// alone still remembers. Publish itself replaces the copy atomically and skips the write
+// when the bytes are already identical — a plain exclusive create there would fail every
+// second full backup against the copy the first one had just written.
 
 import { randomBytes } from "node:crypto";
 import { access, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -378,10 +375,9 @@ async function adoptExistingTargetHistory(
  *  honestly means "nothing recorded", not "history lost".
  *
  *  The write is an atomic REPLACE, and it is skipped when the target already holds exactly
- *  the bytes publish would write. It used to go through
- *  writePrivateFile, which is an EXCLUSIVE create: the second full backup failed against the
- *  copy the first one had just written, and the republish after an adoption hit the same
- *  wall — the failure had nothing to do with what the ledger held. writeFile stages a unique
+ *  the bytes publish would write — an EXCLUSIVE create there would fail the second full
+ *  backup against the copy the first one had just written, and the republish after an
+ *  adoption, regardless of what the ledger held. writeFile stages a unique
  *  sibling and renames it over the final name on every real transport (LocalTransport's
  *  rename, the remote publish command's `mv -f`), applies mode 600 where the sibling is
  *  created locally and chmods it remotely, and never deletes the old history first: a failure
@@ -529,12 +525,12 @@ export async function forgetPrivatePaths(relativePaths: readonly string[]): Prom
  *  never publish.
  *
  *  createArchive() publishes the history for a full backup only; migrate and share exclude the
- *  copy, so nothing else ever asked the target what it still remembers. A deployment folder
+ *  copy, so nothing else ever asks the target what it still remembers. A deployment folder
  *  pointed at already-existing target data — a lost or freshly recreated one, another machine
- *  adopting the same instance — reaches migrate or share with no restore and no full backup
- *  yet, and used to build its exclusions from a record that was not there. This takes the
- *  union here, at the one point every archive passes
- *  through, before the policy is read.
+ *  adopting the same instance — would otherwise reach migrate or share with no restore and no
+ *  full backup yet, building its exclusions from a record that is not there. This function
+ *  takes the union here, at the one point every archive passes through, before the policy is
+ *  read.
  *
  *  Tombstones suppress resurrection: a path this ledger deliberately forgot is not re-recorded
  *  because the target still names it. An existing, entirely empty, tombstone-less ledger

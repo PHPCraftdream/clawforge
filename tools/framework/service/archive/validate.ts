@@ -116,9 +116,9 @@ export function canonicalArchiveEntries(entries: readonly string[]): string[] {
  *  are walked by the same rules: an intermediate target segment that names a link is
  *  resolved (its own target visited) BEFORE a following `..` consumes it, which is what
  *  makes `b/../safe` mean what the kernel means by it rather than the lexically simplified
- *  `safe` (`b` registered as a link to `../../outside` used to be
- *  popped off unread, and a chain written through the first link read as safely inside the
- *  root). A link key visited twice is a cycle; the substitution counter restates the old
+ *  `safe` (without resolving first, `b` registered as a link to `../../outside` would be
+ *  popped off unread, and a chain written through the first link would read as safely
+ *  inside the root). A link key visited twice is a cycle; the substitution counter restates the old
  *  loop bound, though `seen` alone already caps substitutions at the number of links. */
 function resolveLinkChain(segments: readonly string[], links: ReadonlyMap<string, ArchiveLink>, root: string): ChainResolution {
   const resolved: string[] = [];

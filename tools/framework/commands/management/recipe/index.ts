@@ -37,14 +37,14 @@ export { RECIPE_FLAG_ARGUMENTS } from "./arguments.ts";
 export const RECIPE_DEFAULT_ACTION = "list";
 
 /** Actions that only report. One definition for the dispatcher below and the MCP gate's
- *  readOnlyWhen — which is asked from built argv, where an omitted action is no longer
- *  visibly the default — so the two cannot disagree about bare `recipe` again: the gate
- *  once demanded a confirmation the console would never have asked for.
+ *  readOnlyWhen — which is asked from built argv, where an omitted action is not visibly
+ *  the default — so the two cannot disagree about bare `recipe`: divergence here would let
+ *  the gate demand a confirmation the console would never ask for.
  *
  *  verify is deliberately absent, though the action is usually a probe: it runs the recipe's
  *  own verify.ts with the same Context prepare.ts gets, and prepare may mutate the target,
- *  so the framework has no way to know a given hook is read-only. Listing it here let an
- *  unconfirmed verify reach the target AND be reported as changed:false on the strength of
+ *  so the framework has no way to know a given hook is read-only. Listing it here would let
+ *  an unconfirmed verify reach the target AND be reported as changed:false on the strength of
  *  its name alone. It gates like onboard, and its envelope only says changed:false when the
  *  hook's own JSON says so. The instance-lock gate in recipe() reads this same set, so the
  *  MCP gate and the lock cannot disagree about a future action. */
@@ -495,12 +495,10 @@ async function runRecipeAction(ctx: Context, action: string, name: string, rest:
       // unless declared, and the enforced promise about a recipe's private files is the
       // target-side privatePaths policy, never a filter over file names here. The
       // declaration is read strictly — a manifest that exists but cannot be read stops the
-      // import rather than reading as "nothing declared", the quiet-empty failure that once
-      // walked a private file into a share archive; the
-      // application-specific names the dispatcher used to hardcode moved into declarations
-      // in the same change that added the field, so no currently excluded name lost its
-      // exclusion. The regex and the boundary matcher now live in the shared
-      // portable-content policy (security/recipe-portable-content.ts) — the single
+      // import rather than reading as "nothing declared": a quiet-empty failure would walk
+      // a private file into a share archive. Application-specific names live in
+      // declarations, not hardcoded in the dispatcher. The regex and the boundary matcher
+      // live in the shared portable-content policy (security/recipe-portable-content.ts) — the single
       // implementation that set build, the provision-agent mirror and
       // deploy read too, so no carrier of recipe bytes can drift from this answer.
       const declared = await declaredPortablePrivateFiles(source).catch((error: unknown) =>
@@ -608,9 +606,10 @@ async function runRecipeAction(ctx: Context, action: string, name: string, rest:
         spec.readiness !== undefined ? { wait: true, timeoutSeconds: Math.ceil(readinessTimeoutMs / 1000) } : undefined,
       );
 
-      // Checked before afterStart, not the instant `up --detach` returns: a container that
-      // starts and crashes moments later, or a multi-service recipe whose main service never
-      // came up while a sidecar did, used to be reported "running" regardless.
+      // Checked before afterStart, not the instant `up --detach` returns: checking only at
+      // that instant would report "running" regardless of a container that starts and
+      // crashes moments later, or a multi-service recipe whose main service never comes up
+      // while a sidecar does.
       const readiness = await waitForRecipeReadiness(stack, spec.readiness, readinessTimeoutMs);
       const report = { recipe: spec.name, status: readiness.status, detail: readiness.detail, services: readiness.services };
 

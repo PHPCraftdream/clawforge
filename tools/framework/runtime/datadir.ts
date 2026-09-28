@@ -148,9 +148,9 @@ async function dataFamily(ctx: Context): Promise<Map<string, string[]>> {
 }
 
 /** The commands to hand the operator so one pass covers every directory this deployment
- *  will need, not just the one path that happened to fail first — bootstrap used to refuse
- *  on the lock home alone, then again on the data directory, then again on backups and
- *  snapshots the first time each was touched. Whenever whoever runs the tooling already IS
+ *  will need, not just the one path that happened to fail first — otherwise bootstrap would
+ *  refuse on the lock home alone, then again on the data directory, then again on backups
+ *  and snapshots the first time each was touched. Whenever whoever runs the tooling already IS
  *  uid 1000 (a WSL distribution's default user typically is), every group collapses into
  *  the exact same owner and this returns a single line for the whole family. */
 async function prepareFamilyAdvice(ctx: Context): Promise<string[]> {

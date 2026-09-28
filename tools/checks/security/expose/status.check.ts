@@ -204,7 +204,7 @@ async function runJson(ctx: Context, args: string[]): Promise<Record<string, unk
   });
 }
 
-// --- an undeclared argument is refused, not silently accepted (R5) -----------------------------
+// --- an undeclared argument is refused, not silently accepted -----------------------------
 
 {
   const ctx = ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false });

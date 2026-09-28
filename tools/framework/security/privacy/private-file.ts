@@ -278,10 +278,10 @@ export async function probeWslOpen(distro: string, targetPath: string): Promise<
 }
 
 /** Directories already reported this process. reportWslBoundary spawns wsl.exe once per
- *  installed distribution — not cheap — and every write of a deployment's .env used to run
- *  it fresh regardless: the temporary file AND the final rename each went through
- *  protectPrivateFile, so generating a token alone printed the same warning twice before
- *  bootstrap said anything useful, once per installed distribution each time. Keyed on the
+ *  installed distribution — not cheap — so this cache avoids re-running it for every write
+ *  of a deployment's .env: the temporary file AND the final rename each go through
+ *  protectPrivateFile, so without it, generating a token alone would print the same warning
+ *  twice, once per installed distribution, before bootstrap said anything useful. Keyed on the
  *  containing directory — the boundary a Windows-mounted drive creates is a property of
  *  where the deployment sits, not of which file inside it triggered the check — and kept for
  *  the life of the process only: a later run (a different day, a distribution installed or
@@ -330,10 +330,9 @@ async function reportWslBoundary(file: string): Promise<void> {
     }
     unverified.push(`"${distro}" at ${targetPath}: ${verdict}`);
   }
-  // One line naming every exposed distribution, not one line each: this used to run once per
-  // installed distribution and flood the output before anything else printed. Running from
-  // Windows stays the supported setup either way — this is a hardening option, not a verdict
-  // that the setup is wrong.
+  // One line naming every exposed distribution, not one line each, to avoid flooding the
+  // output before anything else printed. Running from Windows stays the supported setup
+  // either way — this is a hardening option, not a verdict that the setup is wrong.
   if (exposed.length > 0) {
     warn(
       `${file} is owner-only on the Windows side only: ` +

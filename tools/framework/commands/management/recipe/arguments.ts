@@ -3,8 +3,8 @@
 // recipe's dispatcher (index.ts) parses action/name/new-name positionally and reads flags
 // out of whatever follows with rest.includes()/indexOf() — order-dependent, and not
 // rewritten onto parseDeclaredArgs here, which assumes a position-independent grammar this
-// one does not have. What this module adds is the missing refusal: a flag or a bare
-// positional an action does not use used to be silently ignored instead of rejected.
+// one does not have. What this module adds is the missing refusal for a flag or a bare
+// positional an action does not use, so it is rejected rather than silently ignored.
 
 import { die } from "#src/core/io/log.ts";
 import type { CommandArgument } from "#src/core/app.ts";

@@ -50,9 +50,9 @@ export interface CommandArgument {
    *    variadic    <args…>            every remaining value, in order
    *
    *  One declaration drives three things — the help text, the MCP tool schema and the argv
-   *  an MCP call is turned back into. They used to be derived separately, which is how
-   *  --profile came to be declared a flag while the parser required a value: over MCP it
-   *  arrived as `--profile` alone and swallowed the next argument.
+   *  an MCP call is turned back into, so `kind` cannot diverge between them (e.g. a flag
+   *  declared here that the parser actually requires a value for, which over MCP would
+   *  arrive as bare `--profile` and swallow the next argument).
    *
    *  variadic exists for a command whose arguments are not ours to name — `cli` hands them
    *  to another program. It is a list of strings in the tool schema, appended to argv in
@@ -62,8 +62,8 @@ export interface CommandArgument {
   /** Accepted values. Enforced before the command runs and published in the tool schema. */
   readonly choices?: readonly string[];
   /** What an option's value actually is — `hostId`, `n`, `artifact` — printed as
-   *  `--name <valueName>` instead of the meaningless `--name <value>` every option used to
-   *  render as. Read by the shared help renderer (core/io/help-render.ts) and folded into
+   *  `--name <valueName>` instead of the meaningless `--name <value>`. Read by the shared
+   *  help renderer (core/io/help-render.ts) and folded into
    *  the MCP tool description. Applies to `option`; a `flag` takes no value and a
    *  `positional`/`variadic`'s own name already reads as its value's description.
    *  tools/checks/foundation/core/arguments.check.ts fails the moment a declared option

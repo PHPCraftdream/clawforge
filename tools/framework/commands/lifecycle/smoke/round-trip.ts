@@ -6,8 +6,8 @@
 //
 // It and the two verifier checks (REJECTS_SECRETS_ENTRY, ACCEPTS_SHARE_ENTRY) each need an
 // archive taken with the gateway down. Run alone (as the tests do) each manages its own
-// stop/start; run together by index.ts's runSmokeSuite() they used to cost three outages,
-// ~70s. Only taking an archive needs the window, so runArchiveChecks() pauses once, takes
+// stop/start; managing each independently in index.ts's runSmokeSuite() would cost three
+// outages, ~70s. Only taking an archive needs the window, so runArchiveChecks() pauses once, takes
 // both archives independently, restarts, then verifies and restore-diffs with the gateway
 // back up.
 
@@ -90,11 +90,10 @@ export const ACCEPTS_SHARE_ENTRY: Check = {
 // Disaster-recovery test in the only shape a smoke run may take: it takes a FULL backup
 // with the gateway held down and restores it into an isolated scratch root beside the
 // data directory, then compares private paths as normalized archive streams. It never
-// writes a witness into the live data root: that used to be a migrate-profile snapshot
-// pushed straight back over the working tree, which
-// dropped every privatePath on the floor while still reporting success. A live
-// overwrite-and-restore drill, if anyone wants
-// one, is an explicit, separately confirmed operation — not a side effect of `smoke`.
+// writes a witness into the live data root: a migrate-profile snapshot pushed straight
+// back over the working tree would drop every privatePath on the floor while still
+// reporting success. A live overwrite-and-restore drill, if anyone wants one, is an
+// explicit, separately confirmed operation — not a side effect of `smoke`.
 //
 // Self-contained on purpose: called directly (as the tests beside this file do), it
 // manages its own single stop/start cycle. Called together with its two sibling

@@ -17,11 +17,10 @@
 import { randomBytes } from "node:crypto";
 import type { Context } from "../core/context.ts";
 
-/** Four outcomes, not three-collapsed-into-one. "skipped" used to mean three different
- *  things — "never this command's job" (advisory), "never got the chance" (an earlier step
- *  already failed) and "this plan names an action nobody implemented" — and a reader needs
- *  a different reaction to each. One label for all three is how an implementation gap hides
- *  inside a routine report.
+/** Four outcomes, not three-collapsed-into-one: "skipped" can mean "never this command's
+ *  job" (advisory), "never got the chance" (an earlier step already failed), or "this plan
+ *  names an action nobody implemented" — and a reader needs a different reaction to each.
+ *  One label for all three would let an implementation gap hide inside a routine report.
  *
  *   advisory  structural: not this command's job, on every run
  *   blocked   would have run, but an earlier step already failed
@@ -61,10 +60,10 @@ let lastStamp = "";
  *  command first, every "apply-…" would sort before every "rollback-…" whenever they were
  *  run, which is an ordering by alphabet wearing an ordering by time.
  *
- *  Milliseconds, and then a counter on top: two operations started in the same millisecond
- *  used to be distinguished only by the random tail, which made their order arbitrary — a
- *  flake that passed in isolation and failed in a full run. When the clock has not moved,
- *  the stamp is incremented instead. That can produce a stamp that is not a valid time
+ *  Milliseconds, and then a counter on top, so two operations started in the same
+ *  millisecond stay ordered instead of being distinguished only by the random tail, which
+ *  would leave their order arbitrary. When the clock has not moved, the stamp is
+ *  incremented instead. That can produce a stamp that is not a valid time
  *  (…59999 + 1), which is fine: this is an identifier, and the record carries `startedAt`
  *  for the actual time. */
 export function newOperationId(command: string): string {

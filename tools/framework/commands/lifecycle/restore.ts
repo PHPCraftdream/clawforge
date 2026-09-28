@@ -227,9 +227,9 @@ async function verifyDataDirAncestry(ctx: Context, dataDir: string): Promise<voi
  *  acts on the restored data.
  *
  *  The ledger describes the target but lives in the operator-side deployment directory, so
- *  restoring through a different one — a new folder, a lost one — used to arrive with the
- *  data and none of its history, and the next migrate/share built its exclusions from an
- *  empty record. A full backup therefore carries a copy inside the data root; when this
+ *  restoring through a different one — a new folder, a lost one — needs its own copy of the
+ *  history: otherwise the next migrate/share would build its exclusions from an empty
+ *  record. A full backup therefore carries a copy inside the data root; when this
  *  archive has one, it is imported (union) here, inside the try whose catch puts the
  *  previous data back: a copy that exists but cannot be read or parsed fails the restore,
  *  never reading as "nothing to protect". An archive without one predates history
@@ -437,7 +437,7 @@ export async function restoreArchive(
     // to exactly what it held before this restore touched it, not just "whatever the merge
     // added" — a concurrent change during the same held lock is not expected, and this is the
     // rollback of THIS restore's own effect, nothing else's. The rollback restores that state
-    // FAITHFULLY, absence included: writing an empty ledger when none existed before used to
+    // FAITHFULLY, absence included: writing an empty ledger when none existed before would
     // fabricate a forget-shaped file — a witness to a forget this operator never asked for.
     if (historyImported) {
       warn("restore failed after privacy history was imported — reverting the ledger");

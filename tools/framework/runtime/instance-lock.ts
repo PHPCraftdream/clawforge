@@ -86,9 +86,9 @@ function isProvablyDeadHere(holder: LockHolder): boolean {
  *
  *  Creating a directory that already exists fails, atomically, on every POSIX filesystem —
  *  and the same one command works through wsl.exe and ssh, which is where an atomic
- *  primitive is otherwise hard to come by. Read-then-write, which this used to be, lets two
- *  runs starting together both conclude the lock was free; the window is small and entirely
- *  real, and it is the only thing standing between two coders.
+ *  primitive is otherwise hard to come by. Read-then-write would let two runs starting
+ *  together both conclude the lock was free; the window is small and entirely real, and it
+ *  is the only thing standing between two coders.
  *
  *  Note it must be a plain `mkdir`, not `mkdir -p`: -p succeeds on an existing directory,
  *  which would turn the test into no test at all. That is why this goes through exec rather

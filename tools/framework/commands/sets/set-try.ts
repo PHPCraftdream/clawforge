@@ -256,10 +256,10 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
     // An absolute file:// URL, never a relative specifier: tempDir is os.tmpdir(), almost
     // always the system drive, while frameworkRoot can be checked out to any other drive —
     // node:path's relative() across two Windows drive letters has no traversal that reaches
-    // one from the other and returns the absolute target unchanged, which this used to hand
-    // to a relative import specifier unmodified (a bare "D:/..." path Node's ESM resolver
-    // then reads as relative to tempDir itself, producing a nonsense concatenated path).
-    // pathToFileURL is drive-agnostic and correct on POSIX too.
+    // one from the other and returns the absolute target unchanged. Handed straight to a
+    // relative import specifier, that reads as relative to tempDir itself (a bare "D:/..."
+    // path), producing a nonsense concatenated path. pathToFileURL is drive-agnostic and
+    // correct on POSIX too.
     await writeFile(join(tempDir, "app.ts"),
       `import { defineApp } from ${JSON.stringify(setTryModuleUrl("app", extension))};\n` +
       `import { mountPoints } from ${JSON.stringify(setTryModuleUrl("mounts", extension))};\n` +

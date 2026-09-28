@@ -1,10 +1,9 @@
 // Preparing a deployment's environment before anything reads it.
 //
-// The order matters and used to be wrong: the CLI built a context — which parses .env and
-// constructs the runtime around it — and only then ran bootstrap, which was supposed to
-// create that same .env. On a deployment without one, bootstrap could never run: it failed
-// in the parser first. And once bootstrap wrote a token, the runtime it had been handed
-// still carried the settings from before, so compose was invoked without it.
+// This must run before the context is built: building the context first parses .env and
+// constructs the runtime around it, so on a deployment without a .env yet, bootstrap would
+// fail in the parser before it could create one — and even once bootstrap wrote a token, a
+// context built earlier would still carry stale settings, so compose would run without it.
 //
 // So this runs first, on its own, and the context is built afterwards from the finished
 // file. Commands opt in by declaring preparesEnvironment.

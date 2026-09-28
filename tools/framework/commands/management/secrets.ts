@@ -112,10 +112,10 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
 
   // config/.env is REPLACED by what follows, not merged into: the required list is the whole
   // file afterwards. Anything an operator put there by hand — a variable OpenClaw reads that
-  // no provider reference names, something a recipe expects — disappears. That is the design
-  // (the file is derived from the requirements), but it used to happen without a word, and a
-  // variable that vanishes silently is one nobody thinks to put back. Names only: the values
-  // are the secrets themselves.
+  // no provider reference names, something a recipe expects — disappears. That is the
+  // design (the file is derived from the requirements), so removed names are warned about
+  // below: a variable that vanishes silently is one nobody thinks to put back. Names only:
+  // the values are the secrets themselves.
   const current = targetSupplied.length > 0 ? await dumpSecrets(ctx) : undefined;
   if (current !== undefined) {
     const keep = new Set(targetSupplied.map((entry) => entry.name));
@@ -374,7 +374,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
 
   if (apply) {
     // Writes config/.env on the target — the same class of mutation apply/restore/rollback
-    // guard against each other for, and this used to bypass entirely. No --break-lock support
+    // guard against each other for, so it takes the same lock. No --break-lock support
     // (its own parser above never declares it): breakLockSupported: false keeps a refusal
     // from offering a flag it cannot accept. Only --break-foreign-lock is forwarded.
     await requireBootstrapped(ctx);

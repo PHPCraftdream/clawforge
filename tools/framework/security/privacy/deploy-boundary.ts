@@ -360,9 +360,9 @@ export function rootInventoryScript(remotePath: string): string {
   ].join("\n");
 }
 
-/** The remote root deploy may mirror into, examined locally before anything remote runs
- *  `--path <dir>` used to reach `mkdir -p` and then
- *  rsync --delete with no validation at all: a typo could select a filesystem root, a
+/** The remote root deploy may mirror into, examined locally before anything remote runs.
+ *  Without these checks, `--path <dir>` would reach `mkdir -p` and then rsync --delete
+ *  with no validation at all: a typo could select a filesystem root, a
  *  shared top-level directory, or a data/backups tree, and the first sync would delete
  *  whatever unrelated content sat there that the mirror does not carry — an unlimited
  *  blast radius for an ordinary operation. These checks are the LOCAL half of the answer

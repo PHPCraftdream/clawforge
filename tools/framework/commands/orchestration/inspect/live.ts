@@ -182,17 +182,17 @@ export async function observeLive(
   }
   const failedProbes = Object.entries(probes).filter(([, code]) => code !== 200);
 
-  // Both criteria are read, because they can disagree and that disagreement is what
-  // uncovered a broken healthcheck on this deployment before. They are not equal, though:
+  // Both criteria are read, because they can disagree, and that disagreement can itself
+  // reveal a broken healthcheck. They are not equal, though:
   //
   //   "unhealthy"/"missing"  the runtime has decided. A finding whatever the probes say.
   //   "starting"             the healthcheck's grace period — genuinely not known yet, and
-  //                          the state every container passes through on the way up. An
-  //                          inspection right after a restart used to report it as a fault,
-  //                          which is a false alarm on a working instance, and a report
-  //                          that cries wolf stops being read. The probes decide instead:
-  //                          answering means it is serving, whatever the runtime has got
-  //                          around to concluding.
+  //                          the state every container passes through on the way up.
+  //                          Reporting it as a fault right after a restart would be a false
+  //                          alarm on a working instance, and a report that cries wolf
+  //                          stops being read. The probes decide instead: answering means
+  //                          it is serving, whatever the runtime has got around to
+  //                          concluding.
   //   "healthy"/"none"       trusted, but still only as far as the probes agree.
   const health = await ctx.runtime.health();
   const probeDetail = failedProbes.map(([name, code]) => `${name} answered ${code}`).join(", ");

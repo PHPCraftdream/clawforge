@@ -1,13 +1,11 @@
 // One vocabulary for check outcomes, owned once for everything that runs checks against a
 // deployment and reports what it found — `accept`'s declared checks, `smoke`'s suite. The
-// idea it owns: was a verdict obtained, and if not, why not. Before it, the same situation
-// was spelled two ways (`AcceptanceStatus` in accept, a private `Skipped` printed as SKIP in
-// smoke), and smoke had no spelling at all for "tried and got no verdict" — a check that
-// could not reach the instance could only pretend to pass or pretend to be inapplicable.
+// idea it owns: was a verdict obtained, and if not, why not — a check that could not reach
+// the instance can only pretend to pass or pretend to be inapplicable otherwise.
 //
-// Four outcomes, not three-collapsed-into-one. "skipped" used to mean both "nobody asked
-// for this" and "we tried and got nowhere" — a reader needs a different reaction to each,
-// and one label for both is how a report stops being trusted.
+// Four outcomes, not three-collapsed-into-one: "skipped" can mean both "nobody asked for
+// this" and "we tried and got nowhere" — a reader needs a different reaction to each, and
+// one label for both is how a report stops being trusted.
 //
 //   passed           a verdict was obtained, and it is good
 //   failed           a verdict was obtained, and it is bad

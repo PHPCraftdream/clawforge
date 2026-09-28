@@ -145,9 +145,8 @@ export function projectPort(taken: ReadonlySet<number> = new Set(), start = rand
  *  whatever the value contains, so even `'it's'` parses back to it's. A value holding a
  *  newline or carriage return cannot live on one line at all (a `\n` splits into two
  *  lines; a trailing `\r` is eaten by the reader's line trim as a CRLF terminator) and
- *  is refused with the key named rather than written lossily: the store writers
- *  used to emit bare NAME=value text, so every apply cycle silently ate the padding of a
- *  value like ` sample ` and re-wrapped quote-shaped values. */
+ *  is refused with the key named: writing it as bare NAME=value would silently lose
+ *  edge whitespace and mangle quote-shaped values on the next read. */
 export function serializeEnvLine(name: string, value: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`invalid environment variable name: ${name}`);
   if (/[\r\n]/.test(value)) throw new Error(`environment value for ${name} contains a newline or carriage return`);

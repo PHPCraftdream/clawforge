@@ -31,12 +31,13 @@ export const PROFILE_SHORTHAND_FLAGS: ReadonlyMap<string, Profile> = new Map([
 
 /** What a backup archive is called, and how to read that name back.
  *
- *  The profile used to be absent from the name, and every consumer of a backup directory
- *  then had to treat "an archive of this deployment" as one kind of thing. It is not: a
- *  `migrate` archive carries no config/.env and a `share` one carries neither identity nor
- *  devices, so restoring either over a live instance replaces it with something that cannot
- *  start. `pull` writes both into the same backup directory that `backup` writes full
- *  archives into, and `./clawforge restore` with no argument took whichever was newest.
+ *  The profile is part of the name because "an archive of this deployment" is not one kind
+ *  of thing: a `migrate` archive carries no config/.env and a `share` one carries neither
+ *  identity nor devices, so restoring either over a live instance replaces it with
+ *  something that cannot start. `pull` writes both into the same backup directory that
+ *  `backup` writes full archives into, and `./clawforge restore` with no argument takes
+ *  whichever is newest — the profile in the name is what lets it, and every other
+ *  consumer, tell the archives apart.
  *
  *  A full archive keeps the name it always had, so directories written before this still
  *  read correctly — with the one limitation that a profile which was never recorded cannot

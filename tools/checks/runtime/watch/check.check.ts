@@ -279,9 +279,9 @@ try {
   }
 
   // --- runWatchCycle(): a codes-only change at an unchanged non-ok level — the SET of
-  // reason codes moving is a transition worth alerting on too, not just the level (R11:
-  // `degraded`(CHANNEL_UNHEALTHY) -> `degraded`(CHANNEL_UNHEALTHY, DISK_LOW) used to send
-  // nothing). Only the code set counts — a reason's own detail text (free MB, an error
+  // reason codes moving is a transition worth alerting on too, not just the level:
+  // `degraded`(CHANNEL_UNHEALTHY) -> `degraded`(CHANNEL_UNHEALTHY, DISK_LOW) must alert.
+  // Only the code set counts — a reason's own detail text (free MB, an error
   // string) changing alone never alerts. -----------------------------------------------
 
   {

@@ -319,6 +319,6 @@ export function redactEndpoint(url: string): string {
   return url.replace(/\/\/[^@/\s]*@/g, "//***@");
 }
 
-// Re-exported rather than reimplemented: this used to be a second copy of lock.ts's version,
-// and "which framework is this" answered twice is a question that can be answered two ways.
+// Re-exported rather than reimplemented, so "which framework is this" has exactly one
+// answer, not two copies that could drift.
 export { frameworkVersion } from "#src/commands/management/lock.ts";

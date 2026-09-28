@@ -82,11 +82,11 @@ export async function collectRecipeFiles(dir: string, excludeDir: string): Promi
  *  the command it is supposed to be checking.
  *
  *  Reads through the SAME canonical walker as the set manifest and agentBundleChecksums:
- *  a raw `readdir`+`readFile` here used to bypass the
- *  portable-content policy entirely, so `privateFiles: ["agent/private.md"]` kept the file
- *  out of the manifest and the checksum map while direct provisioning copied it into the
- *  agent's workspace anyway, and a public-named symlink was read straight through with no
- *  containment check. The walk runs once, before any file is read, so containment and
+ *  a raw `readdir`+`readFile` here would bypass the portable-content policy entirely, so
+ *  `privateFiles: ["agent/private.md"]` could keep the file out of the manifest and the
+ *  checksum map while direct provisioning copies it into the agent's workspace anyway, and
+ *  a public-named symlink would be read straight through with no containment check. The
+ *  walk runs once, before any file is read, so containment and
  *  exclusion are both settled before a single byte moves. The walk root itself is vetted
  *  the same way: an `agent/` that is itself a link out of the recipe — or
  *  one that does not resolve — refuses provisioning exactly as an escaping child link

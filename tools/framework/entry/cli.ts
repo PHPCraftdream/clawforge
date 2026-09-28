@@ -70,8 +70,8 @@ export async function runApp(
 
   // Framework-level command: serves the application's own commands as MCP tools, so the
   // instance can be driven from a chat client as well as from a terminal. --help is
-  // checked before starting the server, not after — this owns stdin/stdout for JSON-RPC
-  // once it runs, so passing --help used to just start the server and wait on stdin.
+  // checked before starting the server, not after — the server owns stdin/stdout for
+  // JSON-RPC once it runs.
   if (name === "control-mcp") {
     if (args.includes("--help") || args.includes("-h")) {
       log(`control-mcp — expose ${app.name}'s commands as MCP tools`);

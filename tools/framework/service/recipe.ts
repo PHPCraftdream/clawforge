@@ -153,9 +153,8 @@ function isPortNumber(value: unknown): value is number {
 
 /** Validates one declared port mapping: describe() in management/recipe/index.ts renders
  *  port.host/port.container unconditionally for every entry in a recipe's listing, so a
- *  malformed element here — null, a non-integer, an out-of-range host — used to reach
- *  render unchecked and crash the WHOLE catalog rather than staying isolated to its own
- *  recipe (the care privatePath takes with a path, applied to a port). Validated and
+ *  malformed element here — null, a non-integer, an out-of-range host — would otherwise
+ *  crash the WHOLE catalog rather than staying isolated to its own recipe. Validated and
  *  returned as-is rather than reconstructed, so an already-well-formed entry's key order
  *  survives untouched. */
 function parsePort(recipe: string, value: unknown, index: number): RecipePort {

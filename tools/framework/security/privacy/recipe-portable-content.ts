@@ -33,16 +33,13 @@
 // Symlink containment: a link inside the recipe tree is resolved before anything is read
 // through it, and one that resolves OUTSIDE the recipe directory is refused — never
 // silently followed. Excluding a path by name means nothing if the name is a door to
-// elsewhere; the audit's recommendation verbatim is to refuse or verify the resolved
-// target stays inside the source root before reading through.
+// elsewhere.
 //
-// The walk ROOT is inside this rule too: containment used to be asked
-// only of entries whose Dirent reported "symlink", so a walk root that was itself the
-// escape — an `agent/` that is really a link to a directory outside the recipe — had that
-// directory's files walk in as ordinary children. The root is now resolved and
-// containment-vetted before the first readdir, every resolved path is contained whatever
-// the Dirent claims, and a root that exists but does not resolve fails loudly instead of
-// reading as an absent bundle.
+// The walk ROOT is contained too: an `agent/` that is itself a link to a directory outside
+// the recipe would otherwise let that directory's files walk in as ordinary children. The
+// root is resolved and containment-vetted before the first readdir, every resolved path is
+// contained whatever the Dirent claims, and a root that exists but does not resolve fails
+// loudly instead of reading as an absent bundle.
 //
 // Staying inside is necessary but not sufficient: an
 // INTERNAL link whose own name is public and whose target is a declared private file or
@@ -253,12 +250,10 @@ export async function collectPortableRecipeFiles(
 
 /** The one walk of a recipe's `agent/` bundle, shared by every reader that needs it:
  *  agentBundleChecksums (service/checksums.ts) and loadRecipeAgentBundle
- *  (commands/management/provision-agent/declaration.ts) used to each answer "what agent
- *  files exist and may this carrier touch them" with their own walk — one policy-checked,
- *  one a raw readdir — which is exactly how a declared-private prompt file stayed out of the
- *  checksum map while direct provisioning copied it anyway. Both
- *  now call this instead: same walkRoot trick as collectPortableRecipeFiles (declarations
- *  stay recipe-relative even though the walk is rooted at `agent/`), and the same answer to
+ *  (commands/management/provision-agent/declaration.ts) both call this rather than walking
+ *  separately, so a declared-private prompt file can't stay out of the checksum map while
+ *  direct provisioning copies it anyway. Same walkRoot trick as collectPortableRecipeFiles
+ *  (declarations stay recipe-relative even though the walk is rooted at `agent/`), and the same answer to
  *  "no agent bundle at all" — undefined, not a thrown ENOENT, since a plain service recipe
  *  with no agent/ directory is a normal shape, not a failure — and that verdict is the
  *  walk root's OWN absence and nothing else: the wrapper probes agent/ directly

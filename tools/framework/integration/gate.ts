@@ -7,8 +7,8 @@
 //
 // They are still capabilities of `./clawforge`, so they are declared rather than hand-written at
 // each call site. One declaration feeds three things — the gate's dispatch, its `--help`,
-// and the MCP tool list — which is the same property AppCommand already has, and the reason
-// the help text for `new-app` no longer lives as literal strings inside the gate.
+// and the MCP tool list — which is the same property AppCommand already has, so `new-app`'s
+// help text lives in the declaration, not as literal strings inside the gate.
 //
 // Which entries exist depends on the gate: `new-app` belongs to the monorepo one (several
 // deployments under apps/), `init` to the installed one (exactly one, at the repository

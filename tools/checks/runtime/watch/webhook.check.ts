@@ -17,7 +17,7 @@
 // - transitionPayload's codesAdded/codesCleared, and the chat formats' "new:"/"cleared:"
 //   line: a codes-only change (same level, different reason-code set) reads as understandable
 //   as a level change does, a detail-only change adds/clears nothing.
-// - runWatchCycle()'s codes-only path (R11), end to end: an undelivered codes-only change
+// - runWatchCycle()'s codes-only path, end to end: an undelivered codes-only change
 //   retries the same way a level transition's own failure does (since/fromCodes survive,
 //   toCodes refreshes), and a state file predating alertPending's fromCodes/toCodes still
 //   parses and still alerts correctly from it.
@@ -211,7 +211,7 @@ try {
   }
 
   // --- transitionPayload(): codesAdded/codesCleared, and the chat formats make a
-  // codes-only change (same level, different reason-code SET) understandable (R11) --------
+  // codes-only change (same level, different reason-code SET) understandable --------
 
   {
     const previousReasons = [{ code: "CHANNEL_UNHEALTHY", detail: "telegram/default: configured but not running" }];
@@ -376,7 +376,7 @@ try {
     check("the failure is recorded as an undelivered alert too", after.alertPending?.to, "down");
   }
 
-  // --- retry of an undelivered codes-only change (R11): a failed delivery leaves
+  // --- retry of an undelivered codes-only change: a failed delivery leaves
   // level/reasons at the pre-change snapshot (same as a level transition's own retry path),
   // so the next cycle still diffs against it and recognises the same unreported change
   // rather than dropping it — and a further code joining mid-outage is folded into toCodes
@@ -446,7 +446,7 @@ try {
     check("the latest reason set is now persisted", after3.reasons, reasons2);
   }
 
-  // --- old-state compatibility (R11): a state file written before alertPending carried
+  // --- old-state compatibility: a state file written before alertPending carried
   // fromCodes/toCodes (bare {from,to,since}) still parses, and a codes-only change starting
   // from one still alerts and clears the stale diagnostics on delivery -------------------
 

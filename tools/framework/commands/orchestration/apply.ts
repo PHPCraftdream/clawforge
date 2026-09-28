@@ -343,9 +343,9 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
         // probing readOperation(ctx, operationId) afterward: a readOperation() failure means
         // "could not read this record", which is also true for a REAL run whose Journal (with
         // its correct, pre-change snapshot) exists but hit one transient read error right
-        // after — that false positive used to make this branch re-open a fresh Journal and
-        // take a NEW snapshot NOW, i.e. of the config AFTER the real steps already changed
-        // it, silently clobbering the correct pre-change snapshot rollback --previous-set needs.
+        // after — probing there would re-open a fresh Journal and take a NEW snapshot NOW,
+        // i.e. of the config AFTER the real steps already changed it, silently clobbering
+        // the correct pre-change snapshot rollback --previous-set needs.
         if (!ranSteps) {
           const noopJournal = await Journal.open(ctx, "apply", deploymentName(), operationId);
           const snapshot = await snapshotConfig(ctx, operationId);
@@ -427,10 +427,10 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
     // Nothing to record: an operation that changes nothing does not need a journal entry,
     // and writing one for every no-op apply would bury the runs that did something.
     //
-    // But it still ends the same way as a run that did work. Returning here before the
-    // blocking check was half a fix, and half is worse than none for a command whose own
-    // help promises the stronger claim: an unhealthy gateway with nothing for the plan to
-    // do reported success and exited zero.
+    // But it still ends the same way as a run that did work: failOnRemainder below still
+    // runs the blocking check, because the command's own help promises success means a
+    // healthy gateway — an unhealthy one with nothing for the plan to do must not report
+    // success and exit zero.
     const outcome = await confirm(
       ctx,
       plan,

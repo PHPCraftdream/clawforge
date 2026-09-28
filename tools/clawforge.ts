@@ -33,8 +33,9 @@ import { useDeployment } from "./framework/runtime/deployment.ts";
 import { createApp } from "./framework/integration/scaffold.ts";
 import { listDeployments, printDeploymentList } from "./framework/integration/list.ts";
 import { safeName } from "./framework/core/names.ts";
+import { parseDeclaredArgs } from "./framework/core/arguments.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
-import type { AppDefinition } from "./framework/core/app.ts";
+import type { AppDefinition, CommandArgument } from "./framework/core/app.ts";
 
 const argv = process.argv.slice(2);
 
@@ -55,6 +56,15 @@ argv.splice(0, argv.length, ...appFlag.rest);
 // rather than an instance, and new-app creates the very thing every other command needs.
 // Declared rather than hand-dispatched so that the help text, the argument list and the MCP
 // tool all come from one place; see framework/gate.ts.
+const checkArguments: CommandArgument[] = [
+  {
+    name: "filter",
+    description: "Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any",
+    kind: "variadic",
+  },
+  { name: "list", description: "Print the matching check paths instead of running them", kind: "flag" },
+];
+
 const gateCommands: GateCommand[] = [
   {
     name: "check",
@@ -62,10 +72,19 @@ const gateCommands: GateCommand[] = [
     details:
       "Paths, archives, the argument contract, what a server delivery contains, secret " +
       "masking — the parts where a mistake is silent. `./clawforge smoke` covers a live instance " +
-      "instead.",
-    run: async () => {
+      "instead.\n" +
+      "With no filter, every check runs. One or more substrings narrow that down to checks " +
+      "whose path contains at least one of them, e.g. `./clawforge check gate` or " +
+      "`npm run check -- foundation runtime`. `--list` prints the matching paths without " +
+      "running them. A filter matching nothing is refused rather than silently running " +
+      "everything.",
+    arguments: checkArguments,
+    run: async (args) => {
+      const parsed = parseDeclaredArgs(checkArguments, args);
+      const filters = (parsed.filter as string[] | undefined) ?? [];
+      const list = parsed.list === true;
       const { runChecks } = await import("./checks/run.ts");
-      return runChecks();
+      return runChecks({ filters, list });
     },
   },
   {

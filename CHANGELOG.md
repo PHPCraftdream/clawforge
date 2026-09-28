@@ -44,6 +44,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   `--break-foreign-lock <hostId>`, `--since <duration|timestamp>`, …) instead of the generic
   `--name <value>` every option rendered as before; shown in `--help` and folded into the
   MCP tool description. A check fails the build if a declared option omits it.
+* `check [<filter…>] [--list]`: one or more substrings narrow the suite to checks whose
+  relative path contains at least one of them (`./clawforge check gate`, `npm run check --
+  foundation runtime`); `--list` prints the matching paths without running them. An unknown
+  flag is refused, and a filter matching nothing exits non-zero instead of silently running
+  the whole suite.
 
 ### Fixed
 
@@ -110,6 +115,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   install` (which reads `OC_REMOTE_PATH`) scheduled the cron entry for the one actually
   configured. The default is now `OC_REMOTE_PATH`; an explicit `--path` that still diverges
   from it is accepted but named in deploy's own closing output.
+* A `check` run killed mid-flight left its scratch deployment under `apps/`, where `list`
+  saw it. `check` now sweeps orphaned `apps/*-check-<hex>` directories older than 30 minutes
+  at the start of every run.
 
 ## 0.1.0
 

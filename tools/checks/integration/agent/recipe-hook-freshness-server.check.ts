@@ -70,7 +70,9 @@ function startServer(name: string) {
   };
 }
 
-const deploymentName = `mcp-hook-fresh-${randomBytes(4).toString("hex")}`;
+// "-check-" in the name so a leftover from a killed run (SIGKILL skips the finally below) is
+// swept by run.ts's own orphan sweep, the same as every other check-owned deployment.
+const deploymentName = `mcp-hook-fresh-check-${randomBytes(4).toString("hex")}`;
 const recipeDir = resolve(appsDir, deploymentName, "recipes", "probe");
 const verifyPath = resolve(recipeDir, "verify.ts");
 const hook = (revision: number): string =>

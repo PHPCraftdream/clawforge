@@ -19,6 +19,13 @@ The check suite uses recording transports and disposable directories. It does no
 OpenClaw gateway or call a model. Live Docker/WSL and SSH scenarios are separate and must be
 clearly identified in a change description.
 
+`npm test` runs every check; while iterating on one, narrow it with `./clawforge check
+<substring>...` (or `npm run check -- <substring>...`), which only runs checks whose relative
+path under `tools/checks/` contains at least one substring — e.g. `./clawforge check gate` or
+`./clawforge check foundation runtime`. `./clawforge check --list` prints the matching paths
+without running them; a filter that matches nothing is refused rather than silently falling
+back to the whole suite.
+
 ## Source layout
 
 `tools/checks/foundation/layout.check.ts` caps every source directory at 7 direct entries

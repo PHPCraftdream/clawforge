@@ -70,7 +70,10 @@ try {
     assert.deepEqual(result.args,["control-mcp"]);
   }
 
-  const name = `mcp-auto-${randomBytes(5).toString("hex")}`;
+  // "-check-" in both names so a leftover from a killed run (SIGKILL skips the finally
+  // below) is swept by run.ts's own orphan sweep, the same as every other check-owned
+  // deployment.
+  const name = `mcp-auto-check-${randomBytes(5).toString("hex")}`;
   monorepoApp = resolve(appsDir,name);
   await withOutputSink(()=>{},()=>createApp(name));
   // Same rule as init.check.ts: no template key the published image rejects.
@@ -78,8 +81,8 @@ try {
   assert.ok(!desiredState.some((entry) => entry.path.startsWith("telemetry")), "new-app declares no telemetry key the published image rejects");
   const appGitignore = await readFile(resolve(monorepoApp, ".gitignore"), "utf8");
   assert.ok(!/setupProjectMcp|below/.test(appGitignore), "the .gitignore comment reads for an operator, not the source");
-  const candidateName = `mcp-auto-${randomBytes(5).toString("hex")}`;
-  claimedSibling = resolve(appsDir, `claim-${randomBytes(5).toString("hex")}`);
+  const candidateName = `mcp-auto-check-${randomBytes(5).toString("hex")}`;
+  claimedSibling = resolve(appsDir, `claim-check-${randomBytes(5).toString("hex")}`);
   await mkdir(claimedSibling, { recursive: true });
   const candidate = projectPort(new Set(), 42);
   assert.notEqual(projectPort(new Set(), 43), candidate, "different project salts produce different candidates");

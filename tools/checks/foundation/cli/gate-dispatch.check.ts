@@ -6,11 +6,14 @@
 //   - a mistyped command name is answered as a typo, not as "deployment not found", which
 //     used to be the only answer no matter what argv[0] actually was;
 //   - a checkout holding exactly one deployment is used automatically when neither --app nor
-//     OC_APP named a (missing) one (tested as a pure decision, never through the real apps/).
+//     OC_APP named a (missing) one (tested as a pure decision, never through the real apps/);
+//   - `check`'s own substring filter (selectChecks in tools/checks/run.ts) is the same kind
+//     of pure boundary, covered here rather than in a new file (foundation/cli/ is already at
+//     the 7-entries-per-directory limit — see CONTRIBUTING.md, "Source layout").
 //
-// The pure boundary (splitLeadingAppFlag, closestCommand, reportUnknownCommand) is unit-tested
-// directly; the gate's own wiring of them is only observable by running the real script, the
-// same way cli-help.check.ts does.
+// The pure boundary (splitLeadingAppFlag, closestCommand, reportUnknownCommand, selectChecks)
+// is unit-tested directly; the gate's own wiring of them is only observable by running the
+// real script, the same way cli-help.check.ts does.
 
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
@@ -24,6 +27,7 @@ import {
   soleDeploymentFallback,
 } from "#framework/integration/gate.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { selectChecks } from "#checks/run.ts";
 
 let failed = 0;
 
@@ -198,6 +202,29 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
     true,
   );
 }
+
+// --- selectChecks(): ./clawforge check's own pure filter -----------------------------------
+
+const checkLabels = [
+  "foundation/cli/gate-commands.check.ts",
+  "foundation/cli/gate-dispatch.check.ts",
+  "runtime/watch/check.check.ts",
+  "integration/mcp/mcp-server.check.ts",
+];
+
+check("no filters keeps every label", selectChecks(checkLabels, []), checkLabels);
+check(
+  "a substring keeps only labels containing it",
+  selectChecks(checkLabels, ["gate-"]),
+  ["foundation/cli/gate-commands.check.ts", "foundation/cli/gate-dispatch.check.ts"],
+);
+check(
+  "several filters match any of them, not all of them at once",
+  selectChecks(checkLabels, ["mcp-server", "watch"]),
+  ["runtime/watch/check.check.ts", "integration/mcp/mcp-server.check.ts"],
+);
+check("a filter matching nothing keeps nothing", selectChecks(checkLabels, ["nonexistent-xyz"]), []);
+check("an empty filter string matches every label", selectChecks(checkLabels, [""]), checkLabels);
 
 // --- the checkout's only deployment is picked automatically -------------------------------
 //

@@ -26,6 +26,41 @@ path under `tools/checks/` contains at least one substring — e.g. `./clawforge
 without running them; a filter that matches nothing is refused rather than silently falling
 back to the whole suite.
 
+## Writing a check
+
+A check is any `tools/checks/**/*.check.ts` file. `tools/checks/kit/run.ts` finds every one of
+them, spawns each as its own `node --experimental-strip-types <file>` child process — bounded
+by `--jobs <n>` / `OC_CHECK_JOBS` (default `min(4, cores/2)`, at least 1) — and prints each
+file's full output as one block, in stable file order, as it completes. Run one file directly
+the same way it runs in the suite: `node --experimental-strip-types tools/checks/foundation/core/paths.check.ts`.
+
+Import the shared harness rather than writing another local `check()`/`failed` counter:
+
+```ts
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+
+check("a plain KEY=VALUE line is captured", parseEnv("KEY=value"), { KEY: "value" });
+checkTrue("cli is marked passesThroughHelp", openclawCommands.cli.passesThroughHelp);
+finish("env"); // prints "all env checks passed" or "N failed", sets process.exitCode
+```
+
+`check(name, actual, expected)` compares with `node:assert`'s `deepStrictEqual` — never
+`JSON.stringify(a) === JSON.stringify(b)`, which silently treats a key holding `undefined` the
+same as a missing key, ignores `Set`/`Map` contents, and can't tell `NaN` from itself.
+`checkTrue(name, condition)` is sugar for `check(name, condition, true)`. Both print
+`  ok   name` on success and `  FAIL name` plus `expected …`/`got …` (via `node:util`'s
+`inspect`) on failure. A file-local helper built on top of `check`/`checkTrue` (a `checkThrows`,
+a `skip`) is fine when a file's own shape genuinely needs one — the harness stays to the three
+primitives every check needs.
+
+Isolation is by file, not by check: two check files never share a module registry, so
+`useDeployment()`'s module-level state, an env mutation, or a stray `process.exit()` in one
+file cannot affect another. A fixture that stands in for the host
+(`useLinuxHost()`, `tools/checks/foundation/hygiene/linux-host.ts`) still works — it sets
+`process.env.NODE_OPTIONS` on the check's own process, which that process's own children (not
+its sibling check files) inherit normally. `npm run check:linux` runs the same suite, filtered
+the same way, inside a Linux container — see "Reproducing Linux CI locally" below.
+
 ## Reproducing Linux CI locally
 
 CI runs two jobs: `ubuntu-latest` (the full check suite, typecheck/lint, build, pack:check) and

@@ -6,20 +6,7 @@
 import { defineApp, mcpCommands, type AppCommand, type AppDefinition } from "#framework/core/app.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { emit, isCaptured, outputSink, shouldFollow, withOutputSink } from "#framework/core/io/output.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function stubCommand(): AppCommand {
   return { summary: "stub", run: async () => {} };
@@ -192,5 +179,4 @@ try {
   }
 }
 
-process.stderr.write(failed === 0 ? "all app/mounts/output checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("app/mounts/output");

@@ -17,29 +17,17 @@ import {
   toContainerPath,
 } from "#framework/core/paths.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const DATA = "/srv/openclaw/data";
 const MOUNTS = mountPoints(DATA);
 
-let passed = 0;
-const failures: string[] = [];
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const a = JSON.stringify(actual);
-  const e = JSON.stringify(expected);
-  if (a === e) {
-    passed += 1;
-  } else {
-    failures.push(`${name}\n      expected ${e}\n      got      ${a}`);
-  }
-}
-
 async function checkThrows(name: string, fn: () => unknown): Promise<void> {
   try {
     await fn();
-    failures.push(`${name}\n      expected a rejection, got a value`);
+    checkTrue(name, false);
   } catch {
-    passed += 1;
+    checkTrue(name, true);
   }
 }
 
@@ -135,12 +123,4 @@ check("automount: custom root", await readAutomountRoot(async () => "[automount]
 check("automount: ignores other sections", await readAutomountRoot(async () => "[network]\nroot = /nope\n[automount]\nroot = /w\n"), "/w");
 check("automount: comment stripped", await readAutomountRoot(async () => "[automount]\nroot = /w # inline\n"), "/w");
 
-// --- report ---------------------------------------------------------------------
-
-if (failures.length > 0) {
-  process.stderr.write(`\n${failures.length} failed, ${passed} passed\n`);
-  for (const failure of failures) process.stderr.write(`  FAIL ${failure}\n`);
-  process.exitCode = 1;
-} else {
-  process.stderr.write(`all ${passed} path checks passed\n`);
-}
+finish("path");

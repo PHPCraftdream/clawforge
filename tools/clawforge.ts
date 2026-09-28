@@ -70,6 +70,12 @@ const checkArguments: CommandArgument[] = [
     kind: "variadic",
   },
   { name: "list", description: "Print the matching check paths instead of running them", kind: "flag" },
+  {
+    name: "jobs",
+    description: "Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))",
+    kind: "option",
+    valueName: "n",
+  },
 ];
 
 const gateCommands: GateCommand[] = [
@@ -90,8 +96,10 @@ const gateCommands: GateCommand[] = [
       const parsed = parseDeclaredArgs(checkArguments, args);
       const filters = (parsed.filter as string[] | undefined) ?? [];
       const list = parsed.list === true;
-      const { runChecks } = await import("./checks/run.ts");
-      return runChecks({ filters, list });
+      const jobsRaw = parsed.jobs as string | undefined;
+      const jobs = jobsRaw === undefined ? undefined : Number(jobsRaw);
+      const { runChecks } = await import("./checks/kit/run.ts");
+      return runChecks({ filters, list, jobs: jobs !== undefined && jobs > 0 ? jobs : undefined });
     },
   },
   {

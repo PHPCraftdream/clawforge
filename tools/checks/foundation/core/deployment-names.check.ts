@@ -1,10 +1,10 @@
 // Checks the deployment directory layout and the name guard that protects it.
 //
 // No instance and no target: deployment.ts is module-level state set by useDeployment(),
-// and names.ts is a pure function. The "never called" case is run in a fresh child
-// process rather than in-process: tools/checks/run.ts imports every *.check.ts into one
-// process, and deploy.check.ts (which sorts before this file) has already called
-// useDeployment() by the time this file loads, so activeDir would already be set here.
+// and names.ts is a pure function. The "never called" case is run in its own child process
+// regardless — even though every check file already gets one of its own (kit/spawn.ts) —
+// because the assertion is specifically about a process that never called useDeployment()
+// at all, not just this file's own fresh module registry.
 
 import { randomBytes } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
@@ -27,26 +27,12 @@ import {
 } from "#framework/runtime/deployment.ts";
 import { safeName } from "#framework/core/names.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function checkThrows(name: string, fn: () => unknown, messageIncludes: string[]): void {
   try {
     fn();
-    failed += 1;
-    process.stderr.write(`  FAIL ${name}\n    expected a throw, but it returned normally\n`);
+    check(name, "no throw", "a throw");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const missing = messageIncludes.filter((needle) => !message.includes(needle));
@@ -204,5 +190,4 @@ checkThrows(
   ["app"],
 );
 
-process.stderr.write(failed === 0 ? "all deployment-names checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("deployment-names");

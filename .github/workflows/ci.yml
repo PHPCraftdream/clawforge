@@ -124,6 +124,7 @@ jobs:
             tools/checks/foundation/packaging/build-output.check.ts
             tools/checks/foundation/providers/provider.check.ts
             tools/checks/foundation/shell.check.ts
+            tools/checks/kit/harness.check.ts
             tools/checks/integration/agent/agent-bundle-portable-content.check.ts
             tools/checks/integration/agent/cron-timezone.check.ts
             tools/checks/integration/agent/provision-agent.check.ts

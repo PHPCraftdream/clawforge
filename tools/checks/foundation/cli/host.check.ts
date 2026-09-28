@@ -29,20 +29,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function skip(reason: string): void {
   process.stderr.write(`  skip ${reason}\n`);
@@ -518,5 +505,4 @@ check("host is declared destructive, so MCP requires a confirmation", openclawCo
   check("local runs the command on this machine, unwrapped", written.join(""), "clawforge host local e2e\n");
 }
 
-process.stderr.write(failed === 0 ? "all host checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("host");

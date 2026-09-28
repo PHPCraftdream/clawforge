@@ -15,19 +15,7 @@
 
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** Builds JS source that writes a Compose lifecycle line, its state word split in two so the
  *  literal never sits contiguous in THIS file's own source — process.execPath's argv is
@@ -170,5 +158,4 @@ for (const [name, char] of [["€ (3-byte UTF-8)", "€"], ["ж (2-byte UTF-8)",
   check("streamed: multibyte output across a chunk boundary decodes whole too", [forwarded.length, forwarded.includes("�")], [300000, false]);
 }
 
-process.stderr.write(failed === 0 ? "all spawn noise checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("spawn noise");

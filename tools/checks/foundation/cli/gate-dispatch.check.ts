@@ -7,7 +7,7 @@
 //     used to be the only answer no matter what argv[0] actually was;
 //   - a checkout holding exactly one deployment is used automatically when neither --app nor
 //     OC_APP named a (missing) one (tested as a pure decision, never through the real apps/);
-//   - `check`'s own substring filter (selectChecks in tools/checks/run.ts) is the same kind
+//   - `check`'s own substring filter (selectChecks in tools/checks/kit/discover.ts) is the same kind
 //     of pure boundary, covered here rather than in a new file (foundation/cli/ is already at
 //     the 7-entries-per-directory limit — see CONTRIBUTING.md, "Source layout");
 //   - --version/-v/version answer from an empty directory, with no deployment resolved at all
@@ -33,22 +33,9 @@ import {
   missingDeploymentReport,
 } from "#framework/integration/gate.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { selectChecks } from "#checks/run.ts";
+import { selectChecks } from "#checks/kit/discover.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** Runs the real gate with a hard deadline, same as cli-help.check.ts: a hang and a slow
  *  success must not look the same to this check. `cwd` defaults to this process's own —
@@ -306,5 +293,4 @@ check(
   ['deployment "openclaw" not found at /apps/openclaw', "create one with: ./clawforge new-app <name>"],
 );
 
-process.stderr.write(failed === 0 ? "all gate-dispatch checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("gate-dispatch");

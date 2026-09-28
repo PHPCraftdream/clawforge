@@ -13,19 +13,7 @@
 // dropped from the declaration, not the two-line conditional in cli.ts being touched).
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 check("cli is marked passesThroughHelp", openclawCommands.cli.passesThroughHelp, true);
 
@@ -39,5 +27,4 @@ check(
   true,
 );
 
-process.stderr.write(failed === 0 ? "all passthrough-help checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("passthrough-help");

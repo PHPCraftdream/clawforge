@@ -13,19 +13,7 @@ import { defineApp } from "#framework/core/app.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { runApp, GROUP_HEADINGS, GROUP_ORDER, destructiveMarker } from "#framework/entry/cli.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 // --- every real command has a known group -------------------------------------
 
@@ -102,5 +90,4 @@ check("secrets (destructive only with --apply/--init-store/--dump) is not flatly
 // same as apply's own --dry-run.
 check("restore (destructive except --dry-run) is not flatly destructive either", destructiveMarker(openclawCommands.restore!), " (destructive for some actions)");
 
-process.stderr.write(failed === 0 ? "all help-groups checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("help-groups");

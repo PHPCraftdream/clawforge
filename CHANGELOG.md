@@ -89,6 +89,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   `ok`/`WARN`/`FAIL` line per prerequisite, exit 0 only when nothing failed; no lock is taken
   and nothing is created either way.
 
+### Changed
+
+* `check`: each check file now runs in its own process instead of all of them sharing one,
+  so a leaked global, an env mutation or a stray `process.exit()` in one file can no longer
+  affect another. Runs with bounded parallelism by default (`--jobs <n>` / `OC_CHECK_JOBS` to
+  control it); each file's output prints as one block, in a stable file order, once it
+  completes.
+
 ### Fixed
 
 * `upgrade` with no `--image` re-resolves the pinned channel at the registry instead of

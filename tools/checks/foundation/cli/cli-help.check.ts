@@ -16,19 +16,7 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** Runs the real gate with a hard deadline: a hang and a slow success must not look the
  *  same to this check. */
@@ -142,5 +130,4 @@ try {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all cli-help checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("cli-help");

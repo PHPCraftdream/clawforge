@@ -39,7 +39,7 @@ import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { safeName } from "#src/core/names.ts";
-import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
+import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { newOperationId } from "#src/service/operations.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";

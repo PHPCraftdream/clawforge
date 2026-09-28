@@ -2,7 +2,7 @@
 // own wording, where the lock lives relative to the data directory `restore` replaces, that a
 // plain claim is genuinely atomic, and that a `mkdir` failure is never misread as "held".
 
-import { takeLock, readLockHolder, refusalMessage, lockPath, lockHome } from "#framework/runtime/instance-lock.ts";
+import { takeLock, readLockHolder, refusalMessage, lockPath, lockHome } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 

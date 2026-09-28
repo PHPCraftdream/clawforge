@@ -7,7 +7,7 @@
 
 import { log, info, die } from "../core/io/log.ts";
 import type { Context } from "../core/context.ts";
-import { lockHome } from "./instance-lock.ts";
+import { lockHome } from "./lock/instance-lock.ts";
 
 /** The fixed uid:gid the image runs as. Exported for callers outside this module that need
  *  to force escalation against it directly — a destructive cleanup over a tree that may

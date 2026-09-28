@@ -16,7 +16,7 @@ import { loadSecrets, dumpSecrets } from "../lifecycle/state.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replacePrivateFile, unprotectedPrivateFile } from "#src/security/privacy/private-file.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
-import { guarded, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
+import { guarded, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";

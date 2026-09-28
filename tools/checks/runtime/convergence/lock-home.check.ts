@@ -9,7 +9,7 @@
 // of a run: numeric ids, resolved before any escalation, passed as plain arguments.
 
 import { ensureLockHome, needsOwnerEscalation, sudoFor } from "#framework/runtime/datadir.ts";
-import { lockHome } from "#framework/runtime/instance-lock.ts";
+import { lockHome } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";

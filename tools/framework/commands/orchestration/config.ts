@@ -9,7 +9,7 @@ import { randomBytes } from "node:crypto";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
-import { guarded, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
+import { guarded, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";

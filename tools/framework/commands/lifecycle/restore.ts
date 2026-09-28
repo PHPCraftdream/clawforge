@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe } from "#src/runtime/datadir.ts";
 import {
   archiveRoot,

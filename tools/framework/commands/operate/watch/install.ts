@@ -27,7 +27,7 @@ import { resolve } from "node:path";
 import { die, info, log, warn } from "../../../core/io/log.ts";
 import { monorepoRoot } from "../../../core/env.ts";
 import { deploymentDir, deploymentName } from "../../../runtime/deployment.ts";
-import { guarded } from "../../../runtime/instance-lock.ts";
+import { guarded } from "../../../runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "../../../runtime/runtime.ts";
 import { SshTransport } from "../../../runtime/transport/transport.ts";
 import type { Context } from "../../../core/context.ts";

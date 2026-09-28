@@ -26,7 +26,7 @@ import { readLedgerStrict } from "#src/set/ownership/ledger.ts";
 import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
 import type { StepStatus } from "#src/service/operations.ts";
-import { runOwning, takeLock, withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
+import { runOwning, takeLock, withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest, readInstalledSetStrict } from "#src/set/artifacts/install.ts";

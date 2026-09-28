@@ -8,7 +8,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv, parseRetention } from "#src/core/env.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, needsOwnerEscalation, secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { archiveRoot, isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";

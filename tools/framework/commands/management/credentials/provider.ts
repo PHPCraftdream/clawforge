@@ -6,7 +6,7 @@ import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "#src/service/secrets.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";

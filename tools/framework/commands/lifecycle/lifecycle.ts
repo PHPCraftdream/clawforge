@@ -9,7 +9,7 @@ import { shouldFollow, emit, withOutputSink } from "#src/core/io/output.ts";
 import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "../management/secrets.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { envFile } from "#src/runtime/deployment.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";

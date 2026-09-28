@@ -26,12 +26,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 
-import { locksDir } from "../core/env.ts";
-import { log, die } from "../core/io/log.ts";
-import { withMutationGuard } from "../security/instance-mutation-guard.ts";
-import { newOperationId } from "../service/operations.ts";
-import { machineName, ownProcessStartedAt } from "../security/instance-mutation-guard.ts";
-import type { Context } from "../core/context.ts";
+import { locksDir } from "../../core/env.ts";
+import { log, die } from "../../core/io/log.ts";
+import { withMutationGuard } from "../../security/instance-mutation-guard.ts";
+import { newOperationId } from "../../service/operations.ts";
+import { machineName, ownProcessStartedAt, removeEmptyDirectory } from "./process-identity.ts";
+import type { Context } from "../../core/context.ts";
 
 /** After this, a lock is described as stale — long enough that no ordinary operation is
  *  still holding it (`apply` on a slow target is minutes, not tens of them) and short
@@ -54,7 +54,7 @@ export interface LockHolder {
    *  this field existed, absent on a holder written before it did. `pid` is only askable
    *  against THIS machine's own process table when `host` matches it: every pid this
    *  framework records is the CLI's own process.pid, never anything living on a WSL/SSH
-   *  transport target (security/instance-mutation-guard.ts). */
+   *  transport target (process-identity.ts). */
   readonly host?: string;
   /** The acquiring process's own pid. */
   readonly pid?: number;
@@ -64,7 +64,7 @@ export interface LockHolder {
 }
 
 /** Whether `holder`'s process is provably gone: recorded on THIS machine — never a WSL/SSH
- *  target, see security/instance-mutation-guard.ts — and signalling it fails with ESRCH. A different machine,
+ *  target, see process-identity.ts — and signalling it fails with ESRCH. A different machine,
  *  no pid recorded, a live process, or a probe error that proves nothing are all "not
  *  provable", and the refusal stays silent about them: this only ever adds a fact on top of
  *  the human's own judgment call, never substitutes for it. Deliberately synchronous and
@@ -133,15 +133,6 @@ function holderPath(ctx: Context): string {
  *  nobody can sit on somebody else's identity by creating the marker late. */
 function generationMarkerPath(ctx: Context, generation: string): string {
   return `${lockPath(ctx)}/gen-${generation}`;
-}
-
-/** Removes only an empty directory; another owner's contents must survive. */
-async function removeEmptyDirectory(ctx: Context, path: string): Promise<void> {
-  if (ctx.transport.removeEmptyDir !== undefined) {
-    await ctx.transport.removeEmptyDir(path).catch(() => {});
-    return;
-  }
-  await ctx.transport.exec("rmdir", [path], { allowFailure: true });
 }
 
 /** Claims the lock directory as this acquisition's, by moving its own generation marker out

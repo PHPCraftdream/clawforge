@@ -25,7 +25,7 @@
 // every other host:port entry — so turning one off never touches another service's mapping.
 
 import { log, info, die } from "#src/core/io/log.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";

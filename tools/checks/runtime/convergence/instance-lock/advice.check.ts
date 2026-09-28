@@ -17,8 +17,8 @@ import {
   parseBreakForeignLockHost,
   lockPath,
   type LockHolder,
-} from "#framework/runtime/instance-lock.ts";
-import { machineName } from "#framework/security/instance-mutation-guard.ts";
+} from "#framework/runtime/lock/instance-lock.ts";
+import { machineName } from "#framework/runtime/lock/process-identity.ts";
 import { bootstrap } from "#framework/commands/lifecycle/bootstrap.ts";
 import { pull } from "#framework/commands/lifecycle/state.ts";
 import { stubContext } from "./fixture.ts";

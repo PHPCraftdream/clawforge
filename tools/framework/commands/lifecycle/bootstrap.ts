@@ -23,7 +23,7 @@ import { ensureBaselineConfig, configureProvider } from "../management/credentia
 import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { preflightPort, pinImageReference } from "./lifecycle.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
 import { imageChannel } from "#src/runtime/docker/image-digest.ts";
 import type { CommandArgument } from "#src/core/app.ts";

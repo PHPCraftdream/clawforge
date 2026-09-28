@@ -19,7 +19,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentName, deploymentDir } from "#src/runtime/deployment.ts";
 import { Journal, readOperation, latestRollbackable, newOperationId } from "#src/service/operations.ts";
 import { restart } from "../lifecycle/lifecycle.ts";
-import { runOwning, takeLock, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
+import { runOwning, takeLock, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { readInstalledSet, withUnpackedArtifact, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
 import { frameworkVersion } from "../management/lock.ts";
 import { apply } from "./apply.ts";

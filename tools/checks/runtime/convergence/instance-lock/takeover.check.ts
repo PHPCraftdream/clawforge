@@ -7,8 +7,8 @@
 // after a takeover has finished.
 
 import { hostname } from "node:os";
-import { machineName, localLiveness } from "#framework/security/instance-mutation-guard.ts";
-import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, STALE_AFTER_MS } from "#framework/runtime/instance-lock.ts";
+import { machineName, localLiveness } from "#framework/runtime/lock/process-identity.ts";
+import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, STALE_AFTER_MS } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
 
 let failed = 0;

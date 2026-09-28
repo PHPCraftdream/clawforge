@@ -21,7 +21,7 @@ import {
   archiveCarriesContent, archiveRoot, createArchive, dataDirName, excludesFor, fileSize, isProfile, backupArchiveName,
   listArchive, parseBackupArchive, privilegePrefixFor, symlinkedDataRoot, PROFILE_SHORTHAND_FLAGS, type Profile,
 } from "#src/service/archive/index.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/management/recipe/lifecycle.ts";

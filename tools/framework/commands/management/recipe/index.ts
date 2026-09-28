@@ -20,7 +20,7 @@ import {
   type Recipe,
 } from "#src/service/recipe.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { isCaptured, emit } from "#src/core/io/output.ts";
 import { validateRecipeArgs } from "./arguments.ts";
 import { runRecipeAction, RECIPE_ACTIONS } from "./actions.ts";

@@ -41,7 +41,7 @@ import { resolve } from "node:path";
 import { log, info, warn, die, registerSecret, maskSecrets } from "../../../core/io/log.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
-import { guarded } from "../../../runtime/instance-lock.ts";
+import { guarded } from "../../../runtime/lock/instance-lock.ts";
 import { generateGatewayToken } from "../../../integration/provision.ts";
 import { envFile, deploymentDir, deploymentName } from "../../../runtime/deployment.ts";
 import { upsertEnvValue } from "../../../security/privacy/private-config.ts";

@@ -5,7 +5,7 @@
 // inside the lock-holding operation's asynchronous chain, against the SAME instance. The
 // chain scope the lock module hands the operation's body is how that is known.
 
-import { takeLock, withInstanceLock, guarded, readLockHolder, refusalMessage, lockHeldHere, lockPath } from "#framework/runtime/instance-lock.ts";
+import { takeLock, withInstanceLock, guarded, readLockHolder, refusalMessage, lockHeldHere, lockPath } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 

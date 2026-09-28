@@ -23,7 +23,7 @@ import { verifySnapshotQuietly } from "../verify.ts";
 import { dataDirName, dataDirParent } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { reach, expect, describeError, evaluate, toResult, type Check, type SmokeResult } from "./verdict.ts";
 
 /** reach() for a call into a command that can refuse on its own: die() is a verdict about

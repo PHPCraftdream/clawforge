@@ -17,7 +17,7 @@ import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import type { ExecOptions, ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 import { createTransport, spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { parseEnv, locksDir, type Settings } from "#framework/core/env.ts";
-import { machineName, ownProcessStartedAt } from "#framework/security/instance-mutation-guard.ts";
+import { machineName, ownProcessStartedAt } from "#framework/runtime/lock/process-identity.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
 
 const previous=(()=>{try{return deploymentDir();}catch{return undefined;}})();

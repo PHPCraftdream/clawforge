@@ -28,9 +28,9 @@ directory's whole existence, stays the operator's.
 ```
 tools/framework/          package metadata and shared service definition
   core/                    types, environment, paths, argument parsing (core/io/ for output)
-  runtime/                 deployment and locks; runtime/docker/ and runtime/transport/ by transport
+  runtime/                 deployment; runtime/lock/ (instance lock, process identity), runtime/docker/ and runtime/transport/ by concern
   service/                 archives, inspection, OpenClaw integration and secrets
-  security/                private-write boundary (security/privacy/), audit, extensions
+  security/                private-write boundary (security/privacy/), audit, the mutation guard serializing lock-state changes
   integration/             gates, scaffolding, listing and MCP setup (integration/mcp/)
   commands/                lifecycle, orchestration, management, sets, interface, operate
     operate/                 expose, watch, incident, recover-env — run against a live instance

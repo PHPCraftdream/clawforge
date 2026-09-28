@@ -7,7 +7,7 @@
 // fresh directory (instance-lock/takeover.check.ts covers who wins one; this file only cares
 // that a failure afterwards is cleaned up like any other fresh claim's).
 
-import { takeLock, withInstanceLock, readLockHolder, lockPath } from "#framework/runtime/instance-lock.ts";
+import { takeLock, withInstanceLock, readLockHolder, lockPath } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
 
 let failed = 0;

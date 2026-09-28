@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { loadSecrets, pull, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
 import { parseSnapshotArchive } from "#framework/service/archive/index.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
-import { takeLock } from "#framework/runtime/instance-lock.ts";
+import { takeLock } from "#framework/runtime/lock/instance-lock.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";

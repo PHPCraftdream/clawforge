@@ -7,7 +7,7 @@
 // exec handling over — never a hand-rolled approximation of the lock.
 
 import { backupPruneReplaced, verifyPruneCandidate } from "#framework/commands/lifecycle/backup/prune-replaced.ts";
-import { takeLock } from "#framework/runtime/instance-lock.ts";
+import { takeLock } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext, refused } from "#checks/runtime/convergence/instance-lock/fixture.ts";
 import type { Context } from "#framework/core/context.ts";

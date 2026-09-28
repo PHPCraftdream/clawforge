@@ -312,7 +312,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `mcp-setup` | `[--client <name>] [--json]` | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
 | `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
 | `expose` | `<ssh\|tailscale\|status> [--local-port <n>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Reach a loopback-bound gateway from outside this host, narrowest scope first: `ssh` prints (and, with `--run`, opens) the SSH tunnel; `tailscale` prints (and, with `--apply`, runs) a tailnet-only `tailscale serve` — never `funnel`; `status` reports what is actually published right now, read back from the running container |
-| `watch` | `<check\|install\|uninstall\|status> [--json] [--interval <minutes>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change. `check` collapses the liveness-relevant findings `inspect` already computes into ok/degraded/down (an unreachable target, not just an unhealthy one, also reads as down, reason `TARGET_UNREACHABLE`), layers on its own channel (`CHANNEL_UNHEALTHY`) and data-directory disk-space (`DISK_LOW`/`DISK_UNKNOWN`, against `OC_WATCH_DISK_MIN_MB`) findings, alerts `OC_WATCH_WEBHOOK` only on a transition, and exits non-zero whenever the state is not ok; a failed alert leaves the persisted state at its old value so the next cycle retries it. `install`/`uninstall` print (and, with `--apply`, install through the transport) a crontab entry — `--interval` is 1-59 minutes or an exact multiple of 60 up to 1440 — only where an unattended cron can be trusted to find this tooling (a real SSH host or a POSIX `local` target) — elsewhere it prints the operator-side command instead of installing something that would silently never run. `status` shows the last persisted state and whether a webhook is configured, never the URL |
+| `watch` | `<check\|install\|uninstall\|status> [--json] [--interval <minutes>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change, plus an optional heartbeat dead-man's switch. `check` collapses the liveness-relevant findings `inspect` already computes into ok/degraded/down (an unreachable target, not just an unhealthy one, also reads as down, reason `TARGET_UNREACHABLE`), layers on its own channel (`CHANNEL_UNHEALTHY`) and data-directory disk-space (`DISK_LOW`/`DISK_UNKNOWN`, against `OC_WATCH_DISK_MIN_MB`) findings, alerts `OC_WATCH_WEBHOOK` only on a transition (`OC_WATCH_WEBHOOK_FORMAT`: generic/slack/discord/telegram, autodetected from the URL when unset), and exits non-zero whenever the state is not ok; a failed alert leaves the persisted state at its old value so the next cycle retries it. `OC_WATCH_HEARTBEAT_URL`, when set, gets a plain GET every cycle that itself reads ok — works with healthchecks.io, Uptime Kuma's push monitor and Better Stack's heartbeat monitor — so that service alerts on its own if the whole server (not just the instance) goes down. `install`/`uninstall` print (and, with `--apply`, install through the transport) a crontab entry — `--interval` is 1-59 minutes or an exact multiple of 60 up to 1440 — only where an unattended cron can be trusted to find this tooling (a real SSH host or a POSIX `local` target) — elsewhere it prints the operator-side command instead of installing something that would silently never run. `status` shows the last persisted state, whether a webhook/heartbeat is configured and the heartbeat's last successful ping, never either URL |
 | `incident` | `[--dry-run] [--keep-exposure] [--tail <n>] [--json] [--break-lock] [--break-foreign-lock <hostId>]` | OpenClaw's own incident runbook, in order: contain (turn off only this gateway's own `tailscale serve` route(s), never `tailscale serve reset`) → preserve (log tail and an env-redacted `docker inspect` of the container about to be replaced) → rotate (a fresh `OPENCLAW_GATEWAY_TOKEN`, recreated into the running container so it takes effect) → audit (the same security gate `doctor`/`accept` run, plus `openclaw doctor --lint`, reported here rather than gating the run) → collect (a bounded log tail, both audit outputs and a status summary, joined into one manifest). Refuses the whole run while the gateway is published on every interface unless `--keep-exposure`. Preserve and collect always run and always write, even when rotate or audit fails. Evidence lands in a private, owner-only `apps/<name>/incidents/<timestamp>/` directory (outside the tracked repository tree), every file masked for known secrets; re-pair every MCP client afterwards with `./clawforge mcp-creds` |
 | `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
 | `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
@@ -405,6 +405,48 @@ An operator finds out the instance stopped doing its job without polling by hand
   The webhook URL is registered as a secret (masked like the gateway token) and is never
   printed by this command, on any path, including failure.
 
+  **Notification format.** `OC_WATCH_WEBHOOK_FORMAT` picks the payload shape: `generic`
+  (default — the original `{deployment, from, to, reasons, at}` JSON), `slack`, `discord` or
+  `telegram`. Left unset, it autodetects from the URL's host: `hooks.slack.com` → slack;
+  `discord.com`/`discordapp.com` with a `/api/webhooks/` path → discord; `api.telegram.org` →
+  telegram; anything else → generic. The three chat formats get a one-two line message —
+  deployment, `from → to`, reason codes with a short detail each, and the time — capped to
+  fit each service's own documented limit:
+  * **Slack** — an [incoming webhook](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)
+    takes `{"text": "..."}`; a message has a hard 40,000-character limit.
+  * **Discord** — [executing a webhook](https://docs.discord.com/developers/resources/webhook)
+    takes `{"content": "..."}`; `content` is capped at 2,000 characters.
+  * **Telegram** — the [Bot API's `sendMessage`](https://core.telegram.org/bots/api#sendmessage)
+    is called at `https://api.telegram.org/bot<token>/sendMessage` with
+    `{"chat_id": ..., "text": "..."}`; `text` allows 1-4,096 characters after entity parsing.
+    `OC_WATCH_WEBHOOK` itself is that full `sendMessage` URL (the bot token lives in the
+    path); `OC_WATCH_TELEGRAM_CHAT_ID` supplies `chat_id` and is required whenever the format
+    is (or autodetects to) telegram — missing, it is refused as a configuration error before
+    any probe cycle runs, the same as an invalid URL. Every Bot API response carries a
+    boolean `ok`; a 2xx reply with `ok:false` (a bad `chat_id`, for one) is treated exactly
+    like a failed POST — not delivered, state kept at its old value for a retry.
+
+  **Heartbeat (dead-man's switch).** `OC_WATCH_HEARTBEAT_URL`, when set, gets a plain GET on
+  every cycle whose *own* level reads `ok` — never on `degraded`/`down`, so a ping never
+  claims the instance is fine when this same cycle just found otherwise. This is the one
+  failure mode the webhook above cannot report: if the whole server — or just the scheduler
+  running `watch check` — stops entirely, no cycle ever runs, no webhook ever fires, and an
+  operator polling only the webhook would never find out. A dead-man's-switch service
+  watches for the *absence* of pings instead, and alerts on its own the moment they stop.
+  This is a plain GET because that is what all three obvious targets accept:
+  [healthchecks.io](https://healthchecks.io/docs/http_api/) (HEAD/GET/POST),
+  [Uptime Kuma's push monitor](https://github.com/louislam/uptime-kuma) (curl GET to the push
+  URL), and [Better Stack's heartbeat monitor](https://betterstack.com/docs/uptime/cron-and-heartbeat-monitor/)
+  (curl GET to the heartbeat URL) — so the method is fixed rather than configurable. Example
+  for healthchecks.io: create a check, copy its ping URL
+  (`https://hc-ping.com/<uuid>`) into `OC_WATCH_HEARTBEAT_URL`, and set that check's own
+  "Period"/grace in the healthchecks.io UI to comfortably exceed `watch install`'s
+  `--interval`. A failed ping is a warning only — printed this cycle and shown by `watch
+  status` as the last heartbeat error — never a level change or a non-zero exit by itself,
+  since the heartbeat target being unreachable says nothing about the instance itself. Same
+  URL rules and secret registration as the webhook: https only unless localhost/127.0.0.1,
+  never printed on any path.
+
   Two findings of watch's own, layered on top of `inspect`'s (neither is a declared-state
   comparison, so neither is a `doctor`-visible `ProblemCode`):
   * `CHANNEL_UNHEALTHY` (`degraded`) — a channel account this deployment configured and left
@@ -441,7 +483,8 @@ An operator finds out the instance stopped doing its job without polling by hand
   scheduler (Task Scheduler on Windows) would need to invoke instead of installing something
   that would silently never run; it never creates or touches a real one.
 * `./clawforge watch status` — the persisted last state, when it last changed, and whether a
-  webhook is configured — never the URL itself.
+  webhook/heartbeat is configured — plus the heartbeat's own last successful ping time, and
+  its last failure if the most recent ping did not succeed. Never either URL itself.
 
 ## Incident response: `incident`
 
@@ -574,7 +617,8 @@ near their theme without creating a flat catalogue.
   has no direct source file of its own, so it is exempt from the cap and the one place a new
   command family fits without relocating something unrelated just to free a slot
 - `tools/framework/watch`: `./clawforge watch` — liveness monitoring, transition-only webhook
-  alerts, and the crontab install/uninstall cycle. Top-level for the same reason `expose` is
+  alerts (generic/Slack/Discord/Telegram), an optional heartbeat dead-man's switch, and the
+  crontab install/uninstall cycle. Top-level for the same reason `expose` is
 - `tools/checks`: foundation, runtime, integration, security, sets and release checks
 
 Run `npm run format:check` for the native TypeScript check and Oxlint before opening a

@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { watchLevel, runWatchCycle, resolveWatchOutcome } from "#framework/watch/index.ts";
 import { parseWebhookUrl } from "#framework/watch/webhook.ts";
+import type { WatchWebhookTarget } from "#framework/watch/webhook.ts";
 import { watchStateFile, writeWatchState } from "#framework/watch/state.ts";
 import type { WatchState } from "#framework/watch/state.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
@@ -117,11 +118,12 @@ try {
 
   const MARKER = "watch-check-secret-marker";
   const webhookUrl = new URL(`https://hooks.example/${MARKER}`);
+  const webhookTarget: WatchWebhookTarget = { url: webhookUrl, format: "generic" };
 
   // First run: no previous state at all — a baseline, never a transition, whatever the level is.
   {
     calls.length = 0;
-    const message = await deathOf(() => runWatchCycle(webhookUrl, "down", [{ code: "GATEWAY_DOWN", detail: "down detail" }], true));
+    const message = await deathOf(() => runWatchCycle(webhookTarget, "down", [{ code: "GATEWAY_DOWN", detail: "down detail" }], true));
     check("first run never posts (nothing to transition FROM)", calls.length, 0);
     check("first run still reports the current level via a non-zero exit", message.includes("the instance is down"), true);
     const written = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
@@ -133,7 +135,7 @@ try {
     const baseline: WatchState = { level: "ok", reasons: [], checkedAt: "2020-01-01T00:00:00.000Z", changedAt: "2020-01-01T00:00:00.000Z" };
     await writeWatchState(baseline);
     calls.length = 0;
-    await runWatchCycle(webhookUrl, "ok", [], false);
+    await runWatchCycle(webhookTarget, "ok", [], false);
     check("an unchanged level never posts", calls.length, 0);
     const written = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
     check("checkedAt moves", written.checkedAt !== baseline.checkedAt, true);
@@ -147,7 +149,7 @@ try {
     calls.length = 0;
     nextResponse = () => new Response(null, { status: 200 });
     const reasons = [{ code: "GATEWAY_DOWN", detail: "down detail" }];
-    await deathOf(() => runWatchCycle(webhookUrl, "down", reasons, false));
+    await deathOf(() => runWatchCycle(webhookTarget, "down", reasons, false));
     check("a real transition posts exactly once", calls.length, 1);
     const postedBody = calls[0]?.body as { at?: string } | undefined;
     check(
@@ -169,7 +171,7 @@ try {
     nextResponse = () => new Response(null, { status: 500 });
     const written: string[] = [];
     const message = await withOutputSink((chunk) => written.push(chunk), () =>
-      deathOf(() => runWatchCycle(webhookUrl, "down", [{ code: "GATEWAY_DOWN", detail: "down detail" }], false)));
+      deathOf(() => runWatchCycle(webhookTarget, "down", [{ code: "GATEWAY_DOWN", detail: "down detail" }], false)));
     check("a failed delivery is still attempted exactly once", calls.length, 1);
     check("a failed delivery reports non-zero (throws)", message.includes("was not delivered"), true);
     check("and says the state was kept for a retry", message.includes(`kept at "ok"`) || message.includes(`retried next cycle`), true);
@@ -186,11 +188,92 @@ try {
     await writeWatchState(before);
     calls.length = 0;
     globalThis.fetch = (async () => { throw new Error("network is down"); }) as typeof fetch;
-    const message = await deathOf(() => runWatchCycle(webhookUrl, "down", [{ code: "GATEWAY_DOWN", detail: "down detail" }], false));
+    const message = await deathOf(() => runWatchCycle(webhookTarget, "down", [{ code: "GATEWAY_DOWN", detail: "down detail" }], false));
     check("a rejected fetch is reported the same way as a bad status", message.includes("was not delivered"), true);
     const after = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
     check("and the state is kept there too", after, before);
     check("the URL never appears in a rejected-fetch message either", message.includes(MARKER), false);
+  }
+
+  // --- runWatchCycle()'s heartbeat parameter: the dead-man's switch is pinged only while
+  // THIS cycle's own level reads ok, a failed ping never changes level/exit, and the URL
+  // never leaks into anything this could print (registered as a secret the same way
+  // core/context.ts registers it, in case a future fetch/undici version ever echoes it back
+  // in a rejection message) -------------------------------------------------------------
+
+  {
+    const HEARTBEAT_MARKER = "watch-check-heartbeat-secret-marker";
+    const heartbeatUrl = new URL(`https://hb.example/${HEARTBEAT_MARKER}`);
+    registerSecret(heartbeatUrl.toString());
+    let heartbeatCalls: { url: string; method: string | undefined }[] = [];
+    const stubHeartbeat = (status: number): void => {
+      heartbeatCalls = [];
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        heartbeatCalls.push({ url: String(input), method: init?.method });
+        return new Response(null, { status });
+      }) as typeof fetch;
+    };
+
+    await writeWatchState({ level: "ok", reasons: [], checkedAt: "2023-01-01T00:00:00.000Z", changedAt: "2023-01-01T00:00:00.000Z" });
+
+    stubHeartbeat(200);
+    await runWatchCycle(undefined, "ok", [], false, heartbeatUrl);
+    check("an ok cycle pings the heartbeat exactly once, by GET", [heartbeatCalls.length, heartbeatCalls[0]?.method], [1, "GET"]);
+    {
+      const written = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+      check("a successful ping is recorded as heartbeatAt", typeof written.heartbeatAt, "string");
+      check("no heartbeatError is recorded on success", written.heartbeatError, undefined);
+    }
+
+    for (const level of ["degraded", "down"] as const) {
+      stubHeartbeat(200);
+      await deathOf(() => runWatchCycle(undefined, level, [{ code: "GATEWAY_DOWN", detail: "d" }], false, heartbeatUrl));
+      check(`a ${level} cycle never pings the heartbeat`, heartbeatCalls.length, 0);
+    }
+
+    // A failed ping: a warning only (surfaced as `heartbeatWarning` in the JSON envelope
+    // this cycle prints, since a captured sink always answers JSON regardless of --json —
+    // same reason check.ts's own if (jsonOnly || isCaptured()) branch exists), never a
+    // level change or a non-zero exit by itself, and the previous successful ping time is
+    // kept rather than cleared.
+    {
+      const before = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+      stubHeartbeat(503);
+      const printed: string[] = [];
+      const message = await withOutputSink((chunk) => printed.push(chunk), () =>
+        deathOf(() => runWatchCycle(undefined, "ok", [], false, heartbeatUrl)));
+      check("a failed ping is still attempted exactly once", heartbeatCalls.length, 1);
+      check("a failed ping never dies on its own (no non-zero exit)", message, "");
+      const envelope = JSON.parse(printed.join("")) as { heartbeatWarning?: string };
+      check("a failed ping surfaces as heartbeatWarning in this cycle's output", typeof envelope.heartbeatWarning, "string");
+      const after = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+      check("heartbeatAt is kept at its previous value, not cleared by a failure", after.heartbeatAt, before.heartbeatAt);
+      check("heartbeatError now records the failure", typeof after.heartbeatError, "string");
+      check("the heartbeat URL never appears in the printed envelope", printed.join("").includes(HEARTBEAT_MARKER), false);
+      check("nor in the persisted state", JSON.stringify(after).includes(HEARTBEAT_MARKER), false);
+    }
+
+    // Same failure, but the underlying fetch rejects outright and its message echoes the
+    // URL — the masking belt-and-suspenders case, proven the same way the webhook's own
+    // rejected-fetch test above proves it.
+    {
+      globalThis.fetch = (async () => { throw new Error(`connect failed reaching ${heartbeatUrl.toString()}`); }) as typeof fetch;
+      const printed: string[] = [];
+      await withOutputSink((chunk) => printed.push(chunk), () => deathOf(() => runWatchCycle(undefined, "ok", [], false, heartbeatUrl)));
+      const envelope = JSON.parse(printed.join("")) as { heartbeatWarning?: string };
+      check("a rejected heartbeat fetch also surfaces as heartbeatWarning", typeof envelope.heartbeatWarning, "string");
+      check("even an error message that echoes the URL comes out masked", printed.join("").includes(HEARTBEAT_MARKER), false);
+    }
+
+    // No heartbeat configured: never attempted, never mentioned.
+    {
+      stubHeartbeat(200);
+      const printed: string[] = [];
+      await withOutputSink((chunk) => printed.push(chunk), () => runWatchCycle(undefined, "ok", [], false, undefined));
+      check("with no heartbeat URL, nothing is pinged", heartbeatCalls.length, 0);
+      const envelope = JSON.parse(printed.join("")) as { heartbeatWarning?: string };
+      check("and no heartbeatWarning field appears", envelope.heartbeatWarning, undefined);
+    }
   }
 
   // --- resolveWatchOutcome() / B3: gatherInspection throwing (a transport error unrelated to
@@ -224,7 +307,7 @@ try {
       calls.push({ url: String(input), body: init?.body === undefined ? undefined : JSON.parse(String(init.body)) });
       return nextResponse();
     }) as typeof fetch;
-    await deathOf(() => runWatchCycle(webhookUrl, outcome.level, outcome.reasons, false));
+    await deathOf(() => runWatchCycle(webhookTarget, outcome.level, outcome.reasons, false));
     check("the outage alerts exactly once on the ok -> down transition", calls.length, 1);
     const posted = calls[0]?.body as { reasons?: { code: string }[] } | undefined;
     check("the alert names TARGET_UNREACHABLE as the reason", posted?.reasons?.[0]?.code, "TARGET_UNREACHABLE");

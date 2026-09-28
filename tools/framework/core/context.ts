@@ -59,10 +59,11 @@ export async function createContext(options: ContextOptions = {}): Promise<Conte
   // Registered here rather than where it is generated: every entry point builds a context,
   // and a failing child process is reported with its whole command line.
   registerSecret(config.env.OPENCLAW_GATEWAY_TOKEN);
-  // `./clawforge watch`'s alert webhook: an outbound URL, not printed anywhere on purpose
-  // (watch/webhook.ts), but registered too so a future leak into a thrown message is
-  // scrubbed the same way a gateway token is.
+  // `./clawforge watch`'s alert webhook and heartbeat URL: outbound URLs, not printed
+  // anywhere on purpose (watch/webhook.ts), but registered too so a future leak into a
+  // thrown message is scrubbed the same way a gateway token is.
   registerSecret(config.env.OC_WATCH_WEBHOOK);
+  registerSecret(config.env.OC_WATCH_HEARTBEAT_URL);
   // Optional, and read from this same .env rather than a separate file: an instance that
   // already exists under a compose project name the deployment directory itself cannot use
   // (Docker allows underscores, safeName does not) is managed under its real name instead
@@ -143,6 +144,7 @@ export async function refreshContext(previous: Context): Promise<ContextRefresh 
   // Same registration createContext makes: a token rotated on disk must be masked too.
   registerSecret(settings.env.OPENCLAW_GATEWAY_TOKEN);
   registerSecret(settings.env.OC_WATCH_WEBHOOK);
+  registerSecret(settings.env.OC_WATCH_HEARTBEAT_URL);
   useComposeProjectOverride(settings.env.OC_COMPOSE_PROJECT === "" ? undefined : settings.env.OC_COMPOSE_PROJECT);
 
   const changed = [...new Set(

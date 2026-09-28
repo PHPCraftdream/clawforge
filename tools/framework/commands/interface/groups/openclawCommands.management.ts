@@ -478,6 +478,26 @@ export const managementCommands: Record<string, AppCommand> = {
       "reflects the CURRENT state on every cycle, alert or not — 0 while ok, non-zero " +
       "otherwise — for a scheduler to branch on without reading the text. The webhook URL is " +
       "never printed, anywhere, including on failure.\n" +
+      "The webhook payload shape follows OC_WATCH_WEBHOOK_FORMAT (generic/slack/discord/" +
+      "telegram), or autodetects from the URL host when unset (hooks.slack.com, discord.com/" +
+      "discordapp.com with /api/webhooks/, api.telegram.org). generic keeps the original " +
+      "{deployment, from, to, reasons, at} JSON; slack/discord/telegram instead get a " +
+      "one-two line human message (deployment, from → to, reason codes with a short detail " +
+      "each, and the time), truncated to fit that format's own documented limit (Slack " +
+      "40000, Discord's `content` 2000, Telegram's `text` 4096). telegram additionally needs " +
+      "OC_WATCH_TELEGRAM_CHAT_ID — refused as a configuration error, the same way a bad URL " +
+      "is, before any probe cycle runs — and treats a 2xx response carrying `ok:false` as an " +
+      "undelivered alert exactly like a failed POST (state kept, retried next cycle).\n" +
+      "OC_WATCH_HEARTBEAT_URL adds a dead-man's switch: a plain GET, fired every cycle whose " +
+      "OWN level reads ok (never on degraded/down, and never affecting level or exit code on " +
+      "its own) — https only unless it is localhost, a secret registered the same way the " +
+      "webhook is. Works with healthchecks.io, Uptime Kuma's push monitor and Better Stack's " +
+      "heartbeat monitor, all three of which accept a bare GET. When the instance, or the " +
+      "scheduler running `watch check` itself, stops entirely, the pings simply stop and " +
+      "that external service raises its own alert — the one failure mode a webhook fired " +
+      "FROM here can never report. A failed ping is a warning in this cycle's output and in " +
+      "`watch status` (last heartbeat error), never a level change or a non-zero exit by " +
+      "itself.\n" +
       "install / uninstall — print (and, with --apply, install through the transport) a " +
       "crontab entry that runs `watch check` every --interval minutes (default 5; 1-59 steps " +
       "cron's own minute field, an exact multiple of 60 up to 1440 steps the hour field " +
@@ -490,8 +510,9 @@ export const managementCommands: Record<string, AppCommand> = {
       "something that silently never runs, the exact command an operator-side scheduler " +
       "(Task Scheduler on Windows) would need to invoke, using the transport's own " +
       "clientInvocation(); it never creates or touches a real one.\n" +
-      "status — the persisted last state, when it last changed, and whether a webhook is " +
-      "configured — never the URL itself.",
+      "status — the persisted last state, when it last changed, and whether a webhook/" +
+      "heartbeat is configured (plus the heartbeat's own last successful ping time, and its " +
+      "last failure if the most recent ping did not succeed) — never either URL itself.",
     arguments: [
       { name: "action", description: "check, install, uninstall or status", kind: "positional", required: true, choices: ["check", "install", "uninstall", "status"] },
       ...WATCH_CHECK_ARGUMENTS,

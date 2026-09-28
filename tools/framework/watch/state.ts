@@ -26,6 +26,12 @@ export interface WatchState {
   readonly checkedAt: string;
   /** When `level` was last entered — equal to checkedAt on the cycle that changed it. */
   readonly changedAt: string;
+  /** When the heartbeat (OC_WATCH_HEARTBEAT_URL) last answered success. Absent when no
+   *  heartbeat is configured, or none has ever succeeded. */
+  readonly heartbeatAt?: string;
+  /** The most recent heartbeat ping failure, if the last attempt did not succeed — cleared
+   *  the moment a later attempt does. Never the URL itself. */
+  readonly heartbeatError?: string;
 }
 
 export function watchStateFile(): string {
@@ -55,7 +61,19 @@ function parseWatchState(raw: string): WatchState | undefined {
     if (typeof code !== "string" || typeof detail !== "string") return undefined;
     reasons.push({ code, detail });
   }
-  return { level: candidate.level, reasons, checkedAt: candidate.checkedAt, changedAt: candidate.changedAt };
+  // Both optional, and absent from every state file written before the heartbeat feature —
+  // present-but-wrong-typed is treated as corrupt (undefined state), present-and-a-string is
+  // kept, and simply missing is fine either way.
+  if (candidate.heartbeatAt !== undefined && typeof candidate.heartbeatAt !== "string") return undefined;
+  if (candidate.heartbeatError !== undefined && typeof candidate.heartbeatError !== "string") return undefined;
+  return {
+    level: candidate.level,
+    reasons,
+    checkedAt: candidate.checkedAt,
+    changedAt: candidate.changedAt,
+    heartbeatAt: candidate.heartbeatAt as string | undefined,
+    heartbeatError: candidate.heartbeatError as string | undefined,
+  };
 }
 
 /** Absent or unreadable/corrupt both read as "no previous state": a fresh install and a

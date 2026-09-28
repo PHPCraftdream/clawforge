@@ -1,11 +1,12 @@
 // `./clawforge watch status` — the persisted last state, when it changed, and whether an
-// alert webhook is configured. Never the URL itself, in any form: only the boolean.
+// alert webhook/heartbeat is configured. Never the URL itself, in any form: only booleans
+// and (for the heartbeat) the last successful ping time and last failure detail.
 
-import { info, log } from "../core/log.ts";
+import { info, log, warn } from "../core/log.ts";
 import { emit, isCaptured } from "../core/output.ts";
 import type { Context } from "../core/context.ts";
 import { readWatchState } from "./state.ts";
-import { watchWebhookRaw } from "./webhook.ts";
+import { watchHeartbeatUrlRaw, watchWebhookRaw } from "./webhook.ts";
 import { WATCH_CHECK_ARGUMENTS } from "./check.ts";
 import { parseDeclaredArgs } from "../argv/parse-args.ts";
 
@@ -14,6 +15,7 @@ export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
 
   const state = await readWatchState();
   const webhookConfigured = watchWebhookRaw(ctx) !== undefined;
+  const heartbeatConfigured = watchHeartbeatUrlRaw(ctx) !== undefined;
 
   if (jsonOnly || isCaptured()) {
     emit(
@@ -24,6 +26,9 @@ export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
           checkedAt: state?.checkedAt ?? null,
           changedAt: state?.changedAt ?? null,
           webhookConfigured,
+          heartbeatConfigured,
+          heartbeatAt: state?.heartbeatAt ?? null,
+          heartbeatError: state?.heartbeatError ?? null,
         },
         null,
         2,
@@ -42,4 +47,6 @@ export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
     for (const reason of state.reasons) info(`${reason.code}  ${reason.detail}`);
   }
   info(`webhook: ${webhookConfigured ? "configured" : "not configured"}`);
+  info(`heartbeat: ${heartbeatConfigured ? "configured" : "not configured"}${state?.heartbeatAt ? `, last ping ${state.heartbeatAt}` : ""}`);
+  if (state?.heartbeatError) warn(`heartbeat: last ping failed — ${state.heartbeatError}`);
 }

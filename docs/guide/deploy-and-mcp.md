@@ -136,6 +136,10 @@ only the last sentence of a story it could otherwise tell in full.
 ./clawforge deploy user@host --path /opt/openclaw
 ```
 
+`--path` defaults to `OC_REMOTE_PATH` (also `/opt/openclaw` unless set); passing a `--path`
+that differs from it is accepted but deploy says so, since `watch install` and other
+remote-side commands trust `OC_REMOTE_PATH` in this deployment's `.env`, not `--path`.
+
 Two deliveries. The framework is mirrored whole, deletions included; `apps/` is excluded,
 so the server's `.env`, data and other deployments are untouched. The deployment travels by
 name and by file: `app.ts`, `config/`, `recipes/`. Neither `.env` nor `secrets/` nor

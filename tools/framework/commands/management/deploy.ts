@@ -67,7 +67,7 @@ export { collectSensitiveCheckoutNames, rootProbeScript, parseRootProbe, markerW
 /** Drives both deploy's own parser and its openclawCommands declaration. */
 export const DEPLOY_ARGUMENTS: CommandArgument[] = [
   { name: "target", description: "user@host", kind: "positional", required: true },
-  { name: "path", description: "Remote install directory", kind: "option", valueName: "path" },
+  { name: "path", description: "Remote install directory (default: OC_REMOTE_PATH)", kind: "option", valueName: "path" },
   { name: "no-bootstrap", description: "Copy the files without starting anything", kind: "flag" },
   {
     name: "adopt",
@@ -162,9 +162,10 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
 
   const parsed = parseDeclaredArgs(DEPLOY_ARGUMENTS, args);
   const target = parsed.target as string | undefined;
+  const requestedPath = parsed.path as string | undefined;
   // An empty --path is caught below by validatedRemoteRoot() ("must be an absolute POSIX
   // path"), which already names the value and the reason — no separate check needed here.
-  let remotePath = parsed.path === undefined ? "/opt/openclaw" : parsed.path as string;
+  let remotePath = requestedPath === undefined ? ctx.settings.remotePath : requestedPath;
   const bootstrapRemote = parsed["no-bootstrap"] !== true;
   const adopt = parsed.adopt === true;
 
@@ -174,6 +175,14 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // remote runs — no connection, no mkdir, no rsync. The marker protocol below asks the
   // remote half of the same question.
   remotePath = validatedRemoteRoot(remotePath);
+  // watch install (and any other remote-side command) reads OC_REMOTE_PATH from this same
+  // deployment's own .env, not from --path — an operator overriding --path here without
+  // updating .env would point this run at one directory and every later command at another.
+  const remotePathNote = requestedPath !== undefined && requestedPath !== ctx.settings.remotePath
+    ? `--path ${remotePath} differs from OC_REMOTE_PATH (${ctx.settings.remotePath}) in this deployment's ` +
+      `.env — set OC_REMOTE_PATH=${remotePath} there, since watch install and other remote-side commands ` +
+      "read it, not --path."
+    : undefined;
 
   const name = deploymentName();
   const remoteApp = `${remotePath}/apps/${name}`;
@@ -500,6 +509,7 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   if (!bootstrapRemote) {
     log(`files synced to ${target}:${remotePath} (bootstrap skipped)`);
     info(`bring it up there with: cd ${remotePath} && ./clawforge --app ${name} bootstrap`);
+    if (remotePathNote !== undefined) info(remotePathNote);
     return;
   }
 
@@ -515,4 +525,5 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   info("the gateway listens on the remote loopback only. Open a tunnel from here:");
   info(`  ssh -N -L ${ctx.settings.gatewayPort}:127.0.0.1:${ctx.settings.gatewayPort} ${target}`);
   info(`provider keys are not copied — install them there: ./clawforge --app ${name} secrets --apply`);
+  if (remotePathNote !== undefined) info(remotePathNote);
 }

@@ -105,6 +105,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   `recipe`, `backup`, and others) are now split by phase/action/concept — the same wall of
   text either printed whole on a terminal or became an entire MCP tool description. A check
   fails the build past a 400-character single line.
+* `deploy --path` defaulted to a hardcoded `/opt/openclaw` instead of `OC_REMOTE_PATH`, so a
+  deployment with `OC_REMOTE_PATH` set elsewhere mirrored to the wrong directory while `watch
+  install` (which reads `OC_REMOTE_PATH`) scheduled the cron entry for the one actually
+  configured. The default is now `OC_REMOTE_PATH`; an explicit `--path` that still diverges
+  from it is accepted but named in deploy's own closing output.
 
 ## 0.1.0
 

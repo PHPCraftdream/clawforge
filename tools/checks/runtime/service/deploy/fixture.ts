@@ -15,7 +15,7 @@ import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
 export const ctx = {
-  settings: { gatewayPort: "18789" },
+  settings: { gatewayPort: "18789", remotePath: "/opt/openclaw" },
   transport: {
     description: "stub",
     async exec(command: string, args: string[]): Promise<ExecResult> {

@@ -375,13 +375,21 @@ export async function plan(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
-  const executable = computed.actions.filter((action) => action.advisory !== true);
-  log(`${computed.actions.length} step(s) — ${executable.length} that ./clawforge apply will run`);
-  computed.actions.forEach((action, index) => {
+  printPlanActions(computed.actions);
+  log(planNextStepLine(computed.actions));
+}
+
+/** The step list `plan` and `apply --dry-run` both print — one renderer, so the two commands
+ *  can never disagree about the same plan. The header's executable count is the same filter
+ *  `apply` itself runs, and every step (advisory included) prints its own summary rather than
+ *  a placeholder, so an advisory step's text is never silently dropped. */
+export function printPlanActions(actions: readonly PlanAction[]): void {
+  const executable = actions.filter((action) => action.advisory !== true);
+  log(`${actions.length} step(s) — ${executable.length} that ./clawforge apply will run`);
+  actions.forEach((action, index) => {
     info(`${index + 1}. ${action.summary}`);
     info(`     ${action.advisory === true ? "(you)" : action.command}   because ${action.because.join(", ")}`);
   });
-  log(planNextStepLine(computed.actions));
 }
 
 /** "Nothing to do" is a claim about the deployment — healthy and problem-free — never

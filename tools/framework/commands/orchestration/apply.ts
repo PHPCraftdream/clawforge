@@ -13,7 +13,7 @@
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { computePlan } from "./plan.ts";
+import { computePlan, printPlanActions } from "./plan.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum, frameworkVersion } from "../management/lock.ts";
 import { isHealthy, nextActions, PROBLEM_CODES } from "#src/service/inspection.ts";
@@ -169,17 +169,11 @@ export class TargetChangedError extends Error {
   }
 }
 
-/** Returns whether argv contains the apply dry-run flag rather than an option value. */
+/** Whether argv requests apply's dry-run flag. Delegates to the same declared-argument
+ *  parser apply's own argument handling uses, rather than a hand-rolled scan, so `--set`'s
+ *  or `--expect`'s own value is never mistaken for the flag. */
 export function isApplyDryRun(args: readonly string[]): boolean {
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--set" || arg === "--expect") {
-      index += 1;
-      continue;
-    }
-    if (arg === "--dry-run") return true;
-  }
-  return false;
+  return parseDeclaredArgs(APPLY_ARGUMENTS, args)["dry-run"] === true;
 }
 
 /** Runs the executable steps in order, stopping at the first failure.
@@ -399,13 +393,13 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
  *  transition still needs a snapshot taken on its behalf. */
 async function applyFromSource(ctx: Context, args: string[], heldOperationId?: string): Promise<boolean> {
   const jsonOnly = args.includes("--json");
-  const dryRun = isApplyDryRun(args);
   const breakLock = args.includes("--break-lock");
   const breakForeignLockHost = parseBreakForeignLockHost(args);
   // Recognizes --set too (already consumed by applyWithSource above, its value read here
   // only so the generic parser does not mistake it for an unknown flag) — its own value is
   // not needed a second time.
   const parsed = parseDeclaredArgs(APPLY_ARGUMENTS, args);
+  const dryRun = parsed["dry-run"] === true;
   const expected = parsed.expect === "" ? die("--expect needs a declaration checksum") : parsed.expect as string | undefined;
 
   const plan = await computePlan(ctx);
@@ -422,9 +416,11 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
   }
 
   if (dryRun) {
+    // Same renderer `plan` uses, on the same plan — the two commands can never report a
+    // different step count or drop an advisory step's text for the same deployment state.
     emitOrPrint(jsonOnly, plan, () => {
-      log(`${plan.actions.length} step(s) would run — nothing was applied`);
-      for (const action of plan.actions) info(`  ${action.advisory === true ? "(you)" : action.command}`);
+      printPlanActions(plan.actions);
+      log("dry run — nothing was applied");
     });
     return false;
   }

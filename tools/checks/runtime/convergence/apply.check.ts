@@ -7,7 +7,7 @@
 
 import { runSteps, blockingRemainder, isApplyDryRun, runnerFor, apply, TargetChangedError } from "#framework/commands/orchestration/apply.ts";
 import type { ApplyOutcome, StepOutcome } from "#framework/commands/orchestration/apply.ts";
-import { planActions } from "#framework/commands/orchestration/plan.ts";
+import { planActions, printPlanActions } from "#framework/commands/orchestration/plan.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
 import { problem, PROBLEM_CODES } from "#framework/service/inspection.ts";
 import type { Inspection, Problem } from "#framework/service/inspection.ts";
@@ -387,6 +387,47 @@ function localTransport(): {
   } finally {
     await teardownFixtureDeployment(deployment);
   }
+}
+
+// --- apply --dry-run shares plan's own step renderer --------------------------------------------
+//
+// The bug this closes: dry-run counted every action, advisory included, as "would run", and
+// printed the literal "(you)" with no text for an advisory step, while `plan` printed the
+// executable count and the step's own summary for the very same plan. printPlanActions() is
+// the one renderer both commands call now (apply.ts's dry-run block and plan.ts's own print),
+// so a divergence between the two is no longer possible to write — pinned here directly against
+// the renderer, since a captured run always answers dry-run in JSON (below), never this text.
+
+{
+  // Unbootstrapped-like: the one step a never-bootstrapped deployment plans, wholly advisory.
+  const onlyAdvisory = planActions({
+    declared: { deployment: "example", config: [], image: "example/image:tag", recipes: [] },
+    observed: { running: false, health: undefined, probes: {}, config: {}, secrets: [], agents: [], mcpServers: [], cronJobs: [], foreignObjects: [] },
+    problems: [problem("NOT_BOOTSTRAPPED", "this deployment has never been bootstrapped")],
+  });
+  let out = "";
+  await withOutputSink((chunk) => { out += chunk; }, async () => { printPlanActions(onlyAdvisory); });
+  check("an all-advisory plan counts zero executable, not the action count", out.includes("1 step(s) — 0 that ./clawforge apply will run"), true);
+  check("and the advisory step's own text is printed, not silently dropped", out.includes("this deployment has never been bootstrapped"), true);
+  check("the advisory marker still appears alongside the text", out.includes("(you)"), true);
+}
+
+{
+  const mixed: PlanAction[] = [
+    { id: "secrets", summary: "install the missing secrets on the target", command: "./clawforge secrets --apply", because: ["SECRET_MISSING"] },
+    { id: "lock", summary: "review the difference from the lock, then run ./clawforge lock to re-pin it deliberately", because: ["LOCK_DRIFT"], advisory: true },
+  ];
+  let out = "";
+  await withOutputSink((chunk) => { out += chunk; }, async () => { printPlanActions(mixed); });
+  check("a mixed plan counts exactly its executable steps", out.includes("2 step(s) — 1 that ./clawforge apply will run"), true);
+  check("the executable step's own command is printed", out.includes("./clawforge secrets --apply"), true);
+  check("the advisory step prints its own text instead of the executable step's command", out.includes("review the difference from the lock"), true);
+}
+
+{
+  let out = "";
+  await withOutputSink((chunk) => { out += chunk; }, async () => { printPlanActions([]); });
+  check("an empty plan states zero of zero", out.includes("0 step(s) — 0 that ./clawforge apply will run"), true);
 }
 
 // --- a composite run keeps up with its own .env rewrites ---------------------------------------

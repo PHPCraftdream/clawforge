@@ -97,6 +97,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 * The general help's `--app <name>` line now says it belongs before the command, matching the
   refusal already given for one placed after it.
 * `docs/guide/commands.md`'s command table was missing `set` and `exec`.
+* `apply --dry-run` counted every action, advisory included, as "would run" and printed the
+  literal `(you)` with no text for an advisory step — disagreeing with `plan`'s report of the
+  very same deployment. Both now share one renderer (`printPlanActions`), so the executable
+  count and each step's own text can never diverge between the two commands again.
 * `details` paragraphs running to a thousand-plus characters on one line (`watch`, `incident`,
   `recipe`, `backup`, and others) are now split by phase/action/concept — the same wall of
   text either printed whole on a terminal or became an entire MCP tool description. A check

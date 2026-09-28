@@ -1,4 +1,4 @@
-// Commands that run before a deployment exists — check, new-app, init.
+// Commands that run before a deployment exists — check, new-app, init, version.
 //
 // They used to be hand-dispatched in each gate with their help text written out as literal
 // strings, which is why they were invisible over MCP: nothing declared them, so nothing
@@ -9,6 +9,8 @@
 import { runGateCommand, gateHelpLines, gateCommandHelp, type GateCommand } from "#framework/integration/gate.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { normalizeVersionAlias, versionGateCommand } from "#framework/integration/version.ts";
+import { frameworkVersion } from "#framework/commands/management/lock.ts";
 
 let failed = 0;
 
@@ -128,6 +130,46 @@ check(
     gateCommandHelp(sample({ arguments: undefined, details: undefined }));
   });
   check("help for an argument-less command is just its summary line", written.join("").trim(), "==> new-app — Create a deployment under apps/");
+}
+
+// --- version: --version/-v/version answer without a deployment, spawn-free -----------------
+
+check("--version as the first token normalizes to version", normalizeVersionAlias(["--version"]), ["version"]);
+check("-v as the first token normalizes to version", normalizeVersionAlias(["-v"]), ["version"]);
+check("trailing arguments survive normalization", normalizeVersionAlias(["--version", "--json"]), ["version", "--json"]);
+check("a plain version is left untouched", normalizeVersionAlias(["version"]), ["version"]);
+check("--version only counts as the very first token", normalizeVersionAlias(["status", "--version"]), ["status", "--version"]);
+check("an unrelated first token is untouched", normalizeVersionAlias(["status"]), ["status"]);
+
+{
+  const written: string[] = [];
+  const code = await withOutputSink((chunk) => written.push(chunk), async () =>
+    runGateCommand([versionGateCommand], ["version"]));
+  const expected = await frameworkVersion();
+  check("version exits 0", code, 0);
+  check(
+    "version prints clawforge <version>, read through the same helper inspect/set build use",
+    written.join("").trim(),
+    `clawforge ${expected}`,
+  );
+}
+
+{
+  const written: string[] = [];
+  const code = await withOutputSink((chunk) => written.push(chunk), async () =>
+    runGateCommand([versionGateCommand], ["version", "--json"]));
+  const expected = await frameworkVersion();
+  check("version --json exits 0", code, 0);
+  check("version --json emits { name, version }", written.join("").trim(), JSON.stringify({ name: "clawforge", version: expected }));
+}
+
+{
+  // The same refusal shape any declared command's argv gets — see core/arguments.ts.
+  const written: string[] = [];
+  const code = await withOutputSink((chunk) => written.push(chunk), async () =>
+    runGateCommand([versionGateCommand], ["version", "extra-arg"]));
+  check("version extra-arg is refused", code, 1);
+  check("with the standard unknown-argument message", written.join("").includes("unknown argument: extra-arg"), true);
 }
 
 process.stderr.write(failed === 0 ? "all gate-command checks passed\n" : `${failed} failed\n`);

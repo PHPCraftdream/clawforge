@@ -23,9 +23,10 @@ import { runGateCommand, gateHelpLines, type GateCommand } from "../integration/
 import { reportError } from "../core/io/log.ts";
 import { useDeployment } from "../runtime/deployment.ts";
 import { initApp } from "../integration/init.ts";
+import { normalizeVersionAlias, versionGateCommand } from "../integration/version.ts";
 import type { AppDefinition } from "../core/app.ts";
 
-const argv = process.argv.slice(2);
+const argv = normalizeVersionAlias(process.argv.slice(2));
 const appRoot = process.cwd();
 
 // Creating the deployment happens before one can be loaded — there is no app.ts yet for a
@@ -49,6 +50,7 @@ const gateCommands: GateCommand[] = [
       return 0;
     },
   },
+  versionGateCommand,
 ];
 
 const gateExit = await runGateCommand(gateCommands, argv);

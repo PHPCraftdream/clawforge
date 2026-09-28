@@ -9,14 +9,19 @@
 //     OC_APP named a (missing) one (tested as a pure decision, never through the real apps/);
 //   - `check`'s own substring filter (selectChecks in tools/checks/run.ts) is the same kind
 //     of pure boundary, covered here rather than in a new file (foundation/cli/ is already at
-//     the 7-entries-per-directory limit — see CONTRIBUTING.md, "Source layout").
+//     the 7-entries-per-directory limit — see CONTRIBUTING.md, "Source layout");
+//   - --version/-v/version answer from an empty directory, with no deployment resolved at all
+//     — the spawn-based counterpart to gate-commands.check.ts's spawn-free coverage of the
+//     same GateCommand.
 //
 // The pure boundary (splitLeadingAppFlag, closestCommand, reportUnknownCommand, selectChecks)
 // is unit-tested directly; the gate's own wiring of them is only observable by running the
 // real script, the same way cli-help.check.ts does.
 
 import { randomBytes } from "node:crypto";
-import { resolve } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { monorepoRoot } from "#framework/core/env.ts";
 import {
@@ -29,6 +34,7 @@ import {
 } from "#framework/integration/gate.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { selectChecks } from "#checks/run.ts";
+import { frameworkVersion } from "#framework/commands/management/lock.ts";
 
 let failed = 0;
 
@@ -45,13 +51,18 @@ function check(name: string, actual: unknown, expected: unknown): void {
 }
 
 /** Runs the real gate with a hard deadline, same as cli-help.check.ts: a hang and a slow
- *  success must not look the same to this check. */
-function runGate(args: string[], timeoutMs = 8000): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
+ *  success must not look the same to this check. `cwd` defaults to this process's own —
+ *  pass an empty directory to prove a command needs nothing this checkout happens to have
+ *  lying around. */
+function runGate(
+  args: string[],
+  { timeoutMs = 8000, cwd }: { timeoutMs?: number; cwd?: string } = {},
+): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
   return new Promise((resolvePromise) => {
     const proc = spawn(
       process.execPath,
       ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
-      { stdio: ["ignore", "pipe", "pipe"] },
+      { stdio: ["ignore", "pipe", "pipe"], cwd },
     );
     let stdout = "";
     let timedOut = false;
@@ -203,6 +214,37 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
     passedThrough.stdout.includes("not found"),
     true,
   );
+}
+
+// --- --version: answers from an empty directory, no deployment or apps/ around at all -------
+//
+// The regression this guards: --version/-v/version used to fall through to
+// reportUnknownCommand ("unknown command"), which only reproduces when nothing about the
+// invocation depends on this checkout's own apps/ — an empty temp directory as cwd, spawned
+// the cross-platform way (process.execPath, no shell script), proves that.
+
+{
+  const expected = await frameworkVersion();
+  const empty = await mkdtemp(join(tmpdir(), "clawforge-version-check-"));
+  try {
+    const flag = await runGate(["--version"], { cwd: empty });
+    check("--version exits 0 from an empty directory", flag.code, 0);
+    check("--version prints clawforge <version>", flag.stdout.trim(), `clawforge ${expected}`);
+
+    const short = await runGate(["-v"], { cwd: empty });
+    check("-v exits 0 from an empty directory", short.code, 0);
+    check("-v prints the same line as --version", short.stdout.trim(), `clawforge ${expected}`);
+
+    const bare = await runGate(["version"], { cwd: empty });
+    check("version exits 0 from an empty directory", bare.code, 0);
+    check("version prints the same line too", bare.stdout.trim(), `clawforge ${expected}`);
+
+    const extra = await runGate(["version", "extra-arg"], { cwd: empty });
+    check("version extra-arg exits non-zero", extra.code === 0, false);
+    check("version extra-arg is refused in the standard argv error style", extra.stdout.includes("unknown argument: extra-arg"), true);
+  } finally {
+    await rm(empty, { recursive: true, force: true });
+  }
 }
 
 // --- selectChecks(): ./clawforge check's own pure filter -----------------------------------

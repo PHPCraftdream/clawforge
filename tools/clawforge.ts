@@ -36,9 +36,10 @@ import { listDeployments, printDeploymentList } from "./framework/integration/li
 import { safeName } from "./framework/core/names.ts";
 import { parseDeclaredArgs } from "./framework/core/arguments.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
+import { normalizeVersionAlias, versionGateCommand } from "./framework/integration/version.ts";
 import type { AppDefinition, CommandArgument } from "./framework/core/app.ts";
 
-const argv = process.argv.slice(2);
+const argv = normalizeVersionAlias(process.argv.slice(2));
 
 // --app wins over the environment, the environment over the default.
 let name = process.env.OC_APP ?? "openclaw";
@@ -144,6 +145,7 @@ const gateCommands: GateCommand[] = [
       return 0;
     },
   },
+  versionGateCommand,
 ];
 
 // --app after the command is refused, except where the command reads argv verbatim.

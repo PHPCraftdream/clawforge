@@ -49,6 +49,10 @@ All notable changes to `@clawforge/framework` will be documented here.
   foundation runtime`); `--list` prints the matching paths without running them. An unknown
   flag is refused, and a filter matching nothing exits non-zero instead of silently running
   the whole suite.
+* `--version`/`-v`/`version` (also `--json`): `clawforge <version>`, read from the framework's
+  own `package.json` the same way `inspect`/`set build` already do. Answers with no deployment
+  resolved, no `.env` read and no lock touched, in both installed and monorepo mode — where
+  before it answered `unknown command`.
 
 ### Fixed
 

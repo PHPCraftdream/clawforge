@@ -48,6 +48,7 @@ export const MCP_EXEMPTIONS: Record<string, string> = {
   "mcp-serve": "it is a stdio JSON-RPC server; a client registers it directly (./clawforge mcp-setup does), rather than starting it through another one",
   "control-mcp": "it is this server — a tool that starts the server it runs inside answers nothing",
   "--app": "it selects which deployment this server serves, which is settled when the client launches it (mcp-setup writes the flag into .mcp.json); switching mid-session would change what every other tool in the list refers to",
+  "version": "answers a human filing a bug report; a tool would only spend the tools/list byte budget",
 };
 
 /** The `help` tool: not a command, answered through renderHelp like `./clawforge help`. */

@@ -8,17 +8,8 @@
 
 import { spawnSync } from "node:child_process";
 import { shellQuote } from "#framework/core/io/shell.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
-let passed = 0;
-const failures: string[] = [];
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    passed += 1;
-  } else {
-    failures.push(`${name}\n      expected ${JSON.stringify(expected)}\n      got      ${JSON.stringify(actual)}`);
-  }
-}
 
 // --- byte-exact output ----------------------------------------------------------
 
@@ -53,12 +44,4 @@ if (shAvailable()) {
   process.stderr.write("no POSIX sh reachable locally — skipping the round-trip half (byte-exact output still checked)\n");
 }
 
-// --- report -----------------------------------------------------------------------
-
-if (failures.length > 0) {
-  process.stderr.write(`\n${failures.length} failed, ${passed} passed\n`);
-  for (const failure of failures) process.stderr.write(`  FAIL ${failure}\n`);
-  process.exitCode = 1;
-} else {
-  process.stderr.write(`all ${passed} shellQuote checks passed\n`);
-}
+finish("shellQuote");

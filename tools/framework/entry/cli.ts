@@ -12,35 +12,13 @@ import { clearRecipesDir } from "../service/recipe.ts";
 import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "../integration/provision.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
-import { gateCommandHelp, reportUnknownCommand, type GateCommand } from "../integration/gate.ts";
-import { renderCommandHelp } from "../core/io/help-render.ts";
-import type { AppCommand, AppDefinition, CommandGroup } from "../core/app.ts";
+import { knownCommandNames, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
+import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
+import type { AppCommand, AppDefinition } from "../core/app.ts";
 
-/** Fixed print order and heading for each CommandGroup — an operator scans intent sections
- *  top to bottom, not an alphabetical command list. tools/checks/foundation/cli/help-groups.check.ts
- *  keeps this in lockstep with the CommandGroup union: a group added to one and not the
- *  other fails there, not silently at render time. */
-export const GROUP_HEADINGS: Record<CommandGroup, string> = {
-  "start-stop": "Start & stop",
-  check: "Check",
-  change: "Change",
-  "save-move": "Save & move",
-  "security-access": "Security & access",
-  integrations: "Integrations & recovery",
-  "low-level": "Low-level",
-};
-export const GROUP_ORDER = Object.keys(GROUP_HEADINGS) as CommandGroup[];
-
-/** Precise, metadata-derived wording instead of a flat "(destructive)" that is only true for
- *  some invocations — readOnlyWhen already says the command has a safe default and a
- *  destructive one only under certain arguments; the label follows that fact rather than
- *  hard-coding which flag it is per command. Exported so the check that guards this wording
- *  (tools/checks/foundation/cli/help-groups.check.ts) asserts against the real function, not
- *  a copy that could drift from it. */
-export function destructiveMarker(command: AppCommand): string {
-  if (command.destructive !== true) return "";
-  return command.readOnlyWhen === undefined ? " (destructive)" : " (destructive for some actions)";
-}
+// Re-exported for tools/checks/foundation/cli/help-groups.check.ts, which asserts the console
+// listing against the real grouping and wording rather than a copy that could drift from it.
+export { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker };
 
 /** Lines shown between the command list and the closing "Run ./clawforge help ..." hint — the one
  *  part of this help screen that is gate-specific (monorepo: --app/new-app; installed: init)
@@ -51,78 +29,6 @@ const DEFAULT_GATE_HELP = [
   "  --app <name>      pick another deployment, before the command (default: the OC_APP one)",
   "  new-app <name>    create a deployment under apps/",
 ];
-
-/** The two framework-owned lines every gate's `--help` footer carries beside its own
- *  (check/new-app/list, or init): `control-mcp`, dispatched here rather than declared in
- *  app.commands (see runApp below), and `help`, this dispatcher's own alias. Padded together
- *  so the two stay visually aligned regardless of what a gate's own lines look like. */
-function builtinHelpLines(app: AppDefinition): string[] {
-  const entries: Array<[string, string]> = [
-    ["control-mcp", `expose ${app.name}'s commands as MCP tools — the entry point for agents`],
-    ["help <command>", "same as: <command> --help"],
-  ];
-  const width = Math.max(...entries.map(([name]) => name.length)) + 2;
-  return entries.map(([name, summary]) => `  ${name.padEnd(width)}${summary}`);
-}
-
-function usage(app: AppDefinition, gateHelp: string[]): void {
-  log(`${app.name} — ${app.description}`);
-  info("");
-  info("Usage: ./clawforge <command> [options]");
-  info("");
-
-  const width = Math.max(...Object.keys(app.commands).map((name) => name.length)) + 2;
-  const byGroup = new Map<CommandGroup, [string, AppCommand][]>();
-  // Belt and suspenders: help-groups.check.ts fails the build before an ungrouped command
-  // ships, but a command that reaches here without a known group is still listed rather than
-  // silently dropped from --help.
-  const unknown: [string, AppCommand][] = [];
-  for (const entry of Object.entries(app.commands)) {
-    const [, command] = entry;
-    if (command.group === undefined || GROUP_HEADINGS[command.group] === undefined) {
-      unknown.push(entry);
-      continue;
-    }
-    const bucket = byGroup.get(command.group);
-    if (bucket === undefined) byGroup.set(command.group, [entry]);
-    else bucket.push(entry);
-  }
-
-  const printGroup = (heading: string, entries: [string, AppCommand][]): void => {
-    info(`${heading}:`);
-    for (const [name, command] of entries) {
-      info(`  ${name.padEnd(width)} ${command.summary}${destructiveMarker(command)}`);
-    }
-    info("");
-  };
-  for (const group of GROUP_ORDER) {
-    const entries = byGroup.get(group);
-    if (entries !== undefined && entries.length > 0) printGroup(GROUP_HEADINGS[group], entries);
-  }
-  if (unknown.length > 0) printGroup("Other", unknown);
-
-  for (const line of gateHelp) info(line);
-  for (const line of builtinHelpLines(app)) info(line);
-  info("");
-  info("Run `./clawforge help <command>` or `./clawforge <command> --help` for its full description.");
-}
-
-/** Every name reachable from this dispatcher: the application's own commands, the gate's
- *  (already handled before runApp ever sees argv, but still real commands a typo can be
- *  compared against), and the two the dispatcher itself owns outside app.commands. */
-function knownCommandNames(app: AppDefinition, gateCommands: GateCommand[]): string[] {
-  return [...Object.keys(app.commands), ...gateCommands.map((command) => command.name), "help", "control-mcp"];
-}
-
-function commandHelp(name: string, command: AppCommand): void {
-  renderCommandHelp(name, command);
-  if (command.destructive === true) {
-    info("");
-    info(command.readOnlyWhen === undefined
-      ? "This command replaces or destroys state."
-      : "This command can replace or destroy state, depending on the action given.");
-  }
-}
 
 /** `--opt=value` for a declared option becomes `--opt value`, so every reader of argv — the
  *  declared parser and the few that scan it directly — sees one form. Commands that pass
@@ -149,35 +55,17 @@ export async function runApp(
   const [name, ...args] = argv;
 
   if (name === undefined || name === "-h" || name === "--help") {
-    usage(app, gateHelp);
+    renderUsage(app, gateHelp);
     return name === undefined ? 1 : 0;
   }
 
   // `./clawforge help` alone behaves like `--help`; `./clawforge help <command>` is the same lookup
   // `<command> --help` does, just easier to reach for from a cold start — "what commands
-  // exist" and "what does this one do" are both spelled the same way, `help`.
+  // exist" and "what does this one do" are both spelled the same way, `help`. Shared with the
+  // MCP `help` tool (integration/mcp/server.ts) through renderHelp, so the two never answer
+  // the same question differently.
   if (name === "help") {
-    const target = args[0];
-    // `help` is not in app.commands; `help help` shows the general list.
-    if (target === undefined || target === "--help" || target === "-h" || target === "help") {
-      usage(app, gateHelp);
-      return 0;
-    }
-    const helpCommand = app.commands[target];
-    if (helpCommand === undefined) {
-      // A gate command is reached the same way as any other from a user's side, so
-      // `help <it>` has to answer too — the gate itself already handled `<it> --help`
-      // before this dispatcher ever ran.
-      const gateCommand = gateCommands.find((entry) => entry.name === target);
-      if (gateCommand !== undefined) {
-        gateCommandHelp(gateCommand);
-        return 0;
-      }
-      reportUnknownCommand(target, knownCommandNames(app, gateCommands));
-      return 1;
-    }
-    commandHelp(target, helpCommand);
-    return 0;
+    return renderHelp(args[0], app, gateCommands, gateHelp) ? 0 : 1;
   }
 
   // Framework-level command: serves the application's own commands as MCP tools, so the
@@ -199,8 +87,9 @@ export async function runApp(
     }
     // The gate's commands travel with the application's: the surface is a mirror of what
     // `./clawforge` can do, and where a command happens to be dispatched from is our layering, not
-    // a distinction a client should have to know about.
-    await serveMcp(app, gateCommands);
+    // a distinction a client should have to know about. gateHelp rides along too — it is what
+    // the MCP `help` tool's no-argument form renders, same as the console's own usage screen.
+    await serveMcp(app, gateCommands, gateHelp);
     return 0;
   }
 
@@ -211,7 +100,7 @@ export async function runApp(
   }
 
   if (command.passesThroughHelp !== true && args.includes("--help")) {
-    commandHelp(name, command);
+    renderFullCommandHelp(name, command);
     return 0;
   }
 

@@ -6,6 +6,7 @@
 
 import type { CommandArgument } from "../../core/app.ts";
 import { maskSecrets } from "../../core/io/log.ts";
+import { destructiveMarker } from "../../core/io/help-render.ts";
 
 /** What the functions below need from a command, and all they need: the description a
  *  client reads, and the arguments the schema, the validation and the argv are derived from.
@@ -156,16 +157,9 @@ export function maskStructuredOutput(output: string, machineOutput: string | und
   return maskSecrets(output.split(machineOutput).join(safePayload));
 }
 
-/** Builds the description a chat client sees for a tool. */
-export function toolDescription(command: Declared): string {
-  const parts = [command.summary];
-  if (command.details !== undefined) parts.push(command.details);
-  if (command.destructive === true) {
-    parts.push(command.readOnlyWhen === undefined
-      ? "Destructive: requires confirm: true."
-      : "Destructive actions require confirm: true; read-only actions do not.");
-  }
-  return parts.join("\n\n");
+/** The tool description: one-line summary plus a pointer to the `help` tool for the full text. */
+export function toolDescription(name: string, command: Declared): string {
+  return `${command.summary}${destructiveMarker(command)}\n\nFull description: call the \`help\` tool with command=${name}.`;
 }
 
 /** JSON Schema for a command, derived from its declared arguments. */

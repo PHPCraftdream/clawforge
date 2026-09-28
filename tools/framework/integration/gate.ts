@@ -18,8 +18,8 @@
 
 import { info, reportError } from "../core/io/log.ts";
 import { closestCommand } from "../core/arguments.ts";
-import { renderCommandHelp } from "../core/io/help-render.ts";
-import type { CommandArgument } from "../core/app.ts";
+import { renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
+import type { AppDefinition, CommandArgument } from "../core/app.ts";
 
 export { closestCommand } from "../core/arguments.ts";
 
@@ -121,6 +121,38 @@ export function reportUnknownCommand(name: string, candidates: string[]): void {
   const suggestion = closestCommand(name, candidates);
   if (suggestion !== undefined) info(`did you mean: ${suggestion}`);
   info("run ./clawforge help to list every command");
+}
+
+/** Every name the dispatcher can resolve: app commands, gate commands and its own aliases. */
+export function knownCommandNames(app: AppDefinition, gateCommands: readonly GateCommand[]): string[] {
+  return [...Object.keys(app.commands), ...gateCommands.map((command) => command.name), "help", "control-mcp"];
+}
+
+/** Renders `./clawforge help [<command>]`; false for an unknown command. Shared by the console
+ *  and the MCP `help` tool. */
+export function renderHelp(
+  target: string | undefined,
+  app: AppDefinition,
+  gateCommands: readonly GateCommand[],
+  gateHelp: string[],
+): boolean {
+  // `help` is not in app.commands; `help help` shows the general list.
+  if (target === undefined || target === "--help" || target === "-h" || target === "help") {
+    renderUsage(app, gateHelp);
+    return true;
+  }
+  const command = app.commands[target];
+  if (command !== undefined) {
+    renderFullCommandHelp(target, command);
+    return true;
+  }
+  const gateCommand = gateCommands.find((entry) => entry.name === target);
+  if (gateCommand !== undefined) {
+    gateCommandHelp(gateCommand);
+    return true;
+  }
+  reportUnknownCommand(target, knownCommandNames(app, gateCommands));
+  return false;
 }
 
 /** The deployment to use when the requested one is missing: the lone deployment under apps/,

@@ -117,7 +117,6 @@ What cannot be mirrored at all is a short list, and each entry says why:
 | --- | --- |
 | `mcp-serve` | it is a stdio JSON-RPC server; a client registers it directly (`./clawforge mcp-setup` does) rather than starting it through another one |
 | `control-mcp` | it is this server — a tool that starts the server it runs inside answers nothing |
-| `help` | a client already holds the text: every tool's description is the same summary and details `help <command>` prints, from the same declaration |
 | `--app <name>` | it settles which deployment the server serves when the client launches it; switching mid-session would change what every other tool refers to |
 
 The list lives in `MCP_EXEMPTIONS` (`framework/integration/mcp/server.ts`) rather than in prose, and
@@ -128,6 +127,18 @@ Tool schemas, the `--help` text and the argv a call is turned into all come from
 argument declaration — otherwise they drift apart, and `--profile share` reaches the
 command as an unnamed value. Arguments are validated server-side: an unknown name, a wrong
 type and a value outside the declared list are rejected before the command runs.
+
+**A tool's `description` is not its whole `--help` text.** It used to be — every tool carried
+its full description whole, and `tools/list` cost an agent roughly 22k tokens of context
+before its first real call, dominated by the handful of commands with the longest `--help`
+bodies. Each description is now the command's one-line summary, plus a `(destructive for
+some actions)`-style marker where the help already carries one, plus a pointer: "Full
+description: call the `help` tool with command=<name>". `help` (input: `command`, optional)
+returns exactly what `./clawforge help <command>` prints — the full description, usage line
+and argument list — or the command list when `command` is omitted; it is itself a tool (not
+an exemption), read-only, and never needs `confirm`. `mcp-mirror.check.ts` keeps `tools/list`
+under a fixed byte budget and every description under 400 characters, and drives `help`
+against every command to prove it always answers.
 
 Destructive commands (`push`, `restore`, `deploy`) require `confirm: true` — a tool call is
 far easier to trigger by accident than a typed command line. `cli` is declared destructive

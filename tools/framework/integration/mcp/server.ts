@@ -21,14 +21,14 @@
 
 import { createInterface } from "node:readline";
 import { mcpCommands, type AppCommand, type AppDefinition } from "../../core/app.ts";
-import type { GateCommand } from "../gate.ts";
+import { renderHelp, type GateCommand } from "../gate.ts";
 import { createContext } from "../../core/context.ts";
 import { clearRecipesDir } from "../../service/recipe.ts";
 import { useApplicationRecipesDir } from "../../runtime/deployment.ts";
 import { ensureEnvironment } from "../provision.ts";
 import { maskSecrets, UserError } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
-import { maskStructuredOutput, maskStructuredResult, toolEnvelope, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA } from "./schema.ts";
+import { maskStructuredOutput, maskStructuredResult, toolEnvelope, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../../commands/operate/recover-env/index.ts";
 
 export * from "./schema.ts";
@@ -39,14 +39,24 @@ const PROTOCOL_VERSION = "2025-06-18";
  *  tools/checks/mcp-mirror.check.ts, so an entry here is a decision on the record rather
  *  than a comment someone can forget to write.
  *
- *  Two of these are the same argument at different heights: a stdio JSON-RPC server cannot
- *  be started by a tool call inside a stdio JSON-RPC server, because both would then own
- *  the same stdout. The other two are redundancy, not impossibility. */
+ *  mcp-serve and control-mcp are the same argument at different heights: a stdio JSON-RPC
+ *  server cannot be started by a tool call inside a stdio JSON-RPC server, because both
+ *  would then own the same stdout. `--app` is redundancy, not impossibility. `help` is not
+ *  listed here: it is a tool (see HELP_TOOL below), the one every other tool's shrunk
+ *  description now points at instead of carrying its own `--help` text whole. */
 export const MCP_EXEMPTIONS: Record<string, string> = {
   "mcp-serve": "it is a stdio JSON-RPC server; a client registers it directly (./clawforge mcp-setup does), rather than starting it through another one",
   "control-mcp": "it is this server — a tool that starts the server it runs inside answers nothing",
-  help: "a client already holds this text: every tool's description is the same summary and details `help <command>` prints, generated from the same declaration",
   "--app": "it selects which deployment this server serves, which is settled when the client launches it (mcp-setup writes the flag into .mcp.json); switching mid-session would change what every other tool in the list refers to",
+};
+
+/** The `help` tool: not a command, answered through renderHelp like `./clawforge help`. */
+const HELP_TOOL: Declared = {
+  summary: "Full description, usage and argument list for one command, or the command list when none is given",
+  arguments: [
+    { name: "command", description: "Command name; omit to list every command", kind: "option", valueName: "name" },
+  ],
+  readOnly: true,
 };
 
 interface JsonRpcRequest {
@@ -152,7 +162,7 @@ function replyError(id: number | string | undefined, code: number, message: stri
   send({ jsonrpc: "2.0", id, error: { code, message: maskSecrets(message) } });
 }
 
-export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] = []): Promise<void> {
+export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] = [], gateHelp: string[] = []): Promise<void> {
   const tools = mcpCommands(app);
   // Presented as one list: a client is offered what `./clawforge` can do, not a map of which layer
   // dispatches what. They are kept apart here only because they are invoked differently —
@@ -206,7 +216,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           tools: [
             ...tools.map(([name, command]) => ({
               name,
-              description: toolDescription(command),
+              description: toolDescription(name, command),
               inputSchema: inputSchema(command),
               // Declared from the command's own metadata alone — a structured tool
               // answers every action in the envelope, so one honest schema covers all of
@@ -215,9 +225,14 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
             })),
             ...gateTools.map((command) => ({
               name: command.name,
-              description: toolDescription(command),
+              description: toolDescription(command.name, command),
               inputSchema: inputSchema(command),
             })),
+            {
+              name: "help",
+              description: HELP_TOOL.summary,
+              inputSchema: inputSchema(HELP_TOOL),
+            },
           ],
         });
         break;
@@ -231,6 +246,30 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
         // simply not a valid tool name, reported the same way as any other unknown one.
         const name = typeof params.name === "string" ? params.name : "";
         const args = (params.arguments ?? {}) as Record<string, unknown>;
+
+        // Not an AppCommand or a GateCommand — the dispatcher's own alias (see entry/cli.ts)
+        // — so it is handled here rather than through the `tools`/`gateTools` lookup below.
+        if (name === "help") {
+          const problems = validate(HELP_TOOL, args);
+          if (problems.length > 0) {
+            reply(request.id, {
+              isError: true,
+              content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
+            });
+            break;
+          }
+          const target = typeof args.command === "string" && args.command !== "" ? args.command : undefined;
+          const chunks: string[] = [];
+          await withOutputSink((chunk) => { chunks.push(chunk); }, async () => {
+            renderHelp(target, app, gateCommands, gateHelp);
+          });
+          const output = chunks.join("").trim();
+          reply(request.id, {
+            content: [{ type: "text", text: output === "" ? "(no output)" : maskSecrets(output) }],
+          });
+          break;
+        }
+
         const entry = tools.find(([toolName]) => toolName === name);
 
         if (entry === undefined) {

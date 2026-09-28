@@ -173,6 +173,7 @@ try {
     { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "recipe", arguments: { action: "list" } } },
     { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "recipe", arguments: {} } },
     { jsonrpc: "2.0", id: 4, method: "tools/list" },
+    { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "help", arguments: { command: "recipe" } } },
   ].map((request) => JSON.stringify(request)).join("\n");
 
   try {
@@ -209,8 +210,8 @@ try {
       .find((tool) => tool.name === "recipe"));
     check("recipe MCP schema leaves conditional confirmation optional", recipeTool?.inputSchema?.required?.includes("confirm"), false);
     check("recipe MCP schema exposes confirmation", recipeTool?.inputSchema?.properties?.confirm !== undefined, true);
-    check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes("read-only actions do not"), true);
-    check("declaration and generated description agree", toolDescription(openclawCommands.recipe!).includes("read-only actions do not"), true);
+    check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes("(destructive for some actions)"), true);
+    check("declaration and generated description agree", toolDescription("recipe", openclawCommands.recipe!).includes("(destructive for some actions)"), true);
     const required = (inputSchema(openclawCommands.recipe!).required as string[] | undefined) ?? [];
     check("declaration and generated schema agree", required.includes("confirm"), false);
     check("bare recipe arguments are read-only for MCP gating", openclawCommands.recipe!.readOnlyWhen?.([]), true);
@@ -227,13 +228,14 @@ try {
     recipeActionSchema?.enum,
     ["list", "import", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
   );
-  check("recipe help explains app-owned hooks", toolDescription(openclawCommands.recipe!).includes("prepare.ts"), true);
+  check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes("call the `help` tool with command=recipe"), true);
+    check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
     check("recipe install remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["install"]), false);
     check("recipe remove remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["remove"]), false);
 
     const setSchema = inputSchema(openclawCommands.set!);
     check("set MCP schema leaves conditional confirmation optional", (setSchema.required as string[]).includes("confirm"), false);
-    check("set MCP description explains conditional confirmation", toolDescription(openclawCommands.set!).includes("read-only actions do not"), true);
+    check("set MCP description explains conditional confirmation", toolDescription("set", openclawCommands.set!).includes("(destructive for some actions)"), true);
     check("set build is mutable without confirmation", openclawCommands.set!.readOnlyWhen?.(["build"]), false);
     check("set try remains destructive for MCP gating", openclawCommands.set!.readOnlyWhen?.(["try"]), false);
     check("lock check is read-only for MCP gating", openclawCommands.lock!.readOnlyWhen?.(["--check"]), true);

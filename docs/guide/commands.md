@@ -10,9 +10,11 @@ run it, ask the tool itself:
 ```
 
 The `--help` text is not an abridgement: it is where side effects and ordering are spelled
-out (why `push` installs keys before starting rather than after, for instance), and an MCP
-client sees that same text as the tool description under `./clawforge control-mcp`. What follows
-below is what does not fit in `--help` — the whole model, file formats, diagnostics.
+out (why `push` installs keys before starting rather than after, for instance). An MCP
+client sees a one-line summary as each tool's description under `./clawforge control-mcp` — not
+that whole text, which would cost every session's context before the first real call — plus a
+pointer to the `help` tool, which returns exactly what `./clawforge help <command>` prints. What
+follows below is what does not fit in `--help` — the whole model, file formats, diagnostics.
 
 A bare sub-action group (`recipe`, `set`, `watch`, `expose`) either runs its one read-only
 default or refuses: `recipe` alone lists the catalog (its default action, harmless to run by

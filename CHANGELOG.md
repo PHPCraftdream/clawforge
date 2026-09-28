@@ -137,6 +137,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   Their bare-usage errors (no action at all) now also point at `--help`.
 * `new-app`'s `.gitignore` now excludes `state/` (machine-local `watch.json`) and `sets/`
   (built artifacts); `config/`, `recipes/` and `deployment.lock.json` stay trackable.
+* `control-mcp`'s `tools/list` carried every tool's whole `--help` text as its `description` —
+  88 KB across 42 tools, roughly 22k tokens of context before an agent's first real call.
+  Each description is now the command's one-line summary plus a pointer to the new `help`
+  tool (input: `command`, optional), which returns exactly what `./clawforge help <command>`
+  prints — or the command list when called without one. A check keeps `tools/list` under a
+  byte budget and every description under 400 characters.
 
 ## 0.1.0
 

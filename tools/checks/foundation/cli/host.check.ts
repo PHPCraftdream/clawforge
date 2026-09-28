@@ -482,8 +482,9 @@ check("host is declared destructive, so MCP requires a confirmation", openclawCo
   check("validate names the contexts for a bad one", validate(openclawCommands.host, { context: "vm" }).join("; ").includes("target, engine, local"), true);
   const missing = validate(openclawCommands.host, {});
   check("validate reports both required arguments", missing.includes("context is required") && missing.includes("args is required"), true);
-  check("the tool description shows the client the contexts", toolDescription(openclawCommands.host).includes("target") && toolDescription(openclawCommands.host).includes("engine") && toolDescription(openclawCommands.host).includes("local"), true);
-  check("and the root gate", toolDescription(openclawCommands.host).includes("--confirm-root"), true);
+  const hostDescription = toolDescription("host", openclawCommands.host);
+  check("the tool description shows the client the contexts", hostDescription.includes("target") && hostDescription.includes("engine") && hostDescription.includes("local"), true);
+  check("the schema exposes the root gate", (inputSchema(openclawCommands.host).properties as Record<string, unknown>)["confirm-root"] !== undefined, true);
 }
 
 // --- as e2e as this gets without a machine fleet ----------------------------------------------

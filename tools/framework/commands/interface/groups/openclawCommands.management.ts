@@ -462,7 +462,7 @@ export const managementCommands: Record<string, AppCommand> = {
     changedWhen: (args) => !watchActionIsReadOnly(args),
     requiresConfirmationWhen: (args) => !watchActionIsReadOnly(args),
     details:
-      "Four actions.\n" +
+      "Five actions.\n" +
       "check — one probe cycle, reusing exactly the findings `inspect`/`doctor` already " +
       "compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE — never " +
       "PROVIDER_MISSING, whose detection is unreliable enough that it would page degraded " +
@@ -485,11 +485,15 @@ export const managementCommands: Record<string, AppCommand> = {
       "directory, never <data>/config — atomic write); a webhook POST (OC_WATCH_WEBHOOK in " +
       "this deployment's .env, https only unless it is localhost) fires only on a " +
       "TRANSITION, so an unchanged state never pages anyone twice. A failed POST leaves the " +
-      "persisted state at its old value on purpose, so the same unreported transition is " +
-      "retried next cycle instead of being silently accepted as normal. The exit code " +
-      "reflects the CURRENT state on every cycle, alert or not — 0 while ok, non-zero " +
-      "otherwise — for a scheduler to branch on without reading the text. The webhook URL is " +
-      "never printed, anywhere, including on failure.\n" +
+      "persisted level at its old value on purpose, so the same unreported transition is " +
+      "retried next cycle instead of being silently accepted as normal — but the failure " +
+      "itself, and when it happened, is now recorded (`watch status`'s lastError/" +
+      "alertPending), so a broken webhook does not fail forever without a trace between " +
+      "cycles. A configuration error (a bad OC_WATCH_WEBHOOK/OC_WATCH_WEBHOOK_FORMAT/" +
+      "OC_WATCH_TELEGRAM_CHAT_ID/OC_WATCH_HEARTBEAT_URL) is recorded the same way, before a " +
+      "probe cycle ever runs. The exit code reflects the CURRENT state on every cycle, alert " +
+      "or not — 0 while ok, non-zero otherwise — for a scheduler to branch on without " +
+      "reading the text. The webhook URL is never printed, anywhere, including on failure.\n" +
       "The webhook payload shape follows OC_WATCH_WEBHOOK_FORMAT (generic/slack/discord/" +
       "telegram), or autodetects from the URL host when unset (hooks.slack.com, discord.com/" +
       "discordapp.com with /api/webhooks/, api.telegram.org). generic keeps the original " +
@@ -524,9 +528,28 @@ export const managementCommands: Record<string, AppCommand> = {
       "clientInvocation(); it never creates or touches a real one.\n" +
       "status — the persisted last state, when it last changed, and whether a webhook/" +
       "heartbeat is configured (plus the heartbeat's own last successful ping time, and its " +
-      "last failure if the most recent ping did not succeed) — never either URL itself.",
+      "last failure if the most recent ping did not succeed) — never either URL itself. Also " +
+      "reports when `watch check` last ran at all (a config error or a failed delivery still " +
+      "counts), the most recent config/delivery error, an alert still waiting to be " +
+      "delivered (since when, and what transition), and warns when that last run is stale — " +
+      "more than 3x the interval `watch install --apply` recorded, or 3x the default (5 " +
+      "minutes) when no interval was ever recorded (a state file from before this field, or " +
+      "a schedule wired up by hand outside `watch install`).\n" +
+      "test — sends one webhook message (clearly marked as a test, never shaped like a real " +
+      "transition) and one heartbeat ping through whichever of OC_WATCH_WEBHOOK/" +
+      "OC_WATCH_HEARTBEAT_URL is configured, so delivery can be proven before a real outage " +
+      "is the first time it is tried. Reports success or failure per target and exits " +
+      "non-zero if a configured one failed; says so plainly when neither is configured. " +
+      "Never touches level/reasons or a pending alert — only the heartbeat's own last-ping " +
+      "fields move, the same way a real cycle's heartbeat ping does.",
     arguments: [
-      { name: "action", description: "check, install, uninstall or status", kind: "positional", required: true, choices: ["check", "install", "uninstall", "status"] },
+      {
+        name: "action",
+        description: "check, install, uninstall, status or test",
+        kind: "positional",
+        required: true,
+        choices: ["check", "install", "uninstall", "status", "test"],
+      },
       ...WATCH_CHECK_ARGUMENTS,
       ...WATCH_INSTALL_ARGUMENTS,
     ],

@@ -9,6 +9,8 @@
 // - postWebhookAlert's per-format body: generic keeps the original structured JSON; slack/
 //   discord/telegram get a one-two line human message, capped to that format's own
 //   documented limit (2,000 for Discord's `content`, 4,096 for Telegram's `text`).
+// - postTestAlert's per-format body: `watch test`'s own message, never transitionPayload's
+//   shape, same delivery proof (deliverWebhook) as a real alert.
 // - Telegram's own success contract: a 2xx reply carrying `ok:false` is treated as
 //   undelivered, end to end through runWatchCycle — the persisted state is kept exactly
 //   like a failed POST to any other format.
@@ -20,6 +22,7 @@ import { runWatchCycle } from "#framework/commands/operate/watch/index.ts";
 import {
   WATCH_TELEGRAM_CHAT_ID_ENV,
   WATCH_WEBHOOK_FORMAT_ENV,
+  postTestAlert,
   postWebhookAlert,
   resolveWebhookTarget,
   transitionPayload,
@@ -27,7 +30,7 @@ import {
 import type { WatchWebhookTarget } from "#framework/commands/operate/watch/webhook.ts";
 import { watchStateFile, writeWatchState } from "#framework/commands/operate/watch/state.ts";
 import type { WatchState } from "#framework/commands/operate/watch/state.ts";
-import { useDeployment } from "#framework/runtime/deployment.ts";
+import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
@@ -223,6 +226,42 @@ try {
     check("telegram's text never exceeds its own 4096-character limit", telegramBody.text.length <= 4096, true);
   }
 
+  // --- postTestAlert(): watch test's own message, per format — never transitionPayload's
+  // shape, so a receiving chat/telegram thread cannot mistake it for a real alert ----------
+
+  {
+    const at = "2026-01-01T00:00:00.000Z";
+
+    stubFetch();
+    await postTestAlert({ url: new URL("https://hooks.example/x"), format: "generic" }, at);
+    const genericBody = calls[0]?.body as { deployment?: string; test?: boolean; at?: string };
+    check("generic carries deployment/test/at, never from/to/reasons", Object.keys(genericBody ?? {}).sort(), ["at", "deployment", "test"]);
+    check("test is true and deployment is named", [genericBody.test, genericBody.deployment], [true, deploymentName()]);
+
+    stubFetch();
+    await postTestAlert({ url: new URL("https://hooks.slack.com/services/x"), format: "slack" }, at);
+    const slackBody = calls[0]?.body as { text?: string };
+    check("slack gets a bare {text}, clearly marked as a test", Object.keys(slackBody ?? {}), ["text"]);
+    check("the text says TEST, not a real transition", typeof slackBody?.text === "string" && slackBody.text.includes("TEST"), true);
+
+    stubFetch();
+    await postTestAlert({ url: new URL("https://discord.com/api/webhooks/1/x"), format: "discord" }, at);
+    const discordBody = calls[0]?.body as { content?: string };
+    check("discord gets a bare {content}", Object.keys(discordBody ?? {}), ["content"]);
+
+    stubFetch();
+    await postTestAlert({ url: new URL("https://api.telegram.org/botX/sendMessage"), format: "telegram", telegramChatId: "-100123" }, at);
+    const telegramBody = calls[0]?.body as { chat_id?: string; text?: string };
+    check("telegram gets {chat_id, text}, chat_id from the resolved target", telegramBody?.chat_id, "-100123");
+
+    // Same delivery proof as postWebhookAlert: a non-2xx status still throws.
+    stubFetch();
+    nextResponse = () => new Response(null, { status: 500 });
+    const message = await deathOf(() =>
+      postTestAlert({ url: new URL("https://hooks.example/x"), format: "generic" }, at));
+    check("a failed test delivery is reported the same way a real alert's is", message.includes("webhook responded with 500"), true);
+  }
+
   // --- Telegram's own success contract: 2xx + ok:false is NOT delivered ------------------
 
   {
@@ -261,7 +300,12 @@ try {
     const message = await deathOf(() => runWatchCycle(target, "down", [{ code: "GATEWAY_DOWN", detail: "down detail" }], false));
     check("a telegram ok:false transition is reported as not delivered", message.includes("was not delivered"), true);
     const after = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
-    check("the state file is left exactly as it was, same as a failed generic POST", after, before);
+    check(
+      "level/reasons/checkedAt/changedAt are left exactly as they were, same as a failed generic POST",
+      [after.level, after.reasons, after.checkedAt, after.changedAt],
+      [before.level, before.reasons, before.checkedAt, before.changedAt],
+    );
+    check("the failure is recorded as an undelivered alert too", after.alertPending?.to, "down");
   }
 } finally {
   globalThis.fetch = originalFetch;

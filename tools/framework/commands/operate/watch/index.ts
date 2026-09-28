@@ -6,16 +6,17 @@
 
 import { die } from "../../../core/io/log.ts";
 import type { Context } from "../../../core/context.ts";
-import { watchCheck } from "./check.ts";
+import { watchCheck, watchTest } from "./check.ts";
 import { watchInstall, watchUninstall } from "./install.ts";
 import { watchStatus } from "./status.ts";
 
 export { watchLevel, runWatchCycle, resolveWatchOutcome } from "./check.ts";
 export type { WatchLevel, WatchReason, WatchState } from "./state.ts";
 
-/** Only install/uninstall --apply mutate the target (a crontab entry); check and status
- *  only read the instance and this deployment's own state file. One predicate for the
- *  MCP gate's readOnlyWhen/changedWhen/requiresConfirmationWhen, same reasoning as
+/** Only install/uninstall --apply mutate the target (a crontab entry); check, status and
+ *  test only read the instance and this deployment's own state file — test reaches an
+ *  external webhook/heartbeat URL, never the target itself. One predicate for the MCP
+ *  gate's readOnlyWhen/changedWhen/requiresConfirmationWhen, same reasoning as
  *  expose/index.ts's exposeActionIsReadOnly. */
 export function watchActionIsReadOnly(argv: string[]): boolean {
   const action = argv[0];
@@ -30,7 +31,8 @@ export async function watch(ctx: Context, args: string[]): Promise<void> {
     case "install": return watchInstall(ctx, rest);
     case "uninstall": return watchUninstall(ctx, rest);
     case "status": return watchStatus(ctx, rest);
-    case undefined: die("usage: ./clawforge watch <check|install|uninstall|status> [...]");
-    default: die(`unknown action: ${action} (expected check, install, uninstall or status)`);
+    case "test": return watchTest(ctx, rest);
+    case undefined: die("usage: ./clawforge watch <check|install|uninstall|status|test> [...]");
+    default: die(`unknown action: ${action} (expected check, install, uninstall, status or test)`);
   }
 }

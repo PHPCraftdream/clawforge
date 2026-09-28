@@ -50,7 +50,11 @@ try {
 
   check("no action at all is a usage error", (await deathOf(() => watch({} as unknown as Context, []))).includes("usage:"), true);
   check("an unknown action is refused by name", (await deathOf(() => watch({} as unknown as Context, ["bogus"]))).includes("unknown action: bogus"), true);
-  check("the refusal names the four valid actions", (await deathOf(() => watch({} as unknown as Context, ["bogus"]))).includes("check, install, uninstall or status"), true);
+  check(
+    "the refusal names all five valid actions",
+    (await deathOf(() => watch({} as unknown as Context, ["bogus"]))).includes("check, install, uninstall, status or test"),
+    true,
+  );
 
   // --- dispatch: routes to the matching sub-handler, and nothing else -------------------
 
@@ -94,11 +98,22 @@ try {
     check("watch status reaches watchStatus", written.join("").includes("webhookConfigured"), true);
   }
 
+  {
+    // Under a captured sink, test (like status) always answers as JSON — same isCaptured()
+    // override — so the distinguishing signal is the field name only this action's envelope
+    // carries, same reasoning as the status-dispatch check above.
+    const ctx = { settings: { env: {} } } as unknown as Context;
+    const written: string[] = [];
+    await withOutputSink((chunk) => written.push(chunk), () => watch(ctx, ["test"]));
+    check("watch test reaches watchTest", written.join("").includes(`"configured"`), true);
+  }
+
   // --- watchActionIsReadOnly: only install/uninstall --apply mutate ---------------------
 
   check("no action (dies before this matters) reads as read-only", watchActionIsReadOnly([]), true);
   check("check is read-only", watchActionIsReadOnly(["check"]), true);
   check("status is read-only", watchActionIsReadOnly(["status"]), true);
+  check("test is read-only — it reaches an external webhook/heartbeat, never the target", watchActionIsReadOnly(["test"]), true);
   check("install without --apply is read-only (print only)", watchActionIsReadOnly(["install"]), true);
   check("install --apply is a mutation", watchActionIsReadOnly(["install", "--apply"]), false);
   check("uninstall without --apply is read-only (print only)", watchActionIsReadOnly(["uninstall"]), true);
@@ -131,21 +146,25 @@ try {
       "action", "json", "interval", "apply", "break-lock", "break-foreign-lock",
     ]);
     const action = (command.arguments ?? []).find((argument) => argument.name === "action");
-    check("action is a required positional with the four choices", [action?.kind, action?.required, action?.choices], [
-      "positional", true, ["check", "install", "uninstall", "status"],
+    check("action is a required positional with the five choices", [action?.kind, action?.required, action?.choices], [
+      "positional", true, ["check", "install", "uninstall", "status", "test"],
     ]);
   }
 
   {
     const schema = inputSchema(command) as { properties: Record<string, { type?: string; enum?: string[] }>; required?: string[] };
     check("action is a plain string in the schema", schema.properties.action?.type, "string");
-    check("action exposes exactly the four choices", schema.properties.action?.enum, ["check", "install", "uninstall", "status"]);
+    check("action exposes exactly the five choices", schema.properties.action?.enum, ["check", "install", "uninstall", "status", "test"]);
     check("json/apply are booleans", [schema.properties.json?.type, schema.properties.apply?.type], ["boolean", "boolean"]);
     check("action is the only required property", schema.required, ["action"]);
 
     check("toArgv places the action first, then flags", toArgv(command, { action: "install", apply: true }), ["install", "--apply"]);
 
-    check("validate reports a bad action naming the valid ones", validate(command, { action: "bogus" }).join("; ").includes("check, install, uninstall, status"), true);
+    check(
+      "validate reports a bad action naming the valid ones",
+      validate(command, { action: "bogus" }).join("; ").includes("check, install, uninstall, status, test"),
+      true,
+    );
     check("validate reports the missing required action", validate(command, {}), ["action is required"]);
   }
 } finally {

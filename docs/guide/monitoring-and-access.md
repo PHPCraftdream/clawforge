@@ -45,11 +45,21 @@ An operator finds out the instance stopped doing its job without polling by hand
   against the state persisted for this deployment (its own directory, atomic write, never
   `<data>/config`), and POSTs `OC_WATCH_WEBHOOK` (in this deployment's `.env`; https only,
   unless the host is localhost/127.0.0.1) only on a **transition** — an unchanged state never
-  alerts twice. A failed POST leaves the persisted state at its old value, so the same
-  unreported transition is retried next cycle rather than accepted as normal. The exit code
-  reflects the *current* state on every cycle, alert or not, for a scheduler to branch on.
-  The webhook URL is registered as a secret (masked like the gateway token) and is never
-  printed by this command, on any path, including failure.
+  alerts twice. A failed POST leaves the persisted *level* at its old value, so the same
+  unreported transition is retried next cycle rather than accepted as normal — but the failure
+  itself is no longer invisible between cycles: `lastRunAt`/`lastError` record it, and
+  `alertPending` names the transition and when it first failed to deliver, all surfaced by
+  `watch status` below. A configuration error — an invalid `OC_WATCH_WEBHOOK`, an unknown
+  `OC_WATCH_WEBHOOK_FORMAT`, `telegram` with no `OC_WATCH_TELEGRAM_CHAT_ID`, or an invalid
+  `OC_WATCH_HEARTBEAT_URL` — is recorded the same way, before a probe cycle ever runs. Both
+  are cleared the moment a later cycle completes cleanly (delivered, or nothing needed
+  delivering). The exit code reflects the *current* state on every cycle, alert or not, for a
+  scheduler to branch on. The webhook URL is registered as a secret (masked like the gateway
+  token) and is never printed by this command, on any path, including failure. `watch install`
+  writes its crontab line with `>/dev/null 2>&1` on purpose (cron's own mail-on-output default
+  would otherwise spam an operator every cycle) — this is what makes the diagnostics above the
+  only trace of a cron-run failure between cycles; run `./clawforge watch test` (below) to
+  prove delivery works before relying on it.
 
   **Notification format.** `OC_WATCH_WEBHOOK_FORMAT` picks the payload shape: `generic`
   (default — the original `{deployment, from, to, reasons, at}` JSON), `slack`, `discord` or
@@ -127,10 +137,29 @@ An operator finds out the instance stopped doing its job without polling by hand
   checkout there) or a POSIX `local` target. A WSL target's Docker distro is not such a place,
   and neither is Windows itself — there this prints the exact command an operator-side
   scheduler (Task Scheduler on Windows) would need to invoke instead of installing something
-  that would silently never run; it never creates or touches a real one.
+  that would silently never run; it never creates or touches a real one. `--apply` also
+  records `--interval` into this deployment's own watch state (cleared by `watch uninstall
+  --apply`) — the only place this framework can observe the real schedule, since cron itself
+  is never asked afterwards; `watch status`'s staleness check reads it from there.
 * `./clawforge watch status` — the persisted last state, when it last changed, and whether a
   webhook/heartbeat is configured — plus the heartbeat's own last successful ping time, and
-  its last failure if the most recent ping did not succeed. Never either URL itself.
+  its last failure if the most recent ping did not succeed. Never either URL itself. Also
+  reports `lastRunAt` (when `watch check` last ran *at all*, config error or delivery failure
+  included), `lastError` (the most recent configuration or delivery failure), and
+  `alertPending` (an undelivered transition and since when). Warns when the last run looks
+  stale: more than 3× the interval `watch install --apply` recorded (`intervalMinutes` in the
+  state file), or 3× the documented default (5 minutes, `DEFAULT_WATCH_INTERVAL_MINUTES` in
+  `install.ts`) when no interval was ever recorded — a state file from before this field
+  existed, or a schedule wired up by hand outside `watch install`. Three missed intervals
+  rather than one: a single slow cycle or scheduler jitter should not cry wolf.
+* `./clawforge watch test` — sends one webhook message, clearly marked as a test (never
+  shaped like a real transition — a receiving chat cannot mistake it for one) in the
+  configured format, and one heartbeat ping, through whichever of `OC_WATCH_WEBHOOK`/
+  `OC_WATCH_HEARTBEAT_URL` is set — so delivery can be proven correct *before* a real outage
+  is the first time it is tried. Reports success or failure per target and exits non-zero if
+  a configured one failed; says so plainly when neither is configured. Never touches
+  `level`/`reasons` or `alertPending` — there is no real transition — only the heartbeat's own
+  last-ping fields move, the same way a real cycle's heartbeat ping does.
 
 ## Incident response: `incident`
 

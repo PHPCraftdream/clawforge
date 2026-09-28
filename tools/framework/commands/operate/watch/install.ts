@@ -33,6 +33,13 @@ import type { Context } from "../../../core/context.ts";
 import type { CommandArgument } from "../../../core/app.ts";
 import { parseDeclaredArgs } from "../../../core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../../interface/groups/shared-arguments.ts";
+import { readWatchState, writeWatchState } from "./state.ts";
+
+/** `watch status`'s own staleness check falls back to this when a state file never recorded
+ *  the real interval — one predating this field, or a schedule wired up by hand outside
+ *  `watch install --apply` — a documented default (also in docs/guide/monitoring-and-access.md),
+ *  never guessed silently per call. */
+export const DEFAULT_WATCH_INTERVAL_MINUTES = 5;
 
 /** The slice of `watch`'s declaration `install`'s own argv actually uses. */
 export const WATCH_INSTALL_ARGUMENTS: CommandArgument[] = [
@@ -174,7 +181,7 @@ async function writeCrontab(ctx: Context, lines: string[]): Promise<void> {
 
 function parseInstallArgs(args: string[]): { interval: number; apply: boolean } {
   const parsed = parseDeclaredArgs(WATCH_INSTALL_ARGUMENTS, args);
-  let interval = 5;
+  let interval = DEFAULT_WATCH_INTERVAL_MINUTES;
   if (parsed.interval !== undefined) {
     const raw = parsed.interval === "" ? undefined : parsed.interval as string;
     const numeric = raw === undefined ? Number.NaN : Number(raw);
@@ -190,6 +197,15 @@ function parseInstallArgs(args: string[]): { interval: number; apply: boolean } 
 
 function parseUninstallArgs(args: string[]): boolean {
   return parseDeclaredArgs(WATCH_UNINSTALL_ARGUMENTS, args).apply === true;
+}
+
+/** Records (or clears) the real interval on this deployment's own watch state, so `watch
+ *  status`'s staleness check compares against what was actually installed rather than a
+ *  guess — the operator-side state file every watch action already shares (state.ts's own
+ *  header), regardless of which transport the schedule itself runs on. */
+async function recordInstalledInterval(minutes: number | undefined): Promise<void> {
+  const previous = await readWatchState();
+  await writeWatchState({ ...previous, intervalMinutes: minutes });
 }
 
 export async function watchInstall(ctx: Context, args: string[]): Promise<void> {
@@ -223,6 +239,7 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
     const existing = await readCrontab(ctx);
     const kept = withoutMarkedLine(existing, deploymentName());
     await writeCrontab(ctx, [...kept, line]);
+    await recordInstalledInterval(interval);
     log("installed");
   });
 }
@@ -251,6 +268,7 @@ export async function watchUninstall(ctx: Context, args: string[]): Promise<void
       return;
     }
     await writeCrontab(ctx, withoutMarkedLine(existing, deploymentName()));
+    await recordInstalledInterval(undefined);
     log("removed");
   });
 }

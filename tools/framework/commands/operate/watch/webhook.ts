@@ -184,17 +184,18 @@ async function telegramDelivered(response: Response): Promise<boolean> {
   }
 }
 
-/** Posts the transition, in `target.format`'s own shape. Throws on anything short of proof
- *  of delivery — a timeout, a refused connection, a non-2xx status, or (Telegram only) a 2xx
- *  answer with `ok:false` — so the caller can tell "delivered" from "not", which is what
- *  decides whether the new state is allowed to replace the old one. */
-export async function postWebhookAlert(target: WatchWebhookTarget, payload: WatchTransitionPayload): Promise<void> {
+/** POSTs `body` and throws on anything short of proof of delivery — a timeout, a refused
+ *  connection, a non-2xx status, or (Telegram only) a 2xx answer with `ok:false` — so the
+ *  caller can tell "delivered" from "not". Shared by postWebhookAlert (a real transition)
+ *  and postTestAlert (`watch test`'s one-off proof): same target, same delivery contract,
+ *  only the message differs. */
+async function deliverWebhook(target: WatchWebhookTarget, body: string): Promise<void> {
   let response: Response;
   try {
     response = await fetch(target.url, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: webhookBody(target, payload),
+      body,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
@@ -210,6 +211,34 @@ export async function postWebhookAlert(target: WatchWebhookTarget, payload: Watc
   if (target.format === "telegram" && !(await telegramDelivered(response))) {
     throw new Error("webhook responded 2xx but telegram reported ok:false");
   }
+}
+
+/** Posts the transition, in `target.format`'s own shape — see deliverWebhook for what
+ *  counts as delivered, which is what decides whether the new state is allowed to replace
+ *  the old one. */
+export async function postWebhookAlert(target: WatchWebhookTarget, payload: WatchTransitionPayload): Promise<void> {
+  await deliverWebhook(target, webhookBody(target, payload));
+}
+
+/** `watch test`'s own message: never transitionPayload's shape, so a receiving chat or
+ *  telegram thread cannot mistake it for a real alert. */
+function testMessageText(at: string): string {
+  return `${deploymentName()}: ./clawforge watch test — this is a TEST alert, not a real transition\nsent ${at}`;
+}
+
+function testWebhookBody(target: WatchWebhookTarget, at: string): string {
+  if (target.format === "generic") return JSON.stringify({ deployment: deploymentName(), test: true, at });
+  const text = capToLimit(testMessageText(at), FORMAT_TEXT_LIMIT[target.format]);
+  if (target.format === "slack") return JSON.stringify({ text });
+  if (target.format === "discord") return JSON.stringify({ content: text });
+  return JSON.stringify({ chat_id: target.telegramChatId, text });
+}
+
+/** Same delivery proof as postWebhookAlert, a clearly-marked test message instead of a
+ *  transition — what `watch test` sends so delivery can be proven before a real outage is
+ *  the first time it is tried. */
+export async function postTestAlert(target: WatchWebhookTarget, at: string): Promise<void> {
+  await deliverWebhook(target, testWebhookBody(target, at));
 }
 
 /** The dead-man's switch: a plain GET, proven to be what all three reference services

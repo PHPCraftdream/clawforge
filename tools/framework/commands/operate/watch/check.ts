@@ -3,6 +3,10 @@
 // differently, gather.ts's own header makes the same point), keep only the findings that
 // say whether the instance is doing its job, add watch's own channel/disk findings
 // (health.ts), and alert exactly on a change.
+//
+// Also owns `watch test` (watchTest, below runWatchCycle): the same webhook/heartbeat
+// targets, sent a one-off test message instead of a real transition, so delivery can be
+// proven before an outage is the first time it is tried.
 
 import { log, info, warn, die, maskSecrets } from "../../../core/io/log.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
@@ -12,9 +16,12 @@ import type { Context } from "../../../core/context.ts";
 import { readWatchState, writeWatchState } from "./state.ts";
 import type { WatchLevel, WatchReason, WatchState } from "./state.ts";
 import {
+  WATCH_HEARTBEAT_URL_ENV,
+  WATCH_WEBHOOK_ENV,
   parseHeartbeatUrl,
   parseWebhookUrl,
   postHeartbeat,
+  postTestAlert,
   postWebhookAlert,
   resolveWebhookTarget,
   transitionPayload,
@@ -71,6 +78,12 @@ function errorDetail(error: unknown): string {
   return masked.length > ERROR_DETAIL_MAX ? `${masked.slice(0, ERROR_DETAIL_MAX)}…` : masked;
 }
 
+/** Whether this cycle differs from the last completed one — the one fact that decides
+ *  whether an alert fires. */
+function isTransition(previousLevel: WatchLevel | undefined, level: WatchLevel): boolean {
+  return previousLevel !== undefined && previousLevel !== level;
+}
+
 /** watchLevel()'s verdict, or "down" when the inspection could not run at all (Docker daemon
  *  down, SSH refused, wsl.exe silent) — the outage this command exists to report. Also
  *  carries the inspection's own observed.channels through, unread by watchLevel() itself
@@ -114,18 +127,24 @@ export async function runWatchCycle(
   // first cycle after `watch install` (or after a corrupt/missing state file) should
   // establish a baseline rather than page on it.
   const previousLevel = previous?.level;
-  const transitioned = previousLevel !== undefined && previousLevel !== level;
+  const transitioned = isTransition(previousLevel, level);
 
   if (transitioned && previousLevel !== undefined && webhookTarget !== undefined) {
     try {
       await postWebhookAlert(webhookTarget, transitionPayload(previousLevel, level, reasons, now));
     } catch (error) {
-      // The state file is NOT written below this point: the next cycle still sees the old
-      // level as "previous", so it reads as the same unreported transition and retries the
-      // alert instead of silently accepting it as normal.
+      // Level fields stay as they were so the next cycle retries the same transition; only
+      // the diagnostics move, so `watch status` can say delivery is failing.
+      const detail = errorDetail(error);
+      await writeWatchState({
+        ...previous!,
+        lastRunAt: now,
+        lastError: detail,
+        alertPending: { from: previousLevel, to: level, since: previous!.alertPending?.since ?? now },
+      });
       die(
         `watch: ${summary(level)}, but the alert for ${previousLevel} → ${level} was not delivered: ` +
-          `${(error as Error).message}\nstate was left at "${previousLevel}" so this is retried next cycle`,
+          `${detail}\nstate was left at "${previousLevel}" so this is retried next cycle`,
       );
     }
   }
@@ -150,7 +169,13 @@ export async function runWatchCycle(
     level,
     reasons,
     checkedAt: now,
-    changedAt: transitioned || previous === undefined ? now : previous.changedAt,
+    changedAt: transitioned || previous?.changedAt === undefined ? now : previous.changedAt,
+    // Reaching here means the cycle completed — delivered, or nothing needed delivering —
+    // so any earlier failure streak is over.
+    lastRunAt: now,
+    lastError: undefined,
+    alertPending: undefined,
+    intervalMinutes: previous?.intervalMinutes,
     heartbeatAt: heartbeatOutcome?.ok ? now : previous?.heartbeatAt,
     heartbeatError: heartbeatOutcome === undefined ? previous?.heartbeatError : heartbeatOutcome.ok ? undefined : heartbeatOutcome.detail,
   };
@@ -178,7 +203,7 @@ export async function runWatchCycle(
     for (const reason of reasons) warn(`${reason.code}  ${reason.detail}`);
     if (heartbeatOutcome !== undefined && !heartbeatOutcome.ok) warn(`heartbeat ping failed: ${heartbeatOutcome.detail}`);
     info(
-      previous === undefined
+      previousLevel === undefined
         ? "first cycle — baseline recorded, no alert sent"
         : transitioned ? `state changed from ${previousLevel} to ${level}` : "state unchanged since the last cycle",
     );
@@ -210,21 +235,100 @@ async function withAdditionalFindings(
   return mergeFindings(base, findings);
 }
 
+/** A configuration error stops watchCheck before any cycle; record it so `watch status`
+ *  shows it. Only lastRunAt/lastError move. */
+async function recordConfigError(error: unknown): Promise<void> {
+  const previous = await readWatchState();
+  await writeWatchState({ ...previous, lastRunAt: new Date().toISOString(), lastError: errorDetail(error) });
+}
+
 export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
   const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
 
   // Validated before gatherInspection ever reaches the target: a misconfigured webhook or
   // heartbeat URL is a configuration error worth stopping on every cycle, not just the one
   // that would have tried to use it, and there is no reason to pay for a probe cycle first.
-  const webhookRaw = watchWebhookRaw(ctx);
-  const webhookUrl = webhookRaw === undefined ? undefined : parseWebhookUrl(webhookRaw);
-  const webhookTarget = webhookUrl === undefined ? undefined : resolveWebhookTarget(ctx, webhookUrl);
+  let webhookTarget: WatchWebhookTarget | undefined;
+  let heartbeatUrl: URL | undefined;
+  try {
+    const webhookRaw = watchWebhookRaw(ctx);
+    const webhookUrl = webhookRaw === undefined ? undefined : parseWebhookUrl(webhookRaw);
+    webhookTarget = webhookUrl === undefined ? undefined : resolveWebhookTarget(ctx, webhookUrl);
 
-  const heartbeatRaw = watchHeartbeatUrlRaw(ctx);
-  const heartbeatUrl = heartbeatRaw === undefined ? undefined : parseHeartbeatUrl(heartbeatRaw);
+    const heartbeatRaw = watchHeartbeatUrlRaw(ctx);
+    heartbeatUrl = heartbeatRaw === undefined ? undefined : parseHeartbeatUrl(heartbeatRaw);
+  } catch (error) {
+    await recordConfigError(error);
+    throw error;
+  }
 
   const base = await resolveWatchOutcome(ctx);
   const { level, reasons } = await withAdditionalFindings(ctx, base);
 
   await runWatchCycle(webhookTarget, level, reasons, jsonOnly, heartbeatUrl);
+}
+
+// --- `watch test` -----------------------------------------------------------------------
+
+export interface WatchTestResult {
+  readonly target: "webhook" | "heartbeat";
+  readonly ok: boolean;
+  /** Absent on success. Masked/capped the same way runWatchCycle's own failures are. */
+  readonly detail?: string;
+}
+
+/** A test ping is the same signal as a cycle's, so it updates only the heartbeat fields. */
+async function recordHeartbeatOutcome(now: string, detail: string | undefined): Promise<void> {
+  const previous = await readWatchState();
+  await writeWatchState({ ...previous, heartbeatAt: detail === undefined ? now : previous?.heartbeatAt, heartbeatError: detail });
+}
+
+/** Proves delivery on demand: a test message (marked as a test, never a transition payload)
+ *  to the webhook and a heartbeat ping, for whichever is configured. Any configured target
+ *  that fails exits non-zero; none configured is reported, not failed. */
+export async function watchTest(ctx: Context, args: string[]): Promise<void> {
+  const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
+  const now = new Date().toISOString();
+  const results: WatchTestResult[] = [];
+
+  const webhookRaw = watchWebhookRaw(ctx);
+  if (webhookRaw !== undefined) {
+    try {
+      const webhookTarget = resolveWebhookTarget(ctx, parseWebhookUrl(webhookRaw));
+      await postTestAlert(webhookTarget, now);
+      results.push({ target: "webhook", ok: true });
+    } catch (error) {
+      results.push({ target: "webhook", ok: false, detail: errorDetail(error) });
+    }
+  }
+
+  const heartbeatRaw = watchHeartbeatUrlRaw(ctx);
+  if (heartbeatRaw !== undefined) {
+    try {
+      await postHeartbeat(parseHeartbeatUrl(heartbeatRaw));
+      results.push({ target: "heartbeat", ok: true });
+      await recordHeartbeatOutcome(now, undefined);
+    } catch (error) {
+      const detail = errorDetail(error);
+      results.push({ target: "heartbeat", ok: false, detail });
+      await recordHeartbeatOutcome(now, detail);
+    }
+  }
+
+  if (jsonOnly || isCaptured()) {
+    emit(`${JSON.stringify({ configured: results.length > 0, results }, null, 2)}\n`);
+  } else if (results.length === 0) {
+    info(`neither ${WATCH_WEBHOOK_ENV} nor ${WATCH_HEARTBEAT_URL_ENV} is configured — nothing to test`);
+  } else {
+    log("watch test");
+    for (const result of results) {
+      if (result.ok) info(`${result.target}: delivered`);
+      else warn(`${result.target}: failed — ${result.detail}`);
+    }
+  }
+
+  const failed = results.filter((result) => !result.ok);
+  if (failed.length > 0) {
+    die(`watch test: ${failed.map((result) => result.target).join(", ")} failed to deliver`);
+  }
 }

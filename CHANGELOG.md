@@ -41,6 +41,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 * The security gate tells a missing `ufw` from one that failed to answer, on every transport.
 * `watch` reports an unreachable target as down (`TARGET_UNREACHABLE`); `--interval` past 59
   minutes steps whole hours instead of silently running hourly, and other values are refused.
+* `watch` failures were invisible between cycles (`watch install`'s crontab entry discards
+  all output): a failed alert delivery or a configuration error is now recorded
+  (`lastRunAt`/`lastError`/`alertPending`) and surfaced by `watch status`, which also warns
+  when the last run looks stale; the new `watch test` action sends a one-off test alert and
+  heartbeat ping so delivery can be proven before a real outage is the first time it matters.
 * Native backup no longer leaves its own full archive inside the live data directory.
 * `bootstrap` pins a freshly pulled tagged image to the digest it just proved, without
   moving the shared tag.

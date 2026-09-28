@@ -20,14 +20,44 @@ export interface WatchReason {
 }
 
 export interface WatchState {
-  readonly level: WatchLevel;
-  readonly reasons: readonly WatchReason[];
-  /** When this cycle ran. */
-  readonly checkedAt: string;
+  /** Verdict from the most recently COMPLETED probe cycle (one that reached
+   *  resolveWatchOutcome/runWatchCycle) — absent before the first cycle ever completes, or
+   *  when the only thing recorded so far is a configuration error that stopped watchCheck
+   *  before a cycle ran. */
+  readonly level?: WatchLevel;
+  readonly reasons?: readonly WatchReason[];
+  /** When that cycle ran. */
+  readonly checkedAt?: string;
   /** When `level` was last entered — equal to checkedAt on the cycle that changed it. */
-  readonly changedAt: string;
-  /** When the heartbeat (OC_WATCH_HEARTBEAT_URL) last answered success. Absent when no
-   *  heartbeat is configured, or none has ever succeeded. */
+  readonly changedAt?: string;
+  /** When `watch check` was last INVOKED, successful cycle or not — set on every run,
+   *  including one that stops at a configuration error or a failed alert delivery. What
+   *  `watch status`'s staleness warning compares against: it proves the scheduler is still
+   *  firing even while every cycle since keeps failing the same way. */
+  readonly lastRunAt?: string;
+  /** The most recent configuration error or alert-delivery failure — masked and capped the
+   *  same way a transport error's own detail is, never the webhook/heartbeat URL. Cleared
+   *  the moment a later cycle completes without one (delivered, or nothing needed
+   *  delivering). Never set by `watch test`, which reports its own result and persists
+   *  nothing but the heartbeat fields below. */
+  readonly lastError?: string;
+  /** An alert that could not be delivered: `level` above was intentionally left at `from`
+   *  so the next cycle still reads it as the same unreported transition and retries — see
+   *  runWatchCycle. `since` is when this streak of failures started, kept across retries.
+   *  Cleared once a retry delivers, or once `level` naturally returns to `from` before one
+   *  does (nothing left to report). */
+  readonly alertPending?: { readonly from: WatchLevel; readonly to: WatchLevel; readonly since: string };
+  /** Minutes between cycles, recorded by `watch install --apply` at the moment a schedule
+   *  is actually installed on the target, cleared by `watch uninstall --apply` — the only
+   *  place this framework can observe the real interval, since cron itself is never asked
+   *  afterwards. Absent for a state file predating this field, or a schedule wired up by
+   *  hand outside `watch install`; `watch status`'s staleness check then falls back to
+   *  install.ts's own DEFAULT_WATCH_INTERVAL_MINUTES — a documented default, not a silent
+   *  guess made fresh per call. */
+  readonly intervalMinutes?: number;
+  /** When the heartbeat (OC_WATCH_HEARTBEAT_URL) last answered success — set by both `watch
+   *  check` and `watch test`. Absent when no heartbeat is configured, or none has ever
+   *  succeeded. */
   readonly heartbeatAt?: string;
   /** The most recent heartbeat ping failure, if the last attempt did not succeed — cleared
    *  the moment a later attempt does. Never the URL itself. */
@@ -42,6 +72,31 @@ function isWatchLevel(value: unknown): value is WatchLevel {
   return value === "ok" || value === "degraded" || value === "down";
 }
 
+function parseReasons(value: unknown): WatchReason[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const reasons: WatchReason[] = [];
+  for (const entry of value) {
+    if (entry === null || typeof entry !== "object") return undefined;
+    const { code, detail } = entry as Record<string, unknown>;
+    if (typeof code !== "string" || typeof detail !== "string") return undefined;
+    reasons.push({ code, detail });
+  }
+  return reasons;
+}
+
+function parseAlertPending(value: unknown): WatchState["alertPending"] | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const { from, to, since } = value as Record<string, unknown>;
+  if (!isWatchLevel(from) || !isWatchLevel(to) || typeof since !== "string") return undefined;
+  return { from, to, since };
+}
+
+/** Every field is optional: a diagnostics-only write (a configuration error recorded before
+ *  any cycle ever completed) has no level to report yet, and a state file from before this
+ *  field existed simply lacks it. Present-but-wrong-typed is corrupt (undefined state, same
+ *  as unparsable JSON); present-and-right-typed is kept; missing is fine either way — which
+ *  is what makes an old, pre-diagnostics state file (level/reasons/checkedAt/changedAt
+ *  always written together, nothing else) parse exactly as it always did. */
 function parseWatchState(raw: string): WatchState | undefined {
   let parsed: unknown;
   try {
@@ -51,26 +106,37 @@ function parseWatchState(raw: string): WatchState | undefined {
   }
   if (parsed === null || typeof parsed !== "object") return undefined;
   const candidate = parsed as Record<string, unknown>;
-  if (!isWatchLevel(candidate.level)) return undefined;
-  if (typeof candidate.checkedAt !== "string" || typeof candidate.changedAt !== "string") return undefined;
-  if (!Array.isArray(candidate.reasons)) return undefined;
-  const reasons: WatchReason[] = [];
-  for (const entry of candidate.reasons) {
-    if (entry === null || typeof entry !== "object") return undefined;
-    const { code, detail } = entry as Record<string, unknown>;
-    if (typeof code !== "string" || typeof detail !== "string") return undefined;
-    reasons.push({ code, detail });
-  }
-  // Both optional, and absent from every state file written before the heartbeat feature —
-  // present-but-wrong-typed is treated as corrupt (undefined state), present-and-a-string is
-  // kept, and simply missing is fine either way.
+
+  if (candidate.level !== undefined && !isWatchLevel(candidate.level)) return undefined;
+  if (candidate.checkedAt !== undefined && typeof candidate.checkedAt !== "string") return undefined;
+  if (candidate.changedAt !== undefined && typeof candidate.changedAt !== "string") return undefined;
+  if (candidate.lastRunAt !== undefined && typeof candidate.lastRunAt !== "string") return undefined;
+  if (candidate.lastError !== undefined && typeof candidate.lastError !== "string") return undefined;
+  if (candidate.intervalMinutes !== undefined && typeof candidate.intervalMinutes !== "number") return undefined;
   if (candidate.heartbeatAt !== undefined && typeof candidate.heartbeatAt !== "string") return undefined;
   if (candidate.heartbeatError !== undefined && typeof candidate.heartbeatError !== "string") return undefined;
+
+  let reasons: WatchReason[] | undefined;
+  if (candidate.reasons !== undefined) {
+    reasons = parseReasons(candidate.reasons);
+    if (reasons === undefined) return undefined;
+  }
+
+  let alertPending: WatchState["alertPending"];
+  if (candidate.alertPending !== undefined) {
+    alertPending = parseAlertPending(candidate.alertPending);
+    if (alertPending === undefined) return undefined;
+  }
+
   return {
-    level: candidate.level,
+    level: candidate.level as WatchLevel | undefined,
     reasons,
-    checkedAt: candidate.checkedAt,
-    changedAt: candidate.changedAt,
+    checkedAt: candidate.checkedAt as string | undefined,
+    changedAt: candidate.changedAt as string | undefined,
+    lastRunAt: candidate.lastRunAt as string | undefined,
+    lastError: candidate.lastError as string | undefined,
+    intervalMinutes: candidate.intervalMinutes as number | undefined,
+    alertPending,
     heartbeatAt: candidate.heartbeatAt as string | undefined,
     heartbeatError: candidate.heartbeatError as string | undefined,
   };

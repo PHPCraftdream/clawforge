@@ -8,6 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  DEFAULT_WATCH_INTERVAL_MINUTES,
   cronLine,
   cronSchedule,
   displayCommandLine,
@@ -17,6 +18,7 @@ import {
   watchUninstall,
   withoutMarkedLine,
 } from "#framework/commands/operate/watch/install.ts";
+import { readWatchState } from "#framework/commands/operate/watch/state.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext } from "#checks/runtime/convergence/instance-lock/fixture.ts";
@@ -156,6 +158,7 @@ try {
   check("another deployment's watch entry survives install", afterFirstInstall.includes(OTHER_DEPLOYMENT), true);
   check("our own marker is present", afterFirstInstall.includes(watchMarker(name)), true);
   check("the default interval is 5", afterFirstInstall.includes(`*/5 * * * * cd`), true);
+  check("the default interval is recorded to watch state", (await readWatchState())?.intervalMinutes, DEFAULT_WATCH_INTERVAL_MINUTES);
 
   // --apply again, with a different interval: replaces the SAME line rather than duplicating it.
   await withOutputSink(() => {}, () => watchInstall(ctx, ["--apply", "--interval", "10"]));
@@ -163,6 +166,7 @@ try {
   const ourLines = afterSecondInstall.split("\n").filter((line) => line.includes(watchMarker(name)));
   check("re-installing replaces the one line rather than adding a second", ourLines.length, 1);
   check("the new interval took effect", ourLines[0]?.startsWith("*/10 * * * *"), true);
+  check("the new interval is recorded to watch state too", (await readWatchState())?.intervalMinutes, 10);
   check("the foreign and other-deployment lines are still untouched", [afterSecondInstall.includes(FOREIGN), afterSecondInstall.includes(OTHER_DEPLOYMENT)], [true, true]);
 
   // an hour-stepped interval (a multiple of 60) prints the hour-field schedule, not */120.
@@ -191,6 +195,7 @@ try {
   check("uninstall removes our own line", afterUninstall.includes(watchMarker(name)), false);
   check("uninstall leaves the foreign entry alone", afterUninstall.includes(FOREIGN), true);
   check("uninstall leaves another deployment's entry alone", afterUninstall.includes(OTHER_DEPLOYMENT), true);
+  check("uninstall clears the recorded interval", (await readWatchState())?.intervalMinutes, undefined);
 
   // uninstall --apply again: nothing to remove, and it does not touch the crontab at all.
   calls.length = 0;

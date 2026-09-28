@@ -1,7 +1,8 @@
 // `./clawforge watch check` — one probe cycle: reuse `inspect`'s own gatherer (the same probes,
 // the same problem codes — a second gatherer would eventually answer the same question
 // differently, gather.ts's own header makes the same point), keep only the findings that
-// say whether the instance is doing its job, and alert exactly on a change.
+// say whether the instance is doing its job, add watch's own channel/disk findings
+// (health.ts), and alert exactly on a change.
 
 import { log, info, warn, die, maskSecrets } from "../core/log.ts";
 import { emit, isCaptured } from "../core/output.ts";
@@ -11,6 +12,7 @@ import type { Context } from "../core/context.ts";
 import { readWatchState, writeWatchState } from "./state.ts";
 import type { WatchLevel, WatchReason, WatchState } from "./state.ts";
 import { parseWebhookUrl, postWebhookAlert, transitionPayload, watchWebhookRaw } from "./webhook.ts";
+import { channelFindings, diskFindings, mergeFindings } from "./health.ts";
 
 /** The subset of `inspect`'s problem codes that say something about LIVENESS — the gateway
  *  answering, bootstrapped, reaching its own configured endpoints. Deliberately narrower
@@ -132,6 +134,22 @@ export async function runWatchCycle(webhookUrl: URL | undefined, level: WatchLev
   }
 }
 
+/** Adds channel/disk findings unless the target is unreachable or not bootstrapped; channels
+ *  are skipped while the gateway is down, disk is still read (a full disk often is why). */
+async function withAdditionalFindings(
+  ctx: Context,
+  base: { level: WatchLevel; reasons: WatchReason[] },
+): Promise<{ level: WatchLevel; reasons: WatchReason[] }> {
+  const hasCode = (code: string): boolean => base.reasons.some((entry) => entry.code === code);
+  if (hasCode("TARGET_UNREACHABLE") || hasCode("NOT_BOOTSTRAPPED")) return base;
+
+  const findings = [
+    ...(hasCode("GATEWAY_DOWN") ? [] : await channelFindings(ctx)),
+    ...(await diskFindings(ctx)),
+  ];
+  return mergeFindings(base, findings);
+}
+
 export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
   const jsonOnly = args.includes("--json");
   for (const arg of args) {
@@ -144,7 +162,8 @@ export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
   const webhookRaw = watchWebhookRaw(ctx);
   const webhookUrl = webhookRaw === undefined ? undefined : parseWebhookUrl(webhookRaw);
 
-  const { level, reasons } = await resolveWatchOutcome(ctx);
+  const base = await resolveWatchOutcome(ctx);
+  const { level, reasons } = await withAdditionalFindings(ctx, base);
 
   await runWatchCycle(webhookUrl, level, reasons, jsonOnly);
 }

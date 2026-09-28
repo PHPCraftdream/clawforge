@@ -292,7 +292,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `mcp-setup` | `[--client <name>] [--json]` | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
 | `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
 | `expose` | `<ssh\|tailscale\|status> [--local-port <n>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Reach a loopback-bound gateway from outside this host, narrowest scope first: `ssh` prints (and, with `--run`, opens) the SSH tunnel; `tailscale` prints (and, with `--apply`, runs) a tailnet-only `tailscale serve` — never `funnel`; `status` reports what is actually published right now, read back from the running container |
-| `watch` | `<check\|install\|uninstall\|status> [--json] [--interval <minutes>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change. `check` collapses the liveness-relevant findings `inspect` already computes into ok/degraded/down (an unreachable target, not just an unhealthy one, also reads as down, reason `TARGET_UNREACHABLE`), alerts `OC_WATCH_WEBHOOK` only on a transition, and exits non-zero whenever the state is not ok; a failed alert leaves the persisted state at its old value so the next cycle retries it. `install`/`uninstall` print (and, with `--apply`, install through the transport) a crontab entry — `--interval` is 1-59 minutes or an exact multiple of 60 up to 1440 — only where an unattended cron can be trusted to find this tooling (a real SSH host or a POSIX `local` target) — elsewhere it prints the operator-side command instead of installing something that would silently never run. `status` shows the last persisted state and whether a webhook is configured, never the URL |
+| `watch` | `<check\|install\|uninstall\|status> [--json] [--interval <minutes>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change. `check` collapses the liveness-relevant findings `inspect` already computes into ok/degraded/down (an unreachable target, not just an unhealthy one, also reads as down, reason `TARGET_UNREACHABLE`), layers on its own channel (`CHANNEL_UNHEALTHY`) and data-directory disk-space (`DISK_LOW`/`DISK_UNKNOWN`, against `OC_WATCH_DISK_MIN_MB`) findings, alerts `OC_WATCH_WEBHOOK` only on a transition, and exits non-zero whenever the state is not ok; a failed alert leaves the persisted state at its old value so the next cycle retries it. `install`/`uninstall` print (and, with `--apply`, install through the transport) a crontab entry — `--interval` is 1-59 minutes or an exact multiple of 60 up to 1440 — only where an unattended cron can be trusted to find this tooling (a real SSH host or a POSIX `local` target) — elsewhere it prints the operator-side command instead of installing something that would silently never run. `status` shows the last persisted state and whether a webhook is configured, never the URL |
 | `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
 | `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
 | `check` | — | Framework checks with no instance — paths, archives, arguments, what a server delivery contains |
@@ -382,6 +382,30 @@ An operator finds out the instance stopped doing its job without polling by hand
   reflects the *current* state on every cycle, alert or not, for a scheduler to branch on.
   The webhook URL is registered as a secret (masked like the gateway token) and is never
   printed by this command, on any path, including failure.
+
+  Two findings of watch's own, layered on top of `inspect`'s (neither is a declared-state
+  comparison, so neither is a `doctor`-visible `ProblemCode`):
+  * `CHANNEL_UNHEALTHY` (`degraded`) — a channel account this deployment configured and left
+    enabled, but `openclaw channels status --json` reports not running, carrying a captured
+    error, or not connected. Skipped while the gateway itself is down (nothing to exec a CLI
+    call into — `GATEWAY_DOWN` already covers that). No `--probe`: the field already tells
+    "not connected" from "no error yet" apart without an extra outbound request per channel
+    on every cycle, and a probe's own transient failure would otherwise read as a channel
+    fault it is not. **Limitation, verified against OpenClaw 2026.6.34:** its CLI has no
+    dead-letter or delivery-failure signal for a channel — this reports connection/auth
+    trouble, never "a message could not be delivered", because no machine-readable signal for
+    that exists in this CLI surface to build it from.
+  * `DISK_LOW` / `DISK_UNKNOWN` — free space on the data directory's filesystem (`df -Pk
+    <dataDir>` on the target, through the same transport everything else uses), against
+    `OC_WATCH_DISK_MIN_MB` in this deployment's `.env` (default 1024 MB): `degraded` below
+    it, `down` below 10% of it or 100 MB — whichever bound is higher, so a deployment that
+    sets the threshold low still gets a meaningful `down` rather than one that scales away to
+    a handful of megabytes. `df` itself failing or answering something this cannot parse is
+    its own finding, `DISK_UNKNOWN` (`degraded`) — never a silent `ok` (a gap in exactly the
+    monitoring this command exists to provide) and never `down` (only the measurement failed;
+    the target may be fine). Skipped, like the channel check, whenever there is no live
+    target worth asking (`TARGET_UNREACHABLE`, `NOT_BOOTSTRAPPED`) — but unlike it, still read
+    while the gateway is merely down, since a full disk is a common reason for that.
 * `./clawforge watch install` / `watch uninstall` — print (and, with `--apply`, install through
   the transport) a crontab entry that runs `watch check` every `--interval` minutes (default
   5): 1-59 steps cron's own minute field, an exact multiple of 60 up to 1440 steps the hour

@@ -496,19 +496,29 @@ export const managementCommands: Record<string, AppCommand> = {
       "compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE — never " +
       "PROVIDER_MISSING, whose detection is unreliable enough that it would page degraded " +
       "forever on an instance answering fine, nor CONFIG_DRIFT or the rest, which are real " +
-      "but not about whether the instance is serving) and collapses them into ok / degraded / " +
-      "down. If gathering those findings itself fails outright — the Docker daemon down, an " +
-      "SSH host refusing the connection, wsl.exe never answering — that reads as down too, " +
-      "reason TARGET_UNREACHABLE, rather than dying before a cycle can alert or record " +
-      "anything. Compared against the last state persisted for this deployment (its own " +
-      "operator-side directory, never <data>/config — atomic write); a webhook POST " +
-      "(OC_WATCH_WEBHOOK in this deployment's .env, https only unless it is localhost) fires " +
-      "only on a TRANSITION, so an unchanged state never pages anyone twice. A failed POST " +
-      "leaves the persisted state at its old value on purpose, so the same unreported " +
-      "transition is retried next cycle instead of being silently accepted as normal. The " +
-      "exit code reflects the CURRENT state on every cycle, alert or not — 0 while ok, " +
-      "non-zero otherwise — for a scheduler to branch on without reading the text. The " +
-      "webhook URL is never printed, anywhere, including on failure.\n" +
+      "but not about whether the instance is serving), then layers on two findings of its " +
+      "own: CHANNEL_UNHEALTHY (degraded) for a configured, enabled channel account that " +
+      "`openclaw channels status --json` reports not running, erroring or not connected " +
+      "(skipped while the gateway itself is down — nothing to exec a CLI call into; verified " +
+      "on OpenClaw 2026.6.34 — that CLI has no dead-letter/delivery-failure signal, only " +
+      "connection/auth trouble, so that is all this reports), and DISK_LOW/DISK_UNKNOWN for " +
+      "the data directory's free space against OC_WATCH_DISK_MIN_MB (default 1024 MB; " +
+      "degraded below it, down below 10% of it or 100 MB, whichever is higher; DISK_UNKNOWN " +
+      "— always degraded, never a silent ok — when `df` itself fails or cannot be parsed). " +
+      "All of this collapses into ok / degraded / down. If gathering the base findings itself " +
+      "fails outright — the Docker daemon down, an SSH host refusing the connection, wsl.exe " +
+      "never answering — that reads as down too, reason TARGET_UNREACHABLE, rather than " +
+      "dying before a cycle can alert or record anything (channel/disk are skipped in that " +
+      "case, and also while NOT_BOOTSTRAPPED — no data directory yet to measure). Compared " +
+      "against the last state persisted for this deployment (its own operator-side " +
+      "directory, never <data>/config — atomic write); a webhook POST (OC_WATCH_WEBHOOK in " +
+      "this deployment's .env, https only unless it is localhost) fires only on a " +
+      "TRANSITION, so an unchanged state never pages anyone twice. A failed POST leaves the " +
+      "persisted state at its old value on purpose, so the same unreported transition is " +
+      "retried next cycle instead of being silently accepted as normal. The exit code " +
+      "reflects the CURRENT state on every cycle, alert or not — 0 while ok, non-zero " +
+      "otherwise — for a scheduler to branch on without reading the text. The webhook URL is " +
+      "never printed, anywhere, including on failure.\n" +
       "install / uninstall — print (and, with --apply, install through the transport) a " +
       "crontab entry that runs `watch check` every --interval minutes (default 5; 1-59 steps " +
       "cron's own minute field, an exact multiple of 60 up to 1440 steps the hour field " +

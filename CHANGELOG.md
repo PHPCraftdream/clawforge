@@ -81,8 +81,13 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `bootstrap --check`: a read-only prerequisite report for a fresh deployment — docker present
   and its daemon answering, compose v2, whether the data/backup/snapshot directories can be
   prepared without a sudo password (naming the exact `sudo install -d` line if not), whether
-  the gateway port is free, and free disk space. One `ok`/`WARN`/`FAIL` line per prerequisite,
-  exit 0 only when nothing failed; no lock is taken and nothing is created either way.
+  the gateway port is free, free disk space, and now whether the target's own userland is GNU
+  (`find -printf`, `stat -c`, `readlink -f`, `sha256sum`, `tar --numeric-owner`, `/proc`) — a
+  BusyBox (Alpine without coreutils) or BSD/macOS target answers every other check and then
+  fails mid-mutation on the first GNU-only flag; this catches it first and names the exact
+  tool(s) missing and how to fix it (`TARGET_NOT_GNU`, `service/inspection.ts`). One
+  `ok`/`WARN`/`FAIL` line per prerequisite, exit 0 only when nothing failed; no lock is taken
+  and nothing is created either way.
 
 ### Fixed
 

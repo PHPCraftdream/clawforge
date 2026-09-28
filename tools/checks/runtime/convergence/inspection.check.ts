@@ -99,6 +99,9 @@ check(
     "SET_SECRET_UNDECLARED",
     "SKILL_DRIFT",
     "STORE_INCOMPLETE",
+    // The target IS reached and answers, but its own userland lacks a GNU tool this framework's
+    // target-side commands need — checked only by bootstrap --check, never gatherInspection.
+    "TARGET_NOT_GNU",
     // wsl.exe/ssh itself failing to reach the target — never a command that ran there.
     "TARGET_UNREACHABLE",
     "UFW_DOCKER_BYPASS",

@@ -4,8 +4,8 @@
 // check.ts owns the report format and the exit-code contract; this file owns only "what is
 // true on the target right now".
 //
-// PREREQ_PROBES is the whole list, one line per entry on purpose — a later probe (task X7:
-// GNU-tool capabilities) is meant to be exactly one more line here, not a second run loop.
+// PREREQ_PROBES is the whole list, one line per entry on purpose — a new probe is exactly one
+// more line there, not a second run loop.
 
 import { TransportUnreachableError } from "../../../runtime/transport/transport.ts";
 import type { ExecResult } from "../../../runtime/transport/transport.ts";
@@ -204,6 +204,125 @@ async function diskProbe(ctx: Context): Promise<PrereqResult> {
   return parseDiskSpace(nearest, result, MIN_FREE_DISK_MB);
 }
 
+// --- GNU userland capabilities ----------------------------------------------------------------
+//
+// The target-side commands this framework runs elsewhere (find -printf, stat -c, readlink -f,
+// sha256sum, tar --numeric-owner, /proc — the same list transport.ts's LOCAL_TARGET_UNSUPPORTED
+// refusal names) are GNU/Linux-specific. LOCAL_TARGET_UNSUPPORTED catches a `local` target on
+// the wrong HOST before anything runs there; it says nothing about a reachable WSL/ssh TARGET
+// whose own userland is BusyBox (Alpine without coreutils) or BSD (a macOS ssh target, a
+// minimal container) — that machine answers `docker info` and `df` just fine and then fails
+// mid-mutation on the first `find -printf`, with an opaque error nowhere near this preflight.
+//
+// One probe, read-only and harmless: every sub-check only inspects something that already
+// exists (/tmp, /, /proc) or pipes a byte through sha256sum — none of them create a file. Run
+// over stdin (`sh -s`, existsVia's own precedent in quoting.ts) rather than as a `-c` argument,
+// so the script is never re-parsed as a command line the way a `-c` string can be by wsl.exe.
+//
+// This finding mirrors service/inspection.ts's TARGET_NOT_GNU code, defined there as the same
+// kind of named vocabulary TARGET_UNREACHABLE is — but it is not threaded through
+// gatherInspection. doctor/plan/inspect all read that one pipeline, and a target's userland does
+// not change between one `bootstrap --check` and the next, so paying a target round trip for
+// this on every doctor/plan/inspect call would buy nothing. `bootstrap --check` already pays
+// for exactly one read-only round trip to answer this; it stays the one place it is asked.
+export const GNU_USERLAND_PROBE_SCRIPT = `
+find /tmp -maxdepth 0 -printf '' >/dev/null 2>&1 && echo find-printf=ok || echo find-printf=missing
+stat -c %s / >/dev/null 2>&1 && echo stat-c=ok || echo stat-c=missing
+readlink -f / >/dev/null 2>&1 && echo readlink-f=ok || echo readlink-f=missing
+printf x | sha256sum >/dev/null 2>&1 && echo sha256sum=ok || echo sha256sum=missing
+{ tar --numeric-owner --help >/dev/null 2>&1 || tar --version 2>/dev/null | grep -q GNU; } && echo tar-numeric-owner=ok || echo tar-numeric-owner=missing
+test -r /proc/self/stat && echo proc=ok || echo proc=missing
+`;
+
+type GnuCapability = "find-printf" | "stat-c" | "readlink-f" | "sha256sum" | "tar-numeric-owner" | "proc";
+
+const GNU_CAPABILITY_ORDER: readonly GnuCapability[] = [
+  "find-printf",
+  "stat-c",
+  "readlink-f",
+  "sha256sum",
+  "tar-numeric-owner",
+  "proc",
+];
+
+// What each (non-/proc) capability is named for a reader and the package that provides it,
+// grouped so "stat -c" and "readlink -f" (both coreutils) collapse into one install line
+// instead of naming coreutils twice.
+const GNU_CAPABILITY_TOOL: Record<Exclude<GnuCapability, "proc">, { readonly tool: string; readonly pkg: string }> = {
+  "find-printf": { tool: "find -printf (findutils)", pkg: "findutils" },
+  "stat-c": { tool: "stat -c (coreutils)", pkg: "coreutils" },
+  "readlink-f": { tool: "readlink -f (coreutils)", pkg: "coreutils" },
+  "sha256sum": { tool: "sha256sum (coreutils)", pkg: "coreutils" },
+  "tar-numeric-owner": { tool: "tar --numeric-owner", pkg: "tar" },
+};
+
+/** Parses the probe script's own `capability=ok`/`capability=missing` lines — the pure half of
+ *  gnuUserlandProbe, fed a canned ExecResult by a check. A line this cannot recognize is
+ *  ignored rather than misread; a capability with no recognized line for it at all is treated
+ *  the same as an explicit `=missing` — a target that did not say ok gets no benefit of the
+ *  doubt. Every capability unreported (empty stdout, a shell that answered nothing) is not the
+ *  same claim as every capability missing, so that case warns instead of failing outright. */
+export function parseGnuUserlandCheck(result: Pick<ExecResult, "code" | "stdout" | "stderr">): PrereqResult {
+  const reported = new Map<string, boolean>();
+  for (const line of result.stdout.split(/\r?\n/)) {
+    const match = /^([a-z0-9-]+)=(ok|missing)$/.exec(line.trim());
+    if (match === null) continue;
+    reported.set(match[1]!, match[2] === "ok");
+  }
+
+  if (reported.size === 0) {
+    return warn(
+      "could not determine the target's GNU userland capabilities — the probe produced no output",
+      "re-run ./clawforge bootstrap --check; verify a POSIX sh is on the target's PATH",
+    );
+  }
+
+  const missing = GNU_CAPABILITY_ORDER.filter((capability) => reported.get(capability) !== true);
+  if (missing.length === 0) {
+    return ok("target userland has GNU find/stat/readlink/coreutils/tar and /proc");
+  }
+
+  // Nothing at all answered ok: this is not a Linux box missing one package, it is very likely
+  // not a Linux box at all — the same situation LOCAL_TARGET_UNSUPPORTED (transport.ts) already
+  // refuses for a `local` target on the wrong host, now found instead on a reachable WSL/ssh one.
+  if (missing.length === GNU_CAPABILITY_ORDER.length) {
+    return fail(
+      "target lacks a GNU/Linux userland (find -printf, stat -c, readlink -f, sha256sum, tar --numeric-owner, and /proc all missing)",
+      "use a Linux target; macOS is only supported as an ssh host",
+    );
+  }
+
+  const tools = missing.map((capability) => (capability === "proc" ? "/proc" : GNU_CAPABILITY_TOOL[capability].tool));
+  const packages = [
+    ...new Set(
+      missing
+        .filter((capability): capability is Exclude<GnuCapability, "proc"> => capability !== "proc")
+        .map((capability) => GNU_CAPABILITY_TOOL[capability].pkg),
+    ),
+  ];
+  const steps: string[] = [];
+  if (packages.length > 0) {
+    steps.push(`install ${packages.join(" ")} — \`apk add ${packages.join(" ")}\` on Alpine, \`apt-get install -y ${packages.join(" ")}\` on Debian/Ubuntu`);
+  }
+  if (missing.includes("proc")) steps.push("mount /proc, or use a Linux target — macOS is only supported as an ssh host");
+
+  return fail(`target lacks GNU ${tools.join(", ")}`, steps.join("; "));
+}
+
+async function gnuUserlandProbe(ctx: Context): Promise<PrereqResult> {
+  let result: ExecResult;
+  try {
+    result = await ctx.transport.exec("sh", ["-s"], { input: GNU_USERLAND_PROBE_SCRIPT, allowFailure: true });
+  } catch (error) {
+    if (error instanceof TransportUnreachableError) throw error;
+    return fail(
+      "no POSIX sh on the target to probe GNU userland capabilities",
+      "install a POSIX shell (dash, busybox sh, or bash) on the target",
+    );
+  }
+  return parseGnuUserlandCheck(result);
+}
+
 /** Every prerequisite `bootstrap --check` reports, in report order. Add one to this list —
  *  nothing else — to add a prerequisite to the report. */
 export const PREREQ_PROBES: PrereqProbe[] = [
@@ -214,6 +333,7 @@ export const PREREQ_PROBES: PrereqProbe[] = [
   { run: (ctx) => dirReadinessProbe(ctx, "snapshot directory", ctx.settings.snapshotDir) },
   { run: portProbe },
   { run: diskProbe },
+  { run: gnuUserlandProbe },
 ];
 
 /** Runs every probe in order and collects the results. A TransportUnreachableError from any

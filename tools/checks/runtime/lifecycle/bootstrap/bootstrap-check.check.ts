@@ -8,9 +8,16 @@
 
 import { bootstrap } from "#framework/commands/lifecycle/bootstrap/index.ts";
 import { bootstrapCheck } from "#framework/commands/lifecycle/bootstrap/check.ts";
-import { parseDockerInfo, parseComposeVersion, parseDiskSpace, runPrereqProbes } from "#framework/commands/lifecycle/bootstrap/prereqs.ts";
+import {
+  parseDockerInfo,
+  parseComposeVersion,
+  parseDiskSpace,
+  parseGnuUserlandCheck,
+  runPrereqProbes,
+  GNU_USERLAND_PROBE_SCRIPT,
+} from "#framework/commands/lifecycle/bootstrap/prereqs.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { TransportUnreachableError } from "#framework/runtime/transport/transport.ts";
+import { spawnLocal, TransportUnreachableError } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
@@ -48,6 +55,44 @@ check("parseComposeVersion: nonzero exit is fail", parseComposeVersion({ code: 1
 
   const dfFailed = parseDiskSpace("/srv", { code: 1, stdout: "", stderr: "no such file" }, 5120);
   check("parseDiskSpace: df itself failing warns, not fails", dfFailed.status, "warn");
+}
+
+// --- parseGnuUserlandCheck: pure parser over the GNU-capability probe's own output -----------
+
+const FULL_GNU_OUTPUT = "find-printf=ok\nstat-c=ok\nreadlink-f=ok\nsha256sum=ok\ntar-numeric-owner=ok\nproc=ok\n";
+// find lacks -printf, stat lacks -c, no GNU tar — readlink -f, sha256sum and /proc are all
+// still applets/kernel features BusyBox (Alpine without coreutils) carries just fine.
+const BUSYBOX_OUTPUT = "find-printf=missing\nstat-c=missing\nreadlink-f=ok\nsha256sum=ok\ntar-numeric-owner=missing\nproc=ok\n";
+// A BSD/macOS ssh target: none of find/stat/readlink/tar are the GNU variant, no sha256sum
+// binary at all (shasum -a 256 is what macOS ships), and no /proc.
+const BSD_MAC_OUTPUT = "find-printf=missing\nstat-c=missing\nreadlink-f=missing\nsha256sum=missing\ntar-numeric-owner=missing\nproc=missing\n";
+
+{
+  const full = parseGnuUserlandCheck({ code: 0, stdout: FULL_GNU_OUTPUT, stderr: "" });
+  check("parseGnuUserlandCheck: a full GNU userland is ok", full.status, "ok");
+
+  const busybox = parseGnuUserlandCheck({ code: 0, stdout: BUSYBOX_OUTPUT, stderr: "" });
+  check("parseGnuUserlandCheck: BusyBox (partial) fails", busybox.status, "fail");
+  check("...naming the missing tools", busybox.what, "target lacks GNU find -printf (findutils), stat -c (coreutils), tar --numeric-owner");
+  check("...with an install step naming the exact packages, not a guessed distro", busybox.next, "install findutils coreutils tar — `apk add findutils coreutils tar` on Alpine, `apt-get install -y findutils coreutils tar` on Debian/Ubuntu");
+
+  const bsdMac = parseGnuUserlandCheck({ code: 0, stdout: BSD_MAC_OUTPUT, stderr: "" });
+  check("parseGnuUserlandCheck: a BSD/macOS target (everything missing) fails", bsdMac.status, "fail");
+  check("...as 'not a GNU/Linux userland' rather than 'missing a package'", bsdMac.next, "use a Linux target; macOS is only supported as an ssh host");
+
+  const partial = parseGnuUserlandCheck({ code: 0, stdout: "find-printf=ok\nstat-c=ok\n", stderr: "" });
+  check("parseGnuUserlandCheck: partial output treats unreported capabilities as missing", partial.status, "fail");
+  check("...naming only what never reported ok", partial.what, "target lacks GNU readlink -f (coreutils), sha256sum (coreutils), tar --numeric-owner, /proc");
+
+  const proc = parseGnuUserlandCheck({ code: 0, stdout: "find-printf=ok\nstat-c=ok\nreadlink-f=ok\nsha256sum=ok\ntar-numeric-owner=ok\nproc=missing\n", stderr: "" });
+  check("parseGnuUserlandCheck: /proc alone missing fails and offers to mount it", proc.status, "fail");
+  check("...alongside the Linux-target fallback, not instead of it", proc.next?.includes("mount /proc") ?? false, true);
+
+  const empty = parseGnuUserlandCheck({ code: 1, stdout: "", stderr: "" });
+  check("parseGnuUserlandCheck: empty output warns rather than assuming every tool is missing", empty.status, "warn");
+
+  const noisy = parseGnuUserlandCheck({ code: 0, stdout: "Welcome to BusyBox\nfind-printf=ok\nstat-c=ok\nreadlink-f=ok\nsha256sum=ok\ntar-numeric-owner=ok\nproc=ok\n", stderr: "" });
+  check("parseGnuUserlandCheck: an unrecognized line (shell banner) is ignored, not misread", noisy.status, "ok");
 }
 
 // --- the directory/port/disk probes against a stub transport ---------------------------------
@@ -100,14 +145,38 @@ function healthyExecHandler(command: string, args: string[]): { code: number; st
   if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
   if (command === "ss") return { code: 0, stdout: "LISTEN 0 128 127.0.0.1:9999 *:*\n", stderr: "" };
   if (command === "df") return { code: 0, stdout: "Filesystem 1K-blocks Used Available Use% Mounted on\n/dev/sda1 100 1 20971520 1% /\n", stderr: "" };
+  if (command === "sh" && args[0] === "-s") return { code: 0, stdout: FULL_GNU_OUTPUT, stderr: "" };
   return undefined;
 }
 
 {
   const { ctx } = stubCtx({ exec: healthyExecHandler });
   const results = await runPrereqProbes(ctx);
-  check("seven prerequisites are probed (one line each)", results.length, 7);
+  check("eight prerequisites are probed (one line each)", results.length, 8);
   check("a fully healthy target reports every prerequisite ok", results.every((result) => result.status === "ok"), true);
+}
+
+{
+  const { ctx } = stubCtx({
+    exec: (command, args) => {
+      if (command === "sh" && args[0] === "-s") return { code: 0, stdout: BUSYBOX_OUTPUT, stderr: "" };
+      return healthyExecHandler(command, args);
+    },
+  });
+  const results = await runPrereqProbes(ctx);
+  check("a BusyBox target fails the GNU-userland prerequisite", results[7]?.status, "fail");
+  check("...without failing the others", results.slice(0, 7).every((result) => result.status === "ok"), true);
+}
+
+{
+  const { ctx } = stubCtx({
+    exec: (command, args) => {
+      if (command === "sh" && args[0] === "-s") throw new Error("spawn sh ENOENT");
+      return healthyExecHandler(command, args);
+    },
+  });
+  const results = await runPrereqProbes(ctx);
+  check("no sh on the target fails the GNU-userland prerequisite instead of throwing", results[7]?.status, "fail");
 }
 
 {
@@ -262,6 +331,37 @@ function healthyExecHandler(command: string, args: string[]): { code: number; st
   check("bootstrap --check never asks the runtime whether it is running (no NOT_BOOTSTRAPPED guard)", threw?.message?.includes("must never ask the runtime") ?? false, false);
   check("and never attempts the instance lock", execCalls.some((call) => call.some((token) => token.includes("operation.lock"))), false);
   check("nor the mutation guard", execCalls.some((call) => call.some((token) => token.includes("operation.mutation"))), false);
+}
+
+// --- the probe script itself is dash-compatible POSIX sh, run for real when sh exists --------
+//
+// Never wsl.exe: this only proves the script text parses and runs under A POSIX sh, which any
+// dash-compatible target's own sh already is — a real target's own set of ok/missing answers
+// is not this machine's to assert on, so only the LINE FORMAT is checked, never which
+// capabilities this machine happens to have.
+
+{
+  let shAvailable = true;
+  try {
+    await spawnLocal("sh", ["-c", "exit 0"], { allowFailure: true });
+  } catch {
+    shAvailable = false;
+  }
+
+  if (!shAvailable) {
+    process.stderr.write("  skip GNU-userland probe script under a real sh (no POSIX sh on this machine)\n");
+  } else {
+    const result = await spawnLocal("sh", ["-s"], { input: GNU_USERLAND_PROBE_SCRIPT, allowFailure: true });
+    const lines = result.stdout.split(/\r?\n/).filter((line) => line !== "");
+    const expectedKeys = ["find-printf", "stat-c", "readlink-f", "sha256sum", "tar-numeric-owner", "proc"];
+    check("the script exits 0 under a real sh (no syntax error)", result.code, 0);
+    check("it prints exactly one line per capability, well-formed and in order", lines.map((line) => line.split("=")[0]), expectedKeys);
+    check(
+      "every line is `<capability>=ok` or `<capability>=missing` — never which this machine has",
+      lines.every((line) => /^[a-z0-9-]+=(ok|missing)$/.test(line)),
+      true,
+    );
+  }
 }
 
 process.stderr.write(failed === 0 ? "all bootstrap --check checks passed\n" : `${failed} failed\n`);

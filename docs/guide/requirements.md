@@ -57,6 +57,25 @@ only a `local` target is Linux-only.
 * **macOS host, `local`** (explicit or via `auto`) — refused: macOS is not a supported local
   target, unlike Linux.
 
+## Target userland
+
+The GNU/Linux-specific commands above assume a *GNU* userland specifically — being Linux is
+not enough. A reachable target running BusyBox (Alpine without `coreutils`/`findutils`/`tar`
+installed) or a BSD userland (a macOS `ssh` target, a minimal/distroless container) answers
+`docker info`, `compose version` and `df` just fine and then fails `bootstrap` mid-mutation on
+the first `find -printf` or `stat -c`, with an error nowhere near that first command.
+
+`./clawforge bootstrap --check` catches this ahead of time: one read-only, harmless probe run
+through the target transport tests `find -printf`, `stat -c`, `readlink -f`, `sha256sum`,
+`tar --numeric-owner` and `/proc`, and reports `ok` when all are GNU, or a `FAIL` line naming
+the exact tool(s) missing and a concrete next step — installing `coreutils`/`findutils`/`tar`
+on the distro in question, or, when nothing at all answered GNU, using a Linux target instead
+(macOS is only supported as an `ssh` *host*, never as the target itself — see the matrix
+above). The finding is named `TARGET_NOT_GNU` (`tools/framework/service/inspection.ts`), the
+target-reached sibling of `LOCAL_TARGET_UNSUPPORTED` above. It is checked only by
+`bootstrap --check`: a target's userland does not change between one check and the next, so
+`doctor`/`plan`/`inspect` do not pay a target round trip for it on every call.
+
 ## How to test each cell
 
 * **`npm run check`** — runs on whatever host you are on. Platform-dependent behavior in the

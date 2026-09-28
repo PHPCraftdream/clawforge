@@ -26,6 +26,7 @@ export type Severity = "blocking" | "warning";
 export type ProblemCode =
   | "NOT_BOOTSTRAPPED"
   | "TARGET_UNREACHABLE"
+  | "TARGET_NOT_GNU"
   | "GATEWAY_DOWN"
   | "GATEWAY_UNHEALTHY"
   | "EGRESS_UNREACHABLE"
@@ -93,6 +94,20 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     // (which env var, which probe command) wherever the failure is actually reported.
     summary: "the transport itself could not reach the target — no command got to run there at all",
     nextAction: "check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`",
+  },
+  TARGET_NOT_GNU: {
+    severity: "blocking",
+    // The target-reached sibling of LOCAL_TARGET_UNSUPPORTED (transport.ts): that one refuses
+    // a `local` target on the wrong HOST before anything ever runs there; this is the same
+    // GNU-toolset requirement (find -printf, stat -c, readlink -f, sha256sum, tar
+    // --numeric-owner, /proc) found missing on a TARGET that IS reachable — BusyBox (Alpine
+    // without coreutils) or BSD (a macOS ssh target, a minimal container) userlands answer
+    // every other preflight check and then fail mid-mutation on the first GNU-only flag.
+    // Checked only by `bootstrap --check` (prereqs.ts's GNU-userland probe): doctor/plan/inspect
+    // never probe for it, since a target's userland does not change between checks and paying
+    // a round trip for it on every one of those calls would buy nothing.
+    summary: "the target's userland is missing a GNU tool this framework's target-side commands require",
+    nextAction: "./clawforge bootstrap --check",
   },
   GATEWAY_DOWN: {
     severity: "blocking",

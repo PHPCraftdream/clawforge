@@ -4,7 +4,19 @@ import { die, info, log } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
 import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/artifacts/receipt.ts";
 import type { Context } from "#src/core/context.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 
+/** The slice of `set`'s declaration `receipts`'s own argv actually uses. */
+export const SET_RECEIPTS_ARGUMENTS: CommandArgument[] = [
+  { name: "set-id", description: "With receipts: filter by immutable set id", kind: "option" },
+  { name: "receipt", description: "With receipts: show this receipt; requires --set-id", kind: "option" },
+  { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
+];
+
+/** Repetition and value-shape checks the generic parser deliberately leaves to the caller
+ *  (see parse-args.ts) — kept here so a second --set-id/--receipt, or one with nothing
+ *  usable after it, still refuses by name rather than silently keeping the last one. */
 function value(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   if (index < 0) return undefined;
@@ -15,12 +27,7 @@ function value(args: string[], flag: string): string | undefined {
 }
 
 function validateArgs(args: string[]): { setId?: string; receiptId?: string; json: boolean } {
-  const known = new Set(["--set-id", "--receipt", "--json"]);
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (!known.has(arg)) die(`unknown argument: ${arg}`);
-    if (arg !== "--json") index += 1;
-  }
+  parseDeclaredArgs(SET_RECEIPTS_ARGUMENTS, args);
   const setId = value(args, "--set-id");
   const receiptId = value(args, "--receipt");
   if (receiptId !== undefined && setId === undefined) die("--receipt requires --set-id");

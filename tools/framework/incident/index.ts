@@ -50,6 +50,19 @@ import { probeTailscale, tailscaleGatewayRoutes, tailscaleServeOffCommand } from
 import { summarizeExposure, exposureOneLiner } from "../expose/status.ts";
 import { runSecurityAudit, type SecurityAuditReport } from "../security-audit/index.ts";
 import { blockingProblems } from "../service/inspection.ts";
+import type { CommandArgument } from "../core/app.ts";
+import { parseDeclaredArgs } from "../argv/parse-args.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../commands/interface/groups/shared-arguments.ts";
+
+/** Drives both incident's own parser and its openclawCommands declaration. */
+export const INCIDENT_ARGUMENTS: CommandArgument[] = [
+  { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
+  { name: "keep-exposure", description: "Proceed even though the gateway is published on every interface", kind: "flag" },
+  { name: "tail", description: "Lines of log to collect (default 500)", kind: "option" },
+  { name: "json", description: "Emit the report as JSON", kind: "flag" },
+  BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
+];
 
 interface IncidentOptions {
   readonly dryRun: boolean;
@@ -88,24 +101,11 @@ export class IncidentPhaseFailure extends Error {
 }
 
 function parseArgs(args: string[]): IncidentOptions {
-  let dryRun = false;
-  let keepExposure = false;
-  let tail = "500";
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--dry-run") dryRun = true;
-    else if (arg === "--keep-exposure") keepExposure = true;
-    else if (arg === "--json") continue;
-    else if (arg === "--break-lock") continue;
-    else if (arg === "--break-foreign-lock") index += 1;
-    else if (arg === "--tail") {
-      const value = args[index + 1];
-      if (value === undefined || !/^\d+$/.test(value)) die("--tail needs a number of lines");
-      tail = value;
-      index += 1;
-    } else die(`unknown argument: ${arg}`);
-  }
-  return { dryRun, keepExposure, tail };
+  const parsed = parseDeclaredArgs(INCIDENT_ARGUMENTS, args);
+  const tail = parsed.tail === undefined
+    ? "500"
+    : !/^\d+$/.test(parsed.tail as string) ? die("--tail needs a number of lines") : parsed.tail as string;
+  return { dryRun: parsed["dry-run"] === true, keepExposure: parsed["keep-exposure"] === true, tail };
 }
 
 /** Refuses the whole run while the gateway may still be reachable from outside this host —

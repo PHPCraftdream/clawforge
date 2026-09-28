@@ -30,6 +30,24 @@ import { deploymentDir, deploymentName } from "../runtime/deployment.ts";
 import { guarded } from "../runtime/instance-lock.ts";
 import { SshTransport } from "../runtime/transport.ts";
 import type { Context } from "../core/context.ts";
+import type { CommandArgument } from "../core/app.ts";
+import { parseDeclaredArgs } from "../argv/parse-args.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../commands/interface/groups/shared-arguments.ts";
+
+/** The slice of `watch`'s declaration `install`'s own argv actually uses. */
+export const WATCH_INSTALL_ARGUMENTS: CommandArgument[] = [
+  { name: "interval", description: "With install: minutes between checks (default 5); 1-59, or an exact multiple of 60 up to 1440", kind: "option" },
+  { name: "apply", description: "With install/uninstall: mutate the target's crontab instead of only printing it", kind: "flag" },
+  BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
+];
+
+/** The slice `uninstall` uses — no --interval, since there is no schedule to set. */
+export const WATCH_UNINSTALL_ARGUMENTS: CommandArgument[] = [
+  { name: "apply", description: "With install/uninstall: mutate the target's crontab instead of only printing it", kind: "flag" },
+  BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
+];
 
 const MARKER_PREFIX = "clawforge-watch";
 
@@ -155,41 +173,23 @@ async function writeCrontab(ctx: Context, lines: string[]): Promise<void> {
 }
 
 function parseInstallArgs(args: string[]): { interval: number; apply: boolean } {
+  const parsed = parseDeclaredArgs(WATCH_INSTALL_ARGUMENTS, args);
   let interval = 5;
-  let apply = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--interval") {
-      const raw = args[index + 1];
-      const parsed = raw === undefined ? Number.NaN : Number(raw);
-      try {
-        cronSchedule(parsed);
-      } catch (error) {
-        die((error as Error).message);
-      }
-      interval = parsed;
-      index += 1;
-      continue;
+  if (parsed.interval !== undefined) {
+    const raw = parsed.interval === "" ? undefined : parsed.interval as string;
+    const numeric = raw === undefined ? Number.NaN : Number(raw);
+    try {
+      cronSchedule(numeric);
+    } catch (error) {
+      die((error as Error).message);
     }
-    if (arg === "--apply") { apply = true; continue; }
-    // Read directly by guarded() below, from this same array.
-    if (arg === "--break-lock") continue;
-    if (arg === "--break-foreign-lock") { index += 1; continue; }
-    die(`unknown argument: ${arg}`);
+    interval = numeric;
   }
-  return { interval, apply };
+  return { interval, apply: parsed.apply === true };
 }
 
 function parseUninstallArgs(args: string[]): boolean {
-  let apply = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--apply") { apply = true; continue; }
-    if (arg === "--break-lock") continue;
-    if (arg === "--break-foreign-lock") { index += 1; continue; }
-    die(`unknown argument: ${arg}`);
-  }
-  return apply;
+  return parseDeclaredArgs(WATCH_UNINSTALL_ARGUMENTS, args).apply === true;
 }
 
 export async function watchInstall(ctx: Context, args: string[]): Promise<void> {

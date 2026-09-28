@@ -36,6 +36,8 @@
 
 import { log, info, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 import { safeName } from "#src/core/names.ts";
 import { withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
@@ -59,11 +61,17 @@ import {
 export * from "./declaration.ts";
 export * from "./reconcile.ts";
 
+/** Drives both provision-agent's own parser and its openclawCommands declaration. */
+export const PROVISION_AGENT_ARGUMENTS: CommandArgument[] = [
+  { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true },
+  { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+];
+
 export async function provisionAgent(ctx: Context, args: string[]): Promise<void> {
-  const breakLock = args.includes("--break-lock");
-  const [rawName, ...rest] = args.filter((arg) => arg !== "--break-lock");
+  const parsed = parseDeclaredArgs(PROVISION_AGENT_ARGUMENTS, args);
+  const breakLock = parsed["break-lock"] === true;
+  const rawName = parsed.recipe as string | undefined;
   if (rawName === undefined) die("usage: ./clawforge provision-agent <recipe>");
-  if (rest.length > 0) die(`unknown argument: ${rest[0]}`);
   const recipeName = safeName("recipe", rawName);
 
   if (!(await ctx.runtime.isRunning())) die("the gateway is not running. Start it with ./clawforge up");

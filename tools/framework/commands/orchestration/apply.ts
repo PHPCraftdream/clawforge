@@ -33,6 +33,17 @@ import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, req
 import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both apply's own parser and its openclawCommands declaration. */
+export const APPLY_ARGUMENTS: CommandArgument[] = [
+  { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option" },
+  { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option" },
+  { name: "dry-run", description: "Show the steps without running any of them", kind: "flag" },
+  { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+];
 
 /** Whether the container is running but its image could not be resolved to any digest at
  *  all — a container built or tagged in a way docker cannot report RepoDigests for, say.
@@ -388,23 +399,11 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
   const jsonOnly = args.includes("--json");
   const dryRun = isApplyDryRun(args);
   const breakLock = args.includes("--break-lock");
-  let expected: string | undefined;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--json" || arg === "--dry-run" || arg === "--break-lock") continue;
-    if (arg === "--set") {
-      // Consumed by applyWithSource above; skipped here so its value is not read as a flag.
-      index += 1;
-      continue;
-    }
-    if (arg === "--expect") {
-      expected = args[index + 1] ?? die("--expect needs a declaration checksum");
-      index += 1; // the value, consumed here so the loop does not read it as a flag
-      continue;
-    }
-    die(`unknown argument: ${arg}`);
-  }
+  // Recognizes --set too (already consumed by applyWithSource above, its value read here
+  // only so the generic parser does not mistake it for an unknown flag) — its own value is
+  // not needed a second time.
+  const parsed = parseDeclaredArgs(APPLY_ARGUMENTS, args);
+  const expected = parsed.expect === "" ? die("--expect needs a declaration checksum") : parsed.expect as string | undefined;
 
   const plan = await computePlan(ctx);
 

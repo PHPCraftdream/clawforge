@@ -17,7 +17,7 @@
 
 import { readFile, writeFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, die } from "#src/core/log.ts";
+import { log, info } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
 import { frameworkRoot } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
@@ -37,8 +37,16 @@ import {
   compareExtensions,
 } from "#src/extensions/index.ts";
 import type { LockPlugin, LockSkill } from "#src/extensions/index.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 
 export const LOCK_VERSION = 1;
+
+/** Drives both lock's own parser and its openclawCommands declaration. */
+export const LOCK_ARGUMENTS: CommandArgument[] = [
+  { name: "check", description: "Compare against the existing lock instead of writing one", kind: "flag" },
+  { name: "json", description: "Emit the lock, or the differences, as JSON", kind: "flag" },
+];
 
 /** Printed once the lock is written. Its own constant so it can be checked against
  *  scaffold.ts's own git-init note for staying consistent (UX-12): `apps/` is entirely
@@ -316,11 +324,9 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
 }
 
 export async function lock(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  const checkOnly = args.includes("--check");
-  for (const arg of args) {
-    if (arg !== "--json" && arg !== "--check") die(`unknown argument: ${arg}`);
-  }
+  const parsed = parseDeclaredArgs(LOCK_ARGUMENTS, args);
+  const jsonOnly = parsed.json === true;
+  const checkOnly = parsed.check === true;
 
   const current = await currentComposition(ctx, { includeExtensions: true });
 

@@ -28,6 +28,16 @@ import { log, info, die } from "#src/core/log.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+
+/** The slice of `expose`'s declaration this action's own argv actually uses. */
+export const EXPOSE_TAILSCALE_ARGUMENTS: CommandArgument[] = [
+  { name: "apply", description: "With tailscale: run the printed `tailscale serve` command on the target instead of only printing it", kind: "flag" },
+  BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
+];
 
 export interface TailscaleProbe {
   readonly present: boolean;
@@ -123,28 +133,20 @@ export function tailscaleServeOffCommand(route: TailscaleGatewayRoute): string[]
 }
 
 function parseArgs(args: string[]): { apply: boolean } {
-  let apply = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--apply") { apply = true; continue; }
-    // Both read directly by guarded() below, from this same array — nothing to do with
-    // either here. --break-foreign-lock takes its host id as the next token (bootstrap.ts's
-    // own parser skips it the same way).
-    if (arg === "--break-lock") continue;
-    if (arg === "--break-foreign-lock") { index += 1; continue; }
-    if (arg === "--funnel" || arg === "funnel") {
-      die(
-        "expose tailscale never runs `tailscale funnel` — funnel shares a service with the " +
-          "public internet, and this framework keeps the gateway off public ports on purpose " +
-          "(.env.example: 0.0.0.0 only behind a reverse proxy with TLS and auth; OpenClaw's " +
-          "own guidance keeps the gateway on loopback, reached through Tailscale or an SSH " +
-          "tunnel). `tailscale serve` — tailnet-only, what this command prints and applies — " +
-          "is the supported path.",
-      );
-    }
-    die(`unknown argument: ${arg}`);
+  // Checked ahead of the generic parser: neither spelling is a declared argument, so it
+  // would otherwise just die as unknown — this names the actual reason instead.
+  if (args.includes("--funnel") || args.includes("funnel")) {
+    die(
+      "expose tailscale never runs `tailscale funnel` — funnel shares a service with the " +
+        "public internet, and this framework keeps the gateway off public ports on purpose " +
+        "(.env.example: 0.0.0.0 only behind a reverse proxy with TLS and auth; OpenClaw's " +
+        "own guidance keeps the gateway on loopback, reached through Tailscale or an SSH " +
+        "tunnel). `tailscale serve` — tailnet-only, what this command prints and applies — " +
+        "is the supported path.",
+    );
   }
-  return { apply };
+  const parsed = parseDeclaredArgs(EXPOSE_TAILSCALE_ARGUMENTS, args);
+  return { apply: parsed.apply === true };
 }
 
 export async function exposeTailscale(ctx: Context, args: string[]): Promise<void> {

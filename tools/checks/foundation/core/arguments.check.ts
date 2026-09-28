@@ -4,6 +4,8 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp-server.ts";
+import { parseDeclaredArgs } from "#framework/argv/parse-args.ts";
+import type { CommandArgument } from "#framework/core/app.ts";
 
 let failed = 0;
 
@@ -167,6 +169,36 @@ check(
   validate(openclawCommands.deploy, { target: "user@host", adopt: true }),
   [],
 );
+
+// --- generic parser: every declared flag/option round-trips through argv, an undeclared
+// one is refused. Run against the same list help/MCP already build from (not against each
+// command's own run()), so this catches a declaration/parser drift for every command,
+// converted to parseDeclaredArgs or not — the class of bug B8 was. ---------------------
+
+function plausibleValue(argument: CommandArgument): unknown {
+  if (argument.kind === "flag") return true;
+  if (argument.kind === "variadic") return ["x"];
+  return argument.choices?.[0] ?? "x";
+}
+
+function parses(declared: CommandArgument[], argv: string[]): boolean {
+  try {
+    parseDeclaredArgs(declared, argv);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+for (const [name, command] of Object.entries(openclawCommands)) {
+  const declared = command.arguments ?? [];
+  const values: Record<string, unknown> = {};
+  for (const argument of declared) values[argument.name] = plausibleValue(argument);
+  const argv = toArgv(command, values);
+
+  check(`${name}: every declared flag/option parses from its own toArgv()`, parses(declared, argv), true);
+  check(`${name}: an undeclared flag is refused`, parses(declared, [...argv, "--totally-undeclared-flag"]), false);
+}
 
 process.stderr.write(failed === 0 ? "all argument checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

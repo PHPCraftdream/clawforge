@@ -14,6 +14,20 @@ import { HelperNotRunning } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "../interface/cli-helper.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp-project.ts";
 import type { McpClient } from "#src/integration/mcp-project.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both mcp-setup's own parser and its openclawCommands declaration. */
+export const MCP_SETUP_ARGUMENTS: CommandArgument[] = [
+  { name: "client", kind: "option", choices: ["claude", "codex", "both"], description: "Client configuration to update (default both)" },
+  { name: "json", kind: "flag", description: "Report changed files as JSON" },
+];
+
+/** Drives both mcp-creds' own parser and its openclawCommands declaration. */
+export const MCP_CREDS_ARGUMENTS: CommandArgument[] = [
+  { name: "json", description: "Print the client config only", kind: "flag" },
+  { name: "token", description: "Print the gateway token only", kind: "flag" },
+];
 
 /** Client configuration belongs to the selected application in either distribution mode. */
 export async function mcpConfigFilePath(_ctx: Context): Promise<string> {
@@ -62,15 +76,16 @@ async function mcpConfig(ctx: Context): Promise<string> {
 
 /** Refresh project-local client settings without replacing other servers or global config. */
 export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {
+  // Repetition is checked on the raw argv, ahead of the generic parser: that only keeps
+  // the last of several same-named options, and a second --client here is a mistake worth
+  // naming rather than silently resolving.
+  if (args.filter((arg) => arg === "--client").length > 1) die("--client may only be given once");
+  const parsed = parseDeclaredArgs(MCP_SETUP_ARGUMENTS, args);
+  const json = parsed.json === true;
   let client: McpClient = "both";
-  let selected = false;
-  let json = false;
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === "--json") { json = true; continue; }
-    if (args[index] !== "--client" || selected) die(`unknown or repeated argument: ${args[index]}`);
-    const value = args[++index];
-    if (value !== "claude" && value !== "codex" && value !== "both") die("--client needs claude, codex or both");
-    client = value; selected = true;
+  if (parsed.client !== undefined) {
+    if (parsed.client !== "claude" && parsed.client !== "codex" && parsed.client !== "both") die("--client needs claude, codex or both");
+    client = parsed.client;
   }
   const installed = await access(resolve(deploymentDir(), "clawforge")).then(() => true, () => false);
   const changedFiles = await setupProjectMcp(deploymentDir(), installed ? "installed" : "monorepo", client);
@@ -83,11 +98,9 @@ export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {
 
 /** Prints everything needed to connect a client. */
 export async function mcpCreds(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  const tokenOnly = args.includes("--token");
-  for (const arg of args) {
-    if (arg !== "--json" && arg !== "--token") die(`unknown argument: ${arg}`);
-  }
+  const parsed = parseDeclaredArgs(MCP_CREDS_ARGUMENTS, args);
+  const jsonOnly = parsed.json === true;
+  const tokenOnly = parsed.token === true;
   const token = ctx.settings.env.OPENCLAW_GATEWAY_TOKEN ?? "";
 
   if (tokenOnly) {

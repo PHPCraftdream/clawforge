@@ -9,18 +9,19 @@ import { cli } from "../cli.ts";
 import { exec } from "../exec.ts";
 import { host } from "../host/index.ts";
 import { cliStart, cliStop } from "../cli-helper.ts";
-import { configureProvider } from "#src/commands/management/provider.ts";
-import { mcpServe, mcpSetup, mcpCreds } from "#src/commands/management/mcp.ts";
-import { deploy } from "#src/commands/management/deploy.ts";
-import { lock } from "#src/commands/management/lock.ts";
-import { secrets } from "#src/commands/management/secrets.ts";
-import { recoverEnv } from "#src/commands/recover-env/index.ts";
+import { configureProvider, CONFIGURE_PROVIDER_ARGUMENTS } from "#src/commands/management/provider.ts";
+import { mcpServe, mcpSetup, mcpCreds, MCP_SETUP_ARGUMENTS, MCP_CREDS_ARGUMENTS } from "#src/commands/management/mcp.ts";
+import { deploy, DEPLOY_ARGUMENTS } from "#src/commands/management/deploy.ts";
+import { lock, LOCK_ARGUMENTS } from "#src/commands/management/lock.ts";
+import { secrets, SECRETS_ARGUMENTS } from "#src/commands/management/secrets.ts";
+import { recoverEnv, RECOVER_ENV_ARGUMENTS } from "#src/commands/recover-env/index.ts";
 import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe/index.ts";
-import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
-import { expose, exposeActionIsReadOnly } from "#src/expose/index.ts";
+import { provisionAgent, PROVISION_AGENT_ARGUMENTS } from "#src/commands/management/provision-agent/index.ts";
+import { expose, exposeActionIsReadOnly, EXPOSE_SSH_ARGUMENTS, EXPOSE_TAILSCALE_ARGUMENTS } from "#src/expose/index.ts";
 import { watch, watchActionIsReadOnly } from "#src/watch/index.ts";
-import { incident } from "#src/incident/index.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
+import { WATCH_CHECK_ARGUMENTS } from "#src/watch/check.ts";
+import { WATCH_INSTALL_ARGUMENTS } from "#src/watch/install.ts";
+import { incident, INCIDENT_ARGUMENTS } from "#src/incident/index.ts";
 
 function secretsWrites(args: string[]): boolean {
   if (["--init-store", "--dump", "--apply"].some((flag) => args.includes(flag))) return true;
@@ -56,10 +57,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "warnings, because an instance that drifted from its lock still works and it is the " +
       "reader who decides whether the difference was intended.\n" +
       "Meant to be committed.",
-    arguments: [
-      { name: "check", description: "Compare against the existing lock instead of writing one", kind: "flag" },
-      { name: "json", description: "Emit the lock, or the differences, as JSON", kind: "flag" },
-    ],
+    arguments: LOCK_ARGUMENTS,
     structured: true,
     readOnlyWhen: (args) => args.includes("--check"),
   },
@@ -189,11 +187,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "entry in target config/.env opts into a new provider; --env selects a different " +
       "variable and explicit models.providers.<id>.apiKey SecretRefs are preserved. Keys " +
       "never enter openclaw.json. --provider and --env make any provider convention explicit.",
-    arguments: [
-      { name: "provider", description: "Provider id, for example openai", kind: "option" },
-      { name: "env", description: "Secret variable, for example OPENAI_API_KEY", kind: "option" },
-      { name: "force", description: "Replace an existing provider SecretRef", kind: "flag" },
-    ],
+    arguments: CONFIGURE_PROVIDER_ARGUMENTS,
   },
   secrets: {
     summary: "Show required secrets and whether they are in place",
@@ -230,15 +224,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "the gateway crash-loop.\n" +
       "Over MCP, status and template operations need no confirmation; --apply, --init-store " +
       "and --dump require confirm: true. --force remains an explicit separate choice.",
-    arguments: [
-      { name: "template", description: "Write the secrets template into config/", kind: "flag" },
-      { name: "print-template", description: "Print the template instead of writing it", kind: "flag" },
-      { name: "init-store", description: "Create an empty store to fill in", kind: "flag" },
-      { name: "apply", description: "Fill the target from a local store", kind: "flag" },
-      { name: "dump", description: "Recover a local store from the running instance", kind: "flag" },
-      { name: "store", description: "Store name, e.g. local or prod", kind: "option" },
-      { name: "force", description: "Replace an existing store (with --init-store or --dump)", kind: "flag" },
-    ],
+    arguments: SECRETS_ARGUMENTS,
     destructive: true,
     readOnlyWhen: (args) => !secretsWrites(args),
     changedWhen: secretsWrites,
@@ -265,14 +251,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "the ones both sides carry differently without writing over them; --adopt-runtime is the " +
       "container-authoritative direction that also merges those over the file's existing values.\n" +
       "--dry-run prints what would change and writes nothing.",
-    arguments: [
-      { name: "dry-run", description: "Print what would change without writing", kind: "flag" },
-      {
-        name: "adopt-runtime",
-        description: "Take the running container as authoritative: merge its facts over the file's existing values too, not just fill the names it is missing",
-        kind: "flag",
-      },
-    ],
+    arguments: RECOVER_ENV_ARGUMENTS,
     readOnlyWhen: (args) => args.includes("--dry-run"),
   },
   recipe: {
@@ -371,10 +350,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "is reported for manual approval through a trusted admin session or the Control UI; " +
       "only accept and set try offer --with-model for explicit model approval.\n" +
       "Requires the gateway to be running (./clawforge up).",
-    arguments: [
-      { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true },
-      { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
-    ],
+    arguments: PROVISION_AGENT_ARGUMENTS,
   },
   deploy: {
     summary: "Deploy to a server over SSH and bootstrap it there",
@@ -398,18 +374,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "Available only when the framework runs from a ClawForge checkout: there has to be " +
       "a checkout for \"mirror the framework\" to mean anything. Installed as a package it " +
       "refuses outright rather than mirroring whatever sits above the package.",
-    arguments: [
-      { name: "target", description: "user@host", kind: "positional", required: true },
-      { name: "path", description: "Remote install directory", kind: "option" },
-      { name: "no-bootstrap", description: "Copy the files without starting anything", kind: "flag" },
-      {
-        name: "adopt",
-        description:
-          "Take over an existing, unmarked, non-empty remote root: lists what --delete would " +
-          "replace there before marking it as this deployment's",
-        kind: "flag",
-      },
-    ],
+    arguments: DEPLOY_ARGUMENTS,
   },
   "mcp-serve": {
     summary: "stdio MCP bridge to the service's own channels",
@@ -443,10 +408,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "init and new-app do this automatically. Use --client claude or --client codex to update " +
       "only one client. Launch paths are resolved inside the project, without absolute host paths. " +
       "The client may still require project trust or server approval; reconnect it after setup.",
-    arguments: [
-      { name: "client", kind: "option", choices: ["claude", "codex", "both"], description: "Client configuration to update (default both)" },
-      { name: "json", kind: "flag", description: "Report changed files as JSON" },
-    ],
+    arguments: MCP_SETUP_ARGUMENTS,
     structured: true,
   },
   expose: {
@@ -475,11 +437,8 @@ export const managementCommands: Record<string, AppCommand> = {
       "0.0.0.0 or ::. The same one-line summary appears in `./clawforge status`.",
     arguments: [
       { name: "action", description: "ssh, tailscale or status", kind: "positional", required: true, choices: ["ssh", "tailscale", "status"] },
-      { name: "local-port", description: "With ssh: local port to bind (defaults to the gateway's own port)", kind: "option" },
-      { name: "run", description: "With ssh: open the tunnel in the foreground until Ctrl+C; needs a real terminal", kind: "flag" },
-      { name: "apply", description: "With tailscale: run the printed `tailscale serve` command on the target instead of only printing it", kind: "flag" },
-      BREAK_LOCK_ARGUMENT,
-      BREAK_FOREIGN_LOCK_ARGUMENT,
+      ...EXPOSE_SSH_ARGUMENTS,
+      ...EXPOSE_TAILSCALE_ARGUMENTS,
     ],
   },
   watch: {
@@ -535,11 +494,8 @@ export const managementCommands: Record<string, AppCommand> = {
       "configured — never the URL itself.",
     arguments: [
       { name: "action", description: "check, install, uninstall or status", kind: "positional", required: true, choices: ["check", "install", "uninstall", "status"] },
-      { name: "json", description: "With check/status: emit JSON instead of text", kind: "flag" },
-      { name: "interval", description: "With install: minutes between checks (default 5); 1-59, or an exact multiple of 60 up to 1440", kind: "option" },
-      { name: "apply", description: "With install/uninstall: mutate the target's crontab instead of only printing it", kind: "flag" },
-      BREAK_LOCK_ARGUMENT,
-      BREAK_FOREIGN_LOCK_ARGUMENT,
+      ...WATCH_CHECK_ARGUMENTS,
+      ...WATCH_INSTALL_ARGUMENTS,
     ],
   },
   incident: {
@@ -575,14 +531,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "original failure still reaches you afterwards as a non-zero exit.\n" +
       "Mutating (rotate recreates the gateway) — takes the instance lock. --dry-run prints the " +
       "plan and performs none of it, not even taking the lock.",
-    arguments: [
-      { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
-      { name: "keep-exposure", description: "Proceed even though the gateway is published on every interface", kind: "flag" },
-      { name: "tail", description: "Lines of log to collect (default 500)", kind: "option" },
-      { name: "json", description: "Emit the report as JSON", kind: "flag" },
-      BREAK_LOCK_ARGUMENT,
-      BREAK_FOREIGN_LOCK_ARGUMENT,
-    ],
+    arguments: INCIDENT_ARGUMENTS,
     structured: true,
   },
   "mcp-creds": {
@@ -597,9 +546,6 @@ export const managementCommands: Record<string, AppCommand> = {
     details:
       "The same information `./clawforge mcp-setup` writes to a file, printed instead —\n" +
       "useful for pasting into a client by hand or checking what --json/--token would produce.",
-    arguments: [
-      { name: "json", description: "Print the client config only", kind: "flag" },
-      { name: "token", description: "Print the gateway token only", kind: "flag" },
-    ],
+    arguments: MCP_CREDS_ARGUMENTS,
   },
 };

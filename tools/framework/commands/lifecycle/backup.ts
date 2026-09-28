@@ -18,7 +18,21 @@ import { runningRecipeStacks } from "../management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "../management/recipe/lifecycle.ts";
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "./verify.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
+import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+
+/** Drives both `./clawforge backup`'s own parser and its openclawCommands declaration (help,
+ *  MCP schema) from one list, so the two cannot drift apart. */
+export const BACKUP_ARGUMENTS: CommandArgument[] = [
+  PROFILE_ARGUMENT,
+  { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
+  { name: "native", description: "Consistent snapshot without stopping the gateway (full profile only); auth-secrets/ and anything OpenClaw's own backup omits are copied in, hot", kind: "flag" },
+  { name: "share", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
+  { name: "migrate", description: "Migrate profile: no provider keys (same as --profile migrate)", kind: "flag" },
+  { name: "with-secrets", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
+];
 
 export interface BackupOptions {
   hot?: boolean;
@@ -449,25 +463,26 @@ async function targetExists(ctx: Context, path: string): Promise<boolean> {
 
 export async function backup(ctx: Context, args: string[]): Promise<void> {
   const options: BackupOptions = {};
+  const parsed = parseDeclaredArgs(BACKUP_ARGUMENTS, args);
 
+  if (parsed.hot === true) options.hot = true;
+  if (parsed.native === true) options.native = true;
+
+  // --share, --with-secrets, --migrate (the same shorthand vocabulary `pull` accepts) and
+  // --profile all set the same field, so whichever was typed LAST decides it — scanned over
+  // the raw argv, not the declaration-keyed `parsed` above, because that ordering is exactly
+  // what the hand-written loop this replaces gave: one pass, later flag wins regardless of
+  // which of the two forms it was.
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
-    if (arg === "--hot") {
-      options.hot = true;
-    } else if (arg === "--native") {
-      options.native = true;
-    } else if (shorthand !== undefined) {
-      // --share, --with-secrets, --migrate: the same shorthand vocabulary `pull` accepts
-      // (UX-13), so a script that passes one to either command gets the same profile.
+    if (shorthand !== undefined) {
       options.profile = shorthand;
     } else if (arg === "--profile") {
       const value = args[index + 1];
       if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");
       options.profile = value;
       index += 1;
-    } else {
-      die(`unknown argument: ${arg}`);
     }
   }
 

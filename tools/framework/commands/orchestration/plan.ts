@@ -26,6 +26,14 @@ import { withSetSource } from "#src/set/artifacts/source.ts";
 import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import type { Inspection, Problem, ProblemCode } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both plan's own parser and its openclawCommands declaration. */
+export const PLAN_ARGUMENTS: CommandArgument[] = [
+  { name: "set", description: "Plan from a built set artifact instead of the working tree", kind: "option" },
+  { name: "json", description: "Emit the plan as JSON", kind: "flag" },
+];
 
 export interface PlanAction {
   /** Stable identifier, so a report about a step can name it: "apply-config",
@@ -296,18 +304,11 @@ export async function computePlan(ctx: Context): Promise<Plan> {
 }
 
 export async function plan(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  let artifact: string | undefined;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--json") continue;
-    if (arg === "--set") {
-      artifact = args[index + 1] ?? die("--set needs an artifact path");
-      index += 1;
-      continue;
-    }
-    die(`unknown argument: ${arg}`);
-  }
+  const parsed = parseDeclaredArgs(PLAN_ARGUMENTS, args);
+  const jsonOnly = parsed.json === true;
+  const artifact = parsed.set === undefined
+    ? undefined
+    : parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string;
 
   // One engine, two sources: with --set the declaration comes from the artifact and
   // everything about the machine keeps coming from the deployment. Without it, nothing

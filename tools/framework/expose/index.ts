@@ -20,6 +20,8 @@ import { exposeStatus } from "./status.ts";
 
 export { summarizeExposure, exposureOneLiner } from "./status.ts";
 export type { ExposureSummary } from "./status.ts";
+export { EXPOSE_SSH_ARGUMENTS } from "./ssh.ts";
+export { EXPOSE_TAILSCALE_ARGUMENTS } from "./tailscale.ts";
 
 /** Only `tailscale --apply` mutates anything (runs `tailscale serve` on the target); ssh and
  *  status only read and print. One predicate for the MCP gate's readOnlyWhen/changedWhen/

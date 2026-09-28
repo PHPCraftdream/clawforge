@@ -33,7 +33,7 @@ import { randomBytes } from "node:crypto";
 import { basename, dirname } from "node:path";
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
-import { log, info, warn, die, UserError } from "#src/core/log.ts";
+import { log, info, warn, UserError } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { CouldNotCheck, NotChecked } from "../check-outcome.ts";
 import type { CheckOutcome } from "../check-outcome.ts";
@@ -49,6 +49,13 @@ import { noProviderConfigured } from "#src/service/secrets.ts";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { valueAt } from "../orchestration/inspect/helpers.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both smoke's own parser and its openclawCommands declaration. */
+export const SMOKE_ARGUMENTS: CommandArgument[] = [
+  { name: "quick", description: "Skip the slow round-trip check", kind: "flag" },
+];
 
 export interface Check {
   readonly name: string;
@@ -680,10 +687,7 @@ export function report(summary: SmokeSummary, quick: boolean): void {
 }
 
 export async function smoke(ctx: Context, args: string[]): Promise<void> {
-  const quick = args.includes("--quick");
-  for (const arg of args) {
-    if (arg !== "--quick") die(`unknown argument: ${arg}`);
-  }
+  const quick = parseDeclaredArgs(SMOKE_ARGUMENTS, args).quick === true;
   const selected = quick ? checks.filter((check) => check.name !== ROUND_TRIP_CHECK) : checks;
 
   log(`smoke run against ${ctx.settings.serviceUrl}`);

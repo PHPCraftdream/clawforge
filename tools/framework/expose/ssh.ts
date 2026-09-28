@@ -8,22 +8,22 @@ import { log, info, die } from "#src/core/log.ts";
 import { spawnLocal } from "#src/runtime/transport.ts";
 import { shouldFollow } from "#src/core/output.ts";
 import type { Context } from "#src/core/context.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 
 const PORT = /^[1-9][0-9]*$/;
 
+/** The slice of `expose`'s declaration this action's own argv actually uses. */
+export const EXPOSE_SSH_ARGUMENTS: CommandArgument[] = [
+  { name: "local-port", description: "With ssh: local port to bind (defaults to the gateway's own port)", kind: "option" },
+  { name: "run", description: "With ssh: open the tunnel in the foreground until Ctrl+C; needs a real terminal", kind: "flag" },
+];
+
 function parseArgs(args: string[]): { localPort?: string; run: boolean } {
-  let localPort: string | undefined;
-  let run = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--run") { run = true; continue; }
-    if (arg === "--local-port") {
-      localPort = args[++index] ?? die("--local-port needs a port number");
-      if (!PORT.test(localPort)) die(`--local-port must be a plain port number, got: ${localPort}`);
-      continue;
-    }
-    die(`unknown argument: ${arg}`);
-  }
+  const parsed = parseDeclaredArgs(EXPOSE_SSH_ARGUMENTS, args);
+  const run = parsed.run === true;
+  const localPort = parsed["local-port"] === "" ? die("--local-port needs a port number") : parsed["local-port"] as string | undefined;
+  if (localPort !== undefined && !PORT.test(localPort)) die(`--local-port must be a plain port number, got: ${localPort}`);
   return { localPort, run };
 }
 

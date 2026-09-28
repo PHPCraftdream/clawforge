@@ -13,6 +13,13 @@ import { readWatchState, writeWatchState } from "./state.ts";
 import type { WatchLevel, WatchReason, WatchState } from "./state.ts";
 import { parseWebhookUrl, postWebhookAlert, transitionPayload, watchWebhookRaw } from "./webhook.ts";
 import { channelFindings, diskFindings, mergeFindings } from "./health.ts";
+import type { CommandArgument } from "../core/app.ts";
+import { parseDeclaredArgs } from "../argv/parse-args.ts";
+
+/** Drives both watch check's own parser and its slice of watch's openclawCommands declaration. */
+export const WATCH_CHECK_ARGUMENTS: CommandArgument[] = [
+  { name: "json", description: "With check/status: emit JSON instead of text", kind: "flag" },
+];
 
 /** The subset of `inspect`'s problem codes that say something about LIVENESS — the gateway
  *  answering, bootstrapped, reaching its own configured endpoints. Deliberately narrower
@@ -151,10 +158,7 @@ async function withAdditionalFindings(
 }
 
 export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  for (const arg of args) {
-    if (arg !== "--json") die(`unknown argument: ${arg}`);
-  }
+  const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
 
   // Validated before gatherInspection ever reaches the target: a misconfigured webhook is
   // a configuration error worth stopping on every cycle, not just the one that would have

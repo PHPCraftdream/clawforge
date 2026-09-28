@@ -26,6 +26,18 @@ import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, collectManifest, defaultSetName } from "./set-manifest.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** The slice of `set`'s declaration build/validate/forget share — `try` parses its own
+ *  (set-try.ts), `diff`/`receipts` parse theirs (set-diff.ts/set-receipts.ts). */
+export const SET_MAIN_ARGUMENTS: CommandArgument[] = [
+  { name: "name", description: "Set name (default: the deployment's name); with forget, the object's name", kind: "option" },
+  { name: "set", description: "Artifact to validate or try, instead of the working tree", kind: "option" },
+  { name: "kind", description: "With forget: agent, mcp-server, or cron-job", kind: "option" },
+  { name: "break-lock", description: "With forget: take over the instance lock held by another operation", kind: "flag" },
+  { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
+];
 
 export * from "./set-secrets-guard.ts";
 export * from "./set-manifest.ts";
@@ -151,30 +163,12 @@ export async function set(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
-  let name: string | undefined;
-  let kind: string | undefined;
-  let artifact: string | undefined;
-  let jsonOnly = false;
-  let breakLock = false;
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index];
-    if (arg === "--name") {
-      name = rest[index + 1] ?? die("--name needs a value");
-      index += 1;
-    } else if (arg === "--kind") {
-      kind = rest[index + 1] ?? die("--kind needs a value");
-      index += 1;
-    } else if (arg === "--set") {
-      artifact = rest[index + 1] ?? die("--set needs an artifact path");
-      index += 1;
-    } else if (arg === "--break-lock") {
-      breakLock = true;
-    } else if (arg === "--json") {
-      jsonOnly = true;
-    } else {
-      die(`unknown argument: ${arg}`);
-    }
-  }
+  const parsed = parseDeclaredArgs(SET_MAIN_ARGUMENTS, rest);
+  const name = parsed.name === "" ? die("--name needs a value") : parsed.name as string | undefined;
+  const kind = parsed.kind === "" ? die("--kind needs a value") : parsed.kind as string | undefined;
+  const artifact = parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string | undefined;
+  const breakLock = parsed["break-lock"] === true;
+  const jsonOnly = parsed.json === true;
 
   if (action === "forget") {
     await forgetAction(ctx, kind, name, breakLock);

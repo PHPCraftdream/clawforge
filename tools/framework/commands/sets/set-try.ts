@@ -38,8 +38,18 @@ import type { AcceptanceResult } from "../orchestration/accept.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { unpackForTry, findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 
 export * from "./set-try-env.ts";
+
+/** The slice of `set`'s declaration `try`'s own argv actually uses. */
+export const SET_TRY_ARGUMENTS: CommandArgument[] = [
+  { name: "set", description: "Artifact to validate or try, instead of the working tree", kind: "option" },
+  { name: "with-model", description: "With try: include acceptance checks that call the model", kind: "flag" },
+  { name: "keep", description: "With try: leave the throwaway instance running instead of tearing it down", kind: "flag" },
+  { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
+];
 
 const SCAFFOLD_MODULES: Record<string, string> = {
   app: "core/app",
@@ -87,22 +97,10 @@ export interface SetTryOptions {
 
 /** Parses the artifact and explicit execution options. */
 export function parseSetTryArgs(args: string[]): SetTryOptions {
-  let artifact: string | undefined;
-  let withModel = false;
-  let keep = false;
-  let jsonOnly = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--set") {
-      artifact = args[index + 1] ?? die("--set needs an artifact path");
-      index += 1;
-    } else if (arg === "--with-model") withModel = true;
-    else if (arg === "--keep") keep = true;
-    else if (arg === "--json") jsonOnly = true;
-    else die(`unknown argument: ${arg}`);
-  }
+  const parsed = parseDeclaredArgs(SET_TRY_ARGUMENTS, args);
+  const artifact = parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string | undefined;
   if (artifact === undefined) die("usage: ./clawforge set try --set <artifact> [--with-model] [--keep] [--json]");
-  return { artifact, withModel, keep, jsonOnly };
+  return { artifact, withModel: parsed["with-model"] === true, keep: parsed.keep === true, jsonOnly: parsed.json === true };
 }
 
 /** Stops and removes only the resources owned by a try. The callbacks are injectable so the

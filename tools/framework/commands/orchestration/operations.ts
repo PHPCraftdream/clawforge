@@ -8,27 +8,28 @@ import { log, info, warn, die } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
 import { listOperations, readOperation, operationsDir } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 
 const DEFAULT_LIMIT = 10;
 
-export async function operations(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  let limit = DEFAULT_LIMIT;
-  let wanted: string | undefined;
+/** Drives both operations' own parser and its openclawCommands declaration. */
+export const OPERATIONS_ARGUMENTS: CommandArgument[] = [
+  { name: "id", description: "Operation id to show in full", kind: "positional" },
+  { name: "limit", description: "How many recent operations to list (default 10)", kind: "option" },
+  { name: "json", description: "Emit the record, or the list, as JSON", kind: "flag" },
+];
 
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--json") continue;
-    if (arg === "--limit") {
-      const value = Number.parseInt(args[index + 1] ?? "", 10);
-      if (Number.isNaN(value) || value <= 0) die("--limit needs a positive number");
-      limit = value;
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith("-")) die(`unknown argument: ${arg}`);
-    wanted = arg;
+export async function operations(ctx: Context, args: string[]): Promise<void> {
+  const parsed = parseDeclaredArgs(OPERATIONS_ARGUMENTS, args);
+  const jsonOnly = parsed.json === true;
+  let limit = DEFAULT_LIMIT;
+  if (parsed.limit !== undefined) {
+    const value = Number.parseInt(parsed.limit as string, 10);
+    if (Number.isNaN(value) || value <= 0) die("--limit needs a positive number");
+    limit = value;
   }
+  const wanted = parsed.id as string | undefined;
 
   if (wanted !== undefined) {
     const record = await readOperation(ctx, wanted);

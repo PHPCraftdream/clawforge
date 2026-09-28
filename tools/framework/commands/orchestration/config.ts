@@ -11,6 +11,16 @@ import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both apply-config's own parser and its openclawCommands declaration. */
+export const APPLY_CONFIG_ARGUMENTS: CommandArgument[] = [
+  { name: "dry-run", description: "Validate the apply without writing; refused together with --dump", kind: "flag" },
+  { name: "dump", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
+  { name: "force", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag" },
+  { name: "break-lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
+];
 
 
 
@@ -45,13 +55,11 @@ export async function applyConfig(
   args: string[],
   options: { restartAdvice?: boolean } = {},
 ): Promise<void> {
-  const dryRun = args.includes("--dry-run");
-  const dump = args.includes("--dump");
-  const force = args.includes("--force");
-  const breakLock = args.includes("--break-lock");
-  for (const arg of args) {
-    if (arg !== "--dry-run" && arg !== "--break-lock" && arg !== "--dump" && arg !== "--force") die(`unknown argument: ${arg}`);
-  }
+  const parsed = parseDeclaredArgs(APPLY_CONFIG_ARGUMENTS, args);
+  const dryRun = parsed["dry-run"] === true;
+  const dump = parsed.dump === true;
+  const force = parsed.force === true;
+  const breakLock = parsed["break-lock"] === true;
 
   // Which flags mean anything is decided from the mode here, not left to branch order: the
   // dump branch used to run first, so --dry-run --dump --force reached it with the dry run

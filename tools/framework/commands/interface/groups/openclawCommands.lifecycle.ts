@@ -3,14 +3,14 @@
 
 import type { AppCommand } from "#src/core/app.ts";
 
-import { up, down, logs, restart, upgrade } from "#src/commands/lifecycle/lifecycle.ts";
-import { bootstrap } from "#src/commands/lifecycle/bootstrap.ts";
-import { backup } from "#src/commands/lifecycle/backup.ts";
-import { restore } from "#src/commands/lifecycle/restore.ts";
-import { verify } from "#src/commands/lifecycle/verify.ts";
-import { pull, push } from "#src/commands/lifecycle/state.ts";
-import { smoke } from "#src/commands/lifecycle/smoke.ts";
-import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
+import { up, down, logs, restart, upgrade, UPGRADE_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
+import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap.ts";
+import { backup, BACKUP_ARGUMENTS } from "#src/commands/lifecycle/backup.ts";
+import { restore, RESTORE_ARGUMENTS } from "#src/commands/lifecycle/restore.ts";
+import { verify, VERIFY_ARGUMENTS } from "#src/commands/lifecycle/verify.ts";
+import { pull, push, PULL_ARGUMENTS, PUSH_ARGUMENTS } from "#src/commands/lifecycle/state.ts";
+import { smoke, SMOKE_ARGUMENTS } from "#src/commands/lifecycle/smoke.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 export const lifecycleCommands: Record<string, AppCommand> = {
   bootstrap: {
@@ -27,11 +27,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "only then start.\n" +
       "Safe to run again on a live instance: it refreshes the image and restarts, and never " +
       "regenerates an existing token or touches data already on disk.",
-    arguments: [
-      { name: "no-pull", description: "Use the image already present locally", kind: "flag" },
-      BREAK_LOCK_ARGUMENT,
-      BREAK_FOREIGN_LOCK_ARGUMENT,
-    ],
+    arguments: BOOTSTRAP_ARGUMENTS,
   },
   up: {
     summary: "Start the service and wait until it serves",
@@ -116,14 +112,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "own payload, never a hardcoded name — and the count is reported. Those copies are hot: " +
       "an append-only transcript's last line can be truncated by a write landing mid-copy, the " +
       "same partial-write risk --hot accepts for the whole tree, narrowed here to log tails.",
-    arguments: [
-      PROFILE_ARGUMENT,
-      { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
-      { name: "native", description: "Consistent snapshot without stopping the gateway (full profile only); auth-secrets/ and anything OpenClaw's own backup omits are copied in, hot", kind: "flag" },
-      { name: "share", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
-      { name: "migrate", description: "Migrate profile: no provider keys (same as --profile migrate)", kind: "flag" },
-      { name: "with-secrets", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
-    ],
+    arguments: BACKUP_ARGUMENTS,
   },
   restore: {
     summary: "Restore an archive over the current state",
@@ -142,17 +131,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "the restored config references is actually available —\n" +
       "a config referencing a variable nothing supplies otherwise crash-loops on " +
       "SecretRefResolutionError.",
-    arguments: [
-      { name: "archive", description: "Path to the archive; newest if omitted", kind: "positional" },
-      FORCE_ARGUMENT,
-      BREAK_LOCK_ARGUMENT,
-      {
-        name: "fresh-identity",
-        description: "Drop identity and paired devices (cloning, not moving)",
-        kind: "flag",
-      },
-      { name: "no-start", description: "Leave the service stopped afterwards", kind: "flag" },
-    ],
+    arguments: RESTORE_ARGUMENTS,
   },
   pull: {
     summary: "Snapshot the instance state into the snapshot directory",
@@ -175,14 +154,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "Keeps the newest OC_SNAPSHOT_KEEP snapshots (default 10, same as backup's " +
       "OC_BACKUP_KEEP) and removes the rest, sidecar files included — unbounded before, " +
       "on a deployment pulled regularly this filled the snapshot directory forever.",
-    arguments: [
-      PROFILE_ARGUMENT,
-      { name: "share", description: "Shareable profile with verification", kind: "flag" },
-      { name: "with-secrets", description: "Full profile: includes provider keys", kind: "flag" },
-      { name: "migrate", description: "Migrate profile (already pull's default) — accepted so backup and pull share the same flag vocabulary", kind: "flag" },
-      { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
-      BREAK_LOCK_ARGUMENT,
-    ],
+    arguments: PULL_ARGUMENTS,
   },
   push: {
     summary: "Push a snapshot back onto the instance",
@@ -197,16 +169,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "then checks every required secret is actually present before starting — a share " +
       "snapshot carries no keys at all, so this leaves the instance restored but stopped " +
       "with instructions instead of crash-looping.",
-    arguments: [
-      { name: "archive", description: "Snapshot to push; newest if omitted", kind: "positional" },
-      FORCE_ARGUMENT,
-      BREAK_LOCK_ARGUMENT,
-      {
-        name: "fresh-identity",
-        description: "Drop identity and paired devices (cloning, not moving)",
-        kind: "flag",
-      },
-    ],
+    arguments: PUSH_ARGUMENTS,
   },
   verify: {
     summary: "Check a snapshot for credentials before sharing it",
@@ -225,10 +188,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "data-relative) are refused the same way for migrate and share.\n" +
       "Does not scan for personal content in transcripts or workspace notes — review " +
       "those yourself.",
-    arguments: [
-      { name: "archive", description: "Archive to inspect", kind: "positional", required: true },
-      PROFILE_ARGUMENT,
-    ],
+    arguments: VERIFY_ARGUMENTS,
   },
   upgrade: {
     summary: "Update the image by digest, with automatic rollback on failure",
@@ -258,12 +218,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "--dry-run prints the current digest, the channel, what it resolves to at the " +
       "registry, and whether that is an upgrade — changing nothing, not even taking the " +
       "instance lock.",
-    arguments: [
-      { name: "image", description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE", kind: "option" },
-      { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
-      BREAK_LOCK_ARGUMENT,
-      BREAK_FOREIGN_LOCK_ARGUMENT,
-    ],
+    arguments: UPGRADE_ARGUMENTS,
     readOnlyWhen: (args) => args.includes("--dry-run"),
   },
   smoke: {
@@ -292,8 +247,6 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "gateway up.\n" +
       "--quick skips the slow round-trip check, but still shares that one stop/start " +
       "window with the two snapshot checks it does not skip.",
-    arguments: [
-      { name: "quick", description: "Skip the slow round-trip check", kind: "flag" },
-    ],
+    arguments: SMOKE_ARGUMENTS,
   },
 };

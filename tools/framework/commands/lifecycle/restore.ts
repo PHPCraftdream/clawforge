@@ -37,6 +37,18 @@ import {
   type PrivatePathsLedgerState,
 } from "#src/security/private-paths-ledger.ts";
 import { runningRecipeStacks } from "../management/recipe/index.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+
+/** Drives both restore's own parser and its openclawCommands declaration. */
+export const RESTORE_ARGUMENTS: CommandArgument[] = [
+  { name: "archive", description: "Path to the archive; newest if omitted", kind: "positional" },
+  FORCE_ARGUMENT,
+  BREAK_LOCK_ARGUMENT,
+  { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
+  { name: "no-start", description: "Leave the service stopped afterwards", kind: "flag" },
+];
 
 export interface RestoreOptions {
   force?: boolean;
@@ -483,16 +495,11 @@ export async function restoreArchive(
 
 export async function restore(ctx: Context, args: string[]): Promise<void> {
   const options: RestoreOptions = {};
-  let archive: string | undefined;
-
-  for (const arg of args) {
-    if (arg === "--force") options.force = true;
-    else if (arg === "--fresh-identity") options.freshIdentity = true;
-    else if (arg === "--no-start") options.noStart = true;
-    else if (arg === "--break-lock") continue;
-    else if (arg.startsWith("-")) die(`unknown argument: ${arg}`);
-    else archive = arg;
-  }
+  const parsed = parseDeclaredArgs(RESTORE_ARGUMENTS, args);
+  if (parsed.force === true) options.force = true;
+  if (parsed["fresh-identity"] === true) options.freshIdentity = true;
+  if (parsed["no-start"] === true) options.noStart = true;
+  let archive = parsed.archive as string | undefined;
 
   if (archive === undefined) {
     const { archive: newest, skipped } = await newestArchive(ctx, ctx.settings.backupDir);

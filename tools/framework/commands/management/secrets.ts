@@ -18,6 +18,19 @@ import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replace
 import { upsertEnvValue } from "#src/security/private-config.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both secrets' own parser and its openclawCommands declaration. */
+export const SECRETS_ARGUMENTS: CommandArgument[] = [
+  { name: "template", description: "Write the secrets template into config/", kind: "flag" },
+  { name: "print-template", description: "Print the template instead of writing it", kind: "flag" },
+  { name: "init-store", description: "Create an empty store to fill in", kind: "flag" },
+  { name: "apply", description: "Fill the target from a local store", kind: "flag" },
+  { name: "dump", description: "Recover a local store from the running instance", kind: "flag" },
+  { name: "store", description: "Store name, e.g. local or prod", kind: "option" },
+  { name: "force", description: "Replace an existing store (with --init-store or --dump)", kind: "flag" },
+];
 
 /** The store `secrets` commands write and read when no --store is given — and the one
  *  store inspect's STORE_INCOMPLETE finding watches, since inspect takes no store name. */
@@ -280,27 +293,14 @@ async function dumpToStore(ctx: Context, storeName: string, force: boolean): Pro
 }
 
 export async function secrets(ctx: Context, args: string[]): Promise<void> {
-  let writeTemplate = false;
-  let printTemplate = false;
-  let apply = false;
-  let store = DEFAULT_SECRET_STORE;
-  let initStore = false;
-  let dump = false;
-  let force = false;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--template") writeTemplate = true;
-    else if (arg === "--print-template") printTemplate = true;
-    else if (arg === "--apply") apply = true;
-    else if (arg === "--init-store") initStore = true;
-    else if (arg === "--dump") dump = true;
-    else if (arg === "--force") force = true;
-    else if (arg === "--store") {
-      store = args[index + 1] ?? die("--store needs a name, e.g. local or prod");
-      index += 1;
-    } else die(`unknown argument: ${arg}`);
-  }
+  const parsed = parseDeclaredArgs(SECRETS_ARGUMENTS, args);
+  const writeTemplate = parsed.template === true;
+  const printTemplate = parsed["print-template"] === true;
+  const apply = parsed.apply === true;
+  const initStore = parsed["init-store"] === true;
+  const dump = parsed.dump === true;
+  const force = parsed.force === true;
+  const store = parsed.store === undefined ? DEFAULT_SECRET_STORE : parsed.store === "" ? die("--store needs a name, e.g. local or prod") : parsed.store as string;
 
   if (initStore) {
     const path = secretStoreFile(store);

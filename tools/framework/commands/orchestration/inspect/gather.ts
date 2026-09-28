@@ -25,7 +25,7 @@
 // keeps its name and signature — apply.ts, plan.ts and the checks all import from
 // "./inspect/gather.ts" (or the barrel-free direct path, since there is no index.ts here).
 
-import { log, info, warn, reportBlocking, die } from "#src/core/log.ts";
+import { log, info, warn, reportBlocking } from "#src/core/log.ts";
 import { emit, isCaptured } from "#src/core/output.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
@@ -44,6 +44,13 @@ import type { Context } from "#src/core/context.ts";
 import { prospectiveConfig, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
 import { declaredState, observeConfig, observeLive, observeConnectionFacts, observeSecretStore, observeDeclarationFile } from "./observe.ts";
 import { runSecurityAudit } from "#src/security-audit/index.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Shared by inspect and doctor: both take only --json. */
+export const JSON_ONLY_ARGUMENTS: CommandArgument[] = [
+  { name: "json", description: "Emit the whole inspection as JSON", kind: "flag" },
+];
 
 /** The whole picture. Exported because doctor, plan and apply all read it rather than
  *  gathering their own — three gatherers would be three answers to one question. */
@@ -257,10 +264,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
 }
 
 export async function inspect(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  for (const arg of args) {
-    if (arg !== "--json") die(`unknown argument: ${arg}`);
-  }
+  const jsonOnly = parseDeclaredArgs(JSON_ONLY_ARGUMENTS, args).json === true;
 
   const inspection = await gatherInspection(ctx);
 
@@ -301,10 +305,7 @@ export function printProblem(entry: Problem): void {
  *  it: an instance with no lock file works, and a command that fails on everything it has
  *  an opinion about stops being consulted. */
 export async function doctor(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  for (const arg of args) {
-    if (arg !== "--json") die(`unknown argument: ${arg}`);
-  }
+  const jsonOnly = parseDeclaredArgs(JSON_ONLY_ARGUMENTS, args).json === true;
 
   const inspection = await gatherInspection(ctx);
   // The security gate: only doctor and accept run it — a container exec per audit, twice —

@@ -15,6 +15,17 @@ import { replacePrivateFile } from "#src/security/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "./backup.ts";
 import { restoreArchive } from "./restore.ts";
 import { imageChannel, channelHasTag } from "#src/diagnostics/image-digest.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+
+/** Drives both upgrade's own parser and its openclawCommands declaration. */
+export const UPGRADE_ARGUMENTS: CommandArgument[] = [
+  { name: "image", description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE", kind: "option" },
+  { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
+  BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
+];
 
 function regexEscape(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -280,21 +291,10 @@ function digestHash(reference: string): string {
 }
 
 function parseUpgradeArgs(args: string[]): { image?: string; dryRun: boolean } {
-  let image: string | undefined;
-  let dryRun = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--dry-run") dryRun = true;
-    else if (arg === "--break-lock") continue;
-    else if (arg === "--break-foreign-lock") index += 1;
-    else if (arg === "--image") {
-      const value = args[index + 1];
-      if (value === undefined || value.startsWith("-")) die("--image needs an image reference");
-      image = value;
-      index += 1;
-    } else die(`unknown argument: ${arg}`);
-  }
-  return { image, dryRun };
+  const parsed = parseDeclaredArgs(UPGRADE_ARGUMENTS, args);
+  const image = parsed.image as string | undefined;
+  if (image === "" || image?.startsWith("-") === true) die("--image needs an image reference");
+  return { image, dryRun: parsed["dry-run"] === true };
 }
 
 /** `channel` is the repo[:tag] the digest was resolved from; absent for an explicit digest. */

@@ -7,6 +7,15 @@ import { parseEnv } from "#src/core/env.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "#src/service/secrets.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both configure-provider's own parser and its openclawCommands declaration. */
+export const CONFIGURE_PROVIDER_ARGUMENTS: CommandArgument[] = [
+  { name: "provider", description: "Provider id, for example openai", kind: "option" },
+  { name: "env", description: "Secret variable, for example OPENAI_API_KEY", kind: "option" },
+  { name: "force", description: "Replace an existing provider SecretRef", kind: "flag" },
+];
 
 /** Gateway flags used by headless onboarding. */
 function gatewayFlags(ctx: Context): string[] {
@@ -24,20 +33,11 @@ const SKIP_FLAGS = [
 ];
 
 function parseArgs(args: string[]): { force: boolean; provider?: string; env?: string } {
-  let force = false;
-  let provider: string | undefined;
-  let env: string | undefined;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--force") { force = true; continue; }
-    if (arg === "--provider") { provider = args[++index] ?? die("--provider needs an id, e.g. openai"); continue; }
-    if (arg === "--env") {
-      env = args[++index] ?? die("--env needs a variable name, e.g. OPENAI_API_KEY");
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(env)) die(`invalid environment variable: ${env}`);
-      continue;
-    }
-    die(`unknown argument: ${arg}`);
-  }
+  const parsed = parseDeclaredArgs(CONFIGURE_PROVIDER_ARGUMENTS, args);
+  const force = parsed.force === true;
+  const provider = parsed.provider === "" ? die("--provider needs an id, e.g. openai") : parsed.provider as string | undefined;
+  const env = parsed.env === "" ? die("--env needs a variable name, e.g. OPENAI_API_KEY") : parsed.env as string | undefined;
+  if (env !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env)) die(`invalid environment variable: ${env}`);
   if (provider !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(provider)) die(`invalid provider id: ${provider}`);
   return { force, provider, env };
 }

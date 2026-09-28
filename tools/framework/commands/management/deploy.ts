@@ -60,8 +60,24 @@ import type { ExecResult } from "#src/runtime/transport.ts";
 import { readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 
 export { collectSensitiveCheckoutNames, rootProbeScript, parseRootProbe, markerWriteScript, markerVerifyScript };
+
+/** Drives both deploy's own parser and its openclawCommands declaration. */
+export const DEPLOY_ARGUMENTS: CommandArgument[] = [
+  { name: "target", description: "user@host", kind: "positional", required: true },
+  { name: "path", description: "Remote install directory", kind: "option" },
+  { name: "no-bootstrap", description: "Copy the files without starting anything", kind: "flag" },
+  {
+    name: "adopt",
+    description:
+      "Take over an existing, unmarked, non-empty remote root: lists what --delete would " +
+      "replace there before marking it as this deployment's",
+    kind: "flag",
+  },
+];
 
 /** Runs a script on the target through ssh.
  *
@@ -145,26 +161,13 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // usage error would send the reader off to fix the wrong thing.
   const sourceRoot = await frameworkSourceRoot();
 
-  let target: string | undefined;
-  let remotePath = "/opt/openclaw";
-  let bootstrapRemote = true;
-  let adopt = false;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--path") {
-      remotePath = args[index + 1] ?? die("--path needs a directory");
-      index += 1;
-    } else if (arg === "--adopt") {
-      adopt = true;
-    } else if (arg === "--no-bootstrap") {
-      bootstrapRemote = false;
-    } else if (arg.startsWith("-")) {
-      die(`unknown argument: ${arg}`);
-    } else {
-      target = arg;
-    }
-  }
+  const parsed = parseDeclaredArgs(DEPLOY_ARGUMENTS, args);
+  const target = parsed.target as string | undefined;
+  let remotePath = parsed.path === undefined
+    ? "/opt/openclaw"
+    : parsed.path === "" ? die("--path needs a directory") : parsed.path as string;
+  const bootstrapRemote = parsed["no-bootstrap"] !== true;
+  const adopt = parsed.adopt === true;
 
   if (target === undefined) die("usage: ./clawforge deploy user@host [--path <dir>] [--adopt] [--no-bootstrap]");
 

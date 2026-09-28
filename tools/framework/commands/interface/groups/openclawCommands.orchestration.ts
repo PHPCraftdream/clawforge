@@ -4,13 +4,13 @@
 
 import type { AppCommand } from "#src/core/app.ts";
 
-import { applyConfig } from "#src/commands/orchestration/config.ts";
+import { applyConfig, APPLY_CONFIG_ARGUMENTS } from "#src/commands/orchestration/config.ts";
 import { inspect, doctor } from "#src/commands/orchestration/inspect/gather.ts";
-import { plan } from "#src/commands/orchestration/plan.ts";
-import { apply, isApplyDryRun } from "#src/commands/orchestration/apply.ts";
-import { operations } from "#src/commands/orchestration/operations.ts";
-import { rollback } from "#src/commands/orchestration/rollback.ts";
-import { accept } from "#src/commands/orchestration/accept.ts";
+import { plan, PLAN_ARGUMENTS } from "#src/commands/orchestration/plan.ts";
+import { apply, isApplyDryRun, APPLY_ARGUMENTS } from "#src/commands/orchestration/apply.ts";
+import { operations, OPERATIONS_ARGUMENTS } from "#src/commands/orchestration/operations.ts";
+import { rollback, ROLLBACK_ARGUMENTS } from "#src/commands/orchestration/rollback.ts";
+import { accept, ACCEPT_ARGUMENTS } from "#src/commands/orchestration/accept.ts";
 
 export const orchestrationCommands: Record<string, AppCommand> = {
   inspect: {
@@ -98,10 +98,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "advisory instead: it refuses to overwrite an existing store without --force, and " +
       "whether the store's contents matter is the reader's decision, not a step.\n" +
       "Changes nothing. `./clawforge apply` runs exactly this list.",
-    arguments: [
-      { name: "set", description: "Plan from a built set artifact instead of the working tree", kind: "option" },
-      { name: "json", description: "Emit the plan as JSON", kind: "flag" },
-    ],
+    arguments: PLAN_ARGUMENTS,
     structured: true,
     readOnly: true,
   },
@@ -131,13 +128,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "step: one operation id, a journal entry each, stop at the first failure; they write " +
       "to the deployment folder rather than the instance, so their runners take no instance " +
       "lock of their own.",
-    arguments: [
-      { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option" },
-      { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option" },
-      { name: "dry-run", description: "Show the steps without running any of them", kind: "flag" },
-      { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
-      { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-    ],
+    arguments: APPLY_ARGUMENTS,
     structured: true,
     readOnlyWhen: isApplyDryRun,
   },
@@ -165,12 +156,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "blocking finding the same way a failed check does.\n" +
       "Exits non-zero when a check fails, could not be checked, or the security gate finds a " +
       "blocking issue.",
-    arguments: [
-      { name: "recipe", description: "Recipe to check (default: every recipe that declares checks)", kind: "positional" },
-      { name: "set", description: "Check this verified artifact's declarations and save an acceptance receipt", kind: "option" },
-      { name: "with-model", description: "Include the checks that call the model, and pay for them", kind: "flag" },
-      { name: "json", description: "Emit the report as JSON", kind: "flag" },
-    ],
+    arguments: ACCEPT_ARGUMENTS,
   },
   rollback: {
     summary: "Put back the configuration an operation replaced",
@@ -195,13 +181,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "restore. Refuses if no previous set is on record, or if its artifact is no longer in " +
       "sets/. Neither path replaces the other: a deployment never installed from a set still " +
       "has only the config-snapshot path above.",
-    arguments: [
-      { name: "operation", description: "Operation id to undo (default: the most recent one with a snapshot)", kind: "option" },
-      { name: "no-restart", description: "Restore the file without restarting the instance", kind: "flag" },
-      { name: "set", description: "Reinstall the previously installed set instead of restoring one config file", kind: "flag" },
-      { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
-      { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-    ],
+    arguments: ROLLBACK_ARGUMENTS,
   },
   operations: {
     summary: "What mutating runs did to this instance, and what they left behind",
@@ -218,11 +198,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "snapshot was taken that `./clawforge rollback` can put back.\n" +
       "An operation with no outcome did not reach its own end — killed, disconnected or " +
       "still running. That is reported as unfinished rather than dressed up as a result.",
-    arguments: [
-      { name: "id", description: "Operation id to show in full", kind: "positional" },
-      { name: "limit", description: "How many recent operations to list (default 10)", kind: "option" },
-      { name: "json", description: "Emit the record, or the list, as JSON", kind: "flag" },
-    ],
+    arguments: OPERATIONS_ARGUMENTS,
   },
   "apply-config": {
     summary: "Apply the deployment's desired-state.json",
@@ -246,11 +222,6 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "--dry-run cannot be combined with --dump — a dump has no dry-run form, it either " +
       "writes the recovered declaration or does nothing — --break-lock applies only where " +
       "an instance lock is taken (the real apply), and --force only applies to --dump.",
-    arguments: [
-      { name: "dry-run", description: "Validate the apply without writing; refused together with --dump", kind: "flag" },
-      { name: "dump", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
-      { name: "force", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag" },
-      { name: "break-lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
-    ],
+    arguments: APPLY_CONFIG_ARGUMENTS,
   },
 };

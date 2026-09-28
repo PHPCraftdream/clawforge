@@ -31,6 +31,15 @@ import { parseEnv } from "#src/core/env.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { privatePathsPolicy } from "#src/security/private-paths-ledger.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+
+/** Drives both verify's own parser and its openclawCommands declaration. */
+export const VERIFY_ARGUMENTS: CommandArgument[] = [
+  { name: "archive", description: "Archive to inspect", kind: "positional", required: true },
+  PROFILE_ARGUMENT,
+];
 
 /** The two kinds of rule a profile forbids archive entries by, kept apart on purpose:
  *
@@ -429,22 +438,13 @@ export async function verifySnapshotQuietly(ctx: Context, archive: string, profi
 }
 
 export async function verify(ctx: Context, args: string[]): Promise<void> {
+  const parsed = parseDeclaredArgs(VERIFY_ARGUMENTS, args);
   let profile: Profile = "share";
-  let archive: string | undefined;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--profile") {
-      const value = args[index + 1];
-      if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");
-      profile = value;
-      index += 1;
-    } else if (arg.startsWith("-")) {
-      die(`unknown argument: ${arg}`);
-    } else {
-      archive = arg;
-    }
+  if (parsed.profile !== undefined) {
+    if (!isProfile(parsed.profile as string)) die("--profile needs one of: full, migrate, share");
+    profile = parsed.profile as Profile;
   }
+  const archive = parsed.archive as string | undefined;
 
   if (archive === undefined) die("usage: ./clawforge verify [--profile share|migrate|full] <archive>");
   if (profile === "full") warn("profile 'full' is credential-complete by design — never share it");

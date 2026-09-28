@@ -15,7 +15,7 @@
 //   7. only then start and wait for /healthz
 
 import JSON5 from "json5";
-import { log, info, warn, die } from "#src/core/log.ts";
+import { log, info, warn } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
 import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
@@ -26,6 +26,16 @@ import { preflightPort, pinImageReference } from "./lifecycle.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
 import { imageChannel } from "#src/diagnostics/image-digest.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+
+/** Drives both bootstrap's own parser and its openclawCommands declaration. */
+export const BOOTSTRAP_ARGUMENTS: CommandArgument[] = [
+  { name: "no-pull", description: "Use the image already present locally", kind: "flag" },
+  BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
+];
 
 /** After a fresh pull, this deployment's OWN OPENCLAW_IMAGE is repointed from the moving tag
  *  to the exact digest that tag was just proven to hold — so a LATER pull of the same shared
@@ -57,16 +67,7 @@ async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
 }
 
 export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
-  const noPull = args.includes("--no-pull");
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--no-pull" || arg === "--break-lock") continue;
-    if (arg === "--break-foreign-lock") {
-      index += 1;
-      continue;
-    }
-    die(`unknown argument: ${arg}`);
-  }
+  const noPull = parseDeclaredArgs(BOOTSTRAP_ARGUMENTS, args)["no-pull"] === true;
 
   // Structurally ahead of the lock, not inside it: the lock lives in a directory of its own
   // (instance-lock.ts's lockHome), and on a fresh host that directory's PARENT is root:root

@@ -25,6 +25,17 @@ import { frameworkVersion } from "../management/lock.ts";
 import { apply } from "./apply.ts";
 import type { OperationRecord } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both rollback's own parser and its openclawCommands declaration. */
+export const ROLLBACK_ARGUMENTS: CommandArgument[] = [
+  { name: "operation", description: "Operation id to undo (default: the most recent one with a snapshot)", kind: "option" },
+  { name: "no-restart", description: "Restore the file without restarting the instance", kind: "flag" },
+  { name: "set", description: "Reinstall the previously installed set instead of restoring one config file", kind: "flag" },
+  { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+];
 
 /** The operation to undo, and why that one. Exported for the checks: choosing the wrong
  *  operation is the failure that matters here, and it is worth asserting without a target. */
@@ -63,42 +74,20 @@ interface RollbackOptions {
 
 /** Parse every rollback argument before reading or changing instance state. */
 export function parseRollbackArgs(args: string[]): RollbackOptions {
-  let set = false;
-  let jsonOnly = false;
-  let breakLock = false;
-  let restartAfter = true;
-  let operation: string | undefined;
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--set") {
-      set = true;
-      continue;
-    }
-    if (arg === "--json") {
-      jsonOnly = true;
-      continue;
-    }
-    if (arg === "--break-lock") {
-      breakLock = true;
-      continue;
-    }
-    if (arg === "--no-restart") {
-      restartAfter = false;
-      continue;
-    }
-    if (arg === "--operation") {
-      const value = args[index + 1];
-      if (value === undefined || value.length === 0 || value.startsWith("-")) {
-        die("--operation needs an operation id");
-      }
-      if (operation !== undefined) die("--operation may only be specified once");
-      operation = value;
-      index += 1;
-      continue;
-    }
-    die(`unknown argument: ${arg}`);
+  // Repetition is checked on the raw argv, ahead of the generic parser: that only keeps
+  // the last of several --operation values, and a second one here is a mistake worth
+  // naming rather than silently resolving.
+  if (args.filter((arg) => arg === "--operation").length > 1) die("--operation may only be specified once");
+  const parsed = parseDeclaredArgs(ROLLBACK_ARGUMENTS, args);
+  const set = parsed.set === true;
+  const jsonOnly = parsed.json === true;
+  const breakLock = parsed["break-lock"] === true;
+  const restartAfter = parsed["no-restart"] !== true;
+  const operationValue = parsed.operation as string | undefined;
+  if (operationValue !== undefined && (operationValue.length === 0 || operationValue.startsWith("-"))) {
+    die("--operation needs an operation id");
   }
+  const operation = operationValue;
 
   if (set && (operation !== undefined || !restartAfter)) {
     die("--set rolls back the whole set through ./clawforge apply — --operation and --no-restart belong to the single-file path only");

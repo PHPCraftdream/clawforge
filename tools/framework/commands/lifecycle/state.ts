@@ -18,8 +18,29 @@ import { createBackup } from "./backup.ts";
 import { restoreArchive } from "./restore.ts";
 import { forbiddenViolations, verifySnapshot } from "./verify.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 const SECRETS_SUFFIX = ".secrets.env";
+
+/** Drives both pull's own parser and its openclawCommands declaration. */
+export const PULL_ARGUMENTS: CommandArgument[] = [
+  PROFILE_ARGUMENT,
+  { name: "share", description: "Shareable profile with verification", kind: "flag" },
+  { name: "with-secrets", description: "Full profile: includes provider keys", kind: "flag" },
+  { name: "migrate", description: "Migrate profile (already pull's default) — accepted so backup and pull share the same flag vocabulary", kind: "flag" },
+  { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
+  BREAK_LOCK_ARGUMENT,
+];
+
+/** Drives both push's own parser and its openclawCommands declaration. */
+export const PUSH_ARGUMENTS: CommandArgument[] = [
+  { name: "archive", description: "Snapshot to push; newest if omitted", kind: "positional" },
+  FORCE_ARGUMENT,
+  BREAK_LOCK_ARGUMENT,
+  { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
+];
 
 async function ensureSnapshotDir(ctx: Context): Promise<string> {
   const directory = ctx.settings.snapshotDir;
@@ -300,23 +321,24 @@ export interface PullTransactionOptions {
 }
 
 export async function pull(ctx: Context, args: string[], transaction: PullTransactionOptions = {}): Promise<void> {
+  parseDeclaredArgs(PULL_ARGUMENTS, args);
   let profile: Profile = "migrate";
   let hot = false;
 
+  // --share, --with-secrets, --migrate (the same shorthand vocabulary `backup` accepts) and
+  // --profile all set the same field, so whichever was typed LAST wins — scanned over the
+  // raw argv, in order, the same way the hand-written loop this replaces did.
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    // --migrate is a no-op alongside the default, kept only so backup and pull accept the
-    // identical shorthand vocabulary (UX-13).
     const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
     if (arg === "--hot") hot = true;
     else if (shorthand !== undefined) profile = shorthand;
-    else if (arg === "--break-lock") continue;
     else if (arg === "--profile") {
       const value = args[index + 1];
       if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");
       profile = value;
       index += 1;
-    } else die(`unknown argument: ${arg}`);
+    }
   }
 
   // Validate argv before creating the lock or touching the target.
@@ -463,17 +485,10 @@ export async function push(ctx: Context, args: string[]): Promise<void> {
 }
 
 async function restoreFromSnapshot(ctx: Context, args: string[]): Promise<void> {
-  let archive: string | undefined;
-  let force = false;
-  let freshIdentity = false;
-
-  for (const arg of args) {
-    if (arg === "--force") force = true;
-    else if (arg === "--fresh-identity") freshIdentity = true;
-    else if (arg === "--break-lock") continue;
-    else if (arg.startsWith("-")) die(`unknown argument: ${arg}`);
-    else archive = arg;
-  }
+  const parsed = parseDeclaredArgs(PUSH_ARGUMENTS, args);
+  let archive = parsed.archive as string | undefined;
+  const force = parsed.force === true;
+  const freshIdentity = parsed["fresh-identity"] === true;
 
   const snapshotDir = ctx.settings.snapshotDir;
 

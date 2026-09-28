@@ -33,6 +33,19 @@ import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts
 import { gatherInspection } from "./inspect/gather.ts";
 import { isHealthy, blockingProblems } from "#src/service/inspection.ts";
 import { runSecurityAudit, type SecurityFinding } from "#src/security-audit/index.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both accept's own parser and its openclawCommands declaration. */
+export const ACCEPT_ARGUMENTS: CommandArgument[] = [
+  { name: "recipe", description: "Recipe to check (default: every recipe that declares checks)", kind: "positional" },
+  { name: "set", description: "Check this verified artifact's declarations and save an acceptance receipt", kind: "option" },
+  { name: "with-model", description: "Include the checks that call the model, and pay for them", kind: "flag" },
+  { name: "json", description: "Emit the report as JSON", kind: "flag" },
+];
+
+/** The slice acceptFromSource re-parses once --set has already been stripped out. */
+const ACCEPT_FROM_SOURCE_ARGUMENTS: CommandArgument[] = ACCEPT_ARGUMENTS.filter((argument) => argument.name !== "set");
 
 /** One declared check. `kind` selects what the framework does; everything else is that
  *  kind's own arguments, kept loose because each kind reads different ones. */
@@ -361,15 +374,10 @@ export async function accept(ctx: Context, args: string[]): Promise<void> {
 
 async function acceptFromSource(ctx: Context, args: string[], verified?: VerifiedArtifact): Promise<void> {
   const startedAt = new Date().toISOString();
-  const jsonOnly = args.includes("--json");
-  const withModel = args.includes("--with-model");
-  let wanted: string | undefined;
-
-  for (const arg of args) {
-    if (arg === "--json" || arg === "--with-model") continue;
-    if (arg.startsWith("-")) die(`unknown argument: ${arg}`);
-    wanted = arg;
-  }
+  const parsed = parseDeclaredArgs(ACCEPT_FROM_SOURCE_ARGUMENTS, args);
+  const jsonOnly = parsed.json === true;
+  const withModel = parsed["with-model"] === true;
+  const wanted = parsed.recipe as string | undefined;
 
   const recipes = wanted === undefined ? await recipesWithAcceptance() : [wanted];
   if (recipes.length === 0) {

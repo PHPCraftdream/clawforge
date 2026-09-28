@@ -1,17 +1,16 @@
 // `./clawforge watch status` — the persisted last state, when it changed, and whether an
 // alert webhook is configured. Never the URL itself, in any form: only the boolean.
 
-import { die, info, log } from "../core/log.ts";
+import { info, log } from "../core/log.ts";
 import { emit, isCaptured } from "../core/output.ts";
 import type { Context } from "../core/context.ts";
 import { readWatchState } from "./state.ts";
 import { watchWebhookRaw } from "./webhook.ts";
+import { WATCH_CHECK_ARGUMENTS } from "./check.ts";
+import { parseDeclaredArgs } from "../argv/parse-args.ts";
 
 export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = args.includes("--json");
-  for (const arg of args) {
-    if (arg !== "--json") die(`unknown argument: ${arg}`);
-  }
+  const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
 
   const state = await readWatchState();
   const webhookConfigured = watchWebhookRaw(ctx) !== undefined;

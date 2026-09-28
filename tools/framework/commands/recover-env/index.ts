@@ -46,6 +46,18 @@ import { upsertEnvValue } from "#src/security/private-config.ts";
 import { CONNECTION_FACTS, connectionFactDiffs, unrecoverableConnectionFacts } from "./facts.ts";
 import type { ConnectionFactDiff, ConnectionFacts } from "./facts.ts";
 import { createRecoveryTransport, runningConnectionFactsWithoutContext } from "./bootstrap.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+
+/** Drives both recover-env's own parser and its openclawCommands declaration. */
+export const RECOVER_ENV_ARGUMENTS: CommandArgument[] = [
+  { name: "dry-run", description: "Print what would change without writing", kind: "flag" },
+  {
+    name: "adopt-runtime",
+    description: "Take the running container as authoritative: merge its facts over the file's existing values too, not just fill the names it is missing",
+    kind: "flag",
+  },
+];
 
 /** Reports the facts Docker's own answer did not carry — left as they are, never guessed.
  *  Shared by every exit path, so a dry run names exactly the gaps a real write would. */
@@ -73,16 +85,8 @@ function reportDirectionChoice(diverged: ConnectionFactDiff[]): void {
  *  change and writes nothing; --adopt-runtime takes the container as the authoritative
  *  side; anything else is refused rather than guessed at. */
 function parseRecoveryArgs(args: string[]): { dryRun: boolean; adoptRuntime: boolean } {
-  let dryRun = false;
-  let adoptRuntime = false;
-
-  for (const arg of args) {
-    if (arg === "--dry-run") dryRun = true;
-    else if (arg === "--adopt-runtime") adoptRuntime = true;
-    else die(`unknown argument: ${arg}`);
-  }
-
-  return { dryRun, adoptRuntime };
+  const parsed = parseDeclaredArgs(RECOVER_ENV_ARGUMENTS, args);
+  return { dryRun: parsed["dry-run"] === true, adoptRuntime: parsed["adopt-runtime"] === true };
 }
 
 /** A wholly absent .env is the command's one stated limit: reaching the target to inspect

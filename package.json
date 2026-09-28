@@ -20,7 +20,7 @@
     "pack:check": "cd tools/framework && npm pack --dry-run --json"
   },
   "devDependencies": {
-    "@types/node": "22.19.21",
+    "@types/node": "24.13.6",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "oxlint": "1.74.0"
   },

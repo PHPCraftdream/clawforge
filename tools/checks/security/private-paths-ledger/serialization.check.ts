@@ -70,6 +70,21 @@ const settle = async (): Promise<void> => {
   for (let turn = 0; turn < 10; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
 };
 
+/** Awaits a merge's own entry signal. The mutation reads the file first (real I/O), which
+ *  under load outlasts any fixed number of event-loop turns; the cap only turns a hang
+ *  into a failure. */
+async function untilSignaled(signal: Promise<void>, label: string): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const cap = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} never entered its merge`)), 60_000);
+  });
+  try {
+    await Promise.race([signal, cap]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const previousDeployment = (() => {
   try { return deploymentDir(); } catch { return undefined; }
 })();
@@ -88,14 +103,17 @@ try {
   const readAs: Record<string, string[]> = {};
   let releaseFirst!: () => void;
   const firstGate = new Promise<void>((resolveGate) => { releaseFirst = resolveGate; });
+  let signalFirstEntered!: () => void;
+  const firstEntered = new Promise<void>((resolveEntry) => { signalFirstEntered = resolveEntry; });
 
   const first = mutatePrivatePathsLedger(ledger, async (current) => {
     entered.push("first");
+    signalFirstEntered();
     readAs.first = [...current];
     await firstGate;
     return { next: [...current, "first-entry"], value: "first-published" };
   });
-  await settle();
+  await untilSignaled(firstEntered, "the first mutation");
   check("the first mutation entered its merge and holds the file", entered.join(","), "first");
   check("the first cycle read the empty ledger", sorted(readAs.first ?? []), "[]");
 
@@ -239,7 +257,6 @@ try {
   const gates: Partial<Record<"a" | "b" | "c", () => void>> = {};
   const hold = (name: "a" | "b" | "c"): Promise<void> =>
     new Promise<void>((resolveGate) => { gates[name] = resolveGate; });
-  // Resolved from inside the merge itself: entry is awaited as an event, not polled for.
   const entrySignals: Partial<Record<"a" | "b" | "c", () => void>> = {};
   const entries: Record<"a" | "b" | "c", Promise<void>> = {
     a: new Promise<void>((resolveEntry) => { entrySignals.a = resolveEntry; }),

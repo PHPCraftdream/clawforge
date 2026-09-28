@@ -9,7 +9,7 @@ import { createInterface } from "node:readline/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
-import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation } from "#src/runtime/datadir.ts";
+import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe } from "#src/runtime/datadir.ts";
 import {
   archiveRoot,
   inspectArchive,
@@ -155,9 +155,11 @@ async function verifyRestoredLayout(ctx: Context, dataDir: string): Promise<void
   }
 }
 
+/** Only test's own 0/1 is an answer; a transport hiccup under load is retried, then
+ *  reported — never read as "not a link", which would skip the root's symlink boundary. */
 async function isLink(ctx: Context, prefix: string[], path: string): Promise<boolean> {
   const [head, ...rest] = [...prefix, "test", "-L", path];
-  return (await ctx.transport.exec(head, rest, { allowFailure: true })).code === 0;
+  return (await answeredProbe(ctx, head, rest, [0, 1])).code === 0;
 }
 
 /** Present as anything — a dangling symlink counts, because creating "through" it lands

@@ -175,9 +175,7 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // remote runs — no connection, no mkdir, no rsync. The marker protocol below asks the
   // remote half of the same question.
   remotePath = validatedRemoteRoot(remotePath);
-  // watch install (and any other remote-side command) reads OC_REMOTE_PATH from this same
-  // deployment's own .env, not from --path — an operator overriding --path here without
-  // updating .env would point this run at one directory and every later command at another.
+  // Later commands (watch install) read OC_REMOTE_PATH, not --path.
   const remotePathNote = requestedPath !== undefined && requestedPath !== ctx.settings.remotePath
     ? `--path ${remotePath} differs from OC_REMOTE_PATH (${ctx.settings.remotePath}) in this deployment's ` +
       `.env — set OC_REMOTE_PATH=${remotePath} there, since watch install and other remote-side commands ` +

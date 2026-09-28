@@ -379,10 +379,8 @@ export async function plan(ctx: Context, args: string[]): Promise<void> {
   log(planNextStepLine(computed.actions));
 }
 
-/** The step list `plan` and `apply --dry-run` both print — one renderer, so the two commands
- *  can never disagree about the same plan. The header's executable count is the same filter
- *  `apply` itself runs, and every step (advisory included) prints its own summary rather than
- *  a placeholder, so an advisory step's text is never silently dropped. */
+/** The step list `plan` and `apply --dry-run` both print; the executable count is the filter
+ *  `apply` runs. */
 export function printPlanActions(actions: readonly PlanAction[]): void {
   const executable = actions.filter((action) => action.advisory !== true);
   log(`${actions.length} step(s) — ${executable.length} that ./clawforge apply will run`);

@@ -169,9 +169,7 @@ export class TargetChangedError extends Error {
   }
 }
 
-/** Whether argv requests apply's dry-run flag. Delegates to the same declared-argument
- *  parser apply's own argument handling uses, rather than a hand-rolled scan, so `--set`'s
- *  or `--expect`'s own value is never mistaken for the flag. */
+/** Whether argv requests --dry-run (an option value is never mistaken for the flag). */
 export function isApplyDryRun(args: readonly string[]): boolean {
   return parseDeclaredArgs(APPLY_ARGUMENTS, args)["dry-run"] === true;
 }
@@ -416,8 +414,7 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
   }
 
   if (dryRun) {
-    // Same renderer `plan` uses, on the same plan — the two commands can never report a
-    // different step count or drop an advisory step's text for the same deployment state.
+    // Same renderer as `plan`, so the two never disagree.
     emitOrPrint(jsonOnly, plan, () => {
       printPlanActions(plan.actions);
       log("dry run — nothing was applied");

@@ -3,27 +3,27 @@
 // differently, gather.ts's own header makes the same point), keep only the findings that
 // say whether the instance is doing its job, and alert exactly on a change.
 
-import { log, info, warn, die } from "../core/log.ts";
+import { log, info, warn, die, maskSecrets } from "../core/log.ts";
 import { emit, isCaptured } from "../core/output.ts";
 import { gatherInspection } from "../commands/orchestration/inspect/gather.ts";
-import type { Problem, ProblemCode } from "../service/inspection.ts";
+import type { Inspection, Problem, ProblemCode } from "../service/inspection.ts";
 import type { Context } from "../core/context.ts";
 import { readWatchState, writeWatchState } from "./state.ts";
 import type { WatchLevel, WatchReason, WatchState } from "./state.ts";
 import { parseWebhookUrl, postWebhookAlert, transitionPayload, watchWebhookRaw } from "./webhook.ts";
 
 /** The subset of `inspect`'s problem codes that say something about LIVENESS — the gateway
- *  answering, bootstrapped, reaching its own configured endpoints, able to answer a prompt
- *  at all. Deliberately narrower than the full inspection: CONFIG_DRIFT, RECIPE_MIRROR_DRIFT,
- *  a stale lock and the rest are real findings `doctor` already owns, but none of them mean
- *  the instance stopped doing its job, and paging an operator for one would train them to
- *  ignore the page. */
+ *  answering, bootstrapped, reaching its own configured endpoints. Deliberately narrower
+ *  than the full inspection: CONFIG_DRIFT, RECIPE_MIRROR_DRIFT, a stale lock and the rest
+ *  are real findings `doctor` already owns, but none of them mean the instance stopped
+ *  doing its job, and paging an operator for one would train them to ignore the page.
+ *  PROVIDER_MISSING is left out: env-keyed, subscription and CLI-backend providers read as
+ *  missing, which here would mean a permanent false "degraded". */
 const LIVENESS_CODES: ReadonlySet<ProblemCode> = new Set([
   "NOT_BOOTSTRAPPED",
   "GATEWAY_DOWN",
   "GATEWAY_UNHEALTHY",
   "EGRESS_UNREACHABLE",
-  "PROVIDER_MISSING",
 ]);
 
 /** Blocking-severity liveness findings mean the instance is not doing its job at all
@@ -40,6 +40,29 @@ export function watchLevel(problems: readonly Problem[]): { level: WatchLevel; r
 
 function summary(level: WatchLevel): string {
   return level === "ok" ? "ok — doing its job" : level === "degraded" ? "degraded — serving, but impaired" : "down — not doing its job";
+}
+
+/** Transport errors may echo a credential: masked, and capped before reaching the state file. */
+const TARGET_UNREACHABLE_DETAIL_MAX = 200;
+
+function targetUnreachableDetail(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const masked = maskSecrets(message);
+  return masked.length > TARGET_UNREACHABLE_DETAIL_MAX ? `${masked.slice(0, TARGET_UNREACHABLE_DETAIL_MAX)}…` : masked;
+}
+
+/** watchLevel()'s verdict, or "down" when the inspection could not run at all (Docker daemon
+ *  down, SSH refused, wsl.exe silent) — the outage this command exists to report. */
+export async function resolveWatchOutcome(
+  ctx: Context,
+  gather: (ctx: Context) => Promise<Inspection> = gatherInspection,
+): Promise<{ level: WatchLevel; reasons: WatchReason[] }> {
+  try {
+    const inspection = await gather(ctx);
+    return watchLevel(inspection.problems);
+  } catch (error) {
+    return { level: "down", reasons: [{ code: "TARGET_UNREACHABLE", detail: targetUnreachableDetail(error) }] };
+  }
 }
 
 /** Everything after "what is the level right now, and is the webhook usable": transition
@@ -121,8 +144,7 @@ export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
   const webhookRaw = watchWebhookRaw(ctx);
   const webhookUrl = webhookRaw === undefined ? undefined : parseWebhookUrl(webhookRaw);
 
-  const inspection = await gatherInspection(ctx);
-  const { level, reasons } = watchLevel(inspection.problems);
+  const { level, reasons } = await resolveWatchOutcome(ctx);
 
   await runWatchCycle(webhookUrl, level, reasons, jsonOnly);
 }

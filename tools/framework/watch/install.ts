@@ -62,9 +62,22 @@ async function targetInvocation(ctx: Context): Promise<WatchInvocation> {
     : { cwd: monorepoRoot, command: "./clawforge", args: ["--app", deploymentName(), "watch", "check"] };
 }
 
+/** A step in cron's minute field only works up to 59; whole hours step the hour field.
+ *  Anything else has no faithful encoding and is refused. */
+export function cronSchedule(minutes: number): string {
+  if (Number.isInteger(minutes) && minutes >= 1 && minutes <= 59) return `*/${minutes} * * * *`;
+  if (Number.isInteger(minutes) && minutes >= 60 && minutes <= 1440 && minutes % 60 === 0) {
+    const hours = minutes / 60;
+    if (hours === 24) return "0 0 * * *";
+    if (hours === 1) return "0 * * * *";
+    return `0 */${hours} * * *`;
+  }
+  throw new Error("--interval must be 1-59 minutes, or an exact multiple of 60 up to 1440 (60, 120, …, 1440)");
+}
+
 export function cronLine(minutes: number, invocation: WatchInvocation, name: string): string {
   const args = invocation.args.map((arg) => SshTransport.quote(arg)).join(" ");
-  return `*/${minutes} * * * * cd ${SshTransport.quote(invocation.cwd)} && ${invocation.command} ${args} >/dev/null 2>&1 ${watchMarker(name)}`;
+  return `${cronSchedule(minutes)} cd ${SshTransport.quote(invocation.cwd)} && ${invocation.command} ${args} >/dev/null 2>&1 ${watchMarker(name)}`;
 }
 
 interface SchedulingSupport {
@@ -149,7 +162,11 @@ function parseInstallArgs(args: string[]): { interval: number; apply: boolean } 
     if (arg === "--interval") {
       const raw = args[index + 1];
       const parsed = raw === undefined ? Number.NaN : Number(raw);
-      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1440) die("--interval needs a whole number of minutes between 1 and 1440");
+      try {
+        cronSchedule(parsed);
+      } catch (error) {
+        die((error as Error).message);
+      }
       interval = parsed;
       index += 1;
       continue;

@@ -486,20 +486,26 @@ export const managementCommands: Record<string, AppCommand> = {
     details:
       "Four actions.\n" +
       "check — one probe cycle, reusing exactly the findings `inspect`/`doctor` already " +
-      "compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE, " +
-      "PROVIDER_MISSING — never CONFIG_DRIFT or the rest, which are real but not about " +
-      "whether the instance is serving) and collapses them into ok / degraded / down. " +
-      "Compared against the last state persisted for this deployment (its own operator-side " +
-      "directory, never <data>/config — atomic write); a webhook POST (OC_WATCH_WEBHOOK in " +
-      "this deployment's .env, https only unless it is localhost) fires only on a TRANSITION, " +
-      "so an unchanged state never pages anyone twice. A failed POST leaves the persisted " +
-      "state at its old value on purpose, so the same unreported transition is retried next " +
-      "cycle instead of being silently accepted as normal. The exit code reflects the " +
-      "CURRENT state on every cycle, alert or not — 0 while ok, non-zero otherwise — for a " +
-      "scheduler to branch on without reading the text. The webhook URL is never printed, " +
-      "anywhere, including on failure.\n" +
+      "compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE — never " +
+      "PROVIDER_MISSING, whose detection is unreliable enough that it would page degraded " +
+      "forever on an instance answering fine, nor CONFIG_DRIFT or the rest, which are real " +
+      "but not about whether the instance is serving) and collapses them into ok / degraded / " +
+      "down. If gathering those findings itself fails outright — the Docker daemon down, an " +
+      "SSH host refusing the connection, wsl.exe never answering — that reads as down too, " +
+      "reason TARGET_UNREACHABLE, rather than dying before a cycle can alert or record " +
+      "anything. Compared against the last state persisted for this deployment (its own " +
+      "operator-side directory, never <data>/config — atomic write); a webhook POST " +
+      "(OC_WATCH_WEBHOOK in this deployment's .env, https only unless it is localhost) fires " +
+      "only on a TRANSITION, so an unchanged state never pages anyone twice. A failed POST " +
+      "leaves the persisted state at its old value on purpose, so the same unreported " +
+      "transition is retried next cycle instead of being silently accepted as normal. The " +
+      "exit code reflects the CURRENT state on every cycle, alert or not — 0 while ok, " +
+      "non-zero otherwise — for a scheduler to branch on without reading the text. The " +
+      "webhook URL is never printed, anywhere, including on failure.\n" +
       "install / uninstall — print (and, with --apply, install through the transport) a " +
-      "crontab entry that runs `watch check` every --interval minutes (default 5), marked " +
+      "crontab entry that runs `watch check` every --interval minutes (default 5; 1-59 steps " +
+      "cron's own minute field, an exact multiple of 60 up to 1440 steps the hour field " +
+      "instead — anything else is refused rather than silently misfiring hourly), marked " +
       "so a re-run replaces only its own line and uninstall removes only it. Only where " +
       "this framework can actually trust an unattended cron to find this tooling's own " +
       "node and checkout: a real SSH host (deploy already mirrored the checkout there) or a " +
@@ -513,7 +519,7 @@ export const managementCommands: Record<string, AppCommand> = {
     arguments: [
       { name: "action", description: "check, install, uninstall or status", kind: "positional", required: true, choices: ["check", "install", "uninstall", "status"] },
       { name: "json", description: "With check/status: emit JSON instead of text", kind: "flag" },
-      { name: "interval", description: "With install: minutes between checks (default 5)", kind: "option" },
+      { name: "interval", description: "With install: minutes between checks (default 5); 1-59, or an exact multiple of 60 up to 1440", kind: "option" },
       { name: "apply", description: "With install/uninstall: mutate the target's crontab instead of only printing it", kind: "flag" },
       BREAK_LOCK_ARGUMENT,
       BREAK_FOREIGN_LOCK_ARGUMENT,

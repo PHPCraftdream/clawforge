@@ -13,7 +13,7 @@ import { watchCheck } from "./check.ts";
 import { watchInstall, watchUninstall } from "./install.ts";
 import { watchStatus } from "./status.ts";
 
-export { watchLevel, runWatchCycle } from "./check.ts";
+export { watchLevel, runWatchCycle, resolveWatchOutcome } from "./check.ts";
 export type { WatchLevel, WatchReason, WatchState } from "./state.ts";
 
 /** Only install/uninstall --apply mutate the target (a crontab entry); check and status

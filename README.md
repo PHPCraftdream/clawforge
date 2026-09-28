@@ -290,7 +290,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `mcp-setup` | `[--client <name>] [--json]` | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
 | `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
 | `expose` | `<ssh\|tailscale\|status> [--local-port <n>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Reach a loopback-bound gateway from outside this host, narrowest scope first: `ssh` prints (and, with `--run`, opens) the SSH tunnel; `tailscale` prints (and, with `--apply`, runs) a tailnet-only `tailscale serve` — never `funnel`; `status` reports what is actually published right now, read back from the running container |
-| `watch` | `<check\|install\|uninstall\|status> [--json] [--interval <minutes>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change. `check` collapses the liveness-relevant findings `inspect` already computes into ok/degraded/down, alerts `OC_WATCH_WEBHOOK` only on a transition, and exits non-zero whenever the state is not ok; a failed alert leaves the persisted state at its old value so the next cycle retries it. `install`/`uninstall` print (and, with `--apply`, install through the transport) a crontab entry, only where an unattended cron can be trusted to find this tooling (a real SSH host or a POSIX `local` target) — elsewhere it prints the operator-side command instead of installing something that would silently never run. `status` shows the last persisted state and whether a webhook is configured, never the URL |
+| `watch` | `<check\|install\|uninstall\|status> [--json] [--interval <minutes>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change. `check` collapses the liveness-relevant findings `inspect` already computes into ok/degraded/down (an unreachable target, not just an unhealthy one, also reads as down, reason `TARGET_UNREACHABLE`), alerts `OC_WATCH_WEBHOOK` only on a transition, and exits non-zero whenever the state is not ok; a failed alert leaves the persisted state at its old value so the next cycle retries it. `install`/`uninstall` print (and, with `--apply`, install through the transport) a crontab entry — `--interval` is 1-59 minutes or an exact multiple of 60 up to 1440 — only where an unattended cron can be trusted to find this tooling (a real SSH host or a POSIX `local` target) — elsewhere it prints the operator-side command instead of installing something that would silently never run. `status` shows the last persisted state and whether a webhook is configured, never the URL |
 | `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
 | `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
 | `check` | — | Framework checks with no instance — paths, archives, arguments, what a server delivery contains |
@@ -363,26 +363,35 @@ An operator finds out the instance stopped doing its job without polling by hand
 
 * `./clawforge watch check` — one probe cycle. Reuses exactly the findings `inspect`/`doctor`
   already compute — `GATEWAY_DOWN`, `GATEWAY_UNHEALTHY`, `NOT_BOOTSTRAPPED`,
-  `EGRESS_UNREACHABLE`, `PROVIDER_MISSING` — and none of the rest (`CONFIG_DRIFT` and similar
-  are real findings, but not about whether the instance is serving). Collapses them into
-  `ok` / `degraded` / `down` by the same severity `service/inspection.ts` already assigns each
-  code, compares against the state persisted for this deployment (its own directory, atomic
-  write, never `<data>/config`), and POSTs `OC_WATCH_WEBHOOK` (in this deployment's `.env`;
-  https only, unless the host is localhost/127.0.0.1) only on a **transition** — an unchanged
-  state never alerts twice. A failed POST leaves the persisted state at its old value, so the
-  same unreported transition is retried next cycle rather than accepted as normal. The exit
-  code reflects the *current* state on every cycle, alert or not, for a scheduler to branch on.
+  `EGRESS_UNREACHABLE` — and none of the rest (`CONFIG_DRIFT` and similar are real findings,
+  but not about whether the instance is serving; `PROVIDER_MISSING` is excluded too — its
+  detection cannot see an env-keyed, subscription-login or CLI-backend provider, so counting
+  it here would page `degraded` forever on an instance that answers every prompt fine).
+  Collapses them into `ok` / `degraded` / `down` by the same severity `service/inspection.ts`
+  already assigns each code. When gathering those findings fails outright instead — the
+  Docker daemon down, an SSH host refusing the connection, `wsl.exe` never answering — that
+  reads as `down` too, reason `TARGET_UNREACHABLE` (a masked, shortened error, never the raw
+  message), rather than the whole cycle dying before it can alert or record anything. Compares
+  against the state persisted for this deployment (its own directory, atomic write, never
+  `<data>/config`), and POSTs `OC_WATCH_WEBHOOK` (in this deployment's `.env`; https only,
+  unless the host is localhost/127.0.0.1) only on a **transition** — an unchanged state never
+  alerts twice. A failed POST leaves the persisted state at its old value, so the same
+  unreported transition is retried next cycle rather than accepted as normal. The exit code
+  reflects the *current* state on every cycle, alert or not, for a scheduler to branch on.
   The webhook URL is registered as a secret (masked like the gateway token) and is never
   printed by this command, on any path, including failure.
 * `./clawforge watch install` / `watch uninstall` — print (and, with `--apply`, install through
   the transport) a crontab entry that runs `watch check` every `--interval` minutes (default
-  5), marked so a re-run replaces only its own line and `uninstall` removes only it. Only where
-  an unattended cron can be trusted to find this tooling's own node and checkout: a real SSH
-  host (`./clawforge deploy` already mirrored the checkout there) or a POSIX `local` target. A WSL
-  target's Docker distro is not such a place, and neither is Windows itself — there this prints
-  the exact command an operator-side scheduler (Task Scheduler on Windows) would need to
-  invoke instead of installing something that would silently never run; it never creates or
-  touches a real one.
+  5): 1-59 steps cron's own minute field, an exact multiple of 60 up to 1440 steps the hour
+  field instead (`60` → hourly, `120` → every 2 hours, `1440` → daily at midnight) — any other
+  value is refused, naming the allowed ones, rather than silently degrading to once an hour
+  the way a raw `*/N` past 59 would. Marked so a re-run replaces only its own line and
+  `uninstall` removes only it. Only where an unattended cron can be trusted to find this
+  tooling's own node and checkout: a real SSH host (`./clawforge deploy` already mirrored the
+  checkout there) or a POSIX `local` target. A WSL target's Docker distro is not such a place,
+  and neither is Windows itself — there this prints the exact command an operator-side
+  scheduler (Task Scheduler on Windows) would need to invoke instead of installing something
+  that would silently never run; it never creates or touches a real one.
 * `./clawforge watch status` — the persisted last state, when it last changed, and whether a
   webhook is configured — never the URL itself.
 

@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   cronLine,
+  cronSchedule,
   displayCommandLine,
   schedulingSupport,
   watchInstall,
@@ -63,6 +64,30 @@ check(
   withoutMarkedLine("*/5 * * * * ./clawforge watch check # clawforge-watch:other\n", "myapp"),
   ["*/5 * * * * ./clawforge watch check # clawforge-watch:other"],
 );
+
+// --- cronSchedule(): 1-59 steps cron's own minute field; an exact multiple of 60 up to a
+// day steps the hour field instead — `*/N` for N>=60 would silently misfire (B5) ----------
+
+for (const [minutes, expected] of [
+  [1, "*/1 * * * *"],
+  [5, "*/5 * * * *"],
+  [59, "*/59 * * * *"],
+  [60, "0 * * * *"],
+  [120, "0 */2 * * *"],
+  [180, "0 */3 * * *"],
+  [1380, "0 */23 * * *"],
+  [1440, "0 0 * * *"],
+] as const) {
+  check(`cronSchedule(${minutes})`, cronSchedule(minutes), expected);
+}
+for (const invalid of [0, 61, 90, 1441, 1.5, -5]) {
+  check(
+    `cronSchedule(${invalid}) refuses — no faithful cron encoding`,
+    await deathOf(() => cronSchedule(invalid)) !== "",
+    true,
+  );
+}
+check("cronLine builds its schedule through cronSchedule, not its own copy", cronLine(120, { cwd: "/x", command: "./clawforge", args: [] }, "myapp").startsWith("0 */2 * * *"), true);
 
 // --- schedulingSupport(): a property of the transport, checked against THIS platform's own
 // POSIX-ness for the "local" branch so the assertion holds on every CI runner ------------
@@ -139,6 +164,26 @@ try {
   check("re-installing replaces the one line rather than adding a second", ourLines.length, 1);
   check("the new interval took effect", ourLines[0]?.startsWith("*/10 * * * *"), true);
   check("the foreign and other-deployment lines are still untouched", [afterSecondInstall.includes(FOREIGN), afterSecondInstall.includes(OTHER_DEPLOYMENT)], [true, true]);
+
+  // an hour-stepped interval (a multiple of 60) prints the hour-field schedule, not */120.
+  {
+    const written: string[] = [];
+    await withOutputSink((chunk) => written.push(chunk), () => watchInstall(ctx, ["--interval", "120"]));
+    check("a 120-minute interval prints the hour-stepped schedule", written.join("").includes("0 */2 * * *"), true);
+  }
+
+  // a non-schedulable interval (not 1-59, not an exact multiple of 60) is refused up front,
+  // before any crontab line is even built — never silently degrades to hourly.
+  {
+    calls.length = 0;
+    const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "90"])));
+    check("--interval 90 is refused", message.includes("--interval must be 1-59 minutes"), true);
+    check("and never touches the crontab", calls.some((call) => call.command === "crontab"), false);
+  }
+  {
+    const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "1441"])));
+    check("--interval beyond a day is refused", message.includes("--interval must be 1-59 minutes"), true);
+  }
 
   // uninstall --apply: removes only OUR marked line.
   await withOutputSink(() => {}, () => watchUninstall(ctx, ["--apply"]));

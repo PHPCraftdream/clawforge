@@ -12,7 +12,7 @@
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { deploy, frameworkSourceRoot, collectSensitiveCheckoutNames } from "#framework/commands/management/deploy.ts";
+import { deploy, frameworkSourceRoot, collectSensitiveCheckoutNames } from "#framework/commands/management/deploy/index.ts";
 import { useDeployment, useComposeProjectOverride, useApplicationRecipesDir } from "#framework/runtime/deployment.ts";
 import { EXCLUDES } from "#framework/security/privacy/deploy-boundary.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#framework/core/env.ts";

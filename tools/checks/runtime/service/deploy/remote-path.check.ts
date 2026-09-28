@@ -5,7 +5,7 @@
 // (same directory) — see fixture.ts for why this is a sibling directory rather than a
 // sibling file.
 
-import { deploy } from "#framework/commands/management/deploy.ts";
+import { deploy } from "#framework/commands/management/deploy/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";

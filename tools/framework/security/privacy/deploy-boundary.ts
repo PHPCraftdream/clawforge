@@ -1,5 +1,5 @@
 // The privacy/destructive-write boundary for `./clawforge deploy`, split out of
-// commands/management/deploy.ts when its remote-root and sensitive-checkout fixes pushed that
+// commands/management/deploy/ when its remote-root and sensitive-checkout fixes pushed that
 // file past the source layout's 700-line limit (tools/checks/foundation/layout.check.ts). Lives
 // in security/privacy/ beside the other privacy-boundary modules (private-config.ts,
 // recipe-portable-content.ts, private-paths-ledger.ts) it is conceptually closest to, rather

@@ -11,7 +11,7 @@
 // is ssh's behaviour, not this machine's.
 
 import { spawn } from "node:child_process";
-import { runRemote } from "#framework/commands/management/deploy.ts";
+import { runRemote } from "#framework/commands/management/deploy/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";

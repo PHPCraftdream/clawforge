@@ -36,7 +36,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildSet } from "#framework/commands/sets/set.ts";
-import { deploy } from "#framework/commands/management/deploy.ts";
+import { deploy } from "#framework/commands/management/deploy/index.ts";
 import { recipeMirrorTargetDir, syncRecipeFiles } from "#framework/commands/management/provision-agent/index.ts";
 import { collectPortableRecipeFiles, declaredPortablePrivateFiles, excludesPortablePath } from "#framework/security/privacy/recipe-portable-content.ts";
 import { agentBundleChecksums, checksumOf, recipeFileChecksums } from "#framework/service/checksums.ts";
@@ -107,7 +107,7 @@ function buildOnlyCtx(image: string): Context {
  *  succeeds, so the assertions can see exactly what would have left this machine. */
 function recordingDeployCtx(calls: { command: string; args: string[] }[]): Context {
   return {
-    settings: { gatewayPort: "18789" },
+    settings: { gatewayPort: "18789", remotePath: "/opt/openclaw" },
     transport: {
       description: "stub",
       async exec(command: string, args: string[]): Promise<ExecResult> {

@@ -1,0 +1,81 @@
+// The gate before either delivery: every tree about to travel — the checkout root, the
+// recipes and the deployment's own config/ — is walked by the same portable-content policy
+// the other carriers of recipe bytes use (collectPortableRecipeFiles: `recipe import`, set
+// build and the provision-agent mirror), so a name gets one answer from all four. A file that
+// policy holds private refuses the whole deploy rather than being excluded and left for rsync
+// globs to guess at.
+
+import { die } from "#src/core/io/log.ts";
+import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";
+import { collectPortableRecipeFiles, SENSITIVE_RECIPE_NAME } from "#src/security/privacy/recipe-portable-content.ts";
+import { collectSensitiveCheckoutNames } from "#src/security/privacy/deploy-boundary.ts";
+import { readdir } from "node:fs/promises";
+import { resolve } from "node:path";
+
+/** Every path the portable-content policy holds back across the three trees deploy sends:
+ *  the recipes root, the deployment's config/, and the checkout root itself. Reports only
+ *  what currently exists — after `recipe import` the declared bytes are absent and deploying
+ *  is fine. */
+export async function collectRefusals(sourceRoot: string): Promise<string[]> {
+  const carrying: string[] = [];
+
+  const recipesRoot = recipesDir();
+  let recipeEntries: { name: string; isDirectory(): boolean }[] = [];
+  try {
+    recipeEntries = await readdir(recipesRoot, { withFileTypes: true });
+    recipeEntries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  } catch (error) {
+    // No recipes directory: nothing synced to scan, and the later rsync of recipes/ fails
+    // exactly as it does today. Any other read error is not ours to interpret.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  for (const entry of recipeEntries) {
+    // A sensitive-named top-level entry — file, link or directory — refuses on its own,
+    // before the walk below could even be reached.
+    if (SENSITIVE_RECIPE_NAME.test(entry.name)) {
+      carrying.push(`recipes/${entry.name} (sensitive-name policy)`);
+      continue;
+    }
+    if (!entry.isDirectory()) continue;
+    const walked = await collectPortableRecipeFiles(resolve(recipesRoot, entry.name));
+    for (const excluded of walked.excluded) {
+      carrying.push(`recipes/${entry.name}/${excluded.path} (${excluded.reason})`);
+    }
+  }
+
+  try {
+    // The deployment's config/ is synced wholesale below; a deployment may have no config/
+    // at all — only that absence is tolerated, never a read that failed for any other reason.
+    const config = await collectPortableRecipeFiles(resolve(deploymentDir(), "config"));
+    for (const entry of config.excluded) {
+      carrying.push(`config/${entry.path} (${entry.reason})`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  // The checkout root is not a recipe and carries no privateFiles declaration, but the
+  // generic sensitive-NAME half of the same policy still applies to it.
+  for (const entry of await collectSensitiveCheckoutNames(sourceRoot)) {
+    carrying.push(`${entry.path} (${entry.reason})`);
+  }
+
+  return carrying;
+}
+
+/** Dies before any tool check, connection or remote write if anything the policy holds
+ *  private is still present in the trees deploy is about to send. */
+export async function assertDeployable(sourceRoot: string): Promise<void> {
+  const carrying = await collectRefusals(sourceRoot);
+  if (carrying.length === 0) return;
+
+  die(
+    "deploy refuses to send files the portable-content policy holds private:\n" +
+      carrying.map((line) => `  ${line}`).join("\n") + "\n" +
+      "Deploy excludes nothing on purpose: rsync globs cannot escape a literal [, so " +
+      "excluding these by pattern could leak one or over-exclude an unrelated file — and " +
+      "these bytes would land on another host with nothing left to review.\n" +
+      "Keep credentials in the deployment's .env or secrets/ (they stay here), or have the " +
+      "recipe's prepare hook create them on the target.",
+  );
+}

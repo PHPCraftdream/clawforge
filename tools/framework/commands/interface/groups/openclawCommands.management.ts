@@ -11,7 +11,7 @@ import { host } from "../host/index.ts";
 import { cliStart, cliStop } from "../cli-helper.ts";
 import { configureProvider, CONFIGURE_PROVIDER_ARGUMENTS } from "#src/commands/management/credentials/provider.ts";
 import { mcpServe, mcpSetup, mcpCreds, MCP_SETUP_ARGUMENTS, MCP_CREDS_ARGUMENTS } from "#src/commands/management/credentials/mcp.ts";
-import { deploy, DEPLOY_ARGUMENTS } from "#src/commands/management/deploy.ts";
+import { deploy, DEPLOY_ARGUMENTS } from "#src/commands/management/deploy/index.ts";
 import { lock, LOCK_ARGUMENTS } from "#src/commands/management/lock.ts";
 import { secrets, SECRETS_ARGUMENTS } from "#src/commands/management/secrets.ts";
 import { recoverEnv, RECOVER_ENV_ARGUMENTS } from "#src/commands/operate/recover-env/index.ts";

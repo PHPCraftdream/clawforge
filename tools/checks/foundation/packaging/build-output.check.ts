@@ -1,3 +1,4 @@
+// check:exclusive — rebuilds tools/framework/dist, which other checks read.
 // The compiled dist/entry/bin.js must start with a shebang every POSIX system can execute.
 //
 // Two ways to get this wrong, and this package has had both. Dropping the type-stripping

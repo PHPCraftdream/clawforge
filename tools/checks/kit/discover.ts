@@ -1,7 +1,7 @@
 // Finds *.check.ts files under tools/checks, and sweeps the deployments a killed run can
 // leave behind under apps/.
 
-import { readdir, rm, stat } from "node:fs/promises";
+import { open, readdir, rm, stat } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { appsDir } from "#framework/integration/deployment/scaffold.ts";
@@ -12,6 +12,21 @@ export const checksRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 export interface LabeledCheck {
   readonly file: string;
   readonly label: string;
+  /** Mutates state other checks read (e.g. rebuilds dist/): runs alone, after the parallel pool. */
+  readonly exclusive: boolean;
+}
+
+/** A file opts out of parallel runs with a `// check:exclusive — <reason>` line in its header. */
+const EXCLUSIVE_MARKER = /^\/\/ check:exclusive(?![A-Za-z-])/m;
+
+async function isExclusive(file: string): Promise<boolean> {
+  const handle = await open(file, "r");
+  try {
+    const { bytesRead, buffer } = await handle.read(Buffer.alloc(2048), 0, 2048, 0);
+    return EXCLUSIVE_MARKER.test(buffer.toString("utf8", 0, bytesRead));
+  } finally {
+    await handle.close();
+  }
 }
 
 async function walk(dir: string): Promise<string[]> {
@@ -27,7 +42,11 @@ async function walk(dir: string): Promise<string[]> {
 /** Every check file under tools/checks, labeled by its path relative to it (POSIX form). */
 export async function discoverChecks(): Promise<LabeledCheck[]> {
   const files = await walk(checksRoot);
-  return files.map((file) => ({ file, label: relative(checksRoot, file).replaceAll("\\", "/") }));
+  return Promise.all(files.map(async (file) => ({
+    file,
+    label: relative(checksRoot, file).replaceAll("\\", "/"),
+    exclusive: await isExclusive(file),
+  })));
 }
 
 /** The labels containing at least one filter substring; all of them when there are none. */

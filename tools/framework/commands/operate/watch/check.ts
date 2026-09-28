@@ -18,6 +18,8 @@ import type { WatchLevel, WatchReason, WatchState } from "./state.ts";
 import {
   WATCH_HEARTBEAT_URL_ENV,
   WATCH_WEBHOOK_ENV,
+  codeDiff,
+  describeTransition,
   parseHeartbeatUrl,
   parseWebhookUrl,
   postHeartbeat,
@@ -78,10 +80,14 @@ function errorDetail(error: unknown): string {
   return masked.length > ERROR_DETAIL_MAX ? `${masked.slice(0, ERROR_DETAIL_MAX)}…` : masked;
 }
 
-/** Whether this cycle differs from the last completed one — the one fact that decides
- *  whether an alert fires. */
-function isTransition(previousLevel: WatchLevel | undefined, level: WatchLevel): boolean {
-  return previousLevel !== undefined && previousLevel !== level;
+/** Whether this cycle differs from the last completed one: the level changed, or at the same
+ *  non-ok level the set of reason codes did (details are ignored — see codeDiff). The first
+ *  cycle is a baseline, never a transition. */
+function isTransition(previousLevel: WatchLevel | undefined, level: WatchLevel, added: readonly string[], cleared: readonly string[]): boolean {
+  if (previousLevel === undefined) return false;
+  if (previousLevel !== level) return true;
+  if (level === "ok") return false;
+  return added.length > 0 || cleared.length > 0;
 }
 
 /** watchLevel()'s verdict, or "down" when the inspection could not run at all (Docker daemon
@@ -127,23 +133,34 @@ export async function runWatchCycle(
   // first cycle after `watch install` (or after a corrupt/missing state file) should
   // establish a baseline rather than page on it.
   const previousLevel = previous?.level;
-  const transitioned = isTransition(previousLevel, level);
+  const previousReasons = previous?.reasons ?? [];
+  const { added, cleared } = codeDiff(
+    previousReasons.map((entry) => entry.code),
+    reasons.map((entry) => entry.code),
+  );
+  const transitioned = isTransition(previousLevel, level, added, cleared);
 
   if (transitioned && previousLevel !== undefined && webhookTarget !== undefined) {
     try {
-      await postWebhookAlert(webhookTarget, transitionPayload(previousLevel, level, reasons, now));
+      await postWebhookAlert(webhookTarget, transitionPayload(previousLevel, level, previousReasons, reasons, now));
     } catch (error) {
-      // Level fields stay as they were so the next cycle retries the same transition; only
-      // the diagnostics move, so `watch status` can say delivery is failing.
+      // Level and reasons stay as they were so the next cycle retries the same change; only
+      // the diagnostics move. since/fromCodes keep the start of the streak, toCodes this attempt.
       const detail = errorDetail(error);
       await writeWatchState({
         ...previous!,
         lastRunAt: now,
         lastError: detail,
-        alertPending: { from: previousLevel, to: level, since: previous!.alertPending?.since ?? now },
+        alertPending: {
+          from: previousLevel,
+          to: level,
+          since: previous!.alertPending?.since ?? now,
+          fromCodes: previous!.alertPending?.fromCodes ?? previousReasons.map((entry) => entry.code),
+          toCodes: reasons.map((entry) => entry.code),
+        },
       });
       die(
-        `watch: ${summary(level)}, but the alert for ${previousLevel} → ${level} was not delivered: ` +
+        `watch: ${summary(level)}, but the alert for ${describeTransition(previousLevel, level, added, cleared)} was not delivered: ` +
           `${detail}\nstate was left at "${previousLevel}" so this is retried next cycle`,
       );
     }
@@ -191,6 +208,8 @@ export async function runWatchCycle(
           alerted: transitioned && webhookTarget !== undefined,
           checkedAt: now,
           changedAt: state.changedAt,
+          codesAdded: added,
+          codesCleared: cleared,
           ...(heartbeatOutcome !== undefined && !heartbeatOutcome.ok ? { heartbeatWarning: heartbeatOutcome.detail } : {}),
         },
         null,
@@ -205,7 +224,7 @@ export async function runWatchCycle(
     info(
       previousLevel === undefined
         ? "first cycle — baseline recorded, no alert sent"
-        : transitioned ? `state changed from ${previousLevel} to ${level}` : "state unchanged since the last cycle",
+        : transitioned ? `state changed: ${describeTransition(previousLevel, level, added, cleared)}` : "state unchanged since the last cycle",
     );
   }
 

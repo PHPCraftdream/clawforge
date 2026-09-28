@@ -119,16 +119,59 @@ export function resolveWebhookTarget(ctx: Context, url: URL): WatchWebhookTarget
   return { url, format, telegramChatId: chatId };
 }
 
+/** Reason codes only, never the volatile detail text (free MB, an error message), so a
+ *  detail-only change never reads as added/cleared. Shared by the payload, check and status. */
+export function codeDiff(
+  previousCodes: readonly string[],
+  codes: readonly string[],
+): { readonly added: readonly string[]; readonly cleared: readonly string[] } {
+  const previous = new Set(previousCodes);
+  const current = new Set(codes);
+  return {
+    added: [...current].filter((code) => !previous.has(code)),
+    cleared: [...previous].filter((code) => !current.has(code)),
+  };
+}
+
+/** Compact "from → to" one-liner, or "from → to (+ADDED -CLEARED)" when the reason-code set
+ *  also moved — the same shape whether the level changed, only the codes did, or both did.
+ *  Shared by check.ts's die()/info() text and status.ts's alertPending line. */
+export function describeTransition(from: WatchLevel, to: WatchLevel, added: readonly string[], cleared: readonly string[]): string {
+  const level = `${from} → ${to}`;
+  if (added.length === 0 && cleared.length === 0) return level;
+  const codes = [added.length > 0 ? `+${added.join(",")}` : undefined, cleared.length > 0 ? `-${cleared.join(",")}` : undefined]
+    .filter((part): part is string => part !== undefined)
+    .join(" ");
+  return `${level} (${codes})`;
+}
+
 export interface WatchTransitionPayload {
   readonly deployment: string;
   readonly from: WatchLevel;
   readonly to: WatchLevel;
   readonly reasons: readonly WatchReason[];
   readonly at: string;
+  /** Reason codes present now that were not present in the previous cycle — non-empty
+   *  exactly when this alert is (wholly or partly) a codes-only change at the same level.
+   *  Always present, appended after the original five fields so a consumer reading only
+   *  {deployment,from,to,reasons,at} sees that shape unchanged. */
+  readonly codesAdded: readonly string[];
+  /** Reason codes present in the previous cycle that are no longer present now. */
+  readonly codesCleared: readonly string[];
 }
 
-export function transitionPayload(from: WatchLevel, to: WatchLevel, reasons: readonly WatchReason[], at: string): WatchTransitionPayload {
-  return { deployment: deploymentName(), from, to, reasons, at };
+export function transitionPayload(
+  from: WatchLevel,
+  to: WatchLevel,
+  previousReasons: readonly WatchReason[],
+  reasons: readonly WatchReason[],
+  at: string,
+): WatchTransitionPayload {
+  const { added, cleared } = codeDiff(
+    previousReasons.map((entry) => entry.code),
+    reasons.map((entry) => entry.code),
+  );
+  return { deployment: deploymentName(), from, to, reasons, at, codesAdded: added, codesCleared: cleared };
 }
 
 // Each chat format's own documented text limit: Slack's hard per-message cap (40,000
@@ -158,11 +201,25 @@ function capToLimit(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
-/** One-two lines for the chat formats: deployment + transition, then reason codes (with a
- *  short detail each) and when. Generic keeps the original structured JSON instead — this is
- *  only for a format a human reads in a chat client. */
+/** "new: X, Y" / "cleared: X" / both; undefined when no code moved. */
+function codesChangeLine(added: readonly string[], cleared: readonly string[]): string | undefined {
+  if (added.length === 0 && cleared.length === 0) return undefined;
+  const parts: string[] = [];
+  if (added.length > 0) parts.push(`new: ${added.join(", ")}`);
+  if (cleared.length > 0) parts.push(`cleared: ${cleared.join(", ")}`);
+  return parts.join("; ");
+}
+
+/** Two-three lines for the chat formats: deployment + transition (readable even when
+ *  from===to, a codes-only change), which reason codes appeared/cleared since the last
+ *  cycle, then the current reasons (with a short detail each) and when. Generic keeps the
+ *  original structured JSON instead — this is only for a format a human reads in a chat
+ *  client. */
 function transitionText(payload: WatchTransitionPayload): string {
-  return `${payload.deployment}: ${payload.from} → ${payload.to}\n${reasonsLine(payload.reasons)} — ${payload.at}`;
+  const header = `${payload.deployment}: ${payload.from} → ${payload.to}`;
+  const changeLine = codesChangeLine(payload.codesAdded, payload.codesCleared);
+  const lines = [header, ...(changeLine === undefined ? [] : [changeLine]), `${reasonsLine(payload.reasons)} — ${payload.at}`];
+  return lines.join("\n");
 }
 
 function webhookBody(target: WatchWebhookTarget, payload: WatchTransitionPayload): string {

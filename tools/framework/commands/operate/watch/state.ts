@@ -28,7 +28,10 @@ export interface WatchState {
   readonly reasons?: readonly WatchReason[];
   /** When that cycle ran. */
   readonly checkedAt?: string;
-  /** When `level` was last entered — equal to checkedAt on the cycle that changed it. */
+  /** When the current STATE was last entered — level changing, or (at a non-ok level) the
+   *  SET of reason codes changing, both count; a reason's own detail text changing alone
+   *  (free MB, an error message) does not. Equal to checkedAt on the cycle that changed
+   *  either. */
   readonly changedAt?: string;
   /** When `watch check` was last INVOKED, successful cycle or not — set on every run,
    *  including one that stops at a configuration error or a failed alert delivery. What
@@ -41,12 +44,25 @@ export interface WatchState {
    *  delivering). Never set by `watch test`, which reports its own result and persists
    *  nothing but the heartbeat fields below. */
   readonly lastError?: string;
-  /** An alert that could not be delivered: `level` above was intentionally left at `from`
-   *  so the next cycle still reads it as the same unreported transition and retries — see
-   *  runWatchCycle. `since` is when this streak of failures started, kept across retries.
-   *  Cleared once a retry delivers, or once `level` naturally returns to `from` before one
-   *  does (nothing left to report). */
-  readonly alertPending?: { readonly from: WatchLevel; readonly to: WatchLevel; readonly since: string };
+  /** An alert that could not be delivered: `level`/`reasons` above were intentionally left as
+   *  they were before this change (from's own codes, at `from`'s level) so the next cycle
+   *  still reads it as the same unreported change and retries — see runWatchCycle. `from`
+   *  and `to` are equal for a codes-only change (a new or cleared reason at an unchanged
+   *  level). `since` is when this streak of failures started, kept across retries. Cleared
+   *  once a retry delivers, or once the observed state naturally returns to `from`/
+   *  `fromCodes` before one does (nothing left to report). */
+  readonly alertPending?: {
+    readonly from: WatchLevel;
+    readonly to: WatchLevel;
+    readonly since: string;
+    /** Reason codes as of the cycle this streak started — fixed across retries, like
+     *  `since`. Absent on a state file predating this field, or when there were none to
+     *  record (a transition from "ok", which never has reasons). */
+    readonly fromCodes?: readonly string[];
+    /** Reason codes as of the most recent retry attempt — unlike fromCodes/since, this
+     *  refreshes every retry so a further code change mid-outage is not lost. */
+    readonly toCodes?: readonly string[];
+  };
   /** Minutes between cycles, recorded by `watch install --apply` at the moment a schedule
    *  is actually installed on the target, cleared by `watch uninstall --apply` — the only
    *  place this framework can observe the real interval, since cron itself is never asked
@@ -84,11 +100,17 @@ function parseReasons(value: unknown): WatchReason[] | undefined {
   return reasons;
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
 function parseAlertPending(value: unknown): WatchState["alertPending"] | undefined {
   if (value === null || typeof value !== "object") return undefined;
-  const { from, to, since } = value as Record<string, unknown>;
+  const { from, to, since, fromCodes, toCodes } = value as Record<string, unknown>;
   if (!isWatchLevel(from) || !isWatchLevel(to) || typeof since !== "string") return undefined;
-  return { from, to, since };
+  if (fromCodes !== undefined && !isStringArray(fromCodes)) return undefined;
+  if (toCodes !== undefined && !isStringArray(toCodes)) return undefined;
+  return { from, to, since, fromCodes, toCodes };
 }
 
 /** Every field is optional: a diagnostics-only write (a configuration error recorded before

@@ -44,11 +44,17 @@ An operator finds out the instance stopped doing its job without polling by hand
   message), rather than the whole cycle dying before it can alert or record anything. Compares
   against the state persisted for this deployment (its own directory, atomic write, never
   `<data>/config`), and POSTs `OC_WATCH_WEBHOOK` (in this deployment's `.env`; https only,
-  unless the host is localhost/127.0.0.1) only on a **transition** — an unchanged state never
-  alerts twice. A failed POST leaves the persisted *level* at its old value, so the same
-  unreported transition is retried next cycle rather than accepted as normal — but the failure
-  itself is no longer invisible between cycles: `lastRunAt`/`lastError` record it, and
-  `alertPending` names the transition and when it first failed to deliver, all surfaced by
+  unless the host is localhost/127.0.0.1) only on a **state change** — an unchanged state
+  never alerts twice. A state change is either the level moving (`ok`/`degraded`/`down`), or —
+  at an unchanged non-`ok` level — the *set* of reason codes moving: a new problem joining or
+  an existing one clearing, e.g. `degraded`(`CHANNEL_UNHEALTHY`) →
+  `degraded`(`CHANNEL_UNHEALTHY`, `DISK_LOW`) alerts even though the level itself stayed
+  `degraded`. Only the code set counts — a reason's own detail text (free MB, an error
+  string) changing alone never alerts. A failed POST leaves the persisted *level and reason
+  codes* at their old values, so the same unreported change is retried next cycle rather than
+  accepted as normal — but the failure itself is no longer invisible between cycles:
+  `lastRunAt`/`lastError` record it, and `alertPending` names the change (`from`/`to` read the
+  same level for a codes-only change) and when it first failed to deliver, all surfaced by
   `watch status` below. A configuration error — an invalid `OC_WATCH_WEBHOOK`, an unknown
   `OC_WATCH_WEBHOOK_FORMAT`, `telegram` with no `OC_WATCH_TELEGRAM_CHAT_ID`, or an invalid
   `OC_WATCH_HEARTBEAT_URL` — is recorded the same way, before a probe cycle ever runs. Both
@@ -62,12 +68,17 @@ An operator finds out the instance stopped doing its job without polling by hand
   prove delivery works before relying on it.
 
   **Notification format.** `OC_WATCH_WEBHOOK_FORMAT` picks the payload shape: `generic`
-  (default — the original `{deployment, from, to, reasons, at}` JSON), `slack`, `discord` or
-  `telegram`. Left unset, it autodetects from the URL's host: `hooks.slack.com` → slack;
+  (default — the original `{deployment, from, to, reasons, at}` JSON, plus `codesAdded` and
+  `codesCleared` — reason codes newly present or no longer present versus the previous cycle,
+  always arrays, empty unless this is a codes-only change; additive, so an existing consumer
+  reading only the original five fields is unaffected), `slack`, `discord` or `telegram`. Left
+  unset, it autodetects from the URL's host: `hooks.slack.com` → slack;
   `discord.com`/`discordapp.com` with a `/api/webhooks/` path → discord; `api.telegram.org` →
-  telegram; anything else → generic. The three chat formats get a one-two line message —
-  deployment, `from → to`, reason codes with a short detail each, and the time — capped to
-  fit each service's own documented limit:
+  telegram; anything else → generic. The three chat formats get a two-three line message —
+  deployment and `from → to` (readable even when both are the same level, a codes-only
+  change), which reason codes appeared/cleared (`new: ...`/`cleared: ...`, omitted when
+  neither did), then the current reason codes with a short detail each and the time — capped
+  to fit each service's own documented limit:
   * **Slack** — an [incoming webhook](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)
     takes `{"text": "..."}`; a message has a hard 40,000-character limit.
   * **Discord** — [executing a webhook](https://docs.discord.com/developers/resources/webhook)
@@ -143,15 +154,19 @@ An operator finds out the instance stopped doing its job without polling by hand
   is never asked afterwards; `watch status`'s staleness check reads it from there.
 * `./clawforge watch status` — the persisted last state, when it last changed, and whether a
   webhook/heartbeat is configured — plus the heartbeat's own last successful ping time, and
-  its last failure if the most recent ping did not succeed. Never either URL itself. Also
-  reports `lastRunAt` (when `watch check` last ran *at all*, config error or delivery failure
-  included), `lastError` (the most recent configuration or delivery failure), and
-  `alertPending` (an undelivered transition and since when). Warns when the last run looks
-  stale: more than 3× the interval `watch install --apply` recorded (`intervalMinutes` in the
-  state file), or 3× the documented default (5 minutes, `DEFAULT_WATCH_INTERVAL_MINUTES` in
-  `install.ts`) when no interval was ever recorded — a state file from before this field
-  existed, or a schedule wired up by hand outside `watch install`. Three missed intervals
-  rather than one: a single slow cycle or scheduler jitter should not cry wolf.
+  its last failure if the most recent ping did not succeed. Never either URL itself.
+  "Changed" (`changedAt`) means the STATE changed — the level, or (at a non-`ok` level) the
+  reason-code set — not just the level; a reason's detail text alone moving does not count.
+  Also reports `lastRunAt` (when `watch check` last ran *at all*, config error or delivery
+  failure included), `lastError` (the most recent configuration or delivery failure), and
+  `alertPending` (an undelivered change and since when — `from`/`to` read the same level for
+  a codes-only change, and the text names which reason codes appeared/cleared the same way
+  the webhook alert itself does). Warns when the last run looks stale: more than 3× the
+  interval `watch install --apply` recorded (`intervalMinutes` in the state file), or 3× the
+  documented default (5 minutes, `DEFAULT_WATCH_INTERVAL_MINUTES` in `install.ts`) when no
+  interval was ever recorded — a state file from before this field existed, or a schedule
+  wired up by hand outside `watch install`. Three missed intervals rather than one: a single
+  slow cycle or scheduler jitter should not cry wolf.
 * `./clawforge watch test` — sends one webhook message, clearly marked as a test (never
   shaped like a real transition — a receiving chat cannot mistake it for one) in the
   configured format, and one heartbeat ping, through whichever of `OC_WATCH_WEBHOOK`/

@@ -8,7 +8,7 @@ import { info, log, warn } from "../../../core/io/log.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
 import { readWatchState } from "./state.ts";
-import { watchHeartbeatUrlRaw, watchWebhookRaw } from "./webhook.ts";
+import { codeDiff, describeTransition, watchHeartbeatUrlRaw, watchWebhookRaw } from "./webhook.ts";
 import { WATCH_CHECK_ARGUMENTS } from "./check.ts";
 import { DEFAULT_WATCH_INTERVAL_MINUTES } from "./install.ts";
 import { parseDeclaredArgs } from "../../../core/arguments.ts";
@@ -93,7 +93,11 @@ export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
   if (state?.lastError !== undefined) warn(`last error: ${state.lastError}`);
   if (state?.alertPending !== undefined) {
     const pending = state.alertPending;
-    warn(`alert pending since ${pending.since}: ${pending.from} → ${pending.to} has not been delivered yet`);
+    // fromCodes/toCodes are absent on a state file predating this field, or for a pure
+    // level transition from "ok" (which never has reasons) — codeDiff then answers empty on
+    // both sides, and describeTransition falls back to the plain "from → to" it always did.
+    const { added, cleared } = codeDiff(pending.fromCodes ?? [], pending.toCodes ?? []);
+    warn(`alert pending since ${pending.since}: ${describeTransition(pending.from, pending.to, added, cleared)} has not been delivered yet`);
   }
   info(`webhook: ${webhookConfigured ? "configured" : "not configured"}`);
   info(`heartbeat: ${heartbeatConfigured ? "configured" : "not configured"}${state?.heartbeatAt ? `, last ping ${state.heartbeatAt}` : ""}`);

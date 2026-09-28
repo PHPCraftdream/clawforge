@@ -15,7 +15,10 @@
 //   alert; an unchanged level never posts; a changed level posts exactly once; a failed
 //   POST leaves the persisted state at its old value so the next cycle retries it — and
 //   that the webhook URL never appears anywhere this run could have printed it, on either
-//   path.
+//   path. Also a codes-only change at an unchanged non-ok level: a new or cleared reason
+//   code alerts the same as a level change would, a detail-only change never does (its own
+//   retry path and old-state compatibility are covered in webhook.check.ts, alongside that
+//   file's own delivery-failure coverage).
 
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -159,7 +162,7 @@ try {
     check(
       "the payload names the transition",
       postedBody,
-      { deployment: deploymentName(), from: "ok", to: "down", reasons, at: postedBody?.at },
+      { deployment: deploymentName(), from: "ok", to: "down", reasons, at: postedBody?.at, codesAdded: ["GATEWAY_DOWN"], codesCleared: [] },
     );
     const written = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
     check("the transition is persisted", written.level, "down");
@@ -274,6 +277,82 @@ try {
     check("lastError is cleared once there is nothing pending to report", after.lastError, undefined);
     check("alertPending is cleared too", after.alertPending, undefined);
   }
+
+  // --- runWatchCycle(): a codes-only change at an unchanged non-ok level — the SET of
+  // reason codes moving is a transition worth alerting on too, not just the level (R11:
+  // `degraded`(CHANNEL_UNHEALTHY) -> `degraded`(CHANNEL_UNHEALTHY, DISK_LOW) used to send
+  // nothing). Only the code set counts — a reason's own detail text (free MB, an error
+  // string) changing alone never alerts. -----------------------------------------------
+
+  {
+    // A new code joins at the same level: alerts, and the payload names from/to as equal
+    // levels with the new code called out.
+    await writeWatchState({
+      level: "degraded",
+      reasons: [{ code: "CHANNEL_UNHEALTHY", detail: "telegram/default: configured but not running" }],
+      checkedAt: "2025-01-01T00:00:00.000Z",
+      changedAt: "2025-01-01T00:00:00.000Z",
+    });
+    calls.length = 0;
+    nextResponse = () => new Response(null, { status: 200 });
+    const reasons = [
+      { code: "CHANNEL_UNHEALTHY", detail: "telegram/default: configured but not running" },
+      { code: "DISK_LOW", detail: "/data has 50 MB free, below the OC_WATCH_DISK_MIN_MB threshold of 1024 MB" },
+    ];
+    await deathOf(() => runWatchCycle(webhookTarget, "degraded", reasons, false));
+    check("a new reason code at an unchanged level still alerts", calls.length, 1);
+    const body = calls[0]?.body as { from?: string; to?: string; codesAdded?: string[]; codesCleared?: string[] } | undefined;
+    check("the payload reads degraded -> degraded", [body?.from, body?.to], ["degraded", "degraded"]);
+    check("codesAdded names the new code", body?.codesAdded, ["DISK_LOW"]);
+    check("codesCleared is empty", body?.codesCleared, []);
+    const written = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+    check("the new reason set is persisted", written.reasons, reasons);
+    check("changedAt moves for a codes-only change too", written.changedAt !== "2025-01-01T00:00:00.000Z", true);
+  }
+
+  {
+    // A code clears while another stays, level unchanged: alerts too, naming what cleared.
+    await writeWatchState({
+      level: "degraded",
+      reasons: [
+        { code: "CHANNEL_UNHEALTHY", detail: "a" },
+        { code: "DISK_LOW", detail: "b" },
+      ],
+      checkedAt: "2025-02-01T00:00:00.000Z",
+      changedAt: "2025-02-01T00:00:00.000Z",
+    });
+    calls.length = 0;
+    nextResponse = () => new Response(null, { status: 200 });
+    const reasons = [{ code: "CHANNEL_UNHEALTHY", detail: "a" }];
+    await deathOf(() => runWatchCycle(webhookTarget, "degraded", reasons, false));
+    check("a cleared reason code at an unchanged level still alerts", calls.length, 1);
+    const body = calls[0]?.body as { codesAdded?: string[]; codesCleared?: string[] } | undefined;
+    check("codesCleared names the resolved code", body?.codesCleared, ["DISK_LOW"]);
+    check("codesAdded is empty", body?.codesAdded, []);
+  }
+
+  {
+    // The same code, only its detail changed (free MB drifting, a different error string):
+    // never alerts, and changedAt does not move — nothing about the STATE changed.
+    await writeWatchState({
+      level: "degraded",
+      reasons: [{ code: "DISK_LOW", detail: "/data has 500 MB free, below the threshold of 1024 MB" }],
+      checkedAt: "2025-03-01T00:00:00.000Z",
+      changedAt: "2025-03-01T00:00:00.000Z",
+    });
+    calls.length = 0;
+    const reasons = [{ code: "DISK_LOW", detail: "/data has 480 MB free, below the threshold of 1024 MB" }];
+    await deathOf(() => runWatchCycle(webhookTarget, "degraded", reasons, false));
+    check("the same code with only its detail changed never alerts", calls.length, 0);
+    const written = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+    check("the fresher detail is still persisted", written.reasons, reasons);
+    check("changedAt does not move for a detail-only change", written.changedAt, "2025-03-01T00:00:00.000Z");
+  }
+
+  // The retry path for an undelivered codes-only change, and old-state (pre-fromCodes/
+  // toCodes) compatibility, are covered in webhook.check.ts alongside its own delivery/retry
+  // coverage — see "retry of an undelivered codes-only change" and "old-state compatibility"
+  // there.
 
   // --- runWatchCycle()'s heartbeat parameter: the dead-man's switch is pinged only while
   // THIS cycle's own level reads ok, a failed ping never changes level/exit, and the URL

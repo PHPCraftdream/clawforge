@@ -46,6 +46,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   (`lastRunAt`/`lastError`/`alertPending`) and surfaced by `watch status`, which also warns
   when the last run looks stale; the new `watch test` action sends a one-off test alert and
   heartbeat ping so delivery can be proven before a real outage is the first time it matters.
+* `watch check` alerted only when the level itself changed: a new problem joining, or an
+  existing one clearing, at an unchanged level — `degraded`(`CHANNEL_UNHEALTHY`) →
+  `degraded`(`CHANNEL_UNHEALTHY`, `DISK_LOW`) — sent nothing. Now the reason-code SET moving
+  alerts too (a reason's own detail text changing alone still does not), the alert payload and
+  chat text name which codes appeared/cleared, and an undelivered codes-only change retries
+  the same way a level transition's own failure already did.
 * Native backup no longer leaves its own full archive inside the live data directory.
 * `bootstrap` pins a freshly pulled tagged image to the digest it just proved, without
   moving the shared tag.

@@ -14,8 +14,15 @@
 // - Telegram's own success contract: a 2xx reply carrying `ok:false` is treated as
 //   undelivered, end to end through runWatchCycle — the persisted state is kept exactly
 //   like a failed POST to any other format.
+// - transitionPayload's codesAdded/codesCleared, and the chat formats' "new:"/"cleared:"
+//   line: a codes-only change (same level, different reason-code set) reads as understandable
+//   as a level change does, a detail-only change adds/clears nothing.
+// - runWatchCycle()'s codes-only path (R11), end to end: an undelivered codes-only change
+//   retries the same way a level transition's own failure does (since/fromCodes survive,
+//   toCodes refreshes), and a state file predating alertPending's fromCodes/toCodes still
+//   parses and still alerts correctly from it.
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runWatchCycle } from "#framework/commands/operate/watch/index.ts";
@@ -28,7 +35,7 @@ import {
   transitionPayload,
 } from "#framework/commands/operate/watch/webhook.ts";
 import type { WatchWebhookTarget } from "#framework/commands/operate/watch/webhook.ts";
-import { watchStateFile, writeWatchState } from "#framework/commands/operate/watch/state.ts";
+import { readWatchState, watchStateFile, writeWatchState } from "#framework/commands/operate/watch/state.ts";
 import type { WatchState } from "#framework/commands/operate/watch/state.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -164,7 +171,7 @@ try {
     }) as typeof fetch;
   };
 
-  const payload = transitionPayload("ok", "down", [{ code: "GATEWAY_DOWN", detail: "gateway did not answer" }], "2026-01-01T00:00:00.000Z");
+  const payload = transitionPayload("ok", "down", [], [{ code: "GATEWAY_DOWN", detail: "gateway did not answer" }], "2026-01-01T00:00:00.000Z");
 
   {
     stubFetch();
@@ -203,6 +210,67 @@ try {
     check("the text names the transition", typeof body?.text === "string" && body.text.includes("ok → down"), true);
   }
 
+  // --- transitionPayload(): codesAdded/codesCleared, and the chat formats make a
+  // codes-only change (same level, different reason-code SET) understandable (R11) --------
+
+  {
+    const previousReasons = [{ code: "CHANNEL_UNHEALTHY", detail: "telegram/default: configured but not running" }];
+    const reasons = [
+      { code: "CHANNEL_UNHEALTHY", detail: "telegram/default: configured but not running" },
+      { code: "DISK_LOW", detail: "/data has 50 MB free, below the threshold of 1024 MB" },
+    ];
+    const addedPayload = transitionPayload("degraded", "degraded", previousReasons, reasons, "2026-02-01T00:00:00.000Z");
+    check("codesAdded names the newly appeared code", addedPayload.codesAdded, ["DISK_LOW"]);
+    check("codesCleared is empty when nothing cleared", addedPayload.codesCleared, []);
+    check(
+      "generic keeps codesAdded/codesCleared alongside the original five fields, none renamed or dropped",
+      Object.keys(addedPayload).sort(),
+      ["at", "codesAdded", "codesCleared", "deployment", "from", "reasons", "to"],
+    );
+
+    const clearedPayload = transitionPayload("degraded", "degraded", reasons, previousReasons, "2026-02-01T00:00:00.000Z");
+    check("codesCleared names the resolved code the other way around", clearedPayload.codesCleared, ["DISK_LOW"]);
+    check("codesAdded is empty when nothing new joined", clearedPayload.codesAdded, []);
+
+    const sameDetailPayload = transitionPayload(
+      "degraded",
+      "degraded",
+      [{ code: "DISK_LOW", detail: "500 MB free" }],
+      [{ code: "DISK_LOW", detail: "480 MB free" }],
+      "2026-02-01T00:00:00.000Z",
+    );
+    check("a detail-only change adds and clears nothing", [sameDetailPayload.codesAdded, sameDetailPayload.codesCleared], [[], []]);
+
+    const slackTarget: WatchWebhookTarget = { url: new URL("https://hooks.slack.com/services/x"), format: "slack" };
+    stubFetch();
+    await postWebhookAlert(slackTarget, addedPayload);
+    const slackAdded = calls[0]?.body as { text?: string };
+    check(
+      "slack's text is readable for a same-level codes-only change: from → to, plus the new code",
+      typeof slackAdded?.text === "string" && slackAdded.text.includes("degraded → degraded") && slackAdded.text.includes("new: DISK_LOW"),
+      true,
+    );
+
+    const discordTarget: WatchWebhookTarget = { url: new URL("https://discord.com/api/webhooks/1/x"), format: "discord" };
+    stubFetch();
+    await postWebhookAlert(discordTarget, clearedPayload);
+    const discordCleared = calls[0]?.body as { content?: string };
+    check(
+      "discord's text names a cleared code too",
+      typeof discordCleared?.content === "string" && discordCleared.content.includes("cleared: DISK_LOW"),
+      true,
+    );
+
+    stubFetch();
+    await postWebhookAlert(slackTarget, sameDetailPayload);
+    const slackUnchanged = calls[0]?.body as { text?: string };
+    check(
+      "no codes changed -> no new:/cleared: line, just the level and current reasons",
+      typeof slackUnchanged?.text === "string" && !slackUnchanged.text.includes("new:") && !slackUnchanged.text.includes("cleared:"),
+      true,
+    );
+  }
+
   // --- discord/telegram cap the text to their own documented limit --------------------
 
   {
@@ -210,7 +278,7 @@ try {
       code: `REASON_${index}`,
       detail: "x".repeat(100),
     }));
-    const longPayload = transitionPayload("ok", "down", longReasons, "2026-01-01T00:00:00.000Z");
+    const longPayload = transitionPayload("ok", "down", [], longReasons, "2026-01-01T00:00:00.000Z");
 
     stubFetch();
     await postWebhookAlert({ url: new URL("https://discord.com/api/webhooks/1/x"), format: "discord" }, longPayload);
@@ -306,6 +374,111 @@ try {
       [before.level, before.reasons, before.checkedAt, before.changedAt],
     );
     check("the failure is recorded as an undelivered alert too", after.alertPending?.to, "down");
+  }
+
+  // --- retry of an undelivered codes-only change (R11): a failed delivery leaves
+  // level/reasons at the pre-change snapshot (same as a level transition's own retry path),
+  // so the next cycle still diffs against it and recognises the same unreported change
+  // rather than dropping it — and a further code joining mid-outage is folded into toCodes
+  // without losing since/fromCodes, exactly like a level transition's alertPending.since ---
+
+  {
+    const target: WatchWebhookTarget = { url: new URL("https://hooks.example/x"), format: "generic" };
+    const before: WatchState = {
+      level: "degraded",
+      reasons: [{ code: "CHANNEL_UNHEALTHY", detail: "a" }],
+      checkedAt: "2025-04-01T00:00:00.000Z",
+      changedAt: "2025-04-01T00:00:00.000Z",
+    };
+    await writeWatchState(before);
+    stubFetch();
+    nextResponse = () => new Response(null, { status: 500 });
+    const reasons = [
+      { code: "CHANNEL_UNHEALTHY", detail: "a" },
+      { code: "DISK_LOW", detail: "low" },
+    ];
+    const firstMessage = await deathOf(() => runWatchCycle(target, "degraded", reasons, false));
+    check("a codes-only change's failed delivery is still attempted exactly once", calls.length, 1);
+    check("and is reported the same way a level transition's failure is", firstMessage.includes("was not delivered"), true);
+    const after1 = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+    check(
+      "level/reasons/checkedAt/changedAt are kept at the pre-change snapshot, not advanced",
+      [after1.level, after1.reasons, after1.checkedAt, after1.changedAt],
+      [before.level, before.reasons, before.checkedAt, before.changedAt],
+    );
+    check(
+      "alertPending reads degraded -> degraded (from===to for a codes-only change)",
+      [after1.alertPending?.from, after1.alertPending?.to],
+      ["degraded", "degraded"],
+    );
+    check("alertPending.fromCodes is the pre-change code set", after1.alertPending?.fromCodes, ["CHANNEL_UNHEALTHY"]);
+    check("alertPending.toCodes is the newly observed code set", after1.alertPending?.toCodes, ["CHANNEL_UNHEALTHY", "DISK_LOW"]);
+    const firstSince = after1.alertPending?.since;
+
+    // A second retry, with yet another code now present: still recognised as the SAME
+    // unreported change (since/fromCodes survive), not lost and not a fresh alertPending.
+    stubFetch();
+    nextResponse = () => new Response(null, { status: 500 });
+    const reasons2 = [
+      { code: "CHANNEL_UNHEALTHY", detail: "a" },
+      { code: "DISK_LOW", detail: "still low" },
+      { code: "DISK_UNKNOWN", detail: "also now" },
+    ];
+    await deathOf(() => runWatchCycle(target, "degraded", reasons2, false));
+    check("the retry attempts delivery again", calls.length, 1);
+    const after2 = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+    check("alertPending.since survives the retry, unlike a fresh pending change", after2.alertPending?.since, firstSince);
+    check("alertPending.fromCodes stays fixed at the original pre-change set", after2.alertPending?.fromCodes, ["CHANNEL_UNHEALTHY"]);
+    check(
+      "alertPending.toCodes refreshes to this retry's own observed set",
+      after2.alertPending?.toCodes,
+      ["CHANNEL_UNHEALTHY", "DISK_LOW", "DISK_UNKNOWN"],
+    );
+
+    // Delivery finally succeeds: the pending change clears, and the latest reasons persist.
+    stubFetch();
+    nextResponse = () => new Response(null, { status: 200 });
+    await deathOf(() => runWatchCycle(target, "degraded", reasons2, false));
+    check("a delivered retry posts the codes-only change exactly once", calls.length, 1);
+    const after3 = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+    check("alertPending clears once delivered", after3.alertPending, undefined);
+    check("lastError clears too", after3.lastError, undefined);
+    check("the latest reason set is now persisted", after3.reasons, reasons2);
+  }
+
+  // --- old-state compatibility (R11): a state file written before alertPending carried
+  // fromCodes/toCodes (bare {from,to,since}) still parses, and a codes-only change starting
+  // from one still alerts and clears the stale diagnostics on delivery -------------------
+
+  {
+    const target: WatchWebhookTarget = { url: new URL("https://hooks.example/x"), format: "generic" };
+    const oldFormatState = {
+      level: "degraded",
+      reasons: [{ code: "CHANNEL_UNHEALTHY", detail: "a" }],
+      checkedAt: "2025-05-01T00:00:00.000Z",
+      changedAt: "2025-05-01T00:00:00.000Z",
+      lastRunAt: "2025-05-01T00:05:00.000Z",
+      lastError: "webhook responded with 500",
+      alertPending: { from: "degraded", to: "degraded", since: "2025-05-01T00:05:00.000Z" },
+    };
+    await writeFile(watchStateFile(), `${JSON.stringify(oldFormatState, null, 2)}\n`, "utf8");
+    const read = await readWatchState();
+    check(
+      "an old-format alertPending (no fromCodes/toCodes) still parses",
+      read?.alertPending,
+      { from: "degraded", to: "degraded", since: "2025-05-01T00:05:00.000Z" },
+    );
+
+    stubFetch();
+    nextResponse = () => new Response(null, { status: 200 });
+    const reasons = [
+      { code: "CHANNEL_UNHEALTHY", detail: "a" },
+      { code: "DISK_LOW", detail: "low" },
+    ];
+    await deathOf(() => runWatchCycle(target, "degraded", reasons, false));
+    check("a codes-only change starting from an old-format state file still alerts", calls.length, 1);
+    const after = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+    check("and clears the stale alertPending/lastError it carried over", [after.alertPending, after.lastError], [undefined, undefined]);
   }
 } finally {
   globalThis.fetch = originalFetch;

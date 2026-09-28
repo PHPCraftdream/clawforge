@@ -54,6 +54,20 @@ values on the target without ever creating a store, so an absent store is how he
 deployments look, and a store under another name is not watched at all, because `inspect` is
 not given a store name.
 
+One finding answers a question that comes before any of the above: whether the target was
+ever reached at all. `TARGET_UNREACHABLE` fires when `wsl.exe` or `ssh` itself fails — a
+wrong `OC_WSL_DISTRO`, a stopped WSL, `ssh` never connecting — as opposed to a command that
+ran on the target and exited non-zero. `wsl.exe` writes its own errors ("There is no
+distribution with the supplied name.") in UTF-16LE, which used to leave `doctor`/`plan`/
+`status`/`backup list` printing a bare `could not check whether … exists (exit
+4294967295):` with nothing after the colon and no other finding to explain it; the
+transport now recognizes its own failure (an exit code outside 0-255, or one of `ssh`'s own
+connection-error lines) and reports it as this one blocking, readable finding instead,
+naming which environment variable to check and how to test the connection by hand:
+`wsl.exe -l -q` (lists the real distribution names) or `ssh -o BatchMode=yes <host> true`
+(fails fast instead of prompting). This is the first thing to check on a fresh Windows
+setup, since a typo in `OC_WSL_DISTRO` is the single most common first failure there.
+
 Two more findings answer questions the ones above cannot. `NOT_BOOTSTRAPPED` replaces
 `GATEWAY_DOWN` on a deployment nobody has bootstrapped yet — its data directory does not
 exist on the target, so `status`/`doctor`/`inspect` answer that plainly instead of asking the

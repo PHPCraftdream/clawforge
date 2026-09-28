@@ -8,8 +8,10 @@
 // it is never written into the archive's name or anywhere else retrievable afterwards, so
 // there is nothing here to read it back from — omitted rather than guessed.
 
-import { log, info } from "#src/core/io/log.ts";
+import { log, info, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
+import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
+import { unreachableProblem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
@@ -46,10 +48,18 @@ export async function backupList(ctx: Context, args: string[]): Promise<void> {
   const jsonOnly = parseDeclaredArgs(BACKUP_LIST_ARGUMENTS, args).json === true;
 
   const { backupDir, dataDir } = ctx.settings;
-  const [archives, replaced] = await Promise.all([
-    listBackupArchives(ctx, backupDir),
-    listReplacedCopies(ctx, dataDir),
-  ]);
+  let archives: BackupArchiveInfo[];
+  let replaced: ReplacedCopyInfo[];
+  try {
+    [archives, replaced] = await Promise.all([
+      listBackupArchives(ctx, backupDir),
+      listReplacedCopies(ctx, dataDir),
+    ]);
+  } catch (error) {
+    if (!(error instanceof TransportUnreachableError)) throw error;
+    const found = unreachableProblem(error);
+    die(`${found.code}  ${found.detail}\n    → ${found.nextAction}`);
+  }
   const picked = defaultRestoreArchive(archives);
 
   if (jsonOnly || isCaptured()) {

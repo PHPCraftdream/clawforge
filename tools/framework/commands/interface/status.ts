@@ -5,9 +5,11 @@
 // disagree — an image whose healthcheck binary is missing reports "unhealthy" forever
 // while the gateway serves traffic.
 
-import { log, info } from "#src/core/io/log.ts";
+import { log, info, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
+import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
+import { unreachableProblem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { summarizeExposure, exposureOneLiner } from "#src/commands/operate/expose/index.ts";
 import type { CommandArgument } from "#src/core/app.ts";
@@ -27,18 +29,24 @@ export async function status(ctx: Context, args: string[]): Promise<void> {
   }
 
   info(`target: ${ctx.transport.description} / runtime: ${ctx.runtime.description}`);
-  info(`exposure: ${exposureOneLiner(summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.()))} — details: ./clawforge expose status`);
 
-  log("containers");
-  // showStatus() shells out to compose, which needs somewhere to write its own private env
-  // file beside the data directory — absent pre-bootstrap, which is exactly the mkdir a
-  // still-root-owned parent refuses. NotBootstrapped is how the runtime says so instead of a
-  // raw transport error; caught here so status answers plainly instead of crashing,
-  // and every other runtime call below is skipped — there is nothing to report on any of
-  // them either.
+  // The exposure line and showStatus() both reach the target, so both sit inside this one
+  // try: an unreachable target (wrong OC_WSL_DISTRO/OC_SSH_HOST) can fail on either, and
+  // must be reported the same clean way either time rather than only from the second.
+  // NotBootstrapped is how the runtime says the target is reachable but nothing is there yet
+  // (no data directory to write compose's own private env file beside); caught here so
+  // status answers plainly instead of crashing, and every other runtime call below is
+  // skipped — there is nothing to report on any of them either.
   try {
+    info(`exposure: ${exposureOneLiner(summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.()))} — details: ./clawforge expose status`);
+
+    log("containers");
     await ctx.runtime.showStatus();
   } catch (error) {
+    if (error instanceof TransportUnreachableError) {
+      const found = unreachableProblem(error);
+      die(`${found.code}  ${found.detail}\n    → ${found.nextAction}`);
+    }
     if (!(error instanceof NotBootstrapped)) throw error;
     info("nothing deployed yet — run ./clawforge bootstrap");
     return;
@@ -72,19 +80,38 @@ export async function status(ctx: Context, args: string[]): Promise<void> {
  *  ps` table showStatus() streams straight to the terminal — that is not structured data —
  *  so `running` (isRunning(), the one fact every Runtime can answer) stands in for it. */
 async function emitStatusReport(ctx: Context): Promise<void> {
-  const exposure = summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.());
-
+  // Both calls reach the target, so both sit in the one try: an unreachable target can fail
+  // on the exposure read before isRunning() ever runs.
+  let exposure: ReturnType<typeof summarizeExposure> | undefined;
   let running: boolean;
   try {
+    exposure = summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.());
     running = await ctx.runtime.isRunning();
   } catch (error) {
+    if (error instanceof TransportUnreachableError) {
+      const found = unreachableProblem(error);
+      emit(
+        `${JSON.stringify(
+          {
+            target: ctx.transport.description,
+            runtime: ctx.runtime.description,
+            problem: { code: found.code, detail: found.detail, nextAction: found.nextAction },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      die(`${found.code}  ${found.detail}`);
+    }
     if (!(error instanceof NotBootstrapped)) throw error;
     emit(
       `${JSON.stringify(
         {
           target: ctx.transport.description,
           runtime: ctx.runtime.description,
-          exposure,
+          // Not yet assigned only if the exposure read itself is what threw NotBootstrapped;
+          // the target is still reachable either way, so the local-only fallback answers it.
+          exposure: exposure ?? summarizeExposure(ctx, undefined),
           bootstrapped: false,
           running: false,
           image: null,

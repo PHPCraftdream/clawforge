@@ -4,11 +4,11 @@
 // The instance-side half of the order (secrets, config, restart, recipes) is pinned in
 // security/acceptance/plan.check.ts. This file pins the other half: the steps planned for
 // findings about the operator's own folder — a stale .env, an incomplete local store, a
-// missing declaration. It lives one level up from runtime/convergence/ because that folder
-// sits at the layout law's seven-entry cap (foundation/layout.check.ts), and the recovery
-// rules lead the list because every step behind them writes to the target — the values
-// these steps recover exist nowhere else, and the flags and the order here are the
-// difference between a recovery and a wipe.
+// missing declaration. Grouped here with private-history-restore.check.ts (this same
+// directory) — both pin a recovery path back onto a folder that lost something the target
+// still holds — because every step behind them writes to the target: the values these
+// steps recover exist nowhere else, and the flags and the order here are the difference
+// between a recovery and a wipe.
 
 import { planActions, planNextStepLine } from "#framework/commands/orchestration/plan.ts";
 import { problem } from "#framework/service/inspection.ts";

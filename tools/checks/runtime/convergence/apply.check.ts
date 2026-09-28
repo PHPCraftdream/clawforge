@@ -272,6 +272,7 @@ function localTransport(): {
       settings: { dataDir: resolve(deployment, "data") },
       transport: localTransport(),
       runtime: {
+        isRunning: async () => true,
         runningConnectionFacts: async () => ({
           dataDir: "/srv/clawforge/data",
           port: "18790",

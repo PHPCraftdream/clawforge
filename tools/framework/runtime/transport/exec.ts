@@ -37,6 +37,44 @@ export interface CommandFailure extends Error {
   fullCommand?: string;
 }
 
+/** wsl.exe or ssh itself failing to reach the target (as opposed to a command that ran there and
+ *  failed); `nextAction` names the specific thing to check. */
+export class TransportUnreachableError extends Error {
+  readonly nextAction?: string;
+  constructor(message: string, nextAction?: string) {
+    super(message);
+    this.name = "TransportUnreachableError";
+    this.nextAction = nextAction;
+  }
+}
+
+/** A target's own exit status is 0-255; anything else means wsl.exe/ssh failed first. */
+export function isWrapperFailureCode(code: number): boolean {
+  return code < 0 || code > 255;
+}
+
+/** Windows reports a negative exit code unsigned (4294967295); this restores -1. */
+export function toSignedExitCode(code: number): number {
+  return code > 0x7fffffff ? code - 0x100000000 : code;
+}
+
+/** The rejection spawnLocal() builds for a non-zero exit, for transports that classify first. */
+export function composeExecFailure(command: string, args: string[], result: ExecResult): CommandFailure {
+  // Prefer stderr over stdout, but only past Compose's noise: a stderr left with nothing
+  // else must not shadow a stdout that has the real reason.
+  const stderrLines = meaningfulLines(result.stderr);
+  const stdoutLines = meaningfulLines(result.stdout);
+  const detail = (stderrLines.length > 0 ? stderrLines : stdoutLines).slice(0, 5).join("\n");
+  // Masked: the arguments may carry a token, and the child's own output may echo it back.
+  const error = new Error(
+    maskSecrets(`${describeInvocation(command, args)} failed (exit ${result.code})${detail ? `: ${detail}` : ""}`),
+  ) as CommandFailure;
+  // Full argv, not in the message by default (Compose plumbing saying nothing about the
+  // failure) but never discarded: OC_DEBUG=1 (entry/cli.ts) prints it.
+  error.fullCommand = maskSecrets(`${command} ${args.join(" ")}`);
+  return error;
+}
+
 export interface Transport {
   /** Human-readable name for diagnostics: "local", "wsl:Ubuntu-24.04", "ssh:user@host". */
   readonly description: string;
@@ -121,19 +159,23 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     const forwardStdout = debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stdout.write(text); });
     const forwardStderr = debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stderr.write(text); });
 
-    child.stdout?.on("data", (chunk) => {
-      stdout += String(chunk);
+    // setEncoding keeps a multibyte character split across chunks whole.
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
       if (options.stream === true) {
-        if (forwardStdout !== undefined) forwardStdout.push(String(chunk));
-        else if (sink !== undefined) sink(String(chunk));
+        if (forwardStdout !== undefined) forwardStdout.push(chunk);
+        else if (sink !== undefined) sink(chunk);
         else process.stdout.write(chunk);
       }
     });
-    child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
       if (options.stream === true) {
-        if (forwardStderr !== undefined) forwardStderr.push(String(chunk));
-        else if (sink !== undefined) sink(String(chunk));
+        if (forwardStderr !== undefined) forwardStderr.push(chunk);
+        else if (sink !== undefined) sink(chunk);
         else process.stderr.write(chunk);
       }
     });
@@ -162,25 +204,13 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
       if (escalate !== undefined) clearTimeout(escalate);
       forwardStdout?.flush();
       forwardStderr?.flush();
-      const result: ExecResult = { code: code ?? -1, stdout, stderr };
+      const result: ExecResult = { code: toSignedExitCode(code ?? -1), stdout, stderr };
       if (launchError !== undefined) {
         rejectPromise(launchError);
         return;
       }
       if (result.code !== 0 && options.allowFailure !== true) {
-        // Prefer stderr over stdout, but only past Compose's noise: a stderr left with
-        // nothing else must not shadow a stdout that has the real reason.
-        const stderrLines = meaningfulLines(stderr);
-        const stdoutLines = meaningfulLines(stdout);
-        const detail = (stderrLines.length > 0 ? stderrLines : stdoutLines).slice(0, 5).join("\n");
-        // Masked: the arguments may carry a token, and the child's own output may echo it back.
-        const error = new Error(
-          maskSecrets(`${describeInvocation(command, args)} failed (exit ${result.code})${detail ? `: ${detail}` : ""}`),
-        ) as CommandFailure;
-        // Full argv, not in the message by default (Compose plumbing saying nothing about the
-        // failure) but never discarded: OC_DEBUG=1 (entry/cli.ts) prints it.
-        error.fullCommand = maskSecrets(`${command} ${args.join(" ")}`);
-        rejectPromise(error);
+        rejectPromise(composeExecFailure(command, args, result));
         return;
       }
       if (inputError !== undefined && result.code === 0) {

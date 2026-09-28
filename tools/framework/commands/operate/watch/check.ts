@@ -49,6 +49,7 @@ export const WATCH_CHECK_ARGUMENTS: CommandArgument[] = [
  *  missing, which here would mean a permanent false "degraded". */
 const LIVENESS_CODES: ReadonlySet<ProblemCode> = new Set([
   "NOT_BOOTSTRAPPED",
+  "TARGET_UNREACHABLE",
   "GATEWAY_DOWN",
   "GATEWAY_UNHEALTHY",
   "EGRESS_UNREACHABLE",

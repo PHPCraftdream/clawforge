@@ -6,6 +6,12 @@
 // See docs/first-hour-acceptance.md's 2026-09-27 run: a Compose progress line standing in for
 // the real failure reason, and streamed progress reaching the operator during bootstrap/smoke,
 // were two of its findings.
+//
+// Same data pipeline (child.stdout/stderr's own "data" handler), a different invariant below:
+// a multibyte character split across a chunk boundary must decode whole, not as two U+FFFD.
+// A pipe delivers chunks in ~64 KB increments, so a child writing more than that of non-ASCII
+// text is a real (and previously silent) way for `String(chunk)` to corrupt output — logs,
+// `config get`, any --json answer over that size.
 
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -140,6 +146,27 @@ function lifecycleLineSource(kind: "Container" | "Network", name: string, state:
   }
   check("a failed sh -c publish script never pastes its body into the message", message.includes("trap 'rm -f"), false);
   check("the real shell-reported cause still comes through", /no such file or directory/i.test(message), true);
+}
+
+// --- multibyte output across a chunk boundary decodes whole ---------------------------------
+
+/** €.repeat(300000) is 900 000 UTF-8 bytes (3 each), ж.repeat(300000) is 600 000 (2 each):
+ *  both cross the ~64 KB pipe chunk size many times over, so any boundary that split a
+ *  character mid-sequence would show up as U+FFFD somewhere in the captured result. */
+for (const [name, char] of [["€ (3-byte UTF-8)", "€"], ["ж (2-byte UTF-8)", "ж"]] as const) {
+  const script = `process.stdout.write(${JSON.stringify(char)}.repeat(300000));`;
+  const result = await spawnLocal(process.execPath, ["-e", script]);
+  check(`${name}: exact character count survives a 64 KB chunk boundary`, result.stdout.length, 300000);
+  check(`${name}: no U+FFFD anywhere in the captured output`, result.stdout.includes("�"), false);
+}
+
+// The streamed path uses the same setEncoding("utf8") stream, not a second decoder — this
+// pins that the forwarded text is whole too, not only the captured ExecResult.
+{
+  const script = "process.stdout.write('€'.repeat(300000));";
+  let forwarded = "";
+  await withOutputSink((chunk) => { forwarded += chunk; }, () => spawnLocal(process.execPath, ["-e", script], { stream: true }));
+  check("streamed: multibyte output across a chunk boundary decodes whole too", [forwarded.length, forwarded.includes("�")], [300000, false]);
 }
 
 process.stderr.write(failed === 0 ? "all spawn noise checks passed\n" : `${failed} failed\n`);

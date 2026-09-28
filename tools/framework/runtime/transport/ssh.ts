@@ -7,8 +7,27 @@
 
 import { listFilesVia } from "../../security/transport-listing.ts";
 import type { ExecOptions, ExecResult, Transport } from "./exec.ts";
-import { spawnLocal } from "./exec.ts";
+import { spawnLocal, isWrapperFailureCode, composeExecFailure, TransportUnreachableError } from "./exec.ts";
 import { existsVia, privateWriteCommand, publishCommand, withEnvPrefix } from "./quoting.ts";
+
+/** Lines ssh writes for its own connection failures (exit 255 alone is ambiguous). */
+const SSH_OWN_FAILURE = [
+  /^ssh: /m,
+  /Connection refused/,
+  /Connection timed out/,
+  /Operation timed out/,
+  /Could not resolve hostname/,
+  /Permission denied \(/,
+  /Host key verification failed/,
+  /kex_exchange_identification/,
+  /No route to host/,
+];
+
+/** Whether ssh failed for its own reason rather than the remote command's exit status. */
+function isSshOwnFailure(code: number, stderr: string): boolean {
+  if (isWrapperFailureCode(code)) return true;
+  return code === 255 && SSH_OWN_FAILURE.some((pattern) => pattern.test(stderr));
+}
 
 export class SshTransport implements Transport {
   readonly description: string;
@@ -24,10 +43,29 @@ export class SshTransport implements Transport {
     return `'${argument.replaceAll("'", `'\\''`)}'`;
   }
 
-  exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
+  async exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
     const [head, rest] = withEnvPrefix(command, args, options.env, options.unsetEnv);
     const remote = [head, ...rest].map(SshTransport.quote).join(" ");
-    return spawnLocal("ssh", [this.#host, remote], options);
+    const sshArgs = [this.#host, remote];
+    let result: ExecResult;
+    try {
+      // allowFailure is forced: stderr must be seen before the failure can be classified.
+      result = await spawnLocal("ssh", sshArgs, { ...options, allowFailure: true });
+    } catch (error) {
+      throw new TransportUnreachableError(
+        `${this.description}: ssh failed before reaching the target — ${(error as Error).message}`,
+        "check that ssh is installed and on PATH",
+      );
+    }
+    if (isSshOwnFailure(result.code, result.stderr)) {
+      const detail = result.stderr.trim() || result.stdout.trim() || "no output";
+      throw new TransportUnreachableError(
+        `${this.description} is unreachable — ssh exited ${result.code}: ${detail}`,
+        "check OC_SSH_HOST — test the connection with `ssh -o BatchMode=yes <host> true`",
+      );
+    }
+    if (result.code !== 0 && options.allowFailure !== true) throw composeExecFailure("ssh", sshArgs, result);
+    return result;
   }
 
   async readFile(path: string): Promise<string> {

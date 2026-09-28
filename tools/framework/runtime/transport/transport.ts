@@ -21,10 +21,10 @@ import { WslTransport } from "./wsl.ts";
 import { SshTransport } from "./ssh.ts";
 
 export type { ExecOptions, ExecResult, CommandFailure, Transport } from "./exec.ts";
-export { spawnLocal } from "./exec.ts";
+export { spawnLocal, TransportUnreachableError, isWrapperFailureCode, toSignedExitCode } from "./exec.ts";
 export { PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER, withEnvPrefix, existsVia } from "./quoting.ts";
 export { LocalTransport } from "./local.ts";
-export { WslTransport } from "./wsl.ts";
+export { WslTransport, stripWslNuls } from "./wsl.ts";
 export { SshTransport } from "./ssh.ts";
 export { listFilesVia } from "../../security/transport-listing.ts";
 export { describeInvocation } from "./spawn-failure.ts";

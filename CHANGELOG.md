@@ -157,6 +157,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   tool (input: `command`, optional), which returns exactly what `./clawforge help <command>`
   prints — or the command list when called without one. A check keeps `tools/list` under a
   byte budget and every description under 400 characters.
+* A command's captured output was decoded per ~64 KB pipe chunk, corrupting multibyte
+  characters split across a boundary into U+FFFD (logs, `config get`, large `--json`). It is
+  now decoded as one continuing UTF-8 stream.
+* `TARGET_UNREACHABLE` (before: only `watch`) now also covers `doctor`, `inspect`, `plan`,
+  `status` and `backup list`. A wrong `OC_WSL_DISTRO`, a stopped WSL or an ssh that never
+  connects used to end in `could not check whether … exists (exit 4294967295):` with nothing
+  after the colon (wsl.exe's own errors are UTF-16LE); it is now one blocking, readable finding
+  naming the variable to check and how to test the connection, and exit codes print signed.
 
 ## 0.1.0
 

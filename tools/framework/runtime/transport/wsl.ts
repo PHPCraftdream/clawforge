@@ -8,8 +8,14 @@
 
 import { listFilesVia } from "../../security/transport-listing.ts";
 import type { ExecOptions, ExecResult, Transport } from "./exec.ts";
-import { spawnLocal } from "./exec.ts";
+import { spawnLocal, isWrapperFailureCode, composeExecFailure, TransportUnreachableError } from "./exec.ts";
 import { existsVia, privateWriteCommand, publishCommand, withEnvPrefix } from "./quoting.ts";
+
+/** wsl.exe writes its own errors in UTF-16LE; read as UTF-8 they carry a NUL after every
+ *  character, which stripping recovers. Shared with parseWslDistroListing. */
+export function stripWslNuls(text: string): string {
+  return text.replaceAll("\u0000", "");
+}
 
 export class WslTransport implements Transport {
   readonly description: string;
@@ -23,9 +29,29 @@ export class WslTransport implements Transport {
     this.description = `wsl:${distro}`;
   }
 
-  exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
+  async exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
     const [head, rest] = withEnvPrefix(command, args, options.env, options.unsetEnv);
-    return spawnLocal("wsl.exe", ["-d", this.#distro, "--exec", head, ...rest], options);
+    const wslArgs = ["-d", this.#distro, "--exec", head, ...rest];
+    let result: ExecResult;
+    try {
+      // allowFailure is forced: the exit code must be seen before it can be classified.
+      result = await spawnLocal("wsl.exe", wslArgs, { ...options, allowFailure: true });
+    } catch (error) {
+      // Launch or stdin failure only; a non-zero exit cannot throw here.
+      throw new TransportUnreachableError(
+        `${this.description}: wsl.exe failed before reaching the target — ${(error as Error).message}`,
+        "check that wsl.exe is installed and on PATH (`wsl.exe --status`)",
+      );
+    }
+    if (isWrapperFailureCode(result.code)) {
+      const detail = stripWslNuls(result.stderr).trim() || stripWslNuls(result.stdout).trim() || "no output";
+      throw new TransportUnreachableError(
+        `${this.description} is unreachable — wsl.exe exited ${result.code}: ${detail}`,
+        "check OC_WSL_DISTRO — list the real names with `wsl.exe -l -q`",
+      );
+    }
+    if (result.code !== 0 && options.allowFailure !== true) throw composeExecFailure("wsl.exe", wslArgs, result);
+    return result;
   }
 
   async readFile(path: string): Promise<string> {

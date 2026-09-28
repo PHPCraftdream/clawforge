@@ -14,6 +14,7 @@
 
 import type { SecretStatus } from "./secrets.ts";
 import type { OwnedKind } from "../set/ownership/ledger.ts";
+import type { TransportUnreachableError } from "../runtime/transport/exec.ts";
 
 /** How much a problem matters. Blocking means the instance is not doing its job, or would
  *  not survive a restart; a warning is a difference worth naming that still works. */
@@ -24,6 +25,7 @@ export type Severity = "blocking" | "warning";
  *  it, the same as renaming a command. */
 export type ProblemCode =
   | "NOT_BOOTSTRAPPED"
+  | "TARGET_UNREACHABLE"
   | "GATEWAY_DOWN"
   | "GATEWAY_UNHEALTHY"
   | "EGRESS_UNREACHABLE"
@@ -80,6 +82,16 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     // without ever reaching for the runtime.
     summary: "this deployment has never been bootstrapped — there is nothing on the target yet",
     nextAction: "./clawforge bootstrap",
+  },
+  TARGET_UNREACHABLE: {
+    severity: "blocking",
+    // wsl.exe/ssh itself failed before ever reaching the target's own shell — a missing WSL
+    // distribution, WSL not running, a host ssh never connected to. Nothing else in this
+    // inspection can be trusted once this fires, since every later check needs the target
+    // to answer at all; the generic remedy below is replaced with a transport-specific one
+    // (which env var, which probe command) wherever the failure is actually reported.
+    summary: "the transport itself could not reach the target — no command got to run there at all",
+    nextAction: "check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`",
   },
   GATEWAY_DOWN: {
     severity: "blocking",
@@ -349,10 +361,11 @@ export interface Problem {
 /** Builds a problem from its code, so severity and remedy come from one table rather than
  *  from whichever call site got there first.
  *
- *  nextAction can be overridden, and exactly one case needs it: a problem whose remedy is
- *  more specific than the code's general one (a single named recipe to re-provision rather
- *  than the whole declaration). The severity deliberately cannot — a caller deciding that
- *  its own CONFIG_DRIFT is only a warning is the failure this table exists to prevent. */
+ *  nextAction can be overridden for a problem whose remedy is more specific than the code's
+ *  general one — a single named recipe to re-provision rather than the whole declaration,
+ *  or (unreachableProblem, below) which env var to check for the transport that actually
+ *  failed. The severity deliberately cannot — a caller deciding that its own CONFIG_DRIFT is
+ *  only a warning is the failure this table exists to prevent. */
 export function problem(code: ProblemCode, detail: string, nextAction?: string): Problem {
   const meaning = PROBLEM_CODES[code];
   return {
@@ -361,6 +374,13 @@ export function problem(code: ProblemCode, detail: string, nextAction?: string):
     detail,
     nextAction: nextAction ?? meaning.nextAction,
   };
+}
+
+/** TARGET_UNREACHABLE, straight from the transport's own typed failure — the one place
+ *  every caller (gatherInspection, status, backup list) turns "wsl.exe/ssh itself never
+ *  reached the target" into the same code, message and remedy. */
+export function unreachableProblem(error: TransportUnreachableError): Problem {
+  return problem("TARGET_UNREACHABLE", error.message, error.nextAction);
 }
 
 /** What this repository says the instance should be. */

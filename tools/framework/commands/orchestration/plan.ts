@@ -22,6 +22,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum } from "../management/lock.ts";
 import { isHealthy } from "#src/service/inspection.ts";
+import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import type { Inspection, Problem, ProblemCode } from "#src/service/inspection.ts";
@@ -335,9 +336,20 @@ export function planActions(inspection: Inspection): PlanAction[] {
  *  one. */
 export async function computePlan(ctx: Context): Promise<Plan> {
   const inspection = await gatherInspection(ctx);
+  let checksum: string;
+  try {
+    checksum = declarationChecksum(await currentComposition(ctx));
+  } catch (error) {
+    if (!(error instanceof TransportUnreachableError)) throw error;
+    // currentComposition() reaches the target for its image digest even though the checksum
+    // itself only ever hashes desiredState/recipes (both local) — an unreachable target
+    // already carries its own TARGET_UNREACHABLE problem in inspection.problems above, and a
+    // second, less useful exception here must not crash a read-only command.
+    checksum = "";
+  }
   return {
     deployment: inspection.declared.deployment,
-    declarationChecksum: declarationChecksum(await currentComposition(ctx)),
+    declarationChecksum: checksum,
     healthy: isHealthy(inspection),
     problems: inspection.problems,
     actions: planActions(inspection),

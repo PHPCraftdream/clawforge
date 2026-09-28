@@ -7,7 +7,7 @@
 
 import { die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
-import { spawnLocal, type ExecOptions, type ExecResult } from "#src/runtime/transport/transport.ts";
+import { spawnLocal, stripWslNuls, type ExecOptions, type ExecResult } from "#src/runtime/transport/transport.ts";
 
 export type HostContextName = "target" | "engine" | "local";
 
@@ -56,10 +56,10 @@ export interface HostEnvironment {
 }
 
 /** wsl.exe emits UTF-16LE on the versions in the field, and spawnLocal decodes bytes as
- *  UTF-8, which leaves interleaved NUL characters; stripping them normalizes both encodings. */
+ *  UTF-8, which leaves interleaved NUL characters; stripWslNuls (runtime/transport/wsl.ts)
+ *  normalizes both encodings, shared with the transport's own unreachable-target detail. */
 export function parseWslDistroListing(stdout: string): string[] {
-  return stdout
-    .replaceAll("\u0000", "")
+  return stripWslNuls(stdout)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line !== "");

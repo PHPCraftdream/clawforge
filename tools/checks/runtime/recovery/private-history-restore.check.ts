@@ -331,7 +331,7 @@ try {
 
     // The real private-write helpers, driven the way `recipe install` drives a prepare hook.
     const fixture = (await import(
-      new URL("../security/credentials/recipe-private-snapshot/fixture-recipe/fixture-sidecar/prepare.ts", import.meta.url).href
+      new URL("../../security/credentials/recipe-private-snapshot/fixture-recipe/fixture-sidecar/prepare.ts", import.meta.url).href
     )) as { prepare: (ctx: Context, recipe: Recipe) => Promise<void> };
     await fixture.prepare(ctx, await loadRecipe("history-sidecar"));
     check(

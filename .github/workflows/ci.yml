@@ -54,7 +54,7 @@ jobs:
     #   runtime/convergence/backup, runtime/convergence/inspect/checksums,
     #   runtime/lifecycle/private-declaration-lifetime,
     #   runtime/lifecycle/private-paths-prefix-boundary,
-    #   runtime/lifecycle/restore-symlink-boundary, runtime/private-history-restore,
+    #   runtime/lifecycle/restore-symlink-boundary, runtime/recovery/private-history-restore,
     #   runtime/service/runtime-image-identity, runtime/service/state/backup/policy,
     #   security/credentials/private-config,
     #   security/credentials/private-file,
@@ -66,7 +66,11 @@ jobs:
     #   dev machines.
     # - The rest are pure Node + fs/logic: stub transports model exec in JS, and the
     #   local tools some spawn (node, npm, git, tar, icacls, whoami) all ship on hosted
-    #   Windows runners.
+    #   Windows runners. One exception spawns wsl.exe for real without a skip —
+    #   runtime/transport/target-unreachable — because a distro name built to not exist
+    #   classifies as TransportUnreachableError identically whether wsl.exe is absent
+    #   (ENOENT) or present and unable to find it, so there is no tool-dependent branch to
+    #   gate.
     # Real WSL/Docker transport behavior on win32 is still only exercised by local
     # developer runs until a self-hosted or WSL/Docker-provisioned Windows runner exists;
     # everything else the suite asserts about Windows (ACL sealing, drive/path bridging,
@@ -190,8 +194,8 @@ jobs:
             tools/checks/runtime/lifecycle/smoke/drift.check.ts
             tools/checks/runtime/lifecycle/smoke/roundtrip.check.ts
             tools/checks/runtime/lifecycle/smoke/archive-window.check.ts
-            tools/checks/runtime/plan.check.ts
-            tools/checks/runtime/private-history-restore.check.ts
+            tools/checks/runtime/recovery/plan.check.ts
+            tools/checks/runtime/recovery/private-history-restore.check.ts
             tools/checks/runtime/service/deploy/checkout-policy.check.ts
             tools/checks/runtime/service/deploy/root-boundary.check.ts
             tools/checks/runtime/service/logs-bounded.check.ts
@@ -208,6 +212,7 @@ jobs:
             tools/checks/runtime/service/state/backup/inventory.check.ts
             tools/checks/runtime/service/state/backup/list.check.ts
             tools/checks/runtime/service/state/backup/prune-replaced.check.ts
+            tools/checks/runtime/transport/target-unreachable.check.ts
             tools/checks/security/acceptance/accept.check.ts
             tools/checks/security/acceptance/plan.check.ts
             tools/checks/security/audit/security-audit.check.ts

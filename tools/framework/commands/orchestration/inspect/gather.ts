@@ -37,11 +37,13 @@ import { pluginsForLock, skillsForLock } from "#src/commands/management/extensio
 import { readInstalledSet, requirementProblems, runningDigests, matchRequiredDigest } from "#src/set/artifacts/install.ts";
 import {
   problem,
+  unreachableProblem,
   blockingProblems,
   isHealthy,
   nextActions,
 } from "#src/service/inspection.ts";
 import type { Problem, Inspection } from "#src/service/inspection.ts";
+import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { prospectiveConfig, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
 import { declaredState, observeDeclarationFile } from "./declared.ts";
@@ -68,11 +70,33 @@ export interface GatherInspectionOptions {
 }
 
 /** The whole picture. Exported because doctor, plan and apply all read it rather than
- *  gathering their own — three gatherers would be three answers to one question. */
+ *  gathering their own — three gatherers would be three answers to one question.
+ *
+ *  declaredState() runs outside the try below on purpose: it never touches the target
+ *  (declared.ts's own header), so it is available even when the target is not — the
+ *  TARGET_UNREACHABLE inspection still names what this repository declares, the same as
+ *  the NOT_BOOTSTRAPPED one a few lines down does. */
 export async function gatherInspection(ctx: Context, options?: GatherInspectionOptions): Promise<Inspection> {
   const problems: Problem[] = [];
   const declared = await declaredState(ctx, problems);
+  try {
+    return await gatherReachedInspection(ctx, declared, problems, options);
+  } catch (error) {
+    if (!(error instanceof TransportUnreachableError)) throw error;
+    return {
+      declared,
+      observed: { running: false, probes: {}, config: {}, secrets: [], agents: [], mcpServers: [], cronJobs: [], foreignObjects: [] },
+      problems: [...problems, unreachableProblem(error)],
+    };
+  }
+}
 
+async function gatherReachedInspection(
+  ctx: Context,
+  declared: Inspection["declared"],
+  problems: Problem[],
+  options: GatherInspectionOptions | undefined,
+): Promise<Inspection> {
   // isRunning() shells out to compose, which needs somewhere to write its own private env
   // file beside the data directory — and on a deployment nobody has bootstrapped yet, that
   // data directory does not exist, so creating a place beside it is exactly the mkdir a
@@ -119,6 +143,9 @@ export async function gatherInspection(ctx: Context, options?: GatherInspectionO
     liveConfig = await readLiveConfigForProspective(ctx);
     prospective = prospectiveConfig(liveConfig, declared.config);
   } catch (error) {
+    // A transport failure here is TARGET_UNREACHABLE, not a bad declared path — rethrown so
+    // the outer catch in gatherInspection() reports it as what it actually is.
+    if (error instanceof TransportUnreachableError) throw error;
     problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} declares an unsafe configuration path: ${(error as Error).message}`));
     prospective = liveConfig;
   }

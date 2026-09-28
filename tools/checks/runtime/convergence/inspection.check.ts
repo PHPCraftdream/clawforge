@@ -38,10 +38,11 @@ for (const code of codes) {
   check(`${code} has a severity that exists`, meaning.severity === "blocking" || meaning.severity === "warning", true);
   check(`${code} says what it means`, meaning.summary.trim() !== "", true);
   // A remedy that is a description rather than a command leaves the reader exactly where
-  // they were. The one exception is the MCP reconnect, which nothing on this side can do.
+  // they were. The two exceptions: the MCP reconnect, which nothing on this side can do,
+  // and an unreachable target, whose fix is outside clawforge entirely (WSL/ssh config).
   check(
     `${code} names something the reader can act on`,
-    meaning.nextAction.startsWith("./clawforge ") || code === "MCP_RESTART_REQUIRED",
+    meaning.nextAction.startsWith("./clawforge ") || code === "MCP_RESTART_REQUIRED" || code === "TARGET_UNREACHABLE",
     true,
   );
 }
@@ -96,6 +97,8 @@ check(
     "SET_SECRET_UNDECLARED",
     "SKILL_DRIFT",
     "STORE_INCOMPLETE",
+    // wsl.exe/ssh itself failing to reach the target — never a command that ran there.
+    "TARGET_UNREACHABLE",
     "UFW_DOCKER_BYPASS",
   ],
 );

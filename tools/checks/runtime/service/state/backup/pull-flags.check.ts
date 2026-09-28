@@ -10,7 +10,7 @@
 // back the profile each command reports having used.
 
 import { resolve } from "node:path";
-import { backup } from "#framework/commands/lifecycle/backup.ts";
+import { backup } from "#framework/commands/lifecycle/backup/index.ts";
 import { pull } from "#framework/commands/lifecycle/state.ts";
 import { PROFILE_SHORTHAND_FLAGS } from "#framework/service/archive/index.ts";
 import { monorepoRoot } from "#framework/core/env.ts";

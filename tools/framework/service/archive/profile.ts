@@ -58,6 +58,25 @@ export function parseBackupArchive(fileName: string, deployment: string): { stam
   return { stamp: match[1], profile: (match[2] ?? "full") as Profile };
 }
 
+/** Builds the name restore moves the previous data directory aside under, one generator so
+ *  parseReplacedCopyName's shape can never drift from what this actually writes. */
+export function replacedCopyName(dataDir: string): string {
+  return `${dataDir}.replaced-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`;
+}
+
+const REPLACED_COPY_STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
+
+/** The stamp of a `.replaced-*` sibling's base name, or undefined when it is not exactly
+ *  one — strict for the same reason parseBackupArchive is: `backup prune-replaced` deletes
+ *  through this, and a loose match would accept a hand-made or unrelated directory that
+ *  merely starts with the right prefix. */
+export function parseReplacedCopyName(baseName: string, dataDirName: string): { stamp: string } | undefined {
+  const escaped = dataDirName.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const match = new RegExp(`^${escaped}\\.replaced-(.+)$`).exec(baseName);
+  if (match === null) return undefined;
+  return REPLACED_COPY_STAMP.test(match[1]) ? { stamp: match[1] } : undefined;
+}
+
 /** Parses the exact snapshot name produced by `pull`. */
 export function snapshotDeploymentNames(deployment: string): string[] {
   return deployment === "openclaw" ? [deployment, "open_claw"] : [deployment];

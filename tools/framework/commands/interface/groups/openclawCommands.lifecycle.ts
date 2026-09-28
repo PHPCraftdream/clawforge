@@ -5,7 +5,7 @@ import type { AppCommand } from "#src/core/app.ts";
 
 import { up, down, logs, restart, upgrade, UPGRADE_ARGUMENTS, LOCK_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
 import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap.ts";
-import { backup, BACKUP_ARGUMENTS } from "#src/commands/lifecycle/backup.ts";
+import { backup, BACKUP_ALL_ARGUMENTS, backupActionIsReadOnly } from "#src/commands/lifecycle/backup/index.ts";
 import { restore, RESTORE_ARGUMENTS } from "#src/commands/lifecycle/restore.ts";
 import { verify, VERIFY_ARGUMENTS } from "#src/commands/lifecycle/verify.ts";
 import { pull, push, PULL_ARGUMENTS, PUSH_ARGUMENTS } from "#src/commands/lifecycle/state.ts";
@@ -86,12 +86,21 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     ],
   },
   backup: {
-    summary: "Snapshot the data directory",
+    summary: "Snapshot the data directory (list, prune-replaced)",
     group: "save-move",
     run: backup,
+    readOnlyWhen: backupActionIsReadOnly,
+    changedWhen: (args) => !backupActionIsReadOnly(args),
+    // Only prune-replaced --apply is destructive enough to need MCP confirmation — a bare
+    // backup already changes nothing anyone would want undone (it only ever adds an
+    // archive) and has never required it; mirroring readOnlyWhen's negation here would
+    // start demanding confirm: true for the plain, everyday case.
+    requiresConfirmationWhen: (args) => args[0] === "prune-replaced" && args.includes("--apply"),
+    destructive: true,
     details:
-      "Stops the gateway for the duration by default: OpenClaw keeps state in SQLite with " +
-      "a multi-megabyte -wal sibling, and a copy taken mid-write is not restorable.\n" +
+      "With no action: stops the gateway for the duration by default — OpenClaw keeps " +
+      "state in SQLite with a multi-megabyte -wal sibling, and a copy taken mid-write is " +
+      "not restorable.\n" +
       "--hot skips the stop for those who accept that risk.\n" +
       "--profile controls what travels in the archive (see `./clawforge help pull` for what each " +
       "profile excludes); --share, --migrate and --with-secrets are shorthands for it, the " +
@@ -115,8 +124,19 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "backup and restore), it " +
       "runs once the archive is published and rotated — never for an internal archive smoke " +
       "takes purely to prove the mechanism works. A hook that fails never deletes the archive: " +
-      "the failure is reported with the published path and a non-zero exit.",
-    arguments: BACKUP_ARGUMENTS,
+      "the failure is reported with the published path and a non-zero exit.\n" +
+      "list — read-only: every archive in the backup directory (name, size, date, profile " +
+      "parsed from the name) and every `<data>.replaced-*` copy restore left next to the " +
+      "data directory (name, size, date); marks which archive a bare `./clawforge restore` " +
+      "would pick by default. --json for machine output.\n" +
+      "prune-replaced — deletes `<data>.replaced-*` copies, which otherwise accumulate " +
+      "forever: previews what would be removed by default, only --apply removes anything, " +
+      "--keep <n> keeps that many newest instead of deleting all of them. Refuses anything " +
+      "that is not exactly one of those copies (a symlink, the data directory itself, an " +
+      "unrelated name), takes the instance lock while --apply runs. Archive pruning is " +
+      "already handled by this command's own rotation (OC_BACKUP_KEEP) — prune-replaced " +
+      "never touches an archive.",
+    arguments: BACKUP_ALL_ARGUMENTS,
   },
   restore: {
     summary: "Restore an archive over the current state",

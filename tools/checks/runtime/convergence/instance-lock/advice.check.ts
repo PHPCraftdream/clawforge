@@ -64,9 +64,16 @@ function declaresBreakForeignLock(name: string): boolean {
 for (const name of ["up", "restart", "down", "restore", "push", "apply", "rollback", "apply-config", "recipe", "provision-agent", "set", "bootstrap", "pull"]) {
   check(`${name} declares --break-lock`, declaresBreakLock(name), true);
 }
-for (const name of ["backup", "configure-provider", "secrets"]) {
+for (const name of ["configure-provider", "secrets"]) {
   check(`${name} does not declare --break-lock (its own parser rejects it)`, declaresBreakLock(name), false);
 }
+
+// backup is a second deliberate asymmetry: bare `backup` (create) takes the lock but its own
+// guarded() call passes breakLockSupported: false (see backup/index.ts) and its creation
+// parser (BACKUP_ARGUMENTS) still rejects the flag, same as before; `prune-replaced --apply`
+// is the one action that both reads and needs it, so the merged declaration
+// (BACKUP_ALL_ARGUMENTS) carries it for that action alone.
+check("backup declares --break-lock (for prune-replaced --apply only)", declaresBreakLock("backup"), true);
 
 // --- hermetic: every command in openclawCommands that declares --break-lock also declares
 // --break-foreign-lock, checked over the whole declaration rather than a fixed list, so a

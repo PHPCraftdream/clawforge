@@ -3,7 +3,7 @@
 // layout so rotation, naming and restore need no native-specific case.
 
 import { resolve } from "node:path";
-import { createBackup, NativeBackupUnsupportedError, NATIVE_MANIFEST_NAME, omittedOnPurpose } from "#framework/commands/lifecycle/backup.ts";
+import { createBackup, NativeBackupUnsupportedError, NATIVE_MANIFEST_NAME, omittedOnPurpose } from "#framework/commands/lifecycle/backup/index.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";

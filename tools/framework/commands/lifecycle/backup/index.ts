@@ -3,6 +3,13 @@
 // The gateway is stopped for the duration by default:
 // OpenClaw keeps state in SQLite databases with multi-megabyte -wal files, and a copy
 // taken mid-write is not restorable. --hot skips the stop for those who accept that.
+//
+// Split into three files: this one keeps the creation path (BACKUP_ARGUMENTS, createBackup
+// and the dispatcher below); list.ts is the read-only archive/replaced-copy inventory;
+// prune-replaced.ts is the explicit, --apply-gated cleanup of `<dataDir>.replaced-*`
+// copies restore leaves behind. No action (`./clawforge backup`) still creates an archive
+// exactly as before — `list`/`prune-replaced` are additional first positional actions, not
+// a replacement for it.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
@@ -14,17 +21,37 @@ import {
   listArchive, parseBackupArchive, privilegePrefixFor, symlinkedDataRoot, PROFILE_SHORTHAND_FLAGS, type Profile,
 } from "#src/service/archive/index.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
-import { runningRecipeStacks } from "../management/recipe/index.ts";
-import { quiesceRecipeStacks, resumeRecipeStacks } from "../management/recipe/lifecycle.ts";
+import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
+import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/management/recipe/lifecycle.ts";
 import type { Recipe } from "#src/service/recipe.ts";
-import { verifySnapshot } from "./verify.ts";
+import { verifySnapshot } from "#src/commands/lifecycle/verify.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
+import { backupPruneReplaced, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
+
+export { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
+export { backupPruneReplaced, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
+
+/** The first positional token `./clawforge backup` accepts instead of creating an archive. */
+export const BACKUP_ACTIONS = ["list", "prune-replaced"] as const;
+
+/** Only `list` and a preview `prune-replaced` (no --apply) merely read the instance; a bare
+ *  create and `prune-replaced --apply` both change it. One predicate for openclawCommands'
+ *  readOnlyWhen/changedWhen/requiresConfirmationWhen, same reasoning as expose/watch's own
+ *  <action>IsReadOnly helpers. */
+export function backupActionIsReadOnly(argv: string[]): boolean {
+  const action = argv[0];
+  if (action === "list") return true;
+  if (action === "prune-replaced") return !argv.includes("--apply");
+  return false;
+}
 
 /** Drives both `./clawforge backup`'s own parser and its openclawCommands declaration (help,
- *  MCP schema) from one list, so the two cannot drift apart. */
+ *  MCP schema) from one list, so the two cannot drift apart. Only the creation path's own
+ *  flags — `list`'s and `prune-replaced`'s own are BACKUP_LIST_ARGUMENTS/BACKUP_PRUNE_ARGUMENTS. */
 export const BACKUP_ARGUMENTS: CommandArgument[] = [
   PROFILE_ARGUMENT,
   { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
@@ -32,6 +59,16 @@ export const BACKUP_ARGUMENTS: CommandArgument[] = [
   { name: "share", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
   { name: "migrate", description: "Migrate profile: no provider keys (same as --profile migrate)", kind: "flag" },
   { name: "with-secrets", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
+];
+
+/** The merged declaration for openclawCommands — one optional `action` positional ahead of
+ *  every sub-action's own flags, so `./clawforge backup` with none of them still creates an
+ *  archive exactly as it always has. */
+export const BACKUP_ALL_ARGUMENTS: CommandArgument[] = [
+  { name: "action", description: "list or prune-replaced instead of creating a backup", kind: "positional", choices: [...BACKUP_ACTIONS] },
+  ...BACKUP_ARGUMENTS,
+  ...BACKUP_LIST_ARGUMENTS,
+  ...BACKUP_PRUNE_ARGUMENTS,
 ];
 
 export interface BackupOptions {
@@ -481,6 +518,14 @@ async function targetExists(ctx: Context, path: string): Promise<boolean> {
 }
 
 export async function backup(ctx: Context, args: string[]): Promise<void> {
+  const [first, ...rest] = args;
+  // Positional and unambiguous: every creation flag is `--something`, so a bare `list` or
+  // `prune-replaced` token can never collide with one. Anything else (including undefined)
+  // falls through to creation unchanged — its own parser below rejects a genuinely unknown
+  // bare token exactly as it always has.
+  if (first === "list") return backupList(ctx, rest);
+  if (first === "prune-replaced") return backupPruneReplaced(ctx, rest);
+
   const options: BackupOptions = {};
   const parsed = parseDeclaredArgs(BACKUP_ARGUMENTS, args);
 

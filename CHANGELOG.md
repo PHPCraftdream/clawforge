@@ -24,6 +24,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   `inspect` reports drift against them.
 * `--help` grouped by operator intent (start & stop, check, change, save & move, security &
   access, integrations & recovery, low-level) instead of one flat alphabetical list.
+* `backup list`: every archive in the backup directory and every `<data>.replaced-*` copy
+  restore left behind, with size/date/profile, text and `--json`; marks which archive a bare
+  `restore` would pick by default. `backup prune-replaced [--apply] [--keep <n>]`: deletes
+  those `.replaced-*` copies, which otherwise accumulate forever — previews by default,
+  takes the instance lock and refuses anything that is not exactly one of those siblings.
 * `list`: one line per deployment under `apps/`, across the whole checkout.
 * `logs --since`/`--grep`: bounded reads and follows filtered by time and by pattern.
 * Typo-aware command dispatch (did-you-mean instead of the full help), `--app` recognised
@@ -67,6 +72,8 @@ All notable changes to `@clawforge/framework` will be documented here.
   `--break-lock`. `push` validates its arguments before taking the lock, so a bad flag can
   no longer follow a takeover. The refusal for a guard owned by another machine names the
   flag, the host id and the runbook.
+* `restore` with no `<archive>` now names which one it picked, with its date, before any
+  confirmation or action — previously only visible from the log of a restore already running.
 
 ## 0.1.0
 

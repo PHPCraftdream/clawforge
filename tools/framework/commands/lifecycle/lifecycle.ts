@@ -13,7 +13,7 @@ import { guarded } from "#src/runtime/instance-lock.ts";
 import { envFile } from "#src/runtime/deployment.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
-import { createBackup, NativeBackupUnsupportedError } from "./backup.ts";
+import { createBackup, NativeBackupUnsupportedError } from "./backup/index.ts";
 import { restoreArchive } from "./restore.ts";
 import { imageChannel, channelHasTag } from "#src/runtime/docker/image-digest.ts";
 import type { CommandArgument } from "#src/core/app.ts";

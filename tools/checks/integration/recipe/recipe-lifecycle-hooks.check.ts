@@ -12,8 +12,8 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { createBackup } from "#framework/commands/lifecycle/backup.ts";
-import type { BackupOptions } from "#framework/commands/lifecycle/backup.ts";
+import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
+import type { BackupOptions } from "#framework/commands/lifecycle/backup/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";

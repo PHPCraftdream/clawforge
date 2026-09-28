@@ -16,7 +16,7 @@ import { basename, dirname } from "node:path";
 import { log, UserError } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { CouldNotCheck } from "../../check-outcome.ts";
-import { createBackup } from "../backup.ts";
+import { createBackup } from "../backup/index.ts";
 import { pull } from "../state.ts";
 import { restoreArchive } from "../restore.ts";
 import { verifySnapshotQuietly } from "../verify.ts";

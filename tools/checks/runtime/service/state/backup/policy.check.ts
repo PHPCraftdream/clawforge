@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { join, resolve } from "node:path";
 import { access, mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { rotate, createBackup } from "#framework/commands/lifecycle/backup.ts";
+import { rotate, createBackup } from "#framework/commands/lifecycle/backup/index.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";

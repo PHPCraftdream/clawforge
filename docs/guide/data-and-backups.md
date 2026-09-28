@@ -121,6 +121,30 @@ Rotation removes one archive per run, the oldest beyond `OC_BACKUP_KEEP`, rather
 whole backlog at once — the same rotation and naming for a native archive as for any other
 full backup.
 
+### Listing archives and cleaning up after a restore
+
+```bash
+./clawforge backup list                  # archives + <data>.replaced-* copies, with size/date
+./clawforge backup list --json
+./clawforge backup prune-replaced        # preview only — nothing is deleted
+./clawforge backup prune-replaced --apply
+./clawforge backup prune-replaced --apply --keep 2   # keep the 2 newest, remove the rest
+```
+
+`restore` keeps the previous data directory rather than deleting it — renamed to
+`<data>.replaced-<timestamp>`, so a wrong restore is recoverable. Nothing removes those
+automatically: run enough restores and they accumulate, each one a full copy of the data
+directory. `backup list` shows both what a bare `./clawforge restore` would pick by default
+(the newest FULL archive) and every `.replaced-*` copy currently sitting there, so the
+operator sees which one before running a restore that is already in flight, not from its log.
+
+`backup prune-replaced` is the explicit cleanup: it previews by default, deletes only with
+`--apply`, and `--keep <n>` retains the newest `n` copies instead of all of them. It refuses
+anything that is not exactly a `<dataDir>.replaced-<stamp>` sibling — a symlink, a nested
+path, an unrelated directory that merely starts with the right name — and takes the instance
+lock while it deletes, the same as any other mutating command. It never touches an archive;
+archive cleanup is `rotate()`'s own job, above.
+
 ### Extending backup and restore: `afterBackup`/`beforeRestore`
 
 The framework does not encrypt archives or ship them off-host itself — that decision

@@ -19,12 +19,13 @@ import {
   listArchive,
   listArchiveLinks,
   parseBackupArchive,
+  replacedCopyName,
   reportableProblems,
 } from "#src/service/archive/index.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { SshTransport } from "#src/runtime/transport/transport.ts";
 import { openclawCli } from "#src/service/openclaw-cli.ts";
-import { NATIVE_MANIFEST_NAME } from "./backup.ts";
+import { NATIVE_MANIFEST_NAME } from "./backup/index.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 import {
   importRestoredPrivatePathsHistory,
@@ -63,6 +64,13 @@ export interface RestoreOptions {
    *  application's `beforeRestore` (if declared) is skipped. Ordinary callers never pass
    *  this. */
   internal?: boolean;
+}
+
+/** `backupArchiveName`'s stamp (`YYYYMMDD-HHMMSS`, always UTC — see backup/index.ts's
+ *  timestamp()) as a readable date, for the pre-confirmation "which archive" line below. */
+function formatArchiveStamp(stamp: string): string {
+  const [date, time] = stamp.split("-");
+  return `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)} ${time.slice(0, 2)}:${time.slice(2, 4)}:${time.slice(4, 6)} UTC`;
 }
 
 /** The newest FULL archive of this deployment, and what was skipped to find it.
@@ -355,7 +363,7 @@ export async function restoreArchive(
     await ctx.runtime.stop();
     await verifyDataDirAncestry(ctx, dataDir);
     if (await ctx.transport.exists(dataDir)) {
-      aside = `${dataDir}.replaced-${new Date().toISOString().replaceAll(/[:.]/g, "-")}`;
+      aside = replacedCopyName(dataDir);
       log(`moving current data aside: ${aside}`);
       await verifyDataDirAncestry(ctx, dataDir);
       await runMaybePrivileged(ctx, parent, "mv", [dataDir, aside]);
@@ -535,7 +543,12 @@ export async function restore(ctx: Context, args: string[]): Promise<void> {
     // Said rather than done quietly: the operator who just ran `pull --share` and then
     // `restore` is entitled to know why the newest file in that directory was not used.
     for (const entry of skipped) info(`skipping ${entry} — not a full backup`);
-    log(`using the newest archive: ${archive}`);
+    // Before any confirmation prompt (below, inside restoreArchive) or anything else runs:
+    // an operator asking "which one" must not have to read it out of a log a restore is
+    // already mid-way through.
+    const pickedName = archive.slice(archive.lastIndexOf("/") + 1);
+    const pickedStamp = parseBackupArchive(pickedName, deploymentName())?.stamp;
+    log(`using the newest archive: ${pickedName}${pickedStamp === undefined ? "" : ` (${formatArchiveStamp(pickedStamp)})`}`);
   }
 
   // The most destructive command here, and until now the only mutating one taking no lock:

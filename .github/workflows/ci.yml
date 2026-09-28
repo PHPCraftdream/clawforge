@@ -55,7 +55,7 @@ jobs:
     #   runtime/lifecycle/private-declaration-lifetime,
     #   runtime/lifecycle/private-paths-prefix-boundary,
     #   runtime/lifecycle/restore-symlink-boundary, runtime/private-history-restore,
-    #   runtime/service/runtime-image-identity, runtime/service/state/backup-policy,
+    #   runtime/service/runtime-image-identity, runtime/service/state/backup/policy,
     #   security/credentials/private-config,
     #   security/credentials/private-file,
     #   security/credentials/recipe-private-snapshot/snapshot,
@@ -198,10 +198,13 @@ jobs:
             tools/checks/runtime/service/runtime-port.check.ts
             tools/checks/runtime/service/state/state.check.ts
             tools/checks/runtime/service/state/rotation.check.ts
-            tools/checks/runtime/service/state/backup-policy.check.ts
-            tools/checks/runtime/service/state/backup-pull-flags.check.ts
-            tools/checks/runtime/service/state/backup-restore-hooks.check.ts
-            tools/checks/runtime/service/state/native-backup.check.ts
+            tools/checks/runtime/service/state/backup/policy.check.ts
+            tools/checks/runtime/service/state/backup/pull-flags.check.ts
+            tools/checks/runtime/service/state/backup/restore-hooks.check.ts
+            tools/checks/runtime/service/state/backup/native.check.ts
+            tools/checks/runtime/service/state/backup/inventory.check.ts
+            tools/checks/runtime/service/state/backup/list.check.ts
+            tools/checks/runtime/service/state/backup/prune-replaced.check.ts
             tools/checks/security/acceptance/accept.check.ts
             tools/checks/security/acceptance/plan.check.ts
             tools/checks/security/audit/security-audit.check.ts

@@ -117,7 +117,7 @@ Change:
   set                  Build or validate the set: everything a deployment installs, one artifact, one content id
 
 Save & move:
-  backup               Snapshot the data directory
+  backup               Snapshot the data directory (list, prune-replaced)
   restore              Restore an archive over the current state
   pull                 Snapshot the instance state into the snapshot directory
   push                 Push a snapshot back onto the instance

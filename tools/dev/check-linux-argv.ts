@@ -20,14 +20,24 @@ export function shellQuoteSingle(word: string): string {
   return `'${word.replaceAll("'", `'\\''`)}'`;
 }
 
-/** The command run inside node:24: install, the (optionally filtered) check suite, then
- *  typecheck/lint — the same three steps ci.yml's ubuntu "checks" job runs ("Install
- *  development dependencies", "Run checks", "Typecheck and lint"). Build and pack:check are
- *  deliberately not mirrored: they exercise tools/framework/dist packaging, not the
- *  Linux-wording/wsl.exe-absence class of failure this tool exists to catch. */
-export function buildInnerScript(filters: readonly string[]): string {
+/** The snapshot is committed as a fresh repo: the privacy checks vet tracked-and-clean files
+ *  (e.g. .env.example) through git, and the copy carries no .git of the host. */
+export const SNAPSHOT_REPO = "git init -q && git add -A && git -c user.name=snapshot -c user.email=snapshot@localhost commit -qm snapshot";
+
+/** The steps run as the unprivileged `node` user: install, the (optionally filtered) check
+ *  suite, then typecheck/lint — the same steps ci.yml's ubuntu "checks" job runs. Build and
+ *  pack:check are not mirrored: they exercise dist packaging, not the Linux-wording class of
+ *  failure this tool exists to catch. */
+export function buildUserScript(filters: readonly string[]): string {
   const checkArgs = filters.length === 0 ? "" : ` -- ${filters.map(shellQuoteSingle).join(" ")}`;
-  return `cd ${CONTAINER_WORKDIR} && npm ci && npm run check${checkArgs} && npm run format:check`;
+  return `cd ${CONTAINER_WORKDIR} && ${SNAPSHOT_REPO} && npm ci && npm run check${checkArgs} && npm run format:check`;
+}
+
+/** The container command. Root would make permission checks (read-only directories) vacuous,
+ *  which the CI runner's non-root user does not: `docker cp` leaves the copy root-owned, so it
+ *  is handed to `node` before the steps run as that user. */
+export function buildInnerScript(filters: readonly string[]): string {
+  return `chown -R node:node ${CONTAINER_WORKDIR} && exec runuser -u node -- env HOME=/home/node sh -c ${shellQuoteSingle(buildUserScript(filters))}`;
 }
 
 /** `--rm` mirrors `docker run --rm`'s auto-cleanup; staging the snapshot with `docker cp`

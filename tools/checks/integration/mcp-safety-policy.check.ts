@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import { inputSchema, toArgv, toolEnvelope } from "#framework/integration/mcp/schema.ts";
+import "#checks/foundation/linux-host.ts";
 
 let failures = 0;
 function check(name: string, actual: unknown, expected: unknown): void {
@@ -65,12 +66,10 @@ function runServer(script: string, input: string): Promise<{ code: number | null
   check("set try and forget require confirmation", [set.requiresConfirmationWhen?.(["try"]), set.requiresConfirmationWhen?.(["forget"])], [true, true]);
 }
 
-// Exercise the actual dispatcher, with stubbed command bodies and a context that needs no
-// real target: wsl, not local, since createTransport() now refuses `local` on a non-Linux
-// host (LOCAL_TARGET_UNSUPPORTED) and every command body below is a spy, never exec.
+// Exercise the actual dispatcher, with stubbed command bodies and local-only context.
 {
   const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-policy-"));
-  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=wsl\n`, "utf8");
+  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
   const url = (name: string): string => new URL(`../../framework/${name}.ts`, import.meta.url).href;
   const script = `
     const { serveMcp } = await import(${JSON.stringify(url("integration/mcp/server"))});

@@ -38,6 +38,10 @@ export interface TransportConfig {
   platform?: string;
 }
 
+/** The host OS createTransport judges by. Checks swap `current` to exercise the matrix, or to run
+ *  fixtures that never touch a target through `local` on any host. */
+export const hostPlatform: { current: string } = { current: process.platform };
+
 /** A `local` target runs GNU/Linux-specific commands (`find -printf`, `stat -c`, `readlink -f`,
  *  `tar --numeric-owner`, `/proc`, `/srv`), so only a Linux host can be one. */
 export class LocalTargetUnsupportedError extends Error {
@@ -67,7 +71,7 @@ function refuseLocalTarget(platform: string): never {
 export async function createTransport(config: TransportConfig = {}): Promise<Transport> {
   const location = (config.location ?? "auto").toLowerCase();
   const distro = config.wslDistro ?? "Ubuntu-24.04";
-  const platform = config.platform ?? process.platform;
+  const platform = config.platform ?? hostPlatform.current;
 
   switch (location) {
     case "local":

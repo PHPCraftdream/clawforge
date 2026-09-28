@@ -7,14 +7,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
+import "#checks/foundation/linux-host.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-apply-report-"));
 try {
   await mkdir(join(root, "config"));
   const token = 'synthetic-mcp-"failure' + String.fromCharCode(92) + "token";
-  // wsl, not local: createTransport() refuses `local` on a non-Linux host
-  // (LOCAL_TARGET_UNSUPPORTED); the command bodies below are fixtures, never exec.
-  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=wsl\nOPENCLAW_GATEWAY_TOKEN=${token}\n`);
+  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_TOKEN=${token}\n`);
   const moduleUrl = (path: string): string => new URL(`../../../framework/${path}.ts`, import.meta.url).href;
   const script = `
     const {serveMcp}=await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});

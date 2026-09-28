@@ -8,6 +8,8 @@ import {
   buildCopyArgv,
   buildCreateArgv,
   buildInnerScript,
+  buildUserScript,
+  SNAPSHOT_REPO,
   buildRemoveArgv,
   buildStartArgv,
   CONTAINER_WORKDIR,
@@ -25,11 +27,17 @@ assert.equal(shellQuoteSingle(""), "''");
 
 // --- the inner script: no filters, one, several, and one needing escaping -----------------
 
-assert.equal(buildInnerScript([]), `cd ${CONTAINER_WORKDIR} && npm ci && npm run check && npm run format:check`);
-assert.equal(buildInnerScript(["backup"]), `cd ${CONTAINER_WORKDIR} && npm ci && npm run check -- 'backup' && npm run format:check`);
+assert.equal(buildUserScript([]), `cd ${CONTAINER_WORKDIR} && ${SNAPSHOT_REPO} && npm ci && npm run check && npm run format:check`);
+assert.equal(buildUserScript(["backup"]), `cd ${CONTAINER_WORKDIR} && ${SNAPSHOT_REPO} && npm ci && npm run check -- 'backup' && npm run format:check`);
 assert.equal(
-  buildInnerScript(["runtime lifecycle", "foo's"]),
-  `cd ${CONTAINER_WORKDIR} && npm ci && npm run check -- 'runtime lifecycle' 'foo'\\''s' && npm run format:check`,
+  buildUserScript(["runtime lifecycle", "foo's"]),
+  `cd ${CONTAINER_WORKDIR} && ${SNAPSHOT_REPO} && npm ci && npm run check -- 'runtime lifecycle' 'foo'\\''s' && npm run format:check`,
+);
+
+// The steps run as `node`, not root: a read-only directory must actually refuse a write.
+assert.equal(
+  buildInnerScript(["backup"]),
+  `chown -R node:node ${CONTAINER_WORKDIR} && exec runuser -u node -- env HOME=/home/node sh -c ${shellQuoteSingle(buildUserScript(["backup"]))}`,
 );
 
 // --- the exact docker argv, so a flag change is a visible diff here, not just in behavior --
@@ -44,10 +52,10 @@ assert.deepEqual(buildCreateArgv("clawforge-check-linux-abcd1234", []), [
   "node:24",
   "sh",
   "-c",
-  `cd ${CONTAINER_WORKDIR} && npm ci && npm run check && npm run format:check`,
+  buildInnerScript([]),
 ]);
 
-assert.deepEqual(buildCreateArgv("c1", ["backup"]).slice(-1), [`cd ${CONTAINER_WORKDIR} && npm ci && npm run check -- 'backup' && npm run format:check`]);
+assert.deepEqual(buildCreateArgv("c1", ["backup"]).slice(-1), [buildInnerScript(["backup"])]);
 
 assert.deepEqual(buildCopyArgv("/tmp/clawforge-check-linux-xyz", "c1"), ["cp", "/tmp/clawforge-check-linux-xyz", `c1:${CONTAINER_WORKDIR}`]);
 // A host path is passed through untouched — no separator rewriting, no trailing-dot suffix:

@@ -16,6 +16,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { AfterBackupInfo } from "#framework/core/app.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
+import "#checks/foundation/linux-host.ts";
 
 let failed = 0;
 
@@ -38,12 +39,9 @@ useDeployment(join(monorepoRoot, "apps", "example app"));
   try {
     await mkdir(join(root, "data", "config"), { recursive: true });
     await mkdir(join(root, "config"), { recursive: true });
-    // wsl rather than local: createTransport() refuses `local` on a non-Linux host
-    // (LOCAL_TARGET_UNSUPPORTED, transport/transport.ts), and createContext below is never
-    // asked to exec anything — only to build a Transport — so this needs no real distro.
     await writeFile(
       join(root, ".env"),
-      `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=wsl\nOC_WSL_DISTRO=Ubuntu-24.04\nOPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token\n`,
+      `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token\n`,
     );
     await writeFile(join(root, "data", "config", "openclaw.json"), "{}");
     useDeployment(root);

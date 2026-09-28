@@ -526,11 +526,13 @@ export const managementCommands: Record<string, AppCommand> = {
       "A WSL target's Docker distro is not such a place, and neither is Windows itself (no " +
       "crontab/systemd) — there this prints, instead of installing something that silently " +
       "never runs, the exact command an operator-side scheduler would need to invoke, using " +
-      "the transport's own clientInvocation(). On an actual Windows host it also prints a " +
+      "the transport's own clientInvocation().\n" +
+      "On an actual Windows host it also prints a " +
       "ready `schtasks /create` command (a WSL target's own `wsl.exe -d <distro> -- …` line, " +
       "or, for the framework running natively, node invoked directly — no bash shim to run " +
       "it through); `/f` replaces the same named task on a re-run, the Task Scheduler " +
-      "counterpart to the crontab marker. --apply on that same Windows host actually runs " +
+      "counterpart to the crontab marker.\n" +
+      "--apply on that same Windows host actually runs " +
       "it, through the same host-spawn helper every other bare-machine action uses; anywhere " +
       "else this only ever prints — it never touches a real crontab or scheduled task by " +
       "itself.\n" +

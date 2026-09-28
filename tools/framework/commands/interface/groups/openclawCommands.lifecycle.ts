@@ -142,7 +142,8 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "install / uninstall — print (and, with --apply, install through the transport) a " +
       "crontab entry that runs a plain `./clawforge backup` every --interval (default 1d; " +
       "e.g. 30m/6h/1d) — the schedule OC_BACKUP_KEEP presumes but nothing installed before " +
-      "this, mirroring `watch install`/`watch uninstall` exactly (same marker convention, " +
+      "this,\n" +
+      "mirroring `watch install`/`watch uninstall` exactly (same marker convention, " +
       "same POSIX-only trust boundary, same Windows fallback: a printed `schtasks` entry, " +
       "applied for real on --apply on an actual Windows host).",
     arguments: BACKUP_ALL_ARGUMENTS,

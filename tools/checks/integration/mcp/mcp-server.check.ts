@@ -21,6 +21,7 @@ import { createApp, appsDir } from "#framework/integration/deployment/scaffold.t
 import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import "#checks/foundation/linux-host.ts";
 
 let failed = 0;
 
@@ -513,9 +514,7 @@ function conforms(
 
   const moduleUrl = (name: string): string => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
   const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
-  // wsl, not local: createTransport() refuses `local` on a non-Linux host
-  // (LOCAL_TARGET_UNSUPPORTED); every action run above is a fixture, never exec.
-  await writeFile(join(sweepRoot, ".env"), `OC_DATA_DIR=${join(sweepRoot, "data")}\nOC_TARGET_LOCATION=wsl\n`, "utf8");
+  await writeFile(join(sweepRoot, ".env"), `OC_DATA_DIR=${join(sweepRoot, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
   const script = `
     const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
     const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
@@ -607,9 +606,7 @@ function conforms(
 {
   const secret = "zt0k_4f8e2d6c9b1a";
   const redactionRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-redaction-"));
-  // wsl, not local: createTransport() refuses `local` on a non-Linux host
-  // (LOCAL_TARGET_UNSUPPORTED); mcp-creds --token reads ctx.settings only, never the runtime.
-  await writeFile(join(redactionRoot, ".env"), `OC_DATA_DIR=${join(redactionRoot, "data")}\nOC_TARGET_LOCATION=wsl\nOPENCLAW_GATEWAY_TOKEN=${secret}\n`, "utf8");
+  await writeFile(join(redactionRoot, ".env"), `OC_DATA_DIR=${join(redactionRoot, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_TOKEN=${secret}\n`, "utf8");
   const moduleUrl = (name: string): string => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
   const script = `
     const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});

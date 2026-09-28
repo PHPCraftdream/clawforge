@@ -9,6 +9,7 @@ import { clearSetSource, setSourceDir, useSetSource } from "#framework/set/artif
 import { clearRecipesDir, listRecipes, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
+import "#checks/foundation/linux-host.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-app-recipes-"));
 const custom = join(root, "custom-recipes");
@@ -32,9 +33,7 @@ try {
   await recipe(custom, "custom");
   await recipe(defaultRoot, "default");
   await recipe(join(sourceRoot, "recipes"), "source");
-  // wsl, not local: createTransport() refuses `local` on a non-Linux host
-  // (LOCAL_TARGET_UNSUPPORTED); nothing here execs through the transport it builds.
-  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=wsl\n`);
+  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\n`);
 
   const command = {
     summary: "list recipes",

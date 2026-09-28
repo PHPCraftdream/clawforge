@@ -11,7 +11,7 @@
 // The pure boundary (splitLeadingAppFlag, closestCommand, reportUnknownCommand) is unit-tested
 // directly; the gate's own wiring of them is only observable by running the real script, the
 // same way cli-help.check.ts does.
-import { rm, readdir } from "node:fs/promises";
+
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";

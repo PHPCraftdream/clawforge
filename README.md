@@ -42,10 +42,12 @@ target through `wsl.exe`, so there is no need to install Node inside WSL.
 Web interface: `http://127.0.0.1:18789`, token in `.env` (`OPENCLAW_GATEWAY_TOKEN`).
 Running `./clawforge bootstrap` again is safe: it refreshes the image and restarts, and never
 touches data already on disk. The first time it pulls a shared tag, it pins `OPENCLAW_IMAGE` in
-`.env` to the exact digest that pull just proved — so another deployment on this Docker daemon
-later pulling the same tag can no longer silently change what THIS one runs next; a deployment
-already pinned to a digest is left alone by `bootstrap`, and `./clawforge upgrade` is the way to
-move it from there (see [Upgrading the image](#upgrading-the-image-upgrade)).
+`.env` to `repo:tag@sha256:…` — the exact digest that pull just proved, alongside the tag it
+came from — so another deployment on this Docker daemon later pulling the same tag can no
+longer silently change what THIS one runs next, while `./clawforge upgrade` (with no `--image`)
+still knows which tag to check for something newer; a deployment already pinned to a digest is
+left alone by `bootstrap`, and `./clawforge upgrade` is the way to move it from there (see
+[Upgrading the image](#upgrading-the-image-upgrade)).
 
 ## Changing something
 
@@ -278,7 +280,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `recover-env` | `[--dry-run]` | Repair `.env`'s four connection facts from the running container; a wholly absent `.env` is not repairable — reaching the target already requires it |
 | `backup` | `[--profile full\|migrate\|share] [--share] [--migrate] [--with-secrets] [--hot] [--native]` | Snapshot the data directory; the gateway is stopped for the duration by default. Defaults to full, unlike `pull`, which defaults to migrate; the shorthand flags are the same vocabulary both commands accept. `--native` (full profile only) takes a consistent snapshot WITHOUT stopping the gateway, via OpenClaw's own `backup create --verify` in the sidecar rather than a raw tar over live state; the archive it publishes is an ordinary full backup, with the pristine OpenClaw archive embedded inside for `restore` to re-verify. `auth-secrets/` and any live file OpenClaw's own backup left out (session transcripts, in the pinned image) are copied in afterwards, the count reported |
 | `restore` | `[<archive>] [--force] [--fresh-identity] [--no-start] [--break-lock]` | Restore an archive; the structural check runs before anything is stopped, the secrets check before anything is started. An archive produced by `backup --native` is additionally re-verified with `openclaw backup verify` before anything is unpacked |
-| `upgrade` | `[--image <ref>] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>]` | Resolve the target image (`--image`, or the deployment's own `OPENCLAW_IMAGE`) to a digest and pull that digest specifically — a shared local tag never moves. Records the running digest, takes a pre-upgrade backup (`backup --native` when available, else a stopped full backup), recreates the gateway on the new digest, waits for `/startupz` then `/readyz`, and runs `openclaw doctor --lint`; on any failure it recreates on the previous digest, restoring the backup too when the failure was the container exiting during migrations (upstream: code 78). On success it pins `OPENCLAW_IMAGE` to the digest in `.env` — re-pin with `./clawforge lock` afterwards. `--dry-run` prints the plan and changes nothing |
+| `upgrade` | `[--image <ref>] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>]` | Resolve the target (`--image`, or the deployment's own `OPENCLAW_IMAGE`) to a digest and pull that digest specifically — a shared local tag never moves. A tag — `--image repo:tag`, or `OPENCLAW_IMAGE` already pinned to `repo:tag@sha256:…` — is re-resolved at the registry every run, so a plain `upgrade` after a pin still catches the tag having moved; `OPENCLAW_IMAGE` pinned with no tag (`repo@sha256:…`, from before pins kept one) has no channel to re-resolve and is refused with `--image <repo:tag>` as the remedy. An explicit digest (`--image repo@sha256:…`) is used as-is. Records the running digest, takes a pre-upgrade backup (`backup --native` when available, else a stopped full backup), recreates the gateway on the new digest, waits for `/startupz` then `/readyz`, and runs `openclaw doctor --lint`; on any failure it recreates on the previous digest, restoring the backup too when the failure was the container exiting during migrations (upstream: code 78). On success it pins `OPENCLAW_IMAGE` to `repo:tag@sha256:…` in `.env` — re-pin with `./clawforge lock` afterwards. `--dry-run` prints the current digest, the channel, its registry digest, and whether an upgrade is available, changing nothing |
 | `pull` | `[--profile ...] [--share] [--with-secrets] [--migrate] [--hot] [--break-lock]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
 | `push` | `[<snapshot>] [--force] [--fresh-identity] [--break-lock]` | Push a snapshot back: restore → install keys if any travelled with it → check → start |
 | `verify` | `<archive> [--profile ...]` | Check an archive for credentials before sharing it — what `pull --share` does on its own |
@@ -1090,15 +1092,30 @@ full backup.
 
 The target is resolved to a digest and pulled by that digest — never the tag, because
 another deployment on the same Docker daemon may use the same tag, and pulling it would
-silently change what that deployment gets on its own next recreate. A pre-upgrade backup is
-taken (the native path above when the image supports it, else a stopped full backup), the
-gateway is recreated on the new digest, and `/startupz`/`/readyz` plus `openclaw doctor
---lint` decide whether it stuck. Any failure recreates on the digest that was running
-before; a container that exited during migrations (upstream: exit code 78) also gets the
-pre-upgrade backup restored, since the data may already have changed. On success
-`OPENCLAW_IMAGE` in `.env` is pinned to the digest — `apply` never rewrites `config/deployment.lock.json`
-(see [Instance settings as code](#instance-settings-as-code)), so re-pin it deliberately with
-`./clawforge lock` afterwards.
+silently change what that deployment gets on its own next recreate. With no `--image`, the
+CHANNEL is what gets resolved, not the digest already sitting in `.env`: once `OPENCLAW_IMAGE`
+is pinned (`repo:tag@sha256:…`, either by `bootstrap` or by a previous `upgrade`), a plain
+`./clawforge upgrade` still means "is there anything newer on `repo:tag`", and only when the
+registry answers with the same digest already running does it report there is nothing to do.
+`--image repo:tag` resolves that reference the same way; `--image repo@sha256:…` names exact
+content and is used as-is, no registry round trip needed. A pin left over from before this
+kept the tag (`repo@sha256:…`, no tag alongside the digest) has no channel to recover without
+guessing, so a plain `upgrade` against one refuses and asks for `--image <repo:tag>` once,
+explicitly.
+
+A pre-upgrade backup is taken (the native path above when the image supports it, else a
+stopped full backup), the gateway is recreated on the new digest, and `/startupz`/`/readyz`
+plus `openclaw doctor --lint` decide whether it stuck. Any failure recreates on the digest
+that was running before; a container that exited during migrations (upstream: exit code 78)
+also gets the pre-upgrade backup restored, since the data may already have changed. On
+success `OPENCLAW_IMAGE` in `.env` is pinned to `repo:tag@sha256:…` (the channel it was
+resolved from, alongside the new digest) — `apply` never rewrites
+`config/deployment.lock.json` (see [Instance settings as code](#instance-settings-as-code)),
+so re-pin it deliberately with `./clawforge lock` afterwards.
+
+`--dry-run` prints the currently running digest, the channel it will check (when there is
+one), what that channel resolves to at the registry right now, and whether that counts as an
+upgrade — without taking the instance lock or changing anything.
 
 This is the deliberate, explicit move; `./clawforge bootstrap` makes the same pin happen on its
 own the first time it pulls a tag, precisely so a deployment is never left running on a moving

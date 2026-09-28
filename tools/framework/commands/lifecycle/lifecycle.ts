@@ -14,6 +14,7 @@ import { upsertEnvValue } from "#src/security/private-config.ts";
 import { replacePrivateFile } from "#src/security/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "./backup.ts";
 import { restoreArchive } from "./restore.ts";
+import { imageChannel, channelHasTag } from "#src/diagnostics/image-digest.ts";
 
 function regexEscape(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -214,6 +215,42 @@ function parseUpgradeArgs(args: string[]): { image?: string; dryRun: boolean } {
   return { image, dryRun };
 }
 
+/** `channel` is the repo[:tag] the digest was resolved from; absent for an explicit digest. */
+interface UpgradeTarget {
+  readonly targetDigest: string;
+  readonly channel?: string;
+}
+
+/** An explicit digest is used as-is. Anything else — including a pinned `repo:tag@sha256:…`
+ *  OPENCLAW_IMAGE — is a channel re-resolved at the registry, so a plain `upgrade` asks whether
+ *  the tag moved. A tagless pin has no recoverable channel and is refused. */
+async function resolveUpgradeTarget(ctx: Context, requestedImage: string | undefined): Promise<UpgradeTarget> {
+  if (requestedImage !== undefined && requestedImage.includes("@sha256:")) {
+    return { targetDigest: requestedImage };
+  }
+
+  let channel = requestedImage;
+  if (channel === undefined) {
+    const declared = ctx.settings.image;
+    if (!declared.includes("@sha256:")) {
+      channel = declared;
+    } else {
+      channel = imageChannel(declared);
+      if (!channelHasTag(channel)) {
+        die(
+          `OPENCLAW_IMAGE is "${declared}" — a digest with no tag alongside it, so the channel it was ` +
+            "pulled from is unknown and cannot be re-resolved (an older pin, from before upgrade could keep " +
+            "the tag). Name the channel explicitly: ./clawforge upgrade --image <repo:tag>.",
+        );
+      }
+    }
+  }
+
+  const targetDigest = await ctx.runtime.resolveImageDigest!(channel);
+  if (targetDigest === undefined) die(`could not resolve a digest for ${channel} — refusing to upgrade to an unverified reference`);
+  return { targetDigest, channel };
+}
+
 /** Waits for /startupz then /readyz, watching the container's own exit code the whole time
  *  so a migration failure (upstream docs: exit 78) is told apart from one still starting —
  *  the caller needs that distinction to decide whether data may already have changed. */
@@ -331,44 +368,47 @@ async function upgradeLocked(ctx: Context, previousDigest: string, targetDigest:
  *  digest it was running before on any failure — restoring that backup too when the failure
  *  was a migration (exit 78) that may already have changed the data.
  *
- *  --image <ref> upgrades to that reference instead of the deployment's own OPENCLAW_IMAGE.
+ *  --image <ref> upgrades to that reference instead of the deployment's own OPENCLAW_IMAGE;
+ *  see resolveUpgradeTarget for how the target is chosen.
  *  --dry-run prints the plan and changes nothing — not even taking the instance lock. */
 export async function upgrade(ctx: Context, args: string[]): Promise<void> {
   const options = parseUpgradeArgs(args);
-  const requested = options.image ?? ctx.settings.image;
 
   if (ctx.runtime.resolveImageDigest === undefined || ctx.runtime.recreateWithImage === undefined) {
     die(`${ctx.runtime.description} does not support ./clawforge upgrade`);
   }
 
-  // A reference already carrying a digest names exact content on its own; asking the
-  // registry again would only be extra latency for the same answer.
-  const targetDigest = requested.includes("@sha256:") ? requested : await ctx.runtime.resolveImageDigest(requested);
-  if (targetDigest === undefined) {
-    die(`could not resolve a digest for ${requested} — refusing to upgrade to an unverified reference`);
-  }
+  const target = await resolveUpgradeTarget(ctx, options.image);
 
   const identity = await ctx.runtime.runningImageIdentity?.();
   if (identity === undefined || identity.digests.length === 0) {
     die("could not determine the currently running image digest — refusing to upgrade with no rollback target. Is the gateway running (./clawforge up)?");
   }
   const previousDigest = identity.digests[0];
-
-  if (digestHash(targetDigest) === digestHash(previousDigest)) {
-    log(`already running ${previousDigest} — nothing to upgrade`);
-    return;
-  }
+  const upToDate = digestHash(target.targetDigest) === digestHash(previousDigest);
 
   if (options.dryRun === true) {
-    log(`upgrade plan: ${previousDigest} -> ${targetDigest}`);
-    info("1. pre-upgrade backup (native, i.e. hot, if the image supports it — else a stopped full backup)");
-    info(`2. recreate the gateway on ${targetDigest}`);
-    info("3. wait for /startupz then /readyz, then run openclaw doctor --lint");
-    info("4. on any failure: recreate on the previous digest; also restore the backup if migrations ran (exit 78)");
-    info(`5. on success: pin OPENCLAW_IMAGE to ${targetDigest} in .env`);
+    log(`current    ${previousDigest}`);
+    if (target.channel !== undefined) log(`channel    ${target.channel}`);
+    log(`registry   ${target.targetDigest}`);
+    if (upToDate) {
+      log(target.channel === undefined ? "up to date — nothing to upgrade" : `up to date — ${target.channel} still resolves to what is running`);
+    } else {
+      log(`upgrade available: ${previousDigest} -> ${target.targetDigest}`);
+      info("1. pre-upgrade backup (native, i.e. hot, if the image supports it — else a stopped full backup)");
+      info(`2. recreate the gateway on ${target.targetDigest}`);
+      info("3. wait for /startupz then /readyz, then run openclaw doctor --lint");
+      info("4. on any failure: recreate on the previous digest; also restore the backup if migrations ran (exit 78)");
+      info(`5. on success: pin OPENCLAW_IMAGE to ${target.targetDigest} in .env`);
+    }
     info("--dry-run changes nothing, and takes no lock");
     return;
   }
 
-  await guarded(ctx, "upgrade", args, () => upgradeLocked(ctx, previousDigest, targetDigest));
+  if (upToDate) {
+    log(target.channel === undefined ? `already running ${previousDigest} — nothing to upgrade` : `already on the latest ${target.channel} (${previousDigest}) — nothing to upgrade`);
+    return;
+  }
+
+  await guarded(ctx, "upgrade", args, () => upgradeLocked(ctx, previousDigest, target.targetDigest));
 }

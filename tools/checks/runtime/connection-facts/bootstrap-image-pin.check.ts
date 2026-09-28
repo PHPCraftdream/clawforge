@@ -5,6 +5,12 @@
 // own version of that, on the FIRST pull rather than on an explicit, later upgrade — reusing
 // upgrade's own pinImageReference() (lifecycle.ts) for the write.
 //
+// The pin keeps the tag alongside the digest (`repo:tag@sha256:…`), on both the paths that
+// write one — the registry-resolved pin before the pull, and the local-inspect fallback after
+// it (imageReference()'s own RepoDigests answer never carries a tag, so the fallback rejoins
+// it with the channel that was pulled) — so a later `./clawforge upgrade` with no `--image`
+// still has a channel to re-resolve instead of comparing the pin to itself forever.
+//
 // Lives here rather than under lifecycle/: that directory's checks are already at the 7-entry
 // layout cap (see upgrade.check.ts's own header for the identical reasoning), and this
 // command's central fact — OPENCLAW_IMAGE — is one of the four connection facts this
@@ -35,8 +41,20 @@ function check(name: string, actual: unknown, expected: unknown): void {
 const DATA_DIR = "/srv/openclaw/data";
 const CONFIG_PATH = `${DATA_DIR}/config/openclaw.json`;
 const SHARED_TAG = "ghcr.io/openclaw/openclaw:extended-stable";
-const PULLED_DIGEST = `${SHARED_TAG.split(":")[0]}@sha256:pulled0000000000000000000000000000000000000000000000000000000`;
+const PULLED_HASH = "sha256:pulled0000000000000000000000000000000000000000000000000000000";
+// What imageReference() itself reports — Docker's own RepoDigests, bare, never a tag.
+const PULLED_DIGEST = `${SHARED_TAG.split(":")[0]}@${PULLED_HASH}`;
+// What bootstrap must actually WRITE to .env: the channel that was pulled, rejoined with just
+// the digest hash — never the bare RepoDigests answer above.
+const PINNED_WITH_TAG = `${SHARED_TAG}@${PULLED_HASH}`;
 const ALREADY_PINNED = `${SHARED_TAG.split(":")[0]}@sha256:already000000000000000000000000000000000000000000000000000000`;
+
+/** The exact value of OPENCLAW_IMAGE in an .env's text — never a substring match, since a
+ *  tag-preserving pin (`repo:tag@sha256:…`) starts with the same bytes as the bare tag alone
+ *  and a substring check cannot tell "pinned with the tag" from "still just the tag". */
+function imageValue(env: string): string | undefined {
+  return /^OPENCLAW_IMAGE=(.*)$/m.exec(env)?.[1];
+}
 
 /** A bootstrap-shaped stub — the same proven shape bootstrap-provider-order.check.ts's own
  *  makeCtx() uses — plus the one extra runtime primitive this pinning asks of a fresh pull:
@@ -109,7 +127,7 @@ async function withTempDeployment(envBody: string, body: () => Promise<void>): P
   }
 }
 
-// --- a fresh pull of a shared tag is pinned to the digest it just proved ---------------------
+// --- a fresh pull of a shared tag is pinned to the digest it just proved, tag kept -------------
 
 await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\nOPENCLAW_GATEWAY_TOKEN=test-token\n`, async () => {
   const { ctx, calls } = makeCtx({ image: SHARED_TAG, pulledDigest: PULLED_DIGEST });
@@ -117,9 +135,10 @@ await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\
   await withOutputSink((chunk) => { output += chunk; }, () => bootstrap(ctx, []));
   const envNow = await readFile(envFile(), "utf8");
   check("the pull ran before the digest was read", calls.indexOf("pull") < calls.indexOf("imageReference"), true);
-  check(".env is rewritten to the digest the tag just proved", envNow.includes(`OPENCLAW_IMAGE=${PULLED_DIGEST}`), true);
-  check("the moving tag itself no longer appears", envNow.includes(`OPENCLAW_IMAGE=${SHARED_TAG}`), false);
-  check("bootstrap says so", output.includes(PULLED_DIGEST) && output.includes("pinned"), true);
+  // imageReference() itself (the stub above) answers with the bare, untagged form Docker's own
+  // RepoDigests always reports — the channel survives only because bootstrap rejoins it.
+  check(".env is rewritten to the digest the tag just proved, WITH the tag kept alongside it", imageValue(envNow), PINNED_WITH_TAG);
+  check("bootstrap says so", output.includes(PINNED_WITH_TAG) && output.includes("pinned"), true);
   check("and names ./clawforge upgrade as how to move it from here", output.includes("./clawforge upgrade"), true);
   // Bootstrap's own final summary also reads imageReference() (to report "running image: …"),
   // unconditionally and unrelated to this pin — so the pin is what pushed the count to two,
@@ -170,12 +189,16 @@ await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}
 OPENCLAW_IMAGE=${SHARED_TAG}
 OPENCLAW_GATEWAY_TOKEN=test-token
 `, async () => {
-  const { ctx, calls } = makeCtx({ image: SHARED_TAG, pulledDigest: PULLED_DIGEST, registryDigest: PULLED_DIGEST });
+  // The real resolveImageDigest() (image-digest.ts) already answers with the channel kept —
+  // this stub returns the same shape it would, so this path is checked for what it actually
+  // does with that answer (pin it as-is) rather than for resolveImageDigest's own logic,
+  // which runtime-image-identity.check.ts covers directly.
+  const { ctx, calls } = makeCtx({ image: SHARED_TAG, pulledDigest: PULLED_DIGEST, registryDigest: PINNED_WITH_TAG });
   let output = "";
   await withOutputSink((chunk) => { output += chunk; }, () => bootstrap(ctx, []));
   check("the digest is resolved at the registry before any pull", calls.indexOf("resolve") < calls.indexOf("pull"), true);
   check("no local tag read is needed to pin", calls.indexOf("imageReference") > calls.indexOf("pull"), true);
-  check(".env holds the registry digest", (await readFile(envFile(), "utf8")).includes(`OPENCLAW_IMAGE=${PULLED_DIGEST}`), true);
+  check(".env holds the registry answer, tag kept alongside the digest", imageValue(await readFile(envFile(), "utf8")), PINNED_WITH_TAG);
   check("bootstrap says the pull was by digest", output.includes("pulled by digest"), true);
 });
 

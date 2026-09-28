@@ -42,13 +42,20 @@ const DATA_DIR = "/srv/clawforge/data";
 const SHARED_TAG = "ghcr.io/openclaw/openclaw:extended-stable";
 const TARGET_DIGEST = `${SHARED_TAG.split(":")[0]}@sha256:target00000000000000000000000000000000000000000000000000000000`;
 const PREVIOUS_DIGEST = `${SHARED_TAG.split(":")[0]}@sha256:previous0000000000000000000000000000000000000000000000000000`;
+// A pin left by a healthy bootstrap/upgrade under the tag-preserving form — the exact digest
+// here is never resolved again; only its channel (SHARED_TAG) is.
+const PINNED_WITH_TAG = `${SHARED_TAG}@sha256:pinned000000000000000000000000000000000000000000000000000000`;
+// A pin with no tag alongside the digest — the channel it came from cannot be recovered
+// without guessing.
+const PINNED_NO_TAG = `${SHARED_TAG.split(":")[0]}@sha256:pinned000000000000000000000000000000000000000000000000000000`;
 
 type Scenario = "success" | "health-fail" | "exit78" | "doctor-fail";
 
 /** A backup/restore-compatible POSIX stub, permissive by default (matching the proven shape
  *  restore.check.ts's own makeCtx() and backup.check.ts's stubBackupCtx() already use), plus
- *  the runtime primitives ./clawforge upgrade itself asks for. */
-function makeUpgradeCtx(scenario: Scenario): { ctx: Context; calls: string[]; runningDigest: () => string } {
+ *  the runtime primitives ./clawforge upgrade itself asks for. `image` overrides the
+ *  deployment's own OPENCLAW_IMAGE, for the pinned-channel scenarios below. */
+function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): { ctx: Context; calls: string[]; runningDigest: () => string } {
   const calls: string[] = [];
   const files = new Set([DATA_DIR]);
   let runningDigest = PREVIOUS_DIGEST;
@@ -56,7 +63,7 @@ function makeUpgradeCtx(scenario: Scenario): { ctx: Context; calls: string[]; ru
 
   const mounts = mountPoints(DATA_DIR);
   const ctx = {
-    settings: { dataDir: DATA_DIR, backupDir: "/srv/clawforge/backups", env: {}, image: SHARED_TAG },
+    settings: { dataDir: DATA_DIR, backupDir: "/srv/clawforge/backups", env: {}, image: options.image ?? SHARED_TAG },
     paths: {
       toContainer: (path: string) => toContainerPath(path, mounts),
       fromContainer: (path: string) => fromContainerPath(path, mounts),
@@ -222,6 +229,58 @@ function makeUpgradeCtx(scenario: Scenario): { ctx: Context; calls: string[]; ru
   (ctx.runtime as unknown as { resolveImageDigest: (reference: string) => Promise<string> }).resolveImageDigest = async () => PREVIOUS_DIGEST;
   await withOutputSink(() => {}, () => upgrade(ctx, []));
   check("nothing recreates when already on the resolved digest", calls.some((call) => call.startsWith("recreateWithImage")), false);
+}
+
+// --- upgrade with no --image, after a tag-preserving pin, re-resolves the CHANNEL (`repo:tag`),
+// never the stale digest already sitting in the pin — a moved tag must still be caught, or
+// `upgrade` silently stops doing anything the moment bootstrap/a prior upgrade pins.
+
+{
+  const { ctx, calls, runningDigest } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
+  let failure: unknown;
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+  });
+  check("upgrading off a tag-preserving pin succeeds", failure, undefined);
+  check("the channel alone is resolved", calls.some((call) => call === `resolveImageDigest ${SHARED_TAG}`), true);
+  check("the stale pinned reference itself is never asked about", calls.some((call) => call === `resolveImageDigest ${PINNED_WITH_TAG}`), false);
+  check("it recreates on the newly resolved digest, not the old pin", runningDigest(), TARGET_DIGEST);
+}
+
+// --- the same check, but the channel's registry digest has not moved — a no-op, not a
+// recreate onto the very reference already running -------------------------------------------
+
+{
+  const { ctx, calls } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
+  (ctx.runtime as unknown as { resolveImageDigest: (reference: string) => Promise<string> }).resolveImageDigest = async () => PREVIOUS_DIGEST;
+  await withOutputSink(() => {}, () => upgrade(ctx, []));
+  check("nothing recreates when the channel still resolves to what is running", calls.some((call) => call.startsWith("recreateWithImage")), false);
+}
+
+// --- a pin from before this fix (digest with no tag) cannot be re-resolved — refused with
+// the one remedy that applies, never guessed -----------------------------------------------
+
+{
+  const { ctx, calls } = makeUpgradeCtx("success", { image: PINNED_NO_TAG });
+  let failure: unknown;
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+  });
+  check("an untagged pin refuses rather than guessing a channel", failure instanceof Error, true);
+  check("the refusal names the remedy", failure instanceof Error && failure.message.includes("--image"), true);
+  check("nothing was asked of the registry — there is no channel to resolve", calls.some((call) => call.startsWith("resolveImageDigest")), false);
+  check("and nothing recreates", calls.some((call) => call.startsWith("recreateWithImage")), false);
+}
+
+// --- --dry-run reports the current digest, the channel, and the registry's answer for it ------
+
+{
+  const { ctx } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
+  let output = "";
+  await withOutputSink((chunk) => { output += chunk; }, () => upgrade(ctx, ["--dry-run"]));
+  check("--dry-run shows the currently running digest", output.includes(PREVIOUS_DIGEST), true);
+  check("--dry-run names the channel it will re-resolve", output.includes(SHARED_TAG), true);
+  check("--dry-run shows what the channel resolves to at the registry", output.includes(TARGET_DIGEST), true);
 }
 
 await rm(deploymentDir, { recursive: true, force: true });

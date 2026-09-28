@@ -682,9 +682,9 @@ if (runnableImage === undefined) {
     { service: "gateway", reconcileSettings: async () => ({ env: { OPENCLAW_IMAGE: "old-ref" }, image: "old-ref", dataDir: "/srv/openclaw/data" } as unknown as Settings) },
   );
 
-  assert.equal(await runtime.resolveImageDigest!("ghcr.io/openclaw/openclaw:extended-stable"), "ghcr.io/openclaw/openclaw@sha256:deadbeef", "resolves a tag via buildx imagetools");
+  assert.equal(await runtime.resolveImageDigest!("ghcr.io/openclaw/openclaw:extended-stable"), "ghcr.io/openclaw/openclaw:extended-stable@sha256:deadbeef", "resolves a tag via buildx imagetools, keeping the tag alongside the digest");
   assert.equal(calls.some((call) => call.command === "docker" && call.args.includes("pull")), false, "resolving a digest never pulls");
-  assert.equal(await runtime.resolveImageDigest!("myregistry:5000/repo:tag"), "myregistry:5000/repo@sha256:deadbeef", "a registry port is not mistaken for the tag separator");
+  assert.equal(await runtime.resolveImageDigest!("myregistry:5000/repo:tag"), "myregistry:5000/repo:tag@sha256:deadbeef", "a registry port is not mistaken for the tag separator, and the tag survives alongside it");
   assert.equal(await runtime.resolveImageDigest!("bad-registry-ref"), undefined, "an unresolvable reference answers undefined, never a guess");
 
   await runtime.recreateWithImage!("ghcr.io/openclaw/openclaw@sha256:pinned");

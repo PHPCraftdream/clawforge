@@ -25,6 +25,7 @@ import { preflightSecrets } from "../management/secrets.ts";
 import { preflightPort, pinImageReference } from "./lifecycle.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
+import { imageChannel } from "#src/diagnostics/image-digest.ts";
 
 /** After a fresh pull, this deployment's OWN OPENCLAW_IMAGE is repointed from the moving tag
  *  to the exact digest that tag was just proven to hold — so a LATER pull of the same shared
@@ -39,7 +40,8 @@ import { collectConfiguredProviders } from "#src/service/secrets.ts";
  *  keep using: refreshContext() re-derives one from the .env this just rewrote, the same way
  *  every other step that rewrites .env does (apply.ts's REDERIVES_CONTEXT); a context this
  *  process did not build through createContext() (a check's own stub, say) has nothing to
- *  refresh and is returned unchanged. */
+ *  refresh and is returned unchanged. RepoDigests carry no tag, so the pin rejoins `image`'s
+ *  own channel with the digest, keeping the tag `upgrade` re-resolves later. */
 async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
   if (image.includes("@sha256:")) return ctx;
   const pulled = await ctx.runtime.imageReference();
@@ -47,8 +49,9 @@ async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
     warn(`pulled ${image} but could not resolve the digest it now holds locally — OPENCLAW_IMAGE stays a moving tag`);
     return ctx;
   }
-  await pinImageReference(pulled);
-  info(`pinned OPENCLAW_IMAGE to ${pulled} in .env — another deployment pulling ${image} on this Docker daemon can no longer move this one; ./clawforge upgrade is how to move it from here`);
+  const pinned = `${imageChannel(image)}@${pulled.split("@").at(-1)}`;
+  await pinImageReference(pinned);
+  info(`pinned OPENCLAW_IMAGE to ${pinned} in .env — another deployment pulling ${image} on this Docker daemon can no longer move this one; ./clawforge upgrade is how to move it from here`);
   const refreshed = await refreshContext(ctx);
   return refreshed?.context ?? ctx;
 }

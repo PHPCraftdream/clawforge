@@ -232,6 +232,12 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "Resolves the target (--image <ref>, or the deployment's own OPENCLAW_IMAGE) to a " +
       "digest and pulls that digest specifically — a shared tag another deployment on the " +
       "same Docker may also use never moves.\n" +
+      "A tag is re-resolved at the registry every run — that includes OPENCLAW_IMAGE once " +
+      "it is already pinned to repo:tag@sha256:…, so upgrade with no --image still checks " +
+      "whether the tracked tag has moved instead of comparing the pin to itself and always " +
+      "finding nothing to do. --image repo@sha256:… names exact content and is used as-is. " +
+      "A pin left with no tag (repo@sha256:… from before pins kept one) has no channel to " +
+      "recover without guessing, and is refused with --image <repo:tag> as the remedy.\n" +
       "Records the currently running digest, takes a consistent pre-upgrade backup (the " +
       "native path from `backup --native` when the image supports it, else a stopped full " +
       "backup), recreates the gateway on the new digest, waits for /startupz then /readyz, " +
@@ -239,10 +245,12 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "On any failure it recreates on the previous digest; when the failure was the " +
       "container exiting during migrations (upstream: code 78), it also restores the " +
       "pre-upgrade backup, since the data may already have changed.\n" +
-      "On success it pins the deployment's OPENCLAW_IMAGE to the digest reference, so a " +
-      "later recreate stays on it — re-pin the deployment's own record with ./clawforge " +
-      "lock afterwards.\n" +
-      "--dry-run prints the plan and changes nothing, not even taking the instance lock.",
+      "On success it pins the deployment's OPENCLAW_IMAGE to repo:tag@sha256:… (the " +
+      "channel it was resolved from, alongside the new digest), so a later recreate stays " +
+      "on it — re-pin the deployment's own record with ./clawforge lock afterwards.\n" +
+      "--dry-run prints the current digest, the channel, what it resolves to at the " +
+      "registry, and whether that is an upgrade — changing nothing, not even taking the " +
+      "instance lock.",
     arguments: [
       { name: "image", description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE", kind: "option" },
       { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },

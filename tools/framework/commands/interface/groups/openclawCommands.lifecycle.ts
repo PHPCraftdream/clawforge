@@ -4,7 +4,7 @@
 import type { AppCommand } from "#src/core/app.ts";
 
 import { up, down, logs, restart, upgrade, UPGRADE_ARGUMENTS, LOCK_ARGUMENTS, LOGS_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
-import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap.ts";
+import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap/index.ts";
 import { backup, BACKUP_ALL_ARGUMENTS, backupActionIsReadOnly } from "#src/commands/lifecycle/backup/index.ts";
 import { restore, RESTORE_ARGUMENTS, isRestoreDryRun } from "#src/commands/lifecycle/restore/index.ts";
 import { verify, VERIFY_ARGUMENTS } from "#src/commands/lifecycle/verify.ts";
@@ -18,6 +18,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     run: bootstrap,
     // The one command that must work on a deployment with no .env at all.
     preparesEnvironment: true,
+    readOnlyWhen: (args) => args.includes("--check"),
     details:
       "Fixed order, each step paid for in debugging: .env and the gateway token first " +
       "(compose interpolates them), then data directories owned by uid 1000, the image, " +
@@ -25,7 +26,11 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "from config/.env, this deployment's desired-state.json, a secrets preflight, and " +
       "only then start.\n" +
       "Safe to run again on a live instance: it refreshes the image and restarts, and never " +
-      "regenerates an existing token or touches data already on disk.",
+      "regenerates an existing token or touches data already on disk.\n" +
+      "--check runs none of that: a read-only prerequisite report (docker and compose v2, " +
+      "whether the data/backup/snapshot directories can be prepared without a sudo password, " +
+      "the gateway port, free disk space), one ok/WARN/FAIL line each, no lock and nothing " +
+      "created — run it before the first bootstrap on a new host.",
     arguments: BOOTSTRAP_ARGUMENTS,
   },
   up: {

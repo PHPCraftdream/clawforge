@@ -96,6 +96,7 @@ and is never committed.
 ```bash
 npm install @clawforge/framework
 node_modules/.bin/clawforge init             # app.ts, config/, .env, .gitignore, ./clawforge — into this repo
+./clawforge bootstrap --check                # read-only: docker, compose v2, this directory, the port, disk space
 ./clawforge bootstrap
 ```
 

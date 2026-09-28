@@ -72,6 +72,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   still resolves to `wsl`, and commands needing no target (`check`, `new-app`, `version`,
   `help`, `list`) are unaffected. See docs/guide/requirements.md for the supported host ×
   target matrix.
+* `bootstrap --check`: a read-only prerequisite report for a fresh deployment — docker present
+  and its daemon answering, compose v2, whether the data/backup/snapshot directories can be
+  prepared without a sudo password (naming the exact `sudo install -d` line if not), whether
+  the gateway port is free, and free disk space. One `ok`/`WARN`/`FAIL` line per prerequisite,
+  exit 0 only when nothing failed; no lock is taken and nothing is created either way.
 
 ### Fixed
 
@@ -220,6 +225,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   shared reader (`listRecipeDirectories`) that turns ENOENT into "no recipes" and any other
   error into a refusal naming the path and errno — `recipe list`, `lock`, `accept`, `deploy`
   and set build now fail the same way `inspect`/`plan` always did.
+* `new-app`/`init` ended with "check `.env` — data directory, port, image" and never said the
+  default data directory lands under `/srv` and typically needs `sudo install -d` on a fresh
+  host — that fact lived only in README's troubleshooting table. The final output now names
+  the actual data directory the `.env` it just wrote chose, and when it is under `/srv` points
+  at `./clawforge bootstrap --check` as the next step, before `bootstrap` itself.
 
 ## 0.1.0
 

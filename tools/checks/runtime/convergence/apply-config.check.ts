@@ -314,7 +314,7 @@ check("...but the headline still confirms the write happened", appliedHeadline(f
   // transport just to observe the same two-argument call.
   const read = async (path: string): Promise<string> =>
     (await import("node:fs/promises")).readFile(new URL(path, import.meta.url), "utf8");
-  const bootstrapSource = await read("../../../framework/commands/lifecycle/bootstrap.ts");
+  const bootstrapSource = await read("../../../framework/commands/lifecycle/bootstrap/index.ts");
   const setTrySource = await read("../../../framework/commands/sets/set-try.ts");
   const applySource = await read("../../../framework/commands/orchestration/apply.ts");
   check("bootstrap suppresses the restart advice (it starts the gateway itself)", bootstrapSource.includes("applyConfig(live, [], { restartAdvice: false })"), true);

@@ -76,7 +76,12 @@ own private environment file beside the data directory, and creating that place 
 the `mkdir` a still-root-owned parent refuses pre-bootstrap. `./clawforge up` is not the
 remedy here (compose would bind-mount a data directory that does not exist yet, creating it
 root-owned), so the finding points at `./clawforge bootstrap` instead, and `GATEWAY_DOWN`
-does not also fire beside it. `PROVIDER_MISSING` catches the opposite kind of quiet failure:
+does not also fire beside it. `./clawforge bootstrap --check` answers the same question
+read-only, before that first bootstrap ever runs: docker present and its daemon answering,
+compose v2, whether the data/backup/snapshot directories can be prepared without a sudo
+password (and the exact `sudo install -d` line to run if not), whether the gateway port is
+free, and free disk space — one `ok`/`WARN`/`FAIL` line per prerequisite, no lock taken and
+nothing created either way. `PROVIDER_MISSING` catches the opposite kind of quiet failure:
 a bootstrap that finishes with no model provider key ends "OpenClaw is up" and every HTTP
 probe green, yet an agent cannot answer a single prompt. Read from the live configuration
 the same way `collectConfiguredProviders` already does (`models.providers`, `auth.profiles`),

@@ -58,7 +58,7 @@ function listeningLine(output: string, address: string, port: string): string | 
  *  causes, from a listener this framework never considered. Absence of both tools is
  *  reported as "unavailable", never silently read as "free": a target this can never check
  *  must say so, not proceed as if it had. */
-async function listeningPortHolder(ctx: Context, address: string, port: string): Promise<string | "unavailable" | undefined> {
+export async function listeningPortHolder(ctx: Context, address: string, port: string): Promise<string | "unavailable" | undefined> {
   for (const [command, args] of [
     ["ss", ["-ltnH"]],
     ["netstat", ["-ltn"]],

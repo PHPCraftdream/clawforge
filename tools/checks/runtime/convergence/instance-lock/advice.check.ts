@@ -19,7 +19,7 @@ import {
   type LockHolder,
 } from "#framework/runtime/lock/instance-lock.ts";
 import { machineName } from "#framework/runtime/lock/process-identity.ts";
-import { bootstrap } from "#framework/commands/lifecycle/bootstrap.ts";
+import { bootstrap } from "#framework/commands/lifecycle/bootstrap/index.ts";
 import { pull } from "#framework/commands/lifecycle/state.ts";
 import { stubContext } from "./fixture.ts";
 import { readFile } from "node:fs/promises";

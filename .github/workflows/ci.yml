@@ -185,6 +185,7 @@ jobs:
             tools/checks/runtime/convergence/instance-lock/misc.check.ts
             tools/checks/runtime/convergence/instance-lock/nesting.check.ts
             tools/checks/runtime/convergence/instance-lock/takeover.check.ts
+            tools/checks/runtime/lifecycle/bootstrap/bootstrap-check.check.ts
             tools/checks/runtime/lifecycle/bootstrap/bootstrap-lock.check.ts
             tools/checks/runtime/lifecycle/bootstrap/bootstrap-provider-order.check.ts
             tools/checks/runtime/lifecycle/bootstrap/requires-bootstrapped.check.ts

@@ -19,20 +19,22 @@ import { log, info, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
 import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
-import { ensureBaselineConfig, configureProvider } from "../management/credentials/provider.ts";
-import { applyConfig } from "../orchestration/config.ts";
-import { preflightSecrets } from "../management/secrets.ts";
-import { preflightPort, pinImageReference } from "./lifecycle.ts";
+import { ensureBaselineConfig, configureProvider } from "../../management/credentials/provider.ts";
+import { applyConfig } from "../../orchestration/config.ts";
+import { preflightSecrets } from "../../management/secrets.ts";
+import { preflightPort, pinImageReference } from "../lifecycle.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
 import { imageChannel } from "#src/runtime/docker/image-digest.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { bootstrapCheck } from "./check.ts";
 
 /** Drives both bootstrap's own parser and its openclawCommands declaration. */
 export const BOOTSTRAP_ARGUMENTS: CommandArgument[] = [
   { name: "no-pull", description: "Use the image already present locally", kind: "flag" },
+  { name: "check", description: "Read-only prerequisite report — no lock, no mutation", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
@@ -67,7 +69,18 @@ async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
 }
 
 export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
-  const noPull = parseDeclaredArgs(BOOTSTRAP_ARGUMENTS, args)["no-pull"] === true;
+  const parsed = parseDeclaredArgs(BOOTSTRAP_ARGUMENTS, args);
+
+  // Read-only, and returned before anything below touches a lock or the target: --check
+  // answers "would this bootstrap need something I have not prepared yet" without ever
+  // creating ensureLockHome's own directory, let alone taking the instance lock guarded()
+  // below does. See bootstrap/check.ts.
+  if (parsed.check === true) {
+    await bootstrapCheck(ctx);
+    return;
+  }
+
+  const noPull = parsed["no-pull"] === true;
 
   // Structurally ahead of the lock, not inside it: the lock lives in a directory of its own
   // (instance-lock.ts's lockHome), and on a fresh host that directory's PARENT is root:root

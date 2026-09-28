@@ -15,9 +15,10 @@ import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/prom
 import { resolve, basename, dirname, relative } from "node:path";
 import { log, info, die } from "../../core/io/log.ts";
 import { safeName } from "../../core/names.ts";
+import { parseEnv } from "../../core/env.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile } from "../../security/privacy/private-file.ts";
-import { deploymentEnv as templateEnv, gitignoreLines, updateGitignore } from "./deployment-template.ts";
+import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";
 
 const DECLARATION = `// This deployment.
 //
@@ -257,15 +258,15 @@ export async function initApp(root: string): Promise<void> {
   await applyModuleType(root, moduleType);
   await writeFile(appFile, DECLARATION, "utf8");
   await writeFile(resolve(root, "config", "desired-state.json"), DESIRED_STATE, "utf8");
-  await createPrivateFile(resolve(root, ".env"), await deploymentEnv(root, base));
+  const env = await deploymentEnv(root, base);
+  await createPrivateFile(resolve(root, ".env"), env);
   await updateInitGitignore(root);
   await writeShim(root);
   await setupProjectMcp(root, "installed");
 
   log(`initialised ${root} as an OpenClaw deployment`);
   info("next:");
-  info(`  1. check ${resolve(root, ".env")} — data directory, port, image`);
-  info("  2. ./clawforge bootstrap");
+  for (const line of nextStepsLines(resolve(root, ".env"), parseEnv(env).OC_DATA_DIR ?? "", "./clawforge bootstrap")) info(line);
   info("Claude Code and Codex project MCP settings are ready; trust the project and reconnect the clients.");
   info("secrets and snapshots stay inside this directory; ./clawforge is the only framework-adjacent");
   info("file meant to be committed — commit it, .gitignore already excludes the rest");

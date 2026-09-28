@@ -37,6 +37,7 @@ choice — see [docs/guide/requirements.md](docs/guide/requirements.md).
 ```bash
 npm install                    # json5, plus the dev tooling the checks use
 ./clawforge new-app openclaw   # deployment directory: .env, config/, secrets/, recipes/
+./clawforge bootstrap --check  # read-only: docker, compose v2, this directory, the port, disk space
 ./clawforge bootstrap          # from nothing: token, directories, image, config, provider, start
 ./clawforge status             # what is running and whether it is healthy
 ./clawforge smoke              # acceptance run
@@ -63,6 +64,7 @@ left alone by `bootstrap`, and `./clawforge upgrade` is the way to move it from 
 
 | I want to… | Run | Notes |
 | --- | --- | --- |
+| Check whether a fresh host is actually ready to bootstrap | `./clawforge bootstrap --check` | read-only: docker, compose v2, the data/backup/snapshot directories, the gateway port, free disk space — no lock, nothing created |
 | Bring a fresh instance up | `./clawforge bootstrap` | idempotent — safe to run again on a live instance |
 | Check what's running right now | `./clawforge status` | containers, image, health probes, disk — a snapshot, not a verdict |
 | Get a pass/fail exit code for scripts | `./clawforge doctor` | the same inspection `inspect` computes, but exits non-zero on a blocking finding |
@@ -185,7 +187,7 @@ Low-level:
 | The container is forever `unhealthy` while the service answers | The healthcheck points at a file that does not exist; image 2026.6.34 needs `curl -fsS /healthz` |
 | `SecretRefResolutionError` and a crash loop | The config references a variable missing from `config/.env` |
 | `127.0.0.1` does not reach a service on the host | Inside the container that is the container itself — use `host.docker.internal` |
-| `... needs root and sudo asks for a password` | A directory this deployment needs is owned by root and there is nowhere to type a password. The refusal now names every directory the deployment will need, not just the one that failed first — usually one `sudo install -d -o 1000 -g 1000 <shared root>`, run once on the target |
+| `... needs root and sudo asks for a password` | A directory this deployment needs is owned by root and there is nowhere to type a password. The refusal now names every directory the deployment will need, not just the one that failed first — usually one `sudo install -d -o 1000 -g 1000 <shared root>`, run once on the target. `./clawforge bootstrap --check` catches this before the first bootstrap ever runs, naming the exact command for each directory that needs it |
 | `port 18789 is already published by ...` / `... is already listening (...)` | The first is another deployment's Docker container; the second is a bare process Docker never published (`ss`/`netstat` on the target caught it, before pulling or preparing data). Either way: set your own `OPENCLAW_GATEWAY_PORT` in `.env`, or stop whatever is using this one |
 | The Control UI reports "Browser origin not allowed" | The gateway was never told this origin: declare it in `gateway.controlUi.allowedOrigins`, apply, and restart the gateway (`docker compose up` alone will not recreate a healthy container) |
 

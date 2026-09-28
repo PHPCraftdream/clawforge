@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { initApp } from "#framework/integration/deployment/init.ts";
-import { deploymentEnv as templateEnv, gitignoreLines as templateLines, updateGitignore } from "#framework/integration/deployment/deployment-template.ts";
+import { deploymentEnv as templateEnv, gitignoreLines as templateLines, nextStepsLines, isUnderSrv, updateGitignore } from "#framework/integration/deployment/deployment-template.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 
@@ -193,6 +193,49 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
     const crlfContent = await readFile(resolve(crlf, ".gitignore"), "utf8");
     check("a CRLF .gitignore keeps CRLF endings after the update", crlfContent.includes("\r\n"), true);
     check("a CRLF .gitignore gains no bare LF", /(?<!\r)\n/.test(crlfContent), false);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+}
+
+// --- nextStepsLines: the shared "next:" block, pure ------------------------------------------
+
+{
+  const underSrv = nextStepsLines(".env", "/srv/openclaw/data", "./clawforge bootstrap");
+  check("names the data directory the .env chose", underSrv.some((line) => line.includes("/srv/openclaw/data")), true);
+  check("an /srv default gets the root-owned hint", underSrv.some((line) => line.includes("usually root-owned")), true);
+  check("...pointing at bootstrap --check", underSrv.some((line) => line.includes("./clawforge bootstrap --check")), true);
+  check("and bootstrap itself is still the final step", underSrv.at(-1), "  3. ./clawforge bootstrap");
+
+  const elsewhere = nextStepsLines(".env", "/home/coder/openclaw-data", "./clawforge bootstrap");
+  check("a data directory NOT under /srv gets no root-owned hint", elsewhere.some((line) => line.includes("usually root-owned")), false);
+  check("but still points at bootstrap --check as the next step", elsewhere.some((line) => line.includes("./clawforge bootstrap --check")), true);
+
+  check("isUnderSrv: the bare root counts", isUnderSrv("/srv"), true);
+  check("isUnderSrv: a child path counts", isUnderSrv("/srv/openclaw/data"), true);
+  check("isUnderSrv: a lookalike prefix does not", isUnderSrv("/srving/data"), false);
+}
+
+// --- and reaches init's own real output, naming the actual generated data directory ----------
+
+{
+  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const root = join(base, "deployment-next-steps");
+  await mkdir(root, { recursive: true });
+  try {
+    let output = "";
+    await withOutputSink(
+      (chunk) => { output += chunk; },
+      () => initApp(root),
+    );
+    const env = await readFile(resolve(root, ".env"), "utf8");
+    const dataDir = /^OC_DATA_DIR=(.*)$/m.exec(env)?.[1];
+    check("a data directory was actually generated", typeof dataDir === "string" && dataDir !== "", true);
+    check("init's own output names it", dataDir !== undefined && output.includes(dataDir), true);
+    check("and points at bootstrap --check before bootstrap itself", output.includes("./clawforge bootstrap --check"), true);
+    const checkStepIndex = output.indexOf("2. ./clawforge bootstrap --check");
+    const bootstrapStepIndex = output.indexOf("3. ./clawforge bootstrap");
+    check("bootstrap --check (step 2) is printed before plain bootstrap (step 3)", checkStepIndex !== -1 && bootstrapStepIndex !== -1 && checkStepIndex < bootstrapStepIndex, true);
   } finally {
     await rm(base, { recursive: true, force: true });
   }

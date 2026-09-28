@@ -17,11 +17,11 @@
 import { mkdir, writeFile, access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, die } from "../../core/io/log.ts";
-import { monorepoRoot } from "../../core/env.ts";
+import { monorepoRoot, parseEnv } from "../../core/env.ts";
 import { safeName } from "../../core/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile } from "../../security/privacy/private-file.ts";
-import { deploymentEnv as templateEnv, gitignoreLines, updateGitignore } from "./deployment-template.ts";
+import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";
 
 export const appsDir = resolve(monorepoRoot, "apps");
 
@@ -111,14 +111,14 @@ export async function createApp(name: string): Promise<void> {
 
   await writeFile(resolve(directory, "app.ts"), declarationFor(name), "utf8");
   await writeFile(resolve(directory, "config", "desired-state.json"), DESIRED_STATE, "utf8");
-  await createPrivateFile(resolve(directory, ".env"), await deploymentEnv(name));
+  const env = await deploymentEnv(name);
+  await createPrivateFile(resolve(directory, ".env"), env);
   await writeGitignore(directory);
   await setupProjectMcp(directory, "monorepo");
 
   log(`created ${directory}`);
   info("next:");
-  info(`  1. check ${resolve(directory, ".env")} — data directory, port, image`);
-  info(`  2. ./clawforge --app ${name} bootstrap`);
+  for (const line of nextStepsLines(resolve(directory, ".env"), parseEnv(env).OC_DATA_DIR ?? "", `./clawforge --app ${name} bootstrap`)) info(line);
   info(
     `if ${name} is the only deployment under apps/, later commands pick it automatically; ` +
       `alongside others, select it with --app ${name} or export OC_APP=${name}`,

@@ -22,6 +22,7 @@ import {
   listArchive, parseBackupArchive, privilegePrefixFor, symlinkedDataRoot, PROFILE_SHORTHAND_FLAGS, type Profile,
 } from "#src/service/archive/index.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/management/recipe/lifecycle.ts";
 import type { Recipe } from "#src/service/recipe.ts";
@@ -342,6 +343,7 @@ async function createNativeArchive(
  *  so pull() and smoke() calling this while already holding the lock for their own
  *  operation cost nothing extra here. */
 export async function createBackup(ctx: Context, options: BackupOptions = {}): Promise<string> {
+  await requireBootstrapped(ctx);
   // No --break-lock support: its own parser (backup() below) rejects it, so a refusal here
   // must not offer a flag it will then reject as unknown.
   return guarded(ctx, "backup", [], () => createBackupLocked(ctx, options), { breakLockSupported: false });

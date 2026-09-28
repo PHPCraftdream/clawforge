@@ -80,6 +80,20 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `plan` names a step for every problem code — a never-bootstrapped deployment first,
   pointing at `bootstrap` — instead of printing "nothing to do" for the 19 of 36 codes it
   had no step for.
+* On a deployment that has never been bootstrapped, `backup`, `incident`,
+  `configure-provider`, `smoke`, `apply-config` (including `--dry-run`/`--dump`), `up`,
+  `restart`, `down`, `logs`, `upgrade`, `secrets --apply`, `provision-agent`,
+  `expose tailscale --apply` and `watch install --apply` died on a raw
+  `could not take the instance lock … mkdir …/operation.lock: No such file or directory`
+  instead of the same "never been bootstrapped — run `./clawforge bootstrap`" answer
+  `doctor`/`plan`/`status`/`mcp-creds` already gave. A shared `requireBootstrapped()` now
+  refuses first, before the lock or any target write; `bootstrap`, `restore` and `push`
+  (the commands that create the instance) are unaffected.
+* A failed target command built as `sh -c <script>` (the internal publish/private-write
+  staging writes) pasted its whole multi-statement body into the operator-facing error —
+  seen from `apply-config --dry-run` as the entire script instead of a reason. The headline
+  now collapses to `sh -c …`; the real cause (stderr) still follows it, and `OC_DEBUG=1`
+  still shows the untouched command.
 * `--break-foreign-lock <hostId>` is accepted everywhere `--break-lock` is — `apply`,
   `rollback`, `provision-agent`, `set forget`, `restore`, `pull`, `recipe install`/`remove`,
   `apply-config` refused it as unknown — and by `secrets --apply`, which still refuses

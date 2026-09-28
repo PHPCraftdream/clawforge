@@ -113,6 +113,12 @@ export function stubContext() {
           return [...files.keys()].filter((entry) => entry.startsWith(prefix)).map((entry) => entry.slice(prefix.length));
         },
       },
+      // This fixture is about the LOCK, not requireBootstrapped ahead of it — bootstrapped
+      // throughout, so every consumer's refusal comes from what it means to exercise, never a
+      // NotBootstrapped raised before the lock is ever reached.
+      runtime: {
+        async isRunning(): Promise<boolean> { return true; },
+      },
     } as unknown as Context,
   };
 }

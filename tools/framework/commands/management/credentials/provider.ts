@@ -7,6 +7,7 @@ import { parseEnv } from "#src/core/env.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "#src/service/secrets.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
@@ -44,6 +45,7 @@ function parseArgs(args: string[]): { force: boolean; provider?: string; env?: s
 
 /** Configure every selected provider using a target-side SecretRef. */
 export async function configureProvider(ctx: Context, args: string[]): Promise<void> {
+  await requireBootstrapped(ctx);
   // No --break-lock support here (same choice backup.ts's own guarded() fix made): this
   // command does not declare that flag, so nothing in args is read by guarded() either —
   // and breakLockSupported: false keeps a refusal here from offering it anyway.

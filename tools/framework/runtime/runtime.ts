@@ -5,6 +5,7 @@
 // would change. That is the whole point of the indirection — it is checked by grepping the
 // command files for "docker" and "compose".
 
+import { die } from "../core/io/log.ts";
 import type { ExecResult } from "./transport/transport.ts";
 import type { Context } from "../core/context.ts";
 
@@ -30,6 +31,24 @@ export class NotBootstrapped extends Error {
   constructor(dataDir: string) {
     super(`${dataDir} does not exist on the target — this deployment has never been bootstrapped`);
     this.name = "NotBootstrapped";
+  }
+}
+
+/** The shared preflight for a command that mutates an EXISTING instance: refuses with
+ *  NotBootstrapped's own message plus the same next step doctor/plan/status/mcp-creds already
+ *  give, before takeLock() or any other mutation runs. Without this, the same fact surfaced as
+ *  a raw `mkdir …/operation.lock` failure (the lock's home is prepared alongside the data
+ *  directory, by bootstrap alone) or, worse, a target exec's whole script pasted into the
+ *  error. Commands that CREATE the instance (bootstrap, restore into an empty target, push,
+ *  deploy) must never call this — it would refuse the very thing they do. isRunning() is the
+ *  cheapest call every Runtime already answers NotBootstrapped from; its actual true/false
+ *  result is not needed here, only whether it throws. */
+export async function requireBootstrapped(ctx: Context): Promise<void> {
+  try {
+    await ctx.runtime.isRunning();
+  } catch (error) {
+    if (!(error instanceof NotBootstrapped)) throw error;
+    die(`${error.message} — run ./clawforge bootstrap`);
   }
 }
 

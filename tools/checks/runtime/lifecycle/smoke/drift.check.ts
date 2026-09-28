@@ -99,6 +99,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
       },
       paths: { toContainer: (path: string) => path },
       runtime: {
+        async isRunning() { return true; },
         async runOneOff(_service: string, args: string[]) {
           if (!args.includes("--batch-file")) return { code: 0, stdout: "", stderr: "" };
           batchCalls += 1;

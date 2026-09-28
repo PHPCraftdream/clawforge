@@ -174,7 +174,7 @@ try {
 // source-order check is honest about being exactly that, not a second behavioural proof.
 {
   const setTrySource = await (await import("node:fs/promises")).readFile(
-    new URL("../../../framework/commands/sets/set-try.ts", import.meta.url),
+    new URL("../../../../framework/commands/sets/set-try.ts", import.meta.url),
     "utf8",
   );
   const applyAt = setTrySource.indexOf("await applyConfig(tryCtx, [], { restartAdvice: false });");

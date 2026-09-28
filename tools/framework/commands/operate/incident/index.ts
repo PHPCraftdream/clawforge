@@ -48,7 +48,7 @@ import { upsertEnvValue } from "../../../security/privacy/private-config.ts";
 import { replacePrivateFile, createPrivateFile, protectPrivateDirectory } from "../../../security/privacy/private-file.ts";
 import { probeTailscale, tailscaleGatewayRoutes, tailscaleServeOffCommand } from "../expose/tailscale.ts";
 import { summarizeExposure, exposureOneLiner } from "../expose/status.ts";
-import { safeConnectionFacts } from "../../../runtime/runtime.ts";
+import { safeConnectionFacts, requireBootstrapped } from "../../../runtime/runtime.ts";
 import { runSecurityAudit, type SecurityAuditReport } from "../../../security/audit.ts";
 import { blockingProblems } from "../../../service/inspection.ts";
 import type { CommandArgument } from "../../../core/app.ts";
@@ -431,6 +431,7 @@ export async function incident(ctx: Context, args: string[]): Promise<void> {
 
   let report: IncidentReport;
   try {
+    if (!options.dryRun) await requireBootstrapped(ctx);
     report = options.dryRun
       ? await runPhases(ctx, options)
       : await guarded(ctx, "incident", args, () => runPhases(ctx, options));

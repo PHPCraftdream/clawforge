@@ -145,7 +145,11 @@ try {
   const FOREIGN = "0 3 * * * /usr/bin/foreign-backup.sh";
   const OTHER_DEPLOYMENT = "*/5 * * * * cd /opt/openclaw && ./clawforge --app other watch check >/dev/null 2>&1 # clawforge-watch:other";
   const { transport, calls, crontab } = crontabTransport(`${FOREIGN}\n${OTHER_DEPLOYMENT}\n`);
-  const ctx = { transport, settings: { remotePath: "/opt/openclaw", dataDir: "/does/not/exist", env: {} } } as unknown as Context;
+  const ctx = {
+    transport,
+    settings: { remotePath: "/opt/openclaw", dataDir: "/does/not/exist", env: {} },
+    runtime: { async isRunning(): Promise<boolean> { return true; } },
+  } as unknown as Context;
 
   // print-only (no --apply): never touches crontab at all.
   await withOutputSink(() => {}, () => watchInstall(ctx, []));

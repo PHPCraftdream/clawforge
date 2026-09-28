@@ -66,6 +66,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
       },
       paths: { toContainer: (path: string) => path },
       runtime: {
+        async isRunning(): Promise<boolean> { return true; },
         async runOneOff(): Promise<never> {
           // What a payload the CLI rejects looks like from here.
           throw new Error("config set --dry-run failed: invalid path");
@@ -123,6 +124,9 @@ check("and stays a .json file", dry.endsWith(".json"), true);
         async readFile(): Promise<string> {
           return liveConfig;
         },
+      },
+      runtime: {
+        async isRunning(): Promise<boolean> { return true; },
       },
     } as unknown as Context;
 
@@ -221,6 +225,9 @@ check("and stays a .json file", dry.endsWith(".json"), true);
         async readFile(): Promise<string> {
           return `{ "gateway": { "mode": "local" } }`;
         },
+      },
+      runtime: {
+        async isRunning(): Promise<boolean> { return true; },
       },
     } as unknown as Context;
 

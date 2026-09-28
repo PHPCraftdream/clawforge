@@ -76,5 +76,22 @@ export function describeInvocation(command: string, args: string[]): string {
     tokens = tokens.filter((token, index) =>
       index < 2 || (!COMPOSE_IDENTITY_FLAGS.has(token) && !COMPOSE_IDENTITY_FLAGS.has(tokens[index - 1])));
   }
+
+  // This framework's own `sh -c <script>` staging invocations (quoting.ts's publishCommand,
+  // privateWriteCommand) must never paste their multi-statement body into a headline — the
+  // real cause is whatever stderr said, appended separately by the caller; OC_DEBUG=1 still
+  // gets the untouched command via CommandFailure.fullCommand. Two shapes reach here: the
+  // plain array form (local/WSL — tokens[0]/[1] are literally "sh"/"-c") and SSH's, where the
+  // whole invocation, host included, is already one shell-quoted string ("'sh' '-c' '…'") by
+  // the time this runs (SshTransport.exec joins before spawnLocal ever sees it).
+  if (tokens[0] === "sh" && tokens[1] === "-c") {
+    tokens = [tokens[0], tokens[1], "…"];
+  } else {
+    tokens = tokens.map((token) => {
+      const at = token.indexOf("'sh' '-c' ");
+      return at === -1 ? token : `${token.slice(0, at)}sh -c …`;
+    });
+  }
+
   return tokens.join(" ");
 }

@@ -17,6 +17,7 @@ import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replacePrivateFile, unprotectedPrivateFile } from "#src/security/privacy/private-file.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { guarded, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
@@ -376,6 +377,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
     // guard against each other for, and this used to bypass entirely. No --break-lock support
     // (its own parser above never declares it): breakLockSupported: false keeps a refusal
     // from offering a flag it cannot accept. Only --break-foreign-lock is forwarded.
+    await requireBootstrapped(ctx);
     const guardArgs = breakForeignLockHost === undefined ? [] : ["--break-foreign-lock", breakForeignLockHost];
     await guarded(ctx, "secrets", guardArgs, () => applyStore(ctx, store), { breakLockSupported: false });
     return;

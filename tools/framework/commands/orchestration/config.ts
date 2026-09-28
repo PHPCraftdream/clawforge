@@ -10,6 +10,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
@@ -75,6 +76,8 @@ export async function applyConfig(
   if (!dump && dryRun && breakLock) die("--break-lock cannot be combined with --dry-run — a dry run takes no instance lock, so there is no lock to break");
   if (!dump && dryRun && breakForeignLockHost !== undefined) die("--break-foreign-lock cannot be combined with --dry-run — a dry run takes no instance lock, so there is no lock to break");
   if (!dump && force) die("--force only applies to --dump — a real apply overwrites the instance config regardless, and its preview is --dry-run");
+
+  await requireBootstrapped(ctx);
 
   if (dump) {
     // Read-only against the target and the running container — the only write is the local

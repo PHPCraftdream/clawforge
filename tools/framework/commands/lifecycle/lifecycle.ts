@@ -6,7 +6,7 @@
 import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { shouldFollow, emit, withOutputSink } from "#src/core/io/output.ts";
-import { sleep } from "#src/runtime/runtime.ts";
+import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
@@ -119,6 +119,7 @@ export async function preflightPort(ctx: Context): Promise<void> {
 export async function up(ctx: Context, args: string[]): Promise<void> {
   // Dies before the lock is ever taken: a bogus flag must not leave a half-started mutation.
   parseDeclaredArgs(LOCK_ARGUMENTS, args);
+  await requireBootstrapped(ctx);
   return guarded(ctx, "up", args, () => startInstance(ctx));
 }
 
@@ -151,6 +152,7 @@ async function startInstance(ctx: Context): Promise<void> {
  *  the container keeps the binding it already holds. */
 export async function restart(ctx: Context, args: string[]): Promise<void> {
   parseDeclaredArgs(LOCK_ARGUMENTS, args);
+  await requireBootstrapped(ctx);
   return guarded(ctx, "restart", args, () => restartInstance(ctx));
 }
 
@@ -171,6 +173,7 @@ async function restartInstance(ctx: Context): Promise<void> {
  *  here, so nothing typed after `down` (e.g. --rmi all, -v) can widen what it does. */
 export async function down(ctx: Context, args: string[]): Promise<void> {
   parseDeclaredArgs(LOCK_ARGUMENTS, args);
+  await requireBootstrapped(ctx);
   return guarded(ctx, "down", args, async () => {
     await ctx.runtime.stop();
     log(`stopped; data kept in ${ctx.settings.dataDir}`);
@@ -190,6 +193,7 @@ export async function down(ctx: Context, args: string[]): Promise<void> {
  *  Only the validated `--since` reaches the runtime; any other token is refused, never
  *  passed to compose as a service name. */
 export async function logs(ctx: Context, args: string[]): Promise<void> {
+  await requireBootstrapped(ctx);
   const parsed = parseDeclaredArgs(LOGS_ARGUMENTS, args);
   const tail = parsed.tail as string | undefined;
   if (tail !== undefined && !/^\d+$/.test(tail)) die(`--tail takes a number of lines, not "${tail}"`);
@@ -465,6 +469,7 @@ async function upgradeLocked(
  *  --dry-run prints the plan and changes nothing — not even taking the instance lock. */
 export async function upgrade(ctx: Context, args: string[]): Promise<void> {
   const options = parseUpgradeArgs(args);
+  await requireBootstrapped(ctx);
 
   if (ctx.runtime.resolveImageDigest === undefined || ctx.runtime.recreateWithImage === undefined) {
     die(`${ctx.runtime.description} does not support ./clawforge upgrade`);

@@ -61,7 +61,14 @@ function noLockTransport(probe: { present: boolean; state?: string; statusFails?
 }
 
 function ctxFor(transport: Context["transport"], gatewayPort = "18789"): Context {
-  return { settings: { gatewayPort, dataDir: "/does/not/exist", env: {} }, transport } as unknown as Context;
+  return {
+    settings: { gatewayPort, dataDir: "/does/not/exist", env: {} },
+    transport,
+    // These fixtures are about the LOCK, not the bootstrap guard ahead of it — bootstrapped
+    // (running or not) throughout, so a refusal always comes from what each test means to
+    // exercise, never a NotBootstrapped raised before it.
+    runtime: { async isRunning(): Promise<boolean> { return true; } },
+  } as unknown as Context;
 }
 
 async function run(ctx: Context, args: string[]): Promise<string> {

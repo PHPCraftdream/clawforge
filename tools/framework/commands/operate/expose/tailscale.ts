@@ -26,6 +26,7 @@
 
 import { log, info, die } from "#src/core/io/log.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import type { CommandArgument } from "#src/core/app.ts";
@@ -170,6 +171,7 @@ export async function exposeTailscale(ctx: Context, args: string[]): Promise<voi
   if (!probe.present) die("cannot --apply: tailscale is not installed on the target");
   if (!probe.loggedIn) die(`cannot --apply: ${probe.detail}`);
 
+  await requireBootstrapped(ctx);
   return guarded(ctx, "expose tailscale --apply", args, async () => {
     log("applying tailscale serve on the target");
     const result = await ctx.transport.exec(command[0], command.slice(1), { allowFailure: true });

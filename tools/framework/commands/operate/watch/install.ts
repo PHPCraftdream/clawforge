@@ -28,6 +28,7 @@ import { die, info, log, warn } from "../../../core/io/log.ts";
 import { monorepoRoot } from "../../../core/env.ts";
 import { deploymentDir, deploymentName } from "../../../runtime/deployment.ts";
 import { guarded } from "../../../runtime/instance-lock.ts";
+import { requireBootstrapped } from "../../../runtime/runtime.ts";
 import { SshTransport } from "../../../runtime/transport/transport.ts";
 import type { Context } from "../../../core/context.ts";
 import type { CommandArgument } from "../../../core/app.ts";
@@ -234,6 +235,7 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
     return;
   }
 
+  await requireBootstrapped(ctx);
   await guarded(ctx, "watch install --apply", args, async () => {
     await probeCrontab(ctx);
     const existing = await readCrontab(ctx);

@@ -123,5 +123,24 @@ function lifecycleLineSource(kind: "Container" | "Network", name: string, state:
   check("streamed noise filter is precise: a real error naming a container still reaches the operator", forwarded.includes("is unhealthy and refuses to start"), true);
 }
 
+// --- a failed `sh -c <script>` never pastes its body into the rejection's own message -------
+//
+// The exact repro shape `quoting.ts`'s publishCommand builds (apply-config's own staging
+// write hit this): `sh -c '<multi-statement script>' sh <temp> <target>`, failing because the
+// parent directory does not exist. Before the fix, the whole script became the headline;
+// stderr's real cause — from the shell itself — must be what the message leads with.
+
+{
+  const script = "temporary=$1; target=$2; trap 'rm -f -- \"$temporary\"' EXIT; cat > \"$temporary\" && mv -f -- \"$temporary\" \"$target\"; status=$?; exit $status";
+  let message = "";
+  try {
+    await spawnLocal("sh", ["-c", script, "sh", "/no/such/dir/x.tmp", "/no/such/dir/x"], { input: "content" });
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  check("a failed sh -c publish script never pastes its body into the message", message.includes("trap 'rm -f"), false);
+  check("the real shell-reported cause still comes through", /no such file or directory/i.test(message), true);
+}
+
 process.stderr.write(failed === 0 ? "all spawn noise checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

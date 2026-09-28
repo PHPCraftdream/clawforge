@@ -71,6 +71,9 @@ try {
           return { code: 0, stdout: "", stderr: "" };
         },
       },
+      runtime: {
+        async isRunning(): Promise<boolean> { return true; },
+      },
     } as unknown as Context;
   }
 

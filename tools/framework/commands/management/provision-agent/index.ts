@@ -40,6 +40,7 @@ import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { safeName } from "#src/core/names.ts";
 import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { newOperationId } from "#src/service/operations.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { readLedgerStrict, recordOwned, ownerOf, updateOwnedPromptFiles } from "#src/set/ownership/ledger.ts";
@@ -77,6 +78,7 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
   if (rawName === undefined) die("usage: ./clawforge provision-agent <recipe>");
   const recipeName = safeName("recipe", rawName);
 
+  await requireBootstrapped(ctx);
   if (!(await ctx.runtime.isRunning())) die("the gateway is not running. Start it with ./clawforge up");
 
   const bundle = await loadRecipeAgentBundle(recipeName);

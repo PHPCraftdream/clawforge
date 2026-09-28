@@ -563,6 +563,27 @@ check(
   "docker compose ps",
 );
 
+// A failed `sh -c <script>` (quoting.ts's publishCommand/privateWriteCommand — apply-config's
+// own staging write, among others) must never paste its multi-statement body into the
+// headline: the real cause is the detail beneath it (stderr), and OC_DEBUG=1 still gets the
+// untouched command via CommandFailure.fullCommand.
+const PUBLISH_SCRIPT = "temporary=$1; target=$2; trap 'rm -f -- \"$temporary\"' EXIT; cat > \"$temporary\" && mv -f -- \"$temporary\" \"$target\"; status=$?; exit $status";
+check(
+  "concise action: a local/WSL sh -c script collapses instead of pasting its body",
+  describeInvocation("sh", ["-c", PUBLISH_SCRIPT, "sh", "/srv/clawforge/data/config/x.json.clawforge-publish-abcd", "/srv/clawforge/data/config/x.json"]),
+  "sh -c …",
+);
+check(
+  "concise action: the same script wrapped in wsl.exe --exec collapses the same way",
+  describeInvocation("wsl.exe", ["-d", "Ubuntu-24.04", "--exec", "sh", "-c", PUBLISH_SCRIPT, "sh", "/x.clawforge-publish-abcd", "/x"]),
+  "sh -c …",
+);
+check(
+  "concise action: SSH's pre-quoted single-string form collapses too",
+  describeInvocation("ssh", ["user@host", `'sh' '-c' '${PUBLISH_SCRIPT}' 'sh' '/x.clawforge-publish-abcd' '/x'`]),
+  "ssh user@host sh -c …",
+);
+
 // The noise phrase is built at runtime from split halves in the child's own source (below),
 // never spelled out contiguously in the script text itself: this spawns via process.execPath,
 // which describeInvocation does not shorten, so the source text ends up echoed verbatim into

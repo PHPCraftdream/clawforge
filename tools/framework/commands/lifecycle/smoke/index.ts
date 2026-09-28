@@ -28,6 +28,7 @@ import JSON5 from "json5";
 import { log, info, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { CouldNotCheck, NotChecked } from "../../check-outcome.ts";
+import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { applyConfig } from "../../orchestration/config.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { noProviderConfigured } from "#src/service/secrets.ts";
@@ -251,6 +252,7 @@ export function report(summary: SmokeSummary, quick: boolean): void {
 }
 
 export async function smoke(ctx: Context, args: string[]): Promise<void> {
+  await requireBootstrapped(ctx);
   const quick = parseDeclaredArgs(SMOKE_ARGUMENTS, args).quick === true;
   const selected = quick ? checks.filter((check) => check.name !== ROUND_TRIP_CHECK) : checks;
 

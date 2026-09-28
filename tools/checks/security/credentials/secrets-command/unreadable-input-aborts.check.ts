@@ -75,6 +75,9 @@ try {
         return { code: 0, stdout: "", stderr: "" };
       },
     },
+    runtime: {
+      async isRunning(): Promise<boolean> { return true; },
+    },
   } as unknown as Context;
 
   let thrown = "";
@@ -118,6 +121,9 @@ try {
         if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
         return { code: 0, stdout: "", stderr: "" };
       },
+    },
+    runtime: {
+      async isRunning(): Promise<boolean> { return true; },
     },
   } as unknown as Context;
 
@@ -164,6 +170,9 @@ try {
           return { code: 0, stdout: "", stderr: "" };
         },
       },
+      runtime: {
+        async isRunning(): Promise<boolean> { return true; },
+      },
     } as unknown as Context;
     let thrown = "";
     try {
@@ -189,6 +198,9 @@ try {
       async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
         return { code: 0, stdout: "", stderr: "" };
       },
+    },
+    runtime: {
+      async isRunning(): Promise<boolean> { return true; },
     },
   } as unknown as Context;
   let thrown = "";

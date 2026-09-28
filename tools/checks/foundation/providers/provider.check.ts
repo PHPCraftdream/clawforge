@@ -19,7 +19,10 @@ const ctx = {
       ? JSON.stringify({ models: { providers: { custom: {} } } })
       : "CUSTOM_API_KEY=secret-value\n",
   },
-  runtime: { runOneOff: async (_service: string, args: string[]) => { calls.push(args); return { code: 0, stdout: "", stderr: "" }; } },
+  runtime: {
+    isRunning: async () => true,
+    runOneOff: async (_service: string, args: string[]) => { calls.push(args); return { code: 0, stdout: "", stderr: "" }; },
+  },
 } as unknown as Context;
 
 await configureProvider(ctx, []);

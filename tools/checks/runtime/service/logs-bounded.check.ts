@@ -69,6 +69,7 @@ function ctxWith(seen: Seen): Context {
   return {
     settings: { dataDir: "/srv/openclaw/data", env: {} },
     runtime: {
+      async isRunning(): Promise<boolean> { return true; },
       async followLogs(rest: string[] = []): Promise<void> {
         seen.followed = true;
         seen.followRest = rest;

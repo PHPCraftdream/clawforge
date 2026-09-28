@@ -34,6 +34,9 @@ try {  const ctx = {
         return { code: 0, stdout: "", stderr: "" };
       },
     },
+    runtime: {
+      async isRunning(): Promise<boolean> { return true; },
+    },
   } as unknown as Context;
 
   const storePath = resolve(deployDir, "secrets", "store-a.env");

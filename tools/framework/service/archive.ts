@@ -97,6 +97,8 @@ function baseExcludes(dataName: string): string[] {
     // Provider-key staging is private from creation and normally removed after rename, but a
     // process can die between those steps. It is credential material, never instance state.
     `${root}/config/.env.clawforge-*`,
+    // A native backup's in-flight full archive; a crash must not nest it into a later backup.
+    `${root}/config/.clawforge-native-*`,
     // The tooling's own temp-sibling staging families (transport.ts) are the same story one
     // layer out: the real bytes sit in the sibling from the first byte written, and a process
     // that dies before the rename — or a cleanup that fails — leaves them beside the target

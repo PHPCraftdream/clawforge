@@ -3,13 +3,14 @@
 // layout so rotation, naming and restore need no native-specific case (task #7).
 
 import { resolve } from "node:path";
-import { createBackup, NativeBackupUnsupportedError, omittedOnPurpose } from "#framework/commands/lifecycle/backup.ts";
+import { createBackup, NativeBackupUnsupportedError, NATIVE_MANIFEST_NAME, omittedOnPurpose } from "#framework/commands/lifecycle/backup.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
+import { excludesFor } from "#framework/service/archive.ts";
 import type { ExecResult } from "#framework/runtime/transport.ts";
 
 let failed = 0;
@@ -50,7 +51,10 @@ function isLeaf(files: ReadonlySet<string>, path: string): boolean {
   return ![...files].some((other) => other !== path && other.startsWith(`${path}/`));
 }
 
-function stubNativeCtx(outcome: NativeCreateOutcome, options: { extraLiveFile?: string } = {}): { ctx: Context; calls: string[]; files: Set<string> } {
+function stubNativeCtx(
+  outcome: NativeCreateOutcome,
+  options: { extraLiveFile?: string; failOnExtract?: boolean } = {},
+): { ctx: Context; calls: string[]; files: Set<string> } {
   const calls: string[] = [];
   const files = new Set([DATA_DIR, `${DATA_DIR}/config`, `${DATA_DIR}/auth-secrets`]);
   if (options.extraLiveFile !== undefined) files.add(options.extraLiveFile);
@@ -82,6 +86,9 @@ function stubNativeCtx(outcome: NativeCreateOutcome, options: { extraLiveFile?: 
           return { code: 0, stdout, stderr: "" };
         }
         if (command === "tar" && args.includes("-xzf")) {
+          // Real transport throws on a non-zero exit when allowFailure is not set, exactly
+          // like createNativeArchive's own extraction call — simulated here the same way.
+          if (options.failOnExtract === true) throw new Error("tar: unexpected end of file");
           // Simulates the native archive's extraction: its payload lands under -C's target.
           const dest = args[args.indexOf("-C") + 1] ?? "";
           files.add(`${dest}/${NATIVE_ROOT}/payload/posix/home/node/.openclaw`);
@@ -137,7 +144,11 @@ function stubNativeCtx(outcome: NativeCreateOutcome, options: { extraLiveFile?: 
       async runOneOff(service: string, cliArgs: string[]): Promise<ExecResult> {
         calls.push(`runOneOff ${service} ${cliArgs.join(" ")}`);
         if (outcome === "unsupported") return { code: 1, stdout: "", stderr: "error: unknown command 'backup'" };
-        const containerOutput = cliArgs[cliArgs.indexOf("--output") + 1];
+        const containerOutput = cliArgs[cliArgs.indexOf("--output") + 1] ?? "";
+        // A verified create actually writes the archive at --output, addressable back on the
+        // host at the same path createNativeArchive built it from — needed for the cleanup
+        // checks below to have something real to find and remove.
+        if (outcome === "ok") files.add(fromContainerPath(containerOutput, mounts));
         return {
           code: outcome === "verify-false" ? 1 : 0,
           stdout: JSON.stringify({ verified: outcome === "ok", archivePath: containerOutput }),
@@ -231,6 +242,39 @@ function stubNativeCtx(outcome: NativeCreateOutcome, options: { extraLiveFile?: 
   const { ctx, calls } = stubNativeCtx("ok", { extraLiveFile: wal });
   await withOutputSink(() => {}, () => createBackup(ctx, { profile: "full", native: true }));
   check("a live -wal file is not copied into the native archive", calls.some((call) => call.startsWith("exec cp") && call.includes(wal)), false);
+}
+
+// --- a failure after the native archive is created (here: extraction) must not leave it
+// sitting in the live data directory — until the mv into staging lands, that file carries a
+// full backup's worth of secrets (config/.env, credentials) -------------------------------
+
+{
+  const { ctx, files } = stubNativeCtx("ok", { failOnExtract: true });
+  let message = "";
+  await withOutputSink(() => {}, async () => {
+    try { await createBackup(ctx, { profile: "full", native: true }); } catch (error) { message = (error as Error).message; }
+  });
+  check("an extraction failure surfaces as an error", message.length > 0, true);
+  check(
+    "the in-flight native archive is removed from config/ rather than left behind",
+    [...files].some((path) => path.startsWith(`${DATA_DIR}/config/.clawforge-native-`)),
+    false,
+  );
+}
+
+// --- an in-flight native archive left in config/ by a crash must not be swept into a LATER
+// backup's own payload: excludesFor keeps it out without touching the published manifest,
+// which sits at the archive root (name/NATIVE_MANIFEST_NAME), never under config/ -----------
+
+{
+  const name = "data";
+  const excludes = excludesFor("full", name);
+  check("excludesFor(full) excludes a native archive left live in config/", excludes.includes(`${name}/config/.clawforge-native-*`), true);
+  check(
+    "the published native manifest's own archive-root path is not among the exclude patterns",
+    excludes.includes(`${name}/${NATIVE_MANIFEST_NAME}`),
+    false,
+  );
 }
 
 process.stderr.write(failed === 0 ? "all native backup checks passed\n" : `${failed} failed\n`);

@@ -147,9 +147,6 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
  *  Failures asking OpenClaw for the archive are reported as NativeBackupUnsupportedError, so
  *  createBackup (and ./clawforge upgrade) can fall back to the classic path; a failure in the
  *  reshape itself is a real bug/environment problem and propagates unchanged. */
-/** Paths, relative to their own root, of every file under `liveDir` that `assembledDir` does
- *  not have — either directory may not exist yet, and that reads as an empty listing rather
- *  than an error. */
 /** Live files the set difference must never re-add: SQLite sidecars (a hot -wal/-shm/-journal
  *  beside the native point-in-time database would be replayed onto it on restore and corrupt
  *  it), Chromium profile locks, and this run's own native archive, which sits in config/
@@ -160,6 +157,9 @@ export function omittedOnPurpose(relative: string): boolean {
   return NEVER_COPY_LIVE.some((pattern) => pattern.test(relative));
 }
 
+/** Paths, relative to their own root, of every file under `liveDir` that `assembledDir` does
+ *  not have — either directory may not exist yet, and that reads as an empty listing rather
+ *  than an error. */
 async function missingRelativeFiles(ctx: Context, liveDir: string, assembledDir: string): Promise<string[]> {
   const listing = async (dir: string): Promise<Set<string>> => {
     if (!(await ctx.transport.exists(dir))) return new Set();
@@ -197,7 +197,13 @@ async function copyOmittedLiveFiles(ctx: Context, liveDir: string, assembledDir:
   return missing.length;
 }
 
-async function createNativeArchive(ctx: Context, stagingDir: string, stagingArchive: string, name: string): Promise<void> {
+async function createNativeArchive(
+  ctx: Context,
+  stagingDir: string,
+  stagingArchive: string,
+  name: string,
+  compensationErrors: unknown[],
+): Promise<void> {
   const { dataDir } = ctx.settings;
   const nativeTarget = `${dataDir}/config/.clawforge-native-${randomUUID()}.tar.gz`;
   let containerOutput: string;
@@ -216,42 +222,59 @@ async function createNativeArchive(ctx: Context, stagingDir: string, stagingArch
   if (outcome.verified !== true) throw new Error("openclaw backup create did not report a verified archive");
   const nativeArchive = outcome.archivePath === undefined ? nativeTarget : ctx.paths.fromContainer(outcome.archivePath);
 
-  const nativeEntries = await listArchive(ctx, nativeArchive);
-  const nativeRoot = archiveRoot(nativeEntries);
-  const nativeWorkdir = `${stagingDir}/native`;
-  const payload = `${nativeWorkdir}/${nativeRoot}/payload/posix/home/node/.openclaw`;
-  const assembled = `${stagingDir}/${name}`;
+  // Until the mv into staging, a full archive (credentials included) sits in the live data
+  // directory; any failure below must not leave it there.
+  let movedIntoStaging = false;
+  try {
+    const nativeEntries = await listArchive(ctx, nativeArchive);
+    const nativeRoot = archiveRoot(nativeEntries);
+    const nativeWorkdir = `${stagingDir}/native`;
+    const payload = `${nativeWorkdir}/${nativeRoot}/payload/posix/home/node/.openclaw`;
+    const assembled = `${stagingDir}/${name}`;
 
-  await runMaybePrivileged(ctx, nativeWorkdir, "mkdir", ["-p", nativeWorkdir]);
-  const extractPrefix = await sudoFor(ctx, nativeArchive);
-  const [exHead, ...exRest] = [...extractPrefix, "tar", "--numeric-owner", "-xzf", nativeArchive, "-C", nativeWorkdir];
-  await ctx.transport.exec(exHead, exRest);
-  if (!(await ctx.transport.exists(payload))) {
-    throw new Error(`native archive ${nativeArchive} carries no ${nativeRoot}/payload/posix/home/node/.openclaw`);
+    await runMaybePrivileged(ctx, nativeWorkdir, "mkdir", ["-p", nativeWorkdir]);
+    const extractPrefix = await sudoFor(ctx, nativeArchive);
+    const [exHead, ...exRest] = [...extractPrefix, "tar", "--numeric-owner", "-xzf", nativeArchive, "-C", nativeWorkdir];
+    await ctx.transport.exec(exHead, exRest);
+    if (!(await ctx.transport.exists(payload))) {
+      throw new Error(`native archive ${nativeArchive} carries no ${nativeRoot}/payload/posix/home/node/.openclaw`);
+    }
+
+    await runMaybePrivileged(ctx, assembled, "mkdir", ["-p", assembled]);
+    await runMaybePrivileged(ctx, assembled, "mv", [payload, `${assembled}/config`]);
+    const nestedWorkspace = `${assembled}/config/workspace`;
+    if (await ctx.transport.exists(nestedWorkspace)) {
+      await runMaybePrivileged(ctx, assembled, "mv", [nestedWorkspace, `${assembled}/workspace`]);
+    }
+
+    const omitted = await copyOmittedLiveFiles(ctx, `${dataDir}/config`, `${assembled}/config`)
+      + await copyOmittedLiveFiles(ctx, `${dataDir}/workspace`, `${assembled}/workspace`);
+    if (omitted > 0) {
+      log(`copied ${omitted} file(s) present live but left out of openclaw's own backup (e.g. session transcripts)`);
+    }
+
+    if (await ctx.transport.exists(`${dataDir}/auth-secrets`)) {
+      await runMaybePrivileged(ctx, assembled, "cp", ["-a", `${dataDir}/auth-secrets`, `${assembled}/auth-secrets`]);
+    }
+    await runMaybePrivileged(ctx, assembled, "mv", [nativeArchive, `${assembled}/${NATIVE_MANIFEST_NAME}`]);
+    movedIntoStaging = true;
+
+    const excludeArgs = excludesFor("full", name).map((pattern) => `--exclude=${pattern}`);
+    const packPrefix = await privilegePrefixFor(ctx, [`${assembled}/auth-secrets`, assembled], stagingArchive);
+    const [head, ...rest] = [...packPrefix, "tar", "--numeric-owner", ...excludeArgs, "-czf", stagingArchive, "-C", stagingDir, name];
+    await ctx.transport.exec(head, rest);
+  } finally {
+    // A removal failure is reported alongside the error in flight, never instead of it.
+    if (!movedIntoStaging) {
+      try {
+        if (await ctx.transport.exists(nativeArchive)) {
+          await runMaybePrivileged(ctx, nativeArchive, "rm", ["-f", "--", nativeArchive]);
+        }
+      } catch (error) {
+        compensationErrors.push(new Error(`could not remove native archive left in the live data directory: ${nativeArchive}`, { cause: error }));
+      }
+    }
   }
-
-  await runMaybePrivileged(ctx, assembled, "mkdir", ["-p", assembled]);
-  await runMaybePrivileged(ctx, assembled, "mv", [payload, `${assembled}/config`]);
-  const nestedWorkspace = `${assembled}/config/workspace`;
-  if (await ctx.transport.exists(nestedWorkspace)) {
-    await runMaybePrivileged(ctx, assembled, "mv", [nestedWorkspace, `${assembled}/workspace`]);
-  }
-
-  const omitted = await copyOmittedLiveFiles(ctx, `${dataDir}/config`, `${assembled}/config`)
-    + await copyOmittedLiveFiles(ctx, `${dataDir}/workspace`, `${assembled}/workspace`);
-  if (omitted > 0) {
-    log(`copied ${omitted} file(s) present live but left out of openclaw's own backup (e.g. session transcripts)`);
-  }
-
-  if (await ctx.transport.exists(`${dataDir}/auth-secrets`)) {
-    await runMaybePrivileged(ctx, assembled, "cp", ["-a", `${dataDir}/auth-secrets`, `${assembled}/auth-secrets`]);
-  }
-  await runMaybePrivileged(ctx, assembled, "mv", [nativeArchive, `${assembled}/${NATIVE_MANIFEST_NAME}`]);
-
-  const excludeArgs = excludesFor("full", name).map((pattern) => `--exclude=${pattern}`);
-  const packPrefix = await privilegePrefixFor(ctx, [`${assembled}/auth-secrets`, assembled], stagingArchive);
-  const [head, ...rest] = [...packPrefix, "tar", "--numeric-owner", ...excludeArgs, "-czf", stagingArchive, "-C", stagingDir, name];
-  await ctx.transport.exec(head, rest);
 }
 
 /** Creates a backup and returns the archive path on the target.
@@ -303,6 +326,8 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   const quiesced: Recipe[] = [];
   let stagingCreated = false;
   let resultError: unknown;
+  // Shared with createNativeArchive, whose cleanup failures are compensations too.
+  const compensationErrors: unknown[] = [];
 
   try {
     if (options.native === true) {
@@ -345,7 +370,7 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     stagingCreated = true;
 
     if (options.native === true) {
-      await createNativeArchive(ctx, stagingDir, stagingArchive, dataDirName(dataDir));
+      await createNativeArchive(ctx, stagingDir, stagingArchive, dataDirName(dataDir), compensationErrors);
     } else {
       await createArchive(ctx, { archive: stagingArchive, profile });
     }
@@ -380,7 +405,6 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     resultError = error;
   }
 
-  const compensationErrors: unknown[] = [];
   if (stagingCreated) {
     try {
       await runMaybePrivileged(ctx, stagingDir, "rm", ["-rf", "--", stagingDir]);

@@ -33,6 +33,14 @@ differs is the data directory, the port and the keys.
 ./clawforge list                          # every deployment under apps/, one line each
 ```
 
+`.env` is the single source for everything below it — `OC_DATA_DIR`, `OC_WSL_DISTRO`,
+`OC_SSH_HOST`, `OC_REMOTE_PATH` and the rest. Exporting one of the same names in the shell
+does not override it: it is silently ignored except for one warning line on stderr per run
+naming what was ignored (never `--json` stdout, so scripts and `control-mcp` are unaffected).
+`OC_APP` (which deployment) and `OC_DEBUG=1` (prints the full argv and stack trace of a
+failure, undiluted, instead of the usual shortened one) are the two names actually read from
+the shell.
+
 `./clawforge list` is the overview `status` cannot be, since `status` always answers for one
 already-chosen deployment: target, port, image and running/stopped for each `apps/<name>`,
 with `--json` for scripting and `--no-status` to skip querying targets entirely.

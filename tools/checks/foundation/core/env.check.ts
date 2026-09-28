@@ -5,7 +5,15 @@
 // rather than trusted. toSettings is checked for its required field and its defaults, since
 // a wrong default silently points a deployment at the wrong directory or port.
 
-import { locksDir, parseEnv, serializeEnvLine, toSettings } from "#framework/core/env.ts";
+import {
+  ENV_FILE_ONLY_VARS,
+  locksDir,
+  parseEnv,
+  serializeEnvLine,
+  shellOnlyEnvNames,
+  shellOnlyEnvWarning,
+  toSettings,
+} from "#framework/core/env.ts";
 
 let failed = 0;
 
@@ -269,6 +277,105 @@ check("location override", full.location, "ssh");
 check("wslDistro override", full.wslDistro, "Debian");
 check("sshHost override", full.sshHost, "user@example.com");
 check("remotePath override", full.remotePath, "/home/user/openclaw");
+
+// --- shellOnlyEnvNames / shellOnlyEnvWarning: shell-exported OC_* the .env doesn't win ----
+//
+// Pure functions, no process.env or filesystem touched — shellEnv is injected, never the
+// real one, so this check cannot leak or depend on whatever the runner's own shell exports.
+
+check(
+  "nothing exported in the shell produces no names",
+  shellOnlyEnvNames({ OC_WSL_DISTRO: "Ubuntu-24.04" }, {}),
+  [],
+);
+
+check(
+  "a shell value equal to .env's is not flagged",
+  shellOnlyEnvNames({ OC_WSL_DISTRO: "Ubuntu-24.04" }, { OC_WSL_DISTRO: "Ubuntu-24.04" }),
+  [],
+);
+
+check(
+  "a shell value differing from .env's is flagged by name",
+  shellOnlyEnvNames({ OC_WSL_DISTRO: "Ubuntu-24.04" }, { OC_WSL_DISTRO: "Nope" }),
+  ["OC_WSL_DISTRO"],
+);
+
+check(
+  "a shell value present but absent from .env is flagged",
+  shellOnlyEnvNames({}, { OC_SSH_HOST: "user@host" }),
+  ["OC_SSH_HOST"],
+);
+
+check(
+  "OC_APP is never flagged: it is meant to be read from the shell",
+  shellOnlyEnvNames({}, { OC_APP: "myapp" }),
+  [],
+);
+
+check(
+  "OC_DEBUG is never flagged: it is meant to be read from the shell",
+  shellOnlyEnvNames({}, { OC_DEBUG: "1" }),
+  [],
+);
+
+check(
+  "an unrelated shell variable is never flagged",
+  shellOnlyEnvNames({}, { PATH: "/usr/bin", HOME: "/home/x" }),
+  [],
+);
+
+check(
+  "every var toSettings/watch/backup actually read from Env is in the list",
+  [...ENV_FILE_ONLY_VARS].sort(),
+  [
+    "OC_BACKUP_DIR",
+    "OC_BACKUP_KEEP",
+    "OC_BIND_ADDRESS",
+    "OC_COMPOSE_PROJECT",
+    "OC_DATA_DIR",
+    "OC_REMOTE_PATH",
+    "OC_SNAPSHOT_DIR",
+    "OC_SNAPSHOT_KEEP",
+    "OC_SSH_HOST",
+    "OC_TARGET_LOCATION",
+    "OC_WATCH_DISK_MIN_MB",
+    "OC_WATCH_HEARTBEAT_URL",
+    "OC_WATCH_TELEGRAM_CHAT_ID",
+    "OC_WATCH_WEBHOOK",
+    "OC_WATCH_WEBHOOK_FORMAT",
+    "OC_WSL_DISTRO",
+  ].sort(),
+);
+
+check(
+  "no shell export -> no warning",
+  shellOnlyEnvWarning({ OC_WSL_DISTRO: "Ubuntu-24.04" }, {}, "/deploy/.env"),
+  undefined,
+);
+
+check(
+  "matching shell export -> no warning",
+  shellOnlyEnvWarning({ OC_WSL_DISTRO: "Ubuntu-24.04" }, { OC_WSL_DISTRO: "Ubuntu-24.04" }, "/deploy/.env"),
+  undefined,
+);
+
+check(
+  "one differing var -> singular wording naming the var and the .env path, value never printed",
+  shellOnlyEnvWarning({ OC_WSL_DISTRO: "Ubuntu-24.04" }, { OC_WSL_DISTRO: "Nope" }, "/deploy/.env"),
+  "warning: OC_WSL_DISTRO is set in the shell but ignored — this tool reads .env only (/deploy/.env); set it there",
+);
+
+check(
+  "two differing vars -> one line, plural wording, both names listed",
+  shellOnlyEnvWarning(
+    { OC_WSL_DISTRO: "Ubuntu-24.04" },
+    { OC_WSL_DISTRO: "Nope", OC_SSH_HOST: "user@host" },
+    "/deploy/.env",
+  ),
+  "warning: OC_WSL_DISTRO, OC_SSH_HOST are set in the shell but ignored — " +
+    "this tool reads .env only (/deploy/.env); set them there",
+);
 
 process.stderr.write(failed === 0 ? "all env checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

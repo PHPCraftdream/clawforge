@@ -121,6 +121,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 * A `check` run killed mid-flight left its scratch deployment under `apps/`, where `list`
   saw it. `check` now sweeps orphaned `apps/*-check-<hex>` directories older than 30 minutes
   at the start of every run.
+* An exported `OC_*` (`OC_WSL_DISTRO`, `OC_SSH_HOST`, …) was silently ignored — only `OC_APP`
+  is read from the shell, `.env` is the sole source for the rest. Now one stderr line per run
+  names every such variable that disagrees with `.env` or is missing from it (never `--json`
+  stdout, so `control-mcp`'s stdio framing is unaffected); values are never printed, only names.
 
 ## 0.1.0
 

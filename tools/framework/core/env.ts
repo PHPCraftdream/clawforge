@@ -155,6 +155,47 @@ export function serializeEnvLine(name: string, value: string): string {
   return `${name}='${value}'`;
 }
 
+// Every OC_* read from the deployment's .env. OC_APP and OC_DEBUG are read from the shell
+// on purpose and absent here.
+export const ENV_FILE_ONLY_VARS = [
+  "OC_DATA_DIR",
+  "OC_BACKUP_DIR",
+  "OC_SNAPSHOT_DIR",
+  "OC_BIND_ADDRESS",
+  "OC_TARGET_LOCATION",
+  "OC_WSL_DISTRO",
+  "OC_SSH_HOST",
+  "OC_REMOTE_PATH",
+  "OC_COMPOSE_PROJECT",
+  "OC_WATCH_WEBHOOK",
+  "OC_WATCH_HEARTBEAT_URL",
+  "OC_WATCH_WEBHOOK_FORMAT",
+  "OC_WATCH_TELEGRAM_CHAT_ID",
+  "OC_WATCH_DISK_MIN_MB",
+  "OC_BACKUP_KEEP",
+  "OC_SNAPSHOT_KEEP",
+] as const;
+
+/** Names (never values — some are secrets) of exported variables that `fileEnv` lacks or
+ *  disagrees with. */
+export function shellOnlyEnvNames(fileEnv: Env, shellEnv: NodeJS.ProcessEnv): string[] {
+  return ENV_FILE_ONLY_VARS.filter((name) => {
+    const shellValue = shellEnv[name];
+    return shellValue !== undefined && shellValue !== fileEnv[name];
+  });
+}
+
+/** The one-line stderr warning for shell-exported variables loadEnv() ignores. */
+export function shellOnlyEnvWarning(fileEnv: Env, shellEnv: NodeJS.ProcessEnv, file: string): string | undefined {
+  const names = shellOnlyEnvNames(fileEnv, shellEnv);
+  if (names.length === 0) return undefined;
+  const plural = names.length > 1;
+  return `warning: ${names.join(", ")} ${plural ? "are" : "is"} set in the shell but ignored — ` +
+    `this tool reads .env only (${file}); set ${plural ? "them" : "it"} there`;
+}
+
+let shellOnlyEnvWarned = false;
+
 export async function loadEnv(): Promise<Env> {
   const file = envFile();
   try {
@@ -162,7 +203,15 @@ export async function loadEnv(): Promise<Env> {
   } catch {
     die(`${file} not found. Run ./clawforge bootstrap first.`);
   }
-  return parseEnv(await readFile(file, "utf8"));
+  const env = parseEnv(await readFile(file, "utf8"));
+  if (!shellOnlyEnvWarned) {
+    const warning = shellOnlyEnvWarning(env, process.env, file);
+    if (warning !== undefined) {
+      process.stderr.write(`${warning}\n`);
+      shellOnlyEnvWarned = true;
+    }
+  }
+  return env;
 }
 
 export interface Settings {

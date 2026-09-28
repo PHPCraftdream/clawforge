@@ -76,7 +76,7 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
       `${probe} needs root and sudo asks for a password, which cannot be typed here.\n` +
         "Prepare it once on the target — everything this deployment will need, not just this path:\n" +
         advice.map((line) => `  ${line}`).join("\n") +
-        "\nor point OC_DATA_DIR (and OC_BACKUP_DIR/OC_SNAPSHOT_DIR) at directories you already own.",
+        "\nor point OC_DATA_DIR (and OC_BACKUP_DIR/OC_SNAPSHOT_DIR) in the deployment's .env at directories you already own.",
     );
   }
   return ["sudo", "-n"];

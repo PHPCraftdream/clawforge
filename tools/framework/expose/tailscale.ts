@@ -15,6 +15,14 @@
 //   is legacy syntax the current CLI translates or rejects — not used here.
 //   https://tailscale.com/docs/reference/tailscale-cli/funnel confirms the split: `serve` stays
 //   inside the tailnet, `funnel` "shares a local service over the internet" — never run here.
+//
+// Turning ONE route off (tailscaleGatewayRoutes/tailscaleServeOffCommand, for incident's
+// contain phase): per the same CLI reference, "off" is the original serve invocation's own
+// flags repeated with `off` appended — `--https=<port> off` for the bare-target form this
+// module applies, `--set-path=<mount> off` added only for a mount other than "/". `serve
+// status --json` reports the ipn.ServeConfig shape (tailscale/tailscale, ipn/serve.go):
+// `Web["<host>:<port>"].Handlers["<mount>"].Proxy` names each route's backend, independent of
+// every other host:port entry — so turning one off never touches another service's mapping.
 
 import { log, info, die } from "#src/core/log.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
@@ -68,18 +76,50 @@ export function tailscaleServeCommand(gatewayPort: string): string[] {
   return ["tailscale", "serve", "--bg", `http://127.0.0.1:${gatewayPort}`];
 }
 
-/** Whether `tailscale serve` is proxying anything on the target right now — the same read
- *  `./clawforge expose status` prints verbatim. Read-only; false on any non-zero exit, which
- *  is also what "nothing configured" answers with. */
-export async function tailscaleServeActive(ctx: Context): Promise<boolean> {
-  const result = await ctx.transport.exec("tailscale", ["serve", "status"], { allowFailure: true });
-  return result.code === 0 && result.stdout.trim() !== "";
+/** One `tailscale serve` route that proxies to this gateway's own loopback port. */
+export interface TailscaleGatewayRoute {
+  /** "$SNI_NAME:$PORT", the Web map's own key. */
+  readonly hostPort: string;
+  /** The https port `--https=<port> off` needs — the numeric suffix of hostPort. */
+  readonly port: string;
+  /** The mount this route answers under ("/" for the bare-target form this module applies). */
+  readonly mountPoint: string;
 }
 
-/** Turns off every `tailscale serve` mapping on the target — incident response's "contain"
- *  step undoing exposeTailscale's own --apply. */
-export function tailscaleServeResetCommand(): string[] {
-  return ["tailscale", "serve", "reset"];
+/** Every route in `tailscale serve status --json` that proxies to 127.0.0.1:<gatewayPort> —
+ *  never any other service's mapping. `undefined` means the JSON did not parse as the
+ *  documented shape (see header): the caller must not guess at what to turn off from a shape
+ *  it does not recognise, and reports the exact manual command instead. */
+export async function tailscaleGatewayRoutes(ctx: Context, gatewayPort: string): Promise<TailscaleGatewayRoute[] | undefined> {
+  const result = await ctx.transport.exec("tailscale", ["serve", "status", "--json"], { allowFailure: true });
+  if (result.code !== 0) return undefined;
+  let parsed: { Web?: Record<string, { Handlers?: Record<string, { Proxy?: unknown }> }> };
+  try {
+    parsed = JSON.parse(result.stdout.trim() === "" ? "{}" : result.stdout) as typeof parsed;
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const target = `http://127.0.0.1:${gatewayPort}`;
+  const routes: TailscaleGatewayRoute[] = [];
+  for (const [hostPort, entry] of Object.entries(parsed.Web ?? {})) {
+    const port = /^.+:(\d+)$/.exec(hostPort)?.[1];
+    if (port === undefined) return undefined; // an unrecognized key shape — refuse to guess at any of it
+    for (const [mountPoint, handler] of Object.entries(entry?.Handlers ?? {})) {
+      if (handler?.Proxy === target) routes.push({ hostPort, port, mountPoint });
+    }
+  }
+  return routes;
+}
+
+/** Turns off exactly one route: the original invocation's own flags repeated with `off`
+ *  appended (see header) — never `tailscale serve reset`, which would wipe every other
+ *  mapping on the target too. */
+export function tailscaleServeOffCommand(route: TailscaleGatewayRoute): string[] {
+  const args = ["tailscale", "serve", `--https=${route.port}`];
+  if (route.mountPoint !== "/") args.push(`--set-path=${route.mountPoint}`);
+  args.push("off");
+  return args;
 }
 
 function parseArgs(args: string[]): { apply: boolean } {

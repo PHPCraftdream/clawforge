@@ -5,7 +5,7 @@
 // instance-lock.check.ts uses (a stub transport implementing just enough of mkdir/test/mv/rm
 // for instance-lock.ts's real claim/release code to run against).
 
-import { exposeTailscale, probeTailscale, tailscaleServeCommand } from "#framework/expose/tailscale.ts";
+import { exposeTailscale, probeTailscale, tailscaleServeCommand, tailscaleGatewayRoutes, tailscaleServeOffCommand } from "#framework/expose/tailscale.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport.ts";
@@ -80,6 +80,69 @@ check(
 check("a different gateway port comes through untouched", tailscaleServeCommand("2200"), [
   "tailscale", "serve", "--bg", "http://127.0.0.1:2200",
 ]);
+
+check(
+  "off command for the root mount needs no --set-path",
+  tailscaleServeOffCommand({ hostPort: "box.ts.net:443", port: "443", mountPoint: "/" }),
+  ["tailscale", "serve", "--https=443", "off"],
+);
+check(
+  "off command for a non-root mount names it with --set-path",
+  tailscaleServeOffCommand({ hostPort: "box.ts.net:443", port: "443", mountPoint: "/foo" }),
+  ["tailscale", "serve", "--https=443", "--set-path=/foo", "off"],
+);
+
+// --- tailscaleGatewayRoutes: only the route(s) proxying to THIS gateway, never a guess ----------
+
+function jsonServeTransport(stdout: string, code = 0): Context["transport"] {
+  return {
+    description: "stub",
+    async exec(command: string, args: string[]): Promise<ExecResult> {
+      if (command === "tailscale" && args.join(" ") === "serve status --json") return { code, stdout, stderr: "" };
+      throw new Error(`unexpected exec: ${command} ${args.join(" ")}`);
+    },
+  } as unknown as Context["transport"];
+}
+
+{
+  const routes = await tailscaleGatewayRoutes(ctxFor(jsonServeTransport(JSON.stringify({
+    Web: { "box.ts.net:443": { Handlers: { "/": { Proxy: "http://127.0.0.1:18789" } } } },
+  }))), "18789");
+  check("the gateway's own route is found", routes, [{ hostPort: "box.ts.net:443", port: "443", mountPoint: "/" }]);
+}
+{
+  const routes = await tailscaleGatewayRoutes(ctxFor(jsonServeTransport(JSON.stringify({
+    Web: {
+      "box.ts.net:443": {
+        Handlers: {
+          "/": { Proxy: "http://127.0.0.1:18789" },
+          "/other": { Proxy: "http://127.0.0.1:9999" },
+        },
+      },
+      "box.ts.net:8443": { Handlers: { "/": { Proxy: "http://127.0.0.1:9999" } } },
+    },
+  }))), "18789");
+  check("every other service's own route is left out", routes, [{ hostPort: "box.ts.net:443", port: "443", mountPoint: "/" }]);
+}
+{
+  const routes = await tailscaleGatewayRoutes(ctxFor(jsonServeTransport("{}")), "18789");
+  check("no serve configuration at all: an empty list, not undefined", routes, []);
+}
+{
+  const routes = await tailscaleGatewayRoutes(ctxFor(jsonServeTransport("not valid json")), "18789");
+  check("unparseable JSON refuses to guess", routes, undefined);
+}
+{
+  const routes = await tailscaleGatewayRoutes(
+    ctxFor(jsonServeTransport(JSON.stringify({ Web: { "no-port-suffix-here": { Handlers: {} } } }))),
+    "18789",
+  );
+  check("a host:port key with no parseable port refuses to guess at any of it", routes, undefined);
+}
+{
+  const routes = await tailscaleGatewayRoutes(ctxFor(jsonServeTransport("", 1)), "18789");
+  check("a failing `tailscale serve status --json` refuses to guess", routes, undefined);
+}
 
 // --- probeTailscale: absent / logged out / present --------------------------------------------
 

@@ -1,11 +1,19 @@
-// `./clawforge incident` — contain, rotate, audit, collect: OpenClaw's own incident runbook,
-// run by the framework because the four steps each need something only it can reach (the
-// expose module, the deployment's own .env, the security gate, a bounded log read).
+// `./clawforge incident` — contain, preserve, rotate, audit, collect: OpenClaw's own incident
+// runbook, run by the framework because the five steps each need something only it can reach
+// (the expose module, the deployment's own .env, the security gate, a bounded log read).
 //
-// contain: stop external exposure. `tailscale serve` is turned off on the target when active
-// (never touches anything else there); a gateway published on 0.0.0.0/:: refuses the whole
-// run first — before the lock, before any mutation — unless --keep-exposure says the operator
-// has already judged that acceptable.
+// contain: turns off, on the target, only the `tailscale serve` route(s) that proxy to THIS
+// gateway (tailscaleGatewayRoutes/tailscaleServeOffCommand in expose/tailscale.ts) — never
+// `tailscale serve reset`, which would also drop every other service's own route on that host.
+// When the route shape cannot be parsed reliably, nothing is turned off and the operator gets
+// the exact manual command instead of a guess. A gateway published on 0.0.0.0/:: refuses the
+// whole run first — before the lock, before any mutation — unless --keep-exposure says the
+// operator has already judged that acceptable. A contain failure (most commonly: this account
+// is not the tailscale operator on the target) is noted in the report, never thrown — rotate
+// runs regardless, because leaving a stale token in place is worse than leaving a stale route.
+//
+// preserve: before rotate recreates the container (and its json-file log with it), a log tail
+// and an env-redacted `docker inspect` of the running container go into the evidence directory.
 //
 // rotate: a fresh OPENCLAW_GATEWAY_TOKEN, generated the same way bootstrap does, written to
 // .env and recreated into the running container so it actually takes effect — a repo-env
@@ -15,12 +23,15 @@
 // audit: the security gate (security-audit/index.ts) plus `openclaw doctor --lint --json`,
 // both informational here — this command reports what they found, it does not gate on it.
 //
-// collect: a bounded log tail, both audit outputs and a short status summary, into a private,
-// owner-only directory under this deployment's own folder (apps/<name>/incidents/<ts>/ — the
-// whole apps/ tree is gitignored, so this is never part of the repository's tracked history),
-// with a manifest naming what is inside. Every file goes through maskSecrets() before it is
+// collect: a bounded log tail (of whatever is running by then), both audit outputs and a short
+// status summary, joined with preserve's own files into ONE manifest naming everything this run
+// wrote — into a private, owner-only directory under this deployment's own folder
+// (apps/<name>/incidents/<ts>/ — the whole apps/ tree is gitignored, so this is never part of
+// the repository's tracked history). Every file goes through maskSecrets() before it is
 // written: these are raw captures, not the log/info calls that already carry known secrets
-// registered for masking.
+// registered for masking. Written unconditionally, even when rotate or audit failed: a failed
+// phase's own IncidentPhaseFailure carries the report so the operator still sees where the
+// evidence landed, and the original failure still reaches them afterwards as a non-zero exit.
 //
 // Mutating — guarded() takes the instance lock, and it is marked destructive. --dry-run prints
 // the plan and performs none of it, not even taking the lock, on upgrade's own precedent.
@@ -35,7 +46,7 @@ import { guarded } from "../runtime/instance-lock.ts";
 import { envFile, deploymentDir, deploymentName } from "../runtime/deployment.ts";
 import { upsertEnvValue } from "../security/private-config.ts";
 import { replacePrivateFile, createPrivateFile, protectPrivateDirectory } from "../security/private-file.ts";
-import { probeTailscale, tailscaleServeActive, tailscaleServeResetCommand } from "../expose/tailscale.ts";
+import { probeTailscale, tailscaleGatewayRoutes, tailscaleServeOffCommand } from "../expose/tailscale.ts";
 import { summarizeExposure, exposureOneLiner } from "../expose/status.ts";
 import { runSecurityAudit, type SecurityAuditReport } from "../security-audit/index.ts";
 import { blockingProblems } from "../service/inspection.ts";
@@ -47,7 +58,7 @@ interface IncidentOptions {
 }
 
 export interface IncidentPhase {
-  readonly phase: "contain" | "rotate" | "audit" | "collect";
+  readonly phase: "contain" | "preserve" | "rotate" | "audit" | "collect";
   readonly actions: readonly string[];
   readonly notes: readonly string[];
 }
@@ -56,9 +67,24 @@ export interface IncidentReport {
   readonly deployment: string;
   readonly dryRun: boolean;
   readonly phases: readonly IncidentPhase[];
-  readonly security: SecurityAuditReport;
+  /** Absent when audit itself threw before producing one — the report still reaches the
+   *  operator, with the audit phase's own note naming why. */
+  readonly security?: SecurityAuditReport;
   /** Where the evidence was written, absent in --dry-run. */
   readonly archive?: string;
+}
+
+/** Thrown by runPhases when rotate or audit fails. Carries the report built so far — contain,
+ *  preserve and collect all still ran, so the operator sees exactly what this run did before
+ *  the original failure reaches them as a non-zero exit (incident() rethrows `cause`
+ *  unchanged). */
+export class IncidentPhaseFailure extends Error {
+  readonly report: IncidentReport;
+  constructor(report: IncidentReport, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "IncidentPhaseFailure";
+    this.report = report;
+  }
 }
 
 function parseArgs(args: string[]): IncidentOptions {
@@ -100,14 +126,19 @@ export async function refuseIfPubliclyExposed(ctx: Context, options: IncidentOpt
   if (!options.keepExposure) {
     die(
       `the gateway is published on ${summary.bindAddress}:${summary.port} — reachable from every interface on ` +
-        "this host. Refusing to run an incident response while it may still be reachable from outside: set " +
-        "OC_BIND_ADDRESS=127.0.0.1 in .env and ./clawforge up to recreate, or pass --keep-exposure if this " +
-        "exposure is already handled elsewhere (a reverse proxy, a security group, ...).",
+        "this host. Refusing to run an incident response while it may still be reachable from outside. To fix " +
+        `it: set OC_BIND_ADDRESS=127.0.0.1 in ${envFile()}, then run ./clawforge up to recreate the gateway on ` +
+        "loopback. Or pass --keep-exposure if this exposure is already handled elsewhere (a reverse proxy, a " +
+        "security group, ...).",
     );
   }
   warn(`proceeding with the gateway published on ${summary.bindAddress}:${summary.port} — --keep-exposure was given`);
 }
 
+/** Turns off only the tailscale serve route(s) that proxy to THIS gateway. Never throws: a
+ *  contain failure (most commonly, this account is not the tailscale operator on the target)
+ *  is reported as a note, because leaving a stale exposure noted is better than skipping
+ *  rotate over it — rotate runs regardless of what happens here. */
 export async function containExposure(ctx: Context, options: IncidentOptions): Promise<IncidentPhase> {
   const actions: string[] = [];
   const notes: string[] = [];
@@ -115,20 +146,42 @@ export async function containExposure(ctx: Context, options: IncidentOptions): P
   const probe = await probeTailscale(ctx);
   if (!probe.present || !probe.loggedIn) {
     actions.push(`tailscale: ${probe.detail} — nothing to turn off`);
-  } else {
-    const active = await tailscaleServeActive(ctx);
-    if (!active) {
-      actions.push("tailscale serve was not active — nothing to turn off");
-    } else if (options.dryRun) {
-      actions.push("would run: tailscale serve reset (turn off tailscale serve on the target)");
-    } else {
-      const command = tailscaleServeResetCommand();
-      const result = await ctx.transport.exec(command[0], command.slice(1), { allowFailure: true });
-      if (result.code !== 0) {
-        throw new Error(`tailscale serve reset failed (exit ${result.code}): ${(result.stderr || result.stdout).trim()}`);
-      }
-      actions.push("ran: tailscale serve reset");
+    return { phase: "contain", actions, notes };
+  }
+
+  const routes = await tailscaleGatewayRoutes(ctx, ctx.settings.gatewayPort);
+  if (routes === undefined) {
+    notes.push(
+      "could not reliably parse `tailscale serve status --json` on the target — turned nothing off. If this " +
+        "gateway is exposed through tailscale serve, turn it off yourself: `tailscale serve --https=443 off` " +
+        "(match the port `tailscale serve status` shows), or `tailscale serve reset` to clear every route on " +
+        "that host, including any that belong to other services.",
+    );
+    return { phase: "contain", actions, notes };
+  }
+  if (routes.length === 0) {
+    actions.push("tailscale serve has no route to this gateway — nothing to turn off");
+    return { phase: "contain", actions, notes };
+  }
+
+  for (const route of routes) {
+    const command = tailscaleServeOffCommand(route);
+    const label = `${route.hostPort}${route.mountPoint}`;
+    if (options.dryRun) {
+      actions.push(`would run: ${command.join(" ")} (turn off tailscale serve route ${label})`);
+      continue;
     }
+    const result = await ctx.transport.exec(command[0], command.slice(1), { allowFailure: true });
+    if (result.code !== 0) {
+      const detail = (result.stderr || result.stdout).trim();
+      const hint = /access denied|operator/i.test(detail)
+        ? " — this account is likely not the tailscale operator on the target; run `sudo tailscale set " +
+          "--operator=$USER` there, then re-run incident to finish containment"
+        : "";
+      notes.push(`could not turn off tailscale serve route ${label} (exit ${result.code}): ${detail}${hint}`);
+      continue;
+    }
+    actions.push(`ran: ${command.join(" ")} (turned off route ${label})`);
   }
 
   return { phase: "contain", actions, notes };
@@ -241,11 +294,48 @@ function incidentDir(timestamp: string): string {
   return resolve(deploymentDir(), "incidents", timestamp);
 }
 
+/** Saves a log tail and an env-redacted `docker inspect` of the container running RIGHT NOW, before
+ *  rotate's reconcile() can recreate it and take the old one's json-file log with it. Never
+ *  throws: a snapshot failure is noted, not fatal — rotate must still run. */
+export async function preserveEvidence(
+  ctx: Context,
+  options: IncidentOptions,
+  dir: string,
+): Promise<IncidentPhase & { files: readonly string[] }> {
+  const actions: string[] = [];
+  const notes: string[] = [];
+
+  if (options.dryRun) {
+    actions.push("would preserve a log tail and `docker inspect` of the current container before rotate recreates it");
+    return { phase: "preserve", actions, notes, files: [] };
+  }
+
+  let snapshot: { logs: string; inspect: string } | undefined;
+  try {
+    snapshot = await ctx.runtime.captureIncidentSnapshot?.(options.tail);
+  } catch (error) {
+    notes.push(`could not snapshot the running container before rotate: ${(error as Error).message}`);
+    return { phase: "preserve", actions, notes, files: [] };
+  }
+  if (snapshot === undefined) {
+    notes.push(`${ctx.runtime.description} has nothing running to snapshot, or cannot introspect it — no pre-rotate evidence to preserve`);
+    return { phase: "preserve", actions, notes, files: [] };
+  }
+
+  await protectPrivateDirectory(dir);
+  await createPrivateFile(resolve(dir, "pre-rotate-logs.txt"), maskSecrets(snapshot.logs));
+  await createPrivateFile(resolve(dir, "pre-rotate-inspect.json"), maskSecrets(snapshot.inspect));
+  actions.push(`preserved the pre-rotate container's log tail and inspect into ${dir}`);
+  return { phase: "preserve", actions, notes, files: ["pre-rotate-logs.txt", "pre-rotate-inspect.json"] };
+}
+
 export async function collectEvidence(
   ctx: Context,
   options: IncidentOptions,
-  security: SecurityAuditReport,
-  doctorLint: { raw: string; error?: string },
+  dir: string,
+  preservedFiles: readonly string[],
+  security: SecurityAuditReport | undefined,
+  doctorLint: { raw: string; error?: string } | undefined,
 ): Promise<IncidentPhase & { archive?: string }> {
   const actions: string[] = [];
   if (options.dryRun) {
@@ -253,17 +343,15 @@ export async function collectEvidence(
     return { phase: "collect", actions, notes: [] };
   }
 
-  const timestamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
-  const dir = incidentDir(timestamp);
   await protectPrivateDirectory(dir);
 
   const logs = await ctx.runtime.readLogs(options.tail).catch((error: unknown) => `(could not read logs: ${(error as Error).message})`);
   await createPrivateFile(resolve(dir, "logs.txt"), maskSecrets(logs));
-  await createPrivateFile(resolve(dir, "security-audit.json"), maskSecrets(JSON.stringify(security, null, 2)));
-  await createPrivateFile(resolve(dir, "doctor-lint.json"), maskSecrets(doctorLint.raw === "" ? "{}" : doctorLint.raw));
+  await createPrivateFile(resolve(dir, "security-audit.json"), maskSecrets(JSON.stringify(security ?? { findings: [], problems: [] }, null, 2)));
+  await createPrivateFile(resolve(dir, "doctor-lint.json"), maskSecrets(doctorLint === undefined || doctorLint.raw === "" ? "{}" : doctorLint.raw));
   await createPrivateFile(resolve(dir, "status.txt"), maskSecrets(await captureStatus(ctx)));
 
-  const files = ["logs.txt", "security-audit.json", "doctor-lint.json", "status.txt"];
+  const files = [...preservedFiles, "logs.txt", "security-audit.json", "doctor-lint.json", "status.txt"];
   await createPrivateFile(
     resolve(dir, "manifest.json"),
     `${JSON.stringify({ createdAt: new Date().toISOString(), deployment: deploymentName(), files }, null, 2)}\n`,
@@ -283,19 +371,63 @@ function render(report: IncidentReport): void {
   if (report.archive !== undefined) info(`evidence: ${report.archive}`);
 }
 
-async function runPhases(ctx: Context, options: IncidentOptions): Promise<IncidentReport> {
-  const contain = await containExposure(ctx, options);
-  const rotate = await rotateToken(ctx, options);
-  const { phase: audit, security, doctorLint } = await runAudits(ctx);
-  const collect = await collectEvidence(ctx, options, security, doctorLint);
+/** contain → preserve → rotate → audit → collect. Preserve and collect always run and always
+ *  write their evidence — collect's write is unconditional even when rotate or audit failed —
+ *  so a phase failure is carried on the thrown IncidentPhaseFailure rather than swallowed: the
+ *  operator sees the full report AND the original error still reaches them as a non-zero exit
+ *  (incident() below). */
+export async function runPhases(ctx: Context, options: IncidentOptions): Promise<IncidentReport> {
+  const contain = await containExposure(ctx, options).catch((error: unknown): IncidentPhase => ({
+    phase: "contain",
+    actions: [],
+    notes: [`contain failed unexpectedly: ${(error as Error).message} — rotate proceeds regardless`],
+  }));
 
-  return {
+  const dir = incidentDir(new Date().toISOString().replaceAll(/[:.]/g, "-"));
+  const preserve = await preserveEvidence(ctx, options, dir);
+
+  let rotate: IncidentPhase;
+  let rotateError: unknown;
+  try {
+    rotate = await rotateToken(ctx, options);
+  } catch (error) {
+    rotateError = error;
+    rotate = { phase: "rotate", actions: [], notes: [`rotate failed: ${(error as Error).message}`] };
+  }
+
+  let audit: IncidentPhase;
+  let security: SecurityAuditReport | undefined;
+  let doctorLint: { raw: string; error?: string } | undefined;
+  let auditError: unknown;
+  try {
+    const result = await runAudits(ctx);
+    audit = result.phase;
+    security = result.security;
+    doctorLint = result.doctorLint;
+  } catch (error) {
+    auditError = error;
+    audit = { phase: "audit", actions: [], notes: [`audit failed: ${(error as Error).message}`] };
+  }
+
+  const collect = await collectEvidence(ctx, options, dir, preserve.files, security, doctorLint);
+
+  const report: IncidentReport = {
     deployment: deploymentName(),
     dryRun: options.dryRun,
-    phases: [contain, rotate, audit, { phase: collect.phase, actions: collect.actions, notes: collect.notes }],
+    phases: [
+      contain,
+      { phase: preserve.phase, actions: preserve.actions, notes: preserve.notes },
+      rotate,
+      audit,
+      { phase: collect.phase, actions: collect.actions, notes: collect.notes },
+    ],
     security,
     archive: collect.archive,
   };
+
+  const failure = rotateError ?? auditError;
+  if (failure !== undefined) throw new IncidentPhaseFailure(report, failure);
+  return report;
 }
 
 export async function incident(ctx: Context, args: string[]): Promise<void> {
@@ -306,9 +438,19 @@ export async function incident(ctx: Context, args: string[]): Promise<void> {
   // reachable is not a plan worth printing.
   await refuseIfPubliclyExposed(ctx, options);
 
-  const report = options.dryRun
-    ? await runPhases(ctx, options)
-    : await guarded(ctx, "incident", args, () => runPhases(ctx, options));
+  let report: IncidentReport;
+  try {
+    report = options.dryRun
+      ? await runPhases(ctx, options)
+      : await guarded(ctx, "incident", args, () => runPhases(ctx, options));
+  } catch (error) {
+    if (!(error instanceof IncidentPhaseFailure)) throw error;
+    // Evidence is already on disk (preserve/collect ran unconditionally) — the report is shown
+    // so the operator knows where, and then the ORIGINAL failure propagates unchanged.
+    if (jsonOnly || isCaptured()) emit(`${JSON.stringify(error.report, null, 2)}\n`);
+    else render(error.report);
+    throw error.cause;
+  }
 
   if (jsonOnly || isCaptured()) {
     emit(`${JSON.stringify(report, null, 2)}\n`);

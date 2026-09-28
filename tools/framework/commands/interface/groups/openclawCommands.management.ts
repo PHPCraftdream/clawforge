@@ -526,24 +526,36 @@ export const managementCommands: Record<string, AppCommand> = {
     ],
   },
   incident: {
-    summary: "Incident response: contain exposure, rotate the gateway token, audit, collect evidence",
+    summary: "Incident response: contain exposure, preserve evidence, rotate the gateway token, audit, collect",
     group: "security-access",
     run: incident,
     destructive: true,
     readOnlyWhen: (args) => args.includes("--dry-run"),
     details:
-      "OpenClaw's own incident runbook, in order: contain — turn off `tailscale serve` on the " +
-      "target when it is active; refuses the whole run outright while the gateway is published " +
-      "on every interface (0.0.0.0/::), unless --keep-exposure says that is already handled " +
-      "elsewhere. rotate — a fresh OPENCLAW_GATEWAY_TOKEN, written to .env and recreated into " +
-      "the running container so it actually takes effect (a repo-env value like this one is " +
-      "fixed at container-creation time); every MCP client paired against the old token needs " +
+      "OpenClaw's own incident runbook, in order: contain — turns off, on the target, only the " +
+      "`tailscale serve` route(s) that proxy to THIS gateway (never `tailscale serve reset`, " +
+      "which would also drop every other service's own route on that host); when the route " +
+      "shape cannot be parsed reliably, nothing is turned off and the exact manual command is " +
+      "printed instead. Refuses the whole run outright while the gateway is published on every " +
+      "interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and ./clawforge up, or pass " +
+      "--keep-exposure if that is already handled elsewhere. A contain failure (most commonly, " +
+      "this account is not the tailscale operator on the target — the report names the fix) is " +
+      "noted, never fatal: rotate still runs. preserve — before rotate can recreate the " +
+      "container, a log tail and a raw `docker inspect` of the container running right now are " +
+      "written into this run's own evidence directory; compose removes the old container once " +
+      "the new one is up, and its json-file log goes with it, so this has to happen first. " +
+      "rotate — a fresh OPENCLAW_GATEWAY_TOKEN, written to .env and recreated into the running " +
+      "container so it actually takes effect (a repo-env value like this one is fixed at " +
+      "container-creation time); every MCP client paired against the old token needs " +
       "./clawforge mcp-creds again. audit — the same security gate `./clawforge doctor`/`./clawforge accept` " +
       "run, plus `openclaw doctor --lint`, both reported here rather than gating the run. collect " +
-      "— a bounded log tail, both audit outputs and a short status summary into a private, " +
-      "owner-only apps/<name>/incidents/<timestamp>/ directory with a manifest — never inside " +
-      "the repository's tracked tree (apps/ is gitignored wholesale); every file is masked for " +
-      "known secrets before it is written.\n" +
+      "— a bounded log tail of whatever is running by then, both audit outputs and a short " +
+      "status summary, joined with preserve's own files into one manifest, into a private, " +
+      "owner-only apps/<name>/incidents/<timestamp>/ directory — never inside the repository's " +
+      "tracked tree (apps/ is gitignored wholesale); every file is masked for known secrets " +
+      "before it is written. preserve and collect run and write unconditionally, even when " +
+      "rotate or audit fails: the report still shows where the evidence landed, and the " +
+      "original failure still reaches you afterwards as a non-zero exit.\n" +
       "Mutating (rotate recreates the gateway) — takes the instance lock. --dry-run prints the " +
       "plan and performs none of it, not even taking the lock.",
     arguments: [

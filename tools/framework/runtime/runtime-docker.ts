@@ -9,6 +9,7 @@ import { composeFile, locksDir, toSettings, loadEnv, type Settings } from "../co
 import { deploymentDir, composeProjectName } from "./deployment.ts";
 import { machineName, ownProcessStartedAt, sweepStaleComposeEnvs } from "../security/instance-mutation-guard.ts";
 import { resolveImageDigest, lastExitCode } from "../diagnostics/image-digest.ts";
+import { captureIncidentSnapshot } from "../diagnostics/incident-snapshot.ts";
 import type { PathBridge } from "../core/paths.ts";
 import type { ExecResult, Transport } from "./transport.ts";
 import { HelperNotRunning, NotBootstrapped, type Runtime, type RunOneOffOptions, type Stack, type StackServiceState } from "./runtime.ts";
@@ -372,6 +373,9 @@ export class DockerRuntime implements Runtime {
   async lastExitCode(): Promise<number | undefined> {
     return lastExitCode(this.#transport, await this.#containerId());
   }
+  async captureIncidentSnapshot(tail: string): Promise<{ logs: string; inspect: string } | undefined> {
+    return captureIncidentSnapshot(this.#transport, await this.#containerId(), tail);
+  }
 
   async imageReference(): Promise<string | undefined> {
     const result = await this.#transport.exec(
@@ -561,12 +565,7 @@ export class DockerRuntime implements Runtime {
     return this.#execInContainer(service, "node", ["dist/index.js", ...args], options);
   }
 
-  async execCommand(
-    service: string,
-    command: string,
-    args: string[],
-    options: { input?: string; allowFailure?: boolean; timeoutMs?: number } = {},
-  ): Promise<ExecResult> {
+  async execCommand(service: string, command: string, args: string[], options: { input?: string; allowFailure?: boolean; timeoutMs?: number } = {}): Promise<ExecResult> {
     return this.#execInContainer(service, command, args, options);
   }
 

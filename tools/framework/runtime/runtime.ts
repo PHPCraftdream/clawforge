@@ -132,6 +132,13 @@ export interface Runtime {
   runningConnectionFacts?(): Promise<
     { dataDir?: string; port?: string; bindAddress?: string; composeProject?: string; image?: string } | undefined
   >;
+  /** A log tail plus an env-redacted `docker inspect` dump of the container this deployment is running
+   *  right NOW — for incident evidence, captured before a caller mutates it (rotateToken's
+   *  reconcile recreates the container, and the old one's json-file log goes with it once
+   *  compose removes it). Undefined when there is nothing running to snapshot or this runtime
+   *  cannot introspect it. */
+  captureIncidentSnapshot?(tail: string): Promise<{ logs: string; inspect: string } | undefined>;
+
   /** When the running instance started, as epoch milliseconds, or undefined when it is not
    *  running.
    *

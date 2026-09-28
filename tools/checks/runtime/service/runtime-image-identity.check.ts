@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { DockerRuntime, serializeComposeEnv } from "#framework/runtime/docker/runtime-docker.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import type { ExecOptions, ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
-import { createTransport, spawnLocal } from "#framework/runtime/transport/transport.ts";
+import { LocalTransport, spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { parseEnv, locksDir, type Settings } from "#framework/core/env.ts";
 import { machineName, ownProcessStartedAt } from "#framework/runtime/lock/process-identity.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
@@ -484,7 +484,9 @@ if (runnableImage === undefined) {
   }));
   await writeFile(envPath, envBody(OLD), "utf8");
   useDeployment(deployDir);
-  const local = await createTransport({ location: "local" });
+  // LocalTransport directly: bypasses ./clawforge's own LOCAL_TARGET_UNSUPPORTED refusal
+  // to exec `docker` on whatever host has it on PATH, gated on above.
+  const local = new LocalTransport();
   // DockerRuntime composes the framework's own docker-compose.yml (the real gateway
   // definition); the fixture proves the recreate mechanics with a scratch definition instead —
   // everything else (env-file plumbing, project naming, the up verb, real docker) is

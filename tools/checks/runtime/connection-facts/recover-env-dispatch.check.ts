@@ -123,8 +123,14 @@ const recoverApp: AppDefinition = {
 
 // .env WITHOUT OC_DATA_DIR — the fact recovery exists to fill, and the fact the settings
 // parser dies on. Everything a transport needs is present.
+// wsl rather than local: createTransport() now refuses `local` on a non-Linux host
+// (LOCAL_TARGET_UNSUPPORTED, transport/transport.ts), and this check must pass on every
+// host these checks run on. wsl needs no real distro to reach this test's own refusal —
+// the transport is constructed either way; only exec() would ever touch wsl.exe, and every
+// exec failure here (absent wsl.exe, absent distro, or a real but non-matching container)
+// is swallowed the same way by runningConnectionFactsWithoutContext's catch.
 const seedWithoutDataDir = [
-  "OC_TARGET_LOCATION=local",
+  "OC_TARGET_LOCATION=wsl",
   "OPENCLAW_GATEWAY_PORT=9999",
   `OPENCLAW_GATEWAY_TOKEN=${TOKEN}`,
   "",
@@ -283,7 +289,9 @@ try {
     await writeFile(
       envFile(),
       [
-        "OC_TARGET_LOCATION=local",
+        // Same reasoning as seedWithoutDataDir above: wsl, not local, so this passes on
+        // every host regardless of the LOCAL_TARGET_UNSUPPORTED refusal.
+        "OC_TARGET_LOCATION=wsl",
         `OPENCLAW_GATEWAY_TOKEN=${TOKEN}`,
         "",
       ].join("\n"),

@@ -57,6 +57,16 @@ All notable changes to `@clawforge/framework` will be documented here.
   check suite, typecheck/lint) inside the official `node:24` image via Docker, from a clean
   `git ls-files` snapshot — never the host's own `node_modules/`. Refuses with the next step
   when Docker is not installed or its daemon is not answering, instead of failing unhelpfully.
+* A `local` target (explicit `OC_TARGET_LOCATION=local`, or `auto` resolving to it) is now
+  refused with a named error (`LOCAL_TARGET_UNSUPPORTED`) on a host that is not Linux —
+  `local` only ever runs the target-side commands this framework issues, and those are
+  GNU/Linux-specific. Windows and macOS were previously able to select `local` (macOS also
+  via `auto`) and fail on the first target command instead; the refusal now fires before
+  `createTransport()` builds anything, names the host OS and the next step
+  (`OC_TARGET_LOCATION=ssh`, or on Windows also `OC_TARGET_LOCATION=wsl`). `auto` on Windows
+  still resolves to `wsl`, and commands needing no target (`check`, `new-app`, `version`,
+  `help`, `list`) are unaffected. See docs/guide/requirements.md for the supported host ×
+  target matrix.
 
 ### Fixed
 

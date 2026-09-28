@@ -32,7 +32,9 @@ try {
   await recipe(custom, "custom");
   await recipe(defaultRoot, "default");
   await recipe(join(sourceRoot, "recipes"), "source");
-  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\n`);
+  // wsl, not local: createTransport() refuses `local` on a non-Linux host
+  // (LOCAL_TARGET_UNSUPPORTED); nothing here execs through the transport it builds.
+  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=wsl\n`);
 
   const command = {
     summary: "list recipes",

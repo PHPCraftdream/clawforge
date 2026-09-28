@@ -7,7 +7,9 @@ import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-structured-"));
 try {
   await mkdir(join(root, "config"));
-  await writeFile(join(root, ".env"), "OC_DATA_DIR=/tmp/fixture\nOC_TARGET_LOCATION=local\n");
+  // wsl, not local: createTransport() refuses `local` on a non-Linux host
+  // (LOCAL_TARGET_UNSUPPORTED); the fixture command below never execs through the transport.
+  await writeFile(join(root, ".env"), "OC_DATA_DIR=/tmp/fixture\nOC_TARGET_LOCATION=wsl\n");
   const modulePath: Record<string, string> = {
     "mcp-server": "integration/mcp/server",
     deployment: "runtime/deployment",

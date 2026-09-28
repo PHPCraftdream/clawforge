@@ -61,13 +61,16 @@ class MemoryTransport implements Transport {
   clientInvocation(entryPath: string, args: string[]): { command: string; args: string[] } { return { command: entryPath, args }; }
 }
 
+// OC_TARGET_LOCATION=wsl throughout, not local: createTransport() refuses `local` on a
+// non-Linux host (LOCAL_TARGET_UNSUPPORTED, transport/transport.ts), and nothing below ever
+// execs through the transport it builds — only createContext() needs one to succeed.
 try {
   await mkdir(join(root, "data", "config"), { recursive: true });
   await mkdir(join(root, "config"), { recursive: true });
   await writeFile(
     join(root, ".env"),
     `OC_DATA_DIR=${join(root, "data")}
-OC_TARGET_LOCATION=local
+OC_TARGET_LOCATION=wsl
 OPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token
 `,
   );
@@ -114,15 +117,15 @@ OPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token
   assert.equal(result.serviceUrl, "http://127.0.0.1:19999");
   assert.deepEqual(result.needed, [{ name: "APP_SECRET", location: "target-env", usedBy: "hook fixture", required: true }]);
 
-  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_PORT=18888\nOPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token\n`);
+  await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=wsl\nOPENCLAW_GATEWAY_PORT=18888\nOPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token\n`);
   const explicitOutput: string[] = [];
   await withOutputSink((chunk) => explicitOutput.push(chunk), () => runApp(app, ["inspect"]));
   const explicit = JSON.parse(explicitOutput.join("")) as { gatewayPort: string; serviceUrl: string };
   assert.equal(explicit.gatewayPort, "18888");
   assert.equal(explicit.serviceUrl, "http://127.0.0.1:18888");
 
-  const explicitEnv = `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_PORT=18888\nOPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token\n`;
-  await writeFile(join(root, ".env"), "OC_TARGET_LOCATION=local\n");
+  const explicitEnv = `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=wsl\nOPENCLAW_GATEWAY_PORT=18888\nOPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token\n`;
+  await writeFile(join(root, ".env"), "OC_TARGET_LOCATION=wsl\n");
   const defaultContext = await createContext({ settings: () => ({ OC_DATA_DIR: join(root, "data"), OPENCLAW_GATEWAY_PORT: "19999" }) });
   assert.equal(defaultContext.settings.dataDir, join(root, "data"));
   assert.equal(defaultContext.settings.gatewayPort, "19999");

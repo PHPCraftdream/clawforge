@@ -29,6 +29,9 @@ The tooling installs nothing: when a dependency is missing it stops and says wha
 missing. Under WSL either Docker Desktop with integration enabled or a native Docker Engine
 works.
 
+Which target (`local`/`wsl`/`ssh`) a given host OS can run is a fixed matrix, not a free
+choice — see [docs/guide/requirements.md](docs/guide/requirements.md).
+
 ## Quick start
 
 ```bash
@@ -149,6 +152,8 @@ Low-level:
 
 ## Documentation
 
+* [docs/guide/requirements.md](docs/guide/requirements.md) — which target (`local`/`wsl`/`ssh`)
+  each host OS can run, what each combination means, how to test it
 * [docs/guide/commands.md](docs/guide/commands.md) — full command reference: every argument
   and behavior, plus `./clawforge host`
 * [docs/guide/operations.md](docs/guide/operations.md) — changing the declared configuration

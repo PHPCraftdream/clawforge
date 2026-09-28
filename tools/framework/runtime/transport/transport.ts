@@ -33,16 +33,45 @@ export interface TransportConfig {
   location?: string;
   wslDistro?: string;
   sshHost?: string;
+  /** Host OS for the `local`/`auto` refusal; injectable for checks. A `string`, not
+   *  `NodeJS.Platform`: this is public API and consumers may have no `@types/node`. */
+  platform?: string;
 }
 
-/** Picks the transport. "auto" means: Windows tooling reaches a WSL target, everything
- *  else is local. An explicit setting always wins. */
+/** A `local` target runs GNU/Linux-specific commands (`find -printf`, `stat -c`, `readlink -f`,
+ *  `tar --numeric-owner`, `/proc`, `/srv`), so only a Linux host can be one. */
+export class LocalTargetUnsupportedError extends Error {
+  readonly nextAction: string;
+  constructor(message: string, nextAction: string) {
+    super(message);
+    this.name = "LocalTargetUnsupportedError";
+    this.nextAction = nextAction;
+  }
+}
+
+/** Refuses before any transport is built or anything runs on a target. */
+function refuseLocalTarget(platform: string): never {
+  const nextAction = platform === "win32"
+    ? "set OC_TARGET_LOCATION=wsl (with OC_WSL_DISTRO naming a WSL2 distro), or OC_TARGET_LOCATION=ssh with OC_SSH_HOST=user@host"
+    : "set OC_TARGET_LOCATION=ssh with OC_SSH_HOST=user@host";
+  throw new LocalTargetUnsupportedError(
+    `LOCAL_TARGET_UNSUPPORTED  this host is ${platform}, and a local target needs Linux ` +
+    "(target commands are GNU/Linux-specific: find -printf, stat -c, readlink -f, sha256sum, " +
+    `tar --numeric-owner, /proc, /srv)\n    → ${nextAction}`,
+    nextAction,
+  );
+}
+
+/** Picks the transport. "auto": WSL on Windows, local on Linux, refusal elsewhere. An explicit
+ *  setting wins over auto-detection, but not over the local-target refusal. */
 export async function createTransport(config: TransportConfig = {}): Promise<Transport> {
   const location = (config.location ?? "auto").toLowerCase();
   const distro = config.wslDistro ?? "Ubuntu-24.04";
+  const platform = config.platform ?? process.platform;
 
   switch (location) {
     case "local":
+      if (platform !== "linux") refuseLocalTarget(platform);
       return new LocalTransport();
     case "wsl":
       return new WslTransport(distro);
@@ -54,7 +83,9 @@ export async function createTransport(config: TransportConfig = {}): Promise<Tra
       return new SshTransport(host);
     }
     case "auto":
-      return process.platform === "win32" ? new WslTransport(distro) : new LocalTransport();
+      if (platform === "win32") return new WslTransport(distro);
+      if (platform !== "linux") refuseLocalTarget(platform);
+      return new LocalTransport();
     default:
       return die(`unknown target location: ${location} (expected local, wsl, ssh or auto)`);
   }

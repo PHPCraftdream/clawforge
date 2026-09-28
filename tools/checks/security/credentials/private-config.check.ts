@@ -16,6 +16,7 @@ import { locksDir, parseEnv } from "#framework/core/env.ts";
 import { LocalTransport, WslTransport, spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
 assert.equal(upsertEnvValue("A=1\nB=2\n", "B", "updated"), "A=1\nB=updated\n");
 assert.equal(upsertEnvValue("A=1\n", "B", "added"), "A=1\nB=added\n");
@@ -131,19 +132,6 @@ process.stderr.write("all private-config checks passed\n");
 // factory call), so nothing leaks between groups; the real-transport group probes for `sh`
 // first and skips cleanly where there is none.
 
-let execFailed = 0;
-
-function checkExec(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  execFailed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
-
 async function rejectedExec(call: () => Promise<unknown>): Promise<boolean> {
   try {
     await call();
@@ -234,37 +222,37 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   const innerCommand = "node";
   const innerArgs = ["run.js", "--flag"];
 
-  checkExec("exactly one sh -c wrapper reaches the transport", wrappers.length, 1);
-  checkExec("the wrapper reads the env file path only from its positional argument", script.includes("file=$1"), true);
-  checkExec("the wrapper sources the resolved env file", script.includes('. "$file"'), true);
-  checkExec("Windows path conversion quotes the positional value", script.includes('cygpath -u -- "$file"'), true);
-  checkExec("the wrapper script never contains the marker", script.includes(MARKER), false);
-  checkExec("the env file path reaches the wrapper args", wrapperArgs.includes(write?.path ?? " never"), true);
-  checkExec(
+  check("exactly one sh -c wrapper reaches the transport", wrappers.length, 1);
+  check("the wrapper reads the env file path only from its positional argument", script.includes("file=$1"), true);
+  check("the wrapper sources the resolved env file", script.includes('. "$file"'), true);
+  check("Windows path conversion quotes the positional value", script.includes('cygpath -u -- "$file"'), true);
+  check("the wrapper script never contains the marker", script.includes(MARKER), false);
+  check("the env file path reaches the wrapper args", wrapperArgs.includes(write?.path ?? " never"), true);
+  check(
     "the wrapper tail carries the inner command unchanged",
     JSON.stringify(wrapperArgs.slice(wrapperArgs.length - (1 + innerArgs.length))) ===
       JSON.stringify([innerCommand, ...innerArgs]),
     true,
   );
-  checkExec("no exec argv ever contains the marker", argvLeak(events, MARKER), false);
+  check("no exec argv ever contains the marker", argvLeak(events, MARKER), false);
 
-  checkExec("the locks dir itself is mkdirped", events.some((event) => event.kind === "mkdirp" && event.path === EXEC_LOCKS), true);
-  checkExec(
+  check("the locks dir itself is mkdirped", events.some((event) => event.kind === "mkdirp" && event.path === EXEC_LOCKS), true);
+  check(
     "Transport.mkdirPrivate creates the private directory",
     privateDirs.length === 1 && privateDirs[0]?.path === directory,
     true,
   );
-  checkExec("the private directory is fresh under the locks dir", directory.startsWith(`${EXEC_LOCKS}/recipe-exec-`), true);
-  checkExec("the env file is that directory's env entry", write?.path, `${directory}/env`);
-  checkExec("the env file content is a shell-sourceable export", write?.content, `export CF_PROBE='${MARKER}'\n`);
-  checkExec("writePrivateFile is preferred over the fallback write", events.some((event) => event.kind === "writeFile"), false);
+  check("the private directory is fresh under the locks dir", directory.startsWith(`${EXEC_LOCKS}/recipe-exec-`), true);
+  check("the env file is that directory's env entry", write?.path, `${directory}/env`);
+  check("the env file content is a shell-sourceable export", write?.content, `export CF_PROBE='${MARKER}'\n`);
+  check("writePrivateFile is preferred over the fallback write", events.some((event) => event.kind === "writeFile"), false);
 
-  checkExec(
+  check(
     "the inner result comes back as-is",
     JSON.stringify(result),
     JSON.stringify({ code: 7, stdout: "inner-stdout", stderr: "inner-stderr" }),
   );
-  checkExec(
+  check(
     "the private directory is removed after the call",
     events.some((event) => event.kind === "remove" && event.path === directory && directory !== ""),
     true,
@@ -280,13 +268,13 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   const directories = events
     .filter((event): event is Extract<ExecEvent, { kind: "mkdirPrivate" }> => event.kind === "mkdirPrivate")
     .map((event) => event.path);
-  checkExec("two calls create two different private directories", directories.length === 2 && directories[0] !== directories[1], true);
-  checkExec(
+  check("two calls create two different private directories", directories.length === 2 && directories[0] !== directories[1], true);
+  check(
     "both live under the locks dir as recipe-exec-*",
     directories.every((directory) => directory.startsWith(`${EXEC_LOCKS}/recipe-exec-`)),
     true,
   );
-  checkExec(
+  check(
     "each private directory is removed again",
     events.filter((event) => event.kind === "remove" && directories.includes(event.path)).length,
     2,
@@ -300,14 +288,14 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   const quoted = `${MARKER}'quoted`;
   await execWithSecrets(execCtx, "sh", ["-c", "exit 0"], { env: { QUOTED: quoted } });
   const write = events.find((event): event is Extract<ExecEvent, { kind: "writePrivate" }> => event.kind === "writePrivate");
-  checkExec(
+  check(
     "the quoted value line is a shell-sourceable export",
     write?.content.startsWith("export QUOTED='") === true && write?.content.endsWith("'\n") === true,
     true,
   );
-  checkExec("the quote is escaped for the shell", write?.content.includes("'\\''"), true);
-  checkExec("the raw quoted value never appears unescaped", write?.content.includes(quoted), false);
-  checkExec("no argv carries the quoted value either", argvLeak(events, quoted), false);
+  check("the quote is escaped for the shell", write?.content.includes("'\\''"), true);
+  check("the raw quoted value never appears unescaped", write?.content.includes(quoted), false);
+  check("no argv carries the quoted value either", argvLeak(events, quoted), false);
 }
 
 // --- without writePrivateFile the writeFile(path, content, "600") fallback applies -----------
@@ -316,16 +304,16 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   const { ctx: execCtx, events } = secretsContext({ fallbackWrite: true });
   await execWithSecrets(execCtx, "sh", ["-c", "exit 0"], { env: { CF_PROBE: MARKER } });
   const writes = events.filter((event): event is Extract<ExecEvent, { kind: "writeFile" }> => event.kind === "writeFile");
-  checkExec("the fallback writes the env file once", writes.length, 1);
-  checkExec("the fallback writes with mode 600", writes[0]?.mode, "600");
-  checkExec("the fallback content is the same shell-sourceable export", writes[0]?.content, `export CF_PROBE='${MARKER}'\n`);
+  check("the fallback writes the env file once", writes.length, 1);
+  check("the fallback writes with mode 600", writes[0]?.mode, "600");
+  check("the fallback content is the same shell-sourceable export", writes[0]?.content, `export CF_PROBE='${MARKER}'\n`);
   const chmods = execEvents(events).filter((event) => event.command === "chmod");
-  checkExec(
+  check(
     "the fallback chmods the env file to 600",
     chmods.length === 1 && JSON.stringify(chmods[0].args) === JSON.stringify(["600", writes[0]?.path]),
     true,
   );
-  checkExec(
+  check(
     "the fallback still removes the private directory",
     events.some((event) => event.kind === "remove" && writes[0] !== undefined && event.path === parentOf(writes[0].path)),
     true,
@@ -342,9 +330,9 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   } catch (error) {
     message = (error as Error).message;
   }
-  checkExec("an inner exec failure rejects execWithSecrets with that error", message, "inner exec failed");
+  check("an inner exec failure rejects execWithSecrets with that error", message, "inner exec failed");
   const write = events.find((event): event is Extract<ExecEvent, { kind: "writePrivate" }> => event.kind === "writePrivate");
-  checkExec(
+  check(
     "the failed call still removes the private directory",
     events.some((event) => event.kind === "remove" && write !== undefined && event.path === parentOf(write.path)),
     true,
@@ -357,7 +345,7 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
   const { ctx: execCtx, events } = secretsContext({ innerResult: { code: 3, stdout: "plain", stderr: "" } });
   const result = await execWithSecrets(execCtx, "node", ["run.js"], { env: {} });
   const only = events[0];
-  checkExec(
+  check(
     "an empty env performs exactly one plain exec",
     events.length === 1 &&
       only?.kind === "exec" &&
@@ -365,8 +353,8 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
       JSON.stringify(only.args) === JSON.stringify(["run.js"]),
     true,
   );
-  checkExec("an empty env touches no private file or directory", events.some((event) => event.kind !== "exec"), false);
-  checkExec(
+  check("an empty env touches no private file or directory", events.some((event) => event.kind !== "exec"), false);
+  check(
     "the plain result still comes back as-is",
     JSON.stringify(result),
     JSON.stringify({ code: 3, stdout: "plain", stderr: "" }),
@@ -377,17 +365,17 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
 
 {
   const { ctx: execCtx, events } = secretsContext();
-  checkExec(
+  check(
     "an env name with invalid characters throws",
     await rejectedExec(() => execWithSecrets(execCtx, "sh", ["-c", "exit 0"], { env: { "BAD-NAME": MARKER } })),
     true,
   );
-  checkExec(
+  check(
     "a value containing a newline throws",
     await rejectedExec(() => execWithSecrets(execCtx, "sh", ["-c", "exit 0"], { env: { CF_PROBE: `${MARKER}\nsecond-line` } })),
     true,
   );
-  checkExec("validation rejects before any transport call", events.length, 0);
+  check("validation rejects before any transport call", events.length, 0);
 }
 
 // --- the real POSIX transport: the marker arrives only through the sourced env file -----------
@@ -402,12 +390,12 @@ const argvLeak = (events: ExecEvent[], needle: string): boolean =>
     const execCtx = { settings: { dataDir, env: {} }, transport } as unknown as Context;
     try {
       const result = await execWithSecrets(execCtx, "sh", ["-c", 'printf %s "$CF_PROBE"'], { env: { CF_PROBE: MARKER } });
-      checkExec("the sourced env file delivers the marker", result.stdout, MARKER);
-      checkExec("the real inner exec exits cleanly", result.code, 0);
+      check("the sourced env file delivers the marker", result.stdout, MARKER);
+      check("the real inner exec exits cleanly", result.code, 0);
       const plain = await execCtx.transport.exec("sh", ["-c", 'printf %s "$CF_PROBE"']);
-      checkExec("the ambient environment never carries the marker", plain.stdout.includes(MARKER), false);
+      check("the ambient environment never carries the marker", plain.stdout.includes(MARKER), false);
       const leftovers = await execCtx.transport.listFiles(locks);
-      checkExec(
+      check(
         "the private env directory is gone after the call",
         leftovers.filter((entry) => entry.startsWith("recipe-exec-")).length,
         0,
@@ -428,7 +416,7 @@ if (process.platform === "win32") {
     try {
       const localCtx = { settings: { dataDir, env: {} }, transport: local } as unknown as Context;
       const result = await execWithSecrets(localCtx, "sh", ["-c", 'printf %s "$CF_PROBE"'], { env: { CF_PROBE: MARKER } });
-      checkExec("Windows local transport sources the ACL-protected environment file", result.stdout, MARKER);
+      check("Windows local transport sources the ACL-protected environment file", result.stdout, MARKER);
     } finally {
       await local.remove(locks).catch(() => {});
     }
@@ -469,7 +457,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
 {
   const transport = await realPosixTransport();
   if (transport === undefined) {
-    checkExec("symlink-ancestor checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
+    check("symlink-ancestor checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
   } else {
     const tag = randomBytes(4).toString("hex");
     const root = `/tmp/clawforge-trav-${tag}`;
@@ -486,7 +474,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       // Case 1: the declared root itself is a symlink out of the data directory.
       await transport.mkdirp(`${root}/data/elsewhere`);
       await transport.exec("ln", ["-s", "elsewhere", `${root}/data/real-sub`]);
-      checkExec(
+      check(
         "a symlinked ancestor between the data dir and the declared root is refused",
         await rejectedExec(() => replacePrivateTargetFile(wslCtx, `${root}/data/real-sub/f.env`, "x")),
         true,
@@ -497,7 +485,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       } catch (error) {
         refusal = (error as Error).message;
       }
-      checkExec(
+      check(
         "the refusal names the symlinked ancestor",
         /symlinked directory/.test(refusal) && refusal.includes(`${root}/data/real-sub`),
         true,
@@ -513,9 +501,9 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       } catch (error) {
         healthy = (error as Error).message;
       }
-      checkExec("a healthy write into the declared root succeeds", healthy, "ok");
+      check("a healthy write into the declared root succeeds", healthy, "ok");
       const landed = await transport.exec("test", ["-f", `${root}/data/real-sub/f.env`], { allowFailure: true });
-      checkExec("the file really landed inside the declared root", landed.code, 0);
+      check("the file really landed inside the declared root", landed.code, 0);
 
       // Case 3: the data ROOT itself may be a symlink — private writes land in the target
       // tree (backup refuses such a root).
@@ -529,9 +517,9 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       } catch (error) {
         linked = (error as Error).message;
       }
-      checkExec("a symlinked data root stays allowed", linked, "ok");
+      check("a symlinked data root stays allowed", linked, "ok");
       const linkedLanding = await transport.exec("test", ["-f", `${root}/data2/real-sub/g.env`], { allowFailure: true });
-      checkExec("the write lands in the tree the link points to", linkedLanding.code, 0);
+      check("the write lands in the tree the link points to", linkedLanding.code, 0);
       // Case 4: a link that textual normalization cancels
       // but the kernel still walks. `link` points outside the data directory, so
       // `link/../real-sub/f.env` normalizes to the declared `real-sub/f.env` — a scan over
@@ -539,13 +527,13 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       // <root>/real-sub/f.env. The scan must run over the raw prefixes and refuse.
       await transport.mkdirp(`${root}/elsewhere`);
       await transport.exec("ln", ["-s", "../elsewhere", `${root}/data/link`]);
-      checkExec(
+      check(
         "a link cancelled by a following `..` is refused",
         await rejectedExec(() => replacePrivateTargetFile(wslCtx, `${root}/data/link/../real-sub/f.env`, "x")),
         true,
       );
       const escaped = await transport.exec("test", ["-e", `${root}/real-sub`], { allowFailure: true });
-      checkExec("the cancelled-link refusal creates nothing outside the data directory", escaped.code, 1);
+      check("the cancelled-link refusal creates nothing outside the data directory", escaped.code, 1);
 
       // Case 5: a `..` over real directories must keep working — the raw scan refuses the
       // link, not the dots — and land at the normalized declared path.
@@ -556,9 +544,9 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       } catch (error) {
         dotdot = (error as Error).message;
       }
-      checkExec("a `..` over real directories stays allowed", dotdot, "ok");
+      check("a `..` over real directories stays allowed", dotdot, "ok");
       const dotdotLanding = await transport.exec("test", ["-f", `${root}/data/real-sub/h.env`], { allowFailure: true });
-      checkExec("the `..` write lands at the normalized declared path", dotdotLanding.code, 0);
+      check("the `..` write lands at the normalized declared path", dotdotLanding.code, 0);
 
       // Case 6 (same audit, second branch): a link at the FINAL component of a directory
       // target. `mkdir -p` and `chmod` do not replace it the way `mv -T` replaces a file
@@ -568,15 +556,15 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       await transport.mkdirp(`${root}/outside-dir`);
       await transport.exec("chmod", ["755", `${root}/outside-dir`]);
       await transport.exec("ln", ["-s", "../outside-dir", `${root}/data/real-sub`]);
-      checkExec(
+      check(
         "a symlink at the final component of a directory target is refused",
         await rejectedExec(() => ensurePrivateTargetDirectory(wslCtx, `${root}/data/real-sub`)),
         true,
       );
       const outsideMode = await transport.exec("stat", ["-c", "%a", `${root}/outside-dir`], { allowFailure: true });
-      checkExec("the refused directory write does not chmod the external target", outsideMode.stdout.trim(), "755");
+      check("the refused directory write does not chmod the external target", outsideMode.stdout.trim(), "755");
       const stillLink = await transport.exec("test", ["-h", `${root}/data/real-sub`], { allowFailure: true });
-      checkExec("the refused directory target is still the link it was", stillLink.code, 0);
+      check("the refused directory target is still the link it was", stillLink.code, 0);
     } finally {
       await transport.remove(root).catch(() => {});
       await rm(recipes, { recursive: true, force: true });
@@ -586,5 +574,4 @@ async function realPosixTransport(): Promise<Transport | undefined> {
   }
 }
 
-process.stderr.write(execFailed === 0 ? "all exec-secrets checks passed\n" : `${execFailed} failed\n`);
-if (execFailed > 0) process.exitCode = 1;
+finish("exec-secrets");

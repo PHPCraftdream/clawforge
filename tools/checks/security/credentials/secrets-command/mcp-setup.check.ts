@@ -20,19 +20,7 @@ import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME } from "#framework/integration/mcp/project.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const installedDir = await mkdtemp(resolve(tmpdir(), "clawforge-mcp-installed-check-"));
 // Selected before the pure checks below, not next to the shim write: the active
@@ -65,10 +53,9 @@ try {
     // either: a client spawns the command directly, with no shell, and the shim is a bash
     // script — which is ENOENT on Windows even where `./clawforge` works fine in a terminal.
     check("wsl mode runs the CLI through node, not the shell shim", entries[name].command, "node");
-    check(
+    checkTrue(
       "wsl mode names the monorepo entry, the deployment and the command",
       entries[name].args.some((arg) => arg.includes('../../tools/clawforge.ts') && arg.includes('--app')) && entries[name].args.at(-1) === "mcp-serve",
-      true,
     );
     check(
       "monorepo mode keeps the client config inside the selected application",
@@ -85,10 +72,9 @@ try {
     const name = CLAWFORGE_MCP_NAME;
     const entries = await mcpServerEntries(sshCtx);
     check("SSH targets still launch the local tooling, which owns the transport", entries[name].command, "node");
-    check(
+    checkTrue(
       "ssh mode's wrapping still carries --app and mcp-serve",
       entries[name].args.some((arg) => arg.includes('--app')) && entries[name].args.at(-1) === "mcp-serve",
-      true,
     );
   }
 
@@ -103,13 +89,12 @@ try {
   const entries = await mcpServerEntries(ctx);
   check("installed mode runs the CLI through node too", entries[name].command, "node");
   check("installed mode does not pass --app", entries[name].args.includes("--app"), false);
-  check("installed mode still names the mcp-serve command", entries[name].args.includes("mcp-serve"), true);
+  checkTrue("installed mode still names the mcp-serve command", entries[name].args.includes("mcp-serve"));
   // The package's own bin, found from where this module was loaded rather than assumed —
   // and written with forward slashes so the same config works on either platform.
-  check(
+  checkTrue(
     "installed mode points at the package's Node entry point",
     entries[name].args.some((arg) => arg.includes('@clawforge/framework/app') && arg.includes('bin.js')),
-    true,
   );
   check(
     "installed mode's config path sits next to the deployment, not the monorepo root",
@@ -126,11 +111,10 @@ try {
   );
   const created = JSON.parse(await readFile(configFile, "utf8")) as { mcpServers: Record<string, unknown> };
   check("a missing .mcp.json is created", Object.keys(created.mcpServers).length, 2);
-  check("the created file keys the mcp-serve entry", Object.prototype.hasOwnProperty.call(created.mcpServers, name), true);
-  check(
+  checkTrue("the created file keys the mcp-serve entry", Object.prototype.hasOwnProperty.call(created.mcpServers, name));
+  checkTrue(
     "the created file keys the control-mcp entry",
     Object.prototype.hasOwnProperty.call(created.mcpServers, CLAWFORGE_CONTROL_MCP_NAME),
-    true,
   );
 
   // .mcp.json exists with an entry for a different server: after mcp-setup, both entries
@@ -142,17 +126,16 @@ try {
     () => mcpSetup(ctx, []),
   );
   const merged = JSON.parse(await readFile(configFile, "utf8")) as { mcpServers: Record<string, unknown> };
-  check("the other server is kept", Object.prototype.hasOwnProperty.call(merged.mcpServers, "someone-else"), true);
+  checkTrue("the other server is kept", Object.prototype.hasOwnProperty.call(merged.mcpServers, "someone-else"));
   check(
     "the other server's config is untouched",
     JSON.stringify(merged.mcpServers["someone-else"]),
     JSON.stringify(otherServer["someone-else"]),
   );
-  check("our mcp-serve entry is added", Object.prototype.hasOwnProperty.call(merged.mcpServers, name), true);
-  check(
+  checkTrue("our mcp-serve entry is added", Object.prototype.hasOwnProperty.call(merged.mcpServers, name));
+  checkTrue(
     "our control-mcp entry is added",
     Object.prototype.hasOwnProperty.call(merged.mcpServers, CLAWFORGE_CONTROL_MCP_NAME),
-    true,
   );
 
   // .mcp.json contains invalid JSON: mcp-setup does not throw, and overwrites with a
@@ -167,11 +150,10 @@ try {
   } catch {
     threw = true;
   }
-  check("invalid JSON is refused before replacing client settings", threw, true);
+  checkTrue("invalid JSON is refused before replacing client settings", threw);
   check("the unparsable configuration is preserved", await readFile(configFile, "utf8"), "{ not valid json");
 } finally {
   await rm(installedDir, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all mcp-setup checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("mcp-setup");

@@ -12,17 +12,7 @@ import { createPrivateFile, protectPrivateDirectory } from "#framework/security/
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function skip(reason: string): void {
   process.stderr.write(`  skip ${reason}\n`);
@@ -151,10 +141,10 @@ await withDeployment(async () => {
   const report = await runSecurityAudit(ctx);
 
   check("info-severity findings are dropped (attack-surface summary, OAuth residue)", report.findings.some((f) => f.checkId === "summary.attack_surface" || f.checkId === "LEGACY_RESIDUE"), false);
-  check("critical security-audit finding maps to a blocking problem", codes(blockingProblems(report.problems)).includes("SECURITY_AUDIT_CRITICAL"), true);
-  check("warn security-audit finding maps to a warning problem", report.problems.some((p) => p.code === "SECURITY_AUDIT_WARN" && p.detail.includes("gateway.trusted_proxies_missing")), true);
-  check("error secrets-audit finding maps to blocking too", report.problems.some((p) => p.code === "SECURITY_AUDIT_CRITICAL" && p.detail.includes("REF_UNRESOLVED")), true);
-  check("warn secrets-audit finding carries its jsonPath, never a value", report.problems.some((p) => p.detail.includes("models.providers.zai.apiKey") && !p.detail.includes("sk-")), true);
+  checkTrue("critical security-audit finding maps to a blocking problem", codes(blockingProblems(report.problems)).includes("SECURITY_AUDIT_CRITICAL"));
+  checkTrue("warn security-audit finding maps to a warning problem", report.problems.some((p) => p.code === "SECURITY_AUDIT_WARN" && p.detail.includes("gateway.trusted_proxies_missing")));
+  checkTrue("error secrets-audit finding maps to blocking too", report.problems.some((p) => p.code === "SECURITY_AUDIT_CRITICAL" && p.detail.includes("REF_UNRESOLVED")));
+  checkTrue("warn secrets-audit finding carries its jsonPath, never a value", report.problems.some((p) => p.detail.includes("models.providers.zai.apiKey") && !p.detail.includes("sk-")));
   check("a security-audit finding's own remediation becomes its nextAction", report.problems.find((p) => p.detail.includes("gateway.loopback_no_auth"))?.nextAction, "Set gateway.auth (token recommended).");
   check("a secrets-audit finding has no remediation, so nextAction points at the CLI", report.problems.find((p) => p.detail.includes("PLAINTEXT_FOUND"))?.nextAction, "./clawforge cli secrets audit --json");
 });
@@ -178,7 +168,7 @@ await withDeployment(async () => {
   const unavailable = report.findings.find((f) => f.checkId === "AUDIT_UNAVAILABLE");
   check("a refused audit call is reported as unavailable, not silently skipped", unavailable?.source, "secrets-audit");
   check("it is a warning, not blocking", unavailable?.severity, "warning");
-  check("the other audit's findings still come through", report.findings.some((f) => f.source === "security-audit"), true);
+  checkTrue("the other audit's findings still come through", report.findings.some((f) => f.source === "security-audit"));
 });
 
 // --- suppressions: still visible, no longer counted ------------------------------------------
@@ -196,7 +186,7 @@ await withDeployment(async (dir) => {
   check("a suppressed finding stays in findings", suppressed?.suppressed, true);
   check("carrying its reason", suppressed?.suppressedReason, "reverse proxy is out of scope here");
   check("a suppressed finding is not counted in problems", report.problems.some((p) => p.detail.includes("gateway.trusted_proxies_missing")), false);
-  check("an unsuppressed finding from the same run still counts", report.problems.some((p) => p.detail.includes("gateway.loopback_no_auth")), true);
+  checkTrue("an unsuppressed finding from the same run still counts", report.problems.some((p) => p.detail.includes("gateway.loopback_no_auth")));
 });
 
 await withDeployment(async (dir) => {
@@ -208,7 +198,7 @@ await withDeployment(async (dir) => {
   } catch (error) {
     thrown = error instanceof Error ? error.message : String(error);
   }
-  check("a broken suppressions file fails closed rather than reading as \"nothing suppressed\"", thrown !== "", true);
+  checkTrue("a broken suppressions file fails closed rather than reading as \"nothing suppressed\"", thrown !== "");
 });
 
 await withDeployment(async (dir) => {
@@ -220,7 +210,7 @@ await withDeployment(async (dir) => {
   } catch (error) {
     thrown = error instanceof Error ? error.message : String(error);
   }
-  check("a suppression missing its reason is refused", thrown.includes("reason"), true);
+  checkTrue("a suppression missing its reason is refused", thrown.includes("reason"));
 });
 
 // --- host-side: the gateway published on every interface -------------------------------------
@@ -240,7 +230,7 @@ await withDeployment(async () => {
 await withDeployment(async () => {
   const ctx = stubContext({ connectionFacts: { bindAddress: "0.0.0.0", port: "18789" } });
   const report = await runSecurityAudit(ctx);
-  check("published on every interface: blocking", codes(blockingProblems(report.problems)).includes("GATEWAY_PUBLICLY_BOUND"), true);
+  checkTrue("published on every interface: blocking", codes(blockingProblems(report.problems)).includes("GATEWAY_PUBLICLY_BOUND"));
 });
 
 await withDeployment(async (dir) => {
@@ -252,7 +242,7 @@ await withDeployment(async (dir) => {
   const ctx = stubContext({ connectionFacts: { bindAddress: "0.0.0.0", port: "18789" } });
   const report = await runSecurityAudit(ctx);
   check("acknowledged exposure is a warning, not blocking", report.problems.some((p) => p.code === "GATEWAY_PUBLICLY_BOUND"), false);
-  check("and names the acknowledgement", report.problems.some((p) => p.code === "GATEWAY_EXPOSURE_ACKNOWLEDGED" && p.detail.includes("hardware firewall")), true);
+  checkTrue("and names the acknowledgement", report.problems.some((p) => p.code === "GATEWAY_EXPOSURE_ACKNOWLEDGED" && p.detail.includes("hardware firewall")));
 });
 
 // --- host-side: UFW active + DOCKER-USER bypass, only when the port is actually public -------
@@ -421,8 +411,7 @@ await withDeployment(async () => {
     connectionFacts: { bindAddress: "0.0.0.0", port: "18789" },
     transportExec: async () => ({ code: 1, stdout: "", stderr: "" }),
   }));
-  check("the same finding stays blocking when the host publishes on every interface", codes(blockingProblems(wildcard.problems)).includes("SECURITY_AUDIT_CRITICAL"), true);
+  checkTrue("the same finding stays blocking when the host publishes on every interface", codes(blockingProblems(wildcard.problems)).includes("SECURITY_AUDIT_CRITICAL"));
 });
 
-process.stderr.write(failed === 0 ? "all security-audit checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("security-audit");

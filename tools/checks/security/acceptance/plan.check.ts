@@ -8,19 +8,7 @@
 import { planActions, planIsClean } from "#framework/commands/orchestration/plan.ts";
 import { problem, PROBLEM_CODES } from "#framework/service/inspection.ts";
 import type { Inspection, Problem, ProblemCode } from "#framework/service/inspection.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function inspectionWith(problems: Problem[], running = true): Inspection {
   return {
@@ -80,25 +68,25 @@ check("configuration is applied before the restart that reads it", ids([problem(
 
 // A drifted setting implies a restart even though nothing has reported RESTART_REQUIRED yet:
 // the step above is about to write a file the running instance will not read.
-check("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", "y")]).includes("restart"), true);
+checkTrue("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", "y")]).includes("restart"));
 
 {
   // A stopped instance reads its configuration when it starts, so starting IS the restart.
   // Planning both would restart a container that had just come up with the right settings.
   const downWithDrift = ids([problem("GATEWAY_DOWN", "not running"), problem("CONFIG_DRIFT", "y")], false);
   check("a stopped instance is started, not started and then restarted", downWithDrift, ["apply-config", "up"]);
-  check("and the start comes after the configuration it will read", downWithDrift.indexOf("apply-config") < downWithDrift.indexOf("up"), true);
+  checkTrue("and the start comes after the configuration it will read", downWithDrift.indexOf("apply-config") < downWithDrift.indexOf("up"));
   // The failure this pairing prevents: an inspection that skipped the comparison because the
   // instance was down planned only [up], and the instance came back on a configuration
   // nobody had applied — with apply reporting success. The plan is only as good as the
   // finding, so both halves are asserted.
-  check("a plan for a stopped, drifted instance is never just a start", downWithDrift.length > 1, true);
+  checkTrue("a plan for a stopped, drifted instance is never just a start", downWithDrift.length > 1);
 }
 
 // Provisioning talks to a running gateway, so it cannot precede the step that provides one.
 {
   const withRecipe = ids([problem("GATEWAY_DOWN", "not running"), problem("AGENT_MISSING", "demo agent", "./clawforge provision-agent demo")], false);
-  check("recipes are provisioned after the gateway is up", withRecipe.indexOf("up") < withRecipe.indexOf("provision-agent:demo"), true);
+  checkTrue("recipes are provisioned after the gateway is up", withRecipe.indexOf("up") < withRecipe.indexOf("provision-agent:demo"));
 }
 
 // --- steps say why they are there ---------------------------------------------------------
@@ -129,7 +117,7 @@ check("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", 
 {
   const actions = planActions(inspectionWith([problem("RECIPE_MIRROR_DRIFT", "demo", "./clawforge provision-agent demo")]));
   const reconnect = actions.find((action) => action.id === "reconnect-mcp");
-  check("changed recipe files raise the client-reconnect advisory", reconnect !== undefined, true);
+  checkTrue("changed recipe files raise the client-reconnect advisory", reconnect !== undefined);
   // Nothing on this side can perform it: the client owns the server process it started.
   check("which is advisory and has no command", [reconnect?.advisory, reconnect?.command], [true, undefined]);
 }
@@ -137,7 +125,7 @@ check("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", 
 {
   const actions = planActions(inspectionWith([problem("LOCK_DRIFT", "image digest moved")]));
   const lockStep = actions.find((action) => action.id === "lock");
-  check("a lock difference is surfaced", lockStep !== undefined, true);
+  checkTrue("a lock difference is surfaced", lockStep !== undefined);
   // Re-pinning automatically would rubber-stamp whatever drifted, which is the opposite of
   // what a lock is for.
   check("but never applied automatically", lockStep?.advisory, true);
@@ -187,7 +175,7 @@ check("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", 
     ]),
   );
   check("each drifted plugin/skill is its own step", actions.length, 2);
-  check("every one of them advisory", actions.every((action) => action.advisory === true), true);
+  checkTrue("every one of them advisory", actions.every((action) => action.advisory === true));
   check("with distinct ids", new Set(actions.map((action) => action.id)).size, 2);
 }
 
@@ -213,7 +201,7 @@ check("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", 
   const actions = planActions(inspectionWith([problem("NOT_BOOTSTRAPPED", "no data directory yet")], false));
   check("NOT_BOOTSTRAPPED comes first", actions[0]?.id, "problem:NOT_BOOTSTRAPPED");
   check("it is advisory, with no command for apply to run", [actions[0]?.advisory, actions[0]?.command], [true, undefined]);
-  check("and it points at bootstrap", (actions[0]?.summary ?? "").includes("./clawforge bootstrap"), true);
+  checkTrue("and it points at bootstrap", (actions[0]?.summary ?? "").includes("./clawforge bootstrap"));
 }
 
 // A code this file already gives a specific step to (e.g. LOCK_DRIFT, above) must not also
@@ -225,9 +213,8 @@ check("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", 
 
 // --- "nothing to do" is a claim about the deployment, never inferred from the step count ---
 
-check("healthy with no problems at all is the only clean plan", planIsClean({ healthy: true, problems: [] }), true);
+checkTrue("healthy with no problems at all is the only clean plan", planIsClean({ healthy: true, problems: [] }));
 check("healthy but with a warning is not clean", planIsClean({ healthy: true, problems: [problem("LOCK_MISSING", "no lock file")] }), false);
 check("unhealthy is never clean, whatever the problem list says", planIsClean({ healthy: false, problems: [] }), false);
 
-process.stderr.write(failed === 0 ? "all plan checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("plan");

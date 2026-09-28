@@ -18,19 +18,7 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -59,7 +47,7 @@ try {
   } catch (error) {
     message = (error as Error).message;
   }
-  check("the migrate refusal names the declared private path", output.join("").includes("recipe-private"), true);
+  checkTrue("the migrate refusal names the declared private path", output.join("").includes("recipe-private"));
   check("the migrate refusal identifies the prepublication privacy check", message?.includes("fresh 'migrate' backup failed its privacy check"), true);
   check("the refused migrate pull releases its lock", scenario.lock(), false);
   check("the refused migrate snapshot is never published", [...scenario.files.keys()].filter((p) => p.includes("-state-") && p.endsWith(".tar.gz")).length, 1);
@@ -73,10 +61,9 @@ try {
   } catch {
     cleanThrew = true;
   }
-  check(
+  checkTrue(
     "a clean migrate listing still publishes with the declarations present",
     !cleanThrew && [...clean.files.keys()].filter((p) => p.includes("-state-") && p.endsWith(".tar.gz")).length === 2,
-    true,
   );
 
   // The old bare-prefix matching read `vault-public/notes.txt` as violating the
@@ -96,5 +83,4 @@ try {
   await rm(recipes, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all recipe-private-snapshot checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("recipe-private-snapshot");

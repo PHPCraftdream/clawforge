@@ -14,26 +14,14 @@ import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
-let failed = 0;
-
-check("model use is enforced by kind", requiresModel("agent_answers"), true);
+checkTrue("model use is enforced by kind", requiresModel("agent_answers"));
 check("ordinary checks do not require the model", requiresModel("mcp_tool"), false);
 check("summary names every non-passed category", summarize(2, 1, 3, 4), "2 passed, 1 failed, 4 could not be checked, 3 not checked");
 check("a non-object declaration is rejected", acceptanceSpecError(null), "acceptance check must be an object");
 check("a declaration without kind is rejected", acceptanceSpecError({}), 'acceptance check needs a non-empty string "kind"');
 check("a tool check without a tool is rejected", acceptanceSpecError({ kind: "mcp_tool" }), 'acceptance check "mcp_tool" has invalid tool, expect or arguments fields');
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
 
 interface Answers {
   /** JSON-RPC lines the recipe's MCP server replies with, by request id. */
@@ -266,7 +254,7 @@ async function run(answers: Answers, declared: AcceptanceCheck) {
 // Metadata cannot opt an agent_answers check into an unpaid run. The dispatcher owns this
 // decision; the declaration's optional usesModel field is only descriptive.
 {
-  check("agent_answers still identifies a model check when metadata lies", requiresModel("agent_answers"), true);
+  checkTrue("agent_answers still identifies a model check when metadata lies", requiresModel("agent_answers"));
 }
 
 // --- an unknown kind is a failure, not a pass -------------------------------------------------------------
@@ -296,13 +284,12 @@ async function run(answers: Answers, declared: AcceptanceCheck) {
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
     }
-    check("a recipes root that is a file dies rather than reporting nothing declared", message !== "", true);
-    check("naming the recipes path", message.includes(resolve(deployment, "recipes")), true);
+    checkTrue("a recipes root that is a file dies rather than reporting nothing declared", message !== "");
+    checkTrue("naming the recipes path", message.includes(resolve(deployment, "recipes")));
   } finally {
     await rm(deployment, { recursive: true, force: true });
     useDeployment(resolve(monorepoRoot, "apps", "example app"));
   }
 }
 
-process.stderr.write(failed === 0 ? "all acceptance checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("acceptance");

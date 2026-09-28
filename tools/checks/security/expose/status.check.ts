@@ -7,20 +7,7 @@ import { exposeStatus, summarizeExposure, exposureOneLiner } from "#framework/co
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const settings = { bindAddress: "127.0.0.1", gatewayPort: "18789" };
 function ctxWithSettings(overrides: Partial<typeof settings> = {}): Context {
@@ -114,45 +101,45 @@ async function run(ctx: Context): Promise<string> {
 {
   const output = await run(ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false }));
   check("loopback: no warning at all", output.includes("warning:"), false);
-  check("loopback-only is reported yes", output.includes("loopback-only    yes"), true);
-  check("tailscale absent is reported", output.includes("tailscale is not installed on the target"), true);
+  checkTrue("loopback-only is reported yes", output.includes("loopback-only    yes"));
+  checkTrue("tailscale absent is reported", output.includes("tailscale is not installed on the target"));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "0.0.0.0", port: "18789" }, { present: false }));
-  check("0.0.0.0 warns loudly", output.includes("warning:") && output.includes("reachable from every interface"), true);
-  check("and suggests the fix", output.includes("expose ssh or ./clawforge expose tailscale"), true);
-  check("loopback-only is reported no", output.includes("loopback-only    no"), true);
+  checkTrue("0.0.0.0 warns loudly", output.includes("warning:") && output.includes("reachable from every interface"));
+  checkTrue("and suggests the fix", output.includes("expose ssh or ./clawforge expose tailscale"));
+  checkTrue("loopback-only is reported no", output.includes("loopback-only    no"));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "::", port: "18789" }, { present: false }));
-  check(":: (IPv6 wildcard) warns loudly too", output.includes("warning:") && output.includes("reachable from every interface"), true);
+  checkTrue(":: (IPv6 wildcard) warns loudly too", output.includes("warning:") && output.includes("reachable from every interface"));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "10.0.0.5", port: "18789" }, { present: false }));
-  check("a non-wildcard, non-loopback address gets a softer warning, not the loud one", output.includes("warning:") && !output.includes("reachable from every interface"), true);
+  checkTrue("a non-wildcard, non-loopback address gets a softer warning, not the loud one", output.includes("warning:") && !output.includes("reachable from every interface"));
 }
 
 {
   const output = await run(ctxFor(undefined, { present: false }));
-  check("not running: configured .env values are shown, unconfirmed", output.includes("container not running"), true);
+  checkTrue("not running: configured .env values are shown, unconfirmed", output.includes("container not running"));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "0.0.0.0", port: "18789" }, { present: false }));
-  check("a drifted bind address (vs. configured .env) is noted", output.includes("differs from configured OC_BIND_ADDRESS"), true);
+  checkTrue("a drifted bind address (vs. configured .env) is noted", output.includes("differs from configured OC_BIND_ADDRESS"));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: true, serveStatus: "https://box.tailnet.ts.net/ proxy http://127.0.0.1:18789\n" }));
-  check("tailscale present: its serve status is forwarded verbatim", output.includes("https://box.tailnet.ts.net/ proxy http://127.0.0.1:18789"), true);
+  checkTrue("tailscale present: its serve status is forwarded verbatim", output.includes("https://box.tailnet.ts.net/ proxy http://127.0.0.1:18789"));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: true, serveStatus: "" }));
-  check("tailscale present but nothing served", output.includes("no tailscale serve configuration"), true);
+  checkTrue("tailscale present but nothing served", output.includes("no tailscale serve configuration"));
 }
 
 // --- exposeStatus --json / captured: the structured counterpart -----------------------------
@@ -217,5 +204,4 @@ async function runJson(ctx: Context, args: string[]): Promise<Record<string, unk
   check("an unknown argument is refused", message?.includes("unknown argument: --bogus"), true);
 }
 
-process.stderr.write(failed === 0 ? "all expose status checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("expose status");

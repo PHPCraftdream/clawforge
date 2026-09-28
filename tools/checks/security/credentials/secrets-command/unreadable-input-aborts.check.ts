@@ -15,19 +15,7 @@ import { secrets } from "#framework/commands/management/secrets.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "./fixture.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 let deployDir = await setupDeployment("read-error");
 
@@ -90,8 +78,8 @@ try {
     thrown = error instanceof Error ? error.message : String(error);
   }
 
-  check("a live-config read error aborts secrets --apply instead of reporting success", thrown !== "", true);
-  check("the error names the actual cause", thrown.includes("could not be read"), true);
+  checkTrue("a live-config read error aborts secrets --apply instead of reporting success", thrown !== "");
+  checkTrue("the error names the actual cause", thrown.includes("could not be read"));
   check("config/.env is never written on the target", writes["/srv/clawforge/data/config/.env"], undefined);
 
   // The same hazard one layer up: the EXISTENCE check itself failing. A transport that
@@ -137,7 +125,7 @@ try {
     checkFailure = error instanceof Error ? error.message : String(error);
   }
 
-  check("a failed existence check aborts secrets --apply too", checkFailure.includes("could not check whether"), true);
+  checkTrue("a failed existence check aborts secrets --apply too", checkFailure.includes("could not check whether"));
   check("and config/.env is left alone", checkFailureWrites["/srv/clawforge/data/config/.env"], undefined);
 } finally {
   await teardownDeployment(deployDir);
@@ -180,7 +168,7 @@ try {
     } catch (error) {
       thrown = error instanceof Error ? error.message : String(error);
     }
-    check(`${scenario[0]} declaration aborts secrets --apply`, thrown !== "", true);
+    checkTrue(`${scenario[0]} declaration aborts secrets --apply`, thrown !== "");
     check(`${scenario[0]} declaration leaves target secrets untouched`, writes[targetEnv], undefined);
   }
 
@@ -209,11 +197,10 @@ try {
   } catch (error) {
     thrown = error instanceof Error ? error.message : String(error);
   }
-  check("unreadable declaration aborts secrets --apply", thrown.includes("could not be read"), true);
+  checkTrue("unreadable declaration aborts secrets --apply", thrown.includes("could not be read"));
   check("unreadable declaration leaves target secrets untouched", writes[targetEnv], undefined);
 } finally {
   await teardownDeployment(deployDir);
 }
 
-process.stderr.write(failed === 0 ? "all unreadable-input-aborts checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("unreadable-input-aborts");

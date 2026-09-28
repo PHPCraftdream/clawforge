@@ -5,17 +5,7 @@
 
 import { registerSecret, maskSecrets } from "#framework/core/io/log.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const SECRET = "sk-test-0123456789abcdef";
 registerSecret(SECRET);
@@ -36,7 +26,6 @@ try {
 }
 
 check("the failing command line is masked", message.includes(SECRET), false);
-check("something was still reported", message.includes("exit 3"), true);
+checkTrue("something was still reported", message.includes("exit 3"));
 
-process.stderr.write(failed === 0 ? "all secret-masking checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("secret-masking");

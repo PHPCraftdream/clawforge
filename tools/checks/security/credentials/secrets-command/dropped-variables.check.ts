@@ -12,19 +12,7 @@ import { secrets } from "#framework/commands/management/secrets.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "./fixture.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const deployDir = await setupDeployment("dropped");
 
@@ -98,13 +86,12 @@ try {
     () => secrets(ctx, ["--apply", "--store", storeName]),
   );
 
-  check("the variable about to be dropped is named", said.includes("RECIPE_WEBHOOK_URL"), true);
-  check("and the operator is told where to put it back", said.includes(`add them to ${resolve(deployDir, "secrets", `${storeName}.env`)}`), true);
+  checkTrue("the variable about to be dropped is named", said.includes("RECIPE_WEBHOOK_URL"));
+  checkTrue("and the operator is told where to put it back", said.includes(`add them to ${resolve(deployDir, "secrets", `${storeName}.env`)}`));
   check("its value is never printed", said.includes("hooks.example"), false);
   check("the required key is still installed", writes[targetEnv], "ZAI_API_KEY=zai-value\n");
 } finally {
   await teardownDeployment(deployDir);
 }
 
-process.stderr.write(failed === 0 ? "all dropped-variable checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("dropped-variable");

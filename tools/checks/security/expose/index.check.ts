@@ -8,20 +8,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -34,9 +21,9 @@ async function deathOf(run: () => unknown): Promise<string> {
 
 // --- dispatch: bad input dies before anything runs ----------------------------------------------
 
-check("no action at all is a usage error", (await deathOf(() => expose({} as unknown as Context, []))).includes("usage:"), true);
-check("an unknown action is refused by name", (await deathOf(() => expose({} as unknown as Context, ["bogus"]))).includes("unknown action: bogus"), true);
-check("the refusal names the three valid actions", (await deathOf(() => expose({} as unknown as Context, ["bogus"]))).includes("ssh, tailscale or status"), true);
+checkTrue("no action at all is a usage error", (await deathOf(() => expose({} as unknown as Context, []))).includes("usage:"));
+checkTrue("an unknown action is refused by name", (await deathOf(() => expose({} as unknown as Context, ["bogus"]))).includes("unknown action: bogus"));
+checkTrue("the refusal names the three valid actions", (await deathOf(() => expose({} as unknown as Context, ["bogus"]))).includes("ssh, tailscale or status"));
 
 // --- dispatch: routes to the matching sub-handler, and nothing else -----------------------------
 // Cheap ctx/args per action so this proves ROUTING without duplicating ssh.check.ts/
@@ -46,7 +33,7 @@ check("the refusal names the three valid actions", (await deathOf(() => expose({
   const ctx = { settings: { location: "wsl" }, transport: { description: "wsl:Ubuntu-24.04" } } as unknown as Context;
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), () => expose(ctx, ["ssh"]));
-  check("expose ssh reaches exposeSsh", written.join("").includes("no SSH tunnel needed"), true);
+  checkTrue("expose ssh reaches exposeSsh", written.join("").includes("no SSH tunnel needed"));
 }
 
 {
@@ -58,7 +45,7 @@ check("the refusal names the three valid actions", (await deathOf(() => expose({
   } as unknown as Context;
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), () => expose(ctx, ["tailscale"]));
-  check("expose tailscale reaches exposeTailscale", written.join("").includes("tailscale serve --bg"), true);
+  checkTrue("expose tailscale reaches exposeTailscale", written.join("").includes("tailscale serve --bg"));
 }
 
 {
@@ -74,22 +61,22 @@ check("the refusal names the three valid actions", (await deathOf(() => expose({
   // status.check.ts for its full text-mode coverage.
   await withOutputSink((chunk) => written.push(chunk), () => expose(ctx, ["status"]));
   const payload = JSON.parse(written.join("")) as { exposure?: unknown };
-  check("expose status reaches exposeStatus", payload.exposure !== undefined, true);
+  checkTrue("expose status reaches exposeStatus", payload.exposure !== undefined);
 }
 
 // --- exposeActionIsReadOnly: only tailscale --apply mutates --------------------------------------
 
-check("no action (dies before this matters) reads as read-only", exposeActionIsReadOnly([]), true);
-check("ssh is read-only", exposeActionIsReadOnly(["ssh"]), true);
-check("ssh --run is still read-only (a local tunnel, nothing on the target changes)", exposeActionIsReadOnly(["ssh", "--run"]), true);
-check("status is read-only", exposeActionIsReadOnly(["status"]), true);
-check("tailscale without --apply is read-only (print only)", exposeActionIsReadOnly(["tailscale"]), true);
+checkTrue("no action (dies before this matters) reads as read-only", exposeActionIsReadOnly([]));
+checkTrue("ssh is read-only", exposeActionIsReadOnly(["ssh"]));
+checkTrue("ssh --run is still read-only (a local tunnel, nothing on the target changes)", exposeActionIsReadOnly(["ssh", "--run"]));
+checkTrue("status is read-only", exposeActionIsReadOnly(["status"]));
+checkTrue("tailscale without --apply is read-only (print only)", exposeActionIsReadOnly(["tailscale"]));
 check("tailscale --apply is the one mutation", exposeActionIsReadOnly(["tailscale", "--apply"]), false);
 
 // --- AppCommand wiring: one declaration drives help, MCP schema and argv -----------------------
 
 const command = openclawCommands.expose!;
-check("expose is registered", command !== undefined, true);
+checkTrue("expose is registered", command !== undefined);
 check("expose is declared destructive (tailscale --apply mutates)", command.destructive, true);
 check("readOnlyWhen matches exposeActionIsReadOnly", [command.readOnlyWhen?.(["status"]), command.readOnlyWhen?.(["tailscale", "--apply"])], [true, false]);
 check("changedWhen is readOnlyWhen's negation", [command.changedWhen?.(["status"]), command.changedWhen?.(["tailscale", "--apply"])], [false, true]);
@@ -113,9 +100,8 @@ check("requiresConfirmationWhen matches changedWhen", [command.requiresConfirmat
 
   check("toArgv places the action first, then flags", toArgv(command, { action: "tailscale", apply: true }), ["tailscale", "--apply"]);
 
-  check("validate reports a bad action naming the valid ones", validate(command, { action: "bogus" }).join("; ").includes("ssh, tailscale, status"), true);
+  checkTrue("validate reports a bad action naming the valid ones", validate(command, { action: "bogus" }).join("; ").includes("ssh, tailscale, status"));
   check("validate reports the missing required action", validate(command, {}), ["action is required"]);
 }
 
-process.stderr.write(failed === 0 ? "all expose dispatch/wiring checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("expose dispatch/wiring");

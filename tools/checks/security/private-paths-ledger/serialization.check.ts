@@ -37,19 +37,7 @@ import {
   privatePathsLedgerFile,
   recordPrivateWrite,
 } from "#framework/security/privacy/private-paths-ledger.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 /** The message a rejected promise failed with, or undefined when it did not reject. */
 async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefined> {
@@ -144,12 +132,12 @@ try {
   const corrupt = await rejectionOf(() =>
     mutatePrivatePathsLedger(ledger, (current) => ({ next: [...current, "never"], value: current })),
   );
-  check("a corrupt ledger fails its own cycle", /could not parse/.test(corrupt ?? ""), true);
+  checkTrue("a corrupt ledger fails its own cycle", /could not parse/.test(corrupt ?? ""));
   await rm(ledger, { force: true });
 
   await writeFile(ledger, `${JSON.stringify({ privatePaths: ["workspace//credential.txt"] })}\n`, "utf8");
   const noncanonical = await rejectionOf(() => persistedPrivatePaths());
-  check("the ledger rejects private paths with an empty interior segment", /must stay inside the data directory/.test(noncanonical ?? ""), true);
+  checkTrue("the ledger rejects private paths with an empty interior segment", /must stay inside the data directory/.test(noncanonical ?? ""));
   await rm(ledger, { force: true });
 
   const refused = await rejectionOf(() =>
@@ -236,7 +224,7 @@ try {
   const invalidRestoredHistory = await rejectionOf(() =>
     importRestoredPrivatePathsHistory(importCtx, privatePathsHistoryFile("/tgt/data")),
   );
-  check("restored history rejects private paths with an empty interior segment", /must stay inside the data directory/.test(invalidRestoredHistory ?? ""), true);
+  checkTrue("restored history rejects private paths with an empty interior segment", /must stay inside the data directory/.test(invalidRestoredHistory ?? ""));
 
   // === PART C — the queue's cleanup must not drop a live queue ====================================
   //
@@ -329,15 +317,8 @@ try {
   );
 } finally {
   await rm(deployment, { recursive: true, force: true }).catch(() => {});
-  if (previousDeployment === undefined) {
-    // A check process starts with no deployment; leave it exactly as found.
-    process.exitCode = failed === 0 ? 0 : 1;
-  } else {
-    useDeployment(previousDeployment);
-  }
+  // A check process starts with no deployment; leave it exactly as found otherwise restore it.
+  if (previousDeployment !== undefined) useDeployment(previousDeployment);
 }
 
-process.stderr.write(
-  failed === 0 ? "all private-paths-ledger serialization checks passed\n" : `${failed} private-paths-ledger serialization check(s) failed\n`,
-);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("private-paths-ledger serialization");

@@ -11,17 +11,7 @@ import { join } from "node:path";
 import { createPrivateFile, installedWslDistros, probeWslOpen, protectPrivateFile, replacePrivateFile, resetWslBoundaryDedupe, withToolRunner } from "#framework/security/privacy/private-file.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function skip(reason: string): void {
   process.stderr.write(`  skip ${reason}\n`);
@@ -109,7 +99,7 @@ async function plantedTemporarySurvives(root: string): Promise<void> {
   } finally {
     Date.now = realNow;
   }
-  check("a foreign file at a colliding temporary path is never removed", await exists(planted), true);
+  checkTrue("a foreign file at a colliding temporary path is never removed", await exists(planted));
   check("the planted temporary keeps its content", await readFile(planted, "utf8"), "planted-by-the-check\n");
   check("the replacement no longer fails on the planted name", (error as NodeJS.ErrnoException | undefined)?.code, undefined);
   const plantedName = planted.split(/[\\/]/).pop() ?? planted;
@@ -138,7 +128,7 @@ async function probeContractChecks(): Promise<void> {
   // A literal substring cannot see an escaped apostrophe, so the fragments carry the
   // assertion: none of the path — not even its automount prefix — may land in the script.
   check("no fragment of the path, not even its automount prefix, lands in the script", ["/mnt/c/tmp", "with space", "it's", "; awk", "$(x)"].some((fragment) => script.includes(fragment)), false);
-  check("the inner shells read the path back as a quoted positional", script.includes(`sh "$1"`), true);
+  checkTrue("the inner shells read the path back as a quoted positional", script.includes(`sh "$1"`));
 
   const probes: string[][] = [];
   const answers = ["DENIED", "OPEN"];
@@ -173,7 +163,7 @@ async function posixChecks(root: string): Promise<void> {
   } catch (error) {
     collision = (error as NodeJS.ErrnoException).code === "EEXIST";
   }
-  check("creation refuses to overwrite an existing environment file", collision, true);
+  checkTrue("creation refuses to overwrite an existing environment file", collision);
   check("a refused creation leaves the original value", await readFile(file, "utf8"), "OPENCLAW_GATEWAY_TOKEN=synthetic-token\n");
 
   await replacePrivateFile(file, "OPENCLAW_GATEWAY_TOKEN=replaced-token\n");
@@ -186,7 +176,7 @@ async function posixChecks(root: string): Promise<void> {
   } catch {
     failedWrite = true;
   }
-  check("a failed private-file write reports its error", failedWrite, true);
+  checkTrue("a failed private-file write reports its error", failedWrite);
 }
 
 /** Protection observed mid-flight: a directory whose inheritable ACE grants Guests read,
@@ -222,12 +212,12 @@ async function aclTransitionChecks(root: string): Promise<void> {
       refusal = error instanceof Error ? error.message : String(error);
     }
   });
-  check("protection observes the DACL it is building", seen.length > 0, true);
-  check("the file never carries the directory's Guests access during protection", seen.every((aces) => !guests.some((trustee) => aces.includes(trustee))), true);
+  checkTrue("protection observes the DACL it is building", seen.length > 0);
+  checkTrue("the file never carries the directory's Guests access during protection", seen.every((aces) => !guests.some((trustee) => aces.includes(trustee))));
   check("protection succeeds on the staged file", refusal, null);
   const sealed = await savedAces(file);
-  check("the sealed DACL names only the owner, SYSTEM and Administrators", sealed.aces.every((ace) => [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"].includes(ownerAlias(ace.trustee, owner))), true);
-  check("the sealed DACL still gives the owner full access", sealed.aces.some((ace) => ownerAlias(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights)), true);
+  checkTrue("the sealed DACL names only the owner, SYSTEM and Administrators", sealed.aces.every((ace) => [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"].includes(ownerAlias(ace.trustee, owner))));
+  checkTrue("the sealed DACL still gives the owner full access", sealed.aces.some((ace) => ownerAlias(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights)));
 
   let injected: string | null = null;
   await withToolRunner(async (command, args, timeoutMs) => {
@@ -243,7 +233,7 @@ async function aclTransitionChecks(root: string): Promise<void> {
       injected = error instanceof Error ? error.message : String(error);
     }
   });
-  check("a failed DACL apply is reported, not swallowed", injected !== null, true);
+  checkTrue("a failed DACL apply is reported, not swallowed", injected !== null);
   const afterFailure = await savedAces(file);
   check(
     "a failed DACL apply leaves the file no wider than it started",
@@ -378,14 +368,14 @@ async function wslListingContractChecks(root: string): Promise<void> {
   {
     const run = await protectWithListing({ code: -1, output: "simulated timeout" });
     check("a timed-out WSL listing still protects the file", run.refusal, null);
-    check("a timed-out WSL listing is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes("could not be listed") && run.captured.includes("simulated timeout"), true);
+    checkTrue("a timed-out WSL listing is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes("could not be listed") && run.captured.includes("simulated timeout"));
     check("a timed-out WSL listing consults the listing exactly once", run.listings, 1);
   }
 
   {
     const run = await protectWithListing({ code: 1, output: "wsl.exe: unexpected failure" });
     check("a WSL listing that exits nonzero with unrelated output still protects the file", run.refusal, null);
-    check("a WSL listing that exits nonzero with unrelated output is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes("could not be listed") && run.captured.includes("unexpected failure"), true);
+    checkTrue("a WSL listing that exits nonzero with unrelated output is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes("could not be listed") && run.captured.includes("unexpected failure"));
   }
 
   {
@@ -415,7 +405,7 @@ async function wslListingContractChecks(root: string): Promise<void> {
     check("each probe carries its own distribution", run.probes.map((args) => args[1]), ["Ubuntu-24.04", "Debian-12"]);
     check("each probe keeps the wsl exec shape", run.probes.map((args) => args.slice(2, 6)), [["-u", "root", "--exec", "sh"], ["-u", "root", "--exec", "sh"]]);
     check("each probe targets the file's automounted path", run.probes.map((args) => (args[args.length - 1] ?? "").startsWith("/mnt/") && (args[args.length - 1] ?? "").endsWith("listing.env")), [true, true]);
-    check("only the distribution that can open the file is warned about", run.captured.includes('"Debian-12" opens') && !run.captured.includes('"Ubuntu-24.04"'), true);
+    checkTrue("only the distribution that can open the file is warned about", run.captured.includes('"Debian-12" opens') && !run.captured.includes('"Ubuntu-24.04"'));
   }
 }
 
@@ -446,8 +436,8 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
   const allowed = new Set([owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"]);
   const foreign = dacl.aces.map((ace) => ownerAlias(ace.trustee, owner)).filter((trustee) => !allowed.has(trustee));
   check("no trustee beyond owner, SYSTEM and Administrators survives", foreign, []);
-  check("the DACL is sealed against inheritance", dacl.daclProtected && dacl.aces.every((ace) => !ace.flags.includes("ID")), true);
-  check("the owner keeps full access", dacl.aces.some((ace) => ownerAlias(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights)), true);
+  checkTrue("the DACL is sealed against inheritance", dacl.daclProtected && dacl.aces.every((ace) => !ace.flags.includes("ID")));
+  checkTrue("the owner keeps full access", dacl.aces.some((ace) => ownerAlias(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights)));
   let ownerCanWrite = true;
   try {
     const handle = await open(file, "r+");
@@ -455,16 +445,16 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
   } catch {
     ownerCanWrite = false;
   }
-  check("the owner can still open the file for writing", ownerCanWrite, true);
+  checkTrue("the owner can still open the file for writing", ownerCanWrite);
 
   // --- the WSL boundary is reported, never silently assumed -----------------------------------
   if (distros.length === 0) {
     skip("WSL boundary assertions (no WSL distribution installed)");
     if (listingFailure === undefined) {
-      check("with no WSL installed, protection succeeds without a boundary warning", refusal === null && !captured.includes("Windows/WSL boundary"), true);
+      checkTrue("with no WSL installed, protection succeeds without a boundary warning", refusal === null && !captured.includes("Windows/WSL boundary"));
     } else {
       check("protection succeeds even when the WSL listing itself fails", refusal, null);
-      check("a failed real WSL listing is reported with its reason", captured.includes("could not be listed") && captured.includes(listingFailure), true);
+      checkTrue("a failed real WSL listing is reported with its reason", captured.includes("could not be listed") && captured.includes(listingFailure));
     }
   } else {
     const target = automountGuess(file);
@@ -477,10 +467,10 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
     }
     if (probe === "OPEN") {
       check("a file another Linux user can open through WSL is still protected", refusal, null);
-      check("the boundary gap is warned about, naming the distribution", distros.some((distro) => captured.includes(`"${distro}"`)), true);
-      check("the warning names the distribution-side path", captured.includes("/mnt/"), true);
+      checkTrue("the boundary gap is warned about, naming the distribution", distros.some((distro) => captured.includes(`"${distro}"`)));
+      checkTrue("the warning names the distribution-side path", captured.includes("/mnt/"));
       check("the warning never carries the file's content", captured.includes(secret.trim()), false);
-      check("the warning says what to do about it", captured.includes("wsl.conf"), true);
+      checkTrue("the warning says what to do about it", captured.includes("wsl.conf"));
     } else {
       check("protection succeeds when no distribution can open the file", refusal, null);
       check("no boundary gap is reported when every distribution is shut out", captured.includes("Windows/WSL boundary"), false);
@@ -504,16 +494,16 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
     } catch {
       created = false;
     }
-    check("creation succeeds on a Windows drive", created, true);
+    checkTrue("creation succeeds on a Windows drive", created);
     check("creation writes the complete value", created ? await readFile(join(root, "fresh.env"), "utf8") : "", secret);
     if (distros.length === 0) {
       if (listingFailure === undefined) {
         check("creation warns nothing when there is no WSL to reach the file", freshCaptured.includes("Windows/WSL boundary"), false);
       } else {
-        check("creation reports the failed WSL listing too", freshCaptured.includes("could not be listed"), true);
+        checkTrue("creation reports the failed WSL listing too", freshCaptured.includes("could not be listed"));
       }
     } else {
-      check("creation reports the same boundary gap", distros.some((distro) => freshCaptured.includes(`"${distro}"`)), true);
+      checkTrue("creation reports the same boundary gap", distros.some((distro) => freshCaptured.includes(`"${distro}"`)));
     }
   }
 
@@ -556,7 +546,7 @@ async function dedupeChecks(root: string): Promise<void> {
     }, () => protectPrivateFile(fileA));
   });
   check("the first write in a directory probes and reports", listings, 1);
-  check("naming the exposed distribution", firstCaptured.includes('"Ubuntu-24.04" opens'), true);
+  checkTrue("naming the exposed distribution", firstCaptured.includes('"Ubuntu-24.04" opens'));
   check(
     "compactly: one warning line and one advice line, not one pair per distribution",
     firstCaptured.split("\n").filter((line) => line.trim() !== "").length,
@@ -581,7 +571,7 @@ async function dedupeChecks(root: string): Promise<void> {
     }, () => replacePrivateFile(fileA, "OPENCLAW_GATEWAY_TOKEN=dedupe-a-2\n"));
   });
   check("replacing a file probes at most once — never for its own temporary write", listings, 2);
-  check("and still reports the real path once", replaceCaptured.includes('"Ubuntu-24.04" opens'), true);
+  checkTrue("and still reports the real path once", replaceCaptured.includes('"Ubuntu-24.04" opens'));
 }
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-private-file-check-"));
@@ -597,5 +587,4 @@ try {
   await rm(root, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all private-file checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("private-file");

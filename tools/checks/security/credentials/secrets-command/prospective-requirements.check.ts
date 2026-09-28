@@ -14,19 +14,7 @@ import { secrets } from "#framework/commands/management/secrets.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "./fixture.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { checkTrue, finish } from "#checks/kit/harness.ts";
 
 const deployDir = await setupDeployment("prospective");
 
@@ -96,14 +84,12 @@ try {
   );
 
   const installed = writes["/srv/clawforge/data/config/.env"];
-  check(
+  checkTrue(
     "a secret only a not-yet-applied declaration needs is actually installed, not refused as empty",
-    installed?.includes("NEWPROV_API_KEY=my-value"),
-    true,
+    installed?.includes("NEWPROV_API_KEY=my-value") === true,
   );
 } finally {
   await teardownDeployment(deployDir);
 }
 
-process.stderr.write(failed === 0 ? "all prospective-requirements checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("prospective-requirements");

@@ -54,19 +54,7 @@ import {
   reconcilePrivatePathsHistory,
   recordPrivateWrite,
 } from "#framework/security/privacy/private-paths-ledger.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -171,7 +159,7 @@ try {
     const forgotten1 = await ledgerJson();
     check("and the tombstone is written beside the now-empty record", sorted(forgotten1.forgotten ?? []), JSON.stringify(["vault/credentials.env"]));
     check("the record half is empty", sorted(forgotten1.privatePaths ?? []), "[]");
-    check("the forget is a state of the file, not of a missing one", (await privatePathsLedgerState()).existed, true);
+    checkTrue("the forget is a state of the file, not of a missing one", (await privatePathsLedgerState()).existed);
 
     // A deployment whose ledger file was never written stays absent: absence is the honest
     // "nothing recorded here", and a forget against it has nothing to drop.
@@ -200,7 +188,7 @@ try {
     const targetBody = `${JSON.stringify({ privatePaths: adopted })}\n`;
     await reconcilePrivatePathsHistory(fakeTargetCtx(targetBody));
     check("reconcile adopts a target-only history into a ledger that had none", sorted(await persistedPrivatePaths()), sorted(adopted));
-    check("the adoption actually wrote the ledger file", await ledgerPresent(), true);
+    checkTrue("the adoption actually wrote the ledger file", await ledgerPresent());
     const afterFirst = await readFile(privatePathsLedgerFile(), "utf8");
     await reconcilePrivatePathsHistory(fakeTargetCtx(targetBody));
     check("a second reconcile leaves the ledger byte-identical", await readFile(privatePathsLedgerFile(), "utf8"), afterFirst);
@@ -240,10 +228,10 @@ try {
     await recordPrivateWrite("vault/keeps.env", "vault");
     const before = sorted(await persistedPrivatePaths());
     const parseRefusal = await rejectionOf(() => reconcilePrivatePathsHistory(fakeTargetCtx("{ not json")));
-    check("a target copy that cannot be parsed refuses the reconcile", /could not parse/.test(parseRefusal ?? ""), true);
+    checkTrue("a target copy that cannot be parsed refuses the reconcile", /could not parse/.test(parseRefusal ?? ""));
     check("and the refusal wrote nothing", sorted(await persistedPrivatePaths()), before);
     const readRefusal = await rejectionOf(() => reconcilePrivatePathsHistory(fakeTargetCtx("unreadable", 1)));
-    check("a target copy that cannot be read refuses the reconcile", /could not read the existing privacy history/.test(readRefusal ?? ""), true);
+    checkTrue("a target copy that cannot be read refuses the reconcile", /could not read the existing privacy history/.test(readRefusal ?? ""));
     check("and that refusal wrote nothing either", sorted(await persistedPrivatePaths()), before);
   }
 
@@ -327,7 +315,7 @@ try {
   {
     useDeployment(await freshDeployment("b1"));
     check("this deployment's ledger starts absent", await ledgerPresent(), false);
-    check("the staged failure fails the restore", await runStagedFailureRestore(), true);
+    checkTrue("the staged failure fails the restore", await runStagedFailureRestore());
     check("and the ledger file is still absent afterwards", await ledgerPresent(), false);
     check("nothing was recorded out of the failed restore", sorted(await persistedPrivatePaths()), "[]");
     // Absence is an adoptable state, not a forget: a target that still remembers the path
@@ -343,7 +331,7 @@ try {
     useDeployment(await freshDeployment("b2"));
     const tombstoned = `${JSON.stringify({ privatePaths: [], forgotten: RESTORED_ONLY }, null, 2)}\n`;
     await writeFile(privatePathsLedgerFile(), tombstoned, "utf8");
-    check("the staged failure fails this restore too", await runStagedFailureRestore(), true);
+    checkTrue("the staged failure fails this restore too", await runStagedFailureRestore());
     check("the rollback restored the tombstone state exactly", await readFile(privatePathsLedgerFile(), "utf8"), tombstoned);
     await reconcilePrivatePathsHistory(fakeTargetCtx(`${JSON.stringify({ privatePaths: RESTORED_ONLY })}\n`));
     check("the deliberate forget survives the reconcile", sorted(await persistedPrivatePaths()), "[]");
@@ -371,7 +359,7 @@ try {
   const CANONICAL = `${JSON.stringify({ privatePaths: ["vault", "vault/credentials.env"] }, null, 2)}\n`;
 
   await publishPrivatePathsHistory(publishCtx);
-  check("the first publish creates the history copy", await access(historyPath).then(() => true, () => false), true);
+  checkTrue("the first publish creates the history copy", await access(historyPath).then(() => true, () => false));
   check("and it holds exactly the canonical bytes", await readFile(historyPath, "utf8"), CANONICAL);
   check("through exactly one write", writeCount, 1);
 
@@ -390,7 +378,7 @@ try {
   const exclusive = await rejectionOf(async () => {
     await local.writePrivateFile?.(historyPath, "x");
   });
-  check("the real private writer still refuses an existing name", exclusive !== undefined && /EEXIST|already exists/.test(exclusive), true);
+  checkTrue("the real private writer still refuses an existing name", exclusive !== undefined && /EEXIST|already exists/.test(exclusive));
 
   await recordPrivateWrite("vault/state", "vault");
   let changedPublishFailed = false;
@@ -401,7 +389,7 @@ try {
   }
   check("a publish of changed content replaces the copy instead of dying on it", changedPublishFailed, false);
   check("through a second write", writeCount, 2);
-  check("and the copy now carries the newly recorded path", (await readFile(historyPath, "utf8")).includes("vault/state"), true);
+  checkTrue("and the copy now carries the newly recorded path", (await readFile(historyPath, "utf8")).includes("vault/state"));
   const afterReplace = await readFile(historyPath, "utf8");
 
   // A fresh deployment folder adopting the same target: the ledger was never written here,
@@ -427,7 +415,7 @@ try {
     } catch {
       lockedPublishFailed = true;
     }
-    check("a publish onto a read-only config directory refuses", lockedPublishFailed, true);
+    checkTrue("a publish onto a read-only config directory refuses", lockedPublishFailed);
     check("and the previous history survives the refusal", await readFile(historyPath, "utf8"), beforeLock);
     await chmod(`${DATA_C}/config`, 0o700);
     let finalPublishFailed = false;
@@ -437,7 +425,7 @@ try {
       finalPublishFailed = true;
     }
     check("restoring the directory's mode lets the publish land", finalPublishFailed, false);
-    check("with the newly recorded path in it", (await readFile(historyPath, "utf8")).includes("vault/extra.env"), true);
+    checkTrue("with the newly recorded path in it", (await readFile(historyPath, "utf8")).includes("vault/extra.env"));
     check("and the published copy is owner-only", (await stat(historyPath)).mode & 0o777, 0o600);
   }
 
@@ -500,8 +488,8 @@ try {
     const fullFresh = `${ARCHIVES}/full-fresh.tar.gz`;
     await createArchive(ctx, { archive: fullFresh, profile: "full" });
     const fullEntries = await listArchive(ctx, fullFresh);
-    check("the first full backup keeps the private file", fullEntries.includes("data/sidecar-private/credentials.env"), true);
-    check("and it carries the privacy history physically", fullEntries.includes("data/config/clawforge-private-paths.json"), true);
+    checkTrue("the first full backup keeps the private file", fullEntries.includes("data/sidecar-private/credentials.env"));
+    checkTrue("and it carries the privacy history physically", fullEntries.includes("data/config/clawforge-private-paths.json"));
 
     await recordPrivateWrite("vault/extra.env", "vault");
     const fullFreshAgain = `${ARCHIVES}/full-fresh-again.tar.gz`;
@@ -513,8 +501,8 @@ try {
     }
     check("a second full backup resolves against the existing history copy", secondFullFailed, false);
     const publishedCopy = await transport.readFile(`${DATA}/config/clawforge-private-paths.json`);
-    check("its replace actually landed", publishedCopy.includes("vault/extra.env"), true);
-    check("and the second full still carries the history copy", (await listArchive(ctx, fullFreshAgain)).includes("data/config/clawforge-private-paths.json"), true);
+    checkTrue("its replace actually landed", publishedCopy.includes("vault/extra.env"));
+    checkTrue("and the second full still carries the history copy", (await listArchive(ctx, fullFreshAgain)).includes("data/config/clawforge-private-paths.json"));
   }
 } finally {
   for (const directory of temporaries) await rm(directory, { recursive: true, force: true }).catch(() => {});
@@ -524,7 +512,4 @@ try {
   if (previousDeployment !== undefined) useDeployment(previousDeployment);
 }
 
-process.stderr.write(
-  failed === 0 ? "all private-paths-history reconcile checks passed\n" : `${failed} private-paths-history reconcile check(s) failed\n`,
-);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("private-paths-history reconcile");

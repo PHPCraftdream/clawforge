@@ -10,19 +10,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "../fixture.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function skip(reason: string): void {
   process.stderr.write(`  skip ${reason}\n`);
@@ -193,8 +181,8 @@ try {
   );
   const hintStore = resolve(deployDir, "secrets", "hint.env");
   const hintTemplate = await readFile(hintStore, "utf8");
-  check("a central store template includes repository requirements", hintTemplate.includes("REPO_SECRET="), true);
-  check("the repo-env section tells the operator to copy the existing value", hintTemplate.includes("already exists in the repository's own .env"), true);
+  checkTrue("a central store template includes repository requirements", hintTemplate.includes("REPO_SECRET="));
+  checkTrue("the repo-env section tells the operator to copy the existing value", hintTemplate.includes("already exists in the repository's own .env"));
   await writeFile(hintStore, "ZAI_API_KEY=zai-value\n", "utf8");
 
   running = true;
@@ -205,9 +193,9 @@ try {
     },
     () => secrets(applyCtx, ["--apply", "--store", "hint"]),
   );
-  check("a running instance is told to restart, not to run up", runningOutput.includes("./clawforge restart"), true);
+  checkTrue("a running instance is told to restart, not to run up", runningOutput.includes("./clawforge restart"));
   check("the running hint does not name ./clawforge up", runningOutput.includes("./clawforge up"), false);
-  check("the running hint says the file is written but has not been read", runningOutput.includes("has not read"), true);
+  checkTrue("the running hint says the file is written but has not been read", runningOutput.includes("has not read"));
   check("the values were installed before the hint is given", targetEnvContent, "ZAI_API_KEY=zai-value\n");
 
   running = false;
@@ -218,7 +206,7 @@ try {
     },
     () => secrets(applyCtx, ["--apply", "--store", "hint"]),
   );
-  check("a stopped instance is told to start, not to restart", stoppedOutput.includes("./clawforge up"), true);
+  checkTrue("a stopped instance is told to start, not to restart", stoppedOutput.includes("./clawforge up"));
   check("the stopped hint does not name ./clawforge restart", stoppedOutput.includes("./clawforge restart"), false);
 
   // The same contract on the status listing's own hint (the missing-secrets branch):
@@ -248,7 +236,7 @@ try {
   {
     const payload = JSON.parse(statusRunningOutput) as StatusPayload;
     check("a running instance is reported as running", payload.running, true);
-    check("ZAI_API_KEY is reported missing", payload.missing.includes("ZAI_API_KEY"), true);
+    checkTrue("ZAI_API_KEY is reported missing", payload.missing.includes("ZAI_API_KEY"));
   }
 
   running = false;
@@ -289,13 +277,13 @@ try {
   }
   {
     const payload = JSON.parse(optionalAbsentOutput) as StatusPayload;
-    check("the required-absent entry is still reported missing", payload.missing.includes("ZAI_API_KEY"), true);
+    checkTrue("the required-absent entry is still reported missing", payload.missing.includes("ZAI_API_KEY"));
     check("the optional-absent entry is not reported as missing", payload.missing.includes("REPO_SECRET"), false);
     const repoSecret = payload.secrets.find((entry) => entry.name === "REPO_SECRET");
     check("the optional-absent entry is present:false", repoSecret?.present, false);
     check("the optional-absent entry is required:false", repoSecret?.required, false);
   }
-  check("the missing-required throw still happened", optionalAbsentError !== "", true);
+  checkTrue("the missing-required throw still happened", optionalAbsentError !== "");
 
   // The success path: with the required value in place the run completes, and nothing is
   // reported missing — the optional entry is merely not set yet.
@@ -340,12 +328,12 @@ try {
       const owner = await windowsOwnerSid();
       const allowed = [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"];
       const storeDacl = await savedAces(sealedStore);
-      check("the fresh store's DACL is sealed against inheritance", storeDacl.daclProtected && storeDacl.aces.every((ace) => !ace.flags.includes("ID")), true);
-      check("the fresh store names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ownerAlias(ace.trustee, owner))), true);
-      check("the fresh store gives the owner full access", storeDacl.aces.some((ace) => ownerAlias(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights)), true);
+      checkTrue("the fresh store's DACL is sealed against inheritance", storeDacl.daclProtected && storeDacl.aces.every((ace) => !ace.flags.includes("ID")));
+      checkTrue("the fresh store names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ownerAlias(ace.trustee, owner))));
+      checkTrue("the fresh store gives the owner full access", storeDacl.aces.some((ace) => ownerAlias(ace.trustee, owner) === owner && /^FA$/i.test(ace.rights)));
       const dirDacl = await savedAces(secretsDirectory);
-      check("secrets/ itself is sealed against inheritance", dirDacl.daclProtected && dirDacl.aces.every((ace) => !ace.flags.includes("ID")), true);
-      check("secrets/ no longer grants the planted Guests access", dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)), true);
+      checkTrue("secrets/ itself is sealed against inheritance", dirDacl.daclProtected && dirDacl.aces.every((ace) => !ace.flags.includes("ID")));
+      checkTrue("secrets/ no longer grants the planted Guests access", dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)));
     } else {
       skip("Windows DACL assertions on POSIX (no DACL to read)");
       check("secrets/ itself is owner-only (700, execute included)", (await stat(secretsDirectory)).mode & 0o777, 0o700);
@@ -368,10 +356,10 @@ try {
       const owner = await windowsOwnerSid();
       const allowed = [owner, "S-1-5-18", "S-1-5-32-544", "BA", "SY"];
       const storeDacl = await savedAces(sealedStore);
-      check("--force's replacement keeps the DACL sealed against inheritance", storeDacl.daclProtected && storeDacl.aces.every((ace) => !ace.flags.includes("ID")), true);
-      check("--force's replacement names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ownerAlias(ace.trustee, owner))), true);
+      checkTrue("--force's replacement keeps the DACL sealed against inheritance", storeDacl.daclProtected && storeDacl.aces.every((ace) => !ace.flags.includes("ID")));
+      checkTrue("--force's replacement names only owner, SYSTEM and Administrators", storeDacl.aces.every((ace) => allowed.includes(ownerAlias(ace.trustee, owner))));
       const dirDacl = await savedAces(secretsDirectory);
-      check("--force seals secrets/ again despite the planted Guests ACE", dirDacl.daclProtected && dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)), true);
+      checkTrue("--force seals secrets/ again despite the planted Guests ACE", dirDacl.daclProtected && dirDacl.aces.every((ace) => !["S-1-5-32-546", "BG"].includes(ace.trustee)));
     } else {
       skip("Windows DACL assertions on POSIX (no DACL to read)");
       check("--force keeps secrets/ owner-only", (await stat(secretsDirectory)).mode & 0o777, 0o700);
@@ -399,7 +387,7 @@ try {
       },
       () => secrets(applyCtx, ["--apply", "--store", "sealed"]),
     );
-    check("applying a store that is not owner-only says so, naming the file", exposedOutput.includes(sealedStore) && exposedOutput.includes("not owner-only"), true);
+    checkTrue("applying a store that is not owner-only says so, naming the file", exposedOutput.includes(sealedStore) && exposedOutput.includes("not owner-only"));
     check("the exposure report never carries the value", exposedOutput.includes("zai-value"), false);
     check("the report is a warning, not a refusal — the values are still installed", targetEnvContent, "ZAI_API_KEY=zai-value\n");
   }
@@ -420,8 +408,8 @@ try {
     );
     const deliveredRepositoryEnv = await readFile(repositoryEnv, "utf8");
     check("one store delivers target values", targetEnvContent, "ZAI_API_KEY=zai-value\n");
-    check("one store delivers repository values", deliveredRepositoryEnv.includes("REPO_SECRET=repo-value"), true);
-    check("repository settings survive delivery", deliveredRepositoryEnv.includes("KEEP_SETTING=keep"), true);
+    checkTrue("one store delivers repository values", deliveredRepositoryEnv.includes("REPO_SECRET=repo-value"));
+    checkTrue("repository settings survive delivery", deliveredRepositoryEnv.includes("KEEP_SETTING=keep"));
     check("delivery output never carries repository secret values", repositoryOutput.includes("repo-value"), false);
   }
   {
@@ -456,10 +444,10 @@ try {
       },
       () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
     );
-    check("a running instance gets the recreate performed, not suggested", delivered.reconciled, true);
-    check("the command waits for health after recreating", delivered.waited, true);
-    check("the recreate is announced as replacing the container", deliveryOutput.includes("replaced, not merely signalled"), true);
-    check("the confirmation names the variable in force", deliveryOutput.includes("confirmed") && deliveryOutput.includes("REPO_SECRET"), true);
+    checkTrue("a running instance gets the recreate performed, not suggested", delivered.reconciled);
+    checkTrue("the command waits for health after recreating", delivered.waited);
+    checkTrue("the recreate is announced as replacing the container", deliveryOutput.includes("replaced, not merely signalled"));
+    checkTrue("the confirmation names the variable in force", deliveryOutput.includes("confirmed") && deliveryOutput.includes("REPO_SECRET"));
     check("the confirmation never carries the value", deliveryOutput.includes("repo-value-two"), false);
     check("nothing suggests restart for repository values", deliveryOutput.includes("./clawforge restart"), false);
 
@@ -473,9 +461,9 @@ try {
       },
       () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
     );
-    check("a container still holding the old value is reported by name", staleOutput.includes("REPO_SECRET") && staleOutput.includes("does not hold"), true);
+    checkTrue("a container still holding the old value is reported by name", staleOutput.includes("REPO_SECRET") && staleOutput.includes("does not hold"));
     check("the mismatch report never carries either value", staleOutput.includes("repo-value-three") || staleOutput.includes("previous-value"), false);
-    check("the mismatch repair names the recreate", staleOutput.includes("./clawforge up"), true);
+    checkTrue("the mismatch repair names the recreate", staleOutput.includes("./clawforge up"));
 
     // Without the capability the command says so and hands over the honest verb.
     delete applyCtx.runtime.reconcile;
@@ -487,7 +475,7 @@ try {
       },
       () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
     );
-    check("a runtime that cannot recreate is told to run up", incapableOutput.includes("recreate the container") && incapableOutput.includes("./clawforge up"), true);
+    checkTrue("a runtime that cannot recreate is told to run up", incapableOutput.includes("recreate the container") && incapableOutput.includes("./clawforge up"));
     check("the incapable runtime still gets no restart suggestion", incapableOutput.includes("./clawforge restart"), false);
 
     // Stopped: the next start creates the container with the new values.
@@ -501,7 +489,7 @@ try {
       },
       () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
     );
-    check("a stopped instance is told the next start carries the values", stoppedDeliveryOutput.includes("the instance is stopped") && stoppedDeliveryOutput.includes("./clawforge up"), true);
+    checkTrue("a stopped instance is told the next start carries the values", stoppedDeliveryOutput.includes("the instance is stopped") && stoppedDeliveryOutput.includes("./clawforge up"));
     check("a stopped instance is not recreated by --apply", delivered.reconciled, reconciledBefore);
 
     // The dump block below proves target-env recovery with a ZAI_API_KEY value, which only
@@ -530,8 +518,8 @@ try {
       () => secrets(applyCtx, ["--dump", "--store", "recovered"]),
     );
     const recoveredContent = await readFile(recoveredStore, "utf8");
-    check("a target-env value is recovered from the target's own config/.env", recoveredContent.includes("ZAI_API_KEY=live-zai-value"), true);
-    check("a repo-env value is recovered from the running container's own environment", recoveredContent.includes("REPO_SECRET=live-repo-value"), true);
+    checkTrue("a target-env value is recovered from the target's own config/.env", recoveredContent.includes("ZAI_API_KEY=live-zai-value"));
+    checkTrue("a repo-env value is recovered from the running container's own environment", recoveredContent.includes("REPO_SECRET=live-repo-value"));
     check("the dump report never carries a recovered value", dumpOutput.includes("live-zai-value") || dumpOutput.includes("live-repo-value"), false);
 
     // Re-running without --force must refuse and leave the recovered store untouched — the
@@ -545,8 +533,8 @@ try {
     } catch (error) {
       dumpRefusal = error instanceof Error ? error.message : String(error);
     }
-    check("re-running --dump without --force throws", dumpRefusal !== "", true);
-    check("the refusal mentions --force", dumpRefusal.includes("--force"), true);
+    checkTrue("re-running --dump without --force throws", dumpRefusal !== "");
+    checkTrue("the refusal mentions --force", dumpRefusal.includes("--force"));
 
     // A name recovery cannot reach is left blank and named, never guessed or silently
     // dropped — the runtime here answers, but does not know REPO_SECRET this time.
@@ -559,8 +547,8 @@ try {
       () => secrets(applyCtx, ["--dump", "--store", "recovered", "--force"]),
     );
     const partialContent = await readFile(recoveredStore, "utf8");
-    check("an unrecovered repo-env name is left blank", /^REPO_SECRET=$/m.test(partialContent), true);
-    check("an unrecovered name is reported by name", partialOutput.includes("REPO_SECRET"), true);
+    checkTrue("an unrecovered repo-env name is left blank", /^REPO_SECRET=$/m.test(partialContent));
+    checkTrue("an unrecovered name is reported by name", partialOutput.includes("REPO_SECRET"));
     check("a running instance that answers empty is not reported as not running", partialOutput.includes("not running"), false);
 
     // The runtime cannot introspect its container at all (the default stub above).
@@ -572,7 +560,7 @@ try {
       },
       () => secrets(applyCtx, ["--dump", "--store", "recovered", "--force"]),
     );
-    check("a runtime without the capability says so", noCapabilityOutput.includes("cannot read a running container's own environment"), true);
+    checkTrue("a runtime without the capability says so", noCapabilityOutput.includes("cannot read a running container's own environment"));
 
     // The runtime has the capability but reports the instance unreachable/not running.
     applyCtx.runtime.runningEnvironment = async () => undefined;
@@ -583,11 +571,10 @@ try {
       },
       () => secrets(applyCtx, ["--dump", "--store", "recovered", "--force"]),
     );
-    check("an unreachable running instance is reported as such", notRunningOutput.includes("the instance is not running"), true);
+    checkTrue("an unreachable running instance is reported as such", notRunningOutput.includes("the instance is not running"));
   }
 } finally {
   await teardownDeployment(deployDir);
 }
 
-process.stderr.write(failed === 0 ? "all local-store checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("local-store");

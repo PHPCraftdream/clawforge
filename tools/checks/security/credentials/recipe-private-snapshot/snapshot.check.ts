@@ -50,19 +50,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -156,7 +144,7 @@ try {
   await writeFile(manifestPath, '{ "description": broken', "utf8");
 
   const policyError = await rejectionOf(() => installedRecipePrivatePaths());
-  check("installedRecipePrivatePaths refuses a malformed manifest", /could not parse/.test(policyError ?? ""), true);
+  checkTrue("installedRecipePrivatePaths refuses a malformed manifest", /could not parse/.test(policyError ?? ""));
 
   check(
     "listRecipes still resolves the working recipes beside a broken manifest",
@@ -173,9 +161,9 @@ try {
     "utf8",
   );
   const noncanonicalRecipe = await rejectionOf(() => loadRecipe("fixture-sidecar"));
-  check("loadRecipe rejects privatePaths with an empty interior segment", /empty path segments/.test(noncanonicalRecipe ?? ""), true);
+  checkTrue("loadRecipe rejects privatePaths with an empty interior segment", /empty path segments/.test(noncanonicalRecipe ?? ""));
   const noncanonicalPolicy = await rejectionOf(() => installedRecipePrivatePaths());
-  check("installedRecipePrivatePaths rejects noncanonical privatePaths", /empty path segments/.test(noncanonicalPolicy ?? ""), true);
+  checkTrue("installedRecipePrivatePaths rejects noncanonical privatePaths", /empty path segments/.test(noncanonicalPolicy ?? ""));
   await writeFile(manifestPath, originalManifest, "utf8");
 
   // --- the staging-marker rules (pure group: no WSL needed) --------------------------------------
@@ -250,7 +238,7 @@ try {
       () => verifySnapshot(ctx, targetOnlyArchive, "share"),
     );
     check("direct verify applies target-only privacy history", targetHistoryPassed, false);
-    check("target-only privacy refusal names the private path", targetHistoryOutput.includes(targetOnlyPath), true);
+    checkTrue("target-only privacy refusal names the private path", targetHistoryOutput.includes(targetOnlyPath));
     await transport.remove(`${DATA}/config/clawforge-private-paths.json`);
     await transport.remove(`${DATA}/${targetOnlyPath}`);
 
@@ -260,14 +248,14 @@ try {
       prepare: (ctx: Context, recipe: Recipe) => Promise<void>;
     };
     await sidecarHooks.prepare(ctx, sidecar);
-    check("the sidecar's private file is written under its declared path", await transport.exists(`${DATA}/sidecar-private/credentials.env`), true);
+    checkTrue("the sidecar's private file is written under its declared path", await transport.exists(`${DATA}/sidecar-private/credentials.env`));
 
     const bracketHooks = (await import(new URL("./fixture-recipe/fixture-bracket/prepare.ts", import.meta.url).href)) as {
       prepare: (ctx: Context, recipe: Recipe) => Promise<void>;
     };
     await bracketHooks.prepare(ctx, bracket);
     // The write itself also proves the private helpers accept a literal-bracket declared path.
-    check("the bracket recipe's private file is written under its literal-bracket declared path", await transport.exists(`${DATA}/vault[1]/credentials.env`), true);
+    checkTrue("the bracket recipe's private file is written under its literal-bracket declared path", await transport.exists(`${DATA}/vault[1]/credentials.env`));
 
     // Control sibling: the name tar's old glob reading of `vault1` caught instead of the real
     // one — declared by nobody, so every profile may carry it. Written raw (not through the
@@ -314,15 +302,15 @@ try {
     const full = `${ARCHIVES}/full.tar.gz`;
     await createArchive(ctx, { archive: full, profile: "full" });
     const fullListing = await listArchive(ctx, full);
-    check("a full archive keeps the sidecar's private file", fullListing.includes("data/sidecar-private/credentials.env"), true);
-    check("a full archive keeps the literal vault[1] private file", fullListing.includes("data/vault[1]/credentials.env"), true);
-    check("a full archive keeps the declared exact file", fullListing.includes(`data/${DECLARED_FILE}`), true);
+    checkTrue("a full archive keeps the sidecar's private file", fullListing.includes("data/sidecar-private/credentials.env"));
+    checkTrue("a full archive keeps the literal vault[1] private file", fullListing.includes("data/vault[1]/credentials.env"));
+    checkTrue("a full archive keeps the declared exact file", fullListing.includes(`data/${DECLARED_FILE}`));
     check("a full archive still leaves every staging leftover out — never instance state", fullListing.some((entry) => entry.includes(".clawforge-private-") || entry.includes(".clawforge-publish-")), false);
 
     const migrate = `${ARCHIVES}/migrate.tar.gz`;
     await createArchive(ctx, { archive: migrate, profile: "migrate" });
     const migrateListing = await listArchive(ctx, migrate);
-    check("a migrate archive keeps the undeclared sibling vault1 — no over-exclusion", migrateListing.includes("data/vault1/credentials.env"), true);
+    checkTrue("a migrate archive keeps the undeclared sibling vault1 — no over-exclusion", migrateListing.includes("data/vault1/credentials.env"));
     check("a migrate archive leaves out the sidecar's private file", migrateListing.includes("data/sidecar-private/credentials.env"), false);
     check("a migrate archive leaves out the literal vault[1] — the escape, not the old glob", migrateListing.includes("data/vault[1]/credentials.env"), false);
     check("a wildcard base exclusion (provider-key staging) stays out of a migrate archive", migrateListing.includes(`data/config/.env.clawforge-staging-${tag}`), false);
@@ -330,7 +318,7 @@ try {
     check("a migrate archive leaves out the interrupted private-write leftover", migrateListing.includes(`data/workspace/${DECLARED_FILE}.clawforge-private-${tag}`), false);
     check("a migrate archive leaves out the nested fallback leftover", migrateListing.includes(`data/workspace/${DECLARED_FILE}.clawforge-private-${tag}.clawforge-publish-${tag}`), false);
     check("a migrate archive leaves out the public publish leftover", migrateListing.includes(`data/workspace/public-note.md.clawforge-publish-${tag}`), false);
-    check("a migrate archive keeps the unrelated neighbor beside the leftovers", migrateListing.includes("data/workspace/neighbor.env"), true);
+    checkTrue("a migrate archive keeps the unrelated neighbor beside the leftovers", migrateListing.includes("data/workspace/neighbor.env"));
 
     // The control has served: gone before any share verdict, so the allow-list below judges a
     // clean tree.
@@ -345,10 +333,9 @@ try {
     check("a share archive leaves out the exact-file declaration itself", shareListing.includes(`data/${DECLARED_FILE}`), false);
     // The positive round-trip. If the literal escaping ever broke, vault[1] would re-enter this
     // archive and this check would fail on both the forbidden-path and allow-list rules.
-    check(
+    checkTrue(
       "a share archive with every declared private path excluded passes verify",
       await withOutputSink(() => {}, () => verifySnapshot(ctx, share, "share")),
-      true,
     );
 
     // --- defense in depth: an archive taken before the exclusion existed -------------------------
@@ -363,15 +350,14 @@ try {
       const output: string[] = [];
       const passed = await withOutputSink((chunk) => output.push(chunk), () => verifySnapshot(ctx, preFix, profile));
       check(`verify refuses an already-taken ${profile} archive containing the recipes' private paths`, passed, false);
-      check(`the ${profile} refusal names the offending path`, output.join("").includes("sidecar-private"), true);
+      checkTrue(`the ${profile} refusal names the offending path`, output.join("").includes("sidecar-private"));
       // The pre-fix tar has no --exclude at all, so the crash leftovers are IN this archive:
       // the marker fragment rule is what refuses it, not the allow-list that used to pass them.
-      check(`the ${profile} refusal names a staging family of an interrupted write`, output.join("").includes(".clawforge-private-"), true);
+      checkTrue(`the ${profile} refusal names a staging family of an interrupted write`, output.join("").includes(".clawforge-private-"));
     }
-    check(
+    checkTrue(
       "a full archive containing the recipes' private paths still passes verify",
       await withOutputSink(() => {}, () => verifySnapshot(ctx, preFix, "full")),
-      true,
     );
 
     // --- the happy path: the same tree once the crash leftovers are cleaned up --------------------
@@ -384,15 +370,13 @@ try {
     const shareClean = `${ARCHIVES}/share-clean.tar.gz`;
     await createArchive(ctx, { archive: shareClean, profile: "share" });
     const cleanListing = await listArchive(ctx, shareClean);
-    check(
+    checkTrue(
       "the healed tree's share archive keeps the declared file out and the neighbor in",
       !cleanListing.includes(`data/${DECLARED_FILE}`) && cleanListing.includes("data/workspace/neighbor.env"),
-      true,
     );
-    check(
+    checkTrue(
       "the healed tree's share archive passes verify",
       await withOutputSink(() => {}, () => verifySnapshot(ctx, shareClean, "share")),
-      true,
     );
 
     // --- a malformed manifest stops the real archivers and verifiers too --------------------------
@@ -408,9 +392,9 @@ try {
 
     for (const profile of ["migrate", "share"] as const) {
       const createError = await rejectionOf(() => createArchive(ctx, { archive: `${ARCHIVES}/broken-${profile}.tar.gz`, profile }));
-      check(`createArchive refuses a ${profile} archive with noncanonical privatePaths`, /empty path segments/.test(createError ?? ""), true);
+      checkTrue(`createArchive refuses a ${profile} archive with noncanonical privatePaths`, /empty path segments/.test(createError ?? ""));
       const verifyError = await rejectionOf(() => withOutputSink(() => {}, () => verifySnapshot(ctx, share, profile)));
-      check(`verifySnapshot refuses a ${profile} archive with noncanonical privatePaths`, /empty path segments/.test(verifyError ?? ""), true);
+      checkTrue(`verifySnapshot refuses a ${profile} archive with noncanonical privatePaths`, /empty path segments/.test(verifyError ?? ""));
     }
 
     await writeFile(manifestPath, originalManifest, "utf8");
@@ -421,10 +405,9 @@ try {
     await transport.writeFile(`${DATA}/vault1/credentials.env`, "FIXTURE_CREDENTIAL=review-p1-02-control-sibling recipe=none\n");
     await createArchive(ctx, { archive: healed, profile: "migrate" });
     const healedListing = await listArchive(ctx, healed);
-    check(
+    checkTrue(
       "a fresh migrate archive succeeds after the restore — private paths out, sibling in",
       healedListing.includes("data/vault1/credentials.env") && !healedListing.includes("data/sidecar-private/credentials.env"),
-      true,
     );
 
     // --- absent recipes root (integration half) --------------------------------------------------
@@ -435,10 +418,9 @@ try {
     useRecipesDir(join(tempRecipes, "absent"));
     const absentArchive = `${ARCHIVES}/migrate-absent-root.tar.gz`;
     await createArchive(ctx, { archive: absentArchive, profile: "migrate" });
-    check(
+    checkTrue(
       "with an absent recipes root the migrate archive keeps the declared files",
       (await listArchive(ctx, absentArchive)).includes("data/sidecar-private/credentials.env"),
-      true,
     );
     useRecipesDir(tempRecipes);
   }
@@ -449,5 +431,4 @@ try {
   else useRecipesDir(previousRecipes);
 }
 
-process.stderr.write(failed === 0 ? "all recipe-private-snapshot checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("recipe-private-snapshot");

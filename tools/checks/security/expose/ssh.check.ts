@@ -9,20 +9,7 @@
 import { exposeSsh, sshTunnelCommand } from "#framework/commands/operate/expose/ssh.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -71,31 +58,29 @@ check("a different local port and host both come through untouched", sshTunnelCo
 
 for (const location of ["wsl", "local", "auto"]) {
   const output = await run(ctxFor({ location, transportDescription: location === "wsl" ? "wsl:Ubuntu-24.04" : location }), []);
-  check(`${location} explains no tunnel is needed`, output.includes("no SSH tunnel needed"), true);
-  check(`${location} still names where the gateway is directly reachable`, output.includes("http://127.0.0.1:18789"), true);
+  checkTrue(`${location} explains no tunnel is needed`, output.includes("no SSH tunnel needed"));
+  checkTrue(`${location} still names where the gateway is directly reachable`, output.includes("http://127.0.0.1:18789"));
 }
 
 // --- ssh: the tunnel command, the URL, and how mcp-creds' own output relates to it --------------
 
 {
   const output = await run(ctxFor({ location: "ssh", sshHost: "user@host" }), []);
-  check("the exact ssh tunnel command is printed", output.includes("ssh -N -L 18789:127.0.0.1:18789 user@host"), true);
-  check("the resulting local URL is printed", output.includes("http://127.0.0.1:18789"), true);
-  check(
+  checkTrue("the exact ssh tunnel command is printed", output.includes("ssh -N -L 18789:127.0.0.1:18789 user@host"));
+  checkTrue("the resulting local URL is printed", output.includes("http://127.0.0.1:18789"));
+  checkTrue(
     "with the default (matching) local port, mcp-creds' own URL is said to already be correct",
     output.includes("mcp-creds already prints this exact URL"),
-    true,
   );
 }
 
 {
   const output = await run(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "2222"]);
-  check("a custom --local-port is used in the tunnel command", output.includes("ssh -N -L 2222:127.0.0.1:18789 user@host"), true);
-  check("and in the resulting URL", output.includes("http://127.0.0.1:2222"), true);
-  check(
+  checkTrue("a custom --local-port is used in the tunnel command", output.includes("ssh -N -L 2222:127.0.0.1:18789 user@host"));
+  checkTrue("and in the resulting URL", output.includes("http://127.0.0.1:2222"));
+  checkTrue(
     "a differing local port tells the operator to substitute it into mcp-creds' URL",
     output.includes("substitute 2222 for 18789"),
-    true,
   );
 }
 
@@ -106,26 +91,23 @@ check(
 );
 {
   const output = await run(ctxFor({ location: "ssh", sshHost: "user@host" }), []);
-  check("and says so explicitly", output.includes("token from mcp-creds is unchanged"), true);
+  checkTrue("and says so explicitly", output.includes("token from mcp-creds is unchanged"));
 }
 
-check(
+checkTrue(
   "OC_SSH_HOST missing under OC_TARGET_LOCATION=ssh is refused with a clear reason",
   (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "" }), []))).includes("OC_SSH_HOST is not set"),
-  true,
 );
 
 // --- argument parsing ----------------------------------------------------------------------------
 
-check(
+checkTrue(
   "a non-numeric --local-port is refused",
   (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "abc"]))).includes("must be a plain port number"),
-  true,
 );
-check(
+checkTrue(
   "an unknown argument is refused",
   (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--bogus"]))).includes("unknown argument: --bogus"),
-  true,
 );
 
 // --- --run needs a real terminal ------------------------------------------------------------------
@@ -133,11 +115,9 @@ check(
 // exactly the world a script, an agent's shell tool, or MCP runs in. --run must refuse there,
 // before ever reaching spawnLocal (which would otherwise hang this check on a real ssh process).
 
-check(
+checkTrue(
   "--run refuses without a real terminal, rather than blocking this check on a real ssh process",
   (await deathOf(() => run(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]))).includes("needs a real terminal"),
-  true,
 );
 
-process.stderr.write(failed === 0 ? "all expose ssh checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("expose ssh");

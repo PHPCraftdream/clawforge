@@ -9,20 +9,7 @@ import { exposeTailscale, probeTailscale, tailscaleServeCommand, tailscaleGatewa
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -162,7 +149,7 @@ function jsonServeTransport(stdout: string, code = 0): Context["transport"] {
   const { transport } = noLockTransport({ present: true, state: "NeedsLogin" });
   const probe = await probeTailscale(ctxFor(transport));
   check("present but not logged in", [probe.present, probe.loggedIn], [true, false]);
-  check("names the state and the fix", probe.detail.includes("NeedsLogin") && probe.detail.includes("tailscale up"), true);
+  checkTrue("names the state and the fix", probe.detail.includes("NeedsLogin") && probe.detail.includes("tailscale up"));
 }
 {
   const { transport } = noLockTransport({ present: true, statusFails: true });
@@ -179,14 +166,14 @@ function jsonServeTransport(stdout: string, code = 0): Context["transport"] {
 
 for (const args of [["--funnel"], ["funnel"], ["--apply", "--funnel"]]) {
   const message = await deathOf(() => run(ctxFor(noLockTransport({ present: true, state: "Running" }).transport), args));
-  check(`funnel is refused for ${JSON.stringify(args)}`, message.includes("never runs `tailscale funnel`"), true);
+  checkTrue(`funnel is refused for ${JSON.stringify(args)}`, message.includes("never runs `tailscale funnel`"));
 }
 
 // --- an undeclared argument is refused, not silently accepted -----------------------------
 
 {
   const message = await deathOf(() => run(ctxFor(noLockTransport({ present: false }).transport), ["--bogus"]));
-  check("an unknown argument is refused", message.includes("unknown argument: --bogus"), true);
+  checkTrue("an unknown argument is refused", message.includes("unknown argument: --bogus"));
 }
 
 // --- print-only default: never touches the lock, never runs serve ------------------------------
@@ -194,13 +181,13 @@ for (const args of [["--funnel"], ["funnel"], ["--apply", "--funnel"]]) {
 {
   const { transport, calls } = noLockTransport({ present: false });
   const output = await run(ctxFor(transport), []);
-  check("absent: the print-only path says so and suggests installing", output.includes("install tailscale on the target"), true);
+  checkTrue("absent: the print-only path says so and suggests installing", output.includes("install tailscale on the target"));
   check("and never attempts `tailscale serve`", calls.some((call) => call.command === "tailscale" && call.args[0] === "serve"), false);
 }
 {
   const { transport, calls } = noLockTransport({ present: true, state: "Running" });
   const output = await run(ctxFor(transport), []);
-  check("present+logged in, no --apply: the exact command is printed", output.includes("tailscale serve --bg http://127.0.0.1:18789"), true);
+  checkTrue("present+logged in, no --apply: the exact command is printed", output.includes("tailscale serve --bg http://127.0.0.1:18789"));
   check("but never actually run", calls.some((call) => call.command === "tailscale" && call.args[0] === "serve"), false);
 }
 
@@ -208,11 +195,11 @@ for (const args of [["--funnel"], ["funnel"], ["--apply", "--funnel"]]) {
 
 {
   const message = await deathOf(() => run(ctxFor(noLockTransport({ present: false }).transport), ["--apply"]));
-  check("--apply refuses when tailscale is absent, before the lock", message.includes("tailscale is not installed"), true);
+  checkTrue("--apply refuses when tailscale is absent, before the lock", message.includes("tailscale is not installed"));
 }
 {
   const message = await deathOf(() => run(ctxFor(noLockTransport({ present: true, state: "NeedsLogin" }).transport), ["--apply"]));
-  check("--apply refuses when not logged in, before the lock", message.includes("not logged in"), true);
+  checkTrue("--apply refuses when not logged in, before the lock", message.includes("not logged in"));
 }
 
 // --- --apply only ever runs while holding the instance lock -------------------------------------
@@ -270,15 +257,14 @@ function lockAwareTransport(lockAlreadyHeld: boolean): { transport: Context["tra
 {
   const { transport, serveCalls } = lockAwareTransport(true);
   const message = await deathOf(() => run(ctxFor(transport), ["--apply"]));
-  check("--apply refuses when another operation already holds the instance lock", message.includes("another operation is changing this instance"), true);
+  checkTrue("--apply refuses when another operation already holds the instance lock", message.includes("another operation is changing this instance"));
   check("and `tailscale serve` is never reached", serveCalls.length, 0);
 }
 {
   const { transport, serveCalls } = lockAwareTransport(false);
   const output = await run(ctxFor(transport), ["--apply"]);
   check("with no competing lock, --apply reaches `tailscale serve` exactly once", serveCalls, [["serve", "--bg", "http://127.0.0.1:18789"]]);
-  check("and reports success", output.includes("applied"), true);
+  checkTrue("and reports success", output.includes("applied"));
 }
 
-process.stderr.write(failed === 0 ? "all expose tailscale checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("expose tailscale");

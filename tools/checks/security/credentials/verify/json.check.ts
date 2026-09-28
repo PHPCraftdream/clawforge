@@ -8,19 +8,7 @@ import { verify } from "#framework/commands/lifecycle/verify.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const ARCHIVE = "/tmp/verify-json.tar.gz";
 
@@ -95,11 +83,11 @@ const CLEAN_VERBOSE =
       threw = true;
     }
   });
-  check("a failing verify --json still throws (non-zero exit)", threw, true);
+  checkTrue("a failing verify --json still throws (non-zero exit)", threw);
   const payload = JSON.parse(output) as { archive: string; profile: string; passed: boolean; findings: { kind: string; detail: string; fatal: boolean }[] };
   check("the JSON verdict matches the text path", payload.passed, false);
   check("the archive and profile are named", `${payload.archive} ${payload.profile}`, `${ARCHIVE} share`);
-  check("a structural finding is reported", payload.findings.some((finding) => finding.kind === "structural"), true);
+  checkTrue("a structural finding is reported", payload.findings.some((finding) => finding.kind === "structural"));
   check("the structural finding is fatal", payload.findings.find((finding) => finding.kind === "structural")?.fatal, true);
 }
 
@@ -108,7 +96,7 @@ const CLEAN_VERBOSE =
   let output = "";
   await withOutputSink((chunk) => { output += chunk; }, () => verify(ctx, [ARCHIVE, "--json"]));
   const payload = JSON.parse(output) as { passed: boolean; findings: unknown[] };
-  check("a passing archive reports passed:true", payload.passed, true);
+  checkTrue("a passing archive reports passed:true", payload.passed);
   check("a passing archive has no findings", payload.findings.length, 0);
 }
 
@@ -119,7 +107,7 @@ const CLEAN_VERBOSE =
   let output = "";
   await withOutputSink((chunk) => { output += chunk; }, () => verify(ctx, [ARCHIVE]));
   const payload = JSON.parse(output) as { passed: boolean };
-  check("captured without --json still reports JSON", payload.passed, true);
+  checkTrue("captured without --json still reports JSON", payload.passed);
 }
 
 {
@@ -142,13 +130,12 @@ const CLEAN_VERBOSE =
       threw = true;
     }
   });
-  check("an archive with its own embedded provider key still fails verify --json", threw, true);
+  checkTrue("an archive with its own embedded provider key still fails verify --json", threw);
   check("the JSON output never carries the value itself", output.includes(ARCHIVED_KEY), false);
   const payload = JSON.parse(output) as { findings: { kind: string; detail: string }[] };
   const finding = payload.findings.find((entry) => entry.kind === "embedded-provider-key");
-  check("the finding names the kind, not the value", finding !== undefined, true);
+  checkTrue("the finding names the kind, not the value", finding !== undefined);
   check("the finding's detail is the config path and provider id, not the key", finding?.detail, "config/openclaw.json (provider custom)");
 }
 
-process.stderr.write(failed === 0 ? "all verify --json checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("verify --json");

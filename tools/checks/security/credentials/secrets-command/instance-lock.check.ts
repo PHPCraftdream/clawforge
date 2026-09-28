@@ -11,19 +11,7 @@ import { secrets } from "#framework/commands/management/secrets.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "./fixture.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const deployDir = await setupDeployment("lock");
 
@@ -86,7 +74,7 @@ try {
   } catch (error) {
     refused = error instanceof Error ? error.message : String(error);
   }
-  check("secrets --apply refuses when another operation already holds the instance lock", refused.includes("another operation is changing this instance"), true);
+  checkTrue("secrets --apply refuses when another operation already holds the instance lock", refused.includes("another operation is changing this instance"));
 
   let unlockedMessage = "";
   let unlockedOutput = "";
@@ -105,11 +93,10 @@ try {
   }
   // With no requirements, an empty store completes without replacing target secrets.
   check("with no competing lock, an empty secret apply completes", unlockedMessage, "");
-  check("the unlocked command reaches the no-op result", unlockedOutput.includes("no target secrets to apply"), true);
+  checkTrue("the unlocked command reaches the no-op result", unlockedOutput.includes("no target secrets to apply"));
   check("an empty secret apply leaves the target file untouched", targetWrites, 0);
 } finally {
   await teardownDeployment(deployDir);
 }
 
-process.stderr.write(failed === 0 ? "all instance-lock checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("instance-lock");

@@ -6,13 +6,7 @@ import { secrets } from "#framework/commands/management/secrets.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "../fixture.ts";
-
-let failed = 0;
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) { process.stderr.write(`  ok   ${name}\n`); return; }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const deployDir = await setupDeployment("store-template");
 try {  const ctx = {
@@ -49,7 +43,7 @@ try {  const ctx = {
   );
 
   const firstContent = await readFile(storePath, "utf8");
-  check("a fresh store is created", firstContent.length > 0, true);
+  checkTrue("a fresh store is created", firstContent.length > 0);
   check("the fresh template has no values", /=\S/.test(firstContent), false);
   check("a template without repo-env requirements omits the copy hint", firstContent.includes("already exists in the repository's own .env"), false);
 
@@ -74,9 +68,9 @@ try {  const ctx = {
   }
   const afterSecondAttempt = await readFile(storePath, "utf8");
 
-  check("re-running --init-store without --force throws", refusalMessage !== "", true);
-  check("the refusal message mentions already exists", refusalMessage.includes("already exists"), true);
-  check("the refusal message mentions --force", refusalMessage.includes("--force"), true);
+  checkTrue("re-running --init-store without --force throws", refusalMessage !== "");
+  checkTrue("the refusal message mentions already exists", refusalMessage.includes("already exists"));
+  checkTrue("the refusal message mentions --force", refusalMessage.includes("--force"));
   check("the file content is unchanged after the refused attempt", afterSecondAttempt, beforeSecondAttempt);
 
   // --force DOES overwrite with a fresh empty template. Prove it by writing a fake value
@@ -97,7 +91,7 @@ try {  const ctx = {
   );
   const templateFile = resolve(deployDir, "config", "secrets.template.env");
   const templateContent = await readFile(templateFile, "utf8");
-  check("--template writes a file", templateContent.length > 0, true);
+  checkTrue("--template writes a file", templateContent.length > 0);
   check("the written template has no values", /=\S/.test(templateContent), false);
 
   // --print-template emits to the output sink rather than writing a file or touching
@@ -109,7 +103,7 @@ try {  const ctx = {
     },
     () => secrets(ctx, ["--print-template"]),
   );
-  check("--print-template emits something", printed.length > 0, true);
+  checkTrue("--print-template emits something", printed.length > 0);
   check("the printed template has no values", /=\S/.test(printed), false);
 
   // --store with a path-traversal name is rejected before any file is touched.
@@ -122,7 +116,7 @@ try {  const ctx = {
   } catch (error) {
     traversalMessage = error instanceof Error ? error.message : String(error);
   }
-  check("a path-traversal store name is rejected", traversalMessage !== "", true);
+  checkTrue("a path-traversal store name is rejected", traversalMessage !== "");
   const escapedPath = resolve(deployDir, "..", "..", "etc", "passwd.env");
   const escapedExists = await access(escapedPath).then(
     () => true,
@@ -142,8 +136,8 @@ try {  const ctx = {
   } catch (error) {
     applyMessage = error instanceof Error ? error.message : String(error);
   }
-  check("applying a missing store is refused", applyMessage !== "", true);
-  check("the refusal names the correct fix", applyMessage.includes("--init-store --store missing-store"), true);
+  checkTrue("applying a missing store is refused", applyMessage !== "");
+  checkTrue("the refusal names the correct fix", applyMessage.includes("--init-store --store missing-store"));
   check("the refusal does not point at --template", applyMessage.includes("--template"), false);
 
   // --json only makes sense against the default read-only report — refused, clearly, rather
@@ -156,11 +150,10 @@ try {  const ctx = {
     } catch (error) {
       comboMessage = error instanceof Error ? error.message : String(error);
     }
-    check(`--json with ${combo.join(" ")} is refused`, comboMessage.includes("--json only supports the default report"), true);
+    checkTrue(`--json with ${combo.join(" ")} is refused`, comboMessage.includes("--json only supports the default report"));
   }
 
 } finally {
   await teardownDeployment(deployDir);
 }
-process.stderr.write(failed === 0 ? "all store-template checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("store-template");

@@ -29,7 +29,14 @@ export type ArgumentKind = "positional" | "flag" | "option" | "variadic";
  *  (see cli.ts's GROUP_HEADINGS). An operator arrives with an intent ("start it", "check
  *  it", "change it"...), not a mechanism, so the top-level listing is grouped by that
  *  instead of the alphabetical, mechanism-flavoured list a Record's own key order gives. */
-export type CommandGroup = "start-stop" | "check" | "change" | "save-move" | "security-access" | "low-level";
+export type CommandGroup =
+  | "start-stop"
+  | "check"
+  | "change"
+  | "save-move"
+  | "security-access"
+  | "integrations"
+  | "low-level";
 
 /** Description of an argument, used for help text and for the MCP schema. */
 export interface CommandArgument {

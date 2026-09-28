@@ -1,4 +1,4 @@
-// P1-02 of docs/review-2026-09-22-xa-round-3.md: the privacy ledger lives operator-side at
+// P1-02 of docs/internal/review-2026-09-22-xa-round-3.md: the privacy ledger lives operator-side at
 // <deployment>/config/private-paths.json, but a full backup publishes a copy into the data
 // root at <dataDir>/config/clawforge-private-paths.json (createArchive, profile "full"), and
 // restoreArchive imports it back into the deployment ledger after verifyRestoredLayout.
@@ -12,7 +12,7 @@
 //
 // Part A drives the ledger/history contract itself — the publish unit (including the
 // adopt-existing-target and explicit-forget-still-clears-both-copies scenarios of P2-01,
-// docs/review-2026-09-23-xs-round-4.md), the import's merge and its two refusals. It needs no
+// docs/internal/review-2026-09-23-xs-round-4.md), the import's merge and its two refusals. It needs no
 // target and runs everywhere.
 // Part B is the whole scenario over real GNU tar and a real POSIX filesystem (LocalTransport
 // off Windows, a WSL distribution on it): a real private write through the fixture recipe's
@@ -192,7 +192,7 @@ try {
   // ledger and expects exactly RECORDED there.
   await rm(privatePathsLedgerFile(), { force: true });
 
-  // P2-01 of docs/review-2026-09-23-xs-round-4.md: an empty LOCAL ledger used to make
+  // P2-01 of docs/internal/review-2026-09-23-xs-round-4.md: an empty LOCAL ledger used to make
   // publishPrivatePathsHistory remove any target copy outright — which does not distinguish
   // "the operator explicitly forgot this history" from "this deployment folder never wrote a
   // ledger of its own, and the target is the only surviving record" (a lost or freshly

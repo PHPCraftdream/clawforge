@@ -1,4 +1,4 @@
-// P1-04 and P2-04 of docs/review-2026-09-23-xxa-round-6.md: the privacy history has TWO
+// P1-04 and P2-04 of docs/internal/review-2026-09-23-xxa-round-6.md: the privacy history has TWO
 // copies — the operator-side ledger at <deployment>/config/private-paths.json and the
 // target-side copy at <dataDir>/config/clawforge-private-paths.json — and every reader that
 // never publishes used to ask only the first one.

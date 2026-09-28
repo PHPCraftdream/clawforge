@@ -1,5 +1,5 @@
 // Restore's symlink boundary, end to end on a real filesystem: P1-01 of
-// docs/review-2026-09-22-xa-round-2.md.
+// docs/internal/review-2026-09-22-xa-round-2.md.
 //
 // inspectArchive() used to reason only about what an archive records. That left restore
 // writing THROUGH a link the archive shipped at the restore root or at a standard layout
@@ -148,7 +148,7 @@ if (transport === undefined) {
     }
   }
 
-  // --- a composite link chain, real tar included: P1-04 of docs/review-2026-09-23-xs-round-4.md
+  // --- a composite link chain, real tar included: P1-04 of docs/internal/review-2026-09-23-xs-round-4.md
   //
   // `data/a -> b` alone never leaves the root; `data/b -> ../../outside` alone is only a
   // dangling warning when nothing is written through it directly. Chained, content nested

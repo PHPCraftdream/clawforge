@@ -49,6 +49,26 @@ still knows which tag to check for something newer; a deployment already pinned 
 left alone by `bootstrap`, and `./clawforge upgrade` is the way to move it from there (see
 [Upgrading the image](#upgrading-the-image-upgrade)).
 
+## I want to…
+
+| I want to… | Run | Notes |
+| --- | --- | --- |
+| Bring a fresh instance up | `./clawforge bootstrap` | idempotent — safe to run again on a live instance |
+| Check what's running right now | `./clawforge status` | containers, image, health probes, disk — a snapshot, not a verdict |
+| Get a pass/fail exit code for scripts | `./clawforge doctor` | the same inspection `inspect` computes, but exits non-zero on a blocking finding |
+| Understand what's wrong and why | `./clawforge inspect` | every declared-vs-running difference, each with a stable code and a remedy; read-only, never fails the process |
+| Prove the instance actually works, not just runs | `./clawforge smoke` | exercises it end to end — the agent answers, config drift self-heals, snapshots round-trip — `status`/`inspect`/`doctor` only observe |
+| Change the declared configuration | edit the declaration, then `./clawforge plan` → `./clawforge apply` | `apply-config` re-applies the current declaration as it stands, without planning first; `configure-provider` only wires a model provider from a secret; `secrets --apply` only pushes secret values into force — none of the three touch `desired-state.json` itself |
+| Save or restore a point-in-time snapshot | `./clawforge backup` / `./clawforge restore` | one archive of this instance's data, by name, kept on this machine |
+| Move or share an instance's state | `./clawforge pull` / `./clawforge push` | same archive format as backup, meant to travel instead — `migrate`/`share` profiles leave secrets out |
+| Update the OpenClaw image | `./clawforge upgrade` | resolves to a digest, backs up first, rolls back automatically on failure |
+| Reach a loopback-bound gateway from outside this host | `./clawforge expose` | an SSH tunnel, a tailnet-only `tailscale serve`, or a status report — narrowest scope first |
+| Get paged when the instance breaks | `./clawforge watch install` | a cron probe plus a webhook fired only on a state transition |
+| Respond to a suspected compromise | `./clawforge incident` | contain exposure → preserve evidence → rotate the gateway token → audit → collect |
+| Move a deployment onto a server | `./clawforge deploy user@host` | mirrors the framework and this deployment's config over SSH; credentials never leave this machine |
+| See every deployment in this checkout | `./clawforge list` | monorepo checkouts only; one line each, naming why a deployment can't be read when it can't |
+| Read the service log | `./clawforge logs` | `--tail <n>`, `--since <duration\|timestamp>`, `--grep <pattern>` |
+
 ## Changing something
 
 Edit the declaration, look at what that implies, apply it, get an answer about the
@@ -293,6 +313,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
 | `expose` | `<ssh\|tailscale\|status> [--local-port <n>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Reach a loopback-bound gateway from outside this host, narrowest scope first: `ssh` prints (and, with `--run`, opens) the SSH tunnel; `tailscale` prints (and, with `--apply`, runs) a tailnet-only `tailscale serve` — never `funnel`; `status` reports what is actually published right now, read back from the running container |
 | `watch` | `<check\|install\|uninstall\|status> [--json] [--interval <minutes>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change. `check` collapses the liveness-relevant findings `inspect` already computes into ok/degraded/down (an unreachable target, not just an unhealthy one, also reads as down, reason `TARGET_UNREACHABLE`), layers on its own channel (`CHANNEL_UNHEALTHY`) and data-directory disk-space (`DISK_LOW`/`DISK_UNKNOWN`, against `OC_WATCH_DISK_MIN_MB`) findings, alerts `OC_WATCH_WEBHOOK` only on a transition, and exits non-zero whenever the state is not ok; a failed alert leaves the persisted state at its old value so the next cycle retries it. `install`/`uninstall` print (and, with `--apply`, install through the transport) a crontab entry — `--interval` is 1-59 minutes or an exact multiple of 60 up to 1440 — only where an unattended cron can be trusted to find this tooling (a real SSH host or a POSIX `local` target) — elsewhere it prints the operator-side command instead of installing something that would silently never run. `status` shows the last persisted state and whether a webhook is configured, never the URL |
+| `incident` | `[--dry-run] [--keep-exposure] [--tail <n>] [--json] [--break-lock] [--break-foreign-lock <hostId>]` | OpenClaw's own incident runbook, in order: contain (turn off only this gateway's own `tailscale serve` route(s), never `tailscale serve reset`) → preserve (log tail and an env-redacted `docker inspect` of the container about to be replaced) → rotate (a fresh `OPENCLAW_GATEWAY_TOKEN`, recreated into the running container so it takes effect) → audit (the same security gate `doctor`/`accept` run, plus `openclaw doctor --lint`, reported here rather than gating the run) → collect (a bounded log tail, both audit outputs and a status summary, joined into one manifest). Refuses the whole run while the gateway is published on every interface unless `--keep-exposure`. Preserve and collect always run and always write, even when rotate or audit fails. Evidence lands in a private, owner-only `apps/<name>/incidents/<timestamp>/` directory (outside the tracked repository tree), every file masked for known secrets; re-pair every MCP client afterwards with `./clawforge mcp-creds` |
 | `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
 | `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
 | `check` | — | Framework checks with no instance — paths, archives, arguments, what a server delivery contains |
@@ -421,6 +442,81 @@ An operator finds out the instance stopped doing its job without polling by hand
   that would silently never run; it never creates or touches a real one.
 * `./clawforge watch status` — the persisted last state, when it last changed, and whether a
   webhook is configured — never the URL itself.
+
+## Incident response: `incident`
+
+OpenClaw's own incident runbook, run by the framework because each step needs something only
+it can reach: `./clawforge incident` runs five phases in order, contain → preserve → rotate →
+audit → collect, and never stops early — a failed phase is noted, not fatal, so the operator
+gets the fullest report and the freshest evidence it can produce.
+
+* **contain** — turns off, on the target, only the `tailscale serve` route(s) that proxy to
+  THIS gateway — never `tailscale serve reset`, which would also drop every other service's
+  own route on that host. When the route shape cannot be parsed reliably, nothing is turned
+  off and the exact manual command is printed instead. The whole run refuses outright, before
+  the lock and before any mutation, while the gateway is published on every interface
+  (`0.0.0.0`/`::`) — fix that first (`OC_BIND_ADDRESS=127.0.0.1` and `./clawforge up`), or pass
+  `--keep-exposure` if it is already handled elsewhere. A contain failure (most commonly: this
+  account is not the tailscale operator on the target) is reported as a note, never thrown —
+  rotate runs regardless, since leaving a stale token in place is worse than leaving a stale
+  route.
+* **preserve** — before rotate can recreate the container (and take its `json-file` log with
+  it), a log tail and an env-redacted `docker inspect` of the container running right now are
+  written into this run's own evidence directory. Known secrets — including the gateway token
+  about to be rotated away — are masked out of both files before they are written.
+* **rotate** — a fresh `OPENCLAW_GATEWAY_TOKEN`, written to `.env` and recreated into the
+  running container so it actually takes effect (a repo-env value like this one is fixed at
+  container-creation time; a plain restart would not apply it). Every MCP client paired
+  against the old token needs `./clawforge mcp-creds` again afterwards.
+* **audit** — the same security gate `./clawforge doctor`/`./clawforge accept` run (see
+  [Security gate: suppressions](#security-gate-suppressions) below), plus
+  `openclaw doctor --lint`, both reported here rather than gating the run.
+* **collect** — a bounded log tail of whatever is running by then, both audit outputs and a
+  short status summary, joined with preserve's own files into one manifest — into a private,
+  owner-only `apps/<name>/incidents/<timestamp>/` directory, never inside the repository's
+  tracked tree (`apps/` is gitignored wholesale). Every file is masked for known secrets
+  before it is written. Preserve and collect run and write unconditionally, even when rotate
+  or audit fails: the report still shows where the evidence landed, and the original failure
+  still reaches the operator afterwards as a non-zero exit.
+
+`--dry-run` prints the plan and performs none of it, not even taking the instance lock.
+`--tail <n>` bounds how much log each of preserve/collect captures (default 500 lines).
+`--keep-exposure` proceeds past the publicly-bound refusal. `--json` emits the full report —
+every phase's actions and notes, the security findings, and where the evidence went — as one
+JSON object.
+
+After a real incident: rotate already invalidated every existing MCP pairing, so run
+`./clawforge mcp-creds` (or `mcp-setup`) again for each client before trusting it to reconnect.
+
+## Security gate: suppressions
+
+`./clawforge doctor` and `./clawforge accept` (and, informationally, `incident`'s own audit
+phase) run a security gate on top of the usual convergence checks: OpenClaw's own
+`security audit --json` and `secrets audit --json` inside the instance, plus host-side checks
+the container cannot see for itself — the gateway published on every interface, a Linux
+target's `DOCKER-USER` iptables chain bypassing an active UFW, and `.env`/`secrets/*` files
+that are not owner-only.
+
+A finding can be suppressed by upstream check id, in `config/security-suppressions.json`:
+
+```json
+{
+  "suppressions": [
+    { "checkId": "SOME_UPSTREAM_CHECK_ID", "reason": "why this is accepted here" }
+  ],
+  "acknowledgePublicBind": { "reason": "why this deployment is intentionally public" }
+}
+```
+
+`suppressions` matches upstream's own `checkId` (from `security audit`) or `code` (from
+`secrets audit`); `acknowledgePublicBind` is the explicit, on-the-record way to accept a
+gateway bound to every interface instead of loopback — without it, that reads as the blocking
+`GATEWAY_PUBLICLY_BOUND` finding. Every suppression needs a non-empty reason; there is no
+suppression without one. A suppressed finding is never simply gone: it still appears in
+`--json`/verbose output, marked `suppressed` with its reason, but is excluded from the count
+`doctor`/`accept` gate on. The file fails closed — missing is read as "nothing suppressed",
+but one that exists and cannot be parsed or validated stops the gate outright rather than
+being read as empty.
 
 ## How it is put together
 

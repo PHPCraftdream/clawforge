@@ -24,6 +24,7 @@ export const GROUP_HEADINGS: Record<CommandGroup, string> = {
   change: "Change",
   "save-move": "Save & move",
   "security-access": "Security & access",
+  integrations: "Integrations & recovery",
   "low-level": "Low-level",
 };
 export const GROUP_ORDER = Object.keys(GROUP_HEADINGS) as CommandGroup[];

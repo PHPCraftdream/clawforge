@@ -35,7 +35,7 @@ Linux job успешен, Windows job падает на Windows-capable subset.
 **Результат:** hosted runner возвращал бинарный маркер `*` в выводе `sha256sum`; прежний
 парсер отбрасывал все строки. Исправлены оба штатных формата и явная обработка ошибок
 shell. Проверки прошли в финальном CI; подробности — в
-`docs/ci-windows-inspect-checksums-gap-2026-09-23.md`.
+`docs/internal/ci-windows-inspect-checksums-gap-2026-09-23.md`.
 
 ### LC-03 [P2, завершено] Добавить защиту при публикации checkpoint-файлов
 

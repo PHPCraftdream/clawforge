@@ -216,7 +216,7 @@ checkRejects(
   new Map([["data/hardlink", { kind: "hardlink", target: "../outside" }]]),
 );
 
-// --- composite link chains: P1-04 of docs/review-2026-09-23-xs-round-4.md -----------------
+// --- composite link chains: P1-04 of docs/internal/review-2026-09-23-xs-round-4.md --------
 //
 // inspectArchive() used to judge each link on its own single hop. `data/a -> b` looks safe
 // alone — "b" stays inside the root — and `data/b -> ../../outside` alone is only a dangling

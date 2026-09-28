@@ -225,8 +225,8 @@ try {
   }
 
   // --- P3-01: malformed ports/variables are rejected at load, isolated at listing, and ---
-  // --- surfaced as a visible catalog entry rather than a thrown render (docs/review- ------
-  // --- 2026-09-23-xs-round-4.md) -----------------------------------------------------------
+  // --- surfaced as a visible catalog entry rather than a thrown render -------------------
+  // --- (docs/internal/review-2026-09-23-xs-round-4.md) ------------------------------------
 
   const malformedManifests: Array<{ name: string; json: unknown; expects: string }> = [
     { name: "bad-port-host-type", json: { description: "port host is not an integer", ports: [{ host: "8080", container: 80 }] }, expects: "ports[0].host must be an integer" },

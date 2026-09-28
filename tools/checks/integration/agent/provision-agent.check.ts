@@ -524,8 +524,8 @@ function stubContext(listAnswer: unknown) {
 // The scope-upgrade self-heal these commands rely on lives in openclaw-cli.ts and is
 // covered by openclaw-cli.check.ts — not duplicated here.
 
-// --- P1-02 (docs/review-2026-09-23-xxa-round-6.md): provisioning never writes through a
-// target symlink ---------------------------------------------------------------------------
+// --- P1-02 (docs/internal/review-2026-09-23-xxa-round-6.md): provisioning never writes ---
+// --- through a target symlink --------------------------------------------------------------
 //
 // syncRecipeFiles/writeWorkspacePromptFiles validated the SOURCE inventory but handed the
 // target path straight to mkdirp/writeFile, both of which follow the final symlink, and

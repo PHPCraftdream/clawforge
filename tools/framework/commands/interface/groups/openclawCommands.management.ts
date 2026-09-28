@@ -246,7 +246,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "recover-env": {
     summary: "Repair .env's connection facts from the running instance",
-    group: "security-access",
+    group: "integrations",
     run: recoverEnv,
     details:
       "OC_DATA_DIR, OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT and OPENCLAW_IMAGE are plumbing, not " +
@@ -413,7 +413,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "mcp-serve": {
     summary: "stdio MCP bridge to the service's own channels",
-    group: "security-access",
+    group: "integrations",
     run: mcpServe,
     details:
       "Runs OpenClaw's own `mcp serve` and speaks JSON-RPC straight through stdio —\n" +
@@ -431,7 +431,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "mcp-setup": {
     summary: "Configure project MCP servers for Claude Code and Codex",
-    group: "security-access",
+    group: "integrations",
     run: mcpSetup,
     details:
       "Registers `clawforge` (mcp-serve, the bridge to OpenClaw's own channels) and " +
@@ -587,7 +587,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "mcp-creds": {
     summary: "Print service URL, token and MCP client config for both servers",
-    group: "security-access",
+    group: "integrations",
     run: mcpCreds,
     // Its whole job is handing over the credential: masking its healthy output (the
     // response redaction every other successful answer now goes through, P2-05) would

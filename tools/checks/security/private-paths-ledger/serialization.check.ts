@@ -1,4 +1,4 @@
-// P2-02 of docs/review-2026-09-22-xa-round-3.md: the ledger's update cycle — read, merge,
+// P2-02 of docs/internal/review-2026-09-22-xa-round-3.md: the ledger's update cycle — read, merge,
 // temporary write, rename — used to run with nothing serializing two cycles against the
 // same ledger file. The rename keeps the JSON intact; it does not merge concurrent changes.
 // Two private-write helpers inside one hook's Promise.all could both read the same old

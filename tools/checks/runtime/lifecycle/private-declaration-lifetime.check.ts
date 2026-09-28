@@ -1,4 +1,4 @@
-// P1-02 of docs/review-2026-09-22-xa-round-2.md: a privatePaths declaration lives in the
+// P1-02 of docs/internal/review-2026-09-22-xa-round-2.md: a privatePaths declaration lives in the
 // recipe's source tree, but the files it covers live on the target. Removing the recipe —
 // deleting its directory, or switching to a set that no longer includes it — takes the
 // declaration away while the runtime credentials stay put, and the security policy used to

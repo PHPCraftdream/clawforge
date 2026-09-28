@@ -232,7 +232,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   upgrade: {
     summary: "Update the image by digest, with automatic rollback on failure",
-    group: "save-move",
+    group: "change",
     run: upgrade,
     destructive: true,
     details:

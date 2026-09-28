@@ -1,4 +1,4 @@
-// P2-05 of docs/review-2026-09-22-xa-round-2.md: the verifier applied a bare string prefix
+// P2-05 of docs/internal/review-2026-09-22-xa-round-2.md: the verifier applied a bare string prefix
 // test to every forbidden rule, literal declarations and generated-file prefixes alike — so
 // the declaration `vault` also forbade the public sibling `vault-public/`, and the exact
 // file `config/private.env` its `.example` neighbor. The archiver (component-boundary tar

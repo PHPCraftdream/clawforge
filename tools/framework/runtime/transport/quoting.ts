@@ -5,12 +5,8 @@
 // facade over the per-transport implementations.
 
 import { randomBytes } from "node:crypto";
+import { shellQuote } from "../../core/io/shell.ts";
 import type { ExecOptions, ExecResult } from "./exec.ts";
-
-/** Quotes one value for a POSIX shell command. */
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
-}
 
 /** The two name markers of the tooling's own temp-sibling staging families: a private write
  *  stages `<path>.clawforge-private-<hex>` (private-config.ts, privateWriteCommand below), a

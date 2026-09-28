@@ -13,6 +13,7 @@
 import { spawn } from "node:child_process";
 import { runRemote } from "#framework/commands/management/deploy/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { shellQuote } from "#framework/core/io/shell.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
@@ -74,7 +75,7 @@ if (!shAvailable) {
 
   const result = await withOutputSink(
     () => {},
-    () => runRemote(ctx, "irrelevant-target", `printf '%s' '${payload.replaceAll("'", `'\\''`)}'`),
+    () => runRemote(ctx, "irrelevant-target", `printf '%s' ${shellQuote(payload)}`),
   );
 
   check("the script runs without a syntax error", result.code, 0);

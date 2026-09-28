@@ -46,7 +46,8 @@ export function maskSecrets(text: string): string {
   return masked;
 }
 
-function regexEscape(value: string): string {
+/** Escapes every regex metacharacter, so `value` matches only itself inside a `new RegExp`. */
+export function regexEscape(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import { posix, resolve, win32 } from "node:path";
 import { die } from "../../core/io/log.ts";
-import { SshTransport } from "../../runtime/transport/transport.ts";
+import { shellQuote } from "../../core/io/shell.ts";
 import { SENSITIVE_RECIPE_NAME } from "./recipe-portable-content.ts";
 
 const execFileAsync = promisify(execFile);
@@ -278,7 +278,7 @@ export async function collectSensitiveCheckoutNames(root: string): Promise<{ pat
  *  a path with a space would otherwise arrive as two. Exported for deploy.ts's own
  *  runRemote(), which needs the identical quoting for the command line it sends. */
 export function quoted(value: string): string {
-  return SshTransport.quote(value);
+  return shellQuote(value);
 }
 
 /** The first question about the remote root, asked before anything is mirrored into it

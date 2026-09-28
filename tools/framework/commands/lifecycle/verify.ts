@@ -12,6 +12,7 @@
 import { randomBytes } from "node:crypto";
 import JSON5 from "json5";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { shellQuote } from "#src/core/io/shell.ts";
 import { withOutputSink, outputSink, emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { sudoFor } from "#src/runtime/datadir.ts";
@@ -158,8 +159,7 @@ async function writePrivateFile(ctx: Context, path: string, content: string): Pr
     await ctx.transport.writePrivateFile(path, content);
     return;
   }
-  const quotedPath = `'${path.replaceAll("'", `'\\''`)}'`;
-  await ctx.transport.exec("sh", ["-c", `umask 077; set -C; cat > ${quotedPath}`], { input: content });
+  await ctx.transport.exec("sh", ["-c", `umask 077; set -C; cat > ${shellQuote(path)}`], { input: content });
 }
 
 /** A supported secret reference ({"source":"env","id":"VAR"} — collectSecretRefs' own

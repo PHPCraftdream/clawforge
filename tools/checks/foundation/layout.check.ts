@@ -62,3 +62,36 @@ async function auditRecipeReaddirSites(dir: string): Promise<void> {
 }
 await auditRecipeReaddirSites(resolve(monorepoRoot, "tools", "framework"));
 process.stderr.write("no second readdir of the recipes directory outside listRecipeDirectories\n");
+
+// shellQuote (core/io/shell.ts) and regexEscape (core/io/log.ts) each guard an invariant —
+// POSIX argument safety, a literal-only regex match — that a second, independently
+// maintained copy could silently drift from. Counting every `function <name>(` site keeps
+// each one singular without trusting callers to remember to import rather than reimplement.
+const SINGLE_DEFINITION: Record<string, RegExp> = {
+  shellQuote: /(?:export )?function shellQuote\(/g,
+  regexEscape: /(?:export )?function regexEscape\(/g,
+};
+async function auditSingleDefinitionSites(dir: string, counts: Map<string, string[]>): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory() && entry.name !== "dist" && entry.name !== "node_modules") {
+      await auditSingleDefinitionSites(full, counts);
+      continue;
+    }
+    if (!entry.isFile() || !/\.(?:ts|js)$/.test(entry.name)) continue;
+    const content = await readFile(full, "utf8");
+    for (const [name, pattern] of Object.entries(SINGLE_DEFINITION)) {
+      if (content.match(pattern) !== null) counts.get(name)!.push(full);
+    }
+  }
+}
+const definitionSites = new Map<string, string[]>(Object.keys(SINGLE_DEFINITION).map((name) => [name, []]));
+await auditSingleDefinitionSites(resolve(monorepoRoot, "tools", "framework"), definitionSites);
+for (const [name, sites] of definitionSites) {
+  assert.equal(
+    sites.length,
+    1,
+    `expected exactly one definition of ${name} in tools/framework, found ${sites.length}: ${sites.join(", ")}`,
+  );
+}
+process.stderr.write("shellQuote and regexEscape each have exactly one definition\n");

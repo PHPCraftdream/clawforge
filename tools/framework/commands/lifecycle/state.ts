@@ -5,6 +5,7 @@
 // deleting it.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { shellQuote } from "#src/core/io/shell.ts";
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv, parseRetention } from "#src/core/env.ts";
@@ -58,11 +59,6 @@ async function ensureSnapshotDir(ctx: Context): Promise<string> {
 
 function stamp(): string {
   return new Date().toISOString().replaceAll(/[:.]/g, "-").slice(0, 19);
-}
-
-/** Quotes a path prefix while leaving the final glob active. */
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 function snapshotGlob(directory: string): string {
@@ -273,8 +269,7 @@ async function writePrivate(ctx: Context, path: string, content: string): Promis
     await ctx.transport.writePrivateFile(path, content);
     return;
   }
-  const quoted = `'${path.replaceAll("'", `'\\''`)}'`;
-  await ctx.transport.exec("sh", ["-c", `umask 077; set -C; cat > ${quoted}`], { input: content });
+  await ctx.transport.exec("sh", ["-c", `umask 077; set -C; cat > ${shellQuote(path)}`], { input: content });
 }
 
 /** Installs provider keys on the target with mode 600 and owner 1000:1000 — OpenClaw runs

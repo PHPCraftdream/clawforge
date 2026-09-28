@@ -25,6 +25,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { log } from "../core/io/log.ts";
+import { shellQuote } from "../core/io/shell.ts";
 import type { Context } from "../core/context.ts";
 import type { ExecResult } from "../runtime/transport/transport.ts";
 
@@ -152,13 +153,6 @@ export interface BatchedCliResult {
  *  enough that no CLI output (a version string, `--json` output) plausibly collides with it. */
 const BATCH_MARKER = "__clawforge_cli_batch__";
 
-/** Quotes one argument for the batch script's POSIX shell — the same escaping transport.ts's
- *  own shellQuote uses, kept local rather than shared: it is a two-line rule, and importing
- *  it across modules for that would be more surface than the duplication it avoids. */
-function quoteArg(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
 /** Runs several OpenClaw CLI invocations in ONE throwaway container instead of one each.
  *  Every `docker compose run --rm` pays Compose's create/destroy cost again — measured
  *  directly against this deployment at ~5-7s (docker-compose.yml's own note on cli-helper) —
@@ -186,12 +180,12 @@ export async function openclawCliBatch(ctx: Context, commands: readonly string[]
   const script = [
     "dir=$(mktemp -d)",
     ...commands.map((args, index) =>
-      `( node dist/index.js ${args.map(quoteArg).join(" ")} > "$dir/${index}"; echo "$?" > "$dir/${index}.code" ) &`),
+      `( node dist/index.js ${args.map(shellQuote).join(" ")} > "$dir/${index}"; echo "$?" > "$dir/${index}.code" ) &`),
     "wait",
     ...commands.map((_, index) => [
-      `printf '%s\\n' ${quoteArg(`${BATCH_MARKER}${index}:begin`)}`,
+      `printf '%s\\n' ${shellQuote(`${BATCH_MARKER}${index}:begin`)}`,
       `cat "$dir/${index}"`,
-      `printf '\\n%s%d\\n' ${quoteArg(`${BATCH_MARKER}${index}:exit:`)} "$(cat "$dir/${index}.code")"`,
+      `printf '\\n%s%d\\n' ${shellQuote(`${BATCH_MARKER}${index}:exit:`)} "$(cat "$dir/${index}.code")"`,
     ].join("\n")),
     `rm -rf -- "$dir"`,
   ].join("\n");

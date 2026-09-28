@@ -4,7 +4,7 @@
 // transport in the context decide how the instance is actually started.
 
 import { readFile } from "node:fs/promises";
-import { log, info, warn, die } from "#src/core/io/log.ts";
+import { log, info, warn, die, regexEscape } from "#src/core/io/log.ts";
 import { shouldFollow, emit, withOutputSink } from "#src/core/io/output.ts";
 import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
@@ -38,10 +38,6 @@ export const LOGS_ARGUMENTS: CommandArgument[] = [
   { name: "since", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option", valueName: "duration|timestamp" },
   { name: "grep", description: "Only lines matching this regular expression", kind: "option", valueName: "pattern" },
 ];
-
-function regexEscape(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 /** Whether `address:port` (or a wildcard bind covering it) already appears in a `ss`/`netstat`
  *  listening-socket listing. Matched loosely against just the local-address column, ending

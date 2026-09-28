@@ -116,7 +116,7 @@ function text(value: unknown, field: string): string {
   return value;
 }
 
-function timestamp(value: unknown, field: string): string {
+function isoTimestamp(value: unknown, field: string): string {
   const result = text(value, field);
   if (!Number.isFinite(Date.parse(result))) throw new Error(`${field} must be an ISO timestamp`);
   return result;
@@ -247,8 +247,8 @@ function validateReceipt(value: unknown, expectedSetId?: string, expectedReceipt
     ...(obs.imageId === undefined ? {} : { imageId: text(obs.imageId, "receipt observations.imageId") }),
     ...(obs.imageDigest === undefined ? {} : { imageDigest: text(obs.imageDigest, "receipt observations.imageDigest") }),
   };
-  const startedAt = timestamp(raw.startedAt, "receipt startedAt");
-  const finishedAt = timestamp(raw.finishedAt, "receipt finishedAt");
+  const startedAt = isoTimestamp(raw.startedAt, "receipt startedAt");
+  const finishedAt = isoTimestamp(raw.finishedAt, "receipt finishedAt");
   if (Date.parse(finishedAt) < Date.parse(startedAt)) throw new Error("receipt finishedAt precedes startedAt");
   const normalizedSelection = normalizeSelection(raw.selection as ReceiptSelection);
   const checks = normalizeChecks((raw.checks ?? {}) as Record<string, readonly ReceiptCheckInput[]>);
@@ -291,8 +291,8 @@ export async function writeReceipt(input: WriteReceiptInput, root?: string): Pro
   const checks = normalizeChecks(input.checks);
   assertSelectionMatchesChecks(selection, checks);
   const counts = countsOf(checks);
-  const startedAt = timestamp(input.startedAt, "receipt startedAt");
-  const finishedAt = timestamp(input.finishedAt, "receipt finishedAt");
+  const startedAt = isoTimestamp(input.startedAt, "receipt startedAt");
+  const finishedAt = isoTimestamp(input.finishedAt, "receipt finishedAt");
   if (Date.parse(finishedAt) < Date.parse(startedAt)) throw new Error("receipt finishedAt precedes startedAt");
   const observations: ReceiptObservations = {
     frameworkVersion: text(input.observations.frameworkVersion, "receipt observations.frameworkVersion"),

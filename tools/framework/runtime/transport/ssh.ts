@@ -6,6 +6,7 @@
 // hoping the remote shell agrees with us.
 
 import { listFilesVia } from "../../security/transport-listing.ts";
+import { shellQuote } from "../../core/io/shell.ts";
 import type { ExecOptions, ExecResult, Transport } from "./exec.ts";
 import { spawnLocal, isWrapperFailureCode, composeExecFailure, TransportUnreachableError } from "./exec.ts";
 import { existsVia, privateWriteCommand, publishCommand, withEnvPrefix } from "./quoting.ts";
@@ -40,7 +41,7 @@ export class SshTransport implements Transport {
 
   /** Minimal single-quote quoting for the remote shell. */
   static quote(argument: string): string {
-    return `'${argument.replaceAll("'", `'\\''`)}'`;
+    return shellQuote(argument);
   }
 
   async exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {

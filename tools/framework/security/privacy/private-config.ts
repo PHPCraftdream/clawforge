@@ -7,6 +7,7 @@ import { recordPrivateWrite } from "./private-paths-ledger.ts";
 import { locksDir, serializeEnvLine } from "../../core/env.ts";
 import type { Context } from "../../core/context.ts";
 import { registerSecret } from "../../core/io/log.ts";
+import { shellQuote } from "../../core/io/shell.ts";
 import { PRIVATE_STAGING_MARKER, type ExecResult } from "../../runtime/transport/transport.ts";
 
 export interface PrivateFileResult {
@@ -199,7 +200,7 @@ export async function replacePrivateTargetFile(ctx: Context, path: string, conte
 
 /** Renders entries as shell-sourceable `export` lines, single-quoted per POSIX. */
 function serializeShellEnv(entries: [string, string][]): string {
-  return entries.map(([name, value]) => `export ${name}='${value.replaceAll("'", `'\\''`)}'`).join("\n") + "\n";
+  return entries.map(([name, value]) => `export ${name}=${shellQuote(value)}`).join("\n") + "\n";
 }
 
 /** Runs a target command with secret values that never appear in any process's argv.

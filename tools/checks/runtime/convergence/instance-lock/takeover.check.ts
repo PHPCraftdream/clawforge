@@ -10,19 +10,7 @@ import { hostname } from "node:os";
 import { machineName, localLiveness } from "#framework/runtime/lock/process-identity.ts";
 import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, STALE_AFTER_MS } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 // --- stale locks are described, not stolen ------------------------------------------------------
 
@@ -354,5 +342,4 @@ function check(name: string, actual: unknown, expected: unknown): void {
   check("an own-scope record with a gone pid is dead", await localLiveness({ pid: 99999999, machine: machineName() }), "dead");
 }
 
-process.stderr.write(failed === 0 ? "all instance lock takeover checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("instance lock takeover");

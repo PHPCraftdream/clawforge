@@ -23,19 +23,7 @@ import type { ConnectionFacts } from "#framework/commands/operate/recover-env/fa
 import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 import type { Settings } from "#framework/core/env.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** The fixture's stub plus, when the case asks for one, the runtime's optional answer about
  *  the running container — the capability ENV_STALE compares against, and whose absence is
@@ -642,5 +630,4 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
   check("a warning finding still prints warning:", warningLine.includes("warning:") && !warningLine.includes("blocking:"), true);
 }
 
-process.stderr.write(failed === 0 ? "all inspect folder checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("inspect folder");

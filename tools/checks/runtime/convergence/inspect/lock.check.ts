@@ -18,19 +18,7 @@ import { currentComposition, lock, lockFile } from "#framework/commands/manageme
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "./fixture.ts";
 import type { TargetSpec } from "./fixture.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function codes(problems: readonly { code: string }[]): string[] {
   return problems.map((entry) => entry.code).sort();
@@ -230,5 +218,4 @@ try {
   await teardownFixtureDeployment(deployment);
 }
 
-process.stderr.write(failed === 0 ? "all inspect lock checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("inspect lock");

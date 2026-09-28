@@ -18,19 +18,7 @@ import { mountPoints } from "#framework/runtime/mounts.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, DATA } from "../convergence/inspect/fixture.ts";
 import { refreshCheckTransport, refreshLiveConfig } from "./apply-driver.ts";
 import type { RefreshState } from "./apply-driver.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function setAtPath(target: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split(".");
@@ -107,10 +95,10 @@ function setAtPath(target: Record<string, unknown>, path: string, value: unknown
     const outcome = JSON.parse(machine) as ApplyOutcome;
     check(
       "the plan treated the diverged .env as advice, not as a recovery step",
-      JSON.stringify(outcome.steps.map((step) => [step.id, step.status])),
+      outcome.steps.map((step) => [step.id, step.status]),
       // The fixture's OPENCLAW_IMAGE names a tag rather than a digest, so IMAGE_UNPINNED is
       // real too — its own advisory step, unrelated to the .env divergence this check is about.
-      JSON.stringify([["recover-env", "advisory"], ["apply-config", "done"], ["restart", "done"], ["problem:IMAGE_UNPINNED", "advisory"]]),
+      [["recover-env", "advisory"], ["apply-config", "done"], ["restart", "done"], ["problem:IMAGE_UNPINNED", "advisory"]],
     );
     check("the advisory step is recorded with its reason", outcome.steps[0].detail, "advisory: for you to do, not this command");
     const envAfter = await readFile(resolve(deployment, ".env"), "utf8");
@@ -125,5 +113,4 @@ function setAtPath(target: Record<string, unknown>, path: string, value: unknown
   }
 }
 
-process.stderr.write(failed === 0 ? "all operator-edit checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("operator-edit");

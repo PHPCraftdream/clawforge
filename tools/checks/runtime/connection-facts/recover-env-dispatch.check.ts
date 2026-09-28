@@ -29,22 +29,9 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
 useLinuxHost();
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
 
 /** Captures a run's output and turns a thrown refusal into its message. The body may be
  *  any runner — runApp resolves to a code, the recovery runners to void. */
@@ -331,5 +318,4 @@ try {
   await rm(deployDir, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all recover-env dispatch checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("recover-env dispatch");

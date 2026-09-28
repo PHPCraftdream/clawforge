@@ -28,19 +28,7 @@ import { readFile } from "node:fs/promises";
 import type { Context } from "#framework/core/context.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function declaresBreakLock(name: string): boolean {
   return (openclawCommands[name]?.arguments ?? []).some((argument) => argument.name === "break-lock");
@@ -272,5 +260,4 @@ check("and is absent when the flag is not there", parseBreakForeignLockHost(["--
     smokeDeclares || calls.every((call) => (call.split("\nasync function ")[0] ?? "").includes("breakLockSupported: false")), true);
 }
 
-process.stderr.write(failed === 0 ? "all instance lock advice checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("instance lock advice");

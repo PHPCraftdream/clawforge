@@ -12,19 +12,7 @@
 // construction itself does no I/O, only exec() would.
 
 import { createTransport, LocalTargetUnsupportedError, LocalTransport, WslTransport, SshTransport } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 async function expectRefusal(platform: NodeJS.Platform, location: string | undefined): Promise<LocalTargetUnsupportedError> {
   let error: unknown;
@@ -107,5 +95,4 @@ async function expectRefusal(platform: NodeJS.Platform, location: string | undef
   check("...next step names OC_TARGET_LOCATION=ssh", error?.nextAction.includes("OC_TARGET_LOCATION=ssh") ?? false, true);
 }
 
-process.stderr.write(failed === 0 ? "all local-target-unsupported checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("local-target-unsupported");

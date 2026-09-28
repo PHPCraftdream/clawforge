@@ -155,7 +155,7 @@ async function observeEgress(
     if (state !== "ok") {
       problems.push(problem("EGRESS_UNREACHABLE", detail === undefined ? unreachable : `${unreachable} (${detail})`));
     }
-    const observation: EgressObservation = { path: endpoint.path, endpoint: display, state, detail };
+    const observation: EgressObservation = { path: endpoint.path, endpoint: display, state, ...(detail === undefined ? {} : { detail }) };
     observations.push(observation);
   }
   return observations;

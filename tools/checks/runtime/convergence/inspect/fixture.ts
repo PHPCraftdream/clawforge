@@ -2,12 +2,11 @@
 // directory): the stubbed Context and the real on-disk deployment every one of those
 // files needs.
 //
-// Not `check`/`failed` — module state shared across check files that run in the same
-// process (tools/checks/run.ts imports them one after another) would let one file's
-// failure count leak into another's. Each check file keeps its own trivial copy of those
-// instead. Not a module-level `goodPrompts` either, for the same reason: stubContext is
-// built fresh per `setupFixtureDeployment()` call, closed over THAT call's own
-// goodPrompts, so nothing here is shared mutable state between files.
+// No check()/failed helper here — each check file runs in its own process (kit/run.ts) and
+// imports the shared one from kit/harness.ts instead. Not a module-level `goodPrompts`
+// either, for a different reason: stubContext is built fresh per `setupFixtureDeployment()`
+// call, closed over THAT call's own goodPrompts, so nothing here is shared mutable state
+// between files.
 
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

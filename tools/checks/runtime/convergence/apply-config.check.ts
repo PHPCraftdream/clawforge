@@ -12,19 +12,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 check("a real run stages under the shared name the container reads", stagedFileName(false), "clawforge-desired.json");
 check("a dry run does not", stagedFileName(true) === stagedFileName(false), false);
@@ -322,5 +310,4 @@ check("...but the headline still confirms the write happened", appliedHeadline(f
   check("apply's own plan runner suppresses it (always paired with up/restart in the same plan)", applySource.includes("applyConfig(ctx, [], { restartAdvice: false })"), true);
 }
 
-process.stderr.write(failed === 0 ? "all apply-config checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("apply-config");

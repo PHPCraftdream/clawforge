@@ -14,20 +14,7 @@ import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 import type { Settings } from "#framework/core/env.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 interface InspectAnswer {
   State?: { Running?: boolean };
@@ -288,5 +275,4 @@ try {
   if (previous !== undefined) useDeployment(previous);
 }
 
-process.stderr.write(failed === 0 ? "all running connection facts checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("running connection facts");

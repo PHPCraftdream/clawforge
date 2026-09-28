@@ -16,19 +16,7 @@ import { LocalTransport, WslTransport, spawnLocal, type Transport, type ExecResu
 import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/datadir.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -636,8 +624,8 @@ if (p202Transport === undefined) {
     check("the ownership change is never recursive", calls.some((call) => call.args.includes("-R")), false);
     check(
       "exactly the paths this run created are named, nothing else",
-      JSON.stringify(chownCalls[0]?.args.slice(chownCalls[0]!.args.indexOf("1000:1000") + 1)),
-      JSON.stringify([dataDir, `${dataDir}/config`, `${dataDir}/workspace`, `${dataDir}/auth-secrets`]),
+      chownCalls[0]?.args.slice(chownCalls[0]!.args.indexOf("1000:1000") + 1),
+      [dataDir, `${dataDir}/config`, `${dataDir}/workspace`, `${dataDir}/auth-secrets`],
     );
     check("no unprivileged chown is attempted either", calls.some((call) => call.command === "chown"), false);
   }
@@ -672,9 +660,7 @@ if (p202Transport === undefined) {
       });
       check("a running recipe without quiesce hooks blocks backup", refusal.includes("could not be quiesced"), true);
       check("the refusal names the uncovered stack", refusal.includes("vault"), true);
-      // check() compares with ===: two array instances are never equal, so compare the
-      // JSON forms — the project names themselves, not the containers holding them.
-      check("the probe went to the recipe's own compose project", JSON.stringify(probed), JSON.stringify([projectName(deploymentName(), "vault")]));
+      check("the probe went to the recipe's own compose project", probed, [projectName(deploymentName(), "vault")]);
     } finally {
       clearRecipesDir();
     }
@@ -694,5 +680,4 @@ if (p202Transport === undefined) {
   }
 }
 
-process.stderr.write(failed === 0 ? "all backup checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("backup");

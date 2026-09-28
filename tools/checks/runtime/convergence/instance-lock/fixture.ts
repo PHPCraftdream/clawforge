@@ -1,9 +1,8 @@
 // Shared fixture for the instance-lock.check.ts split (claims/takeover/nesting/misc.check.ts,
 // this same directory): the stubbed Context every one of those files claims a lock against.
 //
-// Not `check`/`failed` — module state shared across check files that run in the same process
-// (tools/checks/run.ts imports them one after another) would let one file's failure count leak
-// into another's. Each check file keeps its own trivial copy of those instead.
+// No check()/failed helper here — each check file runs in its own process (kit/run.ts) and
+// imports the shared one from kit/harness.ts instead.
 
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";

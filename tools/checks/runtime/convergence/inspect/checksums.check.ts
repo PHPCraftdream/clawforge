@@ -21,20 +21,9 @@ import type { ExecOptions, ExecResult } from "#framework/runtime/transport/trans
 import type { Context } from "#framework/core/context.ts";
 import type { TargetSpec } from "./fixture.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "./fixture.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
-let failed = 0;
 let skipped = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
 
 function skip(name: string): void {
   skipped += 1;
@@ -277,6 +266,5 @@ try {
   await rm(root, { recursive: true, force: true });
 }
 
-const verdict = failed === 0 ? "all inspect checksums checks passed" : `${failed} failed`;
-process.stderr.write(skipped > 0 ? `${verdict} (${skipped} skipped)\n` : `${verdict}\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("inspect checksums");
+if (skipped > 0) process.stderr.write(`${skipped} skipped\n`);

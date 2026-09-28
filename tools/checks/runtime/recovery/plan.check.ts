@@ -14,19 +14,7 @@ import { planActions, planNextStepLine } from "#framework/commands/orchestration
 import { problem } from "#framework/service/inspection.ts";
 import type { Inspection, Problem } from "#framework/service/inspection.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function inspectionWith(problems: Problem[], running = true): Inspection {
   return {
@@ -130,5 +118,4 @@ check(
   "apply it: ./clawforge apply",
 );
 
-process.stderr.write(failed === 0 ? "all plan checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("plan");

@@ -22,19 +22,7 @@ import { heartbeatScheduler, refreshHeartbeat, startHeartbeat, HEARTBEAT_INTERVA
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** Flushes pending microtasks (readHolder/writeHolder inside refreshHeartbeat) before a check
  *  reads their effect — a fire-and-forget scheduled tick is not awaited by design. */
@@ -187,5 +175,4 @@ function flush(): Promise<void> {
   }
 }
 
-process.stderr.write(failed === 0 ? "all instance lock heartbeat checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("instance lock heartbeat");

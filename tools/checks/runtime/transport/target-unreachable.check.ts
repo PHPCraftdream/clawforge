@@ -30,19 +30,7 @@ import { plan } from "#framework/commands/orchestration/plan.ts";
 import { status } from "#framework/commands/interface/status.ts";
 import { backupList } from "#framework/commands/lifecycle/backup/list.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 // --- Part A: the decode/classification mechanism, byte-accurate -----------------------------
 
@@ -192,5 +180,4 @@ try {
   if (previousDeployment !== undefined) useDeployment(previousDeployment);
 }
 
-process.stderr.write(failed === 0 ? "all target-unreachable checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("target-unreachable");

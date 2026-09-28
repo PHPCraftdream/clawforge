@@ -5,19 +5,7 @@
 import { takeLock, readLockHolder, refusalMessage, lockPath, lockHome } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 // --- the message itself ----------------------------------------------------------------------------
 
@@ -123,5 +111,4 @@ function check(name: string, actual: unknown, expected: unknown): void {
   check("pointing at what prepares the directory instead", message.includes("./clawforge bootstrap"), true);
 }
 
-process.stderr.write(failed === 0 ? "all instance lock misc checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("instance lock misc");

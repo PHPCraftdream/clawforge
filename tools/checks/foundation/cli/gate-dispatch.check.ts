@@ -6,19 +6,17 @@
 //   - a mistyped command name is answered as a typo, not as "deployment not found", which
 //     used to be the only answer no matter what argv[0] actually was;
 //   - a checkout holding exactly one deployment is used automatically when neither --app nor
-//     OC_APP named a (missing) one.
+//     OC_APP named a (missing) one (tested as a pure decision, never through the real apps/).
 //
 // The pure boundary (splitLeadingAppFlag, closestCommand, reportUnknownCommand) is unit-tested
 // directly; the gate's own wiring of them is only observable by running the real script, the
 // same way cli-help.check.ts does.
-
 import { rm, readdir } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { createApp, appsDir } from "#framework/integration/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { splitLeadingAppFlag, closestCommand, reportUnknownCommand } from "#framework/integration/gate.ts";
+import { splitLeadingAppFlag, closestCommand, reportUnknownCommand, soleDeploymentFallback } from "#framework/integration/gate.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 
 let failed = 0;
@@ -142,32 +140,15 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   );
 }
 
-// --- the real gate: the checkout's only deployment is picked automatically -------------
+// --- the checkout's only deployment is picked automatically -------------------------------
+//
+// Tested as a pure decision rather than through the real apps/: a developer's own deployments
+// live there, and a check must neither depend on it being empty nor add one beside them.
 
-{
-  const before = await readdir(appsDir, { withFileTypes: true }).then(
-    (entries) => entries.filter((entry) => entry.isDirectory()).length,
-    () => 0,
-  );
-  check("apps/ has no leftover deployments before this scenario", before, 0);
-
-  const onlyOne = `gate-dispatch-check-only-${randomBytes(4).toString("hex")}`;
-  try {
-    await createApp(onlyOne);
-    const picked = await runGate(["help"]);
-    check("the only deployment is announced", picked.stdout.includes(`using the only deployment: ${onlyOne}`), true);
-    // Real dispatch, not the generic no-deployment fallback: the fallback's app is named
-    // "clawforge" with a different description, never this deployment's own.
-    check(
-      "help comes from the real, loaded deployment",
-      picked.stdout.includes(`${onlyOne} — deployment of a self-hosted OpenClaw instance`),
-      true,
-    );
-    check("no leftover complaint about a missing deployment", picked.stdout.includes("not found"), false);
-  } finally {
-    await rm(resolve(appsDir, onlyOne), { recursive: true, force: true });
-  }
-}
+check("the lone deployment is picked when none was named", soleDeploymentFallback(false, ["only"]), "only");
+check("never when --app or OC_APP named one", soleDeploymentFallback(true, ["only"]), undefined);
+check("never among several", soleDeploymentFallback(false, ["a", "b"]), undefined);
+check("never when there are none", soleDeploymentFallback(false, []), undefined);
 
 process.stderr.write(failed === 0 ? "all gate-dispatch checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

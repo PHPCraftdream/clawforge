@@ -163,3 +163,9 @@ export function reportUnknownCommand(name: string, candidates: string[]): void {
   if (suggestion !== undefined) info(`did you mean: ${suggestion}`);
   info("run ./clawforge help to list every command");
 }
+
+/** The deployment to use when the requested one is missing: the lone deployment under apps/,
+ *  but only when nobody named one explicitly (--app or OC_APP); otherwise undefined. */
+export function soleDeploymentFallback(explicit: boolean, available: readonly string[]): string | undefined {
+  return !explicit && available.length === 1 ? available[0] : undefined;
+}

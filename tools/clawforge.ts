@@ -22,6 +22,7 @@ import {
   gateHelpLines,
   reportUnknownCommand,
   splitLeadingAppFlag,
+  soleDeploymentFallback,
   type GateCommand,
 } from "./framework/integration/gate.ts";
 import { reportError, info } from "./framework/core/log.ts";
@@ -159,11 +160,9 @@ try {
     .map((entry) => entry.name)
     .sort();
 
-  if (!appExplicit && available.length === 1) {
-    // Nothing to disambiguate: neither --app nor OC_APP asked for a specific (missing)
-    // deployment, and there is exactly one to have meant. Falls through to the normal load
-    // below rather than exiting, exactly as if it had been named explicitly.
-    name = available[0];
+  const sole = soleDeploymentFallback(appExplicit, available);
+  if (sole !== undefined) {
+    name = sole;
     deploymentDir = resolve(monorepoRoot, "apps", name);
     info(`using the only deployment: ${name}`);
   } else if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {

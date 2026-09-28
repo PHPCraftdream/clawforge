@@ -64,7 +64,12 @@ function stubContext(options: StubOptions = {}): Context {
     },
     transport: {
       description: "stub",
+      // Default: a bare host with neither ufw nor iptables — ufwDockerBypassProblem's own
+      // `command -v` presence probe (index.ts's commandPresent) must see a plain "not found"
+      // here, not the "unexpected exec" throw below, or every wildcard-bind test that does not
+      // care about UFW at all would have to know about that probe just to avoid crashing.
       exec: options.transportExec ?? (async (command: string, args: string[]): Promise<ExecResult> => {
+        if (command === "sh" && (args[1] ?? "").startsWith("command -v ")) return { code: 1, stdout: "", stderr: "" };
         throw new Error(`unexpected exec: ${command} ${args.join(" ")}`);
       }),
     },
@@ -252,16 +257,28 @@ await withDeployment(async (dir) => {
 
 // --- host-side: UFW active + DOCKER-USER bypass, only when the port is actually public -------
 
-function ufwTransport(status: ExecResult | Error, chain?: ExecResult | Error): Context["transport"]["exec"] {
-  return async (command: string, _args: string[]): Promise<ExecResult> => {
+/** `absent` means `sh -c 'command -v <name>'` answers "not found" (exit 1, empty stdout) —
+ *  the same shape a real SshTransport/WslTransport gives for a genuinely missing command,
+ *  never an exception (that is the B9 bug this stub exists to pin: a raw exec's exit 127
+ *  must not be the only way "not installed" is told apart from "installed but failed"). */
+function ufwTransport(
+  ufw: "absent" | ExecResult,
+  iptables?: "absent" | ExecResult,
+): Context["transport"]["exec"] {
+  return async (command: string, args: string[]): Promise<ExecResult> => {
+    if (command === "sh") {
+      const probe = /command -v (\w+)/.exec(args[1] ?? "")?.[1];
+      if (probe === "ufw") return ufw === "absent" ? { code: 1, stdout: "", stderr: "" } : { code: 0, stdout: "/usr/sbin/ufw\n", stderr: "" };
+      if (probe === "iptables") return iptables === "absent" || iptables === undefined ? { code: 1, stdout: "", stderr: "" } : { code: 0, stdout: "/usr/sbin/iptables\n", stderr: "" };
+      throw new Error(`unexpected sh probe: ${args.join(" ")}`);
+    }
     if (command === "ufw") {
-      if (status instanceof Error) throw status;
-      return status;
+      if (ufw === "absent") throw new Error("must not exec ufw once command -v reported it absent");
+      return ufw;
     }
     if (command === "iptables") {
-      if (chain === undefined) throw new Error("unexpected iptables call");
-      if (chain instanceof Error) throw chain;
-      return chain;
+      if (iptables === undefined || iptables === "absent") throw new Error("must not exec iptables once command -v reported it absent");
+      return iptables;
     }
     throw new Error(`unexpected exec: ${command}`);
   };
@@ -279,10 +296,10 @@ await withDeployment(async () => {
 await withDeployment(async () => {
   const ctx = stubContext({
     connectionFacts: { bindAddress: "0.0.0.0", port: "18789" },
-    transportExec: ufwTransport(new Error("ENOENT")),
+    transportExec: ufwTransport("absent"),
   });
   const report = await runSecurityAudit(ctx);
-  check("ufw not installed on the target: not applicable, no finding", report.problems.some((p) => p.code === "UFW_DOCKER_BYPASS"), false);
+  check("ufw not installed (command -v exit 1, no exception — the SSH/WSL shape): not applicable, no finding", report.problems.some((p) => p.code === "UFW_DOCKER_BYPASS"), false);
 });
 
 await withDeployment(async () => {
@@ -301,17 +318,17 @@ await withDeployment(async () => {
   });
   const report = await runSecurityAudit(ctx);
   const finding = report.problems.find((p) => p.code === "UFW_DOCKER_BYPASS");
-  check("no-sudo: reported as could-not-check, never as fine", finding?.detail.includes("could not determine"), true);
+  check("ufw present but no permission: reported as could-not-check, never as fine", finding?.detail.includes("could not determine"), true);
   check("still a warning, not blocking", blockingProblems(report.problems).some((p) => p.code === "UFW_DOCKER_BYPASS"), false);
 });
 
 await withDeployment(async () => {
   const ctx = stubContext({
     connectionFacts: { bindAddress: "0.0.0.0", port: "18789" },
-    transportExec: ufwTransport({ code: 0, stdout: "Status: active\n", stderr: "" }, new Error("ENOENT")),
+    transportExec: ufwTransport({ code: 0, stdout: "Status: active\n", stderr: "" }, "absent"),
   });
   const report = await runSecurityAudit(ctx);
-  check("ufw active, no iptables: could-not-check", report.problems.find((p) => p.code === "UFW_DOCKER_BYPASS")?.detail.includes("not available"), true);
+  check("ufw active, no iptables (command -v exit 1): could-not-check", report.problems.find((p) => p.code === "UFW_DOCKER_BYPASS")?.detail.includes("not available"), true);
 });
 
 await withDeployment(async () => {

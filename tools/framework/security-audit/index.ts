@@ -28,7 +28,6 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Context } from "../core/context.ts";
-import type { ExecResult } from "../runtime/transport.ts";
 import { deploymentDir, envFile, secretsDir } from "../runtime/deployment.ts";
 import { problem, type Problem, type Severity } from "../service/inspection.ts";
 import { openclawCliJson } from "../service/openclaw-cli.ts";
@@ -216,17 +215,21 @@ function applySuppressions(findings: readonly SecurityFinding[], suppressions: r
 
 // --- host-side: exposure Docker/UFW hide from the instance ---------------------------------
 
+/** Whether `command` resolves on the target. Only the local transport throws for a missing
+ *  command; over SSH/WSL it is an ordinary exit 127, indistinguishable from the tool failing. */
+async function commandPresent(ctx: Context, command: string): Promise<boolean> {
+  const found = await ctx.transport.exec("sh", ["-c", `command -v ${command}`], { allowFailure: true });
+  return found.code === 0 && found.stdout.trim() !== "";
+}
+
 /** DOCKER-USER runs ahead of UFW's own chain, so a published port can bypass a firewall that
  *  looks active. `undefined` means "does not apply here" (no ufw on this target at all,
  *  confirmed inactive); a Problem otherwise — including the "could not check" case, which
  *  must never read as "fine". */
 async function ufwDockerBypassProblem(ctx: Context): Promise<Problem | undefined> {
-  let status: ExecResult;
-  try {
-    status = await ctx.transport.exec("ufw", ["status"], { allowFailure: true });
-  } catch {
-    return undefined; // ufw is not installed on this target — the check does not apply
-  }
+  if (!(await commandPresent(ctx, "ufw"))) return undefined; // ufw is not installed on this target — the check does not apply
+
+  const status = await ctx.transport.exec("ufw", ["status"], { allowFailure: true });
   const text = `${status.stdout}\n${status.stderr}`;
   if (/Status:\s*inactive/i.test(text)) return undefined;
   if (!/Status:\s*active/i.test(text)) {
@@ -238,12 +241,10 @@ async function ufwDockerBypassProblem(ctx: Context): Promise<Problem | undefined
     );
   }
 
-  let chain: ExecResult;
-  try {
-    chain = await ctx.transport.exec("iptables", ["-L", "DOCKER-USER", "-n"], { allowFailure: true });
-  } catch {
+  if (!(await commandPresent(ctx, "iptables"))) {
     return problem("UFW_DOCKER_BYPASS", "UFW is active but iptables is not available on this target — could not check the DOCKER-USER chain");
   }
+  const chain = await ctx.transport.exec("iptables", ["-L", "DOCKER-USER", "-n"], { allowFailure: true });
   if (chain.code !== 0) {
     return problem(
       "UFW_DOCKER_BYPASS",

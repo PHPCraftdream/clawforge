@@ -173,7 +173,11 @@ function quoteArg(value: string): string {
  *
  *  The script never uses `set -e` and never chains with `&&`: one command's failure must
  *  not skip the marker that lets its result be told apart from the next command's, and must
- *  not stop the remaining commands from running at all. */
+ *  not stop the remaining commands from running at all.
+ *
+ *  The exit marker always starts on its own line, so output without a trailing newline still
+ *  parses; rejoining the lines between markers restores that output exactly. The temp
+ *  directory is removed last: under `cli-start` the container outlives the call. */
 export async function openclawCliBatch(ctx: Context, commands: readonly string[][]): Promise<BatchedCliResult[]> {
   if (commands.length === 0) return [];
 
@@ -187,8 +191,9 @@ export async function openclawCliBatch(ctx: Context, commands: readonly string[]
     ...commands.map((_, index) => [
       `printf '%s\\n' ${quoteArg(`${BATCH_MARKER}${index}:begin`)}`,
       `cat "$dir/${index}"`,
-      `printf '%s%d\\n' ${quoteArg(`${BATCH_MARKER}${index}:exit:`)} "$(cat "$dir/${index}.code")"`,
+      `printf '\\n%s%d\\n' ${quoteArg(`${BATCH_MARKER}${index}:exit:`)} "$(cat "$dir/${index}.code")"`,
     ].join("\n")),
+    `rm -rf -- "$dir"`,
   ].join("\n");
 
   let result: ExecResult;

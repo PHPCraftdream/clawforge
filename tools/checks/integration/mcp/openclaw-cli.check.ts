@@ -8,6 +8,8 @@
 import {
   openclawCli,
   openclawCliJson,
+  openclawCliBatch,
+  formatBatchStub,
   isScopeUpgradePending,
   approveScopeUpgradeArgv,
   scopeUpgradeRequestId,
@@ -207,6 +209,39 @@ check(
     message = (error as Error).message;
   }
   check("a non-JSON answer is named as such, not left as a SyntaxError", message.includes("did not answer with JSON"), true);
+}
+
+// --- batch: temp-dir cleanup and an exit marker that never glues onto unterminated output ---
+
+{
+  let capturedScript = "";
+  const ctx = {
+    runtime: {
+      async runOneOff(_service: string, args: string[]) {
+        capturedScript = args[1] ?? "";
+        // No trailing newline on the first answer (a bare `--version` string) and one on the
+        // second (typical `--json` output): formatBatchStub frames both the same way the
+        // fixed script now does, with an unconditional `\n` between a command's own stdout
+        // and the exit marker that follows it.
+        const stdout = formatBatchStub([
+          { code: 0, stdout: "1.2.3" },
+          { code: 0, stdout: "{\"ok\":true}\n" },
+        ]);
+        return { code: 0, stdout, stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  const results = await openclawCliBatch(ctx, [["--version"], ["mcp", "list", "--json"]]);
+  check("output with no trailing newline is not glued to the exit marker", results[0], { code: 0, stdout: "1.2.3" });
+  check("output that already ends in a newline round-trips exactly too", results[1], { code: 0, stdout: "{\"ok\":true}\n" });
+  check(
+    "the exit marker is always preceded by an explicit newline, not the command's own output",
+    capturedScript.includes("printf '\\n%s%d\\n'"),
+    true,
+  );
+  check("the script removes its temp directory", /rm -rf -- "\$dir"/.test(capturedScript), true);
+  check("cleanup is the script's last line, after every result is printed", capturedScript.trim().split("\n").at(-1), 'rm -rf -- "$dir"');
 }
 
 // --- accept scope policy -------------------------------------------------------------------

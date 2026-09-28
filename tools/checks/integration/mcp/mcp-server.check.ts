@@ -185,11 +185,25 @@ try {
     const byId = new Map(responses.map((response) => [response.id, response]));
     const textOf = (id: number): string => String(((byId.get(id)?.result as { content?: Array<{ text?: string }> } | undefined)?.content ?? [])[0]?.text ?? "");
 
+    // Captured (isCaptured() — every MCP call is) always answers `list` in JSON, whether or
+    // not --json was asked for; an empty catalog is {recipes:[],bundles:[],broken:[]}, not
+    // the text path's "no recipes yet".
+    const isEmptyRecipeCatalog = (text: string): boolean => {
+      try {
+        const parsed = JSON.parse(text) as { recipes?: unknown; bundles?: unknown; broken?: unknown };
+        return Array.isArray(parsed.recipes) && parsed.recipes.length === 0
+          && Array.isArray(parsed.bundles) && parsed.bundles.length === 0
+          && Array.isArray(parsed.broken) && parsed.broken.length === 0;
+      } catch {
+        return false;
+      }
+    };
+
     check("recipe MCP calls keep the server alive", result.code, 0);
     check("recipe remove without confirm is rejected", textOf(1).includes("pass confirm: true"), true);
     check("recipe remove with confirm false is rejected", textOf(2).includes("pass confirm: true"), true);
-    check("read-only recipe list remains available without confirmation", textOf(3).includes("no recipes yet"), true);
-    check("bare recipe with no action runs the list default instead of demanding confirmation", textOf(5).includes("no recipes yet"), true);
+    check("read-only recipe list remains available without confirmation", isEmptyRecipeCatalog(textOf(3)), true);
+    check("bare recipe with no action runs the list default instead of demanding confirmation", isEmptyRecipeCatalog(textOf(5)), true);
 
     const recipeTool = (((byId.get(4)?.result as { tools?: Array<{ name: string; description?: string; inputSchema?: { properties?: Record<string, unknown>; required?: string[] } }> } | undefined)?.tools ?? [])
       .find((tool) => tool.name === "recipe"));
@@ -343,12 +357,12 @@ try {
     deep("onboard's own JSON rides in the envelope whole", onboardStructured?.result, { ok: true, steps: ["dashboard ready"] });
     const listReply = byId.get(4)?.result as { structuredContent?: { changed?: boolean; result?: unknown } } | undefined;
     check("recipe list answers in the declared envelope too", listReply?.structuredContent !== undefined, true);
-    check("a text action's envelope reports it changed nothing", listReply?.structuredContent?.changed, false);
-    check(
-      "and its result is the command's own text",
-      typeof listReply?.structuredContent?.result === "string" && String(listReply.structuredContent.result).includes("available recipes"),
-      true,
-    );
+    check("a read-only action's envelope reports it changed nothing", listReply?.structuredContent?.changed, false);
+    // list emits its own JSON document when captured (isCaptured() — every MCP call is), so
+    // the envelope's result is the parsed catalog, not the command's raw text.
+    const listResult = listReply?.structuredContent?.result as { recipes?: { name?: string }[] } | undefined;
+    check("its result is the structured catalog, not raw text", Array.isArray(listResult?.recipes), true);
+    check("and the catalog names the probe recipe", listResult?.recipes?.some((entry) => entry.name === "probe"), true);
   } finally {
     await rm(resolve(appsDir, verifyDeployment), { recursive: true, force: true });
   }

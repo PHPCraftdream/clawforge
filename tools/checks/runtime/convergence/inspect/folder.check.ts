@@ -493,15 +493,18 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
         statusError = caught instanceof Error ? caught.message : String(caught);
       }
       check("status does not throw", statusError, "");
-      check("status says nothing is deployed yet", statusOutput.includes("nothing deployed yet"), true);
-      check("status points at bootstrap", statusOutput.includes("./clawforge bootstrap"), true);
       check("status never prints the raw transport error", statusOutput.includes("Permission denied"), false);
       check("status stops after the first failed runtime call", execLog.filter((call) => call[0] === "mkdir").length, 1);
+      // Captured output is always the JSON envelope for this command, whether or not --json
+      // was asked for (isCaptured() — see status.ts's emitStatusReport()).
+      const payload = JSON.parse(statusOutput) as { bootstrapped: boolean; running: boolean };
+      check("status reports not bootstrapped instead of throwing", payload.bootstrapped, false);
+      check("status reports not running", payload.running, false);
     }
 
     {
-      // N1: status takes no arguments at all — an unrecognised one (e.g. a misplaced --app)
-      // must be refused before anything is even asked of the transport.
+      // status declares only --json — any other argument (e.g. a misplaced --app) must be
+      // refused before anything is even asked of the transport.
       const { transport, execLog } = preBootstrapTransport({ dataDirExists: false });
       const ctx = notBootstrappedContext(transport);
       let message: string | undefined;
@@ -512,6 +515,59 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
       }
       check("status refuses an unknown argument", message, "unknown argument: --bogus");
       check("and never touches the transport at all", execLog.length, 0);
+    }
+
+    {
+      // A bootstrapped, running instance — status --json reports the same facts as the text
+      // path, structured instead of the container table.
+      const runtime = {
+        description: "docker",
+        async isRunning() { return true; },
+        async imageReference() { return "ghcr.io/openclaw/openclaw@sha256:deadbeef"; },
+        async probe(endpoint: string) { return endpoint === "readyz" ? 0 : 200; },
+        async health() { return "healthy"; },
+        async runningConnectionFacts() { return { bindAddress: "127.0.0.1", port: "18789" }; },
+      };
+      const transport = {
+        description: "stub-target",
+        async exec() {
+          return {
+            code: 0,
+            stdout: "12M\t/srv/clawforge/data/config\n34M\t/srv/clawforge/data/workspace\n1.0K\t/srv/clawforge/data/auth-secrets\n",
+            stderr: "",
+          };
+        },
+      } as unknown as Transport;
+      const ctx = {
+        settings: {
+          bindAddress: "127.0.0.1",
+          gatewayPort: "18789",
+          dataDir: "/srv/clawforge/data",
+          image: "ghcr.io/openclaw/openclaw:extended-stable",
+          serviceUrl: "http://127.0.0.1:18789",
+        },
+        transport,
+        runtime,
+      } as unknown as Context;
+
+      let output = "";
+      await withOutputSink((chunk) => { output += chunk; }, () => status(ctx, ["--json"]));
+      const payload = JSON.parse(output) as Record<string, unknown>;
+      check("status --json parses as one JSON document", typeof payload, "object");
+      check("reports bootstrapped", payload.bootstrapped, true);
+      check("reports running", payload.running, true);
+      check("reports the resolved image", payload.image, "ghcr.io/openclaw/openclaw@sha256:deadbeef");
+      check("reports every health probe plus the runtime's own verdict", payload.health, {
+        healthz: 200, startupz: 200, readyz: 0, runtime: "healthy",
+      });
+      check("reports exposure the same way expose status does", payload.exposure, {
+        bindAddress: "127.0.0.1", port: "18789", running: true, loopback: true, wildcard: false,
+      });
+      check("reports data usage parsed from du -sh, size and path split apart", payload.dataUsage, [
+        { size: "12M", path: "/srv/clawforge/data/config" },
+        { size: "34M", path: "/srv/clawforge/data/workspace" },
+        { size: "1.0K", path: "/srv/clawforge/data/auth-secrets" },
+      ]);
     }
 
     {

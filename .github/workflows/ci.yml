@@ -218,7 +218,8 @@ jobs:
             tools/checks/security/credentials/secrets-command/prospective-requirements.check.ts
             tools/checks/security/credentials/secrets-command/unreadable-input-aborts.check.ts
             tools/checks/security/credentials/ssh-quoting.check.ts
-            tools/checks/security/credentials/verify.check.ts
+            tools/checks/security/credentials/verify/json.check.ts
+            tools/checks/security/credentials/verify/verify.check.ts
             tools/checks/security/expose/index.check.ts
             tools/checks/security/expose/ssh.check.ts
             tools/checks/security/expose/status.check.ts

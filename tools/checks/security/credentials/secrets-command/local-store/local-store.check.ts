@@ -223,6 +223,15 @@ try {
 
   // The same contract on the status listing's own hint (the missing-secrets branch):
   // which command applies the change depends on whether an instance is running at all.
+  // withOutputSink makes isCaptured() true, so the default report always answers in JSON here
+  // (the same contract watch status/plan already keep) — the restart-vs-up hint is then the
+  // `running` fact rather than a sentence to string-match.
+  interface StatusPayload {
+    readonly secrets: { name: string; location: string; usedBy: string; required: boolean; present: boolean }[];
+    readonly missing: string[];
+    readonly running: boolean | null;
+  }
+
   targetEnvContent = "";
   running = true;
   let statusRunningOutput = "";
@@ -234,10 +243,13 @@ try {
       () => secrets(applyCtx, []),
     );
   } catch {
-    // The missing-secrets listing ends in a deliberate throw; the hint is what matters.
+    // The missing-secrets listing ends in a deliberate throw; the JSON is what matters.
   }
-  check("the status hint names restart for a running instance", statusRunningOutput.includes("then ./clawforge restart"), true);
-  check("the status hint for a running instance does not name up", statusRunningOutput.includes("./clawforge up"), false);
+  {
+    const payload = JSON.parse(statusRunningOutput) as StatusPayload;
+    check("a running instance is reported as running", payload.running, true);
+    check("ZAI_API_KEY is reported missing", payload.missing.includes("ZAI_API_KEY"), true);
+  }
 
   running = false;
   let statusStoppedOutput = "";
@@ -251,14 +263,16 @@ try {
   } catch {
     // Deliberate throw, as above.
   }
-  check("the status hint names up for a stopped instance", statusStoppedOutput.includes("then ./clawforge up"), true);
-  check("the status hint for a stopped instance does not name restart", statusStoppedOutput.includes("./clawforge restart"), false);
+  {
+    const payload = JSON.parse(statusStoppedOutput) as StatusPayload;
+    check("a stopped instance is reported as not running", payload.running, false);
+  }
 
   // --- the status listing mixes optional requirements in with required ones, and an
   // optional secret that is simply not set yet is not missing anything the gateway needs —
-  // printing it as MISSING under a "required secrets" heading left the summary line ("all
-  // required secrets are present") and the listing contradicting each other. The mark is
-  // display only: missing() still gates the throw. --------------------------------------
+  // reporting it in `missing` alongside a genuinely required one would contradict `secrets`'
+  // own present:false/required:false entry for it. present/required stay separate from
+  // missing: missing() still gates the throw. --------------------------------------
   targetEnvContent = "";
   running = false;
   let optionalAbsentOutput = "";
@@ -273,13 +287,18 @@ try {
   } catch (error) {
     optionalAbsentError = error instanceof Error ? error.message : String(error);
   }
-  check("the required-absent entry is still reported missing", optionalAbsentOutput.includes("MISSING ZAI_API_KEY"), true);
-  check("the optional-absent entry is not reported as missing", optionalAbsentOutput.includes("MISSING REPO_SECRET"), false);
-  check("the optional-absent entry is marked as optional", optionalAbsentOutput.includes("optional REPO_SECRET"), true);
+  {
+    const payload = JSON.parse(optionalAbsentOutput) as StatusPayload;
+    check("the required-absent entry is still reported missing", payload.missing.includes("ZAI_API_KEY"), true);
+    check("the optional-absent entry is not reported as missing", payload.missing.includes("REPO_SECRET"), false);
+    const repoSecret = payload.secrets.find((entry) => entry.name === "REPO_SECRET");
+    check("the optional-absent entry is present:false", repoSecret?.present, false);
+    check("the optional-absent entry is required:false", repoSecret?.required, false);
+  }
   check("the missing-required throw still happened", optionalAbsentError !== "", true);
 
-  // The success path: with the required value in place the run completes, and no MISSING
-  // mark may appear anywhere — the optional entry is merely not set yet.
+  // The success path: with the required value in place the run completes, and nothing is
+  // reported missing — the optional entry is merely not set yet.
   targetEnvContent = "ZAI_API_KEY=zai-value\n";
   let successOutput = "";
   await withOutputSink(
@@ -288,9 +307,16 @@ try {
     },
     () => secrets(applyCtx, []),
   );
-  check("the success run reaches the all-present summary", successOutput.includes("all required secrets are present"), true);
-  check("no MISSING mark appears when only an optional entry is absent", successOutput.includes("MISSING"), false);
-  check("the optional entry is marked optional on the success path too", successOutput.includes("optional REPO_SECRET"), true);
+  {
+    const payload = JSON.parse(successOutput) as StatusPayload;
+    check("the success run reports nothing missing", payload.missing.length, 0);
+    check("running is not asked when nothing is missing", payload.running, null);
+    const repoSecret = payload.secrets.find((entry) => entry.name === "REPO_SECRET");
+    check("the optional entry is still present:false on the success path", repoSecret?.present, false);
+    check("the optional entry is still required:false on the success path", repoSecret?.required, false);
+    check("the JSON report carries no secret value from the fixture", successOutput.includes("zai-value"), false);
+    check("every reported entry is name/location/usedBy/required/present only", JSON.stringify(Object.keys(payload.secrets[0]).sort()), JSON.stringify(["location", "name", "present", "required", "usedBy"]));
+  }
 
   // --- the store follows the deployment .env's safe-creation contract — owner-only
   // from the first byte, on Windows a closed DACL rather than the POSIX mode argument

@@ -143,6 +143,19 @@ try {  const ctx = {
   check("the refusal names the correct fix", applyMessage.includes("--init-store --store missing-store"), true);
   check("the refusal does not point at --template", applyMessage.includes("--template"), false);
 
+  // --json only makes sense against the default read-only report — refused, clearly, rather
+  // than silently picked one way or the other, when combined with a mode that prints or
+  // writes content of its own.
+  for (const combo of [["--template", "--json"], ["--print-template", "--json"], ["--init-store", "--store", "store-a", "--json"], ["--dump", "--store", "store-a", "--json"], ["--apply", "--store", "store-a", "--json"]]) {
+    let comboMessage = "";
+    try {
+      await withOutputSink(() => {}, () => secrets(ctx, combo));
+    } catch (error) {
+      comboMessage = error instanceof Error ? error.message : String(error);
+    }
+    check(`--json with ${combo.join(" ")} is refused`, comboMessage.includes("--json only supports the default report"), true);
+  }
+
 } finally {
   await teardownDeployment(deployDir);
 }

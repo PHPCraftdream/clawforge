@@ -6,14 +6,25 @@
 // while the gateway serves traffic.
 
 import { log, info } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { summarizeExposure, exposureOneLiner } from "#src/commands/operate/expose/index.ts";
+import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
+/** Drives both status's own parser and its openclawCommands declaration. */
+export const STATUS_ARGUMENTS: CommandArgument[] = [
+  { name: "json", description: "Emit status as JSON instead of text", kind: "flag" },
+];
+
 export async function status(ctx: Context, args: string[]): Promise<void> {
-  // Takes nothing — an unrecognised argument (e.g. a misplaced --app) must not run silently.
-  parseDeclaredArgs([], args);
+  const jsonOnly = parseDeclaredArgs(STATUS_ARGUMENTS, args).json === true;
+
+  if (jsonOnly || isCaptured()) {
+    await emitStatusReport(ctx);
+    return;
+  }
 
   info(`target: ${ctx.transport.description} / runtime: ${ctx.runtime.description}`);
   info(`exposure: ${exposureOneLiner(summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.()))} — details: ./clawforge expose status`);
@@ -55,4 +66,80 @@ export async function status(ctx: Context, args: string[]): Promise<void> {
   } else {
     info(`no readable data yet in ${ctx.settings.dataDir}`);
   }
+}
+
+/** The machine-readable counterpart of the text path above. Never the raw `docker compose
+ *  ps` table showStatus() streams straight to the terminal — that is not structured data —
+ *  so `running` (isRunning(), the one fact every Runtime can answer) stands in for it. */
+async function emitStatusReport(ctx: Context): Promise<void> {
+  const exposure = summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.());
+
+  let running: boolean;
+  try {
+    running = await ctx.runtime.isRunning();
+  } catch (error) {
+    if (!(error instanceof NotBootstrapped)) throw error;
+    emit(
+      `${JSON.stringify(
+        {
+          target: ctx.transport.description,
+          runtime: ctx.runtime.description,
+          exposure,
+          bootstrapped: false,
+          running: false,
+          image: null,
+          health: null,
+          serviceUrl: null,
+          dataUsage: null,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
+
+  const reference = await ctx.runtime.imageReference();
+  const health = {
+    healthz: await ctx.runtime.probe("healthz"),
+    startupz: await ctx.runtime.probe("startupz"),
+    readyz: await ctx.runtime.probe("readyz"),
+    runtime: await ctx.runtime.health(),
+  };
+
+  const usage = await ctx.transport.exec(
+    "du",
+    ["-sh", `${ctx.settings.dataDir}/config`, `${ctx.settings.dataDir}/workspace`, `${ctx.settings.dataDir}/auth-secrets`],
+    { allowFailure: true },
+  );
+  const dataUsage = usage.code === 0
+    ? usage.stdout
+      .trimEnd()
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => {
+        const tab = line.indexOf("\t");
+        return tab === -1
+          ? { size: line.trim(), path: "" }
+          : { size: line.slice(0, tab).trim(), path: line.slice(tab + 1).trim() };
+      })
+    : null;
+
+  emit(
+    `${JSON.stringify(
+      {
+        target: ctx.transport.description,
+        runtime: ctx.runtime.description,
+        exposure,
+        bootstrapped: true,
+        running,
+        image: reference ?? null,
+        health,
+        serviceUrl: ctx.settings.serviceUrl,
+        dataUsage,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }

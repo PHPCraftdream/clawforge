@@ -12,7 +12,7 @@
 import { randomBytes } from "node:crypto";
 import JSON5 from "json5";
 import { log, info, warn, die } from "#src/core/io/log.ts";
-import { withOutputSink, outputSink } from "#src/core/io/output.ts";
+import { withOutputSink, outputSink, emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { sudoFor } from "#src/runtime/datadir.ts";
 import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "#src/runtime/transport/transport.ts";
@@ -39,7 +39,26 @@ import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-argument
 export const VERIFY_ARGUMENTS: CommandArgument[] = [
   { name: "archive", description: "Archive to inspect", kind: "positional", required: true },
   PROFILE_ARGUMENT,
+  { name: "json", description: "Emit the verdict and findings as JSON — locations and kinds only, never credential values", kind: "flag" },
 ];
+
+/** One thing verifySnapshot found. `detail` is a path, a rule name or a provider id —
+ *  never a credential value, so this is exactly what --json is safe to print. */
+export interface VerifyFinding {
+  readonly kind:
+    | "structural"
+    | "forbidden-path"
+    | "unexpected-path"
+    | "embedded-provider-key"
+    | "embedded-gateway-token"
+    | "unreadable-archived-config"
+    | "credential-in-archive"
+    | "identity-token-in-archive";
+  readonly detail: string;
+  /** Whether this finding is why the check failed, under the profile it ran with — an
+   *  identity token is a finding under every profile but only fatal for 'share'. */
+  readonly fatal: boolean;
+}
 
 /** The two kinds of rule a profile forbids archive entries by, kept apart on purpose:
  *
@@ -244,6 +263,7 @@ export async function verifySnapshot(
   ctx: Context,
   archive: string,
   profile: Profile,
+  onFinding?: (finding: VerifyFinding) => void,
 ): Promise<boolean> {
   if (!(await ctx.transport.exists(archive))) die(`archive not found: ${archive}`);
 
@@ -273,6 +293,7 @@ export async function verifySnapshot(
   for (const problem of toReport) {
     if (problem.fatal) warn(problem.message);
     else info(problem.message);
+    onFinding?.({ kind: "structural", detail: problem.message, fatal: problem.fatal });
   }
   if (foldedImageLinks > 0) info(`${foldedImageLinks} expected link(s) into the OpenClaw image`);
 
@@ -298,6 +319,7 @@ export async function verifySnapshot(
 
   for (const path of forbiddenViolations(profile, recipePrivatePaths, relative)) {
     warn(`archive contains ${path}, which the '${profile}' profile must exclude`);
+    onFinding?.({ kind: "forbidden-path", detail: path, fatal: true });
     failures += 1;
   }
 
@@ -315,7 +337,10 @@ export async function verifySnapshot(
     }
     if (unexpected.size > 0) {
       warn(`archive contains paths the 'share' profile does not allow:`);
-      for (const path of unexpected) info(path);
+      for (const path of unexpected) {
+        info(path);
+        onFinding?.({ kind: "unexpected-path", detail: path, fatal: true });
+      }
       failures += 1;
     }
   }
@@ -368,17 +393,23 @@ export async function verifySnapshot(
         const embeddedToken = isLiteralSecret(archivedConfig.gateway?.auth?.token);
         if (embeddedKeys.length > 0 || embeddedToken) {
           const report = profile === "full" ? info : warn;
+          const fatal = profile !== "full";
           if (embeddedKeys.length > 0) {
             report("the archive's own openclaw.json embeds a plain-string provider apiKey:");
-            for (const id of embeddedKeys) info(`provider ${id}`);
+            for (const id of embeddedKeys) {
+              info(`provider ${id}`);
+              onFinding?.({ kind: "embedded-provider-key", detail: `config/openclaw.json (provider ${id})`, fatal });
+            }
           }
           if (embeddedToken) {
             report("the archive's own openclaw.json embeds a literal gateway.auth.token");
+            onFinding?.({ kind: "embedded-gateway-token", detail: "config/openclaw.json", fatal });
           }
-          if (profile !== "full") failures += 1;
+          if (fatal) failures += 1;
         }
       } catch (error) {
         warn(`the archive's own openclaw.json could not be parsed, so it could not be checked for an embedded key: ${(error as Error).message}`);
+        onFinding?.({ kind: "unreadable-archived-config", detail: "config/openclaw.json", fatal: true });
         failures += 1;
       }
     }
@@ -387,7 +418,10 @@ export async function verifySnapshot(
     if (criticalHits.length > 0) {
       const report = profile === "full" ? info : warn;
       report("provider/gateway credentials found inside the archive:");
-      for (const hit of criticalHits) info(hit);
+      for (const hit of criticalHits) {
+        info(hit);
+        onFinding?.({ kind: "credential-in-archive", detail: hit, fatal: profile !== "full" });
+      }
       if (profile !== "full") failures += 1;
     }
 
@@ -395,10 +429,14 @@ export async function verifySnapshot(
     if (identityHits.length > 0) {
       if (profile === "share") {
         warn("instance identity tokens found inside the archive:");
-        for (const hit of identityHits) info(hit);
+        for (const hit of identityHits) {
+          info(hit);
+          onFinding?.({ kind: "identity-token-in-archive", detail: hit, fatal: true });
+        }
         failures += 1;
       } else {
         info(`contains this instance's identity tokens (expected for profile '${profile}')`);
+        for (const hit of identityHits) onFinding?.({ kind: "identity-token-in-archive", detail: hit, fatal: false });
       }
     }
   } finally {
@@ -445,8 +483,23 @@ export async function verify(ctx: Context, args: string[]): Promise<void> {
     profile = parsed.profile as Profile;
   }
   const archive = parsed.archive as string | undefined;
+  const jsonOnly = parsed.json === true;
 
   if (archive === undefined) die("usage: ./clawforge verify [--profile share|migrate|full] <archive>");
+
+  if (jsonOnly || isCaptured()) {
+    const findings: VerifyFinding[] = [];
+    let passed = false;
+    // Swallows verifySnapshot's own narration (log/info/warn) so a captured caller — MCP
+    // shares one sink for both — sees only the JSON emitted below, never mixed text.
+    await withOutputSink(() => {}, async () => {
+      passed = await verifySnapshot(ctx, archive, profile, (finding) => findings.push(finding));
+    });
+    emit(`${JSON.stringify({ archive, profile, passed, findings }, null, 2)}\n`);
+    if (!passed) die(`snapshot failed the '${profile}' profile check`);
+    return;
+  }
+
   if (profile === "full") warn("profile 'full' is credential-complete by design — never share it");
 
   if (!(await verifySnapshot(ctx, archive, profile))) {

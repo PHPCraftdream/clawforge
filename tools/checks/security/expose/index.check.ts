@@ -70,8 +70,11 @@ check("the refusal names the three valid actions", (await deathOf(() => expose({
     runtime: { async runningConnectionFacts() { return undefined; } },
   } as unknown as Context;
   const written: string[] = [];
+  // withOutputSink makes isCaptured() true, so status always answers in JSON here — see
+  // status.check.ts for its full text-mode coverage.
   await withOutputSink((chunk) => written.push(chunk), () => expose(ctx, ["status"]));
-  check("expose status reaches exposeStatus", written.join("").includes("gateway exposure"), true);
+  const payload = JSON.parse(written.join("")) as { exposure?: unknown };
+  check("expose status reaches exposeStatus", payload.exposure !== undefined, true);
 }
 
 // --- exposeActionIsReadOnly: only tailscale --apply mutates --------------------------------------
@@ -94,8 +97,8 @@ check("requiresConfirmationWhen matches changedWhen", [command.requiresConfirmat
 
 {
   const names = (command.arguments ?? []).map((argument) => argument.name);
-  check("action, local-port, run, apply, break-lock and break-foreign-lock are all declared", names, [
-    "action", "local-port", "run", "apply", "break-lock", "break-foreign-lock",
+  check("action, local-port, run, apply, break-lock, break-foreign-lock and json are all declared", names, [
+    "action", "local-port", "run", "apply", "break-lock", "break-foreign-lock", "json",
   ]);
   const action = (command.arguments ?? []).find((argument) => argument.name === "action");
   check("action is a required positional with the three choices", [action?.kind, action?.required, action?.choices], ["positional", true, ["ssh", "tailscale", "status"]]);

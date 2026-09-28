@@ -267,15 +267,26 @@ try {
   // --- recipe list accounts for what it does not install --------------------------------------
 
   {
+    // withOutputSink makes isCaptured() true, so `list` always answers in JSON here (the same
+    // contract watch status/plan already keep), whether or not --json was asked for.
     const { ctx } = stubContext({});
     let listed = "";
     await withOutputSink((chunk) => {
       listed += chunk;
     }, () => recipe(ctx, ["list"]));
-    check("the list still names the service recipes", listed.includes("with-extras") && listed.includes("plain"), true);
-    check("the list names agent/MCP bundle recipes too", listed.includes("bundle-only"), true);
-    check("the list points at where bundles are visible", listed.includes("inspect"), true);
-    check("a deployment with recipes never says it has none", listed.includes("no recipes yet"), false);
+    const payload = JSON.parse(listed) as {
+      recipes: { name: string; description: string; enabled: boolean; disabledReason: string | null; source: string | null; ports: { host: number; container: number; description: string | null }[] }[];
+      bundles: string[];
+      broken: { name: string }[];
+    };
+    const recipeNames = payload.recipes.map((entry) => entry.name);
+    check("the list still names the service recipes", recipeNames.includes("with-extras") && recipeNames.includes("plain"), true);
+    check("the list names agent/MCP bundle recipes too, in their own field", payload.bundles.includes("bundle-only"), true);
+    check("a bundle is never also listed as a service recipe", recipeNames.includes("bundle-only"), false);
+    const withExtras = payload.recipes.find((entry) => entry.name === "with-extras");
+    check("ports/source pass through structured, not rendered as text", { source: withExtras?.source, ports: withExtras?.ports }, { source: "https://example.com/with-extras", ports: [{ host: 8080, container: 80, description: "web" }] });
+    const disabled = payload.recipes.find((entry) => entry.name === "disabled");
+    check("a disabled recipe reports enabled:false with its reason", { enabled: disabled?.enabled, disabledReason: disabled?.disabledReason }, { enabled: false, disabledReason: "kept ready, not built by default" });
   }
 
   // A bundle-only recipes directory is not "no recipes yet": the bundles are named, the
@@ -295,10 +306,9 @@ try {
       await withOutputSink((chunk) => {
         listed += chunk;
       }, () => recipe(ctx, ["list"]));
-      check("a bundle-only deployment does not claim to have no recipes", listed.includes("no recipes yet"), false);
-      check("the bundle-only list names the bundle", listed.includes("onboarding"), true);
-      check("the bundle-only list says what is missing is service recipes", listed.includes("no service recipes yet"), true);
-      check("the bundle-only list points at inspect", listed.includes("inspect"), true);
+      const payload = JSON.parse(listed) as { recipes: unknown[]; bundles: string[]; broken: unknown[] };
+      check("a bundle-only deployment reports no service recipes", payload.recipes.length, 0);
+      check("the bundle-only list names the bundle", payload.bundles.includes("onboarding"), true);
     } finally {
       useRecipesDir(scratch);
       await rm(bundleScratch, { recursive: true, force: true });

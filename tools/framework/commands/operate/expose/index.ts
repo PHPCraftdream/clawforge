@@ -14,7 +14,7 @@ import { exposeSsh } from "./ssh.ts";
 import { exposeTailscale } from "./tailscale.ts";
 import { exposeStatus } from "./status.ts";
 
-export { summarizeExposure, exposureOneLiner } from "./status.ts";
+export { summarizeExposure, exposureOneLiner, EXPOSE_STATUS_ARGUMENTS } from "./status.ts";
 export type { ExposureSummary } from "./status.ts";
 export { EXPOSE_SSH_ARGUMENTS } from "./ssh.ts";
 export { EXPOSE_TAILSCALE_ARGUMENTS } from "./tailscale.ts";

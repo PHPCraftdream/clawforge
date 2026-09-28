@@ -29,6 +29,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Typo-aware command dispatch (did-you-mean instead of the full help), `--app` recognised
   only before the command name, and the lone deployment under `apps/` picked automatically
   when neither `--app` nor `OC_APP` names one.
+* `--json` on `status`, `secrets`, `verify`, `expose status` and `recipe list` — the reads an
+  agent asks before acting, structured like `inspect`/`doctor`/`plan` already are.
+  `secrets --json` and `verify --json` carry names/locations/kinds only, never a credential
+  value; a captured MCP call answers in JSON on all five even without the flag.
 
 ### Fixed
 

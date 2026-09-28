@@ -394,6 +394,36 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
     // recipes down with it; this is the other half — the same manifest still gets a named,
     // visible entry in the catalog instead of quietly not existing.
     const broken = await listBrokenRecipes();
+
+    // Kept local to this action rather than routed through parseDeclaredArgs: recipe's own
+    // parser is order-dependent (action, name, ...rest) and not being rewritten here — the
+    // same rest.includes() check --volumes/--force-disabled already use below.
+    if (args.slice(1).includes("--json") || isCaptured()) {
+      emit(
+        `${JSON.stringify(
+          {
+            recipes: recipes.map((entry) => ({
+              name: entry.name,
+              description: entry.description,
+              enabled: entry.enabled,
+              disabledReason: entry.disabledReason ?? null,
+              source: entry.source ?? null,
+              ports: (entry.ports ?? []).map((port) => ({
+                host: port.host,
+                container: port.container,
+                description: port.description ?? null,
+              })),
+            })),
+            bundles,
+            broken: broken.map((entry) => ({ name: entry.name, error: entry.error })),
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return;
+    }
+
     if (recipes.length === 0 && bundles.length === 0 && broken.length === 0) {
       info("no recipes yet — add one under recipes/<name>/");
       return;

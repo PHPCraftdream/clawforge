@@ -95,10 +95,20 @@ function ctxFor(facts: { bindAddress?: string; port?: string } | undefined, tail
   } as unknown as Context;
 }
 
+// The raw writer, not withOutputSink: that helper makes isCaptured() true, which switches
+// exposeStatus to its JSON path regardless of args (the same reasoning folder.check.ts's own
+// captureStderr applies to status text) — these checks want the real terminal text path.
 async function run(ctx: Context): Promise<string> {
-  const written: string[] = [];
-  await withOutputSink((chunk) => written.push(chunk), () => exposeStatus(ctx, []));
-  return written.join("");
+  const original = process.stderr.write.bind(process.stderr);
+  let out = "";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stderr.write as any) = (chunk: string): boolean => { out += chunk; return true; };
+  try {
+    await exposeStatus(ctx, []);
+  } finally {
+    process.stderr.write = original;
+  }
+  return out;
 }
 
 {
@@ -143,6 +153,55 @@ async function run(ctx: Context): Promise<string> {
 {
   const output = await run(ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: true, serveStatus: "" }));
   check("tailscale present but nothing served", output.includes("no tailscale serve configuration"), true);
+}
+
+// --- exposeStatus --json / captured: the structured counterpart -----------------------------
+
+async function runJson(ctx: Context, args: string[]): Promise<Record<string, unknown>> {
+  const written: string[] = [];
+  await withOutputSink((chunk) => written.push(chunk), () => exposeStatus(ctx, args));
+  return JSON.parse(written.join("")) as Record<string, unknown>;
+}
+
+{
+  const payload = await runJson(ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false }), ["--json"]);
+  check("exposure reported the same way summarizeExposure computes it", payload.exposure, {
+    bindAddress: "127.0.0.1", port: "18789", running: true, loopback: true, wildcard: false,
+  });
+  check("no bind address drift against a matching configured value", payload.bindAddressDrift, false);
+  check("tailscale absent: no serve status to report", (payload.tailscale as Record<string, unknown>).serveStatus, null);
+  check("tailscale absent: no read error either", (payload.tailscale as Record<string, unknown>).serveStatusError, null);
+}
+
+{
+  const payload = await runJson(ctxFor({ bindAddress: "0.0.0.0", port: "18789" }, { present: false }), ["--json"]);
+  check("wildcard is reported structurally too", (payload.exposure as Record<string, unknown>).wildcard, true);
+  check("a drifted bind address is a boolean fact, not a sentence to grep for", payload.bindAddressDrift, true);
+  check("the configured value it drifted from is named", payload.configuredBindAddress, "127.0.0.1");
+}
+
+{
+  const payload = await runJson(
+    ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: true, serveStatus: "https://box.tailnet.ts.net/ proxy http://127.0.0.1:18789\n" }),
+    ["--json"],
+  );
+  const tailscale = payload.tailscale as Record<string, unknown>;
+  check("tailscale present and logged in", tailscale.present, true);
+  check("serve status comes back as one line per route", tailscale.serveStatus, ["https://box.tailnet.ts.net/ proxy http://127.0.0.1:18789"]);
+}
+
+{
+  const payload = await runJson(ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: true, serveStatus: "" }), ["--json"]);
+  check("tailscale present but nothing served reads as an empty list, not null", (payload.tailscale as Record<string, unknown>).serveStatus, []);
+}
+
+{
+  // MCP shares one capture sink for every command — isCaptured() alone, with no explicit
+  // --json, must still answer in JSON (the same contract watch status/plan already keep).
+  const payload = await runJson(ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false }), []);
+  check("captured without --json still reports the exposure summary", payload.exposure, {
+    bindAddress: "127.0.0.1", port: "18789", running: true, loopback: true, wildcard: false,
+  });
 }
 
 process.stderr.write(failed === 0 ? "all expose status checks passed\n" : `${failed} failed\n`);

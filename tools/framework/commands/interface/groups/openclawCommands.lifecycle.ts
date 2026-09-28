@@ -195,7 +195,10 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "A recipe's declared private paths (recipe.json privatePaths — literal, " +
       "data-relative) are refused the same way for migrate and share.\n" +
       "Does not scan for personal content in transcripts or workspace notes — review " +
-      "those yourself.",
+      "those yourself.\n" +
+      "--json emits {archive, profile, passed, findings}: each finding is a kind, a " +
+      "location (a path, a rule or a provider id) and whether it is fatal under the " +
+      "profile that ran — never a credential value.",
     arguments: VERIFY_ARGUMENTS,
   },
   upgrade: {

@@ -9,8 +9,16 @@
 // this really loopback-only right now" must not be told so on the strength of a stale file.
 
 import { log, info, warn } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { probeTailscale } from "./tailscale.ts";
+
+/** The slice of `expose`'s declaration this action's own argv actually uses. */
+export const EXPOSE_STATUS_ARGUMENTS: CommandArgument[] = [
+  { name: "json", description: "Emit the exposure and tailscale report as JSON", kind: "flag" },
+];
 
 export interface ExposureSummary {
   readonly bindAddress: string;
@@ -54,9 +62,15 @@ export function exposureOneLiner(summary: ExposureSummary): string {
   return `${summary.bindAddress}:${summary.port} (${scope})${confirmed}`;
 }
 
-export async function exposeStatus(ctx: Context, _args: string[]): Promise<void> {
+export async function exposeStatus(ctx: Context, args: string[]): Promise<void> {
+  const jsonOnly = parseDeclaredArgs(EXPOSE_STATUS_ARGUMENTS, args).json === true;
   const facts = await ctx.runtime.runningConnectionFacts?.();
   const summary = summarizeExposure(ctx, facts);
+
+  if (jsonOnly || isCaptured()) {
+    await emitExposeStatusReport(ctx, summary, facts);
+    return;
+  }
 
   log("gateway exposure");
   info(`published        ${summary.bindAddress}:${summary.port}${summary.running ? "" : " (container not running — configured .env values, unconfirmed)"}`);
@@ -90,4 +104,45 @@ export async function exposeStatus(ctx: Context, _args: string[]): Promise<void>
   const text = serveStatus.stdout.trim();
   if (text === "") info("no tailscale serve configuration");
   else for (const line of text.split("\n")) info(line);
+}
+
+/** The machine-readable counterpart of the text path above, with the same facts. */
+async function emitExposeStatusReport(
+  ctx: Context,
+  summary: ExposureSummary,
+  facts: { bindAddress?: string; port?: string } | undefined,
+): Promise<void> {
+  const bindAddressDrift = summary.running && facts?.bindAddress !== undefined && facts.bindAddress !== ctx.settings.bindAddress;
+
+  const probe = await probeTailscale(ctx);
+  let serveStatus: string[] | null = null;
+  let serveStatusError: string | null = null;
+  if (probe.present) {
+    const result = await ctx.transport.exec("tailscale", ["serve", "status"], { allowFailure: true });
+    if (result.code !== 0) {
+      serveStatusError = `exit ${result.code}`;
+    } else {
+      const text = result.stdout.trim();
+      serveStatus = text === "" ? [] : text.split("\n");
+    }
+  }
+
+  emit(
+    `${JSON.stringify(
+      {
+        exposure: summary,
+        configuredBindAddress: ctx.settings.bindAddress,
+        bindAddressDrift,
+        tailscale: {
+          present: probe.present,
+          loggedIn: probe.loggedIn,
+          detail: probe.detail,
+          serveStatus,
+          serveStatusError,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }

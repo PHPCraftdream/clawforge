@@ -4,7 +4,7 @@
 
 import type { AppCommand } from "#src/core/app.ts";
 
-import { status } from "../status.ts";
+import { status, STATUS_ARGUMENTS } from "../status.ts";
 import { cli } from "../cli.ts";
 import { exec } from "../exec.ts";
 import { host } from "../host/index.ts";
@@ -17,7 +17,7 @@ import { secrets, SECRETS_ARGUMENTS } from "#src/commands/management/secrets.ts"
 import { recoverEnv, RECOVER_ENV_ARGUMENTS } from "#src/commands/operate/recover-env/index.ts";
 import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe/index.ts";
 import { provisionAgent, PROVISION_AGENT_ARGUMENTS } from "#src/commands/management/provision-agent/index.ts";
-import { expose, exposeActionIsReadOnly, EXPOSE_SSH_ARGUMENTS, EXPOSE_TAILSCALE_ARGUMENTS } from "#src/commands/operate/expose/index.ts";
+import { expose, exposeActionIsReadOnly, EXPOSE_SSH_ARGUMENTS, EXPOSE_TAILSCALE_ARGUMENTS, EXPOSE_STATUS_ARGUMENTS } from "#src/commands/operate/expose/index.ts";
 import { watch, watchActionIsReadOnly } from "#src/commands/operate/watch/index.ts";
 import { WATCH_CHECK_ARGUMENTS } from "#src/commands/operate/watch/check.ts";
 import { WATCH_INSTALL_ARGUMENTS } from "#src/commands/operate/watch/install.ts";
@@ -38,7 +38,11 @@ export const managementCommands: Record<string, AppCommand> = {
       "Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) " +
       "and the runtime's own opinion —\n" +
       "because they can disagree: an image whose healthcheck binary is missing\n" +
-      "reports \"unhealthy\" forever while the gateway is serving traffic fine.",
+      "reports \"unhealthy\" forever while the gateway is serving traffic fine.\n" +
+      "--json emits the same facts structured instead of the container table, since that " +
+      "table is not machine-readable: target, runtime, exposure, bootstrapped, running, " +
+      "image, health, serviceUrl, dataUsage.",
+    arguments: STATUS_ARGUMENTS,
   },
   lock: {
     summary: "Pin what this instance is made of, or check it still matches",
@@ -224,7 +228,9 @@ export const managementCommands: Record<string, AppCommand> = {
       "up/bootstrap refuse to start when something required is missing, rather than let " +
       "the gateway crash-loop.\n" +
       "Over MCP, status and template operations need no confirmation; --apply, --init-store " +
-      "and --dump require confirm: true. --force remains an explicit separate choice.",
+      "and --dump require confirm: true. --force remains an explicit separate choice.\n" +
+      "--json emits the default report (names/state/where-found, never values) as JSON — " +
+      "refused together with --template/--print-template/--init-store/--apply/--dump.",
     arguments: SECRETS_ARGUMENTS,
     destructive: true,
     readOnlyWhen: (args) => !secretsWrites(args),
@@ -312,7 +318,8 @@ export const managementCommands: Record<string, AppCommand> = {
       "diagnose bundles one report instead of several manual round trips: whether the " +
       "recipe's stack is running, a bounded tail of every service in it (not just one), " +
       "and the verify.ts hook's own result if it has one — gated like verify itself, since " +
-      "it runs that same hook and the framework cannot know it is read-only.",
+      "it runs that same hook and the framework cannot know it is read-only.\n" +
+      "list --json emits {recipes, bundles, broken} instead of the text catalog.",
     arguments: [
       {
         name: "action",
@@ -322,6 +329,7 @@ export const managementCommands: Record<string, AppCommand> = {
       },
       { name: "name", description: "Recipe name; with import, the source directory to copy from", kind: "positional" },
       { name: "new-name", description: "With import: import under this name instead of the source directory's own name", kind: "positional" },
+      { name: "json", description: "With list: emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON", kind: "flag" },
       { name: "volumes", description: "With remove: delete its volumes too", kind: "flag" },
       { name: "tail", description: "With logs/diagnose: lines to return per service", kind: "option" },
       {
@@ -436,11 +444,13 @@ export const managementCommands: Record<string, AppCommand> = {
       "status — the published bind address/port read back from the RUNNING container (never just .env, which can " +
       "be stale the moment OC_BIND_ADDRESS is edited without a recreate), whether that is loopback-only, and — if " +
       "tailscale is present — a summary of `tailscale serve status`. Warns loudly when the bind address is " +
-      "0.0.0.0 or ::. The same one-line summary appears in `./clawforge status`.",
+      "0.0.0.0 or ::. The same one-line summary appears in `./clawforge status`. --json emits the same facts " +
+      "structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.",
     arguments: [
       { name: "action", description: "ssh, tailscale or status", kind: "positional", required: true, choices: ["ssh", "tailscale", "status"] },
       ...EXPOSE_SSH_ARGUMENTS,
       ...EXPOSE_TAILSCALE_ARGUMENTS,
+      ...EXPOSE_STATUS_ARGUMENTS,
     ],
   },
   watch: {

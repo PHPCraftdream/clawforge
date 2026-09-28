@@ -6,7 +6,7 @@
 
 import { writeFile, readFile, access } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
-import { emit } from "#src/core/io/output.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine } from "#src/core/env.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
@@ -34,6 +34,11 @@ export const SECRETS_ARGUMENTS: CommandArgument[] = [
   // Only --apply takes the lock; --break-lock stays unsupported, but an orphaned lock from
   // another machine still needs a way out.
   BREAK_FOREIGN_LOCK_ARGUMENT,
+  {
+    name: "json",
+    description: "Emit the default read-only report as JSON (names/state/where-found only, never values) — refused with --template/--print-template/--init-store/--apply/--dump",
+    kind: "flag",
+  },
 ];
 
 /** The store `secrets` commands write and read when no --store is given — and the one
@@ -307,9 +312,14 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   const force = parsed.force === true;
   const store = parsed.store === undefined ? DEFAULT_SECRET_STORE : parsed.store === "" ? die("--store needs a name, e.g. local or prod") : parsed.store as string;
   const breakForeignLockHost = parseBreakForeignLockHost(args);
+  const jsonOnly = parsed.json === true;
 
   if (breakForeignLockHost !== undefined && !apply) {
     die("--break-foreign-lock only applies with --apply — no other action takes the instance lock");
+  }
+  // --json structures only the default report; the other actions print, write or mutate.
+  if (jsonOnly && (writeTemplate || printTemplate || apply || initStore || dump)) {
+    die("--json only supports the default report — not with --template, --print-template, --init-store, --apply or --dump");
   }
 
   if (initStore) {
@@ -384,8 +394,42 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   }
 
   const entries = await status(ctx);
+  const emitJson = jsonOnly || isCaptured();
+
   if (entries.length === 0) {
+    if (emitJson) {
+      emit(`${JSON.stringify({ secrets: [], missing: [] }, null, 2)}\n`);
+      return;
+    }
     info("no configuration on the target yet — run ./clawforge bootstrap first");
+    return;
+  }
+
+  if (emitJson) {
+    // Names/state/where-found only — SecretStatus never carries a value.
+    const absent = missing(entries);
+    // Only asked when it decides something (the same condition the text path's own restart-
+    // vs-up hint is gated on below) — a fact, not the sentence built from it, so a caller
+    // does not have to string-match "then ./clawforge restart" to act on it.
+    const running = absent.length > 0 ? await ctx.runtime.isRunning() : null;
+    emit(
+      `${JSON.stringify(
+        {
+          secrets: entries.map((entry) => ({
+            name: entry.name,
+            location: entry.location,
+            usedBy: entry.usedBy,
+            required: entry.required,
+            present: entry.present,
+          })),
+          missing: absent.map((entry) => entry.name),
+          running,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    if (absent.length > 0) throw new Error(`missing: ${absent.map((entry) => entry.name).join(", ")}`);
     return;
   }
 

@@ -98,6 +98,11 @@ function check(name: string, actual: unknown, expected: unknown): void {
   const message = await refused(() => takeLock(ctx, "apply", "op-unverifiable", { breakLock: true }));
   check("--break-lock keeps a guard owned by an unverifiable host", message.includes("in progress"), true);
   check("an unverifiable guard is not replaced", JSON.parse(files.get(`${guard}/owner.json`) ?? "{}").generation, "remote");
+  // The recovery path from here is --break-foreign-lock, not --break-lock — the refusal
+  // names the exact flag, the recorded host id, and the runbook that says how to verify first.
+  check("and the refusal names the flag that actually recovers this", message.includes("--break-foreign-lock"), true);
+  check("naming the recorded host id to confirm", message.includes(`${machine}-other`), true);
+  check("and the runbook", message.includes("docs/architecture.md"), true);
 }
 
 // --- R9-R1: an explicit, host-confirmed takeover of a foreign guard --------------------------

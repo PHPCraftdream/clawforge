@@ -17,8 +17,9 @@ import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { validateSet } from "#src/set/ownership/validate.ts";
 import { removeOwnedObject } from "../management/provision-agent/index.ts";
-import { withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
+import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
+import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { setTry } from "./set-try.ts";
 import { setDiff } from "./set-diff.ts";
 import { setReceipts } from "./set-receipts.ts";
@@ -36,6 +37,7 @@ export const SET_MAIN_ARGUMENTS: CommandArgument[] = [
   { name: "set", description: "Artifact to validate or try, instead of the working tree", kind: "option" },
   { name: "kind", description: "With forget: agent, mcp-server, or cron-job", kind: "option" },
   { name: "break-lock", description: "With forget: take over the instance lock held by another operation", kind: "flag" },
+  BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
 ];
 
@@ -129,7 +131,13 @@ async function validateAction(
  *  server or cron job; exposed by hand for the case `apply` never performs on its own — an
  *  orphaned agent, whose removal prunes a workspace and its memory, which stays a decision
  *  for whoever runs this rather than something a plan carries out automatically. */
-async function forgetAction(ctx: Context, kindRaw: string | undefined, name: string | undefined, breakLock: boolean): Promise<void> {
+async function forgetAction(
+  ctx: Context,
+  kindRaw: string | undefined,
+  name: string | undefined,
+  breakLock: boolean,
+  breakForeignLockHost: string | undefined,
+): Promise<void> {
   if (kindRaw === undefined || name === undefined) die("usage: ./clawforge set forget --kind <agent|mcp-server|cron-job> --name <name>");
   if (kindRaw !== "agent" && kindRaw !== "mcp-server" && kindRaw !== "cron-job") {
     die(`unknown kind "${kindRaw}" (expected agent, mcp-server, or cron-job)`);
@@ -138,7 +146,7 @@ async function forgetAction(ctx: Context, kindRaw: string | undefined, name: str
 
   // `apply` calls this indirectly while already holding the lock; nested, the second acquire
   // would refuse the run its own caller started. Taken only when this is invoked directly.
-  await withLockUnlessHeld(ctx, `set forget ${kindRaw} ${name}`, newOperationId("set-forget"), { breakLock }, async () => {
+  await withLockUnlessHeld(ctx, `set forget ${kindRaw} ${name}`, newOperationId("set-forget"), { breakLock, breakForeignLockHost }, async () => {
     await removeOwnedObject(ctx, kindRaw, name);
   });
   log(`${kindRaw} "${name}" removed and no longer tracked as owned`);
@@ -168,10 +176,11 @@ export async function set(ctx: Context, args: string[]): Promise<void> {
   const kind = parsed.kind === "" ? die("--kind needs a value") : parsed.kind as string | undefined;
   const artifact = parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string | undefined;
   const breakLock = parsed["break-lock"] === true;
+  const breakForeignLockHost = parseBreakForeignLockHost(rest);
   const jsonOnly = parsed.json === true;
 
   if (action === "forget") {
-    await forgetAction(ctx, kind, name, breakLock);
+    await forgetAction(ctx, kind, name, breakLock, breakForeignLockHost);
     return;
   }
 

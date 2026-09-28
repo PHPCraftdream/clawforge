@@ -46,6 +46,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `plan` names a step for every problem code — a never-bootstrapped deployment first,
   pointing at `bootstrap` — instead of printing "nothing to do" for the 19 of 36 codes it
   had no step for.
+* `--break-foreign-lock <hostId>` is accepted everywhere `--break-lock` is — `apply`,
+  `rollback`, `provision-agent`, `set forget`, `restore`, `pull`, `recipe install`/`remove`,
+  `apply-config` refused it as unknown — and by `secrets --apply`, which still refuses
+  `--break-lock`. `push` validates its arguments before taking the lock, so a bad flag can
+  no longer follow a takeover. The refusal for a guard owned by another machine names the
+  flag, the host id and the runbook.
 
 ## 0.1.0
 

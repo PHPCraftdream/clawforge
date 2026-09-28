@@ -9,10 +9,11 @@ import { randomBytes } from "node:crypto";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
 import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both apply-config's own parser and its openclawCommands declaration. */
 export const APPLY_CONFIG_ARGUMENTS: CommandArgument[] = [
@@ -20,6 +21,7 @@ export const APPLY_CONFIG_ARGUMENTS: CommandArgument[] = [
   { name: "dump", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
   { name: "force", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag" },
   { name: "break-lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
+  BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
 
@@ -60,6 +62,7 @@ export async function applyConfig(
   const dump = parsed.dump === true;
   const force = parsed.force === true;
   const breakLock = parsed["break-lock"] === true;
+  const breakForeignLockHost = parseBreakForeignLockHost(args);
 
   // Which flags mean anything is decided from the mode here, not left to branch order: the
   // dump branch used to run first, so --dry-run --dump --force reached it with the dry run
@@ -68,7 +71,9 @@ export async function applyConfig(
   // destroy what it previews.
   if (dump && dryRun) die("--dry-run cannot be combined with --dump — a dump has no dry-run form: it writes the recovered declaration or it does nothing");
   if (dump && breakLock) die("--break-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
+  if (dump && breakForeignLockHost !== undefined) die("--break-foreign-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
   if (!dump && dryRun && breakLock) die("--break-lock cannot be combined with --dry-run — a dry run takes no instance lock, so there is no lock to break");
+  if (!dump && dryRun && breakForeignLockHost !== undefined) die("--break-foreign-lock cannot be combined with --dry-run — a dry run takes no instance lock, so there is no lock to break");
   if (!dump && force) die("--force only applies to --dump — a real apply overwrites the instance config regardless, and its preview is --dry-run");
 
   if (dump) {

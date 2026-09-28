@@ -255,7 +255,10 @@ function busy(path: string, owner?: MutationOwner): Error {
     ? "if no lock change is active, retry with --break-lock"
     : owner.machine === machineName()
       ? "wait for it to finish"
-      : `check whether it is still running on ${owner.machine}`;
+      // A remote pid's liveness cannot be checked from here — names the exact flag and
+      // host id a command that accepts it needs, and the runbook for verifying first.
+      : `check whether it is still running on ${owner.machine}; if that process is gone, rerun with ` +
+        `--break-foreign-lock ${owner.machine} (see docs/architecture.md, instance lock)`;
   return new Error(`another instance-lock change is in progress at ${path} (${identity}); ${advice}`);
 }
 

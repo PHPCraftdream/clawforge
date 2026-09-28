@@ -26,7 +26,7 @@ import { readLedgerStrict } from "#src/set/ownership/ledger.ts";
 import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
 import type { StepStatus } from "#src/service/operations.ts";
-import { runOwning, takeLock, withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
+import { runOwning, takeLock, withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest, readInstalledSetStrict } from "#src/set/artifacts/install.ts";
@@ -35,6 +35,7 @@ import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both apply's own parser and its openclawCommands declaration. */
 export const APPLY_ARGUMENTS: CommandArgument[] = [
@@ -42,6 +43,7 @@ export const APPLY_ARGUMENTS: CommandArgument[] = [
   { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option" },
   { name: "dry-run", description: "Show the steps without running any of them", kind: "flag" },
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+  BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
@@ -323,7 +325,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
       // Nesting-safe, the same way provisionAgent()'s own lock-taking already is: a caller
       // (rollback --set) that already holds the instance lock for the whole operation must
       // not have this acquire refuse itself as "another operation changing this instance".
-      await withLockUnlessHeld(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock") }, async () => {
+      await withLockUnlessHeld(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock"), breakForeignLockHost: parseBreakForeignLockHost(args) }, async () => {
         // First thing under the lock, before storeArtifactForRollback — the first bytes this
         // run writes anywhere. A corrupt control marker must stop the run here, not after
         // the steps have changed the instance.
@@ -399,6 +401,7 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
   const jsonOnly = args.includes("--json");
   const dryRun = isApplyDryRun(args);
   const breakLock = args.includes("--break-lock");
+  const breakForeignLockHost = parseBreakForeignLockHost(args);
   // Recognizes --set too (already consumed by applyWithSource above, its value read here
   // only so the generic parser does not mistake it for an unknown flag) — its own value is
   // not needed a second time.
@@ -456,7 +459,7 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
   // steps — one run restarting the instance while another is halfway through provisioning
   // against it.
   const operationId = heldOperationId ?? newOperationId("apply");
-  const held = heldOperationId === undefined ? await takeLock(ctx, "apply", operationId, { breakLock }) : undefined;
+  const held = heldOperationId === undefined ? await takeLock(ctx, "apply", operationId, { breakLock, breakForeignLockHost }) : undefined;
 
   // journal and outcome are assigned in the runOwning callback below; the code after the
   // finally runs only when that callback completed, because a throw inside it propagates.

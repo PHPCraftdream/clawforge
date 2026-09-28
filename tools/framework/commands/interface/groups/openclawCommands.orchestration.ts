@@ -231,8 +231,8 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "--force is given.\n" +
       "The flags are validated against the mode before anything is read or written: " +
       "--dry-run cannot be combined with --dump — a dump has no dry-run form, it either " +
-      "writes the recovered declaration or does nothing — --break-lock applies only where " +
-      "an instance lock is taken (the real apply), and --force only applies to --dump.\n" +
+      "writes the recovered declaration or does nothing — --break-lock and --break-foreign-lock " +
+      "apply only where an instance lock is taken (the real apply), and --force only applies to --dump.\n" +
       "Kept separate from `apply`: its --dry-run really validates against the target (lockless, " +
       "even before the instance is healthy), and --dump --force deliberately overwrites an " +
       "existing declaration — `apply` does neither.",

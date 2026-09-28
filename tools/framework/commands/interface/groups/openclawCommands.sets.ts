@@ -5,6 +5,7 @@
 import type { AppCommand } from "#src/core/app.ts";
 
 import { set } from "#src/commands/sets/set.ts";
+import { BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 export const setsCommands: Record<string, AppCommand> = {
   set: {
@@ -50,6 +51,7 @@ export const setsCommands: Record<string, AppCommand> = {
       { name: "with-model", description: "With try: include acceptance checks that call the model", kind: "flag" },
       { name: "keep", description: "With try: leave the throwaway instance running instead of tearing it down", kind: "flag" },
       { name: "break-lock", description: "With forget: take over the instance lock held by another operation", kind: "flag" },
+      BREAK_FOREIGN_LOCK_ARGUMENT,
       { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
     ],
     // Not readOnly: true for the group as a whole, even though build and validate are —

@@ -24,6 +24,8 @@ import { pull } from "#framework/commands/lifecycle/state.ts";
 import { stubContext } from "./fixture.ts";
 import { readFile } from "node:fs/promises";
 import type { Context } from "#framework/core/context.ts";
+import type { CommandArgument } from "#framework/core/app.ts";
+import type { GateCommand } from "#framework/integration/gate.ts";
 
 let failed = 0;
 
@@ -42,6 +44,20 @@ function declaresBreakLock(name: string): boolean {
   return (openclawCommands[name]?.arguments ?? []).some((argument) => argument.name === "break-lock");
 }
 
+/** True once a declaration list carries `--break-foreign-lock` as a value-taking option — a
+ *  flag whose whole point is a host id has no meaning as a bare boolean flag. Generic over
+ *  `CommandArgument[]` so the same rule applies to an AppCommand's declaration
+ *  (openclawCommands, checked exhaustively below) and to a GateCommand's (gate.ts's `check`/
+ *  `new-app`/`init`, the same shape, declared before a deployment even exists). */
+function declaresBreakForeignLockOption(args: readonly CommandArgument[] | undefined): boolean {
+  const argument = (args ?? []).find((entry) => entry.name === "break-foreign-lock");
+  return argument !== undefined && argument.kind === "option";
+}
+
+function declaresBreakForeignLock(name: string): boolean {
+  return declaresBreakForeignLockOption(openclawCommands[name]?.arguments);
+}
+
 // --- every command whose guarded()/withLockUnlessHeld() call reads real argv for --break-lock
 // declares it, and every command that deliberately does not is left undeclared too ------------
 
@@ -50,6 +66,47 @@ for (const name of ["up", "restart", "down", "restore", "push", "apply", "rollba
 }
 for (const name of ["backup", "configure-provider", "secrets"]) {
   check(`${name} does not declare --break-lock (its own parser rejects it)`, declaresBreakLock(name), false);
+}
+
+// --- hermetic: every command in openclawCommands that declares --break-lock also declares
+// --break-foreign-lock, checked over the whole declaration rather than a fixed list, so a
+// command added later cannot silently reintroduce the gap an orphaned foreign guard hit --------
+
+for (const [name] of Object.entries(openclawCommands)) {
+  if (!declaresBreakLock(name)) continue;
+  check(`${name} (declares --break-lock) also declares --break-foreign-lock`, declaresBreakForeignLock(name), true);
+}
+
+// secrets is the one deliberate asymmetry: --apply is the only action that takes the instance
+// lock, and its own parser never accepts --break-lock (see secrets.ts) — but an orphaned guard
+// from another machine still needs a way out, so --break-foreign-lock is declared alone.
+check("secrets declares --break-foreign-lock despite never declaring --break-lock", declaresBreakForeignLock("secrets"), true);
+
+// The rule above is generic over any CommandArgument[], including a gate command's — the
+// shape check/new-app/init declare before a deployment exists. None of the three takes the
+// instance lock today, so none declares --break-lock; this proves the same helper would still
+// catch the gap if one ever did, without needing to import gate.ts's own side-effecting entry
+// points (tools/clawforge.ts, framework/entry/bin.ts) just to reach their gateCommands arrays.
+{
+  const brokenGateCommand: Pick<GateCommand, "arguments"> = {
+    arguments: [{ name: "break-lock", description: "x", kind: "flag" }],
+  };
+  check(
+    "a gate-shaped declaration with --break-lock but no --break-foreign-lock is caught",
+    declaresBreakForeignLockOption(brokenGateCommand.arguments),
+    false,
+  );
+  const fixedGateCommand: Pick<GateCommand, "arguments"> = {
+    arguments: [
+      { name: "break-lock", description: "x", kind: "flag" },
+      { name: "break-foreign-lock", description: "x", kind: "option" },
+    ],
+  };
+  check(
+    "and a matching --break-foreign-lock <hostId> option satisfies it",
+    declaresBreakForeignLockOption(fixedGateCommand.arguments),
+    true,
+  );
 }
 
 // --- the message itself only ever names a flag the caller says is supported -------------------

@@ -22,6 +22,7 @@ import { watch, watchActionIsReadOnly } from "#src/commands/operate/watch/index.
 import { WATCH_CHECK_ARGUMENTS } from "#src/commands/operate/watch/check.ts";
 import { WATCH_INSTALL_ARGUMENTS } from "#src/commands/operate/watch/install.ts";
 import { incident, INCIDENT_ARGUMENTS } from "#src/commands/operate/incident/index.ts";
+import { BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 function secretsWrites(args: string[]): boolean {
   if (["--init-store", "--dump", "--apply"].some((flag) => args.includes(flag))) return true;
@@ -329,6 +330,7 @@ export const managementCommands: Record<string, AppCommand> = {
         kind: "flag",
       },
       { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+      BREAK_FOREIGN_LOCK_ARGUMENT,
     ],
   },
   "provision-agent": {

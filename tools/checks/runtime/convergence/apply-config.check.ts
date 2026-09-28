@@ -262,6 +262,15 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     check("and the declaration survives byte-identical", await untouched(), declared);
     const dryBreak = await refusal("--dry-run", "--break-lock");
     check("--break-lock with a dry run is refused too — neither takes a lock", dryBreak.includes("--break-lock"), true);
+
+    // --break-foreign-lock is the same story as --break-lock: meaningful only where a lock is
+    // taken, so combining it with --dump or --dry-run must refuse rather than silently no-op.
+    const breakForeignDump = await refusal("--break-foreign-lock", "host-x", "--dump");
+    check("--break-foreign-lock with --dump is refused rather than silently ignored", breakForeignDump.includes("--break-foreign-lock"), true);
+    check("and the declaration survives byte-identical", await untouched(), declared);
+    const dryBreakForeign = await refusal("--dry-run", "--break-foreign-lock", "host-x");
+    check("--break-foreign-lock with a dry run is refused too — neither takes a lock", dryBreakForeign.includes("--break-foreign-lock"), true);
+
     const forceApply = await refusal("--force");
     check("--force without --dump is refused rather than silently ignored", forceApply.includes("--force"), true);
     check("and the declaration survives every one of these refusals byte-identical", await untouched(), declared);

@@ -39,8 +39,9 @@ import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { safeName } from "#src/core/names.ts";
-import { withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
+import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
+import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { readLedgerStrict, recordOwned, ownerOf, updateOwnedPromptFiles } from "#src/set/ownership/ledger.ts";
 import {
   loadRecipeAgentBundle,
@@ -65,11 +66,13 @@ export * from "./reconcile.ts";
 export const PROVISION_AGENT_ARGUMENTS: CommandArgument[] = [
   { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true },
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+  BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
 export async function provisionAgent(ctx: Context, args: string[]): Promise<void> {
   const parsed = parseDeclaredArgs(PROVISION_AGENT_ARGUMENTS, args);
   const breakLock = parsed["break-lock"] === true;
+  const breakForeignLockHost = parseBreakForeignLockHost(args);
   const rawName = parsed.recipe as string | undefined;
   if (rawName === undefined) die("usage: ./clawforge provision-agent <recipe>");
   const recipeName = safeName("recipe", rawName);
@@ -81,7 +84,7 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
   // `apply` calls this as one of its steps and is already holding the lock; nested, the
   // second acquire would refuse the run its own caller started. Taken only when this is the
   // command someone invoked directly.
-  await withLockUnlessHeld(ctx, `provision-agent ${recipeName}`, newOperationId("provision-agent"), { breakLock }, async () => {
+  await withLockUnlessHeld(ctx, `provision-agent ${recipeName}`, newOperationId("provision-agent"), { breakLock, breakForeignLockHost }, async () => {
     // Strict control-ledger preflight, before the first live mutation: a corrupt ownership
     // ledger must refuse the whole run while nothing has been mirrored, written or created
     // yet. The tolerant read this replaces sailed past the corruption and let the mirror,

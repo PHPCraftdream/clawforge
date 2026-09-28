@@ -39,13 +39,14 @@ import {
 import { runningRecipeStacks } from "../management/recipe/index.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
-import { FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both restore's own parser and its openclawCommands declaration. */
 export const RESTORE_ARGUMENTS: CommandArgument[] = [
   { name: "archive", description: "Path to the archive; newest if omitted", kind: "positional" },
   FORCE_ARGUMENT,
   BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
   { name: "no-start", description: "Leave the service stopped afterwards", kind: "flag" },
 ];

@@ -20,7 +20,7 @@ import { forbiddenViolations, verifySnapshot } from "./verify.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
-import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 const SECRETS_SUFFIX = ".secrets.env";
 
@@ -32,6 +32,7 @@ export const PULL_ARGUMENTS: CommandArgument[] = [
   { name: "migrate", description: "Migrate profile (already pull's default) — accepted so backup and pull share the same flag vocabulary", kind: "flag" },
   { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
 /** Drives both push's own parser and its openclawCommands declaration. */
@@ -39,6 +40,7 @@ export const PUSH_ARGUMENTS: CommandArgument[] = [
   { name: "archive", description: "Snapshot to push; newest if omitted", kind: "positional" },
   FORCE_ARGUMENT,
   BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
 ];
 
@@ -485,6 +487,10 @@ async function pullLocked(ctx: Context, profile: Profile, hot: boolean, leaveSto
 // --- push ---------------------------------------------------------------------
 
 export async function push(ctx: Context, args: string[]): Promise<void> {
+  // Dies before the lock is ever taken, same as up/restart/down: guarded() reads
+  // --break-(foreign-)lock straight from argv, ahead of restoreFromSnapshot's own parse — a
+  // bogus flag must be refused before a takeover, not after one already happened.
+  parseDeclaredArgs(PUSH_ARGUMENTS, args);
   return guarded(ctx, "push", args, () => restoreFromSnapshot(ctx, args));
 }
 

@@ -306,8 +306,9 @@ guessed PID proves it dead.
 **Runbook — taking over a guard orphaned on another machine.** First, actually verify: reach
 the recorded machine (`owner.json`'s `machine` field) and confirm its `clawforge` process is
 gone — a crashed run, not a slow one. Only once that is certain, run any lock-taking command
-(`up`, `restart`, `down`, `bootstrap` today) with
-`--break-foreign-lock <hostId>`, where `<hostId>` is exactly that recorded `machine` value.
+with `--break-foreign-lock <hostId>` — every command that accepts `--break-lock` accepts this
+too, plus `secrets --apply`, which never accepts `--break-lock` but still takes this narrower,
+host-confirmed override. `<hostId>` is exactly that recorded `machine` value.
 That value is the host name plus its pid space (`PC:win32`, `PC:linux-4026531836`): Windows
 Node and a WSL distro's Node on one PC share a host name but not pids, so each treats the
 other's records as foreign rather than probing a pid that means nothing on its side.
@@ -325,12 +326,16 @@ exist, complete with a `--break-lock` suggestion that removes nothing and then f
 identically. Probing the directory afterwards separates the two, and the unexplained case
 keeps its own error text rather than being given someone else's story.
 
-Not every lock-taking command accepts `--break-lock`: `backup`, `configure-provider`, `secrets`
-and the internal round-trip step inside `smoke` guard a single operation each time they run
-and take no takeover flag at all — their own parsers reject it, by design, the same way
-`--force` is not accepted everywhere either. A refusal from one of these never advises
-`--break-lock`; it names a command that does accept it instead (`up --break-lock`, the
-simplest one), so the advice a reader gets is always something they can actually run.
+Not every lock-taking command accepts `--break-lock`: `backup`, `configure-provider` and the
+internal round-trip step inside `smoke` guard a single operation each time they run and take
+no takeover flag at all — their own parsers reject it, by design, the same way `--force` is
+not accepted everywhere either. `secrets --apply` also refuses `--break-lock`, for the same
+reason, but is not in that group: it still accepts `--break-foreign-lock`, since the guard an
+orphaned owner on another machine leaves behind blocks it exactly like every other mutating
+command, and a host-confirmed takeover is never the blunt "just take it" `--break-lock` is. A
+refusal from a command with no takeover flag at all never advises one; it names a command
+that does accept it instead (`up --break-lock`, the simplest one), so the advice a reader gets
+is always something they can actually run.
 
 Every crash that can leave `operation.lock`/`operation.mutation` behind can leave a Docker
 runtime's own temporary compose env-file directory (`<data>-locks/compose-<uuid>/`) behind
@@ -630,8 +635,8 @@ more of them than fit here:
 | `apply.check.ts` | stopping at the first failure, reporting what did not run as advisory or blocked, and never performing an advisory step; a runner asserted for every executable id the planner can emit; the recovery step reaching done and every step landing in the journal under one operation id that `./clawforge operations <id>` reads back; a dump's `--force` refusal failing the step with the file untouched; and `--dry-run` emitting the plan and writing nothing |
 | `operations.check.ts` | the journal is on disk before the next step starts, an unfinished run keeps every step it managed and gains no invented outcome, and a target that cannot be written to does not fail the run it is recording |
 | `rollback.check.ts` | choosing what to undo: the newest run that took a snapshot, never one that took none, and every refusal saying where to look instead |
-| `apply-config.check.ts` | a dry run does not stage under the shared file name a real run writes, and two dry runs do not collide; `--dump` recovers exactly the curated paths from a stubbed JSON5 live config, refuses an existing declaration without `--force`, omits paths the live config never set rather than emitting nulls, and says plainly that recovered values are not the original declaration; flag combinations that mean nothing together are refused before the first read or write — `--dry-run` with `--dump` in both argv orders, `--break-lock` with either a dump or a dry run, `--force` without `--dump` — each refusal leaving the existing declaration byte-identical, with a plain `--dump --force` as the working control |
-| `instance-lock.check.ts` | a second operation is refused with the holder named, a failed run releases the lock, a stale one is described rather than stolen, and a run that lost its lock to `--break-lock` does not remove the new holder's, and a claim against an existing directory is refused; a holder's pid provably gone on this machine is named as such, never guessed at for one recorded elsewhere; `--break-foreign-lock <hostId>` refused on a mismatch, taken over on a match with who/when/which-owner recorded, and plain `--break-lock` still refusing a foreign owner; and every command that reads `--break-lock` from real argv actually declares it, with the two that only ever appeared to (`bootstrap`, `pull`) fixed and the deliberately unsupported ones (`backup`, `configure-provider`, `secrets`) naming a command that does instead of the flag they reject |
+| `apply-config.check.ts` | a dry run does not stage under the shared file name a real run writes, and two dry runs do not collide; `--dump` recovers exactly the curated paths from a stubbed JSON5 live config, refuses an existing declaration without `--force`, omits paths the live config never set rather than emitting nulls, and says plainly that recovered values are not the original declaration; flag combinations that mean nothing together are refused before the first read or write — `--dry-run` with `--dump` in both argv orders, `--break-lock`/`--break-foreign-lock` with either a dump or a dry run, `--force` without `--dump` — each refusal leaving the existing declaration byte-identical, with a plain `--dump --force` as the working control |
+| `instance-lock.check.ts` | a second operation is refused with the holder named, a failed run releases the lock, a stale one is described rather than stolen, and a run that lost its lock to `--break-lock` does not remove the new holder's, and a claim against an existing directory is refused; a holder's pid provably gone on this machine is named as such, never guessed at for one recorded elsewhere; `--break-foreign-lock <hostId>` refused on a mismatch, taken over on a match with who/when/which-owner recorded, and plain `--break-lock` still refusing a foreign owner; every command that reads `--break-lock` from real argv actually declares it, with the two that only ever appeared to (`bootstrap`, `pull`) fixed and the deliberately unsupported ones (`backup`, `configure-provider`, the internal `smoke` step) naming a command that does instead of the flag they reject; every command in `openclawCommands` that declares `--break-lock` also declares `--break-foreign-lock` as a value-taking option, checked generically over the whole declaration rather than a fixed list, plus `secrets`, which declares `--break-foreign-lock` alone (`--apply` is the one action that takes the lock) without ever declaring `--break-lock`; and `busy()`'s advice for a guard owned by another machine names the exact flag, host id and runbook |
 | `accept.check.ts` | every declared check kind in both directions, and that an unknown kind fails rather than passing quietly |
 | `foundation/cli/host.check.ts` | `host` end to end: the flag boundary, the root gate on target, context resolution per platform against injected environments, and the engine privilege contract — a context that arrives as root is refused without both flags before anything can spawn, and where this machine can answer, the real effective uid (`id -u` through the real resolution) rather than the argv |
 | `runtime/lifecycle/smoke.check.ts` | every smoke check lands as `passed`, `failed`, `not-checked` or `could-not-check` and the four stay distinct; a check that could not obtain a verdict cannot be the reason a run reports success; the two bodies that run without an instance read a verdict-less runtime apart from a failed one; the drift check's restore failing after the verdict stays a failed check naming the drifted path and the repair; and a silent "agent answers end to end" naming `PROVIDER_MISSING`'s own remedy when the live config configures no provider, instead of inventing that cause when a differently-configured instance simply answered wrong |

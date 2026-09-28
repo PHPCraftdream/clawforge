@@ -19,7 +19,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentName, deploymentDir } from "#src/runtime/deployment.ts";
 import { Journal, readOperation, latestRollbackable, newOperationId } from "#src/service/operations.ts";
 import { restart } from "../lifecycle/lifecycle.ts";
-import { runOwning, takeLock } from "#src/runtime/instance-lock.ts";
+import { runOwning, takeLock, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
 import { readInstalledSet, withUnpackedArtifact, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
 import { frameworkVersion } from "../management/lock.ts";
 import { apply } from "./apply.ts";
@@ -27,6 +27,7 @@ import type { OperationRecord } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both rollback's own parser and its openclawCommands declaration. */
 export const ROLLBACK_ARGUMENTS: CommandArgument[] = [
@@ -34,6 +35,7 @@ export const ROLLBACK_ARGUMENTS: CommandArgument[] = [
   { name: "no-restart", description: "Restore the file without restarting the instance", kind: "flag" },
   { name: "set", description: "Reinstall the previously installed set instead of restoring one config file", kind: "flag" },
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+  BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
@@ -67,6 +69,7 @@ interface RollbackOptions {
   readonly set: boolean;
   readonly jsonOnly: boolean;
   readonly breakLock: boolean;
+  readonly breakForeignLockHost?: string;
   readonly restartAfter: boolean;
   readonly operation?: string;
   readonly applyArgs: string[];
@@ -82,6 +85,7 @@ export function parseRollbackArgs(args: string[]): RollbackOptions {
   const set = parsed.set === true;
   const jsonOnly = parsed.json === true;
   const breakLock = parsed["break-lock"] === true;
+  const breakForeignLockHost = parseBreakForeignLockHost(args);
   const restartAfter = parsed["no-restart"] !== true;
   const operationValue = parsed.operation as string | undefined;
   if (operationValue !== undefined && (operationValue.length === 0 || operationValue.startsWith("-"))) {
@@ -96,7 +100,8 @@ export function parseRollbackArgs(args: string[]): RollbackOptions {
   const applyArgs: string[] = [];
   if (jsonOnly) applyArgs.push("--json");
   if (breakLock) applyArgs.push("--break-lock");
-  return { set, jsonOnly, breakLock, restartAfter, operation, applyArgs };
+  if (breakForeignLockHost !== undefined) applyArgs.push("--break-foreign-lock", breakForeignLockHost);
+  return { set, jsonOnly, breakLock, breakForeignLockHost, restartAfter, operation, applyArgs };
 }
 
 /** Reinstalls the previous set through apply, preserving instance data. */
@@ -157,7 +162,7 @@ async function rollbackSet(ctx: Context, options: RollbackOptions): Promise<void
     // (apply.ts) is nesting-safe the same way provision-agent's already is: it skips
     // acquiring when this outer one is already held.
     const operationId = newOperationId("rollback");
-    const held = await takeLock(ctx, `rollback --set to ${previous.id}`, operationId, { breakLock: options.breakLock });
+    const held = await takeLock(ctx, `rollback --set to ${previous.id}`, operationId, { breakLock: options.breakLock, breakForeignLockHost: options.breakForeignLockHost });
     try {
       await runOwning(held, async () => {
         // Re-verified under the lock: which set is installed (and therefore which "previous"
@@ -243,7 +248,7 @@ export async function rollback(ctx: Context, args: string[]): Promise<void> {
   const journal = await Journal.open(ctx, "rollback", deploymentName());
   const live = `${ctx.settings.dataDir}/config/openclaw.json`;
 
-  const held = await takeLock(ctx, `rollback of ${target.id}`, journal.id, { breakLock: options.breakLock });
+  const held = await takeLock(ctx, `rollback of ${target.id}`, journal.id, { breakLock: options.breakLock, breakForeignLockHost: options.breakForeignLockHost });
   try {
     await runOwning(held, async () => {
       log(`putting back the configuration from before ${target.id}`);

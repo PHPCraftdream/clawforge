@@ -16,10 +16,11 @@ import { loadSecrets, dumpSecrets } from "../lifecycle/state.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replacePrivateFile, unprotectedPrivateFile } from "#src/security/privacy/private-file.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
-import { guarded } from "#src/runtime/instance-lock.ts";
+import { guarded, parseBreakForeignLockHost } from "#src/runtime/instance-lock.ts";
 import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both secrets' own parser and its openclawCommands declaration. */
 export const SECRETS_ARGUMENTS: CommandArgument[] = [
@@ -30,6 +31,9 @@ export const SECRETS_ARGUMENTS: CommandArgument[] = [
   { name: "dump", description: "Recover a local store from the running instance", kind: "flag" },
   { name: "store", description: "Store name, e.g. local or prod", kind: "option" },
   { name: "force", description: "Replace an existing store (with --init-store or --dump)", kind: "flag" },
+  // Only --apply takes the lock; --break-lock stays unsupported, but an orphaned lock from
+  // another machine still needs a way out.
+  BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
 /** The store `secrets` commands write and read when no --store is given — and the one
@@ -302,6 +306,11 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   const dump = parsed.dump === true;
   const force = parsed.force === true;
   const store = parsed.store === undefined ? DEFAULT_SECRET_STORE : parsed.store === "" ? die("--store needs a name, e.g. local or prod") : parsed.store as string;
+  const breakForeignLockHost = parseBreakForeignLockHost(args);
+
+  if (breakForeignLockHost !== undefined && !apply) {
+    die("--break-foreign-lock only applies with --apply — no other action takes the instance lock");
+  }
 
   if (initStore) {
     const path = secretStoreFile(store);
@@ -355,9 +364,10 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   if (apply) {
     // Writes config/.env on the target — the same class of mutation apply/restore/rollback
     // guard against each other for, and this used to bypass entirely. No --break-lock support
-    // (its own parser above rejects it): breakLockSupported: false keeps a refusal from
-    // offering a flag it cannot accept.
-    await guarded(ctx, "secrets", [], () => applyStore(ctx, store), { breakLockSupported: false });
+    // (its own parser above never declares it): breakLockSupported: false keeps a refusal
+    // from offering a flag it cannot accept. Only --break-foreign-lock is forwarded.
+    const guardArgs = breakForeignLockHost === undefined ? [] : ["--break-foreign-lock", breakForeignLockHost];
+    await guarded(ctx, "secrets", guardArgs, () => applyStore(ctx, store), { breakLockSupported: false });
     return;
   }
 

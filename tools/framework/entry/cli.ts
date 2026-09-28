@@ -12,7 +12,32 @@ import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "../integration/provision.ts";
 import { serveMcp } from "../integration/mcp-server.ts";
 import { gateCommandHelp, type GateCommand } from "../integration/gate.ts";
-import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
+import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../core/app.ts";
+
+/** Fixed print order and heading for each CommandGroup — an operator scans intent sections
+ *  top to bottom, not an alphabetical command list. tools/checks/foundation/cli/help-groups.check.ts
+ *  keeps this in lockstep with the CommandGroup union: a group added to one and not the
+ *  other fails there, not silently at render time. */
+export const GROUP_HEADINGS: Record<CommandGroup, string> = {
+  "start-stop": "Start & stop",
+  check: "Check",
+  change: "Change",
+  "save-move": "Save & move",
+  "security-access": "Security & access",
+  "low-level": "Low-level",
+};
+export const GROUP_ORDER = Object.keys(GROUP_HEADINGS) as CommandGroup[];
+
+/** Precise, metadata-derived wording instead of a flat "(destructive)" that is only true for
+ *  some invocations — readOnlyWhen already says the command has a safe default and a
+ *  destructive one only under certain arguments; the label follows that fact rather than
+ *  hard-coding which flag it is per command. Exported so the check that guards this wording
+ *  (tools/checks/foundation/cli/help-groups.check.ts) asserts against the real function, not
+ *  a copy that could drift from it. */
+export function destructiveMarker(command: AppCommand): string {
+  if (command.destructive !== true) return "";
+  return command.readOnlyWhen === undefined ? " (destructive)" : " (destructive for some actions)";
+}
 
 function label(argument: CommandArgument): string {
   if (argument.kind === "flag") return `--${argument.name}`;
@@ -44,11 +69,35 @@ function usage(app: AppDefinition, gateHelp: string[]): void {
   info("");
 
   const width = Math.max(...Object.keys(app.commands).map((name) => name.length)) + 2;
-  for (const [name, command] of Object.entries(app.commands)) {
-    const marker = command.destructive === true ? " (destructive)" : "";
-    info(`  ${name.padEnd(width)} ${command.summary}${marker}`);
+  const byGroup = new Map<CommandGroup, [string, AppCommand][]>();
+  // Belt and suspenders: help-groups.check.ts fails the build before an ungrouped command
+  // ships, but a command that reaches here without a known group is still listed rather than
+  // silently dropped from --help.
+  const unknown: [string, AppCommand][] = [];
+  for (const entry of Object.entries(app.commands)) {
+    const [, command] = entry;
+    if (command.group === undefined || GROUP_HEADINGS[command.group] === undefined) {
+      unknown.push(entry);
+      continue;
+    }
+    const bucket = byGroup.get(command.group);
+    if (bucket === undefined) byGroup.set(command.group, [entry]);
+    else bucket.push(entry);
   }
-  info("");
+
+  const printGroup = (heading: string, entries: [string, AppCommand][]): void => {
+    info(`${heading}:`);
+    for (const [name, command] of entries) {
+      info(`  ${name.padEnd(width)} ${command.summary}${destructiveMarker(command)}`);
+    }
+    info("");
+  };
+  for (const group of GROUP_ORDER) {
+    const entries = byGroup.get(group);
+    if (entries !== undefined && entries.length > 0) printGroup(GROUP_HEADINGS[group], entries);
+  }
+  if (unknown.length > 0) printGroup("Other", unknown);
+
   for (const line of gateHelp) info(line);
   info("  help <command>    same as: <command> --help");
   info("");
@@ -70,7 +119,9 @@ function commandHelp(name: string, command: AppCommand): void {
   }
   if (command.destructive === true) {
     info("");
-    info("This command replaces or destroys state.");
+    info(command.readOnlyWhen === undefined
+      ? "This command replaces or destroys state."
+      : "This command can replace or destroy state, depending on the action given.");
   }
 }
 

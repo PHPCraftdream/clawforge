@@ -30,6 +30,7 @@ function secretsWrites(args: string[]): boolean {
 export const managementCommands: Record<string, AppCommand> = {
   status: {
     summary: "Show containers, image, health probes and data usage",
+    group: "start-stop",
     run: status,
     details:
       "Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) " +
@@ -39,6 +40,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   lock: {
     summary: "Pin what this instance is made of, or check it still matches",
+    group: "save-move",
     run: lock,
     details:
       "Writes config/deployment.lock.json: the framework version, the image reference and " +
@@ -63,6 +65,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   cli: {
     summary: "Run the OpenClaw CLI in a throwaway container",
+    group: "low-level",
     run: cli,
     details:
       "Everything after `cli` is passed straight through to OpenClaw's own CLI, e.g.\n" +
@@ -91,6 +94,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   exec: {
     summary: "Run an arbitrary command in the same sidecar as ./clawforge cli",
+    group: "low-level",
     run: exec,
     details:
       "Unlike `cli`, which always runs OpenClaw's own CLI entrypoint, this runs whatever " +
@@ -111,6 +115,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   host: {
     summary: "Run one command on the operator's own machine — the target's transport, the engine's VM, or bare local",
+    group: "low-level",
     run: host,
     details:
       "Unlike exec/cli, which run inside the deployment's own containers, this reaches the " +
@@ -156,6 +161,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "cli-start": {
     summary: "Start the persistent CLI helper (removes cli/mcp-serve container overhead)",
+    group: "low-level",
     run: cliStart,
     details:
       "`./clawforge cli` and `./clawforge mcp-serve` normally pay for a fresh container on every call " +
@@ -170,11 +176,13 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "cli-stop": {
     summary: "Stop the persistent CLI helper",
+    group: "low-level",
     run: cliStop,
     details: "`./clawforge cli`/`./clawforge mcp-serve` fall back to a one-off container once this is stopped.",
   },
   "configure-provider": {
     summary: "Configure model providers from target-side environment variables",
+    group: "change",
     run: configureProvider,
     details:
       "Provider ids come from models.providers/auth.profiles. A populated <ID>_API_KEY " +
@@ -189,6 +197,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   secrets: {
     summary: "Show required secrets and whether they are in place",
+    group: "change",
     run: secrets,
     details:
       "The manifest comes from two sources, not one: explicit SecretRefs in openclaw.json,\n" +
@@ -237,6 +246,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "recover-env": {
     summary: "Repair .env's connection facts from the running instance",
+    group: "security-access",
     run: recoverEnv,
     details:
       "OC_DATA_DIR, OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT and OPENCLAW_IMAGE are plumbing, not " +
@@ -267,6 +277,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   recipe: {
     summary: "Deploy services next to the instance (list, import, install, remove, status, logs, verify, onboard, diagnose)",
+    group: "change",
     run: recipe,
     // Only lifecycle changes need confirmation; the read-only set is defined once, beside
     // the dispatcher, so the gate and the command cannot drift apart again.
@@ -343,6 +354,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "provision-agent": {
     summary: "Wire a recipe's MCP server to a dedicated OpenClaw agent, with optional cron",
+    group: "change",
     run: provisionAgent,
     details:
       "A scope upgrade never starts a model turn implicitly; use accept or set try with " +
@@ -366,6 +378,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   deploy: {
     summary: "Deploy to a server over SSH and bootstrap it there",
+    group: "save-move",
     run: deploy,
     destructive: true,
     details:
@@ -393,6 +406,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "mcp-serve": {
     summary: "stdio MCP bridge to the service's own channels",
+    group: "security-access",
     run: mcpServe,
     details:
       "Runs OpenClaw's own `mcp serve` and speaks JSON-RPC straight through stdio —\n" +
@@ -410,6 +424,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "mcp-setup": {
     summary: "Configure project MCP servers for Claude Code and Codex",
+    group: "security-access",
     run: mcpSetup,
     details:
       "Registers `clawforge` (mcp-serve, the bridge to OpenClaw's own channels) and " +
@@ -429,6 +444,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   expose: {
     summary: "Reach a loopback-bound gateway from outside this host: SSH tunnel, tailscale serve, or a status report",
+    group: "security-access",
     run: expose,
     destructive: true,
     readOnlyWhen: exposeActionIsReadOnly,
@@ -461,6 +477,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   watch: {
     summary: "Health monitoring with a webhook alert on state change",
+    group: "check",
     run: watch,
     destructive: true,
     readOnlyWhen: watchActionIsReadOnly,
@@ -504,6 +521,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   incident: {
     summary: "Incident response: contain exposure, rotate the gateway token, audit, collect evidence",
+    group: "security-access",
     run: incident,
     destructive: true,
     readOnlyWhen: (args) => args.includes("--dry-run"),
@@ -534,6 +552,7 @@ export const managementCommands: Record<string, AppCommand> = {
   },
   "mcp-creds": {
     summary: "Print service URL, token and MCP client config for both servers",
+    group: "security-access",
     run: mcpCreds,
     // Its whole job is handing over the credential: masking its healthy output (the
     // response redaction every other successful answer now goes through, P2-05) would

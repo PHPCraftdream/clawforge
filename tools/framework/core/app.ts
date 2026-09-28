@@ -25,6 +25,12 @@ import type { MountPoint } from "./paths.ts";
 
 export type ArgumentKind = "positional" | "flag" | "option" | "variadic";
 
+/** The operator-intent section `--help` lists a command under, printed in this fixed order
+ *  (see cli.ts's GROUP_HEADINGS). An operator arrives with an intent ("start it", "check
+ *  it", "change it"...), not a mechanism, so the top-level listing is grouped by that
+ *  instead of the alphabetical, mechanism-flavoured list a Record's own key order gives. */
+export type CommandGroup = "start-stop" | "check" | "change" | "save-move" | "security-access" | "low-level";
+
 /** Description of an argument, used for help text and for the MCP schema. */
 export interface CommandArgument {
   readonly name: string;
@@ -53,6 +59,12 @@ export interface CommandArgument {
 export interface AppCommand {
   /** One line shown in the command list and as the MCP tool's short description. */
   readonly summary: string;
+  /** Which section of the grouped `--help` listing this command belongs under. Optional on
+   *  the type so a test fixture can build a bare AppCommand without one; the real command
+   *  set cannot skip it in practice — tools/checks/foundation/cli/help-groups.check.ts fails
+   *  the moment an entry in openclawCommands omits it or names an unknown group, which is
+   *  what keeps a new command from silently falling out of the top-level listing. */
+  readonly group?: CommandGroup;
   /** Longer explanation shown by `./clawforge help <command>` / `./clawforge <command> --help`, and
    *  appended to the MCP tool description. Optional: a command whose name and summary
    *  already say everything (`up`, `down`) does not need one. Written as plain paragraphs

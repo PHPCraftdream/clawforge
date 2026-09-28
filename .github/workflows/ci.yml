@@ -102,6 +102,7 @@ jobs:
             tools/checks/foundation/cli/cli-help.check.ts
             tools/checks/foundation/cli/cli-helper.check.ts
             tools/checks/foundation/cli/gate-commands.check.ts
+            tools/checks/foundation/cli/help-groups.check.ts
             tools/checks/foundation/cli/host.check.ts
             tools/checks/foundation/cli/passthrough-help.check.ts
             tools/checks/foundation/core/app-mounts-output.check.ts

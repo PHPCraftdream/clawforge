@@ -9,6 +9,7 @@ import { set } from "#src/commands/sets/set.ts";
 export const setsCommands: Record<string, AppCommand> = {
   set: {
     summary: "Build or validate the set: everything a deployment installs, one artifact, one content id",
+    group: "change",
     run: set,
     readOnlyWhen: (args) => ["diff", "receipts", "validate"].includes(args[0] ?? ""),
     changedWhen: (args) => ["build", "try", "forget"].includes(args[0] ?? ""),

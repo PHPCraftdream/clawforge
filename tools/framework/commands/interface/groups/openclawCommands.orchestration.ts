@@ -15,6 +15,7 @@ import { accept } from "#src/commands/orchestration/accept.ts";
 export const orchestrationCommands: Record<string, AppCommand> = {
   inspect: {
     summary: "What is declared, what is actually running, and where they disagree",
+    group: "check",
     run: inspect,
     details:
       "One answer instead of the several commands whose results a coder otherwise has to " +
@@ -51,6 +52,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
   },
   doctor: {
     summary: "Say whether anything is wrong and what to run about it",
+    group: "check",
     run: doctor,
     details:
       "The same inspection as `./clawforge inspect`, read for its problems rather than its " +
@@ -78,6 +80,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
   },
   plan: {
     summary: "The ordered actions the declaration implies, without performing any of them",
+    group: "change",
     run: plan,
     details:
       "Turns what `./clawforge inspect` found into steps, in the order the dependencies actually " +
@@ -104,6 +107,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
   },
   apply: {
     summary: "Run the plan, then confirm what the instance actually is",
+    group: "change",
     run: apply,
     destructive: true,
     details:
@@ -139,6 +143,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
   },
   accept: {
     summary: "Run the acceptance checks this deployment's recipes declare",
+    group: "check",
     run: accept,
     structured: true,
     details:
@@ -169,6 +174,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
   },
   rollback: {
     summary: "Put back the configuration an operation replaced",
+    group: "change",
     run: rollback,
     destructive: true,
     structured: true,
@@ -199,6 +205,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
   },
   operations: {
     summary: "What mutating runs did to this instance, and what they left behind",
+    group: "check",
     run: operations,
     readOnly: true,
     structured: true,
@@ -219,6 +226,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
   },
   "apply-config": {
     summary: "Apply the deployment's desired-state.json",
+    group: "change",
     run: applyConfig,
     details:
       "The declaration in config/desired-state.json is the source of truth:\n" +

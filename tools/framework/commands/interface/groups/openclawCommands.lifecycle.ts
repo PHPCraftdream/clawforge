@@ -15,6 +15,7 @@ import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LO
 export const lifecycleCommands: Record<string, AppCommand> = {
   bootstrap: {
     summary: "Bring the instance up from nothing (idempotent)",
+    group: "start-stop",
     run: bootstrap,
     // The one command that must work on a deployment with no .env at all.
     preparesEnvironment: true,
@@ -34,6 +35,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   up: {
     summary: "Start the service and wait until it serves",
+    group: "start-stop",
     run: up,
     arguments: [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT],
     details:
@@ -44,6 +46,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   restart: {
     summary: "Restart the instance so it re-reads its configuration",
+    group: "start-stop",
     run: restart,
     details:
       "`up` cannot do this: it converges on \"running\", and an instance that is already " +
@@ -61,12 +64,14 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   down: {
     summary: "Stop and remove the containers (data is kept)",
+    group: "start-stop",
     run: down,
     details: "Data lives in host bind mounts, not in runtime-managed volumes, so this never touches it.",
     arguments: [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT],
   },
   logs: {
     summary: "Follow the service log, or read a bounded tail of it",
+    group: "start-stop",
     run: logs,
     details:
       "On a terminal this follows the log until interrupted. Called as a tool it reads the " +
@@ -80,6 +85,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   backup: {
     summary: "Snapshot the data directory",
+    group: "save-move",
     run: backup,
     details:
       "Stops the gateway for the duration by default: OpenClaw keeps state in SQLite with " +
@@ -114,6 +120,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   restore: {
     summary: "Restore an archive over the current state",
+    group: "save-move",
     run: restore,
     destructive: true,
     forceOnConfirmation: true,
@@ -142,6 +149,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   pull: {
     summary: "Snapshot the instance state into the snapshot directory",
+    group: "save-move",
     run: pull,
     details:
       "Defaults to migrate, unlike `backup`, which defaults to full: moving an instance's " +
@@ -171,6 +179,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   push: {
     summary: "Push a snapshot back onto the instance",
+    group: "save-move",
     run: push,
     destructive: true,
     forceOnConfirmation: true,
@@ -194,6 +203,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   verify: {
     summary: "Check a snapshot for credentials before sharing it",
+    group: "save-move",
     run: verify,
     details:
       "What `./clawforge pull --share` runs automatically, callable by hand against any archive.\n" +
@@ -215,6 +225,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   upgrade: {
     summary: "Update the image by digest, with automatic rollback on failure",
+    group: "save-move",
     run: upgrade,
     destructive: true,
     details:
@@ -242,6 +253,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
   },
   smoke: {
     summary: "Acceptance run: health, agent, config, snapshots, MCP",
+    group: "check",
     run: smoke,
     details:
       "Eight checks, the two negative ones matter as much as the positive ones — a suite " +

@@ -12,7 +12,7 @@
 //   ./clawforge --app staging status      same, as an argument
 
 import { resolve } from "node:path";
-import { access } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { main } from "./framework/entry/cli.ts";
 import { runGateCommand, gateHelpLines, type GateCommand } from "./framework/integration/gate.ts";
 import { reportError } from "./framework/core/log.ts";
@@ -109,17 +109,27 @@ try {
   // directly rather than a real app.ts (there isn't one yet): every deployment's own
   // declaration just re-exports this same set unless it adds commands of its own, so this
   // is the accurate answer for "what commands exist" up until one actually does that.
-  if (argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
+  // Other deployments may exist under another name: name them instead of claiming none.
+  const available = (await readdir(resolve(monorepoRoot, "apps"), { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  const pick = available.length === 0
+    ? "this checkout has no deployments yet"
+    : `no deployment "${name}" — available: ${available.join(", ")} (pick one with --app <name> or OC_APP)`;
+  if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
     const genericApp: AppDefinition = {
       name: "clawforge",
-      description: "self-hosting framework for OpenClaw — this checkout has no deployments yet",
+      description: `self-hosting framework for OpenClaw — ${pick}`,
       commands: openclawCommands,
     };
     await main(genericApp, argv, monorepoGateHelp, gateCommands);
     process.exit(0);
   }
   reportError(`deployment "${name}" not found at ${deploymentDir}`);
-  reportError("create one with: ./clawforge new-app <name>");
+  reportError(available.length === 0
+    ? "create one with: ./clawforge new-app <name>"
+    : `available: ${available.join(", ")} — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>`);
   process.exit(1);
 }
 

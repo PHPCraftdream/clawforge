@@ -579,6 +579,26 @@ check("exec is no longer kept out of MCP", openclawCommands.exec.consoleOnly, un
 }
 
 {
+  // N1: an undeclared argument (e.g. a misplaced --app that leaked past the gate) must be
+  // refused before the runtime is ever touched, not silently ignored.
+  const ctx = {
+    runtime: runtimeStub({
+      isRunning: async () => {
+        throw new Error("must not be called — the argument check runs first");
+      },
+    }),
+  } as unknown as Context;
+
+  let message: string | undefined;
+  try {
+    await cliStart(ctx, ["--bogus"]);
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check("cliStart() refuses an unknown argument before touching the runtime", message, "unknown argument: --bogus");
+}
+
+{
   // Regression: cliStop() used to check helperRunning() first and skip cleanup entirely
   // for a container that exists but already stopped on its own (e.g. after a reboot),
   // leaving it behind. It must always attempt the (idempotent) stop.
@@ -594,6 +614,24 @@ check("exec is no longer kept out of MCP", openclawCommands.exec.consoleOnly, un
 
   await cliStop(ctx, []);
   check("cliStop() always attempts cleanup, even if helperRunning() says false", stopped, true);
+}
+
+{
+  const ctx = {
+    runtime: runtimeStub({
+      stopHelper: async () => {
+        throw new Error("must not be called — the argument check runs first");
+      },
+    }),
+  } as unknown as Context;
+
+  let message: string | undefined;
+  try {
+    await cliStop(ctx, ["--bogus"]);
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check("cliStop() refuses an unknown argument before touching the runtime", message, "unknown argument: --bogus");
 }
 
 process.stderr.write(failed === 0 ? "all cli-helper checks passed\n" : `${failed} failed\n`);

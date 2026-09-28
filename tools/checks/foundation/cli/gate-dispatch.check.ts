@@ -16,7 +16,13 @@ import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { splitLeadingAppFlag, closestCommand, reportUnknownCommand, soleDeploymentFallback } from "#framework/integration/gate.ts";
+import {
+  splitLeadingAppFlag,
+  misplacedAppFlag,
+  closestCommand,
+  reportUnknownCommand,
+  soleDeploymentFallback,
+} from "#framework/integration/gate.ts";
 import { withOutputSink } from "#framework/core/output.ts";
 
 let failed = 0;
@@ -90,6 +96,33 @@ check(
 );
 check("empty argv is untouched", splitLeadingAppFlag([]), { value: undefined, missingValue: false, rest: [] });
 
+// --- misplacedAppFlag(): the pure boundary -----------------------------------------------
+
+check(
+  "--app after a plain command is misplaced",
+  misplacedAppFlag("status", ["--app", "x"], ["check", "new-app", "list"]),
+  "--app",
+);
+check(
+  "--app=value after a plain command is misplaced too",
+  misplacedAppFlag("up", ["--app=x"], ["check", "new-app", "list"]),
+  "--app=x",
+);
+check("no --app at all is not misplaced", misplacedAppFlag("status", [], ["check", "new-app", "list"]), undefined);
+check(
+  "a gate command reads its own argv untouched",
+  misplacedAppFlag("new-app", ["--app", "x"], ["check", "new-app", "list"]),
+  undefined,
+);
+for (const passthrough of ["cli", "exec", "host"]) {
+  check(
+    `--app after the exempt command ${passthrough} is its own argument`,
+    misplacedAppFlag(passthrough, ["--app", "x"], ["check", "new-app", "list", "cli", "exec", "host"]),
+    undefined,
+  );
+}
+check("no command name at all is not misplaced", misplacedAppFlag(undefined, ["--app", "x"], []), undefined);
+
 // --- closestCommand() / reportUnknownCommand(): the typo pool ----------------------------
 
 const candidates = ["status", "up", "down", "backup", "restore", "check", "new-app", "help", "control-mcp"];
@@ -136,6 +169,32 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   check(
     "--app after the command name is new-app's own first argument, not stripped by the gate",
     leaked.stdout.includes('invalid deployment name "--app"'),
+    true,
+  );
+
+  // status does not pass its own arguments through, so --app after it is refused as
+  // misplaced rather than silently acting on a different deployment (N1).
+  const misplaced = await runGate(["status", "--app", "not-a-deployment"]);
+  check("a misplaced --app exits non-zero", misplaced.code === 0, false);
+  check(
+    "and is answered as an ordering mistake, not run against another deployment",
+    misplaced.stdout.includes("--app must come before the command"),
+    true,
+  );
+
+  // exec forwards its own argv verbatim, so an identically-spelled --app after it must
+  // reach exec as an ordinary argument instead of being read as deployment selection —
+  // proven here by getting the deployment's own "not found" answer, not the order error.
+  const neverCreatedForExec = `gate-dispatch-check-exec-${randomBytes(4).toString("hex")}`;
+  const passedThrough = await runGate(["--app", neverCreatedForExec, "exec", "--", "echo", "--app", "not-a-deployment"]);
+  check(
+    "--app after a passthrough command is not treated as misplaced",
+    passedThrough.stdout.includes("--app must come before the command"),
+    false,
+  );
+  check(
+    "exec still runs against the named (missing) deployment, not a --app found in its own args",
+    passedThrough.stdout.includes("not found"),
     true,
   );
 }

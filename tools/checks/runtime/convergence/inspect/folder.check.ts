@@ -500,6 +500,21 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
     }
 
     {
+      // N1: status takes no arguments at all — an unrecognised one (e.g. a misplaced --app)
+      // must be refused before anything is even asked of the transport.
+      const { transport, execLog } = preBootstrapTransport({ dataDirExists: false });
+      const ctx = notBootstrappedContext(transport);
+      let message: string | undefined;
+      try {
+        await status(ctx, ["--bogus"]);
+      } catch (caught) {
+        message = caught instanceof Error ? caught.message : String(caught);
+      }
+      check("status refuses an unknown argument", message, "unknown argument: --bogus");
+      check("and never touches the transport at all", execLog.length, 0);
+    }
+
+    {
       // The boundary: a data directory that DOES exist is a different failure, never hidden
       // behind NOT_BOOTSTRAPPED.
       const { transport } = preBootstrapTransport({

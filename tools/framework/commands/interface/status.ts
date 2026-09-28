@@ -9,8 +9,12 @@ import { log, info } from "#src/core/log.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { summarizeExposure, exposureOneLiner } from "#src/expose/index.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 
-export async function status(ctx: Context, _args: string[]): Promise<void> {
+export async function status(ctx: Context, args: string[]): Promise<void> {
+  // Takes nothing — an unrecognised argument (e.g. a misplaced --app) must not run silently.
+  parseDeclaredArgs([], args);
+
   info(`target: ${ctx.transport.description} / runtime: ${ctx.runtime.description}`);
   info(`exposure: ${exposureOneLiner(summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.()))} — details: ./clawforge expose status`);
 

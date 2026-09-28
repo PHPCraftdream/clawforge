@@ -22,6 +22,7 @@ import {
   gateHelpLines,
   reportUnknownCommand,
   splitLeadingAppFlag,
+  misplacedAppFlag,
   soleDeploymentFallback,
   type GateCommand,
 } from "./framework/integration/gate.ts";
@@ -118,6 +119,19 @@ const gateCommands: GateCommand[] = [
     },
   },
 ];
+
+// --app after the command is refused, except where the command reads argv verbatim.
+const verbatimCommands = [
+  ...gateCommands.map((command) => command.name),
+  ...Object.entries(openclawCommands)
+    .filter(([, command]) => command.arguments?.some((argument) => argument.kind === "variadic") === true)
+    .map(([commandName]) => commandName),
+];
+const misplacedApp = misplacedAppFlag(argv[0], argv.slice(1), verbatimCommands);
+if (misplacedApp !== undefined) {
+  reportError("--app must come before the command: ./clawforge --app <name> <command> …");
+  process.exit(1);
+}
 
 const gateExit = await runGateCommand(gateCommands, argv);
 if (gateExit !== undefined) process.exit(gateExit);

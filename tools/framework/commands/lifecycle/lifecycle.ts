@@ -27,6 +27,10 @@ export const UPGRADE_ARGUMENTS: CommandArgument[] = [
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
+/** Drives up's, restart's and down's own parsers and their openclawCommands declarations —
+ *  the only arguments any of the three accept. */
+export const LOCK_ARGUMENTS: CommandArgument[] = [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT];
+
 function regexEscape(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -63,14 +67,6 @@ async function listeningPortHolder(ctx: Context, address: string, port: string):
     return listeningLine(result.stdout, address, port);
   }
   return "unavailable";
-}
-
-/** Strips the instance-lock takeover flags this command reads itself (guarded()) before
- *  anything is forwarded on — down passes its own leftover args straight to compose, and
- *  neither --break-lock nor --break-foreign-lock <hostId> (flag plus its value) are
- *  docker-compose arguments. */
-function stripLockFlags(args: string[]): string[] {
-  return args.filter((arg, index) => arg !== "--break-lock" && arg !== "--break-foreign-lock" && args[index - 1] !== "--break-foreign-lock");
 }
 
 /** Another deployment on the same port fails deep inside compose with a bind error naming
@@ -113,6 +109,8 @@ export async function preflightPort(ctx: Context): Promise<void> {
 /** Starts the gateway and waits until it actually serves, not just until the container
  *  exists — a container that is "up" while crash-looping is the failure mode we hit. */
 export async function up(ctx: Context, args: string[]): Promise<void> {
+  // Dies before the lock is ever taken: a bogus flag must not leave a half-started mutation.
+  parseDeclaredArgs(LOCK_ARGUMENTS, args);
   return guarded(ctx, "up", args, () => startInstance(ctx));
 }
 
@@ -144,6 +142,7 @@ async function startInstance(ctx: Context): Promise<void> {
  *  supplies would otherwise turn a restart into a crash loop. The port is not checked —
  *  the container keeps the binding it already holds. */
 export async function restart(ctx: Context, args: string[]): Promise<void> {
+  parseDeclaredArgs(LOCK_ARGUMENTS, args);
   return guarded(ctx, "restart", args, () => restartInstance(ctx));
 }
 
@@ -160,10 +159,12 @@ async function restartInstance(ctx: Context): Promise<void> {
 }
 
 /** Stops and removes the containers. Data survives: it lives in host bind mounts, not in
- *  runtime-managed volumes. */
+ *  runtime-managed volumes. No compose passthrough: only the lock-takeover flags reach
+ *  here, so nothing typed after `down` (e.g. --rmi all, -v) can widen what it does. */
 export async function down(ctx: Context, args: string[]): Promise<void> {
+  parseDeclaredArgs(LOCK_ARGUMENTS, args);
   return guarded(ctx, "down", args, async () => {
-    await ctx.runtime.stop(stripLockFlags(args));
+    await ctx.runtime.stop();
     log(`stopped; data kept in ${ctx.settings.dataDir}`);
   });
 }

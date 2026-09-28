@@ -7,7 +7,7 @@
 // health rather than returning as soon as the container is told to come back.
 
 import { resolve } from "node:path";
-import { restart } from "#framework/commands/lifecycle/lifecycle.ts";
+import { restart, up, down } from "#framework/commands/lifecycle/lifecycle.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/output.ts";
@@ -113,6 +113,53 @@ async function run(ctx: Context): Promise<string | undefined> {
   check("a satisfiable config restarts cleanly", message, undefined);
   check("the runtime is asked to restart", seen.restarted, true);
   check("the command waits for health instead of returning immediately", seen.waited, true);
+}
+
+// --- N1/N2: an unrecognised argument is refused before the lock is ever taken -------------
+//
+// up, restart and down all validate their argv the same way (parseDeclaredArgs against the
+// same lock-takeover-only declaration) before calling guarded() — proven once here for all
+// three by poisoning every transport/runtime method a lock claim or a mutation would reach;
+// any call at all means the argument check ran too late.
+
+function untouchableCtx(): Context {
+  const poison = (label: string) => (): never => {
+    throw new Error(`must not be called — the argument check runs first (${label})`);
+  };
+  return {
+    settings: { dataDir: "/srv/openclaw/data", env: {}, serviceUrl: "http://127.0.0.1:18789" },
+    transport: { description: "stub", exec: poison("transport.exec"), exists: poison("transport.exists") },
+    runtime: {
+      isRunning: poison("runtime.isRunning"),
+      start: poison("runtime.start"),
+      restart: poison("runtime.restart"),
+      stop: poison("runtime.stop"),
+      waitForHealth: poison("runtime.waitForHealth"),
+      portConflict: poison("runtime.portConflict"),
+    },
+  } as unknown as Context;
+}
+
+async function runCommand(command: (ctx: Context, args: string[]) => Promise<void>, args: string[]): Promise<string | undefined> {
+  return withOutputSink(() => {}, async () => {
+    try {
+      await command(untouchableCtx(), args);
+      return undefined;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  });
+}
+
+for (const [name, command] of [["up", up], ["restart", restart], ["down", down]] as [string, (ctx: Context, args: string[]) => Promise<void>][]) {
+  const message = await runCommand(command, ["--bogus"]);
+  check(`${name} refuses an unknown argument before touching the transport or runtime`, message, "unknown argument: --bogus");
+}
+
+{
+  // The exact N2 scenario: down must not forward --rmi to compose, nor even reach the lock.
+  const message = await runCommand(down, ["--rmi", "all"]);
+  check("down refuses --rmi all before taking the lock or touching compose", message, "unknown argument: --rmi");
 }
 
 process.stderr.write(failed === 0 ? "all restart checks passed\n" : `${failed} failed\n`);

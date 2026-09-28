@@ -4,11 +4,14 @@
 
 import { log, die } from "#src/core/log.ts";
 import type { Context } from "#src/core/context.ts";
+import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 
 export const CLI_HELPER_SERVICE = "cli-helper";
 export const CLI_PROFILE = "cli";
 
-export async function cliStart(ctx: Context, _args: string[]): Promise<void> {
+export async function cliStart(ctx: Context, args: string[]): Promise<void> {
+  // Takes nothing — an unrecognised argument (e.g. a misplaced --app) must not run silently.
+  parseDeclaredArgs([], args);
   if (!(await ctx.runtime.isRunning())) {
     die("the gateway is not running. Start it with ./clawforge up");
   }
@@ -20,7 +23,8 @@ export async function cliStart(ctx: Context, _args: string[]): Promise<void> {
   log("CLI helper started — ./clawforge cli and ./clawforge mcp-serve will exec into it");
 }
 
-export async function cliStop(ctx: Context, _args: string[]): Promise<void> {
+export async function cliStop(ctx: Context, args: string[]): Promise<void> {
+  parseDeclaredArgs([], args);
   // No running-check first: `rm --force --stop` is already a safe no-op when nothing is
   // there, and a check-then-act here would miss a container that exists but already
   // stopped on its own (e.g. after a host reboot), leaving it behind uncleaned.

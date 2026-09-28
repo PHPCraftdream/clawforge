@@ -3,14 +3,13 @@
 
 import type { AppCommand } from "#src/core/app.ts";
 
-import { up, down, logs, restart, upgrade, UPGRADE_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
+import { up, down, logs, restart, upgrade, UPGRADE_ARGUMENTS, LOCK_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
 import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap.ts";
 import { backup, BACKUP_ARGUMENTS } from "#src/commands/lifecycle/backup.ts";
 import { restore, RESTORE_ARGUMENTS } from "#src/commands/lifecycle/restore.ts";
 import { verify, VERIFY_ARGUMENTS } from "#src/commands/lifecycle/verify.ts";
 import { pull, push, PULL_ARGUMENTS, PUSH_ARGUMENTS } from "#src/commands/lifecycle/state.ts";
 import { smoke, SMOKE_ARGUMENTS } from "#src/commands/lifecycle/smoke.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 export const lifecycleCommands: Record<string, AppCommand> = {
   bootstrap: {
@@ -33,7 +32,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     summary: "Start the service and wait until it serves",
     group: "start-stop",
     run: up,
-    arguments: [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT],
+    arguments: LOCK_ARGUMENTS,
     details:
       "Checks secrets and the gateway port before starting, not after —\n" +
       "a missing SecretRef or a port already held by another deployment otherwise " +
@@ -56,14 +55,14 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "performs itself, or `./clawforge up`.\n" +
       "Secrets are checked first, same as `up`; the port is not, since the container keeps " +
       "the binding it already holds.",
-    arguments: [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT],
+    arguments: LOCK_ARGUMENTS,
   },
   down: {
     summary: "Stop and remove the containers (data is kept)",
     group: "start-stop",
     run: down,
     details: "Data lives in host bind mounts, not in runtime-managed volumes, so this never touches it.",
-    arguments: [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT],
+    arguments: LOCK_ARGUMENTS,
   },
   logs: {
     summary: "Follow the service log, or read a bounded tail of it",

@@ -113,6 +113,18 @@ export function splitLeadingAppFlag(argv: string[]): AppFlagSplit {
   return { value: undefined, missingValue: false, rest: argv };
 }
 
+/** The first `--app`/`--app=<name>` among a command's own arguments (a leading one was already
+ *  split off). `exempt` names commands that read their argv verbatim: gate commands and those
+ *  declaring a variadic argument (cli, exec, host), whose `--app` belongs to them. */
+export function misplacedAppFlag(
+  commandName: string | undefined,
+  args: readonly string[],
+  exempt: readonly string[],
+): string | undefined {
+  if (commandName === undefined || exempt.includes(commandName)) return undefined;
+  return args.find((arg) => arg === "--app" || arg.startsWith("--app="));
+}
+
 /** Damerau-Levenshtein edit distance: a transposition of two adjacent characters (the most
  *  common way to mistype a command name — "statsu" for "status") costs one edit, not the two
  *  a plain Levenshtein distance would charge it. */

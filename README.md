@@ -697,9 +697,10 @@ already-chosen deployment: target, port, image and running/stopped for each `app
 with `--json` for scripting and `--no-status` to skip querying targets entirely.
 
 Choosing a deployment: `--app`, the `OC_APP` variable, otherwise `openclaw`. `--app` (or
-`--app=<name>`) must lead the command line, before the command name — after it, an
-identically-spelled `--app` belongs to that command's own arguments (`exec`, `cli` and `host`
-all pass theirs through to something else verbatim). With neither set and no `openclaw`
+`--app=<name>`) must lead the command line, before the command name — after it, every command
+refuses with "--app must come before the command", except `exec`, `cli` and `host`, which pass
+their own arguments through to something else verbatim, so an identically-spelled `--app` there
+is that command's own argument. With neither set and no `openclaw`
 deployment, a checkout holding exactly one deployment under `apps/` uses it automatically and
 says so; with more than one, `./clawforge` lists them and asks for `--app <name>` or `OC_APP`.
 Every configuration path is resolved from the deployment directory — otherwise two instances

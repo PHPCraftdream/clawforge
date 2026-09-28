@@ -44,7 +44,7 @@ interface Stub {
 }
 
 /** A transport/runtime stub answering every command createBackup() issues against a modeled
- *  target (the same shape convergence/backup.check.ts drives), plus the recipe-stack probes
+ *  target (the same shape convergence/backup/backup.check.ts drives), plus the recipe-stack probes
  *  runningRecipeStacks() makes. The archive step and the runtime transitions record into
  *  `events` — the same array the fixture hooks push to — so hook ordering against
  *  pause/tar/start is assertable as one sequence. */

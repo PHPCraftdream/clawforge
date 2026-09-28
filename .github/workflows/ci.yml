@@ -164,7 +164,8 @@ jobs:
             tools/checks/runtime/connection-facts/upgrade.check.ts
             tools/checks/runtime/convergence/apply-config.check.ts
             tools/checks/runtime/convergence/apply.check.ts
-            tools/checks/runtime/convergence/backup.check.ts
+            tools/checks/runtime/convergence/backup/backup.check.ts
+            tools/checks/runtime/convergence/backup/retention.check.ts
             tools/checks/runtime/convergence/inspection.check.ts
             tools/checks/runtime/convergence/lock-home.check.ts
             tools/checks/runtime/convergence/inspect/checksums.check.ts

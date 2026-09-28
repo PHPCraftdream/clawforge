@@ -123,8 +123,8 @@ jobs:
             tools/checks/integration/agent/recipe-readiness.check.ts
             tools/checks/integration/agent/recipe.check.ts
             tools/checks/integration/recipe/recipe-lifecycle-hooks.check.ts
-            tools/checks/integration/app-hooks.check.ts
-            tools/checks/integration/app-recipes-dir.check.ts
+            tools/checks/integration/apps/app-hooks.check.ts
+            tools/checks/integration/apps/app-recipes-dir.check.ts
             tools/checks/integration/init.check.ts
             tools/checks/integration/mcp-safety-policy.check.ts
             tools/checks/integration/mcp/mcp-apply-report.check.ts
@@ -219,10 +219,10 @@ jobs:
             tools/checks/security/expose/ssh.check.ts
             tools/checks/security/expose/status.check.ts
             tools/checks/security/expose/tailscale.check.ts
-            tools/checks/security/watch/index.check.ts
-            tools/checks/security/watch/check.check.ts
-            tools/checks/security/watch/install.check.ts
-            tools/checks/security/watch/status.check.ts
+            tools/checks/runtime/watch/index.check.ts
+            tools/checks/runtime/watch/check.check.ts
+            tools/checks/runtime/watch/install.check.ts
+            tools/checks/runtime/watch/status.check.ts
             tools/checks/security/incident/incident.check.ts
             tools/checks/security/private-paths-ledger/serialization.check.ts
             tools/checks/security/private-paths-ledger/reconcile-history.check.ts

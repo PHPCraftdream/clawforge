@@ -177,7 +177,7 @@ export const ENV_FILE_ONLY_VARS = [
 
 /** Names (never values — some are secrets) of exported variables that `fileEnv` lacks or
  *  disagrees with. */
-export function shellOnlyEnvNames(fileEnv: Env, shellEnv: NodeJS.ProcessEnv): string[] {
+export function shellOnlyEnvNames(fileEnv: Env, shellEnv: Readonly<Record<string, string | undefined>>): string[] {
   return ENV_FILE_ONLY_VARS.filter((name) => {
     const shellValue = shellEnv[name];
     return shellValue !== undefined && shellValue !== fileEnv[name];
@@ -185,7 +185,7 @@ export function shellOnlyEnvNames(fileEnv: Env, shellEnv: NodeJS.ProcessEnv): st
 }
 
 /** The one-line stderr warning for shell-exported variables loadEnv() ignores. */
-export function shellOnlyEnvWarning(fileEnv: Env, shellEnv: NodeJS.ProcessEnv, file: string): string | undefined {
+export function shellOnlyEnvWarning(fileEnv: Env, shellEnv: Readonly<Record<string, string | undefined>>, file: string): string | undefined {
   const names = shellOnlyEnvNames(fileEnv, shellEnv);
   if (names.length === 0) return undefined;
   const plural = names.length > 1;

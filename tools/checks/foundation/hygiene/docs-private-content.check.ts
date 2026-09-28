@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const docs = resolve(repository, "docs");
 
 const privatePaths: readonly [string, RegExp][] = [

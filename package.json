@@ -12,6 +12,7 @@
   },
   "scripts": {
     "check": "node --experimental-strip-types tools/clawforge.ts check",
+    "check:linux": "node --experimental-strip-types tools/dev/check-linux.ts",
     "test": "npm run check",
     "build": "node --experimental-strip-types tools/build-framework-package.ts",
     "typecheck": "tsgo --noEmit",

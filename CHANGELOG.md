@@ -53,6 +53,10 @@ All notable changes to `@clawforge/framework` will be documented here.
   own `package.json` the same way `inspect`/`set build` already do. Answers with no deployment
   resolved, no `.env` read and no lock touched, in both installed and monorepo mode — where
   before it answered `unknown command`.
+* `npm run check:linux [-- <filter…>]`: reproduces ci.yml's ubuntu "checks" job (install, the
+  check suite, typecheck/lint) inside the official `node:24` image via Docker, from a clean
+  `git ls-files` snapshot — never the host's own `node_modules/`. Refuses with the next step
+  when Docker is not installed or its daemon is not answering, instead of failing unhelpfully.
 
 ### Fixed
 

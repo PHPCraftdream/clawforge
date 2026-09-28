@@ -117,11 +117,12 @@ jobs:
             tools/checks/foundation/core/env.check.ts
             tools/checks/foundation/core/paths.check.ts
             tools/checks/foundation/core/requirements.check.ts
-            tools/checks/foundation/docs-private-content.check.ts
+            tools/checks/foundation/hygiene/check-linux.check.ts
+            tools/checks/foundation/hygiene/docs-private-content.check.ts
+            tools/checks/foundation/hygiene/spawn-noise.check.ts
             tools/checks/foundation/layout.check.ts
             tools/checks/foundation/packaging/build-output.check.ts
             tools/checks/foundation/providers/provider.check.ts
-            tools/checks/foundation/spawn-noise.check.ts
             tools/checks/integration/agent/agent-bundle-portable-content.check.ts
             tools/checks/integration/agent/cron-timezone.check.ts
             tools/checks/integration/agent/provision-agent.check.ts

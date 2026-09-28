@@ -26,6 +26,24 @@ path under `tools/checks/` contains at least one substring — e.g. `./clawforge
 without running them; a filter that matches nothing is refused rather than silently falling
 back to the whole suite.
 
+## Reproducing Linux CI locally
+
+CI runs two jobs: `ubuntu-latest` (the full check suite, typecheck/lint, build, pack:check) and
+`windows-latest` (a Windows-safe subset of the same, since this project's dev machines are
+Windows and can't run the Linux job's shell/wording assumptions natively). A change to
+transport, shell invocation, or path handling can pass on Windows and still fail on Linux — a
+dash-vs-bash wording difference or a check that assumes `wsl.exe` is absent are two real
+examples this slipped through before. Run `npm run check:linux` before pushing any such
+change; it needs Docker (Desktop on Windows/macOS, Engine on Linux) and otherwise refuses with
+the next step rather than failing unhelpfully. It reproduces the ubuntu job's checks and
+typecheck/lint steps inside the official `node:24` image, from a clean `git
+ls-files -co --exclude-standard` snapshot (never the host's own `node_modules/` or
+`tools/framework/dist/`) — never the whole working tree. Filter it exactly like `check`:
+`npm run check:linux -- backup`. It does not install Docker inside the container or mount the
+host's Docker socket, so the handful of checks that specifically probe for a local Docker
+daemon skip their tool-dependent assertions here, the same as they do on a bare runner with no
+Docker — see `tools/dev/check-linux.ts`'s own header comment for the exact tradeoff.
+
 ## Source layout
 
 `tools/checks/foundation/layout.check.ts` caps every source directory at 7 direct entries

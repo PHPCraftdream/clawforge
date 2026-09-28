@@ -83,26 +83,63 @@ function lastSeparator(path: string): number {
   return Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
 }
 
-/** Parses KEY=VALUE lines; comments, blanks and surrounding quotes handled, anything else
- *  ignored rather than executed. */
+const EXPORT_PREFIX = /^export\s+/;
+
+/** Parses dotenv basics, the level compose reads the same file at: a leading `export ` is
+ *  stripped, `#` starts a comment for a whole line or (after whitespace) partway through an
+ *  UNQUOTED value, one outer quote pair is stripped literally (`#` inside stays data). No
+ *  `${VAR}` interpolation; anything else is ignored rather than executed. */
 export function parseEnv(text: string): Env {
   const env: Env = {};
   for (const rawLine of text.split("\n")) {
     const line = rawLine.trim();
     if (line === "" || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
+    const stripped = line.replace(EXPORT_PREFIX, "");
+    const eq = stripped.indexOf("=");
     if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
-      (value.startsWith("'") && value.endsWith("'") && value.length > 1)
-    ) {
-      value = value.slice(1, -1);
-    }
-    env[key] = value;
+    const key = stripped.slice(0, eq).trim();
+    env[key] = parseEnvValue(stripped.slice(eq + 1));
   }
   return env;
+}
+
+/** The value half of a line, taken UNTRIMMED so `KEY= # c` reads as empty with a comment.
+ *  A quoted value keeps everything inside its outer pair; only an empty or `#` tail may follow
+ *  the closing quote, otherwise the whole text is kept as written. */
+function parseEnvValue(raw: string): string {
+  const body = raw.trimStart();
+  const quote = body[0];
+  if (quote === '"' || quote === "'") {
+    const close = body.lastIndexOf(quote);
+    if (close > 0) {
+      const after = body.slice(close + 1).trim();
+      if (after === "" || after.startsWith("#")) return body.slice(1, close);
+    }
+    return body;
+  }
+  const commentAt = raw.search(/\s#/);
+  return commentAt === -1 ? raw.trim() : raw.slice(0, commentAt).trim();
+}
+
+const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** 1-based findings for lines whose key is not a valid variable name (a stray space before
+ *  `=` is typical). Never includes the value — some are secrets. */
+export function suspiciousEnvLines(text: string): string[] {
+  const findings: string[] = [];
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const stripped = line.replace(EXPORT_PREFIX, "");
+    const eq = stripped.indexOf("=");
+    if (eq <= 0) continue;
+    const key = stripped.slice(0, eq).trim();
+    if (!ENV_KEY_PATTERN.test(key)) {
+      findings.push(`line ${i + 1}: "${key}" is not a valid environment variable name`);
+    }
+  }
+  return findings;
 }
 
 /** Parses a retention count (OC_BACKUP_KEEP, OC_SNAPSHOT_KEEP): unset → `fallback`; 0 →
@@ -137,20 +174,16 @@ export function projectPort(taken: ReadonlySet<number> = new Set(), start = rand
  *  parseEnv(serializeEnvLine(name, value))[name] is byte-identical to value for every
  *  value without a line terminator.
  *
- *  parseEnv trims each line, splits on the first `=` and strips ONE matched outer quote
- *  pair (`"` or `'`, `length > 1`) with no escape processing. The bare form therefore
- *  survives a round trip only when the value has no edge whitespace and no quote
- *  character anywhere; everything else is written single-quoted, and what sits between
- *  the quotes is read back as literal bytes — exactly one matched pair is stripped,
- *  whatever the value contains, so even `'it's'` parses back to it's. A value holding a
- *  newline or carriage return cannot live on one line at all (a `\n` splits into two
- *  lines; a trailing `\r` is eaten by the reader's line trim as a CRLF terminator) and
- *  is refused with the key named: writing it as bare NAME=value would silently lose
- *  edge whitespace and mangle quote-shaped values on the next read. */
+ *  The bare form survives a round trip only when the value has no edge whitespace, no quote
+ *  character and no whitespace-then-`#` (read back as an inline comment); anything else is
+ *  written single-quoted and read back literally, `#` included. A value holding a newline or
+ *  carriage return cannot live on one line and is refused with the key named. */
 export function serializeEnvLine(name: string, value: string): string {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`invalid environment variable name: ${name}`);
+  if (!ENV_KEY_PATTERN.test(name)) throw new Error(`invalid environment variable name: ${name}`);
   if (/[\r\n]/.test(value)) throw new Error(`environment value for ${name} contains a newline or carriage return`);
-  if (value === value.trim() && !value.includes(`"`) && !value.includes(`'`)) return `${name}=${value}`;
+  if (value === value.trim() && !value.includes(`"`) && !value.includes(`'`) && !/\s#/.test(value)) {
+    return `${name}=${value}`;
+  }
   return `${name}='${value}'`;
 }
 

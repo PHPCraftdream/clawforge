@@ -182,6 +182,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   are missing one at a time (so an old block catches up instead of being skipped forever, and
   the operator's own lines are never touched), and the port avoids every sibling deployment
   directory's own `.env`, the same way `new-app` already did for `apps/`.
+* `.env` parsing only understood a whole-line `#` comment and stripped edge quotes —
+  `.env.example` reads as dotenv, so an operator writing `OPENCLAW_GATEWAY_PORT=18789  # my
+  port` or `export FOO=bar` got a port with the comment stuck to it, or a key literally named
+  `export FOO`, silently. Now: a leading `export ` is stripped, and whitespace before `#` in
+  an UNQUOTED value starts an inline comment (quoted values keep `#` literal, no interpolation
+  added). `serializeEnvLine` quotes a value containing ` #` so it survives the next read;
+  `inspect`/`doctor` report `ENV_LINE_INVALID` for a line whose key is not a usable variable
+  name. The accepted format is documented in docs/guide/deploy-and-mcp.md.
 
 ## 0.1.0
 

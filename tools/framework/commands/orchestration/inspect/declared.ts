@@ -5,12 +5,13 @@
 
 import { access, lstat, readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
+import { deploymentName, desiredStateFile, envFile, recipesDir } from "#src/runtime/deployment.ts";
 import { loadRecipeAgentBundle } from "#src/commands/management/provision-agent/index.ts";
 import type { RecipeAgentBundle } from "#src/commands/management/provision-agent/index.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem, DeclaredState } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
+import { suspiciousEnvLines } from "#src/core/env.ts";
 
 /** A recipe's agent bundle, in the fields inspect compares against the instance. Parsed
  *  loosely on purpose: this is reading someone else's declaration to report on it, not
@@ -80,6 +81,15 @@ export async function declaredState(ctx: Context, problems: Problem[]): Promise<
       // failing to parse.
       problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} exists but is not valid JSON: ${(error as Error).message}`));
     }
+  }
+
+  // Re-read: ctx.settings dropped the raw text. ENOENT means a race with the file, not a normal case.
+  try {
+    for (const finding of suspiciousEnvLines(await readFile(envFile(), "utf8"))) {
+      problems.push(problem("ENV_LINE_INVALID", `${envFile()}: ${finding}`));
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 
   return {

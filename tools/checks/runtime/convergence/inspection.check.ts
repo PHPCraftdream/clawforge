@@ -58,6 +58,8 @@ check(
     "CRON_DRIFT",
     "DECLARATION_MISSING",
     "EGRESS_UNREACHABLE",
+    // A pure fact about .env itself, no instance needed — sits with the declared-state codes.
+    "ENV_LINE_INVALID",
     // Operator-side findings: the deployment folder against the instance.
     "ENV_STALE",
     "GATEWAY_DOWN",

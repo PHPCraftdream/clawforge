@@ -41,6 +41,29 @@ naming what was ignored (never `--json` stdout, so scripts and `control-mcp` are
 failure, undiluted, instead of the usual shortened one) are the two names actually read from
 the shell.
 
+#### `.env` format
+
+`.env` is read as dotenv, the same level compose itself reads it at — never `source .env`,
+so nothing in it is executed:
+
+- `KEY=value`, one per line; a leading `export ` is stripped, so a line copied from a shell
+  script still parses.
+- A line starting with `#` (after leading whitespace) is a whole-line comment. Inside an
+  UNQUOTED value, whitespace followed by `#` starts an inline comment that runs to end of
+  line — `OPENCLAW_GATEWAY_PORT=18789  # my port` reads as `18789`. A bare `#` glued to the
+  value with no whitespace before it (`KEY=#not-a-comment`) is data, not a comment.
+- `"value"` or `'value'` strips exactly one matching outer quote pair, with no escape
+  processing — `#` and everything else inside stays literal, including a second `#`-comment
+  attempt (`KEY="value # not a comment"` keeps the whole thing). A `#comment` after the
+  closing quote (with or without a space before it) is still stripped; anything else there
+  means this was never a clean quoted value, and the whole line is kept literal, quotes
+  included.
+- No `${VAR}` interpolation: a value is read exactly as written. `docker compose` consumes
+  this same file as its own env-file, so a value that clawforge expanded one way and compose
+  read another would silently disagree — better to never expand it at all.
+- `doctor`/`inspect` name any line whose key is not a usable environment variable name
+  (`ENV_LINE_INVALID`) — most often a stray space before `=`.
+
 `./clawforge list` is the overview `status` cannot be, since `status` always answers for one
 already-chosen deployment: target, port, image and running/stopped for each `apps/<name>`,
 with `--json` for scripting and `--no-status` to skip querying targets entirely.

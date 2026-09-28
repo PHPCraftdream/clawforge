@@ -12,6 +12,7 @@ import {
   serializeEnvLine,
   shellOnlyEnvNames,
   shellOnlyEnvWarning,
+  suspiciousEnvLines,
   toSettings,
 } from "#framework/core/env.ts";
 
@@ -100,6 +101,88 @@ check(
   },
 );
 
+// --- dotenv basics: export, inline comments, CRLF ---------------------------------
+
+check(
+  "an unquoted value drops a ` #` inline comment",
+  parseEnv("A=10 # keep ten"),
+  { A: "10" },
+);
+
+check(
+  "a leading `export ` is stripped from the key",
+  parseEnv("export C=exported"),
+  { C: "exported" },
+);
+
+check(
+  "export requires a space — a key merely starting with it is untouched",
+  parseEnv("exported=1"),
+  { exported: "1" },
+);
+
+check(
+  "no interpolation: ${VAR} stays literal",
+  parseEnv("E=${A}suffix"),
+  { E: "${A}suffix" },
+);
+
+check(
+  "a double-quoted value keeps # inside it literal",
+  parseEnv('KEY="abc#def"'),
+  { KEY: "abc#def" },
+);
+
+check(
+  "a double-quoted value followed by an inline comment drops the comment, keeps the quotes' content",
+  parseEnv('KEY="value" # comment'),
+  { KEY: "value" },
+);
+
+check(
+  "a single-quoted value followed by an inline comment drops the comment",
+  parseEnv("KEY='value' # comment"),
+  { KEY: "value" },
+);
+
+check(
+  "a quoted value followed by non-comment junk is not a clean quoted value: kept whole, literal",
+  parseEnv('KEY="value"junk'),
+  { KEY: '"value"junk' },
+);
+
+check("KEY= with an empty value has no inline comment to trip over", parseEnv("KEY= # just a comment"), { KEY: "" });
+
+check(
+  "= inside an unquoted value survives past the first `=`, comment still stripped",
+  parseEnv("KEY=a=b&c=d # comment"),
+  { KEY: "a=b&c=d" },
+);
+
+check(
+  "CRLF line endings parse the same as LF",
+  parseEnv("A=1\r\nB=2 # c\r\nexport C=3\r\n"),
+  { A: "1", B: "2", C: "3" },
+);
+
+// --- suspiciousEnvLines: doctor's own hook for a key that is not a usable name -----
+
+check("a clean file has no suspicious lines", suspiciousEnvLines("A=1\nexport B=2\n# comment\n\n"), []);
+
+check(
+  "interior whitespace in the key is named by line number and key",
+  suspiciousEnvLines("A=1\nMY KEY=oops\nB=2\n"),
+  ['line 2: "MY KEY" is not a valid environment variable name'],
+);
+
+check(
+  "export is stripped before the key is judged, so an exported valid key is not flagged",
+  suspiciousEnvLines("export GOOD_KEY=1\n"),
+  [],
+);
+
+check("a line with no = is not a key to judge", suspiciousEnvLines("STRAY LINE\nA=1\n"), []);
+
 // --- serializeEnvLine: the write side is parseEnv's exact inverse -----------------
 //
 // The store writers (secrets --apply/--dump, upsertEnvValue) route through this single
@@ -132,9 +215,10 @@ roundTrips("a lone double quote (parseEnv's length>1 guard)", `"`);
 roundTrips("a lone single quote", `'`);
 roundTrips("a value made of two single quotes", `''`);
 
-// parseEnv treats `#` and backslashes as literal bytes (only a `#` at line START is a
-// comment), so these stay bare — quoting them would also round-trip, but the bare form
-// pins the minimal quoting contract.
+// parseEnv treats a bare `#` (no whitespace before it) as a literal byte, so these stay
+// bare — quoting them would also round-trip, but the bare form pins the minimal quoting
+// contract. A `#` WITH whitespace before it is the inline-comment case just below, and is
+// not safe bare.
 roundTrips("an embedded # stays literal", "abc#def");
 roundTrips("a leading # is data, not a comment", "#not-a-comment");
 roundTrips("a literal backslash-n is two bytes, not a newline", "a\\nb");
@@ -147,6 +231,16 @@ check(
   serializeEnvLine("PROBE_KEY", "9tT4xQeFv2nH8sK1mR7wY5uC3zA6dB0pL-X_o"),
   "PROBE_KEY=9tT4xQeFv2nH8sK1mR7wY5uC3zA6dB0pL-X_o",
 );
+
+// The bug this whole fix exists for: a bare value with a `# comment`-shaped tail would be
+// read back truncated unless serializeEnvLine quotes it too.
+roundTrips("a value with a ` #` sequence must survive, not be truncated at the next read", "18789  # my port");
+check(
+  "a value with a ` #` sequence is written quoted, not bare",
+  serializeEnvLine("PROBE_KEY", "18789  # my port"),
+  `PROBE_KEY='18789  # my port'`,
+);
+roundTrips("a quoted value with an embedded quote and a ` #` sequence", `it's # not a comment`);
 
 // Values that cannot live on one line are refused with the key named, never written
 // lossily: a real newline splits into two lines, and a \r is eaten by the reader's line

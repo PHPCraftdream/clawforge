@@ -140,6 +140,29 @@ try {
     check("no .env value reaches the answer", JSON.stringify(renderJson(inspection)).includes(TOKEN), false);
   }
 
+  // --- A2. a key with interior whitespace is ENV_LINE_INVALID, a pure fact needing no target -----
+
+  {
+    await reset();
+    await writeEnv(`${MATCHING_ENV}\nMY KEY=oops\n`);
+    await writeStore(COMPLETE_STORE);
+    const inspection = await gatherInspection(folderContext(CLEAN, CONTAINER_FACTS));
+    allJson += JSON.stringify(renderJson(inspection));
+    check("a key with interior whitespace is ENV_LINE_INVALID", codes(inspection.problems), ["ENV_LINE_INVALID"]);
+    check("the finding is advisory", inspection.problems.map((entry) => entry.severity), ["warning"]);
+    check("it names the bad key, not any value", inspection.problems[0]?.detail.includes("MY KEY") ?? false, true);
+    check("no .env value reaches the answer", JSON.stringify(renderJson(inspection)).includes(TOKEN), false);
+  }
+
+  {
+    // Available even with no target reached at all — a fact about the file, not the instance.
+    await reset();
+    await writeEnv(`${MATCHING_ENV}\nMY KEY=oops\n`);
+    const inspection = await gatherInspection(stubContext({ mirrorChecksums: goodChecksums, running: false }));
+    allJson += JSON.stringify(renderJson(inspection));
+    check("ENV_LINE_INVALID is reported even on a stopped, unbootstrapped-looking folder", inspection.problems.some((entry) => entry.code === "ENV_LINE_INVALID"), true);
+  }
+
   // --- B. one drifted fact, named and valueless ----------------------------------------------
 
   {

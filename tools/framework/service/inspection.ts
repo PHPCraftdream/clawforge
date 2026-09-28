@@ -43,6 +43,7 @@ export type ProblemCode =
   | "PLUGIN_DRIFT"
   | "SKILL_DRIFT"
   | "ENV_STALE"
+  | "ENV_LINE_INVALID"
   | "DECLARATION_MISSING"
   | "STORE_INCOMPLETE"
   | "IMAGE_UNPINNED"
@@ -209,6 +210,12 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     // printable beyond the four names.
     summary: "a connection fact in the deployment's .env no longer matches the running container",
     nextAction: "./clawforge recover-env",
+  },
+  ENV_LINE_INVALID: {
+    severity: "warning",
+    // Pure fact about .env: available before bootstrap and with the target unreachable; not blocking.
+    summary: "a key in .env is not a usable environment variable name, most often a stray space before =",
+    nextAction: "./clawforge inspect  (then edit .env: fix the line named)",
   },
   DECLARATION_MISSING: {
     severity: "warning",

@@ -7,7 +7,10 @@
 //   refusal never repeats the value it is refusing.
 // - resolveWatchOutcome(): gatherInspection() throwing outright (a transport failure, not a
 //   liveness finding) reads as TARGET_UNREACHABLE/down instead of propagating and killing the
-//   cycle before it can alert or persist anything.
+//   cycle before it can alert or persist anything; and it forwards whatever gather() answered
+//   for observed.channels untouched — the plumbing withAdditionalFindings()'s channelFindings()
+//   call relies on instead of a CLI call of its own (see inspect/fixture.ts's own batching
+//   proof, and health.check.ts for channelFindings() itself).
 // - runWatchCycle(): the transition matrix — no previous state is a baseline, not an
 //   alert; an unchanged level never posts; a changed level posts exactly once; a failed
 //   POST leaves the persisted state at its old value so the next cycle retries it — and
@@ -315,6 +318,36 @@ try {
     check("state is recorded as down", written.level, "down");
     check("with the TARGET_UNREACHABLE reason", written.reasons[0]?.code, "TARGET_UNREACHABLE");
     check("the persisted state never carries the leaked secret", JSON.stringify(written).includes(LEAKED_TOKEN), false);
+  }
+
+  // --- resolveWatchOutcome() forwards observed.channels, gather() called exactly once ------
+  //
+  // channelFindings() (health.ts) takes the already-parsed answer, not a Context — it cannot
+  // make a CLI call of its own. So the only way watch check's channel findings could still
+  // cost a second exec is resolveWatchOutcome() calling gather() (gatherInspection) more than
+  // once per cycle, or discarding observed.channels along the way. Neither happens here: one
+  // call, and the field comes back exactly as gather() answered it.
+
+  {
+    const dummyCtx = {} as unknown as Context;
+    let gatherCalls = 0;
+    const channelsPayload = { channelAccounts: { telegram: [{ accountId: "default", configured: true, enabled: true, running: false }] } };
+    const countedGather = async (): Promise<Inspection> => {
+      gatherCalls += 1;
+      return { declared: {}, observed: { channels: channelsPayload }, problems: [] } as unknown as Inspection;
+    };
+    const outcome = await resolveWatchOutcome(dummyCtx, countedGather);
+    check("gather() is called exactly once per cycle", gatherCalls, 1);
+    check("resolveWatchOutcome forwards observed.channels untouched", outcome.channels, channelsPayload);
+  }
+
+  {
+    // No channels field at all (a gatherInspection() call that never set the `channels`
+    // option) — a gap, not a crash or a synthesized empty shape.
+    const dummyCtx = {} as unknown as Context;
+    const noChannelsGather = async (): Promise<Inspection> => ({ declared: {}, observed: {}, problems: [] }) as unknown as Inspection;
+    const outcome = await resolveWatchOutcome(dummyCtx, noChannelsGather);
+    check("no channels field on the inspection -> undefined, not thrown", outcome.channels, undefined);
   }
 } finally {
   globalThis.fetch = originalFetch;

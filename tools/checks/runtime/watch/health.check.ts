@@ -1,11 +1,12 @@
 // `./clawforge watch check`'s own channel/disk findings (watch/health.ts) — the two liveness
 // signals `inspect`/`doctor` do not compute:
 //
-// - channelFindings(): configured+enabled channel accounts read from `channels status --json`
-//   (the same CLI path openclaw-cli.ts's openclawCliJson already uses for agents/mcp/cron);
-//   not-running, a captured lastError, or connected: false all read as CHANNEL_UNHEALTHY
-//   (degraded, never down); unconfigured/disabled accounts and a failing CLI call are gaps,
-//   not findings.
+// - channelFindings(): a pure function over `channels status --json`'s already-parsed
+//   answer (gathered by gatherInspection's own `channels` option, inspect/observe.ts, in the
+//   same batched CLI call as agents/mcp/cron — no ctx, no transport, needed here); not-
+//   running, a captured lastError, or connected: false all read as CHANNEL_UNHEALTHY
+//   (degraded, never down); unconfigured/disabled accounts and an absent response (the CLI
+//   call failed, or nothing was asked) are gaps, not findings.
 // - diskFindings(): `df -Pk <dataDir>` against OC_WATCH_DISK_MIN_MB — degraded below the
 //   threshold, down below 10% of it or 100 MB (whichever is higher); a failed or unparsable
 //   `df` is DISK_UNKNOWN (degraded), never a silent ok and never down.
@@ -14,6 +15,7 @@
 import { registerSecret } from "#framework/core/io/log.ts";
 import { channelFindings, diskFindings, mergeFindings, parseDfAvailableKb, DISK_MIN_MB_ENV } from "#framework/commands/operate/watch/health.ts";
 import type { WatchFinding } from "#framework/commands/operate/watch/health.ts";
+import type { ChannelsStatusResponse } from "#framework/service/inspection.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
@@ -33,44 +35,36 @@ function check(name: string, actual: unknown, expected: unknown): void {
 
 // --- channelFindings(): only a configured, enabled account's own trouble is reported -------
 
-function channelsCtx(channelAccounts: unknown, runOneOffOverride?: () => Promise<ExecResult>): Context {
-  return {
-    settings: { env: {} },
-    runtime: {
-      async runOneOff(): Promise<ExecResult> {
-        if (runOneOffOverride !== undefined) return runOneOffOverride();
-        return { code: 0, stdout: JSON.stringify({ channelAccounts }), stderr: "" };
-      },
-    },
-  } as unknown as Context;
+function channelsResponse(channelAccounts: unknown): ChannelsStatusResponse {
+  return { channelAccounts } as ChannelsStatusResponse;
 }
 
 {
-  const healthy = channelsCtx({
+  const healthy = channelsResponse({
     telegram: [{ accountId: "default", enabled: true, configured: true, running: true, connected: true, lastError: null }],
   });
-  check("a healthy, connected account produces no finding", await channelFindings(healthy), []);
+  check("a healthy, connected account produces no finding", channelFindings(healthy), []);
 }
 
 {
-  const notConfigured = channelsCtx({
+  const notConfigured = channelsResponse({
     telegram: [{ accountId: "default", enabled: true, configured: false, running: false, connected: false }],
   });
-  check("an unconfigured account is not a fault, whatever else it reports", await channelFindings(notConfigured), []);
+  check("an unconfigured account is not a fault, whatever else it reports", channelFindings(notConfigured), []);
 }
 
 {
-  const disabled = channelsCtx({
+  const disabled = channelsResponse({
     telegram: [{ accountId: "default", enabled: false, configured: true, running: false, connected: false }],
   });
-  check("a deliberately disabled account is not a fault", await channelFindings(disabled), []);
+  check("a deliberately disabled account is not a fault", channelFindings(disabled), []);
 }
 
 {
-  const notRunning = channelsCtx({
+  const notRunning = channelsResponse({
     telegram: [{ accountId: "default", enabled: true, configured: true, running: false }],
   });
-  const findings = await channelFindings(notRunning);
+  const findings = channelFindings(notRunning);
   check("configured but not running -> one CHANNEL_UNHEALTHY finding", findings.length, 1);
   check("severity is degraded, never down", findings[0]?.level, "degraded");
   check("the code is CHANNEL_UNHEALTHY", findings[0]?.reason.code, "CHANNEL_UNHEALTHY");
@@ -78,22 +72,22 @@ function channelsCtx(channelAccounts: unknown, runOneOffOverride?: () => Promise
 }
 
 {
-  const errored = channelsCtx({
+  const errored = channelsResponse({
     telegram: [{ accountId: "default", enabled: true, configured: true, running: true, lastError: "auth failed: bad token" }],
   });
-  const findings = await channelFindings(errored);
+  const findings = channelFindings(errored);
   check("a captured lastError with no connection state -> CHANNEL_UNHEALTHY", findings[0]?.reason.detail, "telegram/default: last error: auth failed: bad token");
-  const recovered = channelsCtx({
+  const recovered = channelsResponse({
     telegram: [{ accountId: "default", enabled: true, configured: true, running: true, connected: true, lastError: "auth failed: bad token" }],
   });
-  check("a connected account is healthy despite a lingering lastError", (await channelFindings(recovered)).length, 0);
+  check("a connected account is healthy despite a lingering lastError", channelFindings(recovered).length, 0);
 }
 
 {
-  const disconnected = channelsCtx({
+  const disconnected = channelsResponse({
     telegram: [{ accountId: "default", enabled: true, configured: true, running: true, connected: false, lastError: null }],
   });
-  const findings = await channelFindings(disconnected);
+  const findings = channelFindings(disconnected);
   check("configured, running, but not connected -> CHANNEL_UNHEALTHY", findings[0]?.reason.detail, "telegram/default: configured but not connected");
 }
 
@@ -101,27 +95,21 @@ function channelsCtx(channelAccounts: unknown, runOneOffOverride?: () => Promise
   const LEAKED = "leaked-channel-secret-0123456789abcdef";
   registerSecret(LEAKED);
   const longError = `token rejected (auth=${LEAKED}) ${"detail ".repeat(60)}`;
-  const errored = channelsCtx({
+  const errored = channelsResponse({
     telegram: [{ accountId: "default", enabled: true, configured: true, running: true, connected: false, lastError: longError }],
   });
-  const findings = await channelFindings(errored);
+  const findings = channelFindings(errored);
   check("a registered secret in lastError is masked", findings[0]?.reason.detail.includes(LEAKED), false);
   check("the detail is capped rather than carrying the whole message", (findings[0]?.reason.detail.length ?? 0) <= 210, true);
 }
 
 {
-  const failing = channelsCtx({}, async () => ({ code: 1, stdout: "", stderr: "cli refused" }));
-  check("a failing CLI call is a gap, not a finding", await channelFindings(failing), []);
+  check("an absent response (CLI call failed, or channels was never asked) is a gap, not a finding", channelFindings(undefined), []);
 }
 
 {
-  const nonJson = channelsCtx({}, async () => ({ code: 0, stdout: "not json", stderr: "" }));
-  check("a non-JSON answer is a gap, not a finding", await channelFindings(nonJson), []);
-}
-
-{
-  const malformed = channelsCtx("not an object");
-  check("a malformed channelAccounts shape is a gap, not a finding", await channelFindings(malformed), []);
+  const malformed = channelsResponse("not an object");
+  check("a malformed channelAccounts shape is a gap, not a finding", channelFindings(malformed), []);
 }
 
 // --- diskFindings(): degraded below the threshold, down below 10% of it or 100 MB -----------

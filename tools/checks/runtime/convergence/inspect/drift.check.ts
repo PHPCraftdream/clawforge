@@ -222,6 +222,55 @@ try {
     check("versions are answered", inspection.observed.openclawVersion, "OpenClaw 2026.6.34");
   }
 
+  // --- gatherInspection's `channels` option (watch check's own opt-in): rides the same
+  // batched CLI call observeLive already makes for agents/mcp/cron/plugins/skills, so this
+  // never costs a second exec — and inspect/doctor/plan/apply, which never set the option,
+  // see no new field at all ------------------------------------------------------------
+
+  {
+    let batchCalls = 0;
+    const ctx = stubContext({
+      targetEnv: "ZAI_API_KEY=k\n",
+      mirrorChecksums: goodChecksums,
+      channelsStatus: { telegram: [{ accountId: "default", enabled: true, configured: true }] },
+    });
+    const counted = {
+      ...ctx,
+      runtime: {
+        ...ctx.runtime,
+        async runOneOff(service: string, args: string[]) {
+          if (args[0] === "-c") batchCalls += 1;
+          return ctx.runtime.runOneOff(service, args);
+        },
+      },
+    } as unknown as Context;
+    const inspection = await gatherInspection(counted, { channels: true });
+    check("the channels command rides in the same batch — one exec, not two", batchCalls, 1);
+    check(
+      "observed.channels carries channels status --json's parsed answer",
+      inspection.observed.channels,
+      { channelAccounts: { telegram: [{ accountId: "default", enabled: true, configured: true }] } },
+    );
+  }
+
+  {
+    // No channelsStatus on the spec: the fixture's own batch stub leaves this command's line
+    // unmatched, the same shape a real CLI failure inside the batch would produce — proving
+    // that failure is a gap (channels absent), never a thrown inspection.
+    const inspection = await gatherInspection(
+      stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums }),
+      { channels: true },
+    );
+    check("a failing channels command inside the batch leaves observed.channels absent, not a crash", inspection.observed.channels, undefined);
+  }
+
+  {
+    const inspection = await gatherInspection(
+      stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums, channelsStatus: { telegram: [] } }),
+    );
+    check("without the option, observed.channels is absent even when channel data is available", inspection.observed.channels, undefined);
+  }
+
   {
     const desiredStatePath = resolve(deployment, "config", "desired-state.json");
     const validDesiredState = await readFile(desiredStatePath, "utf8");

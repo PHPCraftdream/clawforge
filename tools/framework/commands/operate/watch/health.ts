@@ -2,9 +2,9 @@
 // Not inspect problem codes: neither compares the instance with its declaration.
 
 import { maskSecrets } from "../../../core/io/log.ts";
-import { openclawCliJson } from "../../../service/openclaw-cli.ts";
 import type { Context } from "../../../core/context.ts";
 import type { ExecResult } from "../../../runtime/transport/transport.ts";
+import type { ChannelAccountStatus, ChannelsStatusResponse } from "../../../service/inspection.ts";
 import type { WatchLevel, WatchReason } from "./state.ts";
 
 export const DISK_MIN_MB_ENV = "OC_WATCH_DISK_MIN_MB";
@@ -26,35 +26,21 @@ export interface WatchFinding {
   readonly reason: WatchReason;
 }
 
-interface ChannelAccountStatus {
-  readonly accountId?: unknown;
-  readonly enabled?: unknown;
-  readonly configured?: unknown;
-  readonly running?: unknown;
-  readonly connected?: unknown;
-  readonly lastError?: unknown;
-}
-
-interface ChannelsStatusResponse {
-  readonly channelAccounts?: Record<string, unknown>;
-}
-
 function channelFinding(id: string, detail: string): WatchFinding {
   return { level: "degraded", reason: { code: "CHANNEL_UNHEALTHY", detail: capDetail(`${id}: ${detail}`) } };
 }
 
-/** Per-account channel liveness from `openclaw channels status --json` (verified on 2026.6.34),
- *  without --probe: the status already reflects the background connection. That CLI has no
- *  dead-letter/delivery-failure signal, so none is reported. Only configured, enabled accounts
- *  count; a connected account is healthy even if an old lastError lingers. A CLI failure is a
- *  gap, not a verdict. */
-export async function channelFindings(ctx: Context): Promise<WatchFinding[]> {
-  let response: ChannelsStatusResponse;
-  try {
-    response = await openclawCliJson<ChannelsStatusResponse>(ctx, ["channels", "status", "--json"]);
-  } catch {
-    return [];
-  }
+/** Per-account channel liveness from `openclaw channels status --json`'s already-parsed
+ *  answer (verified on 2026.6.34), gathered by gatherInspection's `channels` option in the
+ *  same batched CLI call as agents/mcp/cron/plugins/skills (inspect/gather.ts) rather than a
+ *  one-off container of its own — a pure function over that data so it needs no ctx and no
+ *  transport to test. Without --probe: the status already reflects the background
+ *  connection. That CLI has no dead-letter/delivery-failure signal, so none is reported. Only
+ *  configured, enabled accounts count; a connected account is healthy even if an old
+ *  lastError lingers. An absent response — the option was not set, or the CLI call itself
+ *  failed — is a gap, not a verdict. */
+export function channelFindings(response: ChannelsStatusResponse | undefined): WatchFinding[] {
+  if (response === undefined) return [];
   const accounts = response.channelAccounts;
   if (accounts === null || typeof accounts !== "object") return [];
 

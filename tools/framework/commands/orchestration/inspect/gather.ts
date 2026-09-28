@@ -52,9 +52,20 @@ export const JSON_ONLY_ARGUMENTS: CommandArgument[] = [
   { name: "json", description: "Emit the whole inspection as JSON", kind: "flag" },
 ];
 
+/** gatherInspection's own opt-in extras — additions no default caller needs, so a caller
+ *  that never passes this second argument gets exactly the inspection it always did. */
+export interface GatherInspectionOptions {
+  /** Also gather `channels status --json`, in the same batched CLI call observeLive already
+   *  makes for agents/mcp/cron/plugins/skills, and expose the parsed answer as
+   *  observed.channels. `./clawforge watch check` is the only caller that sets this — its own
+   *  channel findings used to cost a one-off CLI container every cron cycle; inspect, doctor,
+   *  plan and apply never set it, so their own output is unchanged. */
+  readonly channels?: boolean;
+}
+
 /** The whole picture. Exported because doctor, plan and apply all read it rather than
  *  gathering their own — three gatherers would be three answers to one question. */
-export async function gatherInspection(ctx: Context): Promise<Inspection> {
+export async function gatherInspection(ctx: Context, options?: GatherInspectionOptions): Promise<Inspection> {
   const problems: Problem[] = [];
   const declared = await declaredState(ctx, problems);
 
@@ -165,7 +176,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   await observeDeclarationFile(problems);
   const connectionFacts = await observeConnectionFacts(ctx, problems);
 
-  const live = await observeLive(ctx, declared, problems, configState.mtimeMs, liveConfig);
+  const live = await observeLive(ctx, declared, problems, configState.mtimeMs, liveConfig, options?.channels === true);
 
   // One read of the runtime's own identity, shared below by the set-requirement match and
   // the displayed digest: two separate live queries for one inspection asked the runtime
@@ -252,6 +263,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
       health: live.health,
       egress: live.egress,
       connectionFacts: connectionFacts,
+      channels: live.channels,
       config: configState.config,
       agents: live.agents ?? [],
       mcpServers: live.mcpServers ?? [],

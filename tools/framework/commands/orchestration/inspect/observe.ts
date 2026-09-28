@@ -22,7 +22,7 @@ import {
 } from "#src/commands/management/provision-agent/index.ts";
 import type { RecipeAgentBundle, CronJob } from "#src/commands/management/provision-agent/index.ts";
 import { problem } from "#src/service/inspection.ts";
-import type { Problem, DeclaredState, ObservedState, EgressObservation, ConnectionFactObservation, SecretStoreObservation } from "#src/service/inspection.ts";
+import type { Problem, DeclaredState, ObservedState, EgressObservation, ConnectionFactObservation, SecretStoreObservation, ChannelsStatusResponse } from "#src/service/inspection.ts";
 import type { SecretStatus } from "#src/service/secrets.ts";
 import {
   CONNECTION_FACTS,
@@ -426,6 +426,11 @@ export async function observeLive(
   problems: Problem[],
   configMtimeMs: number | undefined,
   liveConfig: unknown,
+  // watch check's own opt-in (gatherInspection's `channels` option): adds `channels status
+  // --json` to the same batch below instead of a second one-off container. inspect/doctor/
+  // plan/apply never pass true, so their own batch — and everything derived from it — is
+  // unchanged.
+  includeChannels = false,
 ): Promise<Partial<ObservedState> & { plugins: PluginListEntry[]; skills: SkillListEntry[] }> {
   const probes: Record<string, number> = {};
   for (const endpoint of PROBE_ENDPOINTS) {
@@ -490,14 +495,20 @@ export async function observeLive(
   // inspection was the dominant cost doctor/plan measured — trimming wsl.exe spawn counts
   // elsewhere did not move their wall time, this does. Plugins/skills ride along in the same
   // container rather than a second one, for the same reason (security/extensions.ts).
-  const [agentsResult, mcpResult, cronResult, versionResult, pluginsResult, skillsResult] = await openclawCliBatch(ctx, [
+  const batchCommands: string[][] = [
     ["agents", "list", "--json"],
     ["mcp", "list", "--json"],
     ["cron", "list", "--json"],
     ["--version"],
     [...PLUGINS_LIST_ARGS],
     [...SKILLS_LIST_ARGS],
-  ]);
+  ];
+  // Appended, never inserted: every index above is read positionally just below, and an
+  // insertion would shift them all.
+  const channelsIndex = includeChannels ? batchCommands.push(["channels", "status", "--json"]) - 1 : undefined;
+  const batchResults = await openclawCliBatch(ctx, batchCommands);
+  const [agentsResult, mcpResult, cronResult, versionResult, pluginsResult, skillsResult] = batchResults;
+  const channels = channelsIndex === undefined ? undefined : parseChannelsStatus(batchResults[channelsIndex]);
   const agents = parseJsonOrEmpty(agentsResult, (parsed) =>
     (parsed as Array<{ id?: string }>).map((entry) => entry.id ?? "").filter((id) => id !== ""));
   // The full entries, not just names: a server present under the wrong command (or
@@ -643,7 +654,7 @@ export async function observeLive(
   const plugins = parsePluginsList(pluginsResult);
   const skills = parseSkillsList(skillsResult);
 
-  return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion, plugins, skills };
+  return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion, plugins, skills, channels };
 }
 
 /** One batched call's `--json` list, or an empty one when that command failed. A failing
@@ -655,5 +666,17 @@ function parseJsonOrEmpty<T>(result: BatchedCliResult, extract: (parsed: unknown
     return extract(JSON.parse(result.stdout));
   } catch {
     return [];
+  }
+}
+
+/** `channels status --json`'s own batched read, only ever attempted when includeChannels
+ *  opted in above. Absent, not an empty shape, on any failure — the same gap-not-verdict
+ *  reading watch/health.ts's channelFindings() already relies on for a failed CLI call. */
+function parseChannelsStatus(result: BatchedCliResult): ChannelsStatusResponse | undefined {
+  if (result.code !== 0) return undefined;
+  try {
+    return JSON.parse(result.stdout) as ChannelsStatusResponse;
+  } catch {
+    return undefined;
   }
 }

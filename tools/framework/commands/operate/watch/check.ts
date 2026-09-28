@@ -7,7 +7,7 @@
 import { log, info, warn, die, maskSecrets } from "../../../core/io/log.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
 import { gatherInspection } from "../../orchestration/inspect/gather.ts";
-import type { Inspection, Problem, ProblemCode } from "../../../service/inspection.ts";
+import type { Inspection, Problem, ProblemCode, ChannelsStatusResponse } from "../../../service/inspection.ts";
 import type { Context } from "../../../core/context.ts";
 import { readWatchState, writeWatchState } from "./state.ts";
 import type { WatchLevel, WatchReason, WatchState } from "./state.ts";
@@ -72,14 +72,21 @@ function errorDetail(error: unknown): string {
 }
 
 /** watchLevel()'s verdict, or "down" when the inspection could not run at all (Docker daemon
- *  down, SSH refused, wsl.exe silent) — the outage this command exists to report. */
+ *  down, SSH refused, wsl.exe silent) — the outage this command exists to report. Also
+ *  carries the inspection's own observed.channels through, unread by watchLevel() itself
+ *  but exactly what withAdditionalFindings() below needs for channelFindings() — one
+ *  gatherInspection() call (with its `channels` option set) rather than a second one just
+ *  to get the channel data.
+ *
+ *  Defaults to gatherInspection with that option set; a test that passes its own `gather`
+ *  decides for itself whether to include channels — resolveWatchOutcome does not second-guess it. */
 export async function resolveWatchOutcome(
   ctx: Context,
-  gather: (ctx: Context) => Promise<Inspection> = gatherInspection,
-): Promise<{ level: WatchLevel; reasons: WatchReason[] }> {
+  gather: (ctx: Context) => Promise<Inspection> = (target) => gatherInspection(target, { channels: true }),
+): Promise<{ level: WatchLevel; reasons: WatchReason[]; channels?: ChannelsStatusResponse }> {
   try {
     const inspection = await gather(ctx);
-    return watchLevel(inspection.problems);
+    return { ...watchLevel(inspection.problems), channels: inspection.observed.channels };
   } catch (error) {
     return { level: "down", reasons: [{ code: "TARGET_UNREACHABLE", detail: errorDetail(error) }] };
   }
@@ -186,16 +193,18 @@ export async function runWatchCycle(
 }
 
 /** Adds channel/disk findings unless the target is unreachable or not bootstrapped; channels
- *  are skipped while the gateway is down, disk is still read (a full disk often is why). */
+ *  are skipped while the gateway is down, disk is still read (a full disk often is why).
+ *  channelFindings() reads base.channels — resolveWatchOutcome's own gatherInspection call,
+ *  not a second CLI round-trip here. */
 async function withAdditionalFindings(
   ctx: Context,
-  base: { level: WatchLevel; reasons: WatchReason[] },
+  base: { level: WatchLevel; reasons: WatchReason[]; channels?: ChannelsStatusResponse },
 ): Promise<{ level: WatchLevel; reasons: WatchReason[] }> {
   const hasCode = (code: string): boolean => base.reasons.some((entry) => entry.code === code);
   if (hasCode("TARGET_UNREACHABLE") || hasCode("NOT_BOOTSTRAPPED")) return base;
 
   const findings = [
-    ...(hasCode("GATEWAY_DOWN") ? [] : await channelFindings(ctx)),
+    ...(hasCode("GATEWAY_DOWN") ? [] : channelFindings(base.channels)),
     ...(await diskFindings(ctx)),
   ];
   return mergeFindings(base, findings);

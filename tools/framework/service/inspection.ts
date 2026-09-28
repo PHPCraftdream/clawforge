@@ -406,6 +406,22 @@ export interface SecretStoreObservation {
   readonly missing: readonly string[];
 }
 
+/** One channel account, as `openclaw channels status --json` reports it. Loosely typed on
+ *  purpose: this is reading someone else's report to look for trouble in, not validating it. */
+export interface ChannelAccountStatus {
+  readonly accountId?: unknown;
+  readonly enabled?: unknown;
+  readonly configured?: unknown;
+  readonly running?: unknown;
+  readonly connected?: unknown;
+  readonly lastError?: unknown;
+}
+
+/** `openclaw channels status --json`'s own shape, by channel name. */
+export interface ChannelsStatusResponse {
+  readonly channelAccounts?: Record<string, unknown>;
+}
+
 /** What the instance actually is, right now. */
 export interface ObservedState {
   readonly running: boolean;
@@ -428,6 +444,13 @@ export interface ObservedState {
    *  target without ever creating a store, so an absent store is not checked, and this
    *  field's absence is that gap, never a claim that the store is complete. */
   readonly secretStore?: SecretStoreObservation;
+  /** `channels status --json`'s own answer, gathered in the same batched CLI call as
+   *  agents/mcp/cron/plugins/skills only when the caller opted in (gatherInspection's
+   *  `channels` option) — `./clawforge watch check` is the only one that does. Present only
+   *  then, and absent (a gap, never a verdict) when that option was not set or the command
+   *  itself failed: inspect/doctor/plan/apply never ask for it, so their own output never
+   *  carries this field. */
+  readonly channels?: ChannelsStatusResponse;
   /** Image actually in use, and its digest when the runtime can resolve one. */
   readonly image?: string;
   readonly imageDigest?: string;

@@ -123,7 +123,7 @@ function named(index: number): string {
   try {
     const message = await refused(() => backupPruneReplaced(ctx, ["--apply"]));
     check("prune-replaced refuses --apply while another operation holds the lock", message !== "", true);
-    check("and names the flag that recovers it, not a generic failure", message.includes("--break-lock"), true);
+    check("and names how to proceed for a live holder, not a generic failure", message.includes("operations op-holder"), true);
   } finally {
     await held.release();
   }

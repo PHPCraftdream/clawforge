@@ -270,7 +270,8 @@ try {
   // never to be collected by the guard timeout below.
 
   async function runProbeScript(budgetMs: number, urls: string[]): Promise<{ code: number; answers: ProbeAnswer[]; elapsedMs: number }> {
-    const started = Date.now();
+    // Monotonic: the wall clock can step (VM clock sync) while the child's timer keeps running.
+    const started = performance.now();
     const result = await spawnLocal(process.execPath, ["-e", egressProbeScript(budgetMs)], {
       input: JSON.stringify(urls),
       allowFailure: true,
@@ -284,7 +285,7 @@ try {
     } catch {
       // The exit and answer checks below report this; nothing to add here.
     }
-    return { code: result.code, answers, elapsedMs: Date.now() - started };
+    return { code: result.code, answers, elapsedMs: performance.now() - started };
   }
 
   const httpHanging = createServer((_request, response) => {

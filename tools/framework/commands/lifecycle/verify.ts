@@ -258,29 +258,23 @@ async function findSecrets(ctx: Context, directory: string, values: string[], pa
   }
 }
 
-export async function verifySnapshot(
+/** Structural check result: nothing fatal, plus the canonical relative-path listing the
+ *  policy and content-scan phases both need. undefined when the archive already failed. */
+interface StructuralResult {
+  relative: string[];
+  root: string;
+}
+
+/** Validate phase: structural safety (no absolute paths, no `..` escapes, no link written
+ *  through) — needs no unpacking, so it runs before anything below touches the archive's
+ *  content. Returns undefined once the verdict is already decided (unsafe to unpack, or the
+ *  root cannot be canonicalized). */
+async function structuralCheck(
   ctx: Context,
   archive: string,
   profile: Profile,
   onFinding?: (finding: VerifyFinding) => void,
-): Promise<boolean> {
-  if (!(await ctx.transport.exists(archive))) die(`archive not found: ${archive}`);
-
-  const secrets = await collectSecrets(ctx);
-  // The same enumeration archive.ts excludes by: this check is what refuses an archive that
-  // was already taken before that exclusion existed.
-  const [installedPrivatePaths, recordedPrivatePaths] = await Promise.all([
-    installedRecipePrivatePaths(),
-    privatePathsPolicy(ctx),
-  ]);
-  const recipePrivatePaths = [...new Set([...installedPrivatePaths, ...recordedPrivatePaths])];
-  log(
-    `checking against ${secrets.critical.length} provider/gateway and ${secrets.identity.length} identity secret(s)`,
-  );
-
-  let failures = 0;
-
-  // Structural rules first — they need no unpacking.
+): Promise<StructuralResult | undefined> {
   const entries = await listArchive(ctx, archive);
 
   const structural = inspectArchive(entries, await listArchiveLinks(ctx, archive));
@@ -301,7 +295,7 @@ export async function verifySnapshot(
   // run: the content scan itself unpacks the archive, and a rejected count is not a refusal.
   if (structural.some((problem) => problem.fatal)) {
     warn(`snapshot FAILED the '${profile}' check: unsafe to unpack`);
-    return false;
+    return undefined;
   }
 
   // The root is read from the archive, not assumed to be "data": the data directory is
@@ -311,19 +305,29 @@ export async function verifySnapshot(
     canonical = canonicalArchiveEntries(entries);
   } catch (error) {
     warn(`snapshot FAILED the '${profile}' check: ${(error as Error).message}`);
-    return false;
+    return undefined;
   }
   const root = canonicalArchiveEntries([archiveRoot(entries)])[0];
   const relative = canonical.map((entry) => entry === root ? "" : entry.slice(root.length + 1));
+  return { relative, root };
+}
 
+/** Validate phase: the profile's declared exclusions (forbiddenViolations) plus, for
+ *  'share', the positive allow-list — anything new in the data directory is reported
+ *  instead of travelling unnoticed. Returns how many findings were fatal under this profile. */
+function policyViolations(
+  profile: Profile,
+  recipePrivatePaths: readonly string[],
+  relative: readonly string[],
+  onFinding?: (finding: VerifyFinding) => void,
+): number {
+  let failures = 0;
   for (const path of forbiddenViolations(profile, recipePrivatePaths, relative)) {
     warn(`archive contains ${path}, which the '${profile}' profile must exclude`);
     onFinding?.({ kind: "forbidden-path", detail: path, fatal: true });
     failures += 1;
   }
 
-  // For share the allowed set is stated positively as well, so anything new in the data
-  // directory is reported instead of travelling unnoticed.
   if (profile === "share") {
     const unexpected = new Set<string>();
     for (const raw of relative) {
@@ -343,8 +347,22 @@ export async function verifySnapshot(
       failures += 1;
     }
   }
+  return failures;
+}
 
-  // Content scan.
+/** Act phase: unpacks the archive into a private temp tree and greps it for the live
+ *  instance's own secret values, plus scans the archive's own embedded openclaw.json for a
+ *  plain-string key. Removes the temp tree whatever the outcome. Returns how many findings
+ *  were fatal under this profile. */
+async function contentScan(
+  ctx: Context,
+  archive: string,
+  root: string,
+  profile: Profile,
+  secrets: { critical: string[]; identity: string[] },
+  onFinding?: (finding: VerifyFinding) => void,
+): Promise<number> {
+  let failures = 0;
   const session = `/tmp/clawforge-verify-${randomBytes(6).toString("hex")}`;
   const workdir = `${session}/tree`;
   const patternFile = `${session}/patterns`;
@@ -446,6 +464,38 @@ export async function verifySnapshot(
       await ctx.transport.exec(rmHead, rmRest, { allowFailure: true });
     }
   }
+  return failures;
+}
+
+export async function verifySnapshot(
+  ctx: Context,
+  archive: string,
+  profile: Profile,
+  onFinding?: (finding: VerifyFinding) => void,
+): Promise<boolean> {
+  if (!(await ctx.transport.exists(archive))) die(`archive not found: ${archive}`);
+
+  const secrets = await collectSecrets(ctx);
+  // The same enumeration archive.ts excludes by: this check is what refuses an archive that
+  // was already taken before that exclusion existed.
+  const [installedPrivatePaths, recordedPrivatePaths] = await Promise.all([
+    installedRecipePrivatePaths(),
+    privatePathsPolicy(ctx),
+  ]);
+  const recipePrivatePaths = [...new Set([...installedPrivatePaths, ...recordedPrivatePaths])];
+  log(
+    `checking against ${secrets.critical.length} provider/gateway and ${secrets.identity.length} identity secret(s)`,
+  );
+
+  // Structural rules first — they need no unpacking.
+  const structural = await structuralCheck(ctx, archive, profile, onFinding);
+  if (structural === undefined) return false;
+  const { relative, root } = structural;
+
+  let failures = policyViolations(profile, recipePrivatePaths, relative, onFinding);
+
+  // Content scan.
+  failures += await contentScan(ctx, archive, root, profile, secrets, onFinding);
 
   if (failures > 0) {
     warn(`snapshot FAILED the '${profile}' check: ${failures} finding(s)`);

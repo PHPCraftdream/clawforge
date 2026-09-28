@@ -292,11 +292,20 @@ async function verifyEmbeddedNativeManifest(ctx: Context, archive: string, manif
   }
 }
 
-export async function restoreArchive(
-  ctx: Context,
-  archive: string,
-  options: RestoreOptions = {},
-): Promise<void> {
+/** Prepared inputs for the restore transaction: hook applied, archive validated
+ *  structurally and against the native manifest, ancestry checked, confirmation taken. */
+interface PreparedRestore {
+  archive: string;
+  entries: string[];
+  name: string;
+  dataDir: string;
+  parent: string;
+}
+
+/** Validate/prepare phase: runs the beforeRestore hook, checks the archive is safe to
+ *  unpack (structure, root name, embedded native manifest), and confirms with the operator.
+ *  Nothing is stopped or moved yet — a die() here leaves the instance untouched. */
+async function prepareRestore(ctx: Context, archive: string, options: RestoreOptions): Promise<PreparedRestore> {
   // Before anything else — nothing is validated, stopped or moved yet. A hook can decrypt
   // or fetch the real archive and hand back the path to use instead; a failure here means
   // the restore never started, so there is nothing to compensate.
@@ -352,6 +361,87 @@ export async function restoreArchive(
     if (!(await confirm("Type 'yes' to continue: "))) die("aborted");
   }
 
+  return { archive, entries, name, dataDir, parent };
+}
+
+/** State performRestore's try block accumulates, needed by rollbackRestore if it fails. */
+interface RestoreProgress {
+  wasRunning: boolean;
+  aside: string | undefined;
+  oldDataMoved: boolean;
+  restoreMayHaveWritten: boolean;
+  historyImported: boolean;
+  ledgerBefore: PrivatePathsLedgerState | undefined;
+}
+
+/** Compensation for a failed act phase: restores the previous data, reverts the privacy
+ *  ledger to exactly what it held before, and restarts the gateway if it was running —
+ *  then always rethrows, wrapped in an AggregateError when a compensation itself fails. */
+async function rollbackRestore(ctx: Context, dataDir: string, parent: string, progress: RestoreProgress, error: unknown): Promise<never> {
+  const { wasRunning, aside, oldDataMoved, restoreMayHaveWritten, historyImported, ledgerBefore } = progress;
+  // A half-unpacked or rejected directory is worse than nothing: this operation's own
+  // staging root must never survive its own failure, whether or not there was previous
+  // data to put back in its place — a clean target left with a failed extraction's
+  // leftovers reads as existing state to the next bootstrap/restore.
+  warn(oldDataMoved ? "restore failed — restoring the previous data" : "restore failed — removing the unpacked tree");
+  const compensationErrors: unknown[] = [];
+  if (restoreMayHaveWritten) {
+    try {
+      await verifyDataDirAncestry(ctx, dataDir);
+      await runMaybePrivileged(ctx, dataDir, "rm", ["-rf", dataDir], { force: await needsOwnerEscalation(ctx, OWNER) });
+    } catch (rollbackError) { compensationErrors.push(rollbackError); }
+  }
+  if (oldDataMoved && aside !== undefined) {
+    try {
+      await verifyDataDirAncestry(ctx, dataDir);
+      await runMaybePrivileged(ctx, parent, "mv", [aside, dataDir]);
+    } catch (rollbackError) { compensationErrors.push(rollbackError); }
+  }
+  // The import already landed in the operator-side ledger before this failure: put it back
+  // to exactly what it held before this restore touched it, not just "whatever the merge
+  // added" — a concurrent change during the same held lock is not expected, and this is the
+  // rollback of THIS restore's own effect, nothing else's. The rollback restores that state
+  // FAITHFULLY, absence included: writing an empty ledger when none existed before would
+  // fabricate a forget-shaped file — a witness to a forget this operator never asked for.
+  if (historyImported) {
+    warn("restore failed after privacy history was imported — reverting the ledger");
+    const snapshot = ledgerBefore;
+    // historyImported is only ever true after the snapshot succeeded, so the undefined case
+    // is unreachable today; it stays a plain no-op rather than a non-null assertion.
+    if (snapshot !== undefined) {
+      if (snapshot.existed) {
+        try {
+          await mutatePrivatePathsLedgerState(privatePathsLedgerFile(), () => ({
+            next: { paths: snapshot.paths, forgotten: snapshot.forgotten },
+            value: undefined,
+          }));
+        } catch (rollbackError) { compensationErrors.push(rollbackError); }
+      } else {
+        try { await removePrivatePathsLedger(privatePathsLedgerFile()); }
+        catch (rollbackError) { compensationErrors.push(rollbackError); }
+      }
+    }
+  }
+  if (wasRunning) {
+    try {
+      if (!(await ctx.runtime.isRunning())) {
+        await ctx.runtime.start();
+        await ctx.runtime.waitForHealth();
+      }
+    } catch (rollbackError) { compensationErrors.push(rollbackError); }
+  }
+  if (compensationErrors.length > 0) {
+    for (const compensationError of compensationErrors) warn(`restore compensation failed: ${(compensationError as Error).message}`);
+    throw new AggregateError([error, ...compensationErrors], "restore failed and one or more compensations also failed");
+  }
+  throw error;
+}
+
+/** Act phase: stops the gateway, moves the current data aside, unpacks the archive and
+ *  applies its post-unpack steps (layout check, privacy history import, fresh-identity,
+ *  ensureDataDirs). On failure, delegates to rollbackRestore, which always throws. */
+async function performRestore(ctx: Context, prepared: PreparedRestore, options: RestoreOptions): Promise<string | undefined> {
+  const { archive, entries, name, dataDir, parent } = prepared;
   const wasRunning = await ctx.runtime.isRunning();
   log("stopping containers");
   let aside: string | undefined;
@@ -415,64 +505,15 @@ export async function restoreArchive(
     // pre-existing directory this run merely stumbled onto.
     await ensureDataDirs(ctx, { trustExisting: true });
   } catch (error) {
-    // A half-unpacked or rejected directory is worse than nothing: this operation's own
-    // staging root must never survive its own failure, whether or not there was previous
-    // data to put back in its place — a clean target left with a failed extraction's
-    // leftovers reads as existing state to the next bootstrap/restore.
-    warn(oldDataMoved ? "restore failed — restoring the previous data" : "restore failed — removing the unpacked tree");
-    const compensationErrors: unknown[] = [];
-    if (restoreMayHaveWritten) {
-      try {
-        await verifyDataDirAncestry(ctx, dataDir);
-        await runMaybePrivileged(ctx, dataDir, "rm", ["-rf", dataDir], { force: await needsOwnerEscalation(ctx, OWNER) });
-      } catch (rollbackError) { compensationErrors.push(rollbackError); }
-    }
-    if (oldDataMoved && aside !== undefined) {
-      try {
-        await verifyDataDirAncestry(ctx, dataDir);
-        await runMaybePrivileged(ctx, parent, "mv", [aside, dataDir]);
-      } catch (rollbackError) { compensationErrors.push(rollbackError); }
-    }
-    // The import already landed in the operator-side ledger before this failure: put it back
-    // to exactly what it held before this restore touched it, not just "whatever the merge
-    // added" — a concurrent change during the same held lock is not expected, and this is the
-    // rollback of THIS restore's own effect, nothing else's. The rollback restores that state
-    // FAITHFULLY, absence included: writing an empty ledger when none existed before would
-    // fabricate a forget-shaped file — a witness to a forget this operator never asked for.
-    if (historyImported) {
-      warn("restore failed after privacy history was imported — reverting the ledger");
-      const snapshot = ledgerBefore;
-      // historyImported is only ever true after the snapshot succeeded, so the undefined case
-      // is unreachable today; it stays a plain no-op rather than a non-null assertion.
-      if (snapshot !== undefined) {
-        if (snapshot.existed) {
-          try {
-            await mutatePrivatePathsLedgerState(privatePathsLedgerFile(), () => ({
-              next: { paths: snapshot.paths, forgotten: snapshot.forgotten },
-              value: undefined,
-            }));
-          } catch (rollbackError) { compensationErrors.push(rollbackError); }
-        } else {
-          try { await removePrivatePathsLedger(privatePathsLedgerFile()); }
-          catch (rollbackError) { compensationErrors.push(rollbackError); }
-        }
-      }
-    }
-    if (wasRunning) {
-      try {
-        if (!(await ctx.runtime.isRunning())) {
-          await ctx.runtime.start();
-          await ctx.runtime.waitForHealth();
-        }
-      } catch (rollbackError) { compensationErrors.push(rollbackError); }
-    }
-    if (compensationErrors.length > 0) {
-      for (const compensationError of compensationErrors) warn(`restore compensation failed: ${(compensationError as Error).message}`);
-      throw new AggregateError([error, ...compensationErrors], "restore failed and one or more compensations also failed");
-    }
-    throw error;
+    await rollbackRestore(ctx, dataDir, parent, { wasRunning, aside, oldDataMoved, restoreMayHaveWritten, historyImported, ledgerBefore }, error);
   }
+  return aside;
+}
 
+/** Verify/report phase: warns about sidecars still bound to the previous data, then starts
+ *  the gateway back up (or explains why it was left stopped). Runs only once performRestore
+ *  has succeeded. */
+async function reportRestoreOutcome(ctx: Context, archive: string, aside: string | undefined, options: RestoreOptions): Promise<void> {
   // The gateway was stopped; recipe stacks are not and cannot be — they are separate
   // Compose projects, and re-resolving another project's bind mounts is not this
   // command's to do. A sidecar mounting a file or directory under the data directory
@@ -517,6 +558,16 @@ export async function restoreArchive(
   await ctx.runtime.waitForHealth();
   log(`restore complete from ${archive}`);
   if (aside !== undefined) info(`previous data kept at ${aside}`);
+}
+
+export async function restoreArchive(
+  ctx: Context,
+  archive: string,
+  options: RestoreOptions = {},
+): Promise<void> {
+  const prepared = await prepareRestore(ctx, archive, options);
+  const aside = await performRestore(ctx, prepared, options);
+  await reportRestoreOutcome(ctx, prepared.archive, aside, options);
 }
 
 export async function restore(ctx: Context, args: string[]): Promise<void> {

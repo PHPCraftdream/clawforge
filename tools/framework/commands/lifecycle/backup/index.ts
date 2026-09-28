@@ -353,6 +353,23 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   const profile: Profile = options.profile ?? "full";
   const { dataDir, backupDir } = ctx.settings;
 
+  await validateBackupTarget(ctx, options, profile, dataDir, backupDir);
+
+  const archive = `${backupDir}/${backupArchiveName(deploymentName(), timestamp(), profile)}`;
+  // Keep the archive in a private directory until it is complete. The final name must only
+  // appear after tar and chmod succeed, so a failed tar cannot become the newest backup.
+  const stagingDir = `${backupDir}/.clawforge-backup-${randomUUID()}`;
+  const stagingArchive = `${stagingDir}/archive.tar.gz`;
+
+  await runBackupTransaction(ctx, options, profile, dataDir, backupDir, archive, stagingDir, stagingArchive);
+
+  return reportBackupCreated(ctx, archive, profile, backupDir, options);
+}
+
+/** Validate/prepare phase: refuses a request the rest of createBackupLocked cannot honor
+ *  (native+non-full, a missing or symlinked data directory) and ensures the backup
+ *  directory exists. Nothing is stopped yet — a die() here leaves the instance untouched. */
+async function validateBackupTarget(ctx: Context, options: BackupOptions, profile: Profile, dataDir: string, backupDir: string): Promise<void> {
   if (options.native === true && profile !== "full") {
     die("--native only supports the full profile — migrate/share stay on the framework's own tar path");
   }
@@ -374,96 +391,111 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
   const mkdirPrefix = await sudoFor(ctx, backupDir);
   const [mkHead, ...mkRest] = [...mkdirPrefix, "mkdir", "-p", backupDir];
   await ctx.transport.exec(mkHead, mkRest);
+}
 
-  const archive = `${backupDir}/${backupArchiveName(deploymentName(), timestamp(), profile)}`;
-  // Keep the archive in a private directory until it is complete. The final name must only
-  // appear after tar and chmod succeed, so a failed tar cannot become the newest backup.
-  const stagingDir = `${backupDir}/.clawforge-backup-${randomUUID()}`;
-  const stagingArchive = `${stagingDir}/archive.tar.gz`;
-  const wasRunning = await ctx.runtime.isRunning();
+/** Marks whether the staging directory was created, so settleBackupTransaction's cleanup
+ *  runs only once there is something to clean up — set by writeAndPublishArchive as it
+ *  progresses, read after it returns or throws. */
+interface BackupProgress {
+  stagingCreated: boolean;
+}
 
-  const quiesced: Recipe[] = [];
-  let stagingCreated = false;
-  let resultError: unknown;
-  // Shared with createNativeArchive, whose cleanup failures are compensations too.
-  const compensationErrors: unknown[] = [];
-
-  try {
-    if (options.native === true) {
-      log("native backup: OpenClaw's own point-in-time mechanism — the gateway keeps running throughout");
-    } else if (options.hot === true) {
-      warn("hot backup: the gateway keeps writing, the archive may catch a partial sqlite write");
-    } else if (wasRunning) {
-      log("stopping the gateway for a consistent snapshot");
-      await ctx.runtime.pause();
-    }
-
-    // Every operation after pause, including sidecar discovery, belongs to this
-    // compensation scope: discovery and hook loading can both fail. Native never pauses in
-    // the first place, so quiescing recipe stacks buys it nothing either — same reasoning
-    // --hot already applies below.
-    const sidecars = await runningRecipeStacks(ctx);
-    if (options.hot !== true && options.native !== true && options.leaveStopped !== true && sidecars.length > 0) {
-      const outcome = await quiesceRecipeStacks(ctx, sidecars);
-      quiesced.push(...outcome.quiesced);
-      if (outcome.unquiesced.length > 0) {
-        throw new Error(
-          `backup refused because recipe stack(s) could not be quiesced: ${outcome.unquiesced.map((recipe) => recipe.name).join(", ")}`,
-        );
-      }
-    } else if (sidecars.length > 0) {
-      warn(`recipe stack(s) remain running during this transaction: ${sidecars.map((recipe) => recipe.name).join(", ")}`);
-    }
-
-    log(`writing ${archive}`);
-    const mkdirStagePrefix = await sudoFor(ctx, backupDir);
-    const [mkdirStageHead, ...mkdirStageRest] = [
-      ...mkdirStagePrefix,
-      "mkdir",
-      "-m",
-      "700",
-      "--",
-      stagingDir,
-    ];
-    await ctx.transport.exec(mkdirStageHead, mkdirStageRest);
-    stagingCreated = true;
-
-    if (options.native === true) {
-      await createNativeArchive(ctx, stagingDir, stagingArchive, dataDirName(dataDir), compensationErrors);
-    } else {
-      await createArchive(ctx, { archive: stagingArchive, profile });
-    }
-    // tar exiting 0 and the file landing are not evidence the data is inside: a symlinked
-    // root can produce an archive that holds nothing beneath its root, which restores
-    // nothing anywhere. Checked on the staging archive, before it can become the newest
-    // backup.
-    if (!archiveCarriesContent(await listArchive(ctx, stagingArchive))) {
-      throw new Error(`the fresh archive of ${dataDir} carries no data beneath its root — refusing to publish it as a backup`);
-    }
-    if (profile !== "full" && !(await verifySnapshot(ctx, stagingArchive, profile))) {
-      throw new Error(`the fresh '${profile}' backup failed its privacy check — refusing to publish it`);
-    }
-
-    const chmodPrefix = await sudoFor(ctx, stagingArchive);
-    const [chHead, ...chRest] = [...chmodPrefix, "chmod", "600", stagingArchive];
-    await ctx.transport.exec(chHead, chRest);
-
-    const movePrefix = await sudoFor(ctx, archive);
-    const [moveHead, ...moveRest] = [...movePrefix, "mv", "-nT", "--", stagingArchive, archive];
-    const moved = await ctx.transport.exec(moveHead, moveRest, { allowFailure: true });
-    if (moved.code !== 0) {
-      throw new Error(`could not publish ${archive}: ${moved.stderr.trim() || `mv exited ${moved.code}`}`);
-    }
-
-    const remaining = await targetExists(ctx, stagingArchive);
-    if (remaining) throw new Error(`backup path already exists: ${archive}`);
-    if (!(await targetExists(ctx, archive))) {
-      throw new Error(`could not confirm publication of ${archive}`);
-    }
-  } catch (error) {
-    resultError = error;
+/** Act phase (creation half): stops the gateway (unless hot/native), quiesces recipe
+ *  stacks, writes the archive to staging, verifies it, and publishes it under its final
+ *  name. Throws on any failure; settleBackupTransaction cleans up regardless. */
+async function writeAndPublishArchive(
+  ctx: Context,
+  options: BackupOptions,
+  profile: Profile,
+  wasRunning: boolean,
+  dataDir: string,
+  backupDir: string,
+  archive: string,
+  stagingDir: string,
+  stagingArchive: string,
+  quiesced: Recipe[],
+  compensationErrors: unknown[],
+  progress: BackupProgress,
+): Promise<void> {
+  if (options.native === true) {
+    log("native backup: OpenClaw's own point-in-time mechanism — the gateway keeps running throughout");
+  } else if (options.hot === true) {
+    warn("hot backup: the gateway keeps writing, the archive may catch a partial sqlite write");
+  } else if (wasRunning) {
+    log("stopping the gateway for a consistent snapshot");
+    await ctx.runtime.pause();
   }
 
+  // Every operation after pause, including sidecar discovery, belongs to this
+  // compensation scope: discovery and hook loading can both fail. Native never pauses in
+  // the first place, so quiescing recipe stacks buys it nothing either — same reasoning
+  // --hot already applies below.
+  const sidecars = await runningRecipeStacks(ctx);
+  if (options.hot !== true && options.native !== true && options.leaveStopped !== true && sidecars.length > 0) {
+    const outcome = await quiesceRecipeStacks(ctx, sidecars);
+    quiesced.push(...outcome.quiesced);
+    if (outcome.unquiesced.length > 0) {
+      throw new Error(
+        `backup refused because recipe stack(s) could not be quiesced: ${outcome.unquiesced.map((recipe) => recipe.name).join(", ")}`,
+      );
+    }
+  } else if (sidecars.length > 0) {
+    warn(`recipe stack(s) remain running during this transaction: ${sidecars.map((recipe) => recipe.name).join(", ")}`);
+  }
+
+  log(`writing ${archive}`);
+  const mkdirStagePrefix = await sudoFor(ctx, backupDir);
+  const [mkdirStageHead, ...mkdirStageRest] = [...mkdirStagePrefix, "mkdir", "-m", "700", "--", stagingDir];
+  await ctx.transport.exec(mkdirStageHead, mkdirStageRest);
+  progress.stagingCreated = true;
+
+  if (options.native === true) {
+    await createNativeArchive(ctx, stagingDir, stagingArchive, dataDirName(dataDir), compensationErrors);
+  } else {
+    await createArchive(ctx, { archive: stagingArchive, profile });
+  }
+  // tar exiting 0 and the file landing are not evidence the data is inside: a symlinked
+  // root can produce an archive that holds nothing beneath its root, which restores
+  // nothing anywhere. Checked on the staging archive, before it can become the newest
+  // backup.
+  if (!archiveCarriesContent(await listArchive(ctx, stagingArchive))) {
+    throw new Error(`the fresh archive of ${dataDir} carries no data beneath its root — refusing to publish it as a backup`);
+  }
+  if (profile !== "full" && !(await verifySnapshot(ctx, stagingArchive, profile))) {
+    throw new Error(`the fresh '${profile}' backup failed its privacy check — refusing to publish it`);
+  }
+
+  const chmodPrefix = await sudoFor(ctx, stagingArchive);
+  const [chHead, ...chRest] = [...chmodPrefix, "chmod", "600", stagingArchive];
+  await ctx.transport.exec(chHead, chRest);
+
+  const movePrefix = await sudoFor(ctx, archive);
+  const [moveHead, ...moveRest] = [...movePrefix, "mv", "-nT", "--", stagingArchive, archive];
+  const moved = await ctx.transport.exec(moveHead, moveRest, { allowFailure: true });
+  if (moved.code !== 0) {
+    throw new Error(`could not publish ${archive}: ${moved.stderr.trim() || `mv exited ${moved.code}`}`);
+  }
+
+  const remaining = await targetExists(ctx, stagingArchive);
+  if (remaining) throw new Error(`backup path already exists: ${archive}`);
+  if (!(await targetExists(ctx, archive))) {
+    throw new Error(`could not confirm publication of ${archive}`);
+  }
+}
+
+/** Act phase (settle half): always runs after writeAndPublishArchive, success or failure —
+ *  removes the staging directory, restarts the gateway if this transaction stopped it, and
+ *  resumes any quiesced recipe stacks. Compensation failures accumulate; they never replace
+ *  the original error. */
+async function settleBackupTransaction(
+  ctx: Context,
+  options: BackupOptions,
+  wasRunning: boolean,
+  stagingCreated: boolean,
+  stagingDir: string,
+  quiesced: Recipe[],
+  compensationErrors: unknown[],
+): Promise<void> {
   if (stagingCreated) {
     try {
       await runMaybePrivileged(ctx, stagingDir, "rm", ["-rf", "--", stagingDir]);
@@ -484,13 +516,46 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     info("leaving the gateway stopped — the caller restarts it once its own transaction is done");
   }
   if (quiesced.length > 0) compensationErrors.push(...await resumeRecipeStacks(ctx, quiesced));
+}
+
+/** Act phase: orchestrates writeAndPublishArchive and settleBackupTransaction, and turns
+ *  their combined outcome into the one thrown error (or none) the caller sees. */
+async function runBackupTransaction(
+  ctx: Context,
+  options: BackupOptions,
+  profile: Profile,
+  dataDir: string,
+  backupDir: string,
+  archive: string,
+  stagingDir: string,
+  stagingArchive: string,
+): Promise<void> {
+  const wasRunning = await ctx.runtime.isRunning();
+  const quiesced: Recipe[] = [];
+  const progress: BackupProgress = { stagingCreated: false };
+  let resultError: unknown;
+  // Shared with createNativeArchive, whose cleanup failures are compensations too.
+  const compensationErrors: unknown[] = [];
+
+  try {
+    await writeAndPublishArchive(ctx, options, profile, wasRunning, dataDir, backupDir, archive, stagingDir, stagingArchive, quiesced, compensationErrors, progress);
+  } catch (error) {
+    resultError = error;
+  }
+
+  await settleBackupTransaction(ctx, options, wasRunning, progress.stagingCreated, stagingDir, quiesced, compensationErrors);
 
   if (resultError !== undefined && compensationErrors.length > 0) {
     throw new AggregateError([resultError, ...compensationErrors], "backup failed and compensation also failed");
   }
   if (resultError !== undefined) throw resultError;
   if (compensationErrors.length > 0) throw new AggregateError(compensationErrors, "backup completed but compensation failed");
+}
 
+/** Verify/report phase: announces the published archive, rotates old ones, and runs the
+ *  application's afterBackup hook (if declared). Runs only once runBackupTransaction has
+ *  succeeded. */
+async function reportBackupCreated(ctx: Context, archive: string, profile: Profile, backupDir: string, options: BackupOptions): Promise<string> {
   log(`backup done: ${archive} (${await fileSize(ctx, archive)}, profile: ${profile})`);
   await rotate(ctx, backupDir);
 

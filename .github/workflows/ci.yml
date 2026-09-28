@@ -102,6 +102,7 @@ jobs:
             tools/checks/foundation/cli/cli-help.check.ts
             tools/checks/foundation/cli/cli-helper.check.ts
             tools/checks/foundation/cli/gate-commands.check.ts
+            tools/checks/foundation/cli/gate-dispatch.check.ts
             tools/checks/foundation/cli/help-groups.check.ts
             tools/checks/foundation/cli/host.check.ts
             tools/checks/foundation/cli/passthrough-help.check.ts
@@ -116,6 +117,7 @@ jobs:
             tools/checks/foundation/layout.check.ts
             tools/checks/foundation/packaging/build-output.check.ts
             tools/checks/foundation/providers/provider.check.ts
+            tools/checks/foundation/spawn-noise.check.ts
             tools/checks/integration/agent/agent-bundle-portable-content.check.ts
             tools/checks/integration/agent/cron-timezone.check.ts
             tools/checks/integration/agent/provision-agent.check.ts
@@ -126,6 +128,7 @@ jobs:
             tools/checks/integration/apps/app-hooks.check.ts
             tools/checks/integration/apps/app-recipes-dir.check.ts
             tools/checks/integration/init.check.ts
+            tools/checks/integration/list.check.ts
             tools/checks/integration/mcp-safety-policy.check.ts
             tools/checks/integration/mcp/mcp-apply-report.check.ts
             tools/checks/integration/mcp/mcp-mirror.check.ts
@@ -197,6 +200,7 @@ jobs:
             tools/checks/runtime/service/state/rotation.check.ts
             tools/checks/runtime/service/state/backup-policy.check.ts
             tools/checks/runtime/service/state/backup-pull-flags.check.ts
+            tools/checks/runtime/service/state/backup-restore-hooks.check.ts
             tools/checks/runtime/service/state/native-backup.check.ts
             tools/checks/security/acceptance/accept.check.ts
             tools/checks/security/acceptance/plan.check.ts
@@ -223,6 +227,9 @@ jobs:
             tools/checks/runtime/watch/check.check.ts
             tools/checks/runtime/watch/install.check.ts
             tools/checks/runtime/watch/status.check.ts
+            tools/checks/runtime/watch/health.check.ts
+            tools/checks/runtime/watch/heartbeat.check.ts
+            tools/checks/runtime/watch/webhook.check.ts
             tools/checks/security/incident/incident.check.ts
             tools/checks/security/private-paths-ledger/serialization.check.ts
             tools/checks/security/private-paths-ledger/reconcile-history.check.ts

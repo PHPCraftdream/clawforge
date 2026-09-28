@@ -50,17 +50,22 @@ export interface StructuredResult {
 }
 
 /** Declared to clients so the shape above is known before a call rather than discovered
- *  from one. The same for every structured command, because the envelope is. */
+ *  from one. The same for every structured command, because the envelope is — types and
+ *  required-ness only; a per-field description here would be the same ~90 bytes repeated on
+ *  every structured tool for no gain, since it is the same field on all of them. The meaning
+ *  of each (operationId/changed/healthy/problems/warnings/nextActions/result — see
+ *  StructuredResult above) is in `help`'s output for a structured command instead
+ *  (help-render.ts), which every client can already reach and pays for once, not per tool. */
 export const STRUCTURED_OUTPUT_SCHEMA = {
   type: "object",
   properties: {
-    operationId: { type: "string", description: "Command operation id when available; otherwise this tool call id" },
-    changed: { type: "boolean", description: "Whether the call may have changed state" },
-    healthy: { type: "boolean", description: "Whether the instance is doing its job, when the command knows" },
-    problems: { type: "array", description: "Findings, each with a stable code, severity, detail and nextAction" },
-    warnings: { type: "array", description: "The subset of problems that are not blocking" },
-    nextActions: { type: "array", items: { type: "string" }, description: "Commands that resolve the findings" },
-    result: { description: "The command's own output, unaltered — its JSON document when it emits one, its text otherwise" },
+    operationId: { type: "string" },
+    changed: { type: "boolean" },
+    healthy: { type: "boolean" },
+    problems: { type: "array" },
+    warnings: { type: "array" },
+    nextActions: { type: "array", items: { type: "string" } },
+    result: {},
   },
   required: ["operationId", "changed", "problems", "warnings", "nextActions", "result"],
 } as const;
@@ -159,7 +164,7 @@ export function maskStructuredOutput(output: string, machineOutput: string | und
 
 /** The tool description: one-line summary plus a pointer to the `help` tool for the full text. */
 export function toolDescription(name: string, command: Declared): string {
-  return `${command.summary}${destructiveMarker(command)}\n\nFull description: call the \`help\` tool with command=${name}.`;
+  return `${command.summary}${destructiveMarker(command)}\n\nFull text: call help with command=${name}.`;
 }
 
 /** Hard cut for a shortened argument description; `help <command>` keeps the full text. */

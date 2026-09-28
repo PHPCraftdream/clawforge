@@ -231,7 +231,7 @@ try {
     recipeActionSchema?.enum,
     ["list", "import", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
   );
-  check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes("call the `help` tool with command=recipe"), true);
+  check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes("call help with command=recipe"), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
     check("recipe install remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["install"]), false);
     check("recipe remove remains destructive for MCP gating", openclawCommands.recipe!.readOnlyWhen?.(["remove"]), false);

@@ -254,6 +254,15 @@ All notable changes to `@clawforge/framework` will be documented here.
   also the one lock-taking command with no `--break-lock` of its own and a refusal pointing at
   a different command to break it; it now declares and threads `--break-lock`/
   `--break-foreign-lock` like every other ordinary lock-taking command.
+* `control-mcp`'s `tools/list` shrank from ~37.2 KB toward its 30 KB target (now ~30.4 KB):
+  the structured-command `outputSchema` (identical on every one of them) now declares types
+  and required fields only, not a ~90-byte prose description repeated per field per tool —
+  that meaning now lives in `help <command>`'s own output for a structured command instead,
+  reachable the same way any other detail `tools/list` shortens already is; each tool's
+  description also points at `help` in fewer words. `mcp-mirror.check.ts`'s byte budget drops
+  from 38 KB to 32 KB (just above the ~31 KB now reached) and gained checks that every
+  structured tool still declares the documented generic envelope and that its field meanings
+  are still reachable through `help`.
 
 ## 0.1.0
 

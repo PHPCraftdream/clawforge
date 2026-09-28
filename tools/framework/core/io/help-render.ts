@@ -131,6 +131,16 @@ export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
   info("Run `./clawforge help <command>` or `./clawforge <command> --help` for its full description.");
 }
 
+/** The envelope every structured tool call answers in (integration/mcp/schema.ts's
+ *  StructuredResult) — field meanings only, not repeated in the MCP outputSchema itself
+ *  (which declares types and required-ness, identically, on every structured tool). This is
+ *  where that meaning lives instead, reachable through `help <command>` the same as any
+ *  other detail `tools/list` shortens. */
+export const STRUCTURED_ENVELOPE_HELP =
+  "Every call answers in one envelope: operationId (a stable id), changed (bool), " +
+  "healthy (bool, when known), problems/warnings (findings), nextActions (commands to run " +
+  "next), result (the command's own output, unaltered).";
+
 /** One command's full `--help` body plus the destructive-state note entry/cli.ts's console
  *  path appends after it. */
 export function renderFullCommandHelp(name: string, command: AppCommand): void {
@@ -140,5 +150,9 @@ export function renderFullCommandHelp(name: string, command: AppCommand): void {
     info(command.readOnlyWhen === undefined
       ? "This command replaces or destroys state."
       : "This command can replace or destroy state, depending on the action given.");
+  }
+  if (command.structured === true) {
+    info("");
+    info(STRUCTURED_ENVELOPE_HELP);
   }
 }

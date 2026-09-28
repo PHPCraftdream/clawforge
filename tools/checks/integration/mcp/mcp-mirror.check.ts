@@ -17,7 +17,8 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { MCP_EXEMPTIONS } from "#framework/integration/mcp/server.ts";
+import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA } from "#framework/integration/mcp/server.ts";
+import { STRUCTURED_ENVELOPE_HELP } from "#framework/core/io/help-render.ts";
 
 let failed = 0;
 
@@ -80,7 +81,7 @@ try {
     .split("\n")
     .filter((line) => line.trim() !== "")
     .map((line) => JSON.parse(line) as {
-      result?: { tools?: Array<{ name: string; description?: string; inputSchema?: { properties?: Record<string, { description?: string }> } }> };
+      result?: { tools?: Array<{ name: string; description?: string; inputSchema?: { properties?: Record<string, { description?: string }> }; outputSchema?: unknown }> };
     })
     .find((entry) => entry.result?.tools !== undefined);
   const fullTools = response?.result?.tools ?? [];
@@ -110,21 +111,24 @@ try {
 
   // tools/list's byte budget: an agent pays this in context before its first real call, every
   // session — each tool description is a one-line summary plus a pointer to `help`, not the
-  // whole `--help` text. What is left is inputSchema: argument names, choices, and now a
-  // short (~60 char) clause per description instead of its full `--help` text — schema.ts's
+  // whole `--help` text. inputSchema keeps argument names, choices, and a short (~60 char)
+  // clause per description instead of its full `--help` text — schema.ts's
   // schemaArgumentDescription cuts each at its first sentence/clause boundary, drops
   // parenthetical asides, and omits a description that only restates the argument's own
-  // name. `help <command>` (renderHelp) and the CLI `--help` still carry every description
-  // whole; only the copy sent up front in tools/list is shortened.
+  // name. outputSchema (STRUCTURED_OUTPUT_SCHEMA, declared once per structured command)
+  // carries types and required-ness only, not the ~90-byte prose per field that used to sit
+  // on every one of them identically — that meaning is in `help`'s output for a structured
+  // command now (STRUCTURED_ENVELOPE_HELP, checked below). `help <command>` (renderHelp) and
+  // the CLI `--help` still carry every argument description whole; only the copy sent up
+  // front in tools/list is shortened.
   //
-  // 30 KB (30720 bytes) was the target for this budget; it is not reachable without cutting
-  // an argument description well below the point where it still says anything a name did
-  // not already say — the ~19 KB left once every inputSchema description is empty is tool
-  // names/descriptions, outputSchema (declared once per structured command) and JSON
-  // structure, none of which this check's scope covers. 37471 bytes is what shortening
-  // reaches while keeping a real clause per argument; the budget below sits just above that,
-  // not at the 30 KB originally asked for.
-  const TOOLS_LIST_BUDGET = 38 * 1024;
+  // 30 KB (30720 bytes) was the target for this budget. Shortening inputSchema descriptions,
+  // outputSchema and the tool-description help pointer together reach ~31 KB — inputSchema's
+  // argument names/types/required/choices are what is left, and cutting those would mean a
+  // client can no longer tell a command's arguments apart without calling `help` first, which
+  // is the information `tools/list` exists to carry. The budget below sits just above what is
+  // reached, not at 30 KB.
+  const TOOLS_LIST_BUDGET = 32 * 1024;
   const toolsListBytes = Buffer.byteLength(JSON.stringify(response?.result ?? {}), "utf8");
   process.stderr.write(`  tools/list is ${toolsListBytes} bytes (budget ${TOOLS_LIST_BUDGET})\n`);
   check("tools/list stays under its byte budget", toolsListBytes <= TOOLS_LIST_BUDGET, true);
@@ -157,6 +161,25 @@ try {
   };
   const emptyHelp = helpTargets.filter((toolName) => helpTextFor(toolName).trim() === "");
   check("the help tool returns non-empty text for every command", emptyHelp, []);
+
+  // outputSchema was shortened to types and required-ness only (no per-field prose): every
+  // structured tool must still declare the documented generic envelope — the one
+  // structuredResult()/toolEnvelope() actually build — rather than something that quietly
+  // drifted from it. A tool declaring a genuinely distinct outputSchema would fail this and
+  // need its own check instead of this blanket one.
+  const structuredTools = fullTools.filter((tool) => tool.outputSchema !== undefined);
+  check("at least one structured tool was found", structuredTools.length > 0, true);
+  const mismatchedSchema = structuredTools
+    .filter((tool) => JSON.stringify(tool.outputSchema) !== JSON.stringify(STRUCTURED_OUTPUT_SCHEMA))
+    .map((tool) => tool.name);
+  check("every structured tool declares the documented generic envelope", mismatchedSchema, []);
+
+  // The field meanings cut from outputSchema's per-field descriptions have to land somewhere
+  // a client can still reach: `help <command>` for every structured tool, verbatim.
+  const missingEnvelopeHelp = structuredTools
+    .filter((tool) => !helpTextFor(tool.name).includes(STRUCTURED_ENVELOPE_HELP))
+    .map((tool) => tool.name);
+  check("the envelope's field meanings are reachable through help for every structured tool", missingEnvelopeHelp, []);
 
   // Not a second implementation of the console's own lookup: for a representative
   // multi-paragraph command, and for the bare command list, the tool's text matches

@@ -15,7 +15,7 @@ import {
   reportableProblems,
   SHARE_ALLOWED,
   type ArchiveLink,
-} from "#framework/service/archive.ts";
+} from "#framework/service/archive/index.ts";
 import { DATA_DIR_MARKER } from "#framework/runtime/datadir.ts";
 import type { Context } from "#framework/core/context.ts";
 

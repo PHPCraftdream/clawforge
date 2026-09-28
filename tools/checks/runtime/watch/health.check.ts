@@ -2,7 +2,7 @@
 // signals `inspect`/`doctor` do not compute:
 //
 // - channelFindings(): a pure function over `channels status --json`'s already-parsed
-//   answer (gathered by gatherInspection's own `channels` option, inspect/observe.ts, in the
+//   answer (gathered by gatherInspection's own `channels` option, inspect/live.ts, in the
 //   same batched CLI call as agents/mcp/cron — no ctx, no transport, needed here); not-
 //   running, a captured lastError, or connected: false all read as CHANNEL_UNHEALTHY
 //   (degraded, never down); unconfigured/disabled accounts and an absent response (the CLI

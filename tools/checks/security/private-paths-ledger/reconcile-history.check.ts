@@ -42,7 +42,7 @@ import type { Context } from "#framework/core/context.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport/transport.ts";
-import { createArchive, listArchive } from "#framework/service/archive.ts";
+import { createArchive, listArchive } from "#framework/service/archive/index.ts";
 import { clearRecipesDir, installedRecipePrivatePaths, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
 import {
   forgetPrivatePaths,

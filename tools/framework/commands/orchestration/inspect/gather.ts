@@ -19,11 +19,13 @@
 // per call. `./clawforge cli-start` makes those execs instead, and the difference is several
 // seconds per inspect.
 //
-// Split into three files under this directory, purely organisational: helpers.ts (pure
-// pieces), observe.ts (declaredState/observeConfig/observeLive, what actually reads the
-// target), and this one, gather.ts (gatherInspection, the CLI surface). Every export here
-// keeps its name and signature — apply.ts, plan.ts and the checks all import from
-// "./inspect/gather.ts" (or the barrel-free direct path, since there is no index.ts here).
+// Split into several files under this directory, purely organisational: helpers.ts (pure
+// pieces), declared.ts (declaredState/recipeExpectations, what this repository declares),
+// drift.ts (observeConfig/observeConnectionFacts/observeSecretStore, the declared-vs-target
+// comparisons), live.ts (observeLive, what the target reports with no declared counterpart),
+// and this one, gather.ts (gatherInspection, the CLI surface). Every export here keeps its
+// name and signature — apply.ts, plan.ts and the checks all import from "./inspect/gather.ts"
+// (or the barrel-free direct path, since there is no index.ts here).
 
 import { log, info, warn, reportBlocking } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
@@ -42,7 +44,9 @@ import {
 import type { Problem, Inspection } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { prospectiveConfig, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
-import { declaredState, observeConfig, observeLive, observeConnectionFacts, observeSecretStore, observeDeclarationFile } from "./observe.ts";
+import { declaredState, observeDeclarationFile } from "./declared.ts";
+import { observeConfig, observeConnectionFacts, observeSecretStore } from "./drift.ts";
+import { observeLive } from "./live.ts";
 import { runSecurityAudit } from "#src/security/audit.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";

@@ -1,6 +1,6 @@
 // A failed drift cleanup must remain a failed verdict and name the repair.
 
-import { checks, runChecks } from "#framework/commands/lifecycle/smoke.ts";
+import { checks, runChecks } from "#framework/commands/lifecycle/smoke/index.ts";
 import type { Context } from "#framework/core/context.ts";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

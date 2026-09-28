@@ -18,7 +18,7 @@ function shellQuote(value: string): string {
  *  Both siblings carry the file's real bytes from the first one written, so a process that dies
  *  before the rename — or a cleanup that fails — leaves them beside the target under a name no
  *  declared exact path matches. That is why the snapshot policy recognizes the marker families
- *  themselves (service/archive.ts excludes them, commands/lifecycle/verify.ts refuses them), not
+ *  themselves (service/archive/profile.ts excludes them, commands/lifecycle/verify.ts refuses them), not
  *  only the declared paths. Defined here, where the names are created, so the policy readers
  *  cannot drift from the writers. */
 export const PRIVATE_STAGING_MARKER = ".clawforge-private-";

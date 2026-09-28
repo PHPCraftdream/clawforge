@@ -3,7 +3,7 @@
 // createBackup/pull issue, so each failure shape is exercised through the real command.
 // This module has no top-level side effects — check files import it.
 
-import { parseSnapshotArchive } from "#framework/service/archive.ts";
+import { parseSnapshotArchive } from "#framework/service/archive/index.ts";
 import { deploymentName } from "#framework/runtime/deployment.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";

@@ -26,7 +26,7 @@ import {
   reportableProblems,
   SHARE_ALLOWED,
   type Profile,
-} from "#src/service/archive.ts";
+} from "#src/service/archive/index.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";

@@ -19,7 +19,7 @@
 
 import { randomBytes } from "node:crypto";
 import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
-import { inspectArchive, listArchive, listArchiveLinks } from "#framework/service/archive.ts";
+import { inspectArchive, listArchive, listArchiveLinks } from "#framework/service/archive/index.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport/transport.ts";

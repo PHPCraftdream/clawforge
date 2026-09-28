@@ -12,7 +12,7 @@
 import { resolve } from "node:path";
 import { backup } from "#framework/commands/lifecycle/backup.ts";
 import { pull } from "#framework/commands/lifecycle/state.ts";
-import { PROFILE_SHORTHAND_FLAGS } from "#framework/service/archive.ts";
+import { PROFILE_SHORTHAND_FLAGS } from "#framework/service/archive/index.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";

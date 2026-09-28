@@ -10,7 +10,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
-import { excludesFor } from "#framework/service/archive.ts";
+import { excludesFor } from "#framework/service/archive/index.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;

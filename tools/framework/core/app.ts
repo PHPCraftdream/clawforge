@@ -150,8 +150,8 @@ export interface AppSecret {
   readonly required?: boolean;
 }
 
-/** Mirrors service/archive.ts's Profile without importing it — core/ has no dependency on
- *  service/, and these three values are exactly what a backup can be. */
+/** Mirrors service/archive/profile.ts's Profile without importing it — core/ has no
+ *  dependency on service/, and these three values are exactly what a backup can be. */
 export type BackupProfile = "full" | "migrate" | "share";
 
 /** Why an archive was created. Most backups are the operator's own data — a direct

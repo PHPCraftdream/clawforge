@@ -12,7 +12,7 @@ import { deploymentName } from "#src/runtime/deployment.ts";
 import {
   archiveCarriesContent, archiveRoot, createArchive, dataDirName, excludesFor, fileSize, isProfile, backupArchiveName,
   listArchive, parseBackupArchive, privilegePrefixFor, symlinkedDataRoot, PROFILE_SHORTHAND_FLAGS, type Profile,
-} from "#src/service/archive.ts";
+} from "#src/service/archive/index.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { runningRecipeStacks } from "../management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "../management/recipe/lifecycle.ts";

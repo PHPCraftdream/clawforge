@@ -14,7 +14,7 @@ import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { gatherInspection } from "#framework/commands/orchestration/inspect/gather.ts";
-import { parseChecksumOutput } from "#framework/commands/orchestration/inspect/observe.ts";
+import { parseChecksumOutput } from "#framework/commands/orchestration/inspect/live.ts";
 import { recipeMirrorTargetDir } from "#framework/commands/management/provision-agent/index.ts";
 import { spawnLocal, SshTransport } from "#framework/runtime/transport/transport.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
@@ -93,7 +93,7 @@ function recordingContext(
   return { ctx, calls };
 }
 
-/** What observe.ts reads back out of the checksum command's stdout — the same shape, so the
+/** What live.ts reads back out of the checksum command's stdout — the same shape, so the
  *  comparisons below are against what the inspection actually consumed. */
 function parseChecksums(stdout: string): Record<string, string> {
   const sums: Record<string, string> = {};

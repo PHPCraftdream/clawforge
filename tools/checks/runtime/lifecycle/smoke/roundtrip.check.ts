@@ -3,14 +3,14 @@
 import { locksDir } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-import { checks } from "#framework/commands/lifecycle/smoke.ts";
+import { checks } from "#framework/commands/lifecycle/smoke/index.ts";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { deploymentName } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { parseBackupArchive } from "#framework/service/archive.ts";
+import { parseBackupArchive } from "#framework/service/archive/index.ts";
 import { recordPrivateWrite } from "#framework/security/privacy/private-paths-ledger.ts";
 import { installedRecipePrivatePaths } from "#framework/service/recipe.ts";
 import { createHash } from "node:crypto";

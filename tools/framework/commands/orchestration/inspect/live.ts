@@ -1,13 +1,13 @@
-// What `./clawforge inspect` reads: the declared state (from disk) and the observed state
-// (from the target). Split out of inspect.ts; see helpers.ts (this same directory) for
-// the pure pieces these use, and gather.ts for gatherInspection/inspect/doctor/renderJson/
-// renderText.
+// What the target itself reports, with no declared counterpart to compare against: the
+// gateway's HTTP probes and runtime health, outbound egress from inside the container, and
+// everything OpenClaw's own CLI says it has registered (agents/MCP servers/cron jobs/
+// plugins/skills/channels), reconciled against the recipe set's declared ownership and the
+// mirrored recipe/agent files' checksums. Split out of observe.ts; see helpers.ts (this same
+// directory) for the pure pieces these use, declared.ts for recipeExpectations, and drift.ts
+// for the per-facet declared-vs-target comparisons this has no declared side to run.
 
-import { access, lstat, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import JSON5 from "json5";
-import { deploymentName, desiredStateFile, envFile, recipesDir, secretStoreFile } from "#src/runtime/deployment.ts";
-import { parseEnv } from "#src/core/env.ts";
+import { recipesDir } from "#src/runtime/deployment.ts";
 import { openclawCliBatch } from "#src/service/openclaw-cli.ts";
 import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
 import { recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
@@ -16,26 +16,23 @@ import type { DeclaredOwnership } from "#src/set/ownership/ledger.ts";
 import {
   recipeMirrorTargetDir,
   agentWorkspaceTargetDir,
-  loadRecipeAgentBundle,
   cronJobMatches,
   mcpServerMatches,
 } from "#src/commands/management/provision-agent/index.ts";
-import type { RecipeAgentBundle, CronJob } from "#src/commands/management/provision-agent/index.ts";
+import type { CronJob } from "#src/commands/management/provision-agent/index.ts";
 import { problem } from "#src/service/inspection.ts";
-import type { Problem, DeclaredState, ObservedState, EgressObservation, ConnectionFactObservation, SecretStoreObservation, ChannelsStatusResponse } from "#src/service/inspection.ts";
-import type { SecretStatus } from "#src/service/secrets.ts";
+import type { Problem, DeclaredState, ObservedState, EgressObservation, ChannelsStatusResponse } from "#src/service/inspection.ts";
 import {
-  CONNECTION_FACTS,
-  staleConnectionFacts,
-  unrecoverableConnectionFacts,
-} from "#src/commands/operate/recover-env/facts.ts";
-import type { ConnectionFacts } from "#src/commands/operate/recover-env/facts.ts";
-import { DEFAULT_SECRET_STORE } from "#src/commands/management/secrets.ts";
-import { PLUGINS_LIST_ARGS, SKILLS_LIST_ARGS, parsePluginsList, parseSkillsList } from "#src/commands/management/extensions.ts";
+  PLUGINS_LIST_ARGS,
+  SKILLS_LIST_ARGS,
+  parsePluginsList,
+  parseSkillsList,
+} from "#src/commands/management/extensions.ts";
 import type { PluginListEntry, SkillListEntry } from "#src/commands/management/extensions.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { EGRESS_EXEC_TIMEOUT_MS, EGRESS_PROBE_SCRIPT } from "./egress-probe.ts";
-import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt, cronDifferences, egressEndpoints, redactEndpoint } from "./helpers.ts";
+import { cronDifferences, egressEndpoints, redactEndpoint } from "./helpers.ts";
+import { recipeExpectations } from "./declared.ts";
 import type { Context } from "#src/core/context.ts";
 
 const PROBE_ENDPOINTS = ["healthz", "startupz", "readyz"];
@@ -43,72 +40,6 @@ const PROBE_ENDPOINTS = ["healthz", "startupz", "readyz"];
 // The compose service inspect observes, named literally the way config.ts, provider.ts,
 // accept.ts and smoke.ts already name it for their own execs into the same container.
 const GATEWAY_SERVICE = "gateway";
-
-/** Parses GNU stat's fractional, timezone-qualified `%y` timestamp. */
-function parseStatTimestamp(raw: string): number | undefined {
-  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))? ([+-]\d{2}:?\d{2})$/.exec(raw.trim());
-  if (match === null) return undefined;
-  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = "", zone] = match;
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  const hour = Number(hourText);
-  const minute = Number(minuteText);
-  const second = Number(secondText);
-  const zoneDigits = zone.replace(":", "");
-  const zoneHour = Number(zoneDigits.slice(1, 3));
-  const zoneMinute = Number(zoneDigits.slice(3, 5));
-  if (
-    month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate() ||
-    hour > 23 || minute > 59 || second > 59 || zoneHour > 23 || zoneMinute > 59
-  ) return undefined;
-
-  const milliseconds = fraction.slice(0, 3).padEnd(3, "0");
-  const parsed = Date.parse(`${yearText}-${monthText}-${dayText}T${hourText}:${minuteText}:${secondText}.${milliseconds}${zone}`);
-  if (Number.isNaN(parsed)) return undefined;
-  // Runtime.startedAt() is exposed in milliseconds and Date.parse truncates finer Docker
-  // precision too. Keep both sides at that same resolution to avoid false restarts.
-  return parsed;
-}
-
-/** A recipe's agent bundle, in the fields inspect compares against the instance. Parsed
- *  loosely on purpose: this is reading someone else's declaration to report on it, not
- *  validating it — provision-agent owns the validation and says so properly. */
-interface RecipeExpectation {
-  readonly recipe: string;
-  readonly bundle: RecipeAgentBundle;
-}
-
-async function recipeExpectations(): Promise<RecipeExpectation[]> {
-  const found: RecipeExpectation[] = [];
-  let entries: string[];
-  try {
-    entries = (await readdir(recipesDir(), { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return found;
-    throw new Error(`${recipesDir()} could not be read: ${(error as Error).message}`);
-  }
-
-  for (const recipe of entries.sort()) {
-    const agentDir = resolve(recipesDir(), recipe, "agent");
-    let stat;
-    try {
-      stat = await lstat(agentDir);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        // No agent directory: a recipe can be a plain service. Not a finding.
-        continue;
-      }
-      throw error;
-    }
-    if (!stat.isDirectory()) throw new Error(`${agentDir} is not a directory`);
-    // Once the bundle exists, every loader failure must block reconciliation.
-    found.push({ recipe, bundle: await loadRecipeAgentBundle(recipe) });
-  }
-  return found;
-}
 
 // The target directory travels as a positional parameter and is never pasted into this
 // text: JSON.stringify's double quotes do not make a path safe — inside them a POSIX shell
@@ -155,197 +86,6 @@ export function parseChecksumOutput(stdout: string): Record<string, string> {
     checksums[match[2]] = match[1];
   }
   return checksums;
-}
-
-export async function declaredState(ctx: Context, problems: Problem[]): Promise<DeclaredState> {
-  let config: { path: string; value: unknown }[] = [];
-  let raw: string | undefined;
-  try {
-    raw = await readFile(desiredStateFile(), "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      // A directory sitting where the file should be, a permissions error, or anything else
-      // that is not "there is genuinely no file" must not be silently treated the same way
-      // as a legitimate empty declaration — that is how a broken (or blocked) declaration
-      // produced healthy: true with nothing ever saying it could not even be read.
-      problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} could not be read: ${(error as Error).message}`));
-    }
-    // ENOENT: no file at all. A deployment with no desired state declares nothing about the
-    // config — reported as an empty declaration rather than as a failure: inspect must still
-    // work.
-  }
-  if (raw !== undefined) {
-    try {
-      const parsed = JSON.parse(raw) as { path: string; value?: unknown }[];
-      config = parsed.map((entry) => ({ path: entry.path, value: entry.value }));
-    } catch (error) {
-      // The file EXISTS and was meant to declare something — silently treating that the same
-      // way as "no file at all" is how a broken declaration produced healthy: true and
-      // changed: false, with nothing wrong ever reported. Same code and remedy
-      // observeConfig() (below) already uses for its own equivalent case, the LIVE config
-      // failing to parse.
-      problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} exists but is not valid JSON: ${(error as Error).message}`));
-    }
-  }
-
-  return {
-    deployment: deploymentName(),
-    config,
-    image: ctx.settings.image,
-    recipes: (await recipeExpectations()).map((entry) => entry.recipe),
-  };
-}
-
-/** The declared settings against their live values, and when the file was last written.
- *
- *  Deliberately outside the "is it running" branch. openclaw.json is a file on the target,
- *  readable whether or not anything is serving — and skipping the comparison because the
- *  gateway is down produced a plan of just [up], which then started the instance on a
- *  configuration nobody had applied. The command reported success, the journal said
- *  succeeded, and the declaration was not in force. A comparison that works without the
- *  gateway must not be gated on the gateway. */
-export async function observeConfig(
-  ctx: Context,
-  declared: DeclaredState,
-  problems: Problem[],
-): Promise<{ config: Record<string, unknown>; mtimeMs?: number }> {
-  const config: Record<string, unknown> = {};
-  const configFile = `${ctx.settings.dataDir}/config/openclaw.json`;
-  let mtimeMs: number | undefined;
-
-  try {
-    // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format (docs.openclaw.ai/
-    // gateway/configuration) — a comment or trailing comma is legitimate there, and plain
-    // JSON.parse rejecting it produced a false CONFIG_DRIFT on every run against such a config.
-    const parsed = JSON5.parse(await ctx.transport.readFile(configFile)) as unknown;
-    for (const entry of declared.config) config[entry.path] = valueAt(parsed, entry.path);
-    const target = prospectiveConfig(parsed, declared.config);
-    for (const entry of effectiveDeclarationPaths(declared.config)) {
-      const actual = valueAt(parsed, entry.path);
-      const desired = valueAt(target, entry.path);
-      if (!configValuesEqual(actual, desired)) {
-        problems.push(
-          problem("CONFIG_DRIFT", `${entry.path} is ${JSON.stringify(actual)}, declared ${JSON.stringify(desired)}`),
-        );
-      }
-    }
-    const stamp = await ctx.transport.exec("stat", ["-c", "%y", configFile], { allowFailure: true });
-    if (stamp.code === 0) {
-      mtimeMs = parseStatTimestamp(stamp.stdout);
-    }
-  } catch {
-    // A deployment that has never been bootstrapped has no configuration at all, which is
-    // not drift — there is nothing to have drifted from. Only a file that exists and cannot
-    // be understood is a finding.
-    //
-    // exists() itself now throws when the CHECK could not run (an unreachable target, rather
-    // than an answer) — caught here rather than allowed to escape: inspect answers whatever
-    // it can see, and a target it cannot reach at all is a finding of its own, not a reason
-    // to abandon every other observation already gathered.
-    let present: boolean;
-    try {
-      present = await ctx.transport.exists(configFile);
-    } catch (error) {
-      problems.push(problem("CONFIG_DRIFT", `${configFile} could not be reached: ${(error as Error).message}`));
-      present = false;
-    }
-    if (present) {
-      problems.push(problem("CONFIG_DRIFT", `${configFile} could not be read or parsed`));
-    }
-  }
-
-  return { config, mtimeMs };
-}
-
-/** The deployment .env's connection facts against the running container — the same
- *  comparison recover-env reports on and --adopt-runtime resolves (staleConnectionFacts), surfaced instead of waiting
- *  to be asked. Below the not-running early return in gatherInspection: the facts come
- *  from a running container, and without one there is nothing to compare against.
- *
- *  The finding names WHICH variable drifted and never a value, not even a non-secret one:
- *  .env mixes a real secret (OPENCLAW_GATEWAY_TOKEN) with these plumbing facts, so nothing
- *  parsed from that file is printable beyond the four names. */
-export async function observeConnectionFacts(
-  ctx: Context,
-  problems: Problem[],
-): Promise<ConnectionFactObservation[] | undefined> {
-  // Optional on the runtime contract, the way execCommand is: a runtime that cannot
-  // introspect its container is not asked, and skipping is its honest answer.
-  if (typeof ctx.runtime.runningConnectionFacts !== "function") return undefined;
-  const facts: ConnectionFacts | undefined = await ctx.runtime.runningConnectionFacts();
-  // Not running, or the container could not be inspected: a gap, not a verdict.
-  if (facts === undefined) return undefined;
-  let raw: string;
-  try {
-    raw = await readFile(envFile(), "utf8");
-  } catch {
-    // No .env — nothing to compare against; the fresh-clone shape, not a finding.
-    return undefined;
-  }
-  const current = parseEnv(raw);
-  // The comparison itself comes from facts.ts — recover-env acts on exactly it, so
-  // inspect and recover-env cannot disagree about what counts as stale.
-  const stale = new Set(staleConnectionFacts(facts, current).map((entry) => entry.name));
-  const unrecovered = new Set(unrecoverableConnectionFacts(facts).map((entry) => entry.name));
-  const observations: ConnectionFactObservation[] = CONNECTION_FACTS.map((fact) => ({
-    name: fact.name,
-    state: unrecovered.has(fact.name) ? "unrecovered" : stale.has(fact.name) ? "stale" : "match",
-  }));
-  for (const name of stale) {
-    problems.push(problem("ENV_STALE", `${name} in ${envFile()} differs from the running container`));
-  }
-  return observations;
-}
-
-/** The deployment's default local store against the values the target holds. Watched only
- *  when a store file exists, and only the default one (inspect takes no store name):
- *  bootstrap puts values on the target without ever creating a store, so an absent store
- *  is how every healthy deployment starts out, not evidence of loss — and there is no way
- *  to tell it from a lost one. A store that EXISTS missing a required name is unambiguous:
- *  the workflow is in use, and that value has no local copy. Names checked are the same
- *  required set SECRET_MISSING reports, and only names the target still holds — the
- *  target-absent ones are SECRET_MISSING's business, and `secrets --dump` recovers from
- *  the target, not from nowhere. */
-export async function observeSecretStore(
-  ctx: Context,
-  secrets: readonly SecretStatus[],
-  problems: Problem[],
-): Promise<SecretStoreObservation | undefined> {
-  const store = secretStoreFile(DEFAULT_SECRET_STORE);
-  let raw: string;
-  try {
-    raw = await readFile(store, "utf8");
-  } catch {
-    return undefined;
-  }
-  const values = parseEnv(raw);
-  const missing = secrets.filter(
-    (entry) => entry.required && entry.present && (values[entry.name] ?? "").trim() === "",
-  );
-  for (const entry of missing) {
-    problems.push(problem("STORE_INCOMPLETE", `${entry.name} (${entry.usedBy}) is present on the target but has no value in ${store}`));
-  }
-  return { file: store, missing: missing.map((entry) => entry.name) };
-}
-
-/** The declaration's own existence. A fact about the folder, and only a finding while an
- *  instance is running to be re-declared — the caller gates it below the not-running
- *  early return, which is what the code's name claims ("missing" for WHOM). */
-export async function observeDeclarationFile(problems: Problem[]): Promise<void> {
-  const absent = await access(desiredStateFile()).then(
-    () => false,
-    (error: NodeJS.ErrnoException) => {
-      // Unreadable for any other reason: declaredState()'s own read already reports it,
-      // and a second finding for the same file would read as two problems.
-      if (error.code === "ENOENT") return true;
-      return false;
-    },
-  );
-  if (absent) {
-    problems.push(
-      problem("DECLARATION_MISSING", `${desiredStateFile()} does not exist — a running instance nobody can re-declare from this repository`),
-    );
-  }
 }
 
 /** Probes the outbound endpoints the live configuration names, from inside the gateway

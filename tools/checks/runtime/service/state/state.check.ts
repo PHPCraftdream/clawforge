@@ -6,7 +6,7 @@
 
 import { resolve } from "node:path";
 import { loadSecrets, pull, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
-import { parseSnapshotArchive } from "#framework/service/archive.ts";
+import { parseSnapshotArchive } from "#framework/service/archive/index.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { takeLock } from "#framework/runtime/instance-lock.ts";
 import { monorepoRoot } from "#framework/core/env.ts";

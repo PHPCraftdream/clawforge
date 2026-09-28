@@ -35,7 +35,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport/transport.ts";
 import { replacePrivateTargetFile } from "#framework/security/privacy/private-config.ts";
-import { createArchive, listArchive } from "#framework/service/archive.ts";
+import { createArchive, listArchive } from "#framework/service/archive/index.ts";
 import {
   installedRecipePrivatePaths,
   listRecipes,

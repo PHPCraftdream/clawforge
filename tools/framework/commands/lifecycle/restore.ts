@@ -20,7 +20,7 @@ import {
   listArchiveLinks,
   parseBackupArchive,
   reportableProblems,
-} from "#src/service/archive.ts";
+} from "#src/service/archive/index.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { SshTransport } from "#src/runtime/transport/transport.ts";
 import { openclawCli } from "#src/service/openclaw-cli.ts";

@@ -1,6 +1,6 @@
-// The egress probe: the `node -e` script observeEgress (observe.ts, this same directory)
+// The egress probe: the `node -e` script observeEgress (live.ts, this same directory)
 // execs into the gateway container, and the budgets that bound it. Own file because the
-// script is shipped text the deadline checks time, and the observe module has plenty of
+// script is shipped text the deadline checks time, and live.ts has plenty of
 // its own to hold.
 
 // Outbound reachability is asked of the CONTAINER, not of this machine: the inbound probes

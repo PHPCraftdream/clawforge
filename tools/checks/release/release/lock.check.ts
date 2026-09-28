@@ -213,7 +213,7 @@ check(
 
   // A malformed or failed read (a stopped instance, an unbootstrapped one, a CLI that
   // answered something other than JSON) is a gap, not evidence of nothing installed — the
-  // same "gap, not a verdict" every other batched read in observe.ts already gives.
+  // same "gap, not a verdict" every other batched read in inspect/live.ts already gives.
   check("a failed read answers with no plugins, not a thrown error", parsePluginsList({ code: 1, stdout: "" }), []);
   check("malformed JSON answers with no skills either", parseSkillsList({ code: 0, stdout: "not json" }), []);
 }

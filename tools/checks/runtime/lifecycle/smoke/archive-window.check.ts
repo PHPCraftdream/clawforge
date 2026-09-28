@@ -3,8 +3,8 @@
 // start() calls to prove exactly one cycle covers the whole trio, however many of them are
 // selected and however many of them fail.
 
-import { checks, runSmokeSuite } from "#framework/commands/lifecycle/smoke.ts";
-import type { Check, SmokeResult } from "#framework/commands/lifecycle/smoke.ts";
+import { checks, runSmokeSuite } from "#framework/commands/lifecycle/smoke/index.ts";
+import type { Check, SmokeResult } from "#framework/commands/lifecycle/smoke/index.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { locksDir } from "#framework/core/env.ts";
@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { dataDirName } from "#framework/service/archive.ts";
+import { dataDirName } from "#framework/service/archive/index.ts";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown): void {

@@ -1,7 +1,7 @@
 // Smoke verdict classification, exit behavior, and HTTP probe results.
 
-import { checks, report, runChecks } from "#framework/commands/lifecycle/smoke.ts";
-import type { Check, SmokeResult } from "#framework/commands/lifecycle/smoke.ts";
+import { checks, report, runChecks } from "#framework/commands/lifecycle/smoke/index.ts";
+import type { Check, SmokeResult } from "#framework/commands/lifecycle/smoke/index.ts";
 import { CouldNotCheck, NotChecked } from "#framework/commands/check-outcome.ts";
 import type { Context } from "#framework/core/context.ts";
 let failed = 0;

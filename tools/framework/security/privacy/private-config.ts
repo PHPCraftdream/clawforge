@@ -170,7 +170,7 @@ export async function ensurePrivateTargetDirectory(ctx: Context, path: string): 
  *  cleanup) interrupted before the mv leaves them beside the target under a name the
  *  declaration's exact path never matches. The sibling therefore stays name-adjacent to the
  *  verified target on purpose: the whole `.clawforge-private-` family is what the snapshot
- *  policy excludes and verify refuses (service/archive.ts, commands/lifecycle/verify.ts), and
+ *  policy excludes and verify refuses (service/archive/profile.ts, commands/lifecycle/verify.ts), and
  *  a successful run removes it here. */
 export async function replacePrivateTargetFile(ctx: Context, path: string, content: string): Promise<PrivateFileResult> {
   if (!path.startsWith("/")) throw new Error(`private target file must be absolute: ${path}`);

@@ -20,7 +20,7 @@
 // no version at all, for a bundled skill or otherwise. A skill's version, when ClawHub or
 // git installed it, lives only in `skills info <name> --json`'s own per-skill `install`
 // array — a call per skill, which is not part of the batched read this module shares with
-// doctor (openclaw-cli.ts's openclawCliBatch, called from observe.ts's observeLive) — so
+// doctor (openclaw-cli.ts's openclawCliBatch, called from inspect/live.ts's observeLive) — so
 // skill drift here is add/remove only, never version.
 
 import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
@@ -56,7 +56,7 @@ function isNonEmptyString(value: unknown): value is string {
 
 /** Parses one `openclawCliBatch` slot's stdout as the plugins list. A failed or malformed
  *  read answers with an empty list — the same "gap, not a verdict" every other batched read
- *  in observe.ts gives: an inventory nobody could read is not evidence that nothing is
+ *  in inspect/live.ts gives: an inventory nobody could read is not evidence that nothing is
  *  installed. */
 export function parsePluginsList(result: BatchedCliResult): PluginListEntry[] {
   if (result.code !== 0) return [];

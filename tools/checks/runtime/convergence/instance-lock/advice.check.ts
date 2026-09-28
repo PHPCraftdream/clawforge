@@ -177,9 +177,10 @@ check("and is absent when the flag is not there", parseBreakForeignLockHost(["--
 }
 
 // smoke declares no --break-lock, so each lock its run takes (the archive window, the
-// standalone round-trip) must say so — a merge once dropped it from the archive window.
+// standalone round-trip — both in smoke/round-trip.ts) must say so — a merge once dropped
+// it from the archive window.
 {
-  const smokeSource = await readFile(new URL("../../../../framework/commands/lifecycle/smoke.ts", import.meta.url), "utf8");
+  const smokeSource = await readFile(new URL("../../../../framework/commands/lifecycle/smoke/round-trip.ts", import.meta.url), "utf8");
   const smokeDeclares = declaresBreakLock("smoke");
   const calls = smokeSource.split("guarded(ctx,").slice(1);
   check("smoke still takes the instance lock somewhere", calls.length > 0, true);

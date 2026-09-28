@@ -1,0 +1,260 @@
+// `./clawforge smoke` — acceptance run for an instance.
+//
+// which was the "behaviour does not change" boundary for the
+// TypeScript migration. It checks the properties that actually cost debugging time:
+//   - the gateway is healthy by BOTH criteria (HTTP probe and the runtime's own verdict),
+//     because their disagreement is what uncovered a broken healthcheck
+//   - the agent answers end to end, i.e. the provider key really resolved
+//   - the declaration in the repository wins over manual drift
+//   - a full backup restores byte-for-byte (into an isolated root, never over the live data)
+//   - the verifier accepts a shareable archive AND rejects one with secrets
+//   - the MCP bridge speaks JSON-RPC on a clean stdout
+//
+// The two negative checks matter most: a suite that only confirms success degrades
+// silently.
+//
+// This file: the health-probe checks and the orchestration (runChecks/runSmokeSuite/report/
+// smoke). round-trip.ts: the backup/restore round-trip, the two archive/privacy checks and
+// runArchiveChecks()'s shared stop/start window. verdict.ts: the check vocabulary both use.
+//
+// Every check lands on the shared check-outcome vocabulary (commands/check-outcome.ts):
+// passed, failed, not-checked (this deployment makes the check inapplicable) or
+// could-not-check (the check could not obtain a verdict). The last never reads as passing
+// and fails the run exactly as a failed check does: a suite that could not ask its
+// question has not earned a green light.
+
+import { readFile } from "node:fs/promises";
+import JSON5 from "json5";
+import { log, info, warn } from "#src/core/io/log.ts";
+import type { Context } from "#src/core/context.ts";
+import { CouldNotCheck, NotChecked } from "../../check-outcome.ts";
+import { applyConfig } from "../../orchestration/config.ts";
+import { desiredStateFile } from "#src/runtime/deployment.ts";
+import { noProviderConfigured } from "#src/service/secrets.ts";
+import { valueAt } from "../../orchestration/inspect/helpers.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { reach, expect, describeError, evaluate, type Check, type SmokeResult } from "./verdict.ts";
+import { REJECTS_SECRETS_ENTRY, ACCEPTS_SHARE_ENTRY, ROUND_TRIP_ENTRY, ROUND_TRIP_CHECK, ARCHIVE_CHECK_NAMES, runArchiveChecks } from "./round-trip.ts";
+
+export { reach, expect, describeError, evaluate, toResult } from "./verdict.ts";
+export type { Check, SmokeResult } from "./verdict.ts";
+
+/** Drives both smoke's own parser and its openclawCommands declaration. */
+export const SMOKE_ARGUMENTS: CommandArgument[] = [
+  { name: "quick", description: "Skip the slow round-trip check", kind: "flag" },
+];
+
+// Hard ceiling on smoke's agent round-trip, enforced inside the container.
+const AGENT_DEADLINE_S = 120;
+
+export const checks: Check[] = [
+  {
+    name: "gateway answers all HTTP probes",
+    run: async (ctx) => {
+      for (const endpoint of ["healthz", "startupz", "readyz"]) {
+        const code = await reach(`probe ${endpoint}`, () => ctx.runtime.probe(endpoint));
+        expect(code === 200, `${endpoint} returned ${code}`);
+      }
+    },
+  },
+  {
+    name: "runtime reports the container healthy",
+    run: async (ctx) => {
+      const health = await reach("ask the runtime for container health", () => ctx.runtime.health());
+      expect(health === "healthy", `container health is "${health}"`);
+    },
+  },
+  {
+    name: "agent answers end to end",
+    run: async (ctx) => {
+      try {
+        // Bounded inside the container: without a provider the CLI was seen hanging for 10+
+        // minutes, and killing wsl.exe/ssh on this side leaves the target's compose running.
+        const result = await reach("ask the agent", () =>
+          ctx.runtime.runOneOff("cli", [
+            "-k", "10", String(AGENT_DEADLINE_S), "node", "dist/index.js",
+            "agent", "--agent", "main", "--timeout", String(AGENT_DEADLINE_S - 30), "-m", "Reply with exactly: SMOKE-OK",
+          ], {
+            profile: "cli",
+            entrypoint: "timeout",
+            input: "",
+          }),
+        );
+        if (result.stdout.includes("SMOKE-OK")) return;
+        expect(false, `agent replied: ${result.stdout.trim().slice(0, 120)}`);
+      } catch (error) {
+        // A silent OR unreachable agent is most often PROVIDER_MISSING, whichever way
+        // this check failed — named instead of just the symptom, when the live config really
+        // configures none (best effort: noProviderConfigured() never replaces a real failure
+        // with an unrelated guess).
+        if (!(await noProviderConfigured(ctx))) throw error;
+        const message = `no model provider is configured — run ./clawforge configure-provider (${describeError(error)})`;
+        throw error instanceof CouldNotCheck ? new CouldNotCheck(message) : new Error(message);
+      }
+    },
+  },
+  {
+    name: "desired state overrides manual drift",
+    run: async (ctx) => {
+      const declared = JSON.parse(await readFile(desiredStateFile(), "utf8")) as {
+        path: string;
+        value?: unknown;
+      }[];
+
+      // Any declared string setting will do, and which one is the deployment's business —
+      // this used to insist on agents.defaults.model.primary, which the template for a new
+      // deployment does not contain. gateway.* is left alone: drifting it takes the service
+      // down for as long as the check runs.
+      const subject = declared.find(
+        (entry) => typeof entry.value === "string" && !entry.path.startsWith("gateway."),
+      );
+      if (subject === undefined) {
+        throw new NotChecked("desired-state.json declares no drift-safe string setting");
+      }
+
+      const wanted = subject.value as string;
+      const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
+
+      try {
+        await reach("drift the setting on the instance", () =>
+          ctx.runtime.runOneOff(
+            "gateway",
+            ["dist/index.js", "config", "set", subject.path, JSON.stringify(`${wanted}-drifted`), "--strict-json"],
+            { noDeps: true, entrypoint: "node", input: "" },
+          ),
+        );
+        await reach("apply the declaration", () => applyConfig(ctx, []));
+
+        // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format.
+        const config = JSON5.parse(await reach("read the live configuration", () => ctx.transport.readFile(configPath))) as Record<string, unknown>;
+        const actual = valueAt(config, subject.path);
+        expect(actual === wanted, `${subject.path} is ${String(actual)}, expected ${wanted}`);
+      } finally {
+        // Whatever happened, the declaration is what the instance should be left with. The
+        // verdict is already in by the time this runs, so a failure here stays a plain
+        // failure — reach() must not re-label it as a verdict the check never got. But it
+        // must say more than the raw error: this call is what un-drifts the setting, so
+        // when it fails the reader needs what the instance may still hold and the repair,
+        // not just the symptom.
+        await applyConfig(ctx, []).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`restoring the declaration failed — ${subject.path} may still hold the drifted value; repair with ./clawforge apply-config: ${message}`);
+        });
+      }
+    },
+  },
+  REJECTS_SECRETS_ENTRY,
+  ACCEPTS_SHARE_ENTRY,
+  {
+    name: "MCP bridge speaks JSON-RPC",
+    run: async (ctx) => {
+      const request = JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } },
+      });
+      const result = await reach("speak JSON-RPC to the bridge", () =>
+        ctx.runtime.runOneOff("cli", ["mcp", "serve"], {
+          profile: "cli",
+          input: `${request}\n`,
+        }),
+      );
+      expect(result.stdout.includes('"serverInfo"'), `bridge replied: ${result.stdout.trim().slice(0, 120)}`);
+    },
+  },
+  ROUND_TRIP_ENTRY,
+];
+
+export interface SmokeSummary {
+  readonly results: SmokeResult[];
+  readonly passed: number;
+  readonly failed: number;
+  readonly notChecked: number;
+  readonly couldNotCheck: number;
+}
+
+function printResult(result: SmokeResult): void {
+  const line = `${result.status.toUpperCase().padEnd(7)} ${result.name}${result.detail === undefined ? "" : `  ${result.detail}`}`;
+  if (result.status === "failed") warn(line);
+  else info(line);
+}
+
+function tally(counts: { passed: number; failed: number; notChecked: number; couldNotCheck: number }, result: SmokeResult): void {
+  if (result.status === "passed") counts.passed += 1;
+  else if (result.status === "failed") counts.failed += 1;
+  else if (result.status === "not-checked") counts.notChecked += 1;
+  else counts.couldNotCheck += 1;
+}
+
+/** Runs the checks, classifying every outcome into the shared vocabulary. Never throws:
+ *  the counts are the answer. A throw a check did not classify itself stays a failure —
+ *  the reading it has always had. */
+export async function runChecks(ctx: Context, selected: Check[], onResult: (result: SmokeResult) => void = printResult): Promise<SmokeSummary> {
+  const results: SmokeResult[] = [];
+  const counts = { passed: 0, failed: 0, notChecked: 0, couldNotCheck: 0 };
+
+  for (const check of selected) {
+    const result = await evaluate(check.name, () => check.run(ctx));
+    results.push(result);
+    tally(counts, result);
+    onResult(result);
+  }
+
+  return { results, ...counts };
+}
+
+/** The whole selected run: ordinary checks one at a time, exactly as runChecks() does; the
+ *  three archive-based checks, wherever they appear in `selected`, consolidated into one
+ *  stop/start cycle via round-trip.ts's runArchiveChecks() — their results are emitted
+ *  together at the position the first of them holds. This is what smoke() below runs;
+ *  runChecks() stays as it always was for anything that runs a check (or a stand-in one) on
+ *  its own. */
+export async function runSmokeSuite(ctx: Context, selected: Check[], onResult: (result: SmokeResult) => void = printResult): Promise<SmokeSummary> {
+  const results: SmokeResult[] = [];
+  const counts = { passed: 0, failed: 0, notChecked: 0, couldNotCheck: 0 };
+  const record = (result: SmokeResult): void => {
+    results.push(result);
+    tally(counts, result);
+    onResult(result);
+  };
+
+  const wanted = new Set(selected.filter((check) => ARCHIVE_CHECK_NAMES.has(check.name)).map((check) => check.name));
+  let archiveGroupDone = false;
+
+  for (const check of selected) {
+    if (ARCHIVE_CHECK_NAMES.has(check.name)) {
+      if (archiveGroupDone) continue;
+      archiveGroupDone = true;
+      for (const result of await runArchiveChecks(ctx, wanted)) record(result);
+      continue;
+    }
+    record(await evaluate(check.name, () => check.run(ctx)));
+  }
+
+  return { results, ...counts };
+}
+
+/** Prints what the run concluded, and refuses to call a run with an unanswered check
+ *  successful: could-not-check fails the run exactly as a failed check does. */
+export function report(summary: SmokeSummary, quick: boolean): void {
+  if (quick) info("skipping the round-trip (--quick)");
+
+  const unanswered = summary.results.filter((result) => result.status === "failed" || result.status === "could-not-check");
+  if (unanswered.length > 0) {
+    throw new Error(
+      `${unanswered.length} smoke check(s) did not pass (${summary.failed} failed, ${summary.couldNotCheck} could not be checked): ${unanswered.map((result) => result.name).join(", ")}`,
+    );
+  }
+  log(`all ${summary.passed} checks passed${summary.notChecked > 0 ? `, ${summary.notChecked} not checked` : ""}`);
+}
+
+export async function smoke(ctx: Context, args: string[]): Promise<void> {
+  const quick = parseDeclaredArgs(SMOKE_ARGUMENTS, args).quick === true;
+  const selected = quick ? checks.filter((check) => check.name !== ROUND_TRIP_CHECK) : checks;
+
+  log(`smoke run against ${ctx.settings.serviceUrl}`);
+
+  report(await runSmokeSuite(ctx, selected), quick);
+}

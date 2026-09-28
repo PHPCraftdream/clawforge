@@ -10,7 +10,7 @@ import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, needsOwnerEscalation, secretsFileOnTarget } from "#src/runtime/datadir.ts";
-import { archiveRoot, isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive.ts";
+import { archiveRoot, isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { requirements, template } from "#src/service/secrets.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";

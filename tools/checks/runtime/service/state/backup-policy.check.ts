@@ -11,7 +11,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
-import { listArchive } from "#framework/service/archive.ts";
+import { listArchive } from "#framework/service/archive/index.ts";
 
 let failed = 0;
 

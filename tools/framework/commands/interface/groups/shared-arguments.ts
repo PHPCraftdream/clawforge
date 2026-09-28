@@ -2,7 +2,7 @@
 // openclawCommands — split out so every fragment file can share exactly one
 // definition instead of drifting into slightly different copies.
 
-import { PROFILES } from "#src/service/archive.ts";
+import { PROFILES } from "#src/service/archive/index.ts";
 
 export const PROFILE_ARGUMENT = {
   name: "profile",

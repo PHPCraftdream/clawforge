@@ -219,7 +219,7 @@ export function prospectiveConfig(live: unknown, declared: DeclaredState["config
 
 /** The live openclaw.json, parsed as JSON5 — or undefined for any reason at all (absent,
  *  unreadable, unparseable). Failure here is not this function's finding to report:
- *  observeConfig() (inspect-observe.ts) already owns reporting a broken live config as
+ *  observeConfig() (inspect/drift.ts) already owns reporting a broken live config as
  *  CONFIG_DRIFT; this is a second, independent read purely to build the prospective merge
  *  above, and a config that cannot be read here simply means the prospective view falls
  *  back to the declaration alone. */
@@ -258,10 +258,10 @@ export async function readLiveConfigOrThrow(ctx: Context): Promise<unknown> {
 }
 
 /** The raw {path,value} declarations from config/desired-state.json, with no problem
- *  reporting and none of declaredState()'s (observe.ts) recipe/image extras — a caller that
+ *  reporting and none of declaredState()'s (declared.ts) recipe/image extras — a caller that
  *  only wants prospectiveConfig's own input (secrets --apply's own prospective requirements,
  *  which have no use for an inspection Problem list) reads this directly instead of pulling
- *  in observe.ts's much heavier declaredState(). Absence is a legitimate empty declaration;
+ *  in declared.ts's much heavier declaredState(). Absence is a legitimate empty declaration;
  *  any other read or shape failure aborts the write. */
 export async function readDeclaredConfig(): Promise<DeclaredState["config"]> {
   const path = desiredStateFile();

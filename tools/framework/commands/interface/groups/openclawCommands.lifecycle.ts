@@ -9,7 +9,7 @@ import { backup, BACKUP_ARGUMENTS } from "#src/commands/lifecycle/backup.ts";
 import { restore, RESTORE_ARGUMENTS } from "#src/commands/lifecycle/restore.ts";
 import { verify, VERIFY_ARGUMENTS } from "#src/commands/lifecycle/verify.ts";
 import { pull, push, PULL_ARGUMENTS, PUSH_ARGUMENTS } from "#src/commands/lifecycle/state.ts";
-import { smoke, SMOKE_ARGUMENTS } from "#src/commands/lifecycle/smoke.ts";
+import { smoke, SMOKE_ARGUMENTS } from "#src/commands/lifecycle/smoke/index.ts";
 
 export const lifecycleCommands: Record<string, AppCommand> = {
   bootstrap: {

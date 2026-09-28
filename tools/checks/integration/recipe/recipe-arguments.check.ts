@@ -148,6 +148,15 @@ try {
     removeThrew = true;
   }
   check("recipe remove --volumes (a flag it actually reads) is accepted", removeThrew, false);
+
+  // --- unknown action: a typo gets the same treatment an unknown flag already does ----------
+
+  const unknownAction = await messageOf("recipe refuses an unknown action by name", () =>
+    withOutputSink(() => {}, () => recipe(ctx, ["insatll", "plain"])),
+  );
+  check("the refusal names the typo", unknownAction.includes("unknown action: insatll"), true);
+  check("and lists the real actions", unknownAction.includes("install"), true);
+  check("and offers a did-you-mean guess, parity with an unknown flag", unknownAction.includes("did you mean install?"), true);
 } finally {
   await rm(scratch, { recursive: true, force: true });
 }

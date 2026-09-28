@@ -8,6 +8,7 @@ import { cp, access, readdir } from "node:fs/promises";
 import { register } from "node:module";
 import { basename, dirname, relative, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { dieUnknownAction } from "#src/core/arguments.ts";
 import { pathToFileURL } from "node:url";
 import { dependencyGraphChecksum } from "./hook-graph.ts";
 import type { Context } from "#src/core/context.ts";
@@ -390,7 +391,7 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
   // missing name, and a token the resolved action does not use (an undeclared flag, an
   // extra positional) dies here too instead of being silently ignored — see arguments.ts.
   if (action !== undefined && action !== RECIPE_DEFAULT_ACTION && !RECIPE_ACTIONS.includes(action)) {
-    die(`unknown action: ${action} (expected ${RECIPE_ACTIONS.join(", ")})`);
+    dieUnknownAction(action, `unknown action: ${action} (expected ${RECIPE_ACTIONS.join(", ")})`, RECIPE_ACTIONS);
   }
   validateRecipeArgs(action ?? RECIPE_DEFAULT_ACTION, args.slice(1));
 
@@ -664,6 +665,6 @@ async function runRecipeAction(ctx: Context, action: string, name: string, rest:
     }
 
     default:
-      die(`unknown action: ${action} (expected list, import, verify, onboard, diagnose, install, remove, status or logs)`);
+      dieUnknownAction(action, `unknown action: ${action} (expected list, import, verify, onboard, diagnose, install, remove, status or logs)`, RECIPE_ACTIONS);
   }
 }

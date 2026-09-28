@@ -128,3 +128,22 @@ export function reportUnknownCommand(name: string, candidates: string[]): void {
 export function soleDeploymentFallback(explicit: boolean, available: readonly string[]): string | undefined {
   return !explicit && available.length === 1 ? available[0] : undefined;
 }
+
+/** Report lines for an unresolved deployment: several with none selected names the ambiguity;
+ *  a missing explicit name (or none at all) keeps the "not found" wording. */
+export function missingDeploymentReport(
+  explicit: boolean,
+  name: string,
+  deploymentDir: string,
+  available: readonly string[],
+): string[] {
+  if (!explicit && available.length > 1) {
+    return [`several deployments (${available.join(", ")}) — pick one with --app <name> or OC_APP`];
+  }
+  return [
+    `deployment "${name}" not found at ${deploymentDir}`,
+    available.length === 0
+      ? "create one with: ./clawforge new-app <name>"
+      : `available: ${available.join(", ")} — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>`,
+  ];
+}

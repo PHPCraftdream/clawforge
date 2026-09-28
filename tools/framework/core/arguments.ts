@@ -36,7 +36,7 @@ function editDistance(a: string, b: string): number {
  *  name) because parseDeclaredArgs below needs the exact same match against a declared
  *  argument's name — one edit-distance implementation for both, not two that could drift.
  *  gate.ts re-exports this rather than keeping its own copy. */
-export function closestCommand(input: string, candidates: string[]): string | undefined {
+export function closestCommand(input: string, candidates: readonly string[]): string | undefined {
   let best: string | undefined;
   let bestDistance = Infinity;
   for (const candidate of candidates) {
@@ -63,6 +63,17 @@ function dieUnknownArgument(token: string, suggestion?: string): never {
   throw new UnknownArgumentError(
     suggestion === undefined ? `unknown argument: ${token}` : `unknown argument: ${token} (did you mean ${suggestion}?)`,
   );
+}
+
+/** An unknown sub-action word; an UnknownArgumentError so entry/cli.ts adds the --help pointer. */
+export class UnknownActionError extends UnknownArgumentError {
+  name = "UnknownActionError";
+}
+
+/** Refuses an unknown sub-action with `message` plus a did-you-mean guess from `choices`. */
+export function dieUnknownAction(action: string, message: string, choices: readonly string[]): never {
+  const suggestion = closestCommand(action, choices);
+  throw new UnknownActionError(suggestion === undefined ? message : `${message} (did you mean ${suggestion}?)`);
 }
 
 /** One value per declared argument, keyed by its name (not its `--flag` spelling):

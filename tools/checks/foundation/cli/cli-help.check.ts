@@ -10,7 +10,7 @@
 // this spawns the real gate (tools/clawforge.ts) with a bounded wait rather than asserting on a
 // direct function call.
 
-import { rm } from "node:fs/promises";
+import { rm, readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -64,6 +64,21 @@ const deploymentName = `cli-help-check-${randomBytes(4).toString("hex")}`;
 try {
   await createApp(deploymentName);
 
+  // new-app's own .gitignore must keep machine-local, regenerated-every-cycle state out of a
+  // deployment's git history (state/watch.json, sets/*.tar.gz and sets/.tries|receipts/) while
+  // leaving config/, recipes/ and deployment.lock.json — the parts lock.ts's own advice tells
+  // an operator to commit — trackable. Only actual ignore-pattern lines count: an explanatory
+  // comment mentioning "config/" in passing must not read as excluding it.
+  const gitignoreLines = (await readFile(resolve(appsDir, deploymentName, ".gitignore"), "utf8"))
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+  check("the deployment .gitignore excludes machine-local watch state", gitignoreLines.includes("state/"), true);
+  check("and excludes built set artifacts", gitignoreLines.includes("sets/"), true);
+  check("but leaves config/ trackable", gitignoreLines.includes("config/"), false);
+  check("and leaves recipes/ trackable", gitignoreLines.includes("recipes/"), false);
+  check("and leaves deployment.lock.json trackable", gitignoreLines.includes("deployment.lock.json"), false);
+
   const controlHelp = await runGate(["--app", deploymentName, "control-mcp", "--help"]);
   check("control-mcp --help does not hang waiting on stdin", controlHelp.timedOut, false);
   check("control-mcp --help exits cleanly", controlHelp.code, 0);
@@ -79,6 +94,20 @@ try {
   // The real regression this guards: --help used to be treated as the deployment name and
   // rejected by safeName, instead of being recognised as a request for help.
   check("new-app --help is not treated as an invalid deployment name", newAppHelp.stdout.includes("invalid"), false);
+
+  // `help help` used to fall through to reportUnknownCommand, which then suggested "help" for
+  // the very word just typed — "help" is always in its own candidate pool.
+  const helpForHelp = await runGate(["--app", deploymentName, "help", "help"]);
+  check("help help exits cleanly", helpForHelp.code, 0);
+  check("help help does not report itself as unknown", helpForHelp.stdout.includes("unknown command"), false);
+  check("help help does not suggest itself", helpForHelp.stdout.includes("did you mean: help"), false);
+  check("help help falls back to the command list", helpForHelp.stdout.includes("Usage: ./clawforge <command>"), true);
+
+  // `new-app a b` used to read args[0] directly, so "b" vanished silently instead of being
+  // refused — the shared declaration parser refuses any token past the one declared positional.
+  const extraPositional = await runGate(["new-app", `${deploymentName}-extra`, "b"]);
+  check("new-app with an extra positional exits non-zero", extraPositional.code === 0, false);
+  check("new-app with an extra positional names the stray token", extraPositional.stdout.includes("unknown argument: b"), true);
 
   // The gate used to check the deployment exists before it ever looked at what command was
   // asked for, so `./clawforge help` in a completely fresh checkout (no apps/<name> yet — exactly

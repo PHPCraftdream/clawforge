@@ -14,6 +14,11 @@ out (why `push` installs keys before starting rather than after, for instance), 
 client sees that same text as the tool description under `./clawforge control-mcp`. What follows
 below is what does not fit in `--help` — the whole model, file formats, diagnostics.
 
+A bare sub-action group (`recipe`, `set`, `watch`, `expose`) either runs its one read-only
+default or refuses: `recipe` alone lists the catalog (its default action, harmless to run by
+accident); `set`, `watch` and `expose` alone have no such default, so they name every action
+and point at `--help` instead of guessing one.
+
 | Command | Arguments | Purpose |
 | --- | --- | --- |
 | `bootstrap` | `[--no-pull] [--break-lock] [--break-foreign-lock <hostId>]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance. A fresh pull of a tag is pinned to the digest it just proved, in `.env` — an already digest-pinned deployment is left alone; `./clawforge upgrade` moves it from there |

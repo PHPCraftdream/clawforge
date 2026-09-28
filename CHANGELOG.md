@@ -125,6 +125,18 @@ All notable changes to `@clawforge/framework` will be documented here.
   is read from the shell, `.env` is the sole source for the rest. Now one stderr line per run
   names every such variable that disagrees with `.env` or is missing from it (never `--json`
   stdout, so `control-mcp`'s stdio framing is unaffected); values are never printed, only names.
+* `new-app a b` created `a` and silently dropped `b`; it now parses through the same shared
+  declaration parser every other command does, so a stray extra positional is refused.
+* `help help` answered "unknown command: help / did you mean: help"; it now prints the
+  general command list.
+* With several deployments under `apps/` and none selected, commands led with
+  `deployment "openclaw" not found`; they now say "several deployments (a, b) — pick one
+  with --app <name> or OC_APP".
+* `watch`/`set`/`recipe`/`expose`'s own "unknown action" refusal now carries a did-you-mean
+  guess and a `<command> --help` pointer, the same as an unknown command or flag already did.
+  Their bare-usage errors (no action at all) now also point at `--help`.
+* `new-app`'s `.gitignore` now excludes `state/` (machine-local `watch.json`) and `sets/`
+  (built artifacts); `config/`, `recipes/` and `deployment.lock.json` stay trackable.
 
 ## 0.1.0
 

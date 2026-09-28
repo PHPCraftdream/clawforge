@@ -25,6 +25,7 @@ import {
   closestCommand,
   reportUnknownCommand,
   soleDeploymentFallback,
+  missingDeploymentReport,
 } from "#framework/integration/gate.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { selectChecks } from "#checks/run.ts";
@@ -166,13 +167,14 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
 // --- the real gate: --app after the command name is that command's own argument --------
 
 {
-  // new-app takes its target as args[0] after the gate's own dispatch — if --app leaked
-  // through here instead of stopping at the command boundary, "--app" itself would become
-  // the attempted deployment name, and safeName refuses it by that exact literal value.
+  // new-app parses its own args through the shared declaration parser — if --app leaked
+  // through here instead of stopping at the command boundary, it would reach that parser as
+  // new-app's own first token and be refused there, by its own name, rather than silently
+  // dropped or read back out at the gate.
   const leaked = await runGate(["new-app", "--app", "not-a-flag-here", "extra"]);
   check(
     "--app after the command name is new-app's own first argument, not stripped by the gate",
-    leaked.stdout.includes('invalid deployment name "--app"'),
+    leaked.stdout.includes("unknown argument: --app"),
     true,
   );
 
@@ -235,6 +237,32 @@ check("the lone deployment is picked when none was named", soleDeploymentFallbac
 check("never when --app or OC_APP named one", soleDeploymentFallback(true, ["only"]), undefined);
 check("never among several", soleDeploymentFallback(false, ["a", "b"]), undefined);
 check("never when there are none", soleDeploymentFallback(false, []), undefined);
+
+// --- missingDeploymentReport(): several unselected deployments vs. one genuinely missing ----
+//
+// Once soleDeploymentFallback above has ruled out "exactly one, pick it": several deployments
+// with none named should point at the ambiguity, not at the "openclaw" default nobody asked
+// for; a deployment named explicitly (or none existing at all) keeps naming it — there, "not
+// found" is the accurate story.
+
+check(
+  "several deployments with none selected names the ambiguity, not a default",
+  missingDeploymentReport(false, "openclaw", "/apps/openclaw", ["a", "b"]),
+  ['several deployments (a, b) — pick one with --app <name> or OC_APP'],
+);
+check(
+  "an explicitly named deployment that is missing keeps the old wording, even among several",
+  missingDeploymentReport(true, "staging", "/apps/staging", ["a", "b"]),
+  [
+    'deployment "staging" not found at /apps/staging',
+    'available: a, b — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>',
+  ],
+);
+check(
+  "no deployments at all keeps the old wording regardless of --app",
+  missingDeploymentReport(false, "openclaw", "/apps/openclaw", []),
+  ['deployment "openclaw" not found at /apps/openclaw', "create one with: ./clawforge new-app <name>"],
+);
 
 process.stderr.write(failed === 0 ? "all gate-dispatch checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

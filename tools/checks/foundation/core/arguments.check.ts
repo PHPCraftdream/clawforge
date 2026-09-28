@@ -5,7 +5,7 @@
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { splitInlineOptions, reportUnknownArgument } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
-import { parseDeclaredArgs, UnknownArgumentError } from "#framework/core/arguments.ts";
+import { parseDeclaredArgs, UnknownArgumentError, UnknownActionError, dieUnknownAction } from "#framework/core/arguments.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 
@@ -305,6 +305,47 @@ check(
   check("reportUnknownArgument prints the refusal, did-you-mean included", printed.includes("unknown argument: --pth (did you mean --path?)"), true);
   check("reportUnknownArgument points at the command's own --help", printed.includes("run ./clawforge backup --help"), true);
 }
+
+// --- dieUnknownAction: parity for a sub-action dispatcher's own unknown-action refusal ------
+//
+// watch/set/recipe/expose each write their own "unknown action: X (expected ...)" message by
+// hand — dieUnknownAction only needs to add the did-you-mean guess and pick an error type
+// entry/cli.ts's existing UnknownArgumentError catch already recognises, so the --help
+// pointer reportUnknownArgument prints above comes for free once one of these throws.
+
+{
+  let caught: unknown;
+  try {
+    dieUnknownAction("insatll", "unknown action: insatll (expected check, install, uninstall, status or test)", [
+      "check", "install", "uninstall", "status", "test",
+    ]);
+  } catch (error) {
+    caught = error;
+  }
+  check("dieUnknownAction throws an UnknownActionError", caught instanceof UnknownActionError, true);
+  check("and it is an UnknownArgumentError too, so cli.ts's existing catch fires", caught instanceof UnknownArgumentError, true);
+  check(
+    "the message keeps the site's own wording and adds a did-you-mean guess",
+    (caught as Error).message,
+    "unknown action: insatll (expected check, install, uninstall, status or test) (did you mean install?)",
+  );
+
+  let printed = "";
+  await withOutputSink((chunk) => {
+    printed += chunk;
+  }, async () => {
+    reportUnknownArgument("watch", caught as UnknownArgumentError);
+  });
+  check("reported through the same path as an unknown flag, --help pointer included", printed.includes("run ./clawforge watch --help"), true);
+}
+
+check(
+  "nothing close enough to any choice adds no guess",
+  deathOf(() => dieUnknownAction("bogus", "unknown action: bogus (expected check, install, uninstall, status or test)", [
+    "check", "install", "uninstall", "status", "test",
+  ])),
+  "unknown action: bogus (expected check, install, uninstall, status or test)",
+);
 
 process.stderr.write(failed === 0 ? "all argument checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

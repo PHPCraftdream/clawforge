@@ -6,9 +6,13 @@
 
 import { die } from "../../../core/io/log.ts";
 import type { Context } from "../../../core/context.ts";
+import { dieUnknownAction } from "../../../core/arguments.ts";
 import { watchCheck, watchTest } from "./check.ts";
 import { watchInstall, watchUninstall } from "./install.ts";
 import { watchStatus } from "./status.ts";
+
+/** The action words the dispatcher below and its bare-usage/unknown-action refusals share. */
+const WATCH_ACTIONS = ["check", "install", "uninstall", "status", "test"] as const;
 
 export { watchLevel, runWatchCycle, resolveWatchOutcome } from "./check.ts";
 export type { WatchLevel, WatchReason, WatchState } from "./state.ts";
@@ -32,7 +36,7 @@ export async function watch(ctx: Context, args: string[]): Promise<void> {
     case "uninstall": return watchUninstall(ctx, rest);
     case "status": return watchStatus(ctx, rest);
     case "test": return watchTest(ctx, rest);
-    case undefined: die("usage: ./clawforge watch <check|install|uninstall|status|test> [...]");
-    default: die(`unknown action: ${action} (expected check, install, uninstall, status or test)`);
+    case undefined: die(`usage: ./clawforge watch <${WATCH_ACTIONS.join("|")}> [...] (see ./clawforge watch --help)`);
+    default: dieUnknownAction(action, `unknown action: ${action} (expected check, install, uninstall, status or test)`, WATCH_ACTIONS);
   }
 }

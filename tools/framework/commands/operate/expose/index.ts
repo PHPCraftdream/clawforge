@@ -10,9 +10,13 @@
 
 import { die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
+import { dieUnknownAction } from "#src/core/arguments.ts";
 import { exposeSsh } from "./ssh.ts";
 import { exposeTailscale } from "./tailscale.ts";
 import { exposeStatus } from "./status.ts";
+
+/** The action words the dispatcher below and its bare-usage/unknown-action refusals share. */
+const EXPOSE_ACTIONS = ["ssh", "tailscale", "status"] as const;
 
 export { summarizeExposure, exposureOneLiner, EXPOSE_STATUS_ARGUMENTS } from "./status.ts";
 export type { ExposureSummary } from "./status.ts";
@@ -32,7 +36,7 @@ export async function expose(ctx: Context, args: string[]): Promise<void> {
     case "ssh": return exposeSsh(ctx, rest);
     case "tailscale": return exposeTailscale(ctx, rest);
     case "status": return exposeStatus(ctx, rest);
-    case undefined: die("usage: ./clawforge expose <ssh|tailscale|status> [...]");
-    default: die(`unknown action: ${action} (expected ssh, tailscale or status)`);
+    case undefined: die(`usage: ./clawforge expose <${EXPOSE_ACTIONS.join("|")}> [...] (see ./clawforge expose --help)`);
+    default: dieUnknownAction(action, `unknown action: ${action} (expected ssh, tailscale or status)`, EXPOSE_ACTIONS);
   }
 }

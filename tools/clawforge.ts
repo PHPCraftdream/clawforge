@@ -24,6 +24,7 @@ import {
   splitLeadingAppFlag,
   misplacedAppFlag,
   soleDeploymentFallback,
+  missingDeploymentReport,
   type GateCommand,
 } from "./framework/integration/gate.ts";
 import { reportError, info } from "./framework/core/io/log.ts";
@@ -51,6 +52,11 @@ if (appFlag.missingValue) {
   appExplicit = true;
 }
 argv.splice(0, argv.length, ...appFlag.rest);
+
+// Drives both new-app's parser and its declaration.
+const NEW_APP_ARGUMENTS: CommandArgument[] = [
+  { name: "name", description: "Deployment name", kind: "positional", required: true },
+];
 
 // Both of these run before a deployment is resolved — the checks describe the framework
 // rather than an instance, and new-app creates the very thing every other command needs.
@@ -99,9 +105,9 @@ const gateCommands: GateCommand[] = [
       "before preparing data or pulling an image.\n" +
       "Refuses if the directory already exists — run this once per deployment, then " +
       "./clawforge --app <name> bootstrap.",
-    arguments: [{ name: "name", description: "Deployment name", kind: "positional", required: true }],
+    arguments: NEW_APP_ARGUMENTS,
     run: async (args) => {
-      const target = args[0];
+      const target = parseDeclaredArgs(NEW_APP_ARGUMENTS, args).name as string | undefined;
       if (target === undefined) {
         reportError("usage: ./clawforge new-app <name>");
         return 1;
@@ -227,10 +233,7 @@ try {
     reportUnknownCommand(argv[0], baseCommandNames);
     process.exit(1);
   } else {
-    reportError(`deployment "${name}" not found at ${deploymentDir}`);
-    reportError(available.length === 0
-      ? "create one with: ./clawforge new-app <name>"
-      : `available: ${available.join(", ")} — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>`);
+    for (const line of missingDeploymentReport(appExplicit, name, deploymentDir, available)) reportError(line);
     process.exit(1);
   }
 }

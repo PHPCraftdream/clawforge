@@ -158,7 +158,8 @@ export async function runApp(
   // exist" and "what does this one do" are both spelled the same way, `help`.
   if (name === "help") {
     const target = args[0];
-    if (target === undefined || target === "--help" || target === "-h") {
+    // `help` is not in app.commands; `help help` shows the general list.
+    if (target === undefined || target === "--help" || target === "-h" || target === "help") {
       usage(app, gateHelp);
       return 0;
     }

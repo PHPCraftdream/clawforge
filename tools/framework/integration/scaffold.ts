@@ -110,6 +110,10 @@ const GITIGNORE_APPEND = `
 # config. MCP client files (.mcp.json, .codex/) are excluded separately.
 .env
 secrets/
+# Machine-local watch state and built set artifacts, both regenerated every cycle —
+# config/, recipes/ and deployment.lock.json stay trackable.
+state/
+sets/
 `;
 
 /** Appended, not overwritten — mirrors init.ts's own updateGitignore, minus the

@@ -28,7 +28,10 @@ import { withSetSource } from "#src/set/artifacts/source.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, collectManifest, defaultSetName } from "./set-manifest.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, dieUnknownAction } from "#src/core/arguments.ts";
+
+/** The action words `set`'s dispatcher accepts, in the order its usage messages name them. */
+const SET_ACTIONS = ["build", "validate", "diff", "receipts", "try", "forget"] as const;
 
 /** The slice of `set`'s declaration build/validate/forget share — `try` parses its own
  *  (set-try.ts), `diff`/`receipts` parse theirs (set-diff.ts/set-receipts.ts). */
@@ -159,9 +162,9 @@ export async function set(ctx: Context, args: string[]): Promise<void> {
 
   // No default action, and no pretending: with one subcommand, an unknown one fails naming
   // what exists rather than hinting at a surface that is not there yet.
-  if (action === undefined) die("usage: ./clawforge set <build|validate|diff|receipts|try|forget> [options]");
+  if (action === undefined) die(`usage: ./clawforge set <${SET_ACTIONS.join("|")}> [options] (see ./clawforge set --help)`);
   if (action !== "build" && action !== "validate" && action !== "try" && action !== "forget") {
-    die(`unknown action: ${action} (expected build, validate, diff, receipts, try, or forget)`);
+    dieUnknownAction(action, `unknown action: ${action} (expected build, validate, diff, receipts, try, or forget)`, SET_ACTIONS);
   }
 
   // try has its own argument shape (--with-model, --keep) that the flags shared by the

@@ -1,3 +1,4 @@
+// check:exclusive — writes a scratch tree into the real checkout, which other deploy checks scan.
 // Checks what `./clawforge deploy` would actually send to a server.
 //
 // No server and no network: the transport is a stub that records every command instead of

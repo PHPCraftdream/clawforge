@@ -7,7 +7,7 @@
 import { availableParallelism } from "node:os";
 import { reportError } from "#framework/core/io/log.ts";
 import { emit } from "#framework/core/io/output.ts";
-import { discoverChecks, selectChecks, sweepOrphanedCheckDeployments, type LabeledCheck } from "./discover.ts";
+import { discoverChecks, selectChecks, splitExclusive, sweepOrphanedCheckDeployments, type LabeledCheck } from "./discover.ts";
 import { runCheckFile, type CheckResult } from "./spawn.ts";
 
 export { selectChecks } from "./discover.ts";
@@ -80,14 +80,18 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
   }
 
   let failed = 0;
-  await runPooled(selected, jobs, (result) => {
+  const report = (result: CheckResult): void => {
     process.stderr.write(`\n${result.label}\n`);
     process.stderr.write(result.output);
     if (!result.ok) {
       failed += 1;
       process.stderr.write(`  FAIL ${result.label}${result.reason === undefined ? "" : ` — ${result.reason}`}\n`);
     }
-  });
+  };
+  // Exclusive files (see discover.ts) run alone once the parallel pool has drained.
+  const { pooled, alone } = splitExclusive(selected);
+  await runPooled(pooled, jobs, report);
+  await runPooled(alone, 1, report);
 
   process.stderr.write(
     failed === 0

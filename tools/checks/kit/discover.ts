@@ -49,6 +49,11 @@ export async function discoverChecks(): Promise<LabeledCheck[]> {
   })));
 }
 
+/** The parallel pool and the files that must run alone after it, each in the given order. */
+export function splitExclusive(entries: readonly LabeledCheck[]): { pooled: LabeledCheck[]; alone: LabeledCheck[] } {
+  return { pooled: entries.filter((entry) => !entry.exclusive), alone: entries.filter((entry) => entry.exclusive) };
+}
+
 /** The labels containing at least one filter substring; all of them when there are none. */
 export function selectChecks(labels: readonly string[], filters: readonly string[]): string[] {
   if (filters.length === 0) return [...labels];

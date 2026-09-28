@@ -9,7 +9,9 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { initApp } from "#framework/integration/init.ts";
+import { initApp } from "#framework/integration/deployment/init.ts";
+import { deploymentEnv as templateEnv, gitignoreLines as templateLines, updateGitignore } from "#framework/integration/deployment/deployment-template.ts";
+import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 
 let failed = 0;
@@ -128,6 +130,88 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
     // file extension \".ts\"" when bin.js dynamically imports this deployment's app.ts.
     const shim = await readFile(resolve(root, "clawforge"), "utf8");
     check("the shim passes --experimental-strip-types when invoking node directly", shim.includes("--experimental-strip-types"), true);
+
+    // Mirrors cli-help.check.ts's own assertion on scaffold.ts's new-app output: an
+    // installed-mode deployment must keep the same machine-local state out of its history —
+    // this used to be scaffold.ts-only (S10 added state/ and sets/ to that copy alone), so
+    // an installed deployment's watch.json and built set archives got committed.
+    const gitignoreLines = (await readFile(resolve(root, ".gitignore"), "utf8"))
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== "" && !line.startsWith("#"));
+    check("the deployment .gitignore excludes machine-local watch state", gitignoreLines.includes("state/"), true);
+    check("and excludes built set artifacts", gitignoreLines.includes("sets/"), true);
+    check("and still excludes the installed, unvendored package", gitignoreLines.includes("node_modules/"), true);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+}
+
+// --- .gitignore updates are per-line, idempotent, and never clobber what is already there --
+
+{
+  const lines = templateLines(true);
+
+  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  try {
+    // Running it twice is a no-op.
+    const twice = join(base, "twice");
+    await mkdir(twice, { recursive: true });
+    await updateGitignore(twice, lines);
+    const once = await readFile(resolve(twice, ".gitignore"), "utf8");
+    await updateGitignore(twice, lines);
+    check("running the gitignore update twice makes no further change", await readFile(resolve(twice, ".gitignore"), "utf8"), once);
+
+    // An old block from before state/ and sets/ existed still gets the missing lines
+    // appended, rather than being recognised as "already handled" and left alone forever —
+    // the exact idempotency bug init.ts's own includes() heuristic had.
+    const legacy = join(base, "legacy");
+    await mkdir(legacy, { recursive: true });
+    const oldBlock = "\n# @clawforge/framework: installed, not vendored — the whole point of installing it as a\n# dependency instead of copying it in is that it never has to be committed.\nnode_modules/\n\n# OpenClaw deployment state — host paths, the gateway token, secrets and snapshots.\n.env\nsecrets/\n";
+    await writeFile(resolve(legacy, ".gitignore"), oldBlock, "utf8");
+    await updateGitignore(legacy, lines);
+    const upgraded = (await readFile(resolve(legacy, ".gitignore"), "utf8")).split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("#"));
+    check("an old block gains the state/ line it predates", upgraded.includes("state/"), true);
+    check("an old block gains the sets/ line it predates", upgraded.includes("sets/"), true);
+    check("an old block keeps its own .env line, not duplicated", upgraded.filter((line) => line === ".env").length, 1);
+    check("an old block keeps its own secrets/ line, not duplicated", upgraded.filter((line) => line === "secrets/").length, 1);
+
+    // The operator's own lines are neither removed nor reordered.
+    const custom = join(base, "custom");
+    await mkdir(custom, { recursive: true });
+    await writeFile(resolve(custom, ".gitignore"), "*.local\ndist/\n", "utf8");
+    await updateGitignore(custom, lines);
+    const customLines = (await readFile(resolve(custom, ".gitignore"), "utf8")).split(/\r?\n/).map((line) => line.trim());
+    check("a user's own ignore line survives the update", customLines.includes("*.local"), true);
+    check("a user's own ignore line keeps its position", customLines.indexOf("*.local") < customLines.indexOf("state/"), true);
+
+    // CRLF in, CRLF out — no mixed line endings from the append.
+    const crlf = join(base, "crlf");
+    await mkdir(crlf, { recursive: true });
+    await writeFile(resolve(crlf, ".gitignore"), ".env\r\nsecrets/\r\n", "utf8");
+    await updateGitignore(crlf, lines);
+    const crlfContent = await readFile(resolve(crlf, ".gitignore"), "utf8");
+    check("a CRLF .gitignore keeps CRLF endings after the update", crlfContent.includes("\r\n"), true);
+    check("a CRLF .gitignore gains no bare LF", /(?<!\r)\n/.test(crlfContent), false);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+}
+
+// --- init avoids a port a sibling deployment beside it already claims (same idea as ---------
+// --- scaffold.ts's new-app, checked in mcp-project.check.ts, applied to installed mode) -----
+
+{
+  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  try {
+    const claimed = join(base, "sibling-claimed");
+    await mkdir(claimed, { recursive: true });
+    const candidate = projectPort(new Set(), 42);
+    await writeFile(resolve(claimed, ".env"), `OPENCLAW_GATEWAY_PORT=${candidate}\n`, "utf8");
+
+    const assignedEnv = await templateEnv("sibling-new", base, 42);
+    const assigned = Number(/^OPENCLAW_GATEWAY_PORT=(\d+)$/m.exec(assignedEnv)?.[1]);
+    check("init avoids a port a sibling deployment already recorded", assigned !== candidate, true);
   } finally {
     await rm(base, { recursive: true, force: true });
   }

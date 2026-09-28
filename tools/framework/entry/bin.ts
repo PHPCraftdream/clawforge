@@ -22,7 +22,7 @@ import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, type GateCommand } from "../integration/gate.ts";
 import { reportError } from "../core/io/log.ts";
 import { useDeployment } from "../runtime/deployment.ts";
-import { initApp } from "../integration/init.ts";
+import { initApp } from "../integration/deployment/init.ts";
 import { normalizeVersionAlias, versionGateCommand } from "../integration/version.ts";
 import type { AppDefinition } from "../core/app.ts";
 

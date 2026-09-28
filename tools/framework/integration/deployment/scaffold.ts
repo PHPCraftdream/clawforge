@@ -14,14 +14,14 @@
 // The installed-as-dependency init command has its own template in init.ts: it imports the
 // package specifier rather than a relative path into this monorepo.
 
-import { mkdir, writeFile, access, readdir, readFile } from "node:fs/promises";
-import type { Dirent } from "node:fs";
+import { mkdir, writeFile, access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, die } from "../core/io/log.ts";
-import { monorepoRoot, frameworkRoot, parseEnv, projectPort } from "../core/env.ts";
-import { safeName } from "../core/names.ts";
-import { setupProjectMcp } from "./mcp/project.ts";
-import { createPrivateFile } from "../security/privacy/private-file.ts";
+import { log, info, die } from "../../core/io/log.ts";
+import { monorepoRoot } from "../../core/env.ts";
+import { safeName } from "../../core/names.ts";
+import { setupProjectMcp } from "../mcp/project.ts";
+import { createPrivateFile } from "../../security/privacy/private-file.ts";
+import { deploymentEnv as templateEnv, gitignoreLines, updateGitignore } from "./deployment-template.ts";
 
 export const appsDir = resolve(monorepoRoot, "apps");
 
@@ -57,83 +57,26 @@ const DESIRED_STATE = `[
 ]
 `;
 
-/** Ports recorded by readable sibling deployments. */
-async function usedPorts(): Promise<Set<number>> {
-  const ports = new Set<number>();
-
-  let entries: Dirent[];
-  try {
-    entries = await readdir(appsDir, { withFileTypes: true });
-  } catch {
-    return ports;
-  }
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    try {
-      const env = parseEnv(await readFile(resolve(appsDir, entry.name, ".env"), "utf8"));
-      const port = Number.parseInt(env.OPENCLAW_GATEWAY_PORT ?? "", 10);
-      if (Number.isFinite(port)) ports.add(port);
-    } catch {
-      // A deployment without a readable .env claims no port.
-    }
-  }
-  return ports;
-}
-
 /** The template's own settings, adjusted so a new deployment does not collide with the
- *  existing ones. Two deployments sharing a data directory or a port is not a conflict the
- *  user should have to discover from a compose error.
+ *  existing ones under apps/. Two deployments sharing a data directory or a port is not a
+ *  conflict the user should have to discover from a compose error.
  *
  *  Exported because bootstrap creates the file too, when a deployment directory exists
  *  without one — both paths must produce the same isolated settings. */
 export async function deploymentEnv(name: string, portStart?: number): Promise<string> {
-  const template = await readFile(resolve(frameworkRoot, ".env.example"), "utf8");
-  const taken = await usedPorts();
-
-  const port = projectPort(taken, portStart);
-
-  return template
-    .split("\n")
-    .map((line) => {
-      if (line.startsWith("OC_DATA_DIR=")) return `OC_DATA_DIR=/srv/${name}/data`;
-      if (line.startsWith("OC_BACKUP_DIR=")) return `OC_BACKUP_DIR=/srv/${name}/backups`;
-      if (line.startsWith("OC_SNAPSHOT_DIR=")) return `OC_SNAPSHOT_DIR=/srv/${name}/snapshots`;
-      if (line.startsWith("OPENCLAW_GATEWAY_PORT=")) return `OPENCLAW_GATEWAY_PORT=${port}`;
-      return line;
-    })
-    .join("\n");
+  return templateEnv(name, appsDir, portStart);
 }
 
-const GITIGNORE_APPEND = `
-# OpenClaw deployment state — the gateway token and provider secrets, never framework
-# config. MCP client files (.mcp.json, .codex/) are excluded separately.
-.env
-secrets/
-# Machine-local watch state and built set artifacts, both regenerated every cycle —
-# config/, recipes/ and deployment.lock.json stay trackable.
-state/
-sets/
-`;
-
-/** Appended, not overwritten — mirrors init.ts's own updateGitignore, minus the
- *  node_modules/ line an installed deployment needs and this one does not (there is no
+/** Appended, not overwritten — shares its lines with init.ts's own updateGitignore call, minus
+ *  the node_modules/ line an installed deployment needs and this one does not (there is no
  *  package installed under apps/<name>/).
  *
  *  This repository's own .gitignore excludes apps/ entirely (root .gitignore,
  *  docs/architecture.md), so nothing here is ever read by IT — this file only matters once
  *  the deployment directory becomes a git repository of its own (the next: note below), and
  *  that repository needs its secrets kept out of its history the same way init.ts's does. */
-async function updateGitignore(directory: string): Promise<void> {
-  const file = resolve(directory, ".gitignore");
-  let existing = "";
-  try {
-    existing = await readFile(file, "utf8");
-  } catch {
-    // No .gitignore yet — start from nothing.
-  }
-  if (existing.includes("secrets/")) return;
-  await writeFile(file, `${existing}${GITIGNORE_APPEND}`, "utf8");
+async function writeGitignore(directory: string): Promise<void> {
+  await updateGitignore(directory, gitignoreLines(false));
 }
 
 /** Printed as part of createApp's next-steps, and its own constant so lock.ts's COMMIT_ADVICE
@@ -169,7 +112,7 @@ export async function createApp(name: string): Promise<void> {
   await writeFile(resolve(directory, "app.ts"), declarationFor(name), "utf8");
   await writeFile(resolve(directory, "config", "desired-state.json"), DESIRED_STATE, "utf8");
   await createPrivateFile(resolve(directory, ".env"), await deploymentEnv(name));
-  await updateGitignore(directory);
+  await writeGitignore(directory);
   await setupProjectMcp(directory, "monorepo");
 
   log(`created ${directory}`);

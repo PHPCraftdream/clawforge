@@ -1,4 +1,4 @@
-// Listing every deployment under apps/ — `./clawforge list`. Shares scaffold.ts's appsDir;
+// Listing every deployment under apps/ — `./clawforge list`. Shares deployment/scaffold.ts's appsDir;
 // creating a deployment is that file's job, reading what several of them add up to is this
 // one's.
 
@@ -12,7 +12,7 @@ import { createContext, type Context } from "../core/context.ts";
 import { useDeployment, currentDeploymentDir } from "../runtime/deployment.ts";
 import { NotBootstrapped } from "../runtime/runtime.ts";
 import type { AppDefinition } from "../core/app.ts";
-import { appsDir } from "./scaffold.ts";
+import { appsDir } from "./deployment/scaffold.ts";
 
 /** "running"/"stopped" answer isRunning(); "not-bootstrapped" is NotBootstrapped (the data
  *  directory was never created); "unchecked" means --no-status skipped the target entirely;

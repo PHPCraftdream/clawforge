@@ -12,12 +12,12 @@
 // must run immediately after its .env is filled in.
 
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
-import { resolve, basename, relative } from "node:path";
-import { log, info, die } from "../core/io/log.ts";
-import { frameworkRoot, projectPort } from "../core/env.ts";
-import { safeName } from "../core/names.ts";
-import { setupProjectMcp } from "./mcp/project.ts";
-import { createPrivateFile } from "../security/privacy/private-file.ts";
+import { resolve, basename, dirname, relative } from "node:path";
+import { log, info, die } from "../../core/io/log.ts";
+import { safeName } from "../../core/names.ts";
+import { setupProjectMcp } from "../mcp/project.ts";
+import { createPrivateFile } from "../../security/privacy/private-file.ts";
+import { deploymentEnv as templateEnv, gitignoreLines, updateGitignore } from "./deployment-template.ts";
 
 const DECLARATION = `// This deployment.
 //
@@ -47,17 +47,6 @@ const DESIRED_STATE = `[
   { "path": "gateway.mode", "value": "local" },
   { "path": "gateway.bind", "value": "lan" }
 ]
-`;
-
-const GITIGNORE_APPEND = `
-# @clawforge/framework: installed, not vendored — the whole point of installing it as a
-# dependency instead of copying it in is that it never has to be committed.
-node_modules/
-
-# OpenClaw deployment state — host paths, the gateway token, secrets and snapshots.
-.env
-.mcp.json
-secrets/
 `;
 
 // The only framework-adjacent file committed to a consumer repo. It invokes the installed
@@ -108,38 +97,16 @@ async function writeShim(root: string): Promise<void> {
   await chmod(file, 0o755);
 }
 
-/** Same template every deployment starts from, framework-owned since every variable in it
- *  is one the framework's own commands read — not application data. The data/backup/
- *  snapshot directories are named after the deployment, not left at the template's literal
- *  /srv/openclaw/... — otherwise a second deployment on the same host would silently share
- *  the first one's data directory, exactly what deployment.ts's own docs warn against. */
-async function deploymentEnv(name: string): Promise<string> {
-  const template = await readFile(resolve(frameworkRoot, ".env.example"), "utf8");
-  return template
-    .split("\n")
-    .map((line) => {
-      if (line.startsWith("OC_DATA_DIR=")) return `OC_DATA_DIR=/srv/${name}/data`;
-      if (line.startsWith("OC_BACKUP_DIR=")) return `OC_BACKUP_DIR=/srv/${name}/backups`;
-      if (line.startsWith("OC_SNAPSHOT_DIR=")) return `OC_SNAPSHOT_DIR=/srv/${name}/snapshots`;
-      if (line.startsWith("OPENCLAW_GATEWAY_PORT=")) return `OPENCLAW_GATEWAY_PORT=${projectPort()}`;
-      return line;
-    })
-    .join("\n");
+/** The shared template; the port avoids sibling deployments beside this directory. */
+async function deploymentEnv(root: string, name: string): Promise<string> {
+  return templateEnv(name, dirname(root));
 }
 
 /** Appends the deployment-state entries to .gitignore, creating the file if the consumer
  *  repo does not have one yet. Appended rather than overwritten: this is one repo among
  *  possibly many things it already ignores. */
-async function updateGitignore(root: string): Promise<void> {
-  const file = resolve(root, ".gitignore");
-  let existing = "";
-  try {
-    existing = await readFile(file, "utf8");
-  } catch {
-    // No .gitignore yet — start from nothing.
-  }
-  if (existing.includes("@clawforge/framework") && existing.includes("secrets/")) return;
-  await writeFile(file, `${existing}${GITIGNORE_APPEND}`, "utf8");
+async function updateInitGitignore(root: string): Promise<void> {
+  await updateGitignore(root, gitignoreLines(true));
 }
 
 /** What this directory's package.json has to say about module type, and what init must do
@@ -290,8 +257,8 @@ export async function initApp(root: string): Promise<void> {
   await applyModuleType(root, moduleType);
   await writeFile(appFile, DECLARATION, "utf8");
   await writeFile(resolve(root, "config", "desired-state.json"), DESIRED_STATE, "utf8");
-  await createPrivateFile(resolve(root, ".env"), await deploymentEnv(base));
-  await updateGitignore(root);
+  await createPrivateFile(resolve(root, ".env"), await deploymentEnv(root, base));
+  await updateInitGitignore(root);
   await writeShim(root);
   await setupProjectMcp(root, "installed");
 

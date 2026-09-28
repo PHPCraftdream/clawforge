@@ -169,6 +169,15 @@ All notable changes to `@clawforge/framework` will be documented here.
   connects used to end in `could not check whether … exists (exit 4294967295):` with nothing
   after the colon (wsl.exe's own errors are UTF-16LE); it is now one blocking, readable finding
   naming the variable to check and how to test the connection, and exit codes print signed.
+* `init`'s `.env` template, `.gitignore` block and port selection were a separate copy of
+  `new-app`'s, and had drifted: `state/` and `sets/` (machine-local watch state and built set
+  archives) were excluded only by `new-app`, so an installed deployment committed them; a
+  repo whose `.gitignore` already carried an older block never received lines added since;
+  and `init` picked its port at random instead of avoiding one a sibling deployment already
+  claimed. `init` now shares `new-app`'s template: `.gitignore` updates add whichever lines
+  are missing one at a time (so an old block catches up instead of being skipped forever, and
+  the operator's own lines are never touched), and the port avoids every sibling deployment
+  directory's own `.env`, the same way `new-app` already did for `apps/`.
 
 ## 0.1.0
 

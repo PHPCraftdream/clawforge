@@ -9,7 +9,7 @@ import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { reportError } from "#framework/core/io/log.ts";
 import { emit } from "#framework/core/io/output.ts";
-import { appsDir } from "#framework/integration/scaffold.ts";
+import { appsDir } from "#framework/integration/deployment/scaffold.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 

@@ -6,7 +6,7 @@
 // declaration replaced wholesale, a secret the instance did not use to need.
 
 import { compareLock, COMMIT_ADVICE, LOCK_VERSION, declarationChecksum } from "#framework/commands/management/lock.ts";
-import { gitInitAdvice } from "#framework/integration/scaffold.ts";
+import { gitInitAdvice } from "#framework/integration/deployment/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
 import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList } from "#framework/commands/management/extensions.ts";

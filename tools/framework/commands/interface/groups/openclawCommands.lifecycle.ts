@@ -110,7 +110,11 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "afterwards, computed generically — whatever exists live and is absent from OpenClaw's " +
       "own payload, never a hardcoded name — and the count is reported. Those copies are hot: " +
       "an append-only transcript's last line can be truncated by a write landing mid-copy, the " +
-      "same partial-write risk --hot accepts for the whole tree, narrowed here to log tails.",
+      "same partial-write risk --hot accepts for the whole tree, narrowed here to log tails.\n" +
+      "If the application declares afterBackup (see README: Extending backup and restore), it " +
+      "runs once the archive is published and rotated — never for an internal archive smoke " +
+      "takes purely to prove the mechanism works. A hook that fails never deletes the archive: " +
+      "the failure is reported with the published path and a non-zero exit.",
     arguments: BACKUP_ARGUMENTS,
   },
   restore: {
@@ -129,7 +133,11 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "Before starting the gateway (unless --no-start), this checks that every secret " +
       "the restored config references is actually available —\n" +
       "a config referencing a variable nothing supplies otherwise crash-loops on " +
-      "SecretRefResolutionError.",
+      "SecretRefResolutionError.\n" +
+      "If the application declares beforeRestore (see README: Extending backup and " +
+      "restore), it runs first — nothing is stopped or moved yet — and can decrypt or fetch " +
+      "the real archive, returning the path to restore from instead. A hook that fails stops " +
+      "the restore before anything on the target is touched.",
     arguments: RESTORE_ARGUMENTS,
   },
   pull: {

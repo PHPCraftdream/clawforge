@@ -57,6 +57,11 @@ export interface RestoreOptions {
    *  restored config references env variables, and the gateway refuses to start without
    *  them — it crash-loops on SecretRefResolutionError instead. */
   noStart?: boolean;
+  /** Set by an internal caller (smoke's round-trip check) restoring into a scratch root
+   *  that only proves the mechanism still works — never a hook subject, so the
+   *  application's `beforeRestore` (if declared) is skipped. Ordinary callers never pass
+   *  this. */
+  internal?: boolean;
 }
 
 /** The newest FULL archive of this deployment, and what was skipped to find it.
@@ -281,6 +286,18 @@ export async function restoreArchive(
   archive: string,
   options: RestoreOptions = {},
 ): Promise<void> {
+  // Before anything else — nothing is validated, stopped or moved yet. A hook can decrypt
+  // or fetch the real archive and hand back the path to use instead; a failure here means
+  // the restore never started, so there is nothing to compensate.
+  if (options.internal !== true && ctx.applicationBeforeRestore !== undefined) {
+    try {
+      const prepared = await ctx.applicationBeforeRestore({ archive });
+      if (typeof prepared === "string" && prepared !== "") archive = prepared;
+    } catch (error) {
+      die(`beforeRestore hook failed, restore did not start: ${(error as Error).message}`);
+    }
+  }
+
   const { dataDir } = ctx.settings;
   const name = dataDirName(dataDir);
   const parent = dataDirParent(dataDir);

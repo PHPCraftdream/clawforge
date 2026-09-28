@@ -437,11 +437,11 @@ async function upgradeLocked(
   log("taking a pre-upgrade backup");
   let backupArchive: string;
   try {
-    backupArchive = await createBackup(ctx, { profile: "full", native: true });
+    backupArchive = await createBackup(ctx, { profile: "full", native: true, purpose: "upgrade" });
   } catch (error) {
     if (!(error instanceof NativeBackupUnsupportedError)) throw error;
     warn(`native backup unavailable (${error.message}) — falling back to a stopped full backup`);
-    backupArchive = await createBackup(ctx, { profile: "full" });
+    backupArchive = await createBackup(ctx, { profile: "full", purpose: "upgrade" });
   }
   log(`pre-upgrade backup: ${backupArchive}`);
 

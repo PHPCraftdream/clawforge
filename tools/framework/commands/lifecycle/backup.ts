@@ -18,7 +18,7 @@ import { runningRecipeStacks } from "../management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "../management/recipe/lifecycle.ts";
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "./verify.ts";
-import type { CommandArgument } from "#src/core/app.ts";
+import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -49,6 +49,12 @@ export interface BackupOptions {
    *  in the running instance's sidecar instead of a raw tar over live state. Full profile
    *  only (see createNativeArchive). */
   native?: boolean;
+  /** Why this archive is being created — see BackupPurpose. Defaults to "backup": the
+   *  ordinary case, where the application's `afterBackup` (if declared) runs once the
+   *  archive is published and rotated. Pass "internal" for a caller (smoke) whose archive
+   *  only proves the backup/restore mechanism still works and is not a copy for a hook to
+   *  act on. */
+  purpose?: BackupPurpose;
 }
 
 /** Thrown when native mode cannot be attempted at all — the caller (createBackup itself for
@@ -448,6 +454,19 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
 
   log(`backup done: ${archive} (${await fileSize(ctx, archive)}, profile: ${profile})`);
   await rotate(ctx, backupDir);
+
+  // Runs after the archive is fully published and rotated — never before, so a hook never
+  // sees a path that could still turn out to be staging. A hook failure must not read as
+  // the backup itself failing: the archive stays exactly where it landed, and the caller
+  // gets a distinct, actionable error instead of a deleted or hidden backup.
+  const purpose = options.purpose ?? "backup";
+  if (purpose !== "internal" && ctx.applicationAfterBackup !== undefined) {
+    try {
+      await ctx.applicationAfterBackup({ archive, profile, purpose });
+    } catch (error) {
+      die(`backup published at ${archive}, afterBackup hook failed: ${(error as Error).message}`);
+    }
+  }
   return archive;
 }
 

@@ -1259,6 +1259,54 @@ Rotation removes one archive per run, the oldest beyond `OC_BACKUP_KEEP`, rather
 whole backlog at once — the same rotation and naming for a native archive as for any other
 full backup.
 
+### Extending backup and restore: `afterBackup`/`beforeRestore`
+
+The framework does not encrypt archives or ship them off-host itself — that decision
+belongs to each deployment. Instead `defineApp` accepts two optional hooks, the same model
+as `settings`/`secrets`: a plain function on `AppDefinition`, bound to the running `Context`
+once and called from `backup`/`restore` wherever that Context is (not just the console
+command — `pull`, `push`, `upgrade`'s pre-upgrade backup and its rollback all go through the
+same two functions).
+
+```ts
+export default defineApp({
+  // ...
+  async afterBackup({ ctx, archive, profile, purpose }) {
+    // archive already exists on the target, published and rotated. Reach it with
+    // ctx.transport — here, copying it to the operator's own machine:
+    if (purpose === "internal") return; // smoke's own throwaway archives never reach here
+    const bytes = await ctx.transport.readFile(archive); // or shell out to scp/rsync
+    await writeFile(`./offsite-backups/${basename(archive)}`, bytes);
+    // Encryption is not the framework's job either — shell out to an external tool if you
+    // want the copy encrypted, e.g. `age -r <recipient> -o ${archive}.age ${archive}`.
+  },
+  async beforeRestore({ ctx, archive }) {
+    // Called before anything is stopped or moved. Decrypt/fetch the real archive and
+    // return its path; returning nothing restores `archive` as given.
+    if (!archive.endsWith(".age")) return;
+    const plain = archive.replace(/\.age$/, "");
+    await ctx.transport.exec("age", ["--decrypt", "-i", "/path/to/key", "-o", plain, archive]);
+    return plain;
+  },
+});
+```
+
+`afterBackup(info)` runs once the archive is fully published and rotated — never before, so
+it never sees a path that could still turn out to be staging. `info.purpose` says why the
+archive exists: `"backup"`, `"pull"` or `"upgrade"` for a real copy an operator (or upgrade's
+own pre-upgrade safety net) asked for, `"internal"` for an archive `smoke` takes purely to
+prove the mechanism still works — never a copy worth encrypting or exporting, so `afterBackup`
+is not called for it at all. A hook that throws never causes the archive to be deleted or
+hidden: the command reports `backup published at <path>, afterBackup hook failed: …` with a
+non-zero exit, and the archive stays exactly where it landed.
+
+`beforeRestore(info)` runs first, before the archive is even validated — nothing on the
+target has been stopped or touched. Returning a string path makes `restore` use that path for
+everything that follows; returning nothing keeps `archive` as given. A hook that throws stops
+the restore before it starts: nothing is stopped, nothing is moved, and the failure names the
+hook's own error. Internal restores (smoke's own round-trip check, into a throwaway scratch
+root) never call it either, for the same reason `afterBackup` skips smoke's archives.
+
 ### Upgrading the image: `upgrade`
 
 ```bash

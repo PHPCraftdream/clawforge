@@ -220,7 +220,7 @@ export const checks: Check[] = [
   {
     name: REJECTS_SECRETS_CHECK,
     run: async (ctx) => {
-      const archive = await reach("take a backup to verify", () => createBackup(ctx, { profile: "full" }));
+      const archive = await reach("take a backup to verify", () => createBackup(ctx, { profile: "full", purpose: "internal" }));
       const passed = await verifySnapshotQuietly(ctx, archive, "share");
       expect(!passed, "the verifier accepted an archive containing credentials");
     },
@@ -229,7 +229,7 @@ export const checks: Check[] = [
     name: ACCEPTS_SHARE_CHECK,
     run: async (ctx) => {
       try {
-        await pull(ctx, ["--share"]);
+        await pull(ctx, ["--share"], { purpose: "internal" });
       } catch (error) {
         // pull's own die() IS the verdict — a rejected snapshot is a failed check, not an
         // unreachable instance. Anything else never got far enough to judge anything.
@@ -384,11 +384,11 @@ async function roundTripCheck(ctx: Context): Promise<void> {
     // FULL, not migrate: full is the only profile that keeps privatePaths, identity and
     // keys — the only restore that is a round trip.
     const archive = await reachVerdict("take the full backup", () =>
-      createBackup(ctx, { profile: "full", leaveStopped: true }),
+      createBackup(ctx, { profile: "full", leaveStopped: true, purpose: "internal" }),
     );
 
     await reachVerdict("restore the backup into the isolated root", () =>
-      restoreArchive(isolated, archive, { force: true, noStart: true }),
+      restoreArchive(isolated, archive, { force: true, noStart: true, internal: true }),
     );
 
     await compareRestoredWitnesses(ctx, restored, witnesses);
@@ -431,7 +431,7 @@ async function roundTripUsingArchive(ctx: Context, archive: string, witnesses: M
   let bodyError: unknown;
   try {
     await reachVerdict("restore the backup into the isolated root", () =>
-      restoreArchive(isolated, archive, { force: true, noStart: true }),
+      restoreArchive(isolated, archive, { force: true, noStart: true, internal: true }),
     );
     await compareRestoredWitnesses(ctx, restored, witnesses);
   } catch (error) {
@@ -579,7 +579,7 @@ async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>): Prom
         // and the only one guaranteed to still carry whatever the reject-check needs to see
         // rejected. leaveStopped: true — this shared window restarts the gateway itself,
         // once, below; createBackup would otherwise restart it the moment this call returns.
-        fullArchive = await reachVerdict("take the full backup", () => createBackup(ctx, { profile: "full", leaveStopped: true }));
+        fullArchive = await reachVerdict("take the full backup", () => createBackup(ctx, { profile: "full", leaveStopped: true, purpose: "internal" }));
       } catch (error) {
         fullError = error;
       }
@@ -591,7 +591,7 @@ async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>): Prom
         // Same leaveStopped reasoning as the full backup above — and harmless either way
         // here, since createBackup()/pull() already skip re-pausing a gateway they find
         // already stopped (isRunning() is read fresh on every call).
-        await pull(ctx, ["--share"], { leaveStopped: true });
+        await pull(ctx, ["--share"], { leaveStopped: true, purpose: "internal" });
       } catch (error) {
         // pull's own die() IS the verdict — a rejected snapshot is a failed check, not an
         // unreachable instance. Anything else never got far enough to judge anything. Same

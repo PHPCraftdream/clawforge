@@ -11,7 +11,7 @@ import { createPathBridge, type PathBridge, type MountPoint } from "./paths.ts";
 import { DockerRuntime } from "../runtime/runtime-docker.ts";
 import { useComposeProjectOverride } from "../runtime/deployment.ts";
 import type { Runtime } from "../runtime/runtime.ts";
-import type { AppSecret } from "./app.ts";
+import type { AppSecret, AfterBackupInfo, BeforeRestoreInfo } from "./app.ts";
 
 export interface Context {
   readonly settings: Settings;
@@ -20,6 +20,12 @@ export interface Context {
   readonly runtime: Runtime;
   /** Application-owned requirements, evaluated against this context when needed. */
   readonly applicationSecrets?: () => Promise<AppSecret[]>;
+  /** Bound convenience over AppDefinition's `afterBackup` — `ctx` is filled in here so a
+   *  command holding only a Context (backup.ts et al.) never needs the AppDefinition
+   *  itself to call it. Mirrors applicationSecrets. */
+  readonly applicationAfterBackup?: (info: Omit<AfterBackupInfo, "ctx">) => Promise<void> | void;
+  /** Bound convenience over AppDefinition's `beforeRestore`, same reasoning. */
+  readonly applicationBeforeRestore?: (info: Omit<BeforeRestoreInfo, "ctx">) => Promise<string | void> | string | void;
 }
 
 /** The application supplies what the framework cannot know: how its container is laid out
@@ -29,6 +35,8 @@ export interface ContextOptions {
   service?: { name: string; logTail?: string };
   settings?: (env: Env) => Record<string, string>;
   secrets?: (ctx: Context) => Promise<AppSecret[]>;
+  afterBackup?: (info: AfterBackupInfo) => Promise<void> | void;
+  beforeRestore?: (info: BeforeRestoreInfo) => Promise<string | void> | string | void;
   /** The checks' way to run a real Context against stubbed answers instead of building
    *  one from .env's OC_TARGET_LOCATION. */
   transport?: Transport;
@@ -106,6 +114,12 @@ export async function createContext(options: ContextOptions = {}): Promise<Conte
     ...(options.secrets === undefined
       ? {}
       : { applicationSecrets: (): Promise<AppSecret[]> => options.secrets!(context) }),
+    ...(options.afterBackup === undefined
+      ? {}
+      : { applicationAfterBackup: (info: Omit<AfterBackupInfo, "ctx">): Promise<void> | void => options.afterBackup!({ ctx: context, ...info }) }),
+    ...(options.beforeRestore === undefined
+      ? {}
+      : { applicationBeforeRestore: (info: Omit<BeforeRestoreInfo, "ctx">): Promise<string | void> | string | void => options.beforeRestore!({ ctx: context, ...info }) }),
   };
   creationRecords.set(context, { options, service });
   return context;
@@ -174,6 +188,12 @@ export async function refreshContext(previous: Context): Promise<ContextRefresh 
     ...(creation.options.secrets === undefined
       ? {}
       : { applicationSecrets: (): Promise<AppSecret[]> => creation.options.secrets!(context) }),
+    ...(creation.options.afterBackup === undefined
+      ? {}
+      : { applicationAfterBackup: (info: Omit<AfterBackupInfo, "ctx">): Promise<void> | void => creation.options.afterBackup!({ ctx: context, ...info }) }),
+    ...(creation.options.beforeRestore === undefined
+      ? {}
+      : { applicationBeforeRestore: (info: Omit<BeforeRestoreInfo, "ctx">): Promise<string | void> | string | void => creation.options.beforeRestore!({ ctx: context, ...info }) }),
   };
   creationRecords.set(context, { options: creation.options, service: creation.service });
   return { context, changed, targetChanges };

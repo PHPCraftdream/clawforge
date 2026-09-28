@@ -18,7 +18,7 @@ import { createBackup } from "./backup.ts";
 import { restoreArchive } from "./restore.ts";
 import { forbiddenViolations, verifySnapshot } from "./verify.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
-import type { CommandArgument } from "#src/core/app.ts";
+import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
 import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
@@ -318,6 +318,10 @@ export async function loadSecrets(ctx: Context, content: string): Promise<void> 
  *  between this pull and the restore that follows it. Ordinary callers never pass this. */
 export interface PullTransactionOptions {
   leaveStopped?: boolean;
+  /** Passed straight through to createBackup's own purpose (default "pull") — smoke's
+   *  internal share check sets this to "internal" so afterBackup does not fire for a
+   *  backup that exists only to prove pull's own privacy check still works. */
+  purpose?: BackupPurpose;
 }
 
 export async function pull(ctx: Context, args: string[], transaction: PullTransactionOptions = {}): Promise<void> {
@@ -342,13 +346,13 @@ export async function pull(ctx: Context, args: string[], transaction: PullTransa
   }
 
   // Validate argv before creating the lock or touching the target.
-  return guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot, transaction.leaveStopped === true));
+  return guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot, transaction.leaveStopped === true, transaction.purpose ?? "pull"));
 }
 
 /** Captures the archive and sidecars under one instance lock. */
-async function pullLocked(ctx: Context, profile: Profile, hot: boolean, leaveStopped: boolean): Promise<void> {
+async function pullLocked(ctx: Context, profile: Profile, hot: boolean, leaveStopped: boolean, purpose: BackupPurpose): Promise<void> {
   const snapshotDir = await ensureSnapshotDir(ctx);
-  const archive = await createBackup(ctx, { profile, hot, leaveStopped });
+  const archive = await createBackup(ctx, { profile, hot, leaveStopped, purpose });
   const snapshot = `${snapshotDir}/${deploymentName()}-state-${stamp()}.tar.gz`;
   const snapshotTemplate = `${snapshot}.template.env`;
   const snapshotSecrets = `${snapshot}${SECRETS_SUFFIX}`;

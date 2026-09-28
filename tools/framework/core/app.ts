@@ -150,6 +150,32 @@ export interface AppSecret {
   readonly required?: boolean;
 }
 
+/** Mirrors service/archive.ts's Profile without importing it — core/ has no dependency on
+ *  service/, and these three values are exactly what a backup can be. */
+export type BackupProfile = "full" | "migrate" | "share";
+
+/** Why an archive was created. Most backups are the operator's own data — a direct
+ *  `backup`, a `pull`, or the pre-upgrade copy `upgrade` takes before touching anything —
+ *  and afterBackup fires for all of them. `internal` is for an archive a framework
+ *  self-check creates purely to prove the backup/restore mechanism still works (smoke's
+ *  round-trip and privacy checks): never a copy an operator asked for, so a hook that
+ *  encrypts or exports backups must not run on it. */
+export type BackupPurpose = "backup" | "pull" | "upgrade" | "internal";
+
+export interface AfterBackupInfo {
+  readonly ctx: Context;
+  /** Path of the published, rotated archive on the target. */
+  readonly archive: string;
+  readonly profile: BackupProfile;
+  readonly purpose: BackupPurpose;
+}
+
+export interface BeforeRestoreInfo {
+  readonly ctx: Context;
+  /** Path of the archive restore was given, before anything on the target is touched. */
+  readonly archive: string;
+}
+
 export interface AppDefinition {
   /** Short identifier, used in messages. */
   readonly name: string;
@@ -174,6 +200,18 @@ export interface AppDefinition {
     readonly name: string;
     readonly logTail?: string;
   };
+  /** Called after a backup archive is published and rotated on the target (the archive
+   *  already exists at `archive`) — a hook can copy it off-host through `ctx.transport`,
+   *  encrypt it into a sibling file, and so on; the framework does none of that itself.
+   *  Not called for `purpose: "internal"` (smoke's own throwaway archives). A hook that
+   *  throws leaves the archive published: the command reports the hook's failure with a
+   *  non-zero exit rather than deleting or hiding a backup that already exists. */
+  readonly afterBackup?: (info: AfterBackupInfo) => Promise<void> | void;
+  /** Called before a restore touches anything on the target (nothing is stopped, nothing
+   *  is moved) — a hook can decrypt or fetch the real archive and return the path to
+   *  restore from instead; returning nothing (or an empty string) keeps `archive` as
+   *  given. A hook that throws stops the restore before it starts. */
+  readonly beforeRestore?: (info: BeforeRestoreInfo) => Promise<string | void> | string | void;
   readonly commands: Record<string, AppCommand>;
 }
 

@@ -94,6 +94,8 @@ async function captureRun(
           service: app.service,
           settings: app.settings,
           secrets: app.secrets,
+          afterBackup: app.afterBackup,
+          beforeRestore: app.beforeRestore,
         });
         await command.run(ctx, argv);
         return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined };

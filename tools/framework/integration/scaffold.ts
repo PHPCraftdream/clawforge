@@ -216,7 +216,14 @@ export interface ListDeploymentsOptions {
 
 async function defaultBuildContext(app: AppDefinition, directory: string): Promise<Context> {
   useDeployment(directory);
-  return createContext({ mounts: app.mounts, service: app.service, settings: app.settings, secrets: app.secrets });
+  return createContext({
+    mounts: app.mounts,
+    service: app.service,
+    settings: app.settings,
+    secrets: app.secrets,
+    afterBackup: app.afterBackup,
+    beforeRestore: app.beforeRestore,
+  });
 }
 
 /** The four configuration fields plus pinning, read straight from .env — never through an

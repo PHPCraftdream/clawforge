@@ -250,6 +250,8 @@ export async function runApp(
     service: app.service,
     settings: app.settings,
     secrets: app.secrets,
+    afterBackup: app.afterBackup,
+    beforeRestore: app.beforeRestore,
   });
 
   await command.run(ctx, splitInlineOptions(command, args));

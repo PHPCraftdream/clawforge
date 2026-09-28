@@ -7,7 +7,7 @@
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
-import { parseEnv } from "#src/core/env.ts";
+import { parseEnv, parseRetention } from "#src/core/env.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, needsOwnerEscalation, secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { archiveRoot, isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
@@ -197,8 +197,8 @@ export function selectSnapshotPaths(listing: string, deployment: string): string
  *  Exported so tools/checks/state.check.ts can drive it directly, rather than through the
  *  whole of pull() just to reach the one call site. */
 export async function rotateSnapshots(ctx: Context, snapshotDir: string): Promise<void> {
-  const keep = Number.parseInt(ctx.settings.env.OC_SNAPSHOT_KEEP ?? "10", 10);
-  if (!Number.isFinite(keep) || keep <= 0) return;
+  const keep = parseRetention("OC_SNAPSHOT_KEEP", ctx.settings.env.OC_SNAPSHOT_KEEP, 10);
+  if (keep <= 0) return;
 
   const prefix = await sudoFor(ctx, snapshotDir);
 

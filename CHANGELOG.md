@@ -68,6 +68,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   alerts too (a reason's own detail text changing alone still does not), the alert payload and
   chat text name which codes appeared/cleared, and an undelivered codes-only change retries
   the same way a level transition's own failure already did.
+* `OC_BACKUP_KEEP`/`OC_SNAPSHOT_KEEP`: a non-numeric or negative value (`ten`, an empty
+  string, `-3`, `10x`) silently disabled rotation; it now warns and falls back to 10, and `0`
+  is an explicit, reported "never rotate".
 * Native backup no longer leaves its own full archive inside the live data directory.
 * `bootstrap` pins a freshly pulled tagged image to the digest it just proved, without
   moving the shared tag.

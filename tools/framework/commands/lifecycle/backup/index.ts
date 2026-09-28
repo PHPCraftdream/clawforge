@@ -13,6 +13,7 @@
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
+import { parseRetention } from "#src/core/env.ts";
 import { randomUUID } from "node:crypto";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
@@ -121,8 +122,8 @@ function timestamp(): string {
 /** Deletes the single oldest archive beyond the configured retention count, if any.
  *  Exported for testing. */
 export async function rotate(ctx: Context, backupDir: string): Promise<void> {
-  const keep = Number.parseInt(ctx.settings.env.OC_BACKUP_KEEP ?? "10", 10);
-  if (!Number.isFinite(keep) || keep <= 0) return;
+  const keep = parseRetention("OC_BACKUP_KEEP", ctx.settings.env.OC_BACKUP_KEEP, 10);
+  if (keep <= 0) return;
 
   const prefix = await sudoFor(ctx, backupDir);
   // find returns success for an empty directory and a non-zero status for an unreadable one.
@@ -167,9 +168,8 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
     byProfile.set(parsed.profile, [...(byProfile.get(parsed.profile) ?? []), path]);
   }
 
-  // `ls -1t` ordered the listing, and grouping preserved it: each group is newest first.
-  // Put the stale ones back in that order, so "the oldest" below still means the oldest of
-  // all of them rather than the oldest of whichever group happened to be last.
+  // The listing is sorted newest first and each group keeps that order; restore it across
+  // groups so "the oldest" below is the oldest of all of them.
   const staleSet = new Set([...byProfile.values()].flatMap((group) => group.slice(keep)));
   const stale = archives.map((line) => line.trim()).filter((path) => staleSet.has(path));
   if (stale.length === 0) return;

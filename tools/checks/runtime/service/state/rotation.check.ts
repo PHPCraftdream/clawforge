@@ -83,6 +83,66 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
   check("the whole rotation costs at most a few round trips, not one per file", execCalls.length <= 5, true);
 }
 
+// --- OC_SNAPSHOT_KEEP parsing: a typo/empty/negative value must never silently disable
+// rotation the way Number.parseInt + a NaN/<=0 check used to.
+for (const testCase of [
+  { value: "ten", invalid: true },
+  { value: "", invalid: true },
+  { value: "-3", invalid: true },
+  { value: "10x", invalid: true },
+  { value: "0", zero: true },
+  { value: "3", valid: 3 },
+] as const) {
+  const name = deploymentName();
+  const snapshotDir = "/srv/openclaw/snapshots";
+  const ownListing = Array.from({ length: 12 }, (_, i) => `${snapshotDir}/${name}-state-2026-01-12T03-04-${String(12 - i).padStart(2, "0")}.tar.gz`);
+
+  const execCalls: { command: string; args: string[] }[] = [];
+  const ctx = {
+    settings: { env: { OC_SNAPSHOT_KEEP: testCase.value } },
+    transport: {
+      description: "stub",
+      async exists(): Promise<boolean> {
+        return true;
+      },
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        execCalls.push({ command, args });
+        if (args.includes("-w")) return { code: 0, stdout: "", stderr: "" };
+        if (command === "find") {
+          const lines = ownListing.map((path, index) => `${100 - index}\t${path}`);
+          return { code: 0, stdout: `${lines.join("\n")}\n`, stderr: "" };
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  let output = "";
+  await withOutputSink(
+    (line) => { output += line; },
+    () => rotateSnapshots(ctx, snapshotDir),
+  );
+
+  const rmCalls = execCalls.filter((call) => call.command === "rm");
+
+  if ("invalid" in testCase) {
+    check(`OC_SNAPSHOT_KEEP=${JSON.stringify(testCase.value)} warns naming the variable`, output.includes("OC_SNAPSHOT_KEEP"), true);
+    check(`OC_SNAPSHOT_KEEP=${JSON.stringify(testCase.value)} warns naming the value`, output.includes(JSON.stringify(testCase.value)), true);
+    check(`OC_SNAPSHOT_KEEP=${JSON.stringify(testCase.value)} still rotates, falling back to 10`, rmCalls.length, 1);
+    const removedTargets = rmCalls[0]?.args.filter((arg) => arg !== "-f") ?? [];
+    check(`OC_SNAPSHOT_KEEP=${JSON.stringify(testCase.value)} keeps the newest 10`, ownListing.slice(0, 10).some((path) => removedTargets.includes(path)), false);
+    check(`OC_SNAPSHOT_KEEP=${JSON.stringify(testCase.value)} removes the 2 beyond it`, removedTargets.includes(ownListing[10]) && removedTargets.includes(ownListing[11]), true);
+  } else if ("zero" in testCase) {
+    check("OC_SNAPSHOT_KEEP=0 never rotates", rmCalls.length, 0);
+    check("OC_SNAPSHOT_KEEP=0 says so once", output.includes("OC_SNAPSHOT_KEEP=0"), true);
+  } else {
+    check(`OC_SNAPSHOT_KEEP=${testCase.valid} rotates using that count, no warning`, output.includes("warning:"), false);
+    check(`OC_SNAPSHOT_KEEP=${testCase.valid} removes exactly the excess`, rmCalls.length, 1);
+    const removedTargets = rmCalls[0]?.args.filter((arg) => arg !== "-f") ?? [];
+    check(`OC_SNAPSHOT_KEEP=${testCase.valid} keeps the newest ${testCase.valid}`, ownListing.slice(0, testCase.valid).some((path) => removedTargets.includes(path)), false);
+  }
+}
+
 for (const failure of [
   { operation: "find", code: 1, expected: "could not list archives" },
   { operation: "rm", code: 1, expected: "could not remove stale archives" },

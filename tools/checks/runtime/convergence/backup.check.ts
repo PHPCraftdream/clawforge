@@ -295,6 +295,9 @@ function rotationContext(
   check("this deployment's own excess archive is", rmCalls[0]?.args.includes(`${backupDir}/${name}-20260103-000000.tar.gz`), true);
 }
 
+// OC_BACKUP_KEEP parsing (typo/empty/negative/zero values) has its own file, right beside
+// this one: backup-retention.check.ts.
+
 // --- the archive a profile produces says which profile it was --------------------------------
 {
   const { ctx, files } = stubBackupCtx(false);

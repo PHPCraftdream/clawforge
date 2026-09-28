@@ -10,7 +10,7 @@ import { readFile, access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomInt } from "node:crypto";
-import { die } from "./io/log.ts";
+import { die, log, warn } from "./io/log.ts";
 import { envFile } from "../runtime/deployment.ts";
 
 // Two different roots, kept apart on purpose (npm distribution: tools/framework/ is meant
@@ -103,6 +103,23 @@ export function parseEnv(text: string): Env {
     env[key] = value;
   }
   return env;
+}
+
+/** Parses a retention count (OC_BACKUP_KEEP, OC_SNAPSHOT_KEEP): unset → `fallback`; 0 →
+ *  "never rotate", reported; anything but a non-negative integer → warning and `fallback`. */
+export function parseRetention(name: string, raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    warn(`${name}=${JSON.stringify(raw)} is not a non-negative integer — using the default of ${fallback}`);
+    return fallback;
+  }
+  const value = Number.parseInt(trimmed, 10);
+  if (value === 0) {
+    log(`${name}=0 — rotation is disabled, nothing will be removed`);
+    return 0;
+  }
+  return value;
 }
 
 /** Selects a deployment port candidate outside the usual ephemeral range. */

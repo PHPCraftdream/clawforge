@@ -70,6 +70,40 @@ for (const failure of ["find", "rm"] as const) {
   check("a successful empty listing is distinct from an enumeration failure", calls.includes("rm"), false);
 }
 
+// OC_BACKUP_KEEP parsing must never silently turn rotation off: a typo/empty/negative value
+// still rotates (fallback to the default), only "0" is a deliberate no-op, and both are said
+// out loud rather than swallowed by a NaN/<=0 check.
+for (const testCase of [
+  { value: "ten", proceeds: true, invalid: true },
+  { value: "", proceeds: true, invalid: true },
+  { value: "-3", proceeds: true, invalid: true },
+  { value: "10x", proceeds: true, invalid: true },
+  { value: "0", proceeds: false, invalid: false },
+  { value: "3", proceeds: true, invalid: false },
+] as const) {
+  const calls: string[] = [];
+  const ctx = {
+    settings: { env: { OC_BACKUP_KEEP: testCase.value } },
+    transport: {
+      async exists(): Promise<boolean> { return true; },
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+        if (args.includes("-w")) return { code: 0, stdout: "", stderr: "" };
+        calls.push(command);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+  let output = "";
+  await withOutputSink((line) => { output += line; }, () => rotate(ctx, "/srv/clawforge/backup-policy-check"));
+
+  check(`OC_BACKUP_KEEP=${JSON.stringify(testCase.value)} ${testCase.proceeds ? "still lists archives" : "never lists archives"}`, calls.includes("find"), testCase.proceeds);
+  if (testCase.invalid) {
+    check(`OC_BACKUP_KEEP=${JSON.stringify(testCase.value)} is reported as a warning naming the variable and value`, output.includes(`OC_BACKUP_KEEP=${JSON.stringify(testCase.value)}`), true);
+  } else if (testCase.value === "0") {
+    check("OC_BACKUP_KEEP=0 is reported as an explicit no-op, not silence", output.includes("OC_BACKUP_KEEP=0"), true);
+  }
+}
+
 // Passing a path with shell metacharacters as a literal find argument must not execute it.
 if (process.platform !== "win32") {
   const root = await mkdtemp(join(tmpdir(), "clawforge-backup-quote-check-"));

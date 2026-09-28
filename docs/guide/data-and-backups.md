@@ -119,7 +119,8 @@ current data — it renames the directory to `<data>.replaced-<timestamp>`.
 
 Rotation removes one archive per run, the oldest beyond `OC_BACKUP_KEEP`, rather than the
 whole backlog at once — the same rotation and naming for a native archive as for any other
-full backup.
+full backup. `OC_BACKUP_KEEP=0` disables rotation explicitly (logged, not silent); a value
+that is not a non-negative integer is a warning and falls back to the default of 10.
 
 ### Listing archives and cleaning up after a restore
 
@@ -261,7 +262,8 @@ grepping the data directory: the provider key lives only in `config/.env`, but
 
 Each `pull` keeps only the newest `OC_SNAPSHOT_KEEP` snapshots (10 by default, same as
 `OC_BACKUP_KEEP` for backups) — older ones are removed along with their sidecar files
-(`.template.env`, `.secrets.env`).
+(`.template.env`, `.secrets.env`); it follows the same `0`/invalid-value rule as
+`OC_BACKUP_KEEP` above.
 
 ### Checking before handing over
 

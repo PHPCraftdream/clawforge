@@ -4,12 +4,14 @@
 // OpenClaw keeps state in SQLite databases with multi-megabyte -wal files, and a copy
 // taken mid-write is not restorable. --hot skips the stop for those who accept that.
 //
-// Split into three files: this one keeps the creation path (BACKUP_ARGUMENTS, createBackup
+// Split into four files: this one keeps the creation path (BACKUP_ARGUMENTS, createBackup
 // and the dispatcher below); list.ts is the read-only archive/replaced-copy inventory;
 // prune-replaced.ts is the explicit, --apply-gated cleanup of `<dataDir>.replaced-*`
-// copies restore leaves behind. No action (`./clawforge backup`) still creates an archive
-// exactly as before — `list`/`prune-replaced` are additional first positional actions, not
-// a replacement for it.
+// copies restore leaves behind; install.ts wires `./clawforge backup` itself onto a schedule
+// (crontab, or a printed/applyable `schtasks` entry on Windows), mirroring watch install/
+// uninstall exactly. No action (`./clawforge backup`) still creates an archive exactly as
+// before — `list`/`prune-replaced`/`install`/`uninstall` are additional first positional
+// actions, not a replacement for it.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
@@ -33,27 +35,31 @@ import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
 import { backupPruneReplaced, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
+import { backupInstall, backupUninstall, BACKUP_INSTALL_ARGUMENTS } from "./install.ts";
 
 export { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
 export { backupPruneReplaced, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
+export { backupInstall, backupUninstall, BACKUP_INSTALL_ARGUMENTS, BACKUP_UNINSTALL_ARGUMENTS } from "./install.ts";
 
 /** The first positional token `./clawforge backup` accepts instead of creating an archive. */
-export const BACKUP_ACTIONS = ["list", "prune-replaced"] as const;
+export const BACKUP_ACTIONS = ["list", "prune-replaced", "install", "uninstall"] as const;
 
-/** Only `list` and a preview `prune-replaced` (no --apply) merely read the instance; a bare
- *  create and `prune-replaced --apply` both change it. One predicate for openclawCommands'
- *  readOnlyWhen/changedWhen/requiresConfirmationWhen, same reasoning as expose/watch's own
- *  <action>IsReadOnly helpers. */
+/** Only `list` and a preview `prune-replaced`/`install`/`uninstall` (no --apply) merely read
+ *  the instance; a bare create and any of the three `--apply` forms change it (install/
+ *  uninstall mutate the target's crontab — the same target-state mutation `watch install`'s
+ *  own guard classifies). One predicate for openclawCommands' readOnlyWhen/changedWhen/
+ *  requiresConfirmationWhen, same reasoning as expose/watch's own <action>IsReadOnly helpers. */
 export function backupActionIsReadOnly(argv: string[]): boolean {
   const action = argv[0];
   if (action === "list") return true;
-  if (action === "prune-replaced") return !argv.includes("--apply");
+  if (action === "prune-replaced" || action === "install" || action === "uninstall") return !argv.includes("--apply");
   return false;
 }
 
 /** Drives both `./clawforge backup`'s own parser and its openclawCommands declaration (help,
  *  MCP schema) from one list, so the two cannot drift apart. Only the creation path's own
- *  flags — `list`'s and `prune-replaced`'s own are BACKUP_LIST_ARGUMENTS/BACKUP_PRUNE_ARGUMENTS. */
+ *  flags — `list`'s, `prune-replaced`'s and `install`'s own are BACKUP_LIST_ARGUMENTS/
+ *  BACKUP_PRUNE_ARGUMENTS/BACKUP_INSTALL_ARGUMENTS. */
 export const BACKUP_ARGUMENTS: CommandArgument[] = [
   PROFILE_ARGUMENT,
   { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
@@ -63,15 +69,33 @@ export const BACKUP_ARGUMENTS: CommandArgument[] = [
   { name: "with-secrets", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
 ];
 
+/** Keeps the first declaration of each argument name — `--apply`/`--break-lock`/
+ *  `--break-foreign-lock` are shared across prune-replaced/install/uninstall, and a flat
+ *  concatenation would otherwise list each one more than once (a duplicate --help line, and
+ *  a later description silently overwriting an earlier one in the MCP schema — see
+ *  BACKUP_APPLY_ARGUMENT's own comment in prune-replaced.ts for why they are literally the
+ *  same object rather than three that happen to agree today). */
+function dedupeByName(args: readonly CommandArgument[]): CommandArgument[] {
+  const seen = new Set<string>();
+  return args.filter((argument) => {
+    if (seen.has(argument.name)) return false;
+    seen.add(argument.name);
+    return true;
+  });
+}
+
 /** The merged declaration for openclawCommands — one optional `action` positional ahead of
  *  every sub-action's own flags, so `./clawforge backup` with none of them still creates an
- *  archive exactly as it always has. */
-export const BACKUP_ALL_ARGUMENTS: CommandArgument[] = [
-  { name: "action", description: "list or prune-replaced instead of creating a backup", kind: "positional", choices: [...BACKUP_ACTIONS] },
+ *  archive exactly as it always has. `uninstall`'s own arguments are a strict subset of
+ *  install's (no --interval) and are not merged in separately, same convention as watch's own
+ *  WATCH_UNINSTALL_ARGUMENTS. */
+export const BACKUP_ALL_ARGUMENTS: CommandArgument[] = dedupeByName([
+  { name: "action", description: "list, prune-replaced, install or uninstall instead of creating a backup", kind: "positional", choices: [...BACKUP_ACTIONS] },
   ...BACKUP_ARGUMENTS,
   ...BACKUP_LIST_ARGUMENTS,
   ...BACKUP_PRUNE_ARGUMENTS,
-];
+  ...BACKUP_INSTALL_ARGUMENTS,
+]);
 
 export interface BackupOptions {
   hot?: boolean;
@@ -586,12 +610,14 @@ async function targetExists(ctx: Context, path: string): Promise<boolean> {
 
 export async function backup(ctx: Context, args: string[]): Promise<void> {
   const [first, ...rest] = args;
-  // Positional and unambiguous: every creation flag is `--something`, so a bare `list` or
-  // `prune-replaced` token can never collide with one. Anything else (including undefined)
-  // falls through to creation unchanged — its own parser below rejects a genuinely unknown
-  // bare token exactly as it always has.
+  // Positional and unambiguous: every creation flag is `--something`, so a bare `list`,
+  // `prune-replaced`, `install` or `uninstall` token can never collide with one. Anything
+  // else (including undefined) falls through to creation unchanged — its own parser below
+  // rejects a genuinely unknown bare token exactly as it always has.
   if (first === "list") return backupList(ctx, rest);
   if (first === "prune-replaced") return backupPruneReplaced(ctx, rest);
+  if (first === "install") return backupInstall(ctx, rest);
+  if (first === "uninstall") return backupUninstall(ctx, rest);
 
   const options: BackupOptions = {};
   const parsed = parseDeclaredArgs(BACKUP_ARGUMENTS, args);

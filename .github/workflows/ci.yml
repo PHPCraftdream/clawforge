@@ -172,6 +172,7 @@ jobs:
             tools/checks/runtime/convergence/apply.check.ts
             tools/checks/runtime/convergence/backup/backup.check.ts
             tools/checks/runtime/convergence/backup/retention.check.ts
+            tools/checks/runtime/convergence/backup/install.check.ts
             tools/checks/runtime/convergence/inspection.check.ts
             tools/checks/runtime/convergence/lock-home.check.ts
             tools/checks/runtime/convergence/inspect/checksums.check.ts
@@ -239,6 +240,7 @@ jobs:
             tools/checks/security/expose/ssh.check.ts
             tools/checks/security/expose/status.check.ts
             tools/checks/security/expose/tailscale.check.ts
+            tools/checks/runtime/schedule/schedule.check.ts
             tools/checks/runtime/watch/index.check.ts
             tools/checks/runtime/watch/check.check.ts
             tools/checks/runtime/watch/install.check.ts

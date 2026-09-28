@@ -1,7 +1,7 @@
 // requireBootstrapped() (runtime/runtime.ts) and every mutating command that now calls it
 // BEFORE takeLock()/any target write: backup, incident, configure-provider, smoke,
 // apply-config (incl. --dry-run), up, restart, down, logs, upgrade, secrets --apply,
-// provision-agent, expose tailscale --apply, watch install --apply.
+// provision-agent, expose tailscale --apply, watch install --apply, backup install --apply.
 //
 // Before this guard, a never-bootstrapped deployment hit each of these deep inside — a raw
 // `mkdir …/operation.lock: No such file or directory` from the lock claim (the lock's own
@@ -24,6 +24,7 @@ import { applyConfig } from "#framework/commands/orchestration/config.ts";
 import { incident } from "#framework/commands/operate/incident/index.ts";
 import { exposeTailscale } from "#framework/commands/operate/expose/tailscale.ts";
 import { watchInstall } from "#framework/commands/operate/watch/install.ts";
+import { backupInstall } from "#framework/commands/lifecycle/backup/install.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
@@ -153,6 +154,11 @@ for (const kase of [
     run: (ctx: Context) => watchInstall(ctx, ["--apply"]),
     // schedulingSupport() only accepts ssh (or a non-Windows local) as installable — forced
     // here so the check exercises the same path on every OS this check itself runs on.
+    transportDescription: "ssh:user@example.com",
+  },
+  {
+    name: "backup install --apply",
+    run: (ctx: Context) => backupInstall(ctx, ["--apply"]),
     transportDescription: "ssh:user@example.com",
   },
 ] satisfies GuardCase[]) {

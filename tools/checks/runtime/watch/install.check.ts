@@ -18,6 +18,7 @@ import {
   watchUninstall,
   withoutMarkedLine,
 } from "#framework/commands/operate/watch/install.ts";
+import { scheduledTaskName, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import { readWatchState } from "#framework/commands/operate/watch/state.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -211,7 +212,9 @@ try {
   await rm(root, { recursive: true, force: true });
 }
 
-// --- an unsupported transport never installs, apply or not ------------------------------
+// --- an unsupported transport never installs a crontab line; on an actual Windows host it
+// can print (and, with --apply, run through a recording transport — never a real one) the
+// schtasks equivalent instead ------------------------------------------------------------
 
 {
   const ctx = {
@@ -223,8 +226,44 @@ try {
   await withOutputSink((chunk) => written.push(chunk), () => watchInstall(ctx, []));
   check("an unsupported transport prints instructions instead of a crontab line", written.join("").includes("Run this yourself"), true);
 
-  const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--apply"])));
-  check("--apply refuses outright on an unsupported transport", message.includes("refusing --apply"), true);
+  if (process.platform === "win32") {
+    check("...and, on an actual Windows host, a ready schtasks command too", written.join("").includes("schtasks"), true);
+
+    const recorded: { command: string; args: string[] }[] = [];
+    await withOutputSink(() => {}, () =>
+      withScheduleRunner(
+        async (command, args) => {
+          recorded.push({ command, args: [...args] });
+          return { code: 0, stdout: "", stderr: "" };
+        },
+        () => watchInstall(ctx, ["--apply"]),
+      ));
+    check("--apply on Windows runs schtasks through the recording transport, never a real one", recorded.length, 1);
+    check("...targeting this job's own task name", recorded[0]?.args.includes(scheduledTaskName("watch", name)) ?? false, true);
+
+    const localCtx = {
+      transport: { description: "local", clientInvocation: (entry: string, args: string[]) => ({ command: entry, args }) },
+      paths: { async toTarget(path: string): Promise<string> { return path; } },
+      settings: {},
+    } as unknown as Context;
+    const localRecorded: { command: string; args: string[] }[] = [];
+    await withOutputSink(() => {}, () =>
+      withScheduleRunner(
+        async (command, args) => {
+          localRecorded.push({ command, args: [...args] });
+          return { code: 0, stdout: "", stderr: "" };
+        },
+        () => watchInstall(localCtx, ["--apply"]),
+      ));
+    check(
+      "a native Windows host (no WSL involved) runs node directly, not the bash shim",
+      localRecorded[0]?.args.some((arg) => arg.includes(process.execPath)) ?? false,
+      true,
+    );
+  } else {
+    const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--apply"])));
+    check("--apply refuses outright on an unsupported, non-Windows transport", message.includes("refusing --apply"), true);
+  }
 }
 
 // The printed operator command must survive a paste: bash -lc's script is one argument.

@@ -134,6 +134,27 @@ whole backlog at once — the same rotation and naming for a native archive as f
 full backup. `OC_BACKUP_KEEP=0` disables rotation explicitly (logged, not silent); a value
 that is not a non-negative integer is a warning and falls back to the default of 10.
 
+`OC_BACKUP_KEEP` only means something once backups actually happen on a schedule —
+otherwise it is rotating a backlog nothing keeps adding to:
+
+```bash
+./clawforge backup install                    # print the crontab entry (or Windows equivalent)
+./clawforge backup install --apply             # actually install it — daily by default
+./clawforge backup install --interval 6h --apply
+./clawforge backup uninstall --apply
+```
+
+`backup install` / `backup uninstall` wire a plain `./clawforge backup` onto a schedule —
+`--interval` takes a duration (`30m`/`6h`/`1d`, default `1d`), not a bare minute count.
+Mirrors `watch install`/`watch uninstall` (see
+[Health monitoring](monitoring-and-access.md#health-monitoring-watch)) exactly, down to the
+shared crontab-marker convention and the Windows fallback: crontab where an unattended cron
+can be trusted to find this tooling (a real SSH host or a POSIX `local` target), otherwise a
+printed — and, with `--apply` on an actual Windows host, applied — `schtasks /create`
+command. Its own marker (`clawforge-backup:<deployment>`) is distinct from `watch install`'s
+(`clawforge-watch:<deployment>`), so installing one never disturbs the other, even for the
+same deployment.
+
 ### Listing archives and cleaning up after a restore
 
 ```bash

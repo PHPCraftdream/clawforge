@@ -21,10 +21,21 @@ import {
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { JSON_ARGUMENT } from "./list.ts";
 
+/** Shared across every `backup` sub-action that previews by default — prune-replaced
+ *  (delete) and install/uninstall (mutate the crontab) alike — so the merged `backup`
+ *  command's single `--apply` never carries two different descriptions depending on which
+ *  action declared it last. Declared once, here, and reused (not redeclared) by install.ts,
+ *  same as list.ts's JSON_ARGUMENT below. */
+export const BACKUP_APPLY_ARGUMENT: CommandArgument = {
+  name: "apply",
+  description: "Actually apply the action (delete, or install/uninstall the schedule) instead of only previewing/printing it",
+  kind: "flag",
+};
+
 /** The declared, help/MCP-visible shape — `--json` is declared once, in list.ts, and
  *  reused here (not redeclared) so the merged `backup` command never lists it twice. */
 export const BACKUP_PRUNE_ARGUMENTS: CommandArgument[] = [
-  { name: "apply", description: "Actually delete; without it, only previews what would be removed", kind: "flag" },
+  BACKUP_APPLY_ARGUMENT,
   { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,

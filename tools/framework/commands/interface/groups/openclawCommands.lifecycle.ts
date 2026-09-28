@@ -87,16 +87,16 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     arguments: LOGS_ARGUMENTS,
   },
   backup: {
-    summary: "Snapshot the data directory (list, prune-replaced)",
+    summary: "Snapshot the data directory (list, prune-replaced, install, uninstall)",
     group: "save-move",
     run: backup,
     readOnlyWhen: backupActionIsReadOnly,
     changedWhen: (args) => !backupActionIsReadOnly(args),
-    // Only prune-replaced --apply is destructive enough to need MCP confirmation — a bare
-    // backup already changes nothing anyone would want undone (it only ever adds an
-    // archive) and has never required it; mirroring readOnlyWhen's negation here would
-    // start demanding confirm: true for the plain, everyday case.
-    requiresConfirmationWhen: (args) => args[0] === "prune-replaced" && args.includes("--apply"),
+    // Only an --apply form of prune-replaced/install/uninstall is destructive enough to need
+    // MCP confirmation — a bare backup already changes nothing anyone would want undone (it
+    // only ever adds an archive) and has never required it; mirroring readOnlyWhen's negation
+    // here would start demanding confirm: true for the plain, everyday case.
+    requiresConfirmationWhen: (args) => ["prune-replaced", "install", "uninstall"].includes(args[0]) && args.includes("--apply"),
     destructive: true,
     details:
       "With no action: stops the gateway for the duration by default — OpenClaw keeps " +
@@ -138,7 +138,13 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "Refuses anything that is not exactly one of those copies (a symlink, the data " +
       "directory itself, an unrelated name), takes the instance lock while --apply runs.\n" +
       "Archive pruning is already handled by this command's own rotation (OC_BACKUP_KEEP) " +
-      "— prune-replaced never touches an archive.",
+      "— prune-replaced never touches an archive.\n" +
+      "install / uninstall — print (and, with --apply, install through the transport) a " +
+      "crontab entry that runs a plain `./clawforge backup` every --interval (default 1d; " +
+      "e.g. 30m/6h/1d) — the schedule OC_BACKUP_KEEP presumes but nothing installed before " +
+      "this, mirroring `watch install`/`watch uninstall` exactly (same marker convention, " +
+      "same POSIX-only trust boundary, same Windows fallback: a printed `schtasks` entry, " +
+      "applied for real on --apply on an actual Windows host).",
     arguments: BACKUP_ALL_ARGUMENTS,
   },
   restore: {

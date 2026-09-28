@@ -14,7 +14,13 @@ All notable changes to `@clawforge/framework` will be documented here.
   tailnet-only `tailscale serve`, or a status report.
 * `watch`: health monitoring with a webhook alert on state transitions; `check` also covers
   disconnected channels (`CHANNEL_UNHEALTHY`) and a filling data disk (`DISK_LOW`/
-  `DISK_UNKNOWN`); `install`/`uninstall` manage a crontab entry.
+  `DISK_UNKNOWN`); `install`/`uninstall` manage a crontab entry — on an actual Windows host
+  it now prints (and, with `--apply`, can run) the equivalent `schtasks /create` command
+  instead of only pointing at Task Scheduler by hand.
+* `backup install [--interval <30m|6h|1d>] [--apply]` / `backup uninstall [--apply]`: the
+  schedule `OC_BACKUP_KEEP` presumes but nothing installed before now — mirrors `watch
+  install`/`uninstall` exactly (crontab where trusted, the same Windows `schtasks` fallback),
+  built on a shared scheduling module so the two commands cannot drift apart.
 * `incident`: contain exposure → preserve evidence → rotate the gateway token → audit →
   collect, into a private, owner-only evidence directory.
 * A security gate — upstream `security audit`/`secrets audit`, plus host-side exposure and

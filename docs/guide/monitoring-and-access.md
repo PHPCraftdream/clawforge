@@ -146,12 +146,20 @@ An operator finds out the instance stopped doing its job without polling by hand
   `uninstall` removes only it. Only where an unattended cron can be trusted to find this
   tooling's own node and checkout: a real SSH host (`./clawforge deploy` already mirrored the
   checkout there) or a POSIX `local` target. A WSL target's Docker distro is not such a place,
-  and neither is Windows itself — there this prints the exact command an operator-side
-  scheduler (Task Scheduler on Windows) would need to invoke instead of installing something
-  that would silently never run; it never creates or touches a real one. `--apply` also
-  records `--interval` into this deployment's own watch state (cleared by `watch uninstall
-  --apply`) — the only place this framework can observe the real schedule, since cron itself
-  is never asked afterwards; `watch status`'s staleness check reads it from there.
+  and neither is Windows itself (no crontab/systemd) — there this prints, and on an actual
+  Windows host can also run with `--apply`, the equivalent `schtasks /create` command instead:
+  for a WSL target, the same `wsl.exe -d <distro> -- …` line a human would run (built from the
+  configured `OC_WSL_DISTRO`); for the framework running natively on Windows, node invoked
+  directly (there is no shell there to run the `./clawforge` bash shim through). `/f` replaces
+  the same named task (`clawforge-<deployment>-watch`) on a re-run, Task Scheduler's own
+  counterpart to the crontab marker. This machinery (crontab conventions and the Windows
+  fallback alike) is shared with `backup install`/`backup uninstall` — see
+  [Backup and restore](data-and-backups.md#backup-and-restore) — through
+  `commands/operate/schedule.ts`, so the two jobs cannot drift into two different
+  implementations of the same idea. `--apply` also records `--interval` into this deployment's
+  own watch state (cleared by `watch uninstall --apply`) — the only place this framework can
+  observe the real schedule, since cron itself is never asked afterwards; `watch status`'s
+  staleness check reads it from there.
 * `./clawforge watch status` — the persisted last state, when it last changed, and whether a
   webhook/heartbeat is configured — plus the heartbeat's own last successful ping time, and
   its last failure if the most recent ping did not succeed. Never either URL itself.

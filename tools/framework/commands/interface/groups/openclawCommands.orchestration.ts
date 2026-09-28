@@ -127,7 +127,12 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "executable — recover-env, apply-config --dump — run under the same rules as every " +
       "step: one operation id, a journal entry each, stop at the first failure; they write " +
       "to the deployment folder rather than the instance, so their runners take no instance " +
-      "lock of their own.",
+      "lock of their own.\n" +
+      "--dry-run only lists what the plan computed — it touches nothing, so it cannot tell " +
+      "you whether desired-state.json would actually validate against the target's own " +
+      "schema. `./clawforge apply-config --dry-run` does: a real (lockless) `config set " +
+      "--batch-file --dry-run` against the target, usable even before the instance is " +
+      "healthy.",
     arguments: APPLY_ARGUMENTS,
     structured: true,
     readOnlyWhen: isApplyDryRun,
@@ -221,7 +226,10 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "The flags are validated against the mode before anything is read or written: " +
       "--dry-run cannot be combined with --dump — a dump has no dry-run form, it either " +
       "writes the recovered declaration or does nothing — --break-lock applies only where " +
-      "an instance lock is taken (the real apply), and --force only applies to --dump.",
+      "an instance lock is taken (the real apply), and --force only applies to --dump.\n" +
+      "Kept separate from `apply`: its --dry-run really validates against the target (lockless, " +
+      "even before the instance is healthy), and --dump --force deliberately overwrites an " +
+      "existing declaration — `apply` does neither.",
     arguments: APPLY_CONFIG_ARGUMENTS,
   },
 };

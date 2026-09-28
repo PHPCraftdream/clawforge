@@ -19,7 +19,7 @@ import { log, info, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
 import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
-import { ensureBaselineConfig, configureProvider } from "../management/provider.ts";
+import { ensureBaselineConfig, configureProvider } from "../management/credentials/provider.ts";
 import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { preflightPort, pinImageReference } from "./lifecycle.ts";

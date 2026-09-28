@@ -31,7 +31,7 @@ import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import { requirementsForConfig, statusForRequirements, collectConfiguredProviders } from "#src/service/secrets.ts";
 import { compareLock, readLock, currentComposition } from "#src/commands/management/lock.ts";
-import { pluginsForLock, skillsForLock } from "#src/security/extensions.ts";
+import { pluginsForLock, skillsForLock } from "#src/commands/management/extensions.ts";
 import { readInstalledSet, requirementProblems, runningDigests, matchRequiredDigest } from "#src/set/artifacts/install.ts";
 import {
   problem,
@@ -232,7 +232,7 @@ export async function gatherInspection(ctx: Context, options?: GatherInspectionO
   // Plugins/skills are folded in here rather than fetched by currentComposition() itself:
   // `live` already carries them from observeLive's own batched read (openclawCliBatch, above)
   // and a second fetch would spend a second container on the same question — exactly what
-  // that batching exists to avoid (openclaw-cli.ts, security/extensions.ts).
+  // that batching exists to avoid (openclaw-cli.ts, commands/management/extensions.ts).
   const composition = await currentComposition(ctx);
   problems.push(
     ...compareLock(await readLock(), {

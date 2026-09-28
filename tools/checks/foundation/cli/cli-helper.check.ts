@@ -13,7 +13,7 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { cli } from "#framework/commands/interface/cli.ts";
 import { exec } from "#framework/commands/interface/exec.ts";
-import { mcpServe } from "#framework/commands/management/mcp.ts";
+import { mcpServe } from "#framework/commands/management/credentials/mcp.ts";
 import { cliStart, cliStop } from "#framework/commands/interface/cli-helper.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";

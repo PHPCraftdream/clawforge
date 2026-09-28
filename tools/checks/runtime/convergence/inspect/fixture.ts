@@ -16,7 +16,7 @@ import { recipeFileChecksums, agentBundleChecksums } from "#framework/service/ch
 import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
 import { currentComposition, lockFile } from "#framework/commands/management/lock.ts";
-import type { PluginListEntry, SkillListEntry } from "#framework/security/extensions.ts";
+import type { PluginListEntry, SkillListEntry } from "#framework/commands/management/extensions.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";

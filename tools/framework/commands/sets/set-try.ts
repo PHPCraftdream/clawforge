@@ -25,7 +25,7 @@ import { recordInstalledSet } from "#src/set/artifacts/install.ts";
 import { validateSet } from "#src/set/ownership/validate.ts";
 import { localSecretValues } from "./set.ts";
 import { ensureDataDirs, ensureSecretsFile, secretsFileOnTarget, runMaybePrivileged } from "#src/runtime/datadir.ts";
-import { ensureBaselineConfig, configureProvider } from "../management/provider.ts";
+import { ensureBaselineConfig, configureProvider } from "../management/credentials/provider.ts";
 import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { down } from "../lifecycle/lifecycle.ts";

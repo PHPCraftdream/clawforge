@@ -171,7 +171,7 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   PLUGIN_DRIFT: {
     severity: "warning",
-    // Third-party code, not this framework's own config — see security/extensions.ts's header
+    // Third-party code, not this framework's own config — see commands/management/extensions.ts's header
     // for why a version-pinned reinstall is only ever offered as a plan step to run
     // yourself, never one apply performs unattended.
     summary: "an OpenClaw plugin's presence or version differs from what config/deployment.lock.json pinned",

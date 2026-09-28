@@ -11,7 +11,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { HelperNotRunning } from "#src/runtime/runtime.ts";
-import { CLI_HELPER_SERVICE } from "../interface/cli-helper.ts";
+import { CLI_HELPER_SERVICE } from "../../interface/cli-helper.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
 import type { McpClient } from "#src/integration/mcp/project.ts";
 import type { CommandArgument } from "#src/core/app.ts";

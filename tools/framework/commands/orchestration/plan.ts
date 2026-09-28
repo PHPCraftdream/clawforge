@@ -274,7 +274,7 @@ export function planActions(inspection: Inspection): PlanAction[] {
   // a supply-chain surface, and — unlike every other step above — this framework does not
   // even have proof its own reinstall command names the right package: the pinned image's own
   // `plugins list --json` already shows an npm-origin plugin's id differing from its
-  // manifest name (security/extensions.ts), so a spec built from either could install something
+  // manifest name (commands/management/extensions.ts), so a spec built from either could install something
   // else. Each finding carries its own best-effort command (compareExtensions); this only
   // turns it into a step the reader sees.
   for (const entry of problems.filter((candidate) => candidate.code === "PLUGIN_DRIFT" || candidate.code === "SKILL_DRIFT")) {

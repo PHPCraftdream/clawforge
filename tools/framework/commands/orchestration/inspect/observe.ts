@@ -31,8 +31,8 @@ import {
 } from "#src/commands/operate/recover-env/facts.ts";
 import type { ConnectionFacts } from "#src/commands/operate/recover-env/facts.ts";
 import { DEFAULT_SECRET_STORE } from "#src/commands/management/secrets.ts";
-import { PLUGINS_LIST_ARGS, SKILLS_LIST_ARGS, parsePluginsList, parseSkillsList } from "#src/security/extensions.ts";
-import type { PluginListEntry, SkillListEntry } from "#src/security/extensions.ts";
+import { PLUGINS_LIST_ARGS, SKILLS_LIST_ARGS, parsePluginsList, parseSkillsList } from "#src/commands/management/extensions.ts";
+import type { PluginListEntry, SkillListEntry } from "#src/commands/management/extensions.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { EGRESS_EXEC_TIMEOUT_MS, EGRESS_PROBE_SCRIPT } from "./egress-probe.ts";
 import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt, cronDifferences, egressEndpoints, redactEndpoint } from "./helpers.ts";
@@ -494,7 +494,7 @@ export async function observeLive(
   // docker-compose.yml's own note on cli-helper), and paying that four times over for one
   // inspection was the dominant cost doctor/plan measured — trimming wsl.exe spawn counts
   // elsewhere did not move their wall time, this does. Plugins/skills ride along in the same
-  // container rather than a second one, for the same reason (security/extensions.ts).
+  // container rather than a second one, for the same reason (commands/management/extensions.ts).
   const batchCommands: string[][] = [
     ["agents", "list", "--json"],
     ["mcp", "list", "--json"],

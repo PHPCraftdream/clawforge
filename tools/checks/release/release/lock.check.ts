@@ -9,8 +9,8 @@ import { compareLock, COMMIT_ADVICE, LOCK_VERSION, declarationChecksum } from "#
 import { gitInitAdvice } from "#framework/integration/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
-import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList } from "#framework/security/extensions.ts";
-import type { LockPlugin, LockSkill } from "#framework/security/extensions.ts";
+import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList } from "#framework/commands/management/extensions.ts";
+import type { LockPlugin, LockSkill } from "#framework/commands/management/extensions.ts";
 
 let failed = 0;
 
@@ -189,7 +189,7 @@ check(
 
 // --- plugins/skills: a supply-chain surface the lock did not pin before --------------------
 //
-// Bundled entries are covered by the image digest already (security/extensions.ts's header) and
+// Bundled entries are covered by the image digest already (commands/management/extensions.ts's header) and
 // never reach the lock at all; everything else is compared the same way a recipe file is —
 // named individually, add/remove/version, never silently rewritten.
 

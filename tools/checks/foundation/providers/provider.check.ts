@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { configureProvider } from "#framework/commands/management/provider.ts";
+import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
 import type { Context } from "#framework/core/context.ts";
 
 const calls: string[][] = [];

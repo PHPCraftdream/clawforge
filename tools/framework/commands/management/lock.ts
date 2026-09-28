@@ -35,8 +35,8 @@ import {
   pluginsForLock,
   skillsForLock,
   compareExtensions,
-} from "#src/security/extensions.ts";
-import type { LockPlugin, LockSkill } from "#src/security/extensions.ts";
+} from "./extensions.ts";
+import type { LockPlugin, LockSkill } from "./extensions.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
@@ -86,12 +86,12 @@ export interface DeploymentLock {
    *  like a manifest, and it is meant to be committed. */
   readonly secrets: readonly string[];
   /** OpenClaw plugins, read from `openclaw plugins list --json` — bundled ones left out
-   *  (security/extensions.ts's header: the image digest above already covers them). Optional so
+   *  (commands/management/extensions.ts's header: the image digest above already covers them). Optional so
    *  a lock written before this framework knew to pin them parses as "not yet covered"
    *  (compareLock) rather than "none installed". */
   readonly plugins?: readonly LockPlugin[];
   /** OpenClaw skills, read from `openclaw skills list --json` — same bundled exclusion, same
-   *  optionality, and no version (security/extensions.ts's header: this CLI does not report
+   *  optionality, and no version (commands/management/extensions.ts's header: this CLI does not report
    *  one). */
   readonly skills?: readonly LockSkill[];
 }

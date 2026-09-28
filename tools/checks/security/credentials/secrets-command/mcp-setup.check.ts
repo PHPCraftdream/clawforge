@@ -15,7 +15,7 @@
 import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { mcpSetup, mcpServerEntries, mcpConfigFilePath } from "#framework/commands/management/mcp.ts";
+import { mcpSetup, mcpServerEntries, mcpConfigFilePath } from "#framework/commands/management/credentials/mcp.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME } from "#framework/integration/mcp/project.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";

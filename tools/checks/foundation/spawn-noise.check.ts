@@ -145,7 +145,8 @@ function lifecycleLineSource(kind: "Container" | "Network", name: string, state:
     message = (error as Error).message;
   }
   check("a failed sh -c publish script never pastes its body into the message", message.includes("trap 'rm -f"), false);
-  check("the real shell-reported cause still comes through", /no such file or directory/i.test(message), true);
+  // bash says "No such file or directory", dash "Directory nonexistent": the path is the shared part.
+  check("the real shell-reported cause still comes through", message.includes("/no/such/dir/x.tmp"), true);
 }
 
 // --- multibyte output across a chunk boundary decodes whole ---------------------------------

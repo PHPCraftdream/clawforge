@@ -3,9 +3,10 @@
 // No instance and no target: these are the pure parts of the contract.
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { splitInlineOptions } from "#framework/entry/cli.ts";
+import { splitInlineOptions, reportUnknownArgument } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
-import { parseDeclaredArgs } from "#framework/core/arguments.ts";
+import { parseDeclaredArgs, UnknownArgumentError } from "#framework/core/arguments.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 
 let failed = 0;
@@ -248,6 +249,43 @@ check(
 check("an inline declared option is split", splitInlineOptions(openclawCommands.apply, ["--set=x", "--dry-run"]), ["--set", "x", "--dry-run"]);
 check("an undeclared inline flag is left for the parser to refuse", splitInlineOptions(openclawCommands.apply, ["--bogus=1"]), ["--bogus=1"]);
 check("a passthrough command's argv is untouched", splitInlineOptions(openclawCommands.exec, ["--set=x"]), ["--set=x"]);
+
+// --- unknown argument: a did-you-mean guess, and entry/cli.ts's --help pointer -----------
+
+check(
+  "an unknown flag close to a declared one gets a did-you-mean suggestion",
+  deathOf(() => parseDeclaredArgs([OPTION_ARG, FLAG_ARG], ["--pth", "/tmp"])),
+  "unknown argument: --pth (did you mean --path?)",
+);
+check(
+  "nothing close enough suggests nothing",
+  deathOf(() => parseDeclaredArgs([OPTION_ARG, FLAG_ARG], ["--totally-unrelated"])),
+  "unknown argument: --totally-unrelated",
+);
+check(
+  "a bare positional overflow gets no suggestion — only --flag typos do",
+  deathOf(() => parseDeclaredArgs([POSITIONAL_ARG], ["h1", "h2"])),
+  "unknown argument: h2",
+);
+
+{
+  let caught: unknown;
+  try {
+    parseDeclaredArgs([OPTION_ARG], ["--pth", "/tmp"]);
+  } catch (error) {
+    caught = error;
+  }
+  check("parseDeclaredArgs throws UnknownArgumentError, not a plain UserError", caught instanceof UnknownArgumentError, true);
+
+  let printed = "";
+  await withOutputSink((chunk) => {
+    printed += chunk;
+  }, async () => {
+    reportUnknownArgument("backup", caught as UnknownArgumentError);
+  });
+  check("reportUnknownArgument prints the refusal, did-you-mean included", printed.includes("unknown argument: --pth (did you mean --path?)"), true);
+  check("reportUnknownArgument points at the command's own --help", printed.includes("run ./clawforge backup --help"), true);
+}
 
 process.stderr.write(failed === 0 ? "all argument checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

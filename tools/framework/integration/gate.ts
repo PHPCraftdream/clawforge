@@ -17,7 +17,10 @@
 // and failing at call time.
 
 import { log, info, reportError } from "../core/io/log.ts";
+import { closestCommand } from "../core/arguments.ts";
 import type { CommandArgument } from "../core/app.ts";
+
+export { closestCommand } from "../core/arguments.ts";
 
 export interface GateCommand {
   readonly name: string;
@@ -123,46 +126,6 @@ export function misplacedAppFlag(
 ): string | undefined {
   if (commandName === undefined || exempt.includes(commandName)) return undefined;
   return args.find((arg) => arg === "--app" || arg.startsWith("--app="));
-}
-
-/** Damerau-Levenshtein edit distance: a transposition of two adjacent characters (the most
- *  common way to mistype a command name — "statsu" for "status") costs one edit, not the two
- *  a plain Levenshtein distance would charge it. */
-function editDistance(a: string, b: string): number {
-  const rows = a.length + 1;
-  const cols = b.length + 1;
-  const d: number[][] = Array.from({ length: rows }, () => Array.from<number>({ length: cols }).fill(0));
-  for (let i = 0; i < rows; i += 1) d[i][0] = i;
-  for (let j = 0; j < cols; j += 1) d[0][j] = j;
-  for (let i = 1; i < rows; i += 1) {
-    for (let j = 1; j < cols; j += 1) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
-      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
-        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + cost);
-      }
-    }
-  }
-  return d[rows - 1][cols - 1];
-}
-
-/** The nearest command name to a typed one, or undefined when nothing is close enough to be
- *  worth guessing at. The threshold scales with length so a couple of wrong letters in a long
- *  name still matches, while two short, unrelated names never suggest one another just for
- *  being short. */
-export function closestCommand(input: string, candidates: string[]): string | undefined {
-  let best: string | undefined;
-  let bestDistance = Infinity;
-  for (const candidate of candidates) {
-    const distance = editDistance(input, candidate);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = candidate;
-    }
-  }
-  if (best === undefined) return undefined;
-  const threshold = Math.min(3, Math.max(1, Math.floor(Math.max(input.length, best.length) / 3)));
-  return bestDistance <= threshold ? best : undefined;
 }
 
 /** The standard answer to a command name nothing declares: the typo itself, a nearby spelling

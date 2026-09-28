@@ -3,7 +3,7 @@
 
 import type { AppCommand } from "#src/core/app.ts";
 
-import { up, down, logs, restart, upgrade, UPGRADE_ARGUMENTS, LOCK_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
+import { up, down, logs, restart, upgrade, UPGRADE_ARGUMENTS, LOCK_ARGUMENTS, LOGS_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
 import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap.ts";
 import { backup, BACKUP_ALL_ARGUMENTS, backupActionIsReadOnly } from "#src/commands/lifecycle/backup/index.ts";
 import { restore, RESTORE_ARGUMENTS } from "#src/commands/lifecycle/restore.ts";
@@ -79,11 +79,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "--grep filters lines by a JS RegExp, on the bounded read and on a followed stream " +
       "alike (filtered line by line as it arrives); an invalid pattern is refused before " +
       "anything runs.",
-    arguments: [
-      { name: "tail", description: "Lines to return when reading rather than following", kind: "option" },
-      { name: "since", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option" },
-      { name: "grep", description: "Only lines matching this regular expression", kind: "option" },
-    ],
+    arguments: LOGS_ARGUMENTS,
   },
   backup: {
     summary: "Snapshot the data directory (list, prune-replaced)",

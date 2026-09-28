@@ -28,6 +28,9 @@ import { guarded } from "#src/runtime/instance-lock.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit } from "#src/core/io/output.ts";
 import { takeTail } from "../../lifecycle/lifecycle.ts";
+import { validateRecipeArgs } from "./arguments.ts";
+
+export { RECIPE_FLAG_ARGUMENTS } from "./arguments.ts";
 
 /** The action a bare `recipe` runs. */
 export const RECIPE_DEFAULT_ACTION = "list";
@@ -383,6 +386,14 @@ async function waitForRecipeReadiness(stack: Stack, readiness: RecipeReadiness |
 export async function recipe(ctx: Context, args: string[]): Promise<void> {
   const [action, name, ...rest] = args;
 
+  // Checked before anything else runs: an unknown action is a typo, not a lock failure or a
+  // missing name, and a token the resolved action does not use (an undeclared flag, an
+  // extra positional) dies here too instead of being silently ignored — see arguments.ts.
+  if (action !== undefined && action !== RECIPE_DEFAULT_ACTION && !RECIPE_ACTIONS.includes(action)) {
+    die(`unknown action: ${action} (expected ${RECIPE_ACTIONS.join(", ")})`);
+  }
+  validateRecipeArgs(action ?? RECIPE_DEFAULT_ACTION, args.slice(1));
+
   if (action === undefined || action === RECIPE_DEFAULT_ACTION) {
     const recipes = await listRecipes();
     // A recipe directory can also be an agent/MCP bundle — no recipe.json, so listRecipes
@@ -395,9 +406,7 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
     // visible entry in the catalog instead of quietly not existing.
     const broken = await listBrokenRecipes();
 
-    // Kept local to this action rather than routed through parseDeclaredArgs: recipe's own
-    // parser is order-dependent (action, name, ...rest) and not being rewritten here — the
-    // same rest.includes() check --volumes/--force-disabled already use below.
+    // validateRecipeArgs above already refused anything but --json here.
     if (args.slice(1).includes("--json") || isCaptured()) {
       emit(
         `${JSON.stringify(
@@ -446,10 +455,6 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
   }
 
   if (name === undefined) die(`usage: ./clawforge recipe ${action} <name>`);
-
-  if (!RECIPE_ACTIONS.includes(action)) {
-    die(`unknown action: ${action} (expected ${RECIPE_ACTIONS.join(", ")})`);
-  }
 
   // One classification for MCP's confirmation gate and for the instance lock, so a future
   // action cannot be mutating for one and read-only for the other. The single exception is

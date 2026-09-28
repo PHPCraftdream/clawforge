@@ -32,6 +32,13 @@ export const UPGRADE_ARGUMENTS: CommandArgument[] = [
  *  the only arguments any of the three accept. */
 export const LOCK_ARGUMENTS: CommandArgument[] = [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT];
 
+/** Drives logs's own parser and its openclawCommands declaration. */
+export const LOGS_ARGUMENTS: CommandArgument[] = [
+  { name: "tail", description: "Lines to return when reading rather than following", kind: "option" },
+  { name: "since", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option" },
+  { name: "grep", description: "Only lines matching this regular expression", kind: "option" },
+];
+
 function regexEscape(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -178,11 +185,21 @@ export async function down(ctx: Context, args: string[]): Promise<void> {
  *
  *  The switch is on how the output is being consumed rather than on a separate command
  *  name: it is one capability, and the mirror is meant to expose it, not a second spelling
- *  of it. recipe.ts's logs action makes the same choice the same way. */
+ *  of it. recipe.ts's logs action makes the same choice the same way.
+ *
+ *  Only the validated `--since` reaches the runtime; any other token is refused, never
+ *  passed to compose as a service name. */
 export async function logs(ctx: Context, args: string[]): Promise<void> {
-  const { tail, rest: afterTail } = takeTail(args);
-  validateSince(afterTail);
-  const { pattern, rest } = takeGrep(afterTail);
+  const parsed = parseDeclaredArgs(LOGS_ARGUMENTS, args);
+  const tail = parsed.tail as string | undefined;
+  if (tail !== undefined && !/^\d+$/.test(tail)) die(`--tail takes a number of lines, not "${tail}"`);
+  const since = parsed.since as string | undefined;
+  if (since !== undefined && !isValidSince(since)) {
+    die(`--since takes a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time, not "${since}"`);
+  }
+  const grep = parsed.grep as string | undefined;
+  const pattern = grep === undefined ? undefined : compileGrep(grep);
+  const rest = since === undefined ? [] : ["--since", since];
 
   if (shouldFollow()) {
     if (pattern === undefined) {
@@ -219,24 +236,11 @@ const SINCE_DURATION = /^(?:\d+h)?(?:\d+m)?(?:\d+s)?$/;
 // compose's own --since does and would let an otherwise-meaningless string through.
 const SINCE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})?)?$/;
 
+/** `--since` is forwarded to compose as-is — the only piece of `logs`'s own argv that
+ *  reaches the runtime at all — so a typo is refused here with a clear reason instead of
+ *  quietly changing what compose thinks "since" means. */
 function isValidSince(value: string): boolean {
   return (SINCE_DURATION.test(value) && /\d/.test(value)) || SINCE_TIMESTAMP.test(value);
-}
-
-/** `--since` is forwarded to compose as-is (already part of `rest`, the way `--tail`'s
- *  leftovers always have been) — validated here rather than left to whatever compose makes
- *  of an arbitrary string, so a typo fails with a clear reason instead of quietly changing
- *  what compose thinks "since" means. */
-function validateSince(args: string[]): void {
-  const at = args.indexOf("--since");
-  if (at === -1) return;
-  const value = args[at + 1];
-  if (value === undefined || value.startsWith("-")) {
-    die("--since needs a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time");
-  }
-  if (!isValidSince(value)) {
-    die(`--since takes a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time, not "${value}"`);
-  }
 }
 
 function compileGrep(pattern: string): RegExp {
@@ -245,18 +249,6 @@ function compileGrep(pattern: string): RegExp {
   } catch (error) {
     die(`--grep takes a valid regular expression: ${(error as Error).message}`);
   }
-}
-
-/** Pulls `--grep <pattern>` out of the arguments the same way takeTail() pulls `--tail`:
- *  compose never sees it, since filtering happens here in tooling, not in the container. */
-function takeGrep(args: string[]): { pattern?: RegExp; rest: string[] } {
-  const at = args.indexOf("--grep");
-  if (at === -1) return { rest: args };
-
-  const value = args[at + 1];
-  if (value === undefined || value.startsWith("-")) die("--grep needs a pattern");
-
-  return { pattern: compileGrep(value), rest: [...args.slice(0, at), ...args.slice(at + 2)] };
 }
 
 /** Keeps only the lines `pattern` matches, preserving a trailing newline when the input had

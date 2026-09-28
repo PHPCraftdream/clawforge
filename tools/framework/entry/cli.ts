@@ -5,6 +5,7 @@
 // file in framework/ — that is the property this module exists to guarantee.
 
 import { reportError, UserError, log, info } from "../core/io/log.ts";
+import { UnknownArgumentError } from "../core/arguments.ts";
 import { createContext } from "../core/context.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../commands/operate/recover-env/index.ts";
 import { clearRecipesDir } from "../service/recipe.ts";
@@ -254,8 +255,27 @@ export async function runApp(
     beforeRestore: app.beforeRestore,
   });
 
-  await command.run(ctx, splitInlineOptions(command, args));
+  try {
+    await command.run(ctx, splitInlineOptions(command, args));
+  } catch (error) {
+    if (error instanceof UnknownArgumentError) {
+      reportUnknownArgument(name, error);
+      return 1;
+    }
+    throw error;
+  }
   return 0;
+}
+
+/** The standard answer to a token no declared argument matches: the refusal itself (already
+ *  carrying a did-you-mean guess at the nearest declared flag, from parseDeclaredArgs — see
+ *  core/arguments.ts) plus a pointer to that command's own --help — a pointer only this
+ *  dispatcher can add, since parseDeclaredArgs never learns the command name it is parsing
+ *  for. Mirrors reportUnknownCommand's shape (integration/gate.ts) for the sibling case, an
+ *  unrecognised command name rather than an unrecognised argument of a real one. */
+export function reportUnknownArgument(commandName: string, error: UnknownArgumentError): void {
+  reportError(error);
+  info(`run ./clawforge ${commandName} --help for its full argument list`);
 }
 
 /** Wraps runApp with the error handling every entry point needs, so an application's own

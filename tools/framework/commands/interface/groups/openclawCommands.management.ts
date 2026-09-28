@@ -15,14 +15,13 @@ import { deploy, DEPLOY_ARGUMENTS } from "#src/commands/management/deploy.ts";
 import { lock, LOCK_ARGUMENTS } from "#src/commands/management/lock.ts";
 import { secrets, SECRETS_ARGUMENTS } from "#src/commands/management/secrets.ts";
 import { recoverEnv, RECOVER_ENV_ARGUMENTS } from "#src/commands/operate/recover-env/index.ts";
-import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe/index.ts";
+import { recipe, recipeActionIsReadOnly, RECIPE_FLAG_ARGUMENTS } from "#src/commands/management/recipe/index.ts";
 import { provisionAgent, PROVISION_AGENT_ARGUMENTS } from "#src/commands/management/provision-agent/index.ts";
 import { expose, exposeActionIsReadOnly, EXPOSE_SSH_ARGUMENTS, EXPOSE_TAILSCALE_ARGUMENTS, EXPOSE_STATUS_ARGUMENTS } from "#src/commands/operate/expose/index.ts";
 import { watch, watchActionIsReadOnly } from "#src/commands/operate/watch/index.ts";
 import { WATCH_CHECK_ARGUMENTS } from "#src/commands/operate/watch/check.ts";
 import { WATCH_INSTALL_ARGUMENTS } from "#src/commands/operate/watch/install.ts";
 import { incident, INCIDENT_ARGUMENTS } from "#src/commands/operate/incident/index.ts";
-import { BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 function secretsWrites(args: string[]): boolean {
   if (["--init-store", "--dump", "--apply"].some((flag) => args.includes(flag))) return true;
@@ -329,16 +328,7 @@ export const managementCommands: Record<string, AppCommand> = {
       },
       { name: "name", description: "Recipe name; with import, the source directory to copy from", kind: "positional" },
       { name: "new-name", description: "With import: import under this name instead of the source directory's own name", kind: "positional" },
-      { name: "json", description: "With list: emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON", kind: "flag" },
-      { name: "volumes", description: "With remove: delete its volumes too", kind: "flag" },
-      { name: "tail", description: "With logs/diagnose: lines to return per service", kind: "option" },
-      {
-        name: "force-disabled",
-        description: "With install: build a recipe marked disabled",
-        kind: "flag",
-      },
-      { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
-      BREAK_FOREIGN_LOCK_ARGUMENT,
+      ...RECIPE_FLAG_ARGUMENTS,
     ],
   },
   "provision-agent": {

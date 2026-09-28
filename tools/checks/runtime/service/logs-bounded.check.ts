@@ -159,6 +159,35 @@ for (const bad of ["(", "[", "*"]) {
   check("--grep with nothing matching returns nothing", written.join(""), "");
 }
 
+// --- a stray token is refused instead of forwarded as a compose service name ----------------
+
+{
+  let threw = false;
+  let message = "";
+  try {
+    await withOutputSink(() => {}, async () => {
+      await logs(ctxWith({ followed: false }), ["extra"]);
+    });
+  } catch (error) {
+    threw = true;
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check("a bare extra token is refused rather than read as another service name", threw, true);
+  check("the refusal names the stray token", message.includes("extra"), true);
+}
+
+{
+  let threw = false;
+  try {
+    await withOutputSink(() => {}, async () => {
+      await logs(ctxWith({ followed: false }), ["--bogus"]);
+    });
+  } catch {
+    threw = true;
+  }
+  check("an undeclared flag is refused", threw, true);
+}
+
 {
   const seen: Seen = { followed: false };
   await logs(ctxWith(seen), []);

@@ -3,8 +3,67 @@
 // (mcp-schema.ts's inputSchema/validate/toArgv) — so a flag the declaration knows and the
 // CLI parser does not (or the reverse) stops being possible to write by hand.
 
-import { die } from "#src/core/io/log.ts";
+import { die, UserError } from "#src/core/io/log.ts";
 import type { CommandArgument } from "#src/core/app.ts";
+
+/** Damerau-Levenshtein edit distance: a transposition of two adjacent characters (the most
+ *  common way to mistype a name — "statsu" for "status") costs one edit, not the two a
+ *  plain Levenshtein distance would charge it. */
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const d: number[][] = Array.from({ length: rows }, () => Array.from<number>({ length: cols }).fill(0));
+  for (let i = 0; i < rows; i += 1) d[i][0] = i;
+  for (let j = 0; j < cols; j += 1) d[0][j] = j;
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + cost);
+      }
+    }
+  }
+  return d[rows - 1][cols - 1];
+}
+
+/** The nearest candidate to a typed name, or undefined when nothing is close enough to be
+ *  worth guessing at. The threshold scales with length so a couple of wrong letters in a
+ *  long name still matches, while two short, unrelated names never suggest one another just
+ *  for being short.
+ *
+ *  Lives here rather than in integration/gate.ts (its original home, for an unknown command
+ *  name) because parseDeclaredArgs below needs the exact same match against a declared
+ *  argument's name — one edit-distance implementation for both, not two that could drift.
+ *  gate.ts re-exports this rather than keeping its own copy. */
+export function closestCommand(input: string, candidates: string[]): string | undefined {
+  let best: string | undefined;
+  let bestDistance = Infinity;
+  for (const candidate of candidates) {
+    const distance = editDistance(input, candidate);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = candidate;
+    }
+  }
+  if (best === undefined) return undefined;
+  const threshold = Math.min(3, Math.max(1, Math.floor(Math.max(input.length, best.length) / 3)));
+  return bestDistance <= threshold ? best : undefined;
+}
+
+/** Thrown for a token that matches no declared argument. A UserError, reported and exited
+ *  the same way, but distinct so the dispatcher that knows the running command's name
+ *  (entry/cli.ts) can point at that command's own --help — parseDeclaredArgs itself never
+ *  learns the name it is parsing for. */
+export class UnknownArgumentError extends UserError {
+  name = "UnknownArgumentError";
+}
+
+function dieUnknownArgument(token: string, suggestion?: string): never {
+  throw new UnknownArgumentError(
+    suggestion === undefined ? `unknown argument: ${token}` : `unknown argument: ${token} (did you mean ${suggestion}?)`,
+  );
+}
 
 /** One value per declared argument, keyed by its name (not its `--flag` spelling):
  *   flag        true once seen, otherwise absent
@@ -18,10 +77,11 @@ export type ParsedArgs = Record<string, string | boolean | string[] | undefined>
 
 /** Answers only the syntactic question every hand-written parser answered the same way:
  *  which declared argument does this token belong to, and does every token belong to one.
- *  Dies as `unknown argument: <token>` on an undeclared flag/option, on `--flag=value` for
- *  a boolean flag (flags carry no value), and on a bare token with no positional or
- *  variadic slot left for it; dies as `--<name> needs a value` when an option is the last
- *  token in argv, with nothing after it to take as its value.
+ *  Throws UnknownArgumentError as `unknown argument: <token>` on an undeclared flag/option
+ *  (naming the nearest declared one when it is close enough to be worth guessing at), on
+ *  `--flag=value` for a boolean flag (flags carry no value), and on a bare token with no
+ *  positional or variadic slot left for it; dies as `--<name> needs a value` when an option
+ *  is the last token in argv, with nothing after it to take as its value.
  *
  *  Deliberately does not enforce `required`, `choices`, or an option's value shape beyond
  *  "some value must follow" (a number, a regex, an enum, "must not look like another
@@ -59,11 +119,16 @@ export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: re
         }
       }
       const argument = flagToken.startsWith("--") ? named.get(flagToken.slice(2)) : undefined;
-      if (argument === undefined) die(`unknown argument: ${token}`);
+      if (argument === undefined) {
+        const suggestion = flagToken.startsWith("--")
+          ? closestCommand(flagToken.slice(2), [...named.keys()])
+          : undefined;
+        dieUnknownArgument(token, suggestion === undefined ? undefined : `--${suggestion}`);
+      }
       if (argument.kind === "flag") {
         // A flag carries no value — "=value" on one is a mistake worth naming, not a
         // silently ignored suffix.
-        if (inlineValue !== undefined) die(`unknown argument: ${token}`);
+        if (inlineValue !== undefined) dieUnknownArgument(token);
         result[argument.name] = true;
         continue;
       }
@@ -89,7 +154,7 @@ export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: re
       else list.push(token);
       continue;
     }
-    die(`unknown argument: ${token}`);
+    dieUnknownArgument(token);
   }
 
   return result;

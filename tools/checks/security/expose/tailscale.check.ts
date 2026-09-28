@@ -175,6 +175,13 @@ for (const args of [["--funnel"], ["funnel"], ["--apply", "--funnel"]]) {
   check(`funnel is refused for ${JSON.stringify(args)}`, message.includes("never runs `tailscale funnel`"), true);
 }
 
+// --- an undeclared argument is refused, not silently accepted (R5) -----------------------------
+
+{
+  const message = await deathOf(() => run(ctxFor(noLockTransport({ present: false }).transport), ["--bogus"]));
+  check("an unknown argument is refused", message.includes("unknown argument: --bogus"), true);
+}
+
 // --- print-only default: never touches the lock, never runs serve ------------------------------
 
 {

@@ -74,6 +74,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   flag, the host id and the runbook.
 * `restore` with no `<archive>` now names which one it picked, with its date, before any
   confirmation or action — previously only visible from the log of a restore already running.
+* `expose tailscale`/`expose status` and `recipe` (every action) reject an undeclared flag or
+  an extra positional instead of silently accepting it; `recipe list --bogus extra` and
+  `recipe <action> <name> <stray>` are now refused, naming which flags the action actually
+  takes. `logs` is parsed against its own declaration too, so a stray token (`./clawforge logs
+  extra`) is refused instead of reaching `docker compose logs` as another service name —
+  only the validated `--since` still travels to the runtime.
+* An unknown `--flag` close to one the command declares now says "did you mean --<name>";
+  every unknown-argument refusal from the CLI also points at `<command> --help`.
 
 ## 0.1.0
 

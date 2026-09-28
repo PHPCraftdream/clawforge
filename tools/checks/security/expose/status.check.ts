@@ -204,5 +204,18 @@ async function runJson(ctx: Context, args: string[]): Promise<Record<string, unk
   });
 }
 
+// --- an undeclared argument is refused, not silently accepted (R5) -----------------------------
+
+{
+  const ctx = ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false });
+  let message: string | undefined;
+  try {
+    await withOutputSink(() => {}, () => exposeStatus(ctx, ["--bogus"]));
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check("an unknown argument is refused", message?.includes("unknown argument: --bogus"), true);
+}
+
 process.stderr.write(failed === 0 ? "all expose status checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

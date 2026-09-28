@@ -108,7 +108,9 @@ function setAtPath(target: Record<string, unknown>, path: string, value: unknown
     check(
       "the plan treated the diverged .env as advice, not as a recovery step",
       JSON.stringify(outcome.steps.map((step) => [step.id, step.status])),
-      JSON.stringify([["recover-env", "advisory"], ["apply-config", "done"], ["restart", "done"]]),
+      // The fixture's OPENCLAW_IMAGE names a tag rather than a digest, so IMAGE_UNPINNED is
+      // real too — its own advisory step, unrelated to the .env divergence this check is about.
+      JSON.stringify([["recover-env", "advisory"], ["apply-config", "done"], ["restart", "done"], ["problem:IMAGE_UNPINNED", "advisory"]]),
     );
     check("the advisory step is recorded with its reason", outcome.steps[0].detail, "advisory: for you to do, not this command");
     const envAfter = await readFile(resolve(deployment, ".env"), "utf8");

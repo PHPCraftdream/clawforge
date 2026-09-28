@@ -43,6 +43,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 * A root-privilege probe that never ran is no longer read as "needs a password".
 * `incident` preserves the running container's log tail and `docker inspect` before rotating
   the token, and contains only this gateway's own `tailscale serve` route.
+* `plan` names a step for every problem code — a never-bootstrapped deployment first,
+  pointing at `bootstrap` — instead of printing "nothing to do" for the 19 of 36 codes it
+  had no step for.
 
 ## 0.1.0
 

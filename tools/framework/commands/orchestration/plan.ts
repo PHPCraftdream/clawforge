@@ -17,7 +17,7 @@
 // their purpose (rewriting the lock file would silently re-pin whatever just drifted;
 // overwriting the secret store would discard whatever recovery cannot reach).
 
-import { log, info, die } from "#src/core/io/log.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum } from "../management/lock.ts";
@@ -126,11 +126,48 @@ function orphanActions(inspection: Inspection): PlanAction[] {
   return actions;
 }
 
+/** Every problem no step above names becomes an advisory step with its own nextAction, so a
+ *  plan never stays silent about a problem it cannot fix. One step per code. */
+function fallbackActions(problems: readonly Problem[], resolved: ReadonlySet<ProblemCode>): PlanAction[] {
+  const byCode = new Map<ProblemCode, Problem[]>();
+  for (const entry of problems) {
+    if (resolved.has(entry.code)) continue;
+    const group = byCode.get(entry.code);
+    if (group === undefined) byCode.set(entry.code, [entry]);
+    else group.push(entry);
+  }
+
+  const actions: PlanAction[] = [];
+  for (const [code, group] of byCode) {
+    const details = [...new Set(group.map((entry) => entry.detail))];
+    const remedies = [...new Set(group.map((entry) => entry.nextAction))];
+    actions.push({
+      id: `problem:${code}`,
+      summary: `${details.join("; ")} — next: ${remedies.join(" or ")}`,
+      because: [code],
+      advisory: true,
+    });
+  }
+  return actions;
+}
+
 /** The ordered steps. Exported so `apply` executes exactly this list and the checks can
  *  assert the order without a live instance. */
 export function planActions(inspection: Inspection): PlanAction[] {
   const { problems } = inspection;
   const actions: PlanAction[] = [];
+
+  // Bootstrap first. Nothing else needs suppressing: instance-side findings cannot exist
+  // before bootstrap, and the operator-side ones (SECRET_MISSING, STORE_INCOMPLETE) still apply.
+  const notBootstrapped = problems.find((entry) => entry.code === "NOT_BOOTSTRAPPED");
+  if (notBootstrapped !== undefined) {
+    actions.push({
+      id: "problem:NOT_BOOTSTRAPPED",
+      summary: `${notBootstrapped.detail} — next: ${notBootstrapped.nextAction}`,
+      because: ["NOT_BOOTSTRAPPED"],
+      advisory: true,
+    });
+  }
 
   // 0. Operator-side recovery, before anything repairs the instance. The group reads back
   //    what only the target still holds, and the step that follows it in a combined plan
@@ -286,6 +323,10 @@ export function planActions(inspection: Inspection): PlanAction[] {
     });
   }
 
+  // Backstop: every code the steps above did not name is still shown.
+  const resolved = new Set(actions.flatMap((action) => action.because));
+  actions.push(...fallbackActions(problems, resolved));
+
   return actions;
 }
 
@@ -322,8 +363,15 @@ export async function plan(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
-  if (computed.actions.length === 0) {
+  if (planIsClean(computed)) {
     log(`${computed.deployment} is what this repository declares — nothing to do`);
+    return;
+  }
+
+  if (computed.actions.length === 0) {
+    // Unhealthy with no step: never claim the deployment matches its declaration.
+    warn(`${computed.deployment}: ${computed.problems.length} problem(s) found, but plan has no step for any of them — this is a gap in planActions()`);
+    for (const entry of computed.problems) info(`  ${entry.code}  ${entry.detail}`);
     return;
   }
 
@@ -334,6 +382,12 @@ export async function plan(ctx: Context, args: string[]): Promise<void> {
     info(`     ${action.advisory === true ? "(you)" : action.command}   because ${action.because.join(", ")}`);
   });
   log(planNextStepLine(computed.actions));
+}
+
+/** "Nothing to do" is a claim about the deployment — healthy and problem-free — never
+ *  inferred from an empty step list. Exported for the checks. */
+export function planIsClean(computed: Pick<Plan, "healthy" | "problems">): boolean {
+  return computed.healthy && computed.problems.length === 0;
 }
 
 /** What to tell the reader once the numbered steps are printed: apply runs the executable

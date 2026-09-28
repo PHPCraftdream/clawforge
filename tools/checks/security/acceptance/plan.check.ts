@@ -5,9 +5,9 @@
 // on the old configuration — which is what happened by hand before this command existed.
 // So each rule is asserted as a rule, against inspections built to provoke it.
 
-import { planActions } from "#framework/commands/orchestration/plan.ts";
-import { problem } from "#framework/service/inspection.ts";
-import type { Inspection, Problem } from "#framework/service/inspection.ts";
+import { planActions, planIsClean } from "#framework/commands/orchestration/plan.ts";
+import { problem, PROBLEM_CODES } from "#framework/service/inspection.ts";
+import type { Inspection, Problem, ProblemCode } from "#framework/service/inspection.ts";
 
 let failed = 0;
 
@@ -190,6 +190,44 @@ check("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", 
   check("every one of them advisory", actions.every((action) => action.advisory === true), true);
   check("with distinct ids", new Set(actions.map((action) => action.id)).size, 2);
 }
+
+// --- coverage: every problem code produces a step, not just the ones this file names above -
+
+// A plan that stays silent about a problem it did not fix is indistinguishable from one
+// that found nothing wrong at all. fallbackActions() is the backstop that keeps that from
+// happening; every code is asserted here in isolation so a new ProblemCode with no step
+// fails this check instead of silently making "nothing to do" a lie.
+
+{
+  const missing: ProblemCode[] = [];
+  for (const code of Object.keys(PROBLEM_CODES) as ProblemCode[]) {
+    const actions = planActions(inspectionWith([problem(code, `synthetic ${code} finding`)]));
+    if (actions.length === 0) missing.push(code);
+  }
+  check("every ProblemCode plans at least one step on its own", missing, []);
+}
+
+// NOT_BOOTSTRAPPED specifically: first in the list, advisory (this framework has no runner
+// for it), and naming its own remedy.
+{
+  const actions = planActions(inspectionWith([problem("NOT_BOOTSTRAPPED", "no data directory yet")], false));
+  check("NOT_BOOTSTRAPPED comes first", actions[0]?.id, "problem:NOT_BOOTSTRAPPED");
+  check("it is advisory, with no command for apply to run", [actions[0]?.advisory, actions[0]?.command], [true, undefined]);
+  check("and it points at bootstrap", (actions[0]?.summary ?? "").includes("./clawforge bootstrap"), true);
+}
+
+// A code this file already gives a specific step to (e.g. LOCK_DRIFT, above) must not also
+// get the generic fallback step — one step per finding, not two.
+{
+  const actions = planActions(inspectionWith([problem("LOCK_DRIFT", "image digest moved")]));
+  check("a code with a specific step never also gets the generic one", actions.filter((action) => action.id === "problem:LOCK_DRIFT"), []);
+}
+
+// --- "nothing to do" is a claim about the deployment, never inferred from the step count ---
+
+check("healthy with no problems at all is the only clean plan", planIsClean({ healthy: true, problems: [] }), true);
+check("healthy but with a warning is not clean", planIsClean({ healthy: true, problems: [problem("LOCK_MISSING", "no lock file")] }), false);
+check("unhealthy is never clean, whatever the problem list says", planIsClean({ healthy: false, problems: [] }), false);
 
 process.stderr.write(failed === 0 ? "all plan checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

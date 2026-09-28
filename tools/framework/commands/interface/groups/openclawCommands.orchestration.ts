@@ -84,19 +84,25 @@ export const orchestrationCommands: Record<string, AppCommand> = {
     run: plan,
     details:
       "Turns what `./clawforge inspect` found into steps, in the order the dependencies actually " +
-      "require — secrets before anything starts, configuration before the restart that " +
-      "reads it, the gateway up before provisioning talks to it, recipes last.\n" +
+      "require — a never-bootstrapped deployment first, secrets before anything starts, " +
+      "configuration before the restart that reads it, the gateway up before provisioning " +
+      "talks to it, recipes last.\n" +
       "That order is the framework's job. Before this command it lived in whoever had " +
       "learned it.\n" +
       "Each step says which finding put it there. A few steps are advisory: reconnecting " +
-      "an MCP client is something only the client can do, and the lock file is never " +
-      "re-pinned automatically, since doing that would rubber-stamp whatever drifted.\n" +
-      "Recovery steps appear here too, and first: a stale .env plans ./clawforge recover-env " +
+      "an MCP client is something only the client can do, the lock file is never " +
+      "re-pinned automatically since doing that would rubber-stamp whatever drifted, and " +
+      "any other problem this framework has no specific step for yet still gets one — named " +
+      "advisory rather than left out, so a problem plan cannot act on is still a problem the " +
+      "reader sees, never one \"nothing to do\" quietly absorbs.\n" +
+      "Recovery steps appear early too: a stale .env plans ./clawforge recover-env " +
       "and a missing desired-state.json plans ./clawforge apply-config --dump, both run " +
       "exactly as planned — the dump's --force refusal protects an existing declaration, and " +
       "this one is absent. An incomplete local store plans ./clawforge secrets --dump as " +
       "advisory instead: it refuses to overwrite an existing store without --force, and " +
       "whether the store's contents matter is the reader's decision, not a step.\n" +
+      "\"nothing to do\" prints only once inspect finds this deployment healthy with no " +
+      "problems at all — never merely because plan has no step for what it found.\n" +
       "Changes nothing. `./clawforge apply` runs exactly this list.",
     arguments: PLAN_ARGUMENTS,
     structured: true,

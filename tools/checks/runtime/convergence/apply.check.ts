@@ -427,10 +427,12 @@ function localTransport(): {
     }, (chunk) => { machine += chunk; });
     check("the whole run does not throw", threw === undefined, true);
     const outcome = JSON.parse(machine) as ApplyOutcome;
-    // A stopped instance with SECRET_MISSING + GATEWAY_DOWN plans exactly these two — which
-    // also pins that no recovery step leaked in. Without the refresh the `up` step dies in
-    // preflightSecrets: its stale settings.env has no token.
-    check("secrets then up both ran — the second on the refreshed context", outcome.steps.map((step) => [step.id, step.status]), [["secrets", "done"], ["up", "done"]]);
+    // A stopped instance with SECRET_MISSING + GATEWAY_DOWN plans exactly these two
+    // executable steps — which also pins that no recovery step leaked in. Without the
+    // refresh the `up` step dies in preflightSecrets: its stale settings.env has no token.
+    // The fixture's own OPENCLAW_IMAGE names a tag rather than a digest, so IMAGE_UNPINNED
+    // is real too — recorded as its own advisory step, run for nothing.
+    check("secrets then up both ran — the second on the refreshed context", outcome.steps.map((step) => [step.id, step.status]), [["secrets", "done"], ["up", "done"], ["problem:IMAGE_UNPINNED", "advisory"]]);
     check("and the confirming inspection finds the instance healthy", outcome.healthy, true);
     check("the run is recorded under one operation id", typeof outcome.operationId === "string" && outcome.operationId !== "", true);
 
@@ -447,7 +449,7 @@ function localTransport(): {
     await withOutputSink(() => {}, async () => { await operations(ctx, [outcome.operationId, "--json"]); }, (chunk) => { recordJson += chunk; });
     const record = JSON.parse(recordJson) as OperationRecord;
     check("operations reads the run back as succeeded", record.outcome, "succeeded");
-    check("its recorded steps are the run's steps, in order", record.steps.map((step) => [step.id, step.status]), [["secrets", "done"], ["up", "done"]]);
+    check("its recorded steps are the run's steps, in order", record.steps.map((step) => [step.id, step.status]), [["secrets", "done"], ["up", "done"], ["problem:IMAGE_UNPINNED", "advisory"]]);
   } finally {
     // createContext pins OC_COMPOSE_PROJECT process-wide; the checks share one process.
     useComposeProjectOverride(undefined);

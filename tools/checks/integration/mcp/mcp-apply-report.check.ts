@@ -7,7 +7,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
-import "#checks/foundation/linux-host.ts";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+
+useLinuxHost();
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-apply-report-"));
 try {

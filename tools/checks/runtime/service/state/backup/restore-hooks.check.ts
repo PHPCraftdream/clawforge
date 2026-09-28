@@ -16,7 +16,9 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { AfterBackupInfo } from "#framework/core/app.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-import "#checks/foundation/linux-host.ts";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+
+useLinuxHost();
 
 let failed = 0;
 

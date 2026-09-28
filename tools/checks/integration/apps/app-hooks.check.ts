@@ -11,7 +11,9 @@ import type { ExecOptions, ExecResult, Transport } from "#framework/runtime/tran
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
-import "#checks/foundation/linux-host.ts";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+
+useLinuxHost();
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-app-hooks-"));
 const previousDeployment = (() => {

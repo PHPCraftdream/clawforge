@@ -21,7 +21,9 @@ import { createApp, appsDir } from "#framework/integration/deployment/scaffold.t
 import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import "#checks/foundation/linux-host.ts";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+
+useLinuxHost();
 
 let failed = 0;
 

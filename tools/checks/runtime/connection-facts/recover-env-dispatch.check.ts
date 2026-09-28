@@ -28,7 +28,9 @@ import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deploy
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
-import "#checks/foundation/linux-host.ts";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+
+useLinuxHost();
 
 let failed = 0;
 

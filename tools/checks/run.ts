@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { reportError } from "#framework/core/io/log.ts";
 import { emit } from "#framework/core/io/output.ts";
 import { appsDir } from "#framework/integration/deployment/scaffold.ts";
+import { hostPlatform } from "#framework/runtime/transport/transport.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -82,12 +83,18 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
     process.exitCode = 0;
     // Imported rather than spawned: one process, and a check that throws is a failure like
     // any other.
+    const nodeOptions = process.env.NODE_OPTIONS;
     try {
       await import(pathToFileURL(file).href);
       if (process.exitCode !== 0) failed += 1;
     } catch (error) {
       process.stderr.write(`  FAIL ${label} threw: ${(error as Error).message}\n`);
       failed += 1;
+    } finally {
+      // A fixture may stand in for the host (useLinuxHost); nothing carries over to the next file.
+      hostPlatform.current = process.platform;
+      if (nodeOptions === undefined) delete process.env.NODE_OPTIONS;
+      else process.env.NODE_OPTIONS = nodeOptions;
     }
   }
 

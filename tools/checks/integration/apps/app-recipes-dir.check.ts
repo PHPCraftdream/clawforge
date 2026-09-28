@@ -9,7 +9,9 @@ import { clearSetSource, setSourceDir, useSetSource } from "#framework/set/artif
 import { clearRecipesDir, listRecipes, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
-import "#checks/foundation/linux-host.ts";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+
+useLinuxHost();
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-app-recipes-"));
 const custom = join(root, "custom-recipes");

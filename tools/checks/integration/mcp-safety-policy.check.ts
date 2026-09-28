@@ -9,7 +9,9 @@ import { spawn } from "node:child_process";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import { inputSchema, toArgv, toolEnvelope } from "#framework/integration/mcp/schema.ts";
-import "#checks/foundation/linux-host.ts";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+
+useLinuxHost();
 
 let failures = 0;
 function check(name: string, actual: unknown, expected: unknown): void {

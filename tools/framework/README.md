@@ -39,7 +39,7 @@ credentials on the target: `migrate` and `share` snapshots exclude them, `full` 
 and the `@clawforge/framework/private-config` helpers refuse private writes anywhere else.
 `privateFiles` lists recipe-relative files that `recipe import` leaves out of the copy — a
 filter over file names, not a guarantee. Both are literal paths, validated strictly. The
-repository README's "Recipes" section documents both contracts, including their limits.
+repository's `docs/guide/recipes.md` documents both contracts, including their limits.
 
 ## MCP
 

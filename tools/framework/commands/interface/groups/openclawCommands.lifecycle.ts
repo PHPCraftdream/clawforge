@@ -111,7 +111,8 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "own payload, never a hardcoded name — and the count is reported. Those copies are hot: " +
       "an append-only transcript's last line can be truncated by a write landing mid-copy, the " +
       "same partial-write risk --hot accepts for the whole tree, narrowed here to log tails.\n" +
-      "If the application declares afterBackup (see README: Extending backup and restore), it " +
+      "If the application declares afterBackup (see docs/guide/data-and-backups.md: Extending " +
+      "backup and restore), it " +
       "runs once the archive is published and rotated — never for an internal archive smoke " +
       "takes purely to prove the mechanism works. A hook that fails never deletes the archive: " +
       "the failure is reported with the published path and a non-zero exit.",
@@ -134,8 +135,8 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "the restored config references is actually available —\n" +
       "a config referencing a variable nothing supplies otherwise crash-loops on " +
       "SecretRefResolutionError.\n" +
-      "If the application declares beforeRestore (see README: Extending backup and " +
-      "restore), it runs first — nothing is stopped or moved yet — and can decrypt or fetch " +
+      "If the application declares beforeRestore (see docs/guide/data-and-backups.md: " +
+      "Extending backup and restore), it runs first — nothing is stopped or moved yet — and can decrypt or fetch " +
       "the real archive, returning the path to restore from instead. A hook that fails stops " +
       "the restore before anything on the target is touched.",
     arguments: RESTORE_ARGUMENTS,

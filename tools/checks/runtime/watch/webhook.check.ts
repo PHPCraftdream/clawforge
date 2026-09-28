@@ -2,7 +2,7 @@
 // coverage of runWatchCycle's transition matrix:
 //
 // - detectWebhookFormat (through resolveWebhookTarget): autodetected from the URL host
-//   alone, matching each vendor's own incoming-webhook host (README links the docs).
+//   alone, matching each vendor's own incoming-webhook host (docs/guide/monitoring-and-access.md links the docs).
 // - resolveWebhookTarget: OC_WATCH_WEBHOOK_FORMAT overrides autodetection when set, an
 //   unknown value is a configuration error, and format=telegram with no
 //   OC_WATCH_TELEGRAM_CHAT_ID is refused the same way, before any probe cycle runs.

@@ -389,7 +389,7 @@ async function runDoctorLint(ctx: Context): Promise<{ ok: true } | { ok: false; 
 
 /** Rewrites this deployment's own .env (repo-side, not the target) so a later recreate stays
  *  pinned to a digest rather than the moving tag that named it — never automatic for
- *  config/desired state (see README on why apply never rewrites the lock); this is one of two
+ *  config/desired state (see docs/guide/operations.md on why apply never rewrites the lock); this is one of two
  *  exceptions, the same way secrets --apply rewrites .env for a rotated repo-env value.
  *  Shared by upgrade (the digest it just confirmed healthy) and bootstrap (the digest a fresh
  *  pull just resolved to) — the one place either command is allowed to rewrite .env

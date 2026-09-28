@@ -75,7 +75,7 @@ export type WatchWebhookFormat = "generic" | "slack" | "discord" | "telegram";
 
 const WEBHOOK_FORMATS: ReadonlySet<string> = new Set<WatchWebhookFormat>(["generic", "slack", "discord", "telegram"]);
 
-/** Each vendor's own incoming-webhook host, verified against their docs (README links them):
+/** Each vendor's own incoming-webhook host, verified against their docs (docs/guide/monitoring-and-access.md links them):
  *  Slack's are always hooks.slack.com; Discord's live at discord.com or the legacy
  *  discordapp.com under /api/webhooks/; Telegram's Bot API is always api.telegram.org.
  *  Anything else stays "generic" — the original {deployment, from, to, reasons, at} JSON. */
@@ -133,7 +133,7 @@ export function transitionPayload(from: WatchLevel, to: WatchLevel, reasons: rea
 
 // Each chat format's own documented text limit: Slack's hard per-message cap (40,000
 // chars), Discord's `content` field (2,000), Telegram's `text` field (4,096, after entity
-// parsing) — sources in README's Health monitoring section.
+// parsing) — sources in docs/guide/monitoring-and-access.md's Health monitoring section.
 const FORMAT_TEXT_LIMIT: Record<"slack" | "discord" | "telegram", number> = {
   slack: 40_000,
   discord: 2_000,

@@ -55,6 +55,62 @@ that it ends up in the npm package if the framework is ever installed as a depen
 someone else's repository instead of being used colocated as in this checkout (see the
 notes in `core/env.ts`/`runtime/deployment.ts`).
 
+Run `npm run format:check` for the native TypeScript check and Oxlint before opening a
+change. Public modules and exported functions use short TsDoc comments that describe their
+contract; implementation comments are kept to the decision they explain.
+
+## How it is put together
+
+A command does not know where the target lives or how to reach it. It is handed a context
+with three abstractions:
+
+* **Transport** — run a command and read a file on the target: locally or through
+  `wsl.exe`. Selected by `OC_TARGET_LOCATION` (`auto`: Windows → WSL, Linux → local).
+* **Runtime** — Docker. The only supported value, but the contract leaves room for a native
+  installation: not one command mentions `docker`.
+* **Path bridge** — translation between four coordinate systems: our side (the same location
+  spelled three ways — a Windows path, its WSL automount, and its Git Bash form), the target
+  (`/srv/openclaw/data`), the container (`/home/node/.openclaw`) and the remote server.
+
+Why the bridge is a separate thing:
+
+* `docker compose` runs on the target and is handed a path to the compose file — a
+  Windows-side path is meaningless there;
+* arguments that end up **inside** the container have to be in container coordinates;
+* the automount point is configurable in `/etc/wsl.conf`, so `/mnt` is not a constant;
+* bind mounts are nested (`workspace` inside `config`), and translation has to prefer the
+  longest match — otherwise a path silently lands in a different mount.
+
+Calling `wslpath` is not an option: backslashes do not survive the trip through `wsl.exe`, so
+a Windows path loses its separators and arrives as one fused segment. Translation is done in
+our own code and covered by checks (see "What `./clawforge check` covers" below).
+
+**TypeScript is executed directly** (type stripping), with no build step and no `tsx`. The
+flip side: constructs that need code generation are unavailable — `constructor(private x)`,
+`enum`, `namespace`, decorators. All code is asynchronous, and commands are passed as
+argument arrays (no string building for a shell).
+
+There is one runtime dependency, `json5` — OpenClaw's own configuration is JSON5, and a
+second parser written here would disagree with it eventually. So `npm install` is a
+prerequisite of the gate in this repository, as [Quick start](../README.md#quick-start) says;
+the published package declares it as a dependency and npm installs it with the package.
+
+The only shell file is `clawforge`: it runs before Node and only looks for a suitable Node.
+
+### Combinations, and which of them are proven
+
+Target location and runtime are independent axes. There is one runtime today; the contract
+leaves room for a native installation, but no such setup exists.
+
+| Combination | `OC_TARGET_LOCATION` | Status |
+| --- | --- | --- |
+| WSL + Docker | `auto` (from Windows) or `wsl` | **Verified live 2026-09-08**: smoke 8/8, a round trip with matching checksums, a second deployment with its own port and token |
+| Local + Docker | `local` | **Unverified**: needs Node 24+ inside WSL, where there is none |
+| SSH + Docker | `ssh` + `OC_SSH_HOST` | **Unverified**: needs a server. Delivery contents are checked against a recording transport (`./clawforge check`); there has been no live run |
+
+What is unverified says so on purpose: the code is written and covered by checks, which is
+not the same thing as a scenario that has run.
+
 ## Why the boundary runs here
 
 Domain commands used to be considered part of the application. That turned out to be wrong:
@@ -117,9 +173,10 @@ different: `tools/clawforge.ts` resolves `apps/<name>` from the monorepo root (`
 `init` (integration/init.ts) with a package-specifier import (`@clawforge/framework/app`), because
 outside the monorepo the relative path does not exist.
 
-The practical flow, and why packaging raw `.ts` does not work, are in the README, under
-"Installing in a separate repository". Releases publish the built package from
-`tools/framework`; the repository's CI checks the generated tarball before release.
+The practical flow, and why packaging raw `.ts` does not work, are in
+[docs/guide/deploy-and-mcp.md](guide/deploy-and-mcp.md), under "Installing in a separate
+repository". Releases publish the built package from `tools/framework`; the repository's CI
+checks the generated tarball before release.
 
 Choosing a deployment: the `--app` argument, the `OC_APP` variable, otherwise `openclaw`.
 
@@ -516,3 +573,65 @@ Checked by grep rather than by eye:
 
 The rest is `./clawforge check` (paths, archives, arguments, delivery contents, secret masking) and
 `./clawforge smoke` against a live instance.
+
+### What `./clawforge check` covers
+
+```bash
+./clawforge check
+```
+
+A selection — `./clawforge check` runs every `*.check.ts` under `tools/checks/`, and there are
+more of them than fit here:
+
+| File | What it covers |
+| --- | --- |
+| `release/release/installed-consumer.check.ts` | the published tarball, installed into a directory `npm init -y` made: `init` there, then a command through the installed entry point |
+| `foundation/core/paths.check.ts` | 48 translations between the four coordinate systems |
+| `foundation/core/archive.check.ts` | absolute paths, `..`, links pointing outside (symlink and hard link), consistency of the `share` profile |
+| `foundation/core/arguments.check.ts` | argument declarations, MCP schemas, the reverse mapping back to argv |
+| `runtime/service/deploy.check.ts` | what a server delivery contains: what travels and what stays, and that it refuses to mirror a tree that is not a checkout |
+| `integration/mcp/transport-listing.check.ts` | `listFiles`: a real local tree (no separator leaks into a target path, directories are not files) and what the remote implementations make of `find` output |
+| `secrets.check.ts` | masking of secrets in diagnostics, including a failing child process |
+| `ssh-quoting.check.ts` | a remote script survives ssh joining its arguments into one line — checked against a real `sh` |
+| `verify.check.ts` | a fatal structural finding rejects an archive before unpacking, not after |
+| `state.check.ts` | a share snapshot is removed whole even when verification throws rather than returning false |
+| `restore.check.ts` | a direct `restore` does not start the gateway on a config with missing secrets, does not report a corrupted config as a successful restore, and with no argument picks the newest FULL archive rather than the newest file |
+| `mcp-server.check.ts` | malformed JSON-RPC (`null`, a number, an array) does not take the server down — a real stdio process, and a confirmed `recipe verify` — the one call that reaches a lock-taking command — running against a scratch app whose data directory, lock home included, stays inside the app the check removes; and `recipe import` is expressible over MCP — both forms, with and without the rename, validate clean and build the exact argv the dispatcher reads |
+| `env.check.ts` | `.env` parsing (quotes, comments, `=` inside a value), `toSettings()` defaults |
+| `deployment-names.check.ts` | deployment paths, `safeName` — protection against `--store ../../etc` |
+| `app-mounts-output.check.ts` | `defineApp`/`mcpCommands`, the bind-mount map, nested `withOutputSink` |
+| `requirements.check.ts` | collecting `SecretRef`s from the config, deduplicating provider vs explicit reference, rendering the template |
+| `recipe.check.ts` | parsing `recipe.json`, `install` refusing a disabled recipe without `--force-disabled`, and the instance lock: every mutating action refused while another operation holds it — the prepare hook provably never running — the same actions riding a lock the calling chain already holds instead of refusing it, read-only actions ungated, and `--break-lock` honoured; and `import`'s exclusion contract — every name the old hardcoded blacklist excluded still excluded, the generic four with no declaration at all, the application's own names only via the source's `privateFiles` declaration, a broken source manifest stopping the import instead of reading as nothing declared, and a non-credential file copied whole |
+| `security/credentials/secrets-command/*.check.ts` | `--init-store` refusing to overwrite a filled store; `--apply` aborting on a live config it could not read and naming the variables it replaces; `--apply` performing the repo-env recreate, or saying exactly why it cannot, then confirming the value in force by name and never by value; `mcp-setup` merging `.mcp.json` |
+| `runtime-port.check.ts` | parsing `docker ps` through `.Label` (not `.Labels`), `preflightPort` |
+| `cli-help.check.ts` | `--help` for `control-mcp`/`new-app`/`help` neither hangs nor stays silent; `help` works before any deployment exists |
+| `passthrough-help.check.ts` | `cli` is marked `passesThroughHelp` — `--help` reaches OpenClaw instead of being intercepted here |
+| `cli-helper.check.ts` | the persistent CLI container: `startHelper`/`stopHelper`/`execInHelper`, `cli()`/`mcpServe()` falling back to `runOneOff` only on `HelperNotRunning` and not on any error; `runOneOff` forwarding `allowFailure` |
+| `backup.check.ts` | rotation removes one archive per run, the oldest, counted per profile, and never a sibling deployment's |
+| `runtime/service/state/native-backup.check.ts` | `--native` invokes `openclaw backup create --verify --json --output` in the sidecar and parses its result; refuses to publish on `verified: false`; the published archive keeps the ordinary full-backup name and location, so rotation needs no native-specific case; `--native` refuses any profile but full; an image without native support raises a distinct error rather than a generic failure; neither an unsupported attempt nor a failed verify ever leaves a half archive under a normal-looking name; and a live file OpenClaw's own backup left out (a session transcript) is copied into the archive, with the count reported |
+| `runtime/service/restore.check.ts` (native section) | a restored archive carrying a native backup's embedded manifest is re-verified with `openclaw backup verify` before anything is unpacked, and a failing verification refuses the restore before any destructive step runs |
+| `runtime/connection-facts/upgrade.check.ts` | the target tag is resolved to a digest and pulled by digest, never the tag itself; the running digest is recorded before anything changes; a healthy upgrade takes a pre-upgrade backup, recreates on the target digest, and passes `openclaw doctor --lint`; a generic health failure recreates back on the previous digest without touching data; a container exit during migrations (code 78) additionally restores the pre-upgrade backup; a blocking `doctor --lint` finding rolls back the same way a health failure does; `--dry-run` resolves the digest to report the plan but changes nothing; and an instance already on the resolved digest is a no-op |
+| `runtime/connection-facts/bootstrap-image-pin.check.ts` | a fresh pull is pinned to the digest it just proved — `.env` rewritten, the moving tag gone, the pull itself proven to run before the digest is read; `--no-pull` asks for no digest to pin and leaves `.env` byte-identical; a deployment already pinned to a digest is never asked to re-resolve and never rewritten — `./clawforge upgrade` is the only way to move it from there; and a digest the runtime cannot resolve locally leaves the tag alone rather than guessing |
+| `provision-agent.check.ts` | path and argv builders, `collectRecipeFiles` excluding `agent/`, the create-vs-skip decisions, and cron reconciliation against the declaration |
+| `mcp-mirror.check.ts` | the promise itself: every command `./clawforge help` lists is a tool or an explained exemption, and every tool is a command the console offers — both surfaces read from real processes |
+| `gate-commands.check.ts` | the gate's own commands: dispatch, `--help` from the declaration, and the same schema/argv derivation the deployment's commands get |
+| `logs-bounded.check.ts` | `logs` and `recipe logs` follow on a terminal and read a bounded tail under a sink, with `--tail` parsed rather than passed on; `--since` accepting a duration or an RFC3339/ISO date-time and refusing anything else; `--grep` compiling to a `RegExp` or refusing an invalid pattern, filtering the bounded read, and filtering a followed stream line by line under a sink |
+| `deployment-list.check.ts` | `listDeployments()` against a scratch `apps/` and a stubbed context: the four configuration fields plus `pinned` read straight from `.env`; a missing `.env`, a broken `app.ts` and a failing `isRunning()` each produce their own row and reason rather than failing the whole call; `NotBootstrapped` maps to its own state; `--no-status` never builds a context at all; and the active deployment global is restored to what it was before `list` ran |
+| `openclaw-cli.check.ts` | the shared wrapper around OpenClaw's CLI: capture, the scope-upgrade approve-and-retry, and that an unrelated failure is not retried into a second error |
+| `restart.check.ts` | `restart` refuses a stopped instance, does not restart into a config with missing secrets, and waits for health |
+| `runtime/service/runtime-image-identity.check.ts` | what compose is handed — a private env file, never `env VAR=…` arguments; `reconcile()` re-reading the deployment `.env` from disk rather than the process-start snapshot; and, where this machine can run a container, a synthetic rotation proven live: `restart` keeping the created environment in force, `reconcile` replacing the container, the rotated value read back from `docker inspect`; each temporary environment file's owner record (pid, machine) written before the token-bearing file itself; and a crash-abandoned `compose-<uuid>` directory — an owner recorded on this machine, its pid provably gone — swept before the next call, while one still owned by a live pid, one whose owner cannot be read at all, and one recorded on a different machine are each left alone; `health()` distinguishing `missing`/`stopped`/`starting`/`healthy`/`unhealthy` — a container stopped while healthy (or mid-failure) reports `stopped`, never Docker's stale last verdict; and the container-id lookup costing one bare `docker ps --filter label=…` exec, shared by `health()`/`startedAt()`/`runningConnectionFacts()`/`runningImageIdentity()`/`runningEnvironment()`, never a whole compose invocation each |
+| `inspection.check.ts` | the problem-code table: every code has a severity and a runnable remedy, a caller cannot downgrade a blocking one, and "healthy" means serving rather than silent |
+| `runtime/convergence/inspect/*.check.ts` | every finding `inspect` can report, provoked one at a time against a stubbed target and a real temp deployment; and `doctor`'s exit contract in both directions |
+| `runtime/convergence/inspect/egress.check.ts` | the outbound probe runs through the container exec and never `Runtime.probe()`, one exec on stdin for exactly the endpoints the live config names (none named — none asked), a name that does not resolve and an endpoint that does not answer are separate findings naming endpoint and config path, credentials in a proxy URL never reach the output, `doctor` still exits zero, and a stopped instance is asked nothing |
+| `runtime/convergence/inspect/folder.check.ts` | the deployment folder against the instance: each of `ENV_STALE`, `DECLARATION_MISSING`, `STORE_INCOMPLETE` provoked and distinct; a folder that matches the running instance producing no finding at all; a stale fact named by variable, never by value, and the token sharing `.env` reaching no output; the stopped-instance and absent-store non-findings pinned as the limits they are; `doctor` exiting zero with all three firing; `IMAGE_UNPINNED` for a bare tag (surviving being stopped, since it is a fact about `.env` alone) and `IMAGE_TAG_MOVED` only once a running instance's own digest actually diverges from what the tag now resolves to — never paired over a tag that has not moved, never over a digest-pinned image, and never `IMAGE_TAG_MOVED` alone without `IMAGE_UNPINNED` beside it; and, against a REAL `DockerRuntime` with a stubbed transport, a deployment nobody has bootstrapped yet answering `NOT_BOOTSTRAPPED` (never a raw `mkdir` transport error, never `GATEWAY_DOWN` or `IMAGE_UNPINNED` beside it) from `inspect`/`doctor`/`status` alike, with the boundary pinned too — a data directory that DOES exist fails for its own real reason, never swallowed as `NOT_BOOTSTRAPPED` |
+| `lock.check.ts` | what the lock notices: an image that moved behind an unchanged tag, a framework bump, an edited recipe, a newly required secret — and that all of it is a warning |
+| `plan.check.ts` | the order, as rules: secrets before anything that needs the instance, configuration before the restart that reads it, start instead of start-then-restart, recipes after the gateway is up |
+| `runtime/convergence/plan.check.ts` | the recovery half of the order: recover-env before the two dumps, the dumps before the steps that write to the target, the declaration dump executable only while the declaration is absent, and the store dump advisory because the refusal is the safeguard |
+| `apply.check.ts` | stopping at the first failure, reporting what did not run as advisory or blocked, and never performing an advisory step; a runner asserted for every executable id the planner can emit; the recovery step reaching done and every step landing in the journal under one operation id that `./clawforge operations <id>` reads back; a dump's `--force` refusal failing the step with the file untouched; and `--dry-run` emitting the plan and writing nothing |
+| `operations.check.ts` | the journal is on disk before the next step starts, an unfinished run keeps every step it managed and gains no invented outcome, and a target that cannot be written to does not fail the run it is recording |
+| `rollback.check.ts` | choosing what to undo: the newest run that took a snapshot, never one that took none, and every refusal saying where to look instead |
+| `apply-config.check.ts` | a dry run does not stage under the shared file name a real run writes, and two dry runs do not collide; `--dump` recovers exactly the curated paths from a stubbed JSON5 live config, refuses an existing declaration without `--force`, omits paths the live config never set rather than emitting nulls, and says plainly that recovered values are not the original declaration; flag combinations that mean nothing together are refused before the first read or write — `--dry-run` with `--dump` in both argv orders, `--break-lock` with either a dump or a dry run, `--force` without `--dump` — each refusal leaving the existing declaration byte-identical, with a plain `--dump --force` as the working control |
+| `instance-lock.check.ts` | a second operation is refused with the holder named, a failed run releases the lock, a stale one is described rather than stolen, and a run that lost its lock to `--break-lock` does not remove the new holder's, and a claim against an existing directory is refused; a holder's pid provably gone on this machine is named as such, never guessed at for one recorded elsewhere; `--break-foreign-lock <hostId>` refused on a mismatch, taken over on a match with who/when/which-owner recorded, and plain `--break-lock` still refusing a foreign owner; and every command that reads `--break-lock` from real argv actually declares it, with the two that only ever appeared to (`bootstrap`, `pull`) fixed and the deliberately unsupported ones (`backup`, `configure-provider`, `secrets`) naming a command that does instead of the flag they reject |
+| `accept.check.ts` | every declared check kind in both directions, and that an unknown kind fails rather than passing quietly |
+| `foundation/cli/host.check.ts` | `host` end to end: the flag boundary, the root gate on target, context resolution per platform against injected environments, and the engine privilege contract — a context that arrives as root is refused without both flags before anything can spawn, and where this machine can answer, the real effective uid (`id -u` through the real resolution) rather than the argv |
+| `runtime/lifecycle/smoke.check.ts` | every smoke check lands as `passed`, `failed`, `not-checked` or `could-not-check` and the four stay distinct; a check that could not obtain a verdict cannot be the reason a run reports success; the two bodies that run without an instance read a verdict-less runtime apart from a failed one; the drift check's restore failing after the verdict stays a failed check naming the drifted path and the repair; and a silent "agent answers end to end" naming `PROVIDER_MISSING`'s own remedy when the live config configures no provider, instead of inventing that cause when a differently-configured instance simply answered wrong |

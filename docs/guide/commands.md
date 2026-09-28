@@ -1,0 +1,94 @@
+# Command reference
+
+A summary of every command's arguments and purpose. For what's current at the moment you
+run it, ask the tool itself:
+
+```bash
+./clawforge help               # the same list as below, current as of the moment you run it
+./clawforge help <command>     # full description of a command and its arguments
+./clawforge <command> --help   # the same thing, different syntax
+```
+
+The `--help` text is not an abridgement: it is where side effects and ordering are spelled
+out (why `push` installs keys before starting rather than after, for instance), and an MCP
+client sees that same text as the tool description under `./clawforge control-mcp`. What follows
+below is what does not fit in `--help` — the whole model, file formats, diagnostics.
+
+| Command | Arguments | Purpose |
+| --- | --- | --- |
+| `bootstrap` | `[--no-pull] [--break-lock] [--break-foreign-lock <hostId>]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance. A fresh pull of a tag is pinned to the digest it just proved, in `.env` — an already digest-pinned deployment is left alone; `./clawforge upgrade` moves it from there |
+| `up` | `[--break-lock] [--break-foreign-lock <hostId>]` | Start and wait for `/healthz`; secrets and port availability are checked before the start, not after |
+| `restart` | `[--break-lock] [--break-foreign-lock <hostId>]` | Restart in place so the instance re-reads its configuration — what `apply-config` and `configure-provider` need, and what `up` cannot do. It re-reads files the container can see (bind-mounted config) and nothing compose baked into it: the environment was interpolated from `.env` at creation, so a rotated repo-env secret needs the recreate `secrets --apply` performs, or `up` |
+| `down` | `[--break-lock] [--break-foreign-lock <hostId>]` | Stop and remove the containers; data in bind mounts is untouched |
+| `logs` | `[--tail <n>] [--since <duration\|timestamp>] [--grep <pattern>]` | Follow the service log on a terminal; called as a tool, read the last `n` lines and return them. `--since` takes a Go-style duration (`10m`, `2h`, `1h30m`) or an RFC3339/ISO date-time, passed straight to `docker compose logs --since`; anything else is refused rather than forwarded. `--grep` filters lines by a JS `RegExp`, on both the bounded read and the following stream — an invalid pattern is refused before anything runs |
+| `status` | — | Containers, image, health probes (HTTP probes and Docker's own verdict side by side — they can disagree), disk usage |
+| `inspect` | `[--json]` | What is declared, what is running, and where they disagree — one answer, every finding carrying a stable code. Also probes, from inside the container, the outbound endpoints the live config names, and compares the deployment folder itself — `.env`'s connection facts, the desired-state file, the default secret store — against the instance, as warnings. Read-only |
+| `doctor` | `[--json]` | The same inspection read as a verdict; exits non-zero when something blocking was found; outbound reachability is a warning, never a failure |
+| `plan` | `[--set <artifact>] [--json]` | The ordered actions the declaration implies, and why each one is there. Changes nothing |
+| `apply` | `[--set <artifact>] [--expect <checksum>] [--dry-run] [--break-lock] [--json]` | Run that plan, stop at the first failure, then inspect again and report what the instance actually is |
+| `lock` | `[--check] [--json]` | Pin the composition — framework version, image digest, recipe checksums, secret names — or check it still matches |
+| `rollback` | `[--operation <id>] [--no-restart] [--set] [--break-lock] [--json]` | Put back the configuration an operation replaced, and restart. One file, not the data directory |
+| `operations` | `[<id>] [--limit <n>] [--json]` | What mutating runs did: their steps, what failed, what never ran, and whether a snapshot was taken |
+| `accept` | `[<recipe>] [--set <artifact>] [--with-model] [--json]` | Run the acceptance checks a recipe declares. Checks that call the model are reported as `not-checked` unless asked for, and counted; one that cannot obtain a verdict is `could-not-check` and fails the run |
+| `cli …` | arbitrary | OpenClaw's own CLI, e.g. `./clawforge cli config get gateway.mode`; a one-off container by default, but execs into the persistent one when `cli-start` is running. As a tool it takes the arguments as a list and needs `confirm: true` — it can run anything that CLI can |
+| `cli-start` | — | Start the persistent CLI container: `cli`/`mcp-serve` then exec into it instead of paying create/destroy per call |
+| `cli-stop` | — | Stop and remove the persistent CLI container |
+| `apply-config` | `[--dry-run] [--dump] [--force] [--break-lock]` | Apply `config/desired-state.json`, overwriting hand edits to `openclaw.json`; `--dump` reconstructs a lost declaration from the live instance's own config — commonly declared paths only. Flags are validated against the mode before anything runs: `--dry-run` and `--dump` refuse each other (a dump has no dry-run form — the combination used to overwrite the declaration it was asked to preview), `--break-lock` applies only where a lock is taken, `--force` only to `--dump` |
+| `configure-provider` | `[--provider <id>] [--env <VAR>] [--force]` | Configure any provider from a target-side SecretRef; key values never enter `openclaw.json` |
+| `secrets` | `[--template] [--print-template] [--init-store] [--apply] [--dump] [--store <name>] [--force]` | The manifest of required secrets, the template, the local store of values; `--apply` puts repo-env values in force itself — recreating the running container, since restart cannot change an environment compose interpolated at creation — and confirms them without printing them; `--dump` recovers a lost store from a running instance |
+| `recover-env` | `[--dry-run]` | Repair `.env`'s four connection facts from the running container; a wholly absent `.env` is not repairable — reaching the target already requires it |
+| `backup` | `[--profile full\|migrate\|share] [--share] [--migrate] [--with-secrets] [--hot] [--native]` | Snapshot the data directory; the gateway is stopped for the duration by default. Defaults to full, unlike `pull`, which defaults to migrate; the shorthand flags are the same vocabulary both commands accept. `--native` (full profile only) takes a consistent snapshot WITHOUT stopping the gateway, via OpenClaw's own `backup create --verify` in the sidecar rather than a raw tar over live state; the archive it publishes is an ordinary full backup, with the pristine OpenClaw archive embedded inside for `restore` to re-verify. `auth-secrets/` and any live file OpenClaw's own backup left out (session transcripts, in the pinned image) are copied in afterwards, the count reported |
+| `restore` | `[<archive>] [--force] [--fresh-identity] [--no-start] [--break-lock]` | Restore an archive; the structural check runs before anything is stopped, the secrets check before anything is started. An archive produced by `backup --native` is additionally re-verified with `openclaw backup verify` before anything is unpacked |
+| `upgrade` | `[--image <ref>] [--dry-run] [--break-lock] [--break-foreign-lock <hostId>]` | Resolve the target (`--image`, or the deployment's own `OPENCLAW_IMAGE`) to a digest and pull that digest specifically — a shared local tag never moves. A tag — `--image repo:tag`, or `OPENCLAW_IMAGE` already pinned to `repo:tag@sha256:…` — is re-resolved at the registry every run, so a plain `upgrade` after a pin still catches the tag having moved; `OPENCLAW_IMAGE` pinned with no tag (`repo@sha256:…`, from before pins kept one) has no channel to re-resolve and is refused with `--image <repo:tag>` as the remedy. An explicit digest (`--image repo@sha256:…`) is used as-is. Records the running digest, takes a pre-upgrade backup (`backup --native` when available, else a stopped full backup), recreates the gateway on the new digest, waits for `/startupz` then `/readyz`, and runs `openclaw doctor --lint`; on any failure it recreates on the previous digest, restoring the backup too when the failure was the container exiting during migrations (upstream: code 78). On success it pins `OPENCLAW_IMAGE` to `repo:tag@sha256:…` in `.env` — re-pin with `./clawforge lock` afterwards. `--dry-run` prints the current digest, the channel, its registry digest, and whether an upgrade is available, changing nothing |
+| `pull` | `[--profile ...] [--share] [--with-secrets] [--migrate] [--hot] [--break-lock]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
+| `push` | `[<snapshot>] [--force] [--fresh-identity] [--break-lock]` | Push a snapshot back: restore → install keys if any travelled with it → check → start |
+| `verify` | `<archive> [--profile ...]` | Check an archive for credentials before sharing it — what `pull --share` does on its own |
+| `recipe` | `<list\|import\|install\|remove\|status\|logs\|verify\|onboard\|diagnose> <name> [new-name] [--volumes] [--tail <n>] [--force-disabled] [--break-lock]` | App-owned services beside the instance, each its own compose project and optional lifecycle hooks. install, remove and the hook-running actions take the instance lock for their whole run — install across its build; list/status/logs and import (a repository-side copy) take none. With import, `<name>` is the source directory and `[new-name]` the name to import under — the source's own name by default; the copy leaves out the generic credential-shaped names (`.env*`, `secrets/`, `*.token`, `*.secrets.env`) plus what the source's own `recipe.json` declares under `privateFiles` — a filter over file names, not a guarantee; `privatePaths` in the same file declares where the running recipe keeps generated credentials (data-relative), which migrate/share snapshots exclude and full keeps |
+| `provision-agent` | `<recipe> [--break-lock]` | Wire a recipe's MCP server to a dedicated agent: agent, workspace prompt files, MCP registration and an optional cron job |
+| `host` | `<target\|engine\|local> [--root --confirm-root] -- <command>` | Run one command on the operator's own machine layers — the deployment's transport, the container engine's VM, or the bare host. Privilege is stated where it arrives: target and local run as the operator's own user until both root flags elevate them; Docker Desktop's `docker-desktop` engine distro has no login user but root, so both flags are the consent every engine command needs before it runs at all — without them it is refused, not downgraded |
+| `deploy` | `<user@host> [--path <dir>] [--no-bootstrap] [--adopt]` | Deploy to a server: the code is mirrored whole, the deployment by name and by file, credentials never leave this machine. The first deploy to a `--path` may only mirror into a directory it created itself (proven empty, then marked); `--adopt` takes over an existing unmarked, non-empty root instead, listing what `--delete` would replace there first. Only from a checkout — installed as a package it refuses, since there is no checkout to mirror |
+| `mcp-serve` | — | stdio bridge to OpenClaw's channels — what a client from `.mcp.json` starts, not something to run by hand; execs into the persistent CLI container when it is up |
+| `mcp-setup` | `[--client <name>] [--json]` | Merge project MCP settings into `.mcp.json` and `.codex/config.toml` |
+| `mcp-creds` | `[--json] [--token]` | URL, token, ready-made client config — what `mcp-setup` writes to a file, printed instead |
+| `expose` | `<ssh\|tailscale\|status> [--local-port <n>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Reach a loopback-bound gateway from outside this host, narrowest scope first: `ssh` prints (and, with `--run`, opens) the SSH tunnel; `tailscale` prints (and, with `--apply`, runs) a tailnet-only `tailscale serve` — never `funnel`; `status` reports what is actually published right now, read back from the running container |
+| `watch` | `<check\|install\|uninstall\|status> [--json] [--interval <minutes>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]` | Health monitoring with a webhook alert on state change, plus an optional heartbeat dead-man's switch. `check` collapses the liveness-relevant findings `inspect` already computes into ok/degraded/down (an unreachable target, not just an unhealthy one, also reads as down, reason `TARGET_UNREACHABLE`), layers on its own channel (`CHANNEL_UNHEALTHY`) and data-directory disk-space (`DISK_LOW`/`DISK_UNKNOWN`, against `OC_WATCH_DISK_MIN_MB`) findings, alerts `OC_WATCH_WEBHOOK` only on a transition (`OC_WATCH_WEBHOOK_FORMAT`: generic/slack/discord/telegram, autodetected from the URL when unset), and exits non-zero whenever the state is not ok; a failed alert leaves the persisted state at its old value so the next cycle retries it. `OC_WATCH_HEARTBEAT_URL`, when set, gets a plain GET every cycle that itself reads ok — works with healthchecks.io, Uptime Kuma's push monitor and Better Stack's heartbeat monitor — so that service alerts on its own if the whole server (not just the instance) goes down. `install`/`uninstall` print (and, with `--apply`, install through the transport) a crontab entry — `--interval` is 1-59 minutes or an exact multiple of 60 up to 1440 — only where an unattended cron can be trusted to find this tooling (a real SSH host or a POSIX `local` target) — elsewhere it prints the operator-side command instead of installing something that would silently never run. `status` shows the last persisted state, whether a webhook/heartbeat is configured and the heartbeat's last successful ping, never either URL |
+| `incident` | `[--dry-run] [--keep-exposure] [--tail <n>] [--json] [--break-lock] [--break-foreign-lock <hostId>]` | OpenClaw's own incident runbook, in order: contain (turn off only this gateway's own `tailscale serve` route(s), never `tailscale serve reset`) → preserve (log tail and an env-redacted `docker inspect` of the container about to be replaced) → rotate (a fresh `OPENCLAW_GATEWAY_TOKEN`, recreated into the running container so it takes effect) → audit (the same security gate `doctor`/`accept` run, plus `openclaw doctor --lint`, reported here rather than gating the run) → collect (a bounded log tail, both audit outputs and a status summary, joined into one manifest). Refuses the whole run while the gateway is published on every interface unless `--keep-exposure`. Preserve and collect always run and always write, even when rotate or audit fails. Evidence lands in a private, owner-only `apps/<name>/incidents/<timestamp>/` directory (outside the tracked repository tree), every file masked for known secrets; re-pair every MCP client afterwards with `./clawforge mcp-creds` |
+| `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
+| `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
+| `check` | — | Framework checks with no instance — paths, archives, arguments, what a server delivery contains |
+| `new-app <name>` | — | Create a deployment directory (framework-level, available before `--app` is resolved) |
+| `list` | `[--json] [--no-status]` | One line per `apps/<name>`: target, gateway port, image (pinned when it carries `@sha256:`), and whether the gateway is running (framework-level, monorepo checkouts only — an installed, single-deployment checkout has nothing to list beside itself). A deployment this cannot fully read — no `.env` yet, a broken `app.ts`, an unreachable target — gets its own line naming why, instead of failing the whole listing. `--no-status` skips querying any target, for a fast configuration-only read; `--json` prints the same rows as an array of objects |
+| `init` | — | Scaffold the current directory as the single deployment (framework-level, installed mode only — see [Installing in a separate repository](deploy-and-mcp.md#installing-in-a-separate-repository-npm)) |
+
+## The machine itself: `host`
+
+`./clawforge host <context> -- <command>` runs one ad hoc command against the operator's own
+machine layers instead of the deployment's containers: `target` (the deployment's own
+transport), `engine` (wherever the container engine actually executes — Docker Desktop's
+`docker-desktop` WSL2 distro on Windows), and `local` (this machine, unwrapped). Where no
+separate engine exists, `engine` says so and runs where `local` would.
+
+The privilege model, stated as it is:
+
+* `target` and `local` run as the operator's own user. `--root --confirm-root` together
+  elevate: `sudo -n` (a required password fails fast rather than hanging), `wsl -u root` in
+  the engine distro, refused outright where there is no root concept. Either flag alone does
+  nothing.
+* `engine` on Docker Desktop is the other case, and it is not a corner: the `docker-desktop`
+  distro has no login user but root — its default user is root (uid 0), and `/etc/passwd`
+  offers only `nologin` service accounts besides, so there is no unprivileged user to select.
+  Every engine command therefore arrives as root before any flag is read. There the two flags
+  are not an upgrade but the consent the command needs to run at all: without them the command
+  is refused rather than downgraded, and with them it is pinned to `-u root` explicitly. This
+  is not a boundary against the operator — the operator already has WSL and can run anything
+  there themselves. It is what keeps a routine diagnostic from silently carrying authority
+  over engine state nobody knowingly asked it to have, which is the defect an external audit
+  (P2-04, 2026-09-21) found in the previous "root only when asked for twice" contract: the
+  flags gated the request, and the request was not where the privilege came from.
+
+The check pins what the machine does, not what the argv requests: where the machine running
+the checks has the distro, `foundation/cli/host.check.ts` runs the audit's own read-only probe
+(`id -u` through the real engine resolution), asserts the effective uid, the refusal without
+consent, and the consented run. Where it cannot — Linux CI has no `docker-desktop` to ask —
+that leg prints a skip, names the limit, and the arrival declaration plus the consent gate are
+pinned hermetically instead.

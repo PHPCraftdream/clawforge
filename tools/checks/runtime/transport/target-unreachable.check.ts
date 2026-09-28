@@ -82,7 +82,8 @@ check("isWrapperFailureCode: 256 (impossible for a real guest exit) is one", isW
   check("a WSL distro that cannot exist raises TransportUnreachableError", error instanceof TransportUnreachableError, true);
   const unreachable = error as TransportUnreachableError;
   check("...naming the transport it tried to reach", unreachable.message.includes(distro), true);
-  check("...with a next step naming OC_WSL_DISTRO", unreachable.nextAction?.includes("OC_WSL_DISTRO") ?? false, true);
+  // wsl.exe absent (Linux CI) names the tool to install; present, the variable to fix.
+  check("...with a next step naming OC_WSL_DISTRO or wsl.exe", /OC_WSL_DISTRO|wsl.exe/.test(unreachable.nextAction ?? ""), true);
 }
 
 // --- Part C: doctor/plan/status/backup list, wired through a stub transport -----------------

@@ -143,6 +143,47 @@ try {
     check("not the old blanket answer", payload.nextActions.includes("./clawforge lock"), false);
   }
 
+  // --- plugins/skills, end to end: the same "cli" container inspect already reads from -----
+  //
+  // Not a unit test of compareLock's branches (release/release/lock.check.ts covers those) —
+  // this is the whole pipeline lock() and inspect() actually run: the stubbed `plugins
+  // list`/`skills list` output, parsed, bundled entries dropped, written to
+  // config/deployment.lock.json, then read back and compared against a live set that moved.
+
+  {
+    // page.md was rewritten by the case above and never reverted — fresh local checksums,
+    // not the setup-time goodChecksums, so a mirror that matches them provokes no unrelated
+    // RECIPE_MIRROR_DRIFT here.
+    const currentChecksums = await recipeFileChecksums(resolve(deployment, "recipes", "demo"));
+    const thirdPartyPlugin = { id: "acme-tool", name: "@acme/tool", version: "1.0.0", origin: "npm", enabled: true };
+    const bundledPlugin = { id: "alibaba", name: "@openclaw/alibaba-provider", version: "2026.6.34", origin: "bundled", enabled: true };
+    const thirdPartySkill = { name: "acme-skill", source: "clawhub" };
+
+    await withOutputSink(
+      () => {},
+      () =>
+        lock(
+          stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: currentChecksums, plugins: [thirdPartyPlugin, bundledPlugin], skills: [thirdPartySkill] }),
+          ["--json"],
+        ),
+    );
+    const written = JSON.parse(await readFile(lockFile(), "utf8")) as { plugins?: unknown[]; skills?: unknown[] };
+    check("the lock records the third-party plugin it read from the CLI", written.plugins, [{ id: "acme-tool", name: "@acme/tool", version: "1.0.0", source: "npm" }]);
+    check("bundled ones never reach the file", (written.plugins ?? []).length, 1);
+    check("and the third-party skill too", written.skills, [{ name: "acme-skill", source: "clawhub" }]);
+
+    // The instance loses the plugin (uninstalled) after the lock was taken — inspect and
+    // doctor read it through the exact same batched call observeLive already makes, no
+    // second container.
+    const inspection = await gatherInspection(
+      stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: currentChecksums, plugins: [bundledPlugin], skills: [] }),
+    );
+    const drift = inspection.problems.filter((entry) => entry.code === "PLUGIN_DRIFT" || entry.code === "SKILL_DRIFT");
+    check("the instance losing a pinned plugin and skill is reported", codes(drift), ["PLUGIN_DRIFT", "SKILL_DRIFT"]);
+    check("as warnings, not blocking — the instance still works", drift.every((entry) => entry.severity === "warning"), true);
+    check("the instance is still reported healthy", renderJson(inspection).healthy, true);
+  }
+
   {
     // A desired-state.json that EXISTS but cannot be parsed is a different situation than
     // "no file at all" — before the fix, both were caught by the same catch and silently

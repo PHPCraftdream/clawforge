@@ -151,5 +151,45 @@ check("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", 
   check("a warning-only plan has nothing for apply to run", actions.filter((action) => action.advisory !== true), []);
 }
 
+// --- plugins/skills: always advisory, never one apply runs unattended ----------------------
+//
+// Third-party code is a supply-chain surface, and this framework does not even have proof
+// its own reinstall command names the right package (extensions/index.ts's header) — so a
+// finding always becomes a step for the reader, never one apply performs.
+
+{
+  const detail = 'plugin "acme-tool" is version 2.0.0, locked at 1.0.0 — reinstall the pinned version: ./clawforge cli plugins install acme-tool@1.0.0 --force';
+  const actions = planActions(inspectionWith([problem("PLUGIN_DRIFT", detail)]));
+  check("a plugin drift finding becomes exactly one step", actions.length, 1);
+  check("carrying the finding's own command, verbatim", actions[0].summary, detail);
+  check("advisory — apply never runs it unattended", actions[0].advisory, true);
+  check("with no command field of its own to be picked up by a runner", actions[0].command, undefined);
+  check("naming the finding it resolves", actions[0].because, ["PLUGIN_DRIFT"]);
+}
+
+{
+  const detail = 'skill "acme-skill" (source clawhub) is locked but no longer installed — reinstall it: ./clawforge cli skills install acme-skill --force';
+  const actions = planActions(inspectionWith([problem("SKILL_DRIFT", detail)]));
+  check("a skill drift finding becomes exactly one step too", actions.length, 1);
+  check("also advisory", actions[0].advisory, true);
+  check("naming SKILL_DRIFT, not PLUGIN_DRIFT", actions[0].because, ["SKILL_DRIFT"]);
+}
+
+{
+  // Several findings at once — an added plugin nobody pinned, plus a removed skill — each
+  // becomes its own step with its own stable id, never merged into one blanket line the way
+  // LOCK_DRIFT's single re-pin advice is: a reader deciding what to do with one plugin must
+  // not have to parse a sentence about a different skill to find it.
+  const actions = planActions(
+    inspectionWith([
+      problem("PLUGIN_DRIFT", 'plugin "extra-tool" (source npm) is installed but not in the lock — review it, then either remove it or run ./clawforge lock to pin it deliberately'),
+      problem("SKILL_DRIFT", 'skill "acme-skill" (source clawhub) is locked but no longer installed — reinstall it: ./clawforge cli skills install acme-skill --force'),
+    ]),
+  );
+  check("each drifted plugin/skill is its own step", actions.length, 2);
+  check("every one of them advisory", actions.every((action) => action.advisory === true), true);
+  check("with distinct ids", new Set(actions.map((action) => action.id)).size, 2);
+}
+
 process.stderr.write(failed === 0 ? "all plan checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

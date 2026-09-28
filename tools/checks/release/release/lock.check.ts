@@ -9,6 +9,8 @@ import { compareLock, COMMIT_ADVICE, LOCK_VERSION, declarationChecksum } from "#
 import { gitInitAdvice } from "#framework/integration/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
+import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList } from "#framework/extensions/index.ts";
+import type { LockPlugin, LockSkill } from "#framework/extensions/index.ts";
 
 let failed = 0;
 
@@ -184,6 +186,101 @@ check(
   checksumOfFileMap({ "a.md": "1".repeat(64), "b.md": "2".repeat(64) }),
   checksumOfFileMap({ "b.md": "2".repeat(64), "a.md": "1".repeat(64) }),
 );
+
+// --- plugins/skills: a supply-chain surface the lock did not pin before --------------------
+//
+// Bundled entries are covered by the image digest already (extensions/index.ts's header) and
+// never reach the lock at all; everything else is compared the same way a recipe file is —
+// named individually, add/remove/version, never silently rewritten.
+
+{
+  const bundledPlugin = { id: "alibaba", name: "@openclaw/alibaba-provider", version: "2026.6.34", origin: "bundled", enabled: true };
+  const thirdPartyPlugin = { id: "acme-tool", name: "@acme/tool", version: "1.0.0", origin: "npm", enabled: true };
+  check(
+    "a bundled plugin never reaches the lock",
+    pluginsForLock(parsePluginsList({ code: 0, stdout: JSON.stringify({ plugins: [bundledPlugin, thirdPartyPlugin] }) })),
+    [{ id: "acme-tool", name: "@acme/tool", version: "1.0.0", source: "npm" }],
+  );
+
+  const bundledSkill = { name: "1password", source: "openclaw-bundled" };
+  const extraSkill = { name: "browser-automation", source: "openclaw-extra" };
+  const thirdPartySkill = { name: "acme-skill", source: "clawhub" };
+  check(
+    "a bundled or OpenClaw-extra skill never reaches the lock either",
+    skillsForLock(parseSkillsList({ code: 0, stdout: JSON.stringify({ skills: [bundledSkill, extraSkill, thirdPartySkill] }) })),
+    [{ name: "acme-skill", source: "clawhub" }],
+  );
+
+  // A malformed or failed read (a stopped instance, an unbootstrapped one, a CLI that
+  // answered something other than JSON) is a gap, not evidence of nothing installed — the
+  // same "gap, not a verdict" every other batched read in observe.ts already gives.
+  check("a failed read answers with no plugins, not a thrown error", parsePluginsList({ code: 1, stdout: "" }), []);
+  check("malformed JSON answers with no skills either", parseSkillsList({ code: 0, stdout: "not json" }), []);
+}
+
+{
+  const withExtensions = (plugins: LockPlugin[], skills: LockSkill[]): DeploymentLock => ({ ...composition(), plugins, skills });
+
+  const lockedPlugin: LockPlugin = { id: "acme-tool", name: "@acme/tool", version: "1.0.0", source: "npm" };
+  const lockedSkill: LockSkill = { name: "acme-skill", source: "clawhub" };
+
+  check("a plugin and skill that match the lock report nothing", compareLock(withExtensions([lockedPlugin], [lockedSkill]), withExtensions([lockedPlugin], [lockedSkill])), []);
+
+  {
+    const found = compareLock(withExtensions([lockedPlugin], []), withExtensions([], []));
+    check("a plugin removed since the lock is drift", found.map((entry) => entry.code), ["PLUGIN_DRIFT"]);
+    check("saying it is no longer installed", found[0].detail.includes("no longer installed"), true);
+    check("and naming the reinstall command", found[0].detail.includes("./clawforge cli plugins install"), true);
+  }
+
+  {
+    const found = compareLock(withExtensions([], []), withExtensions([{ ...lockedPlugin, id: "another-tool", name: "@acme/another" }], []));
+    check("a plugin installed since the lock is drift too", found.map((entry) => entry.code), ["PLUGIN_DRIFT"]);
+    check("but never proposed for removal — only for the reader to decide", found[0].detail.includes("review it"), true);
+  }
+
+  {
+    const found = compareLock(withExtensions([lockedPlugin], []), withExtensions([{ ...lockedPlugin, version: "2.0.0" }], []));
+    check("a plugin at a different version is drift", found.map((entry) => entry.code), ["PLUGIN_DRIFT"]);
+    check("naming both versions", found[0].detail.includes("1.0.0") && found[0].detail.includes("2.0.0"), true);
+  }
+
+  {
+    const found = compareLock(withExtensions([], [lockedSkill]), withExtensions([], []));
+    check("a skill removed since the lock is drift", found.map((entry) => entry.code), ["SKILL_DRIFT"]);
+    check("naming the reinstall command", found[0].detail.includes("./clawforge cli skills install"), true);
+  }
+
+  {
+    const found = compareLock(withExtensions([], []), withExtensions([], [{ name: "another-skill", source: "git" }]));
+    check("a skill installed since the lock is drift too", found.map((entry) => entry.code), ["SKILL_DRIFT"]);
+    check("but never proposed for removal either", found[0].detail.includes("review it"), true);
+  }
+
+  check("every plugin/skill finding is a warning, like every other lock finding", compareLock(withExtensions([lockedPlugin], []), withExtensions([], [])).every((entry) => entry.severity === "warning"), true);
+
+  {
+    // A lock written before this framework knew to pin plugins/skills at all — the same gap
+    // agent-bundle pinning already guards against above: comparing only when the locked side
+    // has a value would let the absence read as agreement, and the gap would hide itself.
+    const oldLock = composition();
+    const nowWithExtensions = withExtensions([lockedPlugin], [lockedSkill]);
+    const found = compareLock(oldLock, nowWithExtensions);
+    const gaps = found.filter((entry) => entry.detail.includes("predates"));
+    check("a lock that predates plugin/skill pinning is reported", gaps.length, 2);
+    check("naming plugins specifically", gaps.some((entry) => entry.detail.includes("predates plugin pinning")), true);
+    check("and skills specifically", gaps.some((entry) => entry.detail.includes("predates skill pinning")), true);
+
+    // Nothing installed yet has nothing to pin, so an old lock is not reported as a gap.
+    check("an old lock with nothing installed is not reported as a gap", compareLock(oldLock, withExtensions([], [])).filter((entry) => entry.detail.includes("predates")), []);
+  }
+
+  // A caller that never asked for extensions at all (plan/apply's bare currentComposition())
+  // must not have that absence read as "nothing installed" — a false PLUGIN_DRIFT for a step
+  // that has nothing to do with plugins would be exactly the "trains people to ignore
+  // findings" failure this file's other checks guard against.
+  check("a composition that never asked about plugins/skills reports nothing about them", compareLock(withExtensions([lockedPlugin], [lockedSkill]), composition()), []);
+}
 
 // --- UX-12: lock's "commit it" and new-app's own next-steps agree on the model --------------
 //

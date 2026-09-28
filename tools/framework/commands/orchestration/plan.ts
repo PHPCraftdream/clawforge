@@ -262,6 +262,22 @@ export function planActions(inspection: Inspection): PlanAction[] {
     });
   }
 
+  // Plugins/skills: always advisory, never one `apply` runs unattended. Third-party code is
+  // a supply-chain surface, and — unlike every other step above — this framework does not
+  // even have proof its own reinstall command names the right package: the pinned image's own
+  // `plugins list --json` already shows an npm-origin plugin's id differing from its
+  // manifest name (extensions/index.ts), so a spec built from either could install something
+  // else. Each finding carries its own best-effort command (compareExtensions); this only
+  // turns it into a step the reader sees.
+  for (const entry of problems.filter((candidate) => candidate.code === "PLUGIN_DRIFT" || candidate.code === "SKILL_DRIFT")) {
+    actions.push({
+      id: `extension-drift:${entry.code === "PLUGIN_DRIFT" ? "plugin" : "skill"}:${actions.length}`,
+      summary: entry.detail,
+      because: [entry.code],
+      advisory: true,
+    });
+  }
+
   return actions;
 }
 

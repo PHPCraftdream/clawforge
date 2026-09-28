@@ -31,6 +31,8 @@ import {
 } from "#src/commands/recover-env/facts.ts";
 import type { ConnectionFacts } from "#src/commands/recover-env/facts.ts";
 import { DEFAULT_SECRET_STORE } from "#src/commands/management/secrets.ts";
+import { PLUGINS_LIST_ARGS, SKILLS_LIST_ARGS, parsePluginsList, parseSkillsList } from "#src/extensions/index.ts";
+import type { PluginListEntry, SkillListEntry } from "#src/extensions/index.ts";
 import type { ExecResult } from "#src/runtime/transport.ts";
 import { EGRESS_EXEC_TIMEOUT_MS, EGRESS_PROBE_SCRIPT } from "./egress-probe.ts";
 import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt, cronDifferences, egressEndpoints, redactEndpoint } from "./helpers.ts";
@@ -424,7 +426,7 @@ export async function observeLive(
   problems: Problem[],
   configMtimeMs: number | undefined,
   liveConfig: unknown,
-): Promise<Partial<ObservedState>> {
+): Promise<Partial<ObservedState> & { plugins: PluginListEntry[]; skills: SkillListEntry[] }> {
   const probes: Record<string, number> = {};
   for (const endpoint of PROBE_ENDPOINTS) {
     try {
@@ -482,16 +484,19 @@ export async function observeLive(
   const egress = await observeEgress(ctx, liveConfig, problems);
 
   // --- what OpenClaw itself has registered ----------------------------------------------
-  // One container for all four reads (three lists plus --version below) instead of one
-  // each: every `docker compose run --rm` pays Compose's create/destroy cost again
-  // (~5-7s, docker-compose.yml's own note on cli-helper), and paying that four times over
-  // for one inspection was the dominant cost doctor/plan measured — trimming wsl.exe spawn
-  // counts elsewhere did not move their wall time, this does.
-  const [agentsResult, mcpResult, cronResult, versionResult] = await openclawCliBatch(ctx, [
+  // One container for all six reads (four lists plus --version) instead of one each: every
+  // `docker compose run --rm` pays Compose's create/destroy cost again (~5-7s,
+  // docker-compose.yml's own note on cli-helper), and paying that four times over for one
+  // inspection was the dominant cost doctor/plan measured — trimming wsl.exe spawn counts
+  // elsewhere did not move their wall time, this does. Plugins/skills ride along in the same
+  // container rather than a second one, for the same reason (extensions/index.ts).
+  const [agentsResult, mcpResult, cronResult, versionResult, pluginsResult, skillsResult] = await openclawCliBatch(ctx, [
     ["agents", "list", "--json"],
     ["mcp", "list", "--json"],
     ["cron", "list", "--json"],
     ["--version"],
+    [...PLUGINS_LIST_ARGS],
+    [...SKILLS_LIST_ARGS],
   ]);
   const agents = parseJsonOrEmpty(agentsResult, (parsed) =>
     (parsed as Array<{ id?: string }>).map((entry) => entry.id ?? "").filter((id) => id !== ""));
@@ -632,7 +637,13 @@ export async function observeLive(
   const openclawVersionLine = versionResult.code === 0 ? versionResult.stdout.trim().split("\n")[0] : "";
   const openclawVersion = openclawVersionLine === "" ? undefined : openclawVersionLine;
 
-  return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion };
+  // Raw (unfiltered, un-normalised) — gather.ts turns these into the same shape the lock
+  // records (pluginsForLock/skillsForLock) before comparing, so this function stays a plain
+  // read of what OpenClaw itself reports.
+  const plugins = parsePluginsList(pluginsResult);
+  const skills = parseSkillsList(skillsResult);
+
+  return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion, plugins, skills };
 }
 
 /** One batched call's `--json` list, or an empty one when that command failed. A failing

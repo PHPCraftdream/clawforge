@@ -38,6 +38,8 @@ export type ProblemCode =
   | "CRON_DRIFT"
   | "LOCK_MISSING"
   | "LOCK_DRIFT"
+  | "PLUGIN_DRIFT"
+  | "SKILL_DRIFT"
   | "ENV_STALE"
   | "DECLARATION_MISSING"
   | "STORE_INCOMPLETE"
@@ -165,6 +167,19 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   LOCK_DRIFT: {
     severity: "warning",
     summary: "the instance no longer matches config/deployment.lock.json",
+    nextAction: "./clawforge plan",
+  },
+  PLUGIN_DRIFT: {
+    severity: "warning",
+    // Third-party code, not this framework's own config — see extensions/index.ts's header
+    // for why a version-pinned reinstall is only ever offered as a plan step to run
+    // yourself, never one apply performs unattended.
+    summary: "an OpenClaw plugin's presence or version differs from what config/deployment.lock.json pinned",
+    nextAction: "./clawforge plan",
+  },
+  SKILL_DRIFT: {
+    severity: "warning",
+    summary: "an OpenClaw skill's presence differs from what config/deployment.lock.json pinned",
     nextAction: "./clawforge plan",
   },
 

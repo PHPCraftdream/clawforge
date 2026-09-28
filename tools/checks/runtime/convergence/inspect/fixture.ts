@@ -16,6 +16,7 @@ import { recipeFileChecksums, agentBundleChecksums } from "#framework/service/ch
 import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
 import { currentComposition, lockFile } from "#framework/commands/management/lock.ts";
+import type { PluginListEntry, SkillListEntry } from "#framework/extensions/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -43,6 +44,11 @@ export interface TargetSpec {
   /** Explicit override for a server's registered command/args/enabled, for the drift cases. */
   mcpServerEntries?: Record<string, { command?: unknown; args?: unknown; enabled?: unknown }>;
   cronJobs?: Record<string, unknown>[];
+  /** `plugins list --json`'s entries, defaulting to none — a case that says nothing about
+   *  plugins provokes no PLUGIN_DRIFT, same reasoning as agents/mcpServers above. */
+  plugins?: PluginListEntry[];
+  /** `skills list --json`'s entries, same default. */
+  skills?: SkillListEntry[];
   mirrorChecksums?: Record<string, string>;
   /** What the agent's workspace holds — its prompt files as the target reports them. */
   workspaceChecksums?: Record<string, string>;
@@ -182,11 +188,30 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
           );
           const cronListResult = json({ jobs: spec.cronJobs ?? [matchingJob()] });
           const version = { code: 0, stdout: "OpenClaw 2026.6.34\n", stderr: "" };
+          const pluginsList = json({ plugins: spec.plugins ?? [] });
+          const skillsList = json({ skills: spec.skills ?? [] });
 
           // observeLive's own batched read (openclawCliBatch): "-c" plus a script is the
-          // shape only that call ever passes, never a plain "agents"/"mcp"/"cron" argv.
+          // shape only that call ever passes, never a plain "agents"/"mcp"/"cron" argv. Two
+          // different callers batch different command sets (observeLive's six vs lock's own
+          // plugins+skills pair, lock.ts's currentComposition) — matched by each generated
+          // line's own quoted argv rather than by position or count, so either shape answers
+          // correctly regardless of how many commands it asked for.
           if (args[0] === "-c") {
-            return { code: 0, stdout: formatBatchStub([agentsList, mcpList, cronListResult, version]), stderr: "" };
+            const script = args[1] ?? "";
+            const known: { needle: string; result: ExecResult }[] = [
+              { needle: "'agents' 'list' '--json'", result: agentsList },
+              { needle: "'mcp' 'list' '--json'", result: mcpList },
+              { needle: "'cron' 'list' '--json'", result: cronListResult },
+              { needle: "'--version'", result: version },
+              { needle: "'plugins' 'list' '--json'", result: pluginsList },
+              { needle: "'skills' 'list' '--json'", result: skillsList },
+            ];
+            const results = script
+              .split("\n")
+              .filter((line) => line.includes("node dist/index.js"))
+              .map((line) => known.find((entry) => line.includes(entry.needle))?.result ?? { code: 1, stdout: "", stderr: "" });
+            return { code: 0, stdout: formatBatchStub(results), stderr: "" };
           }
 
           // provision-agent's own reconcile.ts reads these one at a time, unbatched — same

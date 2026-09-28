@@ -31,6 +31,7 @@ import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import { requirementsForConfig, statusForRequirements, collectConfiguredProviders } from "#src/service/secrets.ts";
 import { compareLock, readLock, currentComposition } from "#src/commands/management/lock.ts";
+import { pluginsForLock, skillsForLock } from "#src/extensions/index.ts";
 import { readInstalledSet, requirementProblems, runningDigests, matchRequiredDigest } from "#src/set/artifacts/install.ts";
 import {
   problem,
@@ -209,7 +210,19 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   // Last, and only when the instance is up: the lock pins the image digest, which cannot be
   // read from a stopped instance, and a lock comparison against half an observation would
   // report differences that are only missing information.
-  problems.push(...compareLock(await readLock(), await currentComposition(ctx)));
+  //
+  // Plugins/skills are folded in here rather than fetched by currentComposition() itself:
+  // `live` already carries them from observeLive's own batched read (openclawCliBatch, above)
+  // and a second fetch would spend a second container on the same question — exactly what
+  // that batching exists to avoid (openclaw-cli.ts, extensions/index.ts).
+  const composition = await currentComposition(ctx);
+  problems.push(
+    ...compareLock(await readLock(), {
+      ...composition,
+      plugins: pluginsForLock(live.plugins),
+      skills: skillsForLock(live.skills),
+    }),
+  );
 
   return {
     declared,

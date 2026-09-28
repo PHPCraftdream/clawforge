@@ -23,9 +23,20 @@ import { frameworkRoot } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
 import { requirements } from "#src/service/secrets.ts";
 import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
+import { openclawCliBatch } from "#src/service/openclaw-cli.ts";
 import { nextActions, problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
+import {
+  PLUGINS_LIST_ARGS,
+  SKILLS_LIST_ARGS,
+  parsePluginsList,
+  parseSkillsList,
+  pluginsForLock,
+  skillsForLock,
+  compareExtensions,
+} from "#src/extensions/index.ts";
+import type { LockPlugin, LockSkill } from "#src/extensions/index.ts";
 
 export const LOCK_VERSION = 1;
 
@@ -66,6 +77,15 @@ export interface DeploymentLock {
   /** Names only. A lock file that carried values would be a credential store that looks
    *  like a manifest, and it is meant to be committed. */
   readonly secrets: readonly string[];
+  /** OpenClaw plugins, read from `openclaw plugins list --json` — bundled ones left out
+   *  (extensions/index.ts's header: the image digest above already covers them). Optional so
+   *  a lock written before this framework knew to pin them parses as "not yet covered"
+   *  (compareLock) rather than "none installed". */
+  readonly plugins?: readonly LockPlugin[];
+  /** OpenClaw skills, read from `openclaw skills list --json` — same bundled exclusion, same
+   *  optionality, and no version (extensions/index.ts's header: this CLI does not report
+   *  one). */
+  readonly skills?: readonly LockSkill[];
 }
 
 export function lockFile(): string {
@@ -96,8 +116,20 @@ async function recipeNames(): Promise<string[]> {
 }
 
 /** What the lock would say if written now. Exported so `plan` and the checks can ask for it
- *  without writing anything — computing it is read-only by nature. */
-export async function currentComposition(ctx: Context): Promise<DeploymentLock> {
+ *  without writing anything — computing it is read-only by nature.
+ *
+ *  `includeExtensions` defaults to false: `plan`/`apply` call this only for
+ *  declarationChecksum() below, which never reads plugins/skills (they are observed facts
+ *  about the instance, not part of the declaration a plan is computed from — the same
+ *  reasoning that already keeps the image digest out of it) — asking for a plugin/skill
+ *  inventory on their behalf would spend a container on an answer nobody looks at. `lock`
+ *  itself (both the write and the --check path) always asks for it; `inspect`/`doctor`
+ *  never call this for it either, reusing observeLive's own batched read instead
+ *  (gather.ts) rather than paying for a second container. */
+export async function currentComposition(
+  ctx: Context,
+  options?: { readonly includeExtensions?: boolean },
+): Promise<DeploymentLock> {
   const recipes: DeploymentLock["recipes"] = {};
   for (const name of await recipeNames()) {
     const dir = resolve(recipesDir(), name);
@@ -117,6 +149,17 @@ export async function currentComposition(ctx: Context): Promise<DeploymentLock> 
     desiredState = undefined;
   }
 
+  let plugins: LockPlugin[] | undefined;
+  let skills: LockSkill[] | undefined;
+  if (options?.includeExtensions === true) {
+    // One container for both reads, the same batching openclawCliBatch exists for — a
+    // pre-bootstrap or otherwise unreachable target answers every slot with a failed result,
+    // which parsePluginsList/parseSkillsList already read as "none" rather than throwing.
+    const [pluginsResult, skillsResult] = await openclawCliBatch(ctx, [[...PLUGINS_LIST_ARGS], [...SKILLS_LIST_ARGS]]);
+    plugins = pluginsForLock(parsePluginsList(pluginsResult));
+    skills = skillsForLock(parseSkillsList(skillsResult));
+  }
+
   return {
     version: LOCK_VERSION,
     deployment: deploymentName(),
@@ -126,6 +169,8 @@ export async function currentComposition(ctx: Context): Promise<DeploymentLock> 
     desiredState,
     recipes,
     secrets: (await requirements(ctx)).map((entry) => entry.name).sort(),
+    ...(plugins === undefined ? {} : { plugins }),
+    ...(skills === undefined ? {} : { skills }),
   };
 }
 
@@ -252,6 +297,21 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
     problems.push(problem("LOCK_DRIFT", `the instance now requires ${newSecrets.join(", ")}, which the lock does not list`));
   }
 
+  // Plugins/skills, only when the caller actually fetched them: lock's own --check path
+  // always does (includeExtensions), and inspect/doctor supply them from observeLive's own
+  // batched read (gather.ts) — but a bare currentComposition(ctx), which is all plan/apply
+  // ever ask for (declarationChecksum never reads either field), leaves current.plugins/
+  // skills undefined, and an absent answer must not read as "nothing installed".
+  if (current.plugins !== undefined && lock.plugins === undefined && current.plugins.length > 0) {
+    problems.push(problem("LOCK_DRIFT", "the lock predates plugin pinning and does not record it — re-pin to cover installed plugins"));
+  }
+  if (current.skills !== undefined && lock.skills === undefined && current.skills.length > 0) {
+    problems.push(problem("LOCK_DRIFT", "the lock predates skill pinning and does not record it — re-pin to cover installed skills"));
+  }
+  if (current.plugins !== undefined || current.skills !== undefined) {
+    problems.push(...compareExtensions(lock.plugins, current.plugins ?? [], lock.skills, current.skills ?? []));
+  }
+
   return problems;
 }
 
@@ -262,7 +322,7 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
     if (arg !== "--json" && arg !== "--check") die(`unknown argument: ${arg}`);
   }
 
-  const current = await currentComposition(ctx);
+  const current = await currentComposition(ctx, { includeExtensions: true });
 
   if (checkOnly) {
     const problems = compareLock(await readLock(), current);
@@ -291,5 +351,7 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
   info(`image      ${current.image.digest ?? current.image.reference}`);
   info(`recipes    ${Object.keys(current.recipes).length === 0 ? "(none)" : Object.keys(current.recipes).join(", ")}`);
   info(`secrets    ${current.secrets.length} name(s), no values`);
+  info(`plugins    ${(current.plugins ?? []).length} third-party (bundled ones are covered by the image digest)`);
+  info(`skills     ${(current.skills ?? []).length} third-party (bundled ones are covered by the image digest)`);
   info(COMMIT_ADVICE);
 }

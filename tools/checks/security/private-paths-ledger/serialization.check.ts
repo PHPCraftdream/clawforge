@@ -239,29 +239,38 @@ try {
   const gates: Partial<Record<"a" | "b" | "c", () => void>> = {};
   const hold = (name: "a" | "b" | "c"): Promise<void> =>
     new Promise<void>((resolveGate) => { gates[name] = resolveGate; });
+  // Resolved from inside the merge itself: entry is awaited as an event, not polled for.
+  const entrySignals: Partial<Record<"a" | "b" | "c", () => void>> = {};
+  const entries: Record<"a" | "b" | "c", Promise<void>> = {
+    a: new Promise<void>((resolveEntry) => { entrySignals.a = resolveEntry; }),
+    b: new Promise<void>((resolveEntry) => { entrySignals.b = resolveEntry; }),
+    c: new Promise<void>((resolveEntry) => { entrySignals.c = resolveEntry; }),
+  };
   const queued = (name: "a" | "b" | "c", entry: string): Promise<string> =>
     mutatePrivatePathsLedger(ledger, async (current) => {
       order.push(name);
+      entrySignals[name]?.();
       readWhen[name] = [...current];
       await hold(name);
       return { next: [...current, entry], value: name };
     });
-  // Waits for a merge whose entry the queue itself guarantees — its predecessor has already
-  // settled — with a hard cap, so a broken queue fails loudly instead of hanging the run.
+  // Each predecessor's publish is real fs I/O, so entry is awaited as an event; the cap is
+  // wall-clock and generous, only so a broken queue fails loudly instead of hanging the run.
   const untilEntered = async (name: "a" | "b" | "c"): Promise<void> => {
-    for (let turn = 0; turn < 200 && !order.includes(name); turn += 1) {
-      await new Promise<void>((resolve) => setImmediate(resolve));
+    let timer: NodeJS.Timeout | undefined;
+    const cap = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`mutation ${name} never entered its merge`)), 60_000);
+    });
+    try {
+      await Promise.race([entries[name], cap]);
+    } finally {
+      clearTimeout(timer);
     }
-    if (!order.includes(name)) throw new Error(`mutation ${name} never entered its merge`);
   };
 
   const mutationA = queued("a", "a-entry");
   const mutationB = queued("b", "b-entry");
   const mutationC = queued("c", "c-entry");
-  // a's own read is real fs I/O (mutatePrivatePathsLedger reads the file before invoking the
-  // merge), not just a microtask — under load from a full concurrent suite run, that read can
-  // take longer than a fixed handful of setImmediate turns. Waiting for it to actually enter
-  // is what makes the assertion below about serialization rather than about scheduling luck.
   await untilEntered("a");
   await settle();
   check("only a entered its merge; b and c are registered but strictly queued", order.join(","), "a");

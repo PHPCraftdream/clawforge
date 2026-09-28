@@ -61,6 +61,14 @@ export interface CommandArgument {
   readonly kind: ArgumentKind;
   /** Accepted values. Enforced before the command runs and published in the tool schema. */
   readonly choices?: readonly string[];
+  /** What an option's value actually is — `hostId`, `n`, `artifact` — printed as
+   *  `--name <valueName>` instead of the meaningless `--name <value>` every option used to
+   *  render as. Read by the shared help renderer (core/io/help-render.ts) and folded into
+   *  the MCP tool description. Applies to `option`; a `flag` takes no value and a
+   *  `positional`/`variadic`'s own name already reads as its value's description.
+   *  tools/checks/foundation/core/arguments.check.ts fails the moment a declared option
+   *  omits it. */
+  readonly valueName?: string;
 }
 
 export interface AppCommand {

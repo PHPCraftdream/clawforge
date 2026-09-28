@@ -31,9 +31,13 @@ import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shar
 
 /** Drives both rollback's own parser and its openclawCommands declaration. */
 export const ROLLBACK_ARGUMENTS: CommandArgument[] = [
-  { name: "operation", description: "Operation id to undo (default: the most recent one with a snapshot)", kind: "option" },
+  { name: "operation", description: "Operation id to undo (default: the most recent one with a snapshot)", kind: "option", valueName: "id" },
   { name: "no-restart", description: "Restore the file without restarting the instance", kind: "flag" },
-  { name: "set", description: "Reinstall the previously installed set instead of restoring one config file", kind: "flag" },
+  // A flag, not `plan`/`apply`/`accept`'s `--set <artifact>` option — rollback names no
+  // artifact of its own, it reinstalls whichever one `apply --set` installed before the
+  // current one. Named distinctly so one property name is never a boolean here and a string
+  // there in the MCP schema.
+  { name: "previous-set", description: "Reinstall the previously installed set instead of restoring one config file", kind: "flag" },
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
@@ -66,7 +70,7 @@ export async function operationToRollback(ctx: Context, wanted?: string): Promis
 
 /** Options validated before a rollback can touch the target. */
 interface RollbackOptions {
-  readonly set: boolean;
+  readonly previousSet: boolean;
   readonly jsonOnly: boolean;
   readonly breakLock: boolean;
   readonly breakForeignLockHost?: string;
@@ -82,7 +86,7 @@ export function parseRollbackArgs(args: string[]): RollbackOptions {
   // naming rather than silently resolving.
   if (args.filter((arg) => arg === "--operation").length > 1) die("--operation may only be specified once");
   const parsed = parseDeclaredArgs(ROLLBACK_ARGUMENTS, args);
-  const set = parsed.set === true;
+  const previousSet = parsed["previous-set"] === true;
   const jsonOnly = parsed.json === true;
   const breakLock = parsed["break-lock"] === true;
   const breakForeignLockHost = parseBreakForeignLockHost(args);
@@ -93,15 +97,15 @@ export function parseRollbackArgs(args: string[]): RollbackOptions {
   }
   const operation = operationValue;
 
-  if (set && (operation !== undefined || !restartAfter)) {
-    die("--set rolls back the whole set through ./clawforge apply — --operation and --no-restart belong to the single-file path only");
+  if (previousSet && (operation !== undefined || !restartAfter)) {
+    die("--previous-set rolls back the whole set through ./clawforge apply — --operation and --no-restart belong to the single-file path only");
   }
 
   const applyArgs: string[] = [];
   if (jsonOnly) applyArgs.push("--json");
   if (breakLock) applyArgs.push("--break-lock");
   if (breakForeignLockHost !== undefined) applyArgs.push("--break-foreign-lock", breakForeignLockHost);
-  return { set, jsonOnly, breakLock, breakForeignLockHost, restartAfter, operation, applyArgs };
+  return { previousSet, jsonOnly, breakLock, breakForeignLockHost, restartAfter, operation, applyArgs };
 }
 
 /** Reinstalls the previous set through apply, preserving instance data. */
@@ -109,7 +113,7 @@ async function rollbackSet(ctx: Context, options: RollbackOptions): Promise<void
   const installed = await readInstalledSet(ctx);
   if (installed?.previous === undefined) {
     die(
-      "no previous set is recorded on this instance — rollback --set only knows what apply --set " +
+      "no previous set is recorded on this instance — rollback --previous-set only knows what apply --set " +
         "installed here before the one currently in force, and there is none on record (or this instance " +
         "was never installed from a set at all)",
     );
@@ -162,7 +166,7 @@ async function rollbackSet(ctx: Context, options: RollbackOptions): Promise<void
     // (apply.ts) is nesting-safe the same way provision-agent's already is: it skips
     // acquiring when this outer one is already held.
     const operationId = newOperationId("rollback");
-    const held = await takeLock(ctx, `rollback --set to ${previous.id}`, operationId, { breakLock: options.breakLock, breakForeignLockHost: options.breakForeignLockHost });
+    const held = await takeLock(ctx, `rollback --previous-set to ${previous.id}`, operationId, { breakLock: options.breakLock, breakForeignLockHost: options.breakForeignLockHost });
     try {
       await runOwning(held, async () => {
         // Re-verified under the lock: which set is installed (and therefore which "previous"
@@ -175,7 +179,7 @@ async function rollbackSet(ctx: Context, options: RollbackOptions): Promise<void
           die(
             `the installed set changed while this rollback was preparing (was "${installed.name}" (${installed.id}), ` +
               `is now ${stillInstalled === undefined ? "nothing recorded" : `"${stillInstalled.name}" (${stillInstalled.id})`}) — ` +
-              "re-run ./clawforge rollback --set against the current state.",
+              "re-run ./clawforge rollback --previous-set against the current state.",
           );
         }
 
@@ -234,7 +238,7 @@ async function rollbackSet(ctx: Context, options: RollbackOptions): Promise<void
 
 export async function rollback(ctx: Context, args: string[]): Promise<void> {
   const options = parseRollbackArgs(args);
-  if (options.set) return rollbackSet(ctx, options);
+  if (options.previousSet) return rollbackSet(ctx, options);
 
   const target = await operationToRollback(ctx, options.operation);
   const snapshot = target.configSnapshot!;

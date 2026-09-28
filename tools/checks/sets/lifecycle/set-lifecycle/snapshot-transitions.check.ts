@@ -17,11 +17,11 @@ const fixture = await createFixture();
 const { root, sourceData, files, ctx } = fixture;
 
 try {
-  // --- rollback --set must succeed after a NO-OP set transition (a renamed set whose
+  // --- rollback --previous-set must succeed after a NO-OP set transition (a renamed set whose
   // declared config is byte-identical to what is already live) — applyFromSource's own
   // "nothing to apply" fast path never opens a Journal or takes a config snapshot for its
   // operationId, but recordInstalledSet() still records that operationId as the one that
-  // installed the set. Before the fix, rollback --set later found no operation record for
+  // installed the set. Before the fix, rollback --previous-set later found no operation record for
   // it and refused with "no configuration snapshot is available", even though nothing about
   // the config actually needed restoring. ---------------------------------------------------
   {
@@ -50,11 +50,11 @@ try {
     assert.equal(installedB?.id, setB.id);
     assert.equal(installedB?.previous?.id, setA.id, "the fixture for this test needs A on record as previous");
 
-    const rolledBack = await fixture.captured(() => rollback(ctx, ["--set", "--json"]));
+    const rolledBack = await fixture.captured(() => rollback(ctx, ["--previous-set", "--json"]));
     assert.equal(
       rolledBack.error,
       undefined,
-      `rollback --set must succeed after a no-op set transition, not refuse for lack of a snapshot: ${rolledBack.error?.message}`,
+      `rollback --previous-set must succeed after a no-op set transition, not refuse for lack of a snapshot: ${rolledBack.error?.message}`,
     );
     assert.equal((await readInstalledSet(ctx))?.id, setA.id, "rollback restores the previous set");
   }
@@ -67,7 +67,7 @@ try {
   // (executable steps, Journal opened, correct pre-change snapshot already taken). Mistaking
   // that failure for "nothing ran" made the old code open a FRESH journal and take a NEW
   // snapshot right then — of the config AFTER the real steps already changed it — silently
-  // overwriting the correct pre-change snapshot. rollback --set then restored to a config
+  // overwriting the correct pre-change snapshot. rollback --previous-set then restored to a config
   // that already included B's own setting, i.e. undid nothing. --------------------------------
   {
     fixture.state.running = true;
@@ -89,7 +89,7 @@ try {
 
     // A single, one-shot fault: the FIRST read of an operation RECORD file (not a
     // ".openclaw.json" config snapshot copy) throws once, then behaves normally forever
-    // after. Scoped to this one apply call only — rollback --set below uses the plain,
+    // after. Scoped to this one apply call only — rollback --previous-set below uses the plain,
     // unfaulted ctx.
     const isOperationRecord = (path: string): boolean =>
       /\/clawforge-operations\/[^/]+\.json$/.test(path) && !path.endsWith(".openclaw.json");
@@ -111,7 +111,7 @@ try {
     const installB2 = await fixture.captured(() => apply(faultyCtx, ["--set", setB2.artifact, "--json"]));
     assert.equal(installB2.error, undefined, installB2.error?.message);
 
-    const rolledBack2 = await fixture.captured(() => rollback(ctx, ["--set", "--json"]));
+    const rolledBack2 = await fixture.captured(() => rollback(ctx, ["--previous-set", "--json"]));
     assert.equal(rolledBack2.error, undefined, rolledBack2.error?.message);
     const configAfter2 = JSON.parse(files.get(`${sourceData}/config/openclaw.json`) ?? "{}");
     assert.equal(

@@ -16,7 +16,7 @@ const DEFAULT_LIMIT = 10;
 /** Drives both operations' own parser and its openclawCommands declaration. */
 export const OPERATIONS_ARGUMENTS: CommandArgument[] = [
   { name: "id", description: "Operation id to show in full", kind: "positional" },
-  { name: "limit", description: "How many recent operations to list (default 10)", kind: "option" },
+  { name: "limit", description: "How many recent operations to list (default 10)", kind: "option", valueName: "n" },
   { name: "json", description: "Emit the record, or the list, as JSON", kind: "flag" },
 ];
 

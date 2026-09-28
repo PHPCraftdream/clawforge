@@ -35,6 +35,12 @@ for (const [name, command] of Object.entries(openclawCommands)) {
     if (argument.kind === "flag") {
       check(`${name}.${argument.name} flag has no choices`, argument.choices, undefined);
     }
+    // Every option renders as `--name <valueName>` in --help and the MCP schema — a
+    // missing one used to fall back to the meaningless `--name <value>` every option
+    // rendered as before valueName existed.
+    if (argument.kind === "option") {
+      check(`${name}.${argument.name} option declares a valueName`, typeof argument.valueName, "string");
+    }
   }
 
   // A required positional after an optional one can never be supplied.
@@ -45,6 +51,19 @@ for (const [name, command] of Object.entries(openclawCommands)) {
     else if (seenOptional) {
       check(`${name}.${argument.name} required positional comes before optional ones`, false, true);
     }
+  }
+}
+
+// A `details` line prints whole, on a terminal and inside an MCP tool description alike — a
+// single line running to a thousand-plus characters is a wall of text on the one side and
+// the entire tool description on the other. `\n` inside `details` already renders as
+// separate lines (entry/cli.ts's commandHelp, integration/gate.ts's gateCommandHelp), so the
+// fix is always to add one, never to shorten the text itself.
+const MAX_DETAILS_LINE = 400;
+for (const [name, command] of Object.entries(openclawCommands)) {
+  if (command.details === undefined) continue;
+  for (const [index, line] of command.details.split("\n").entries()) {
+    check(`${name}'s details line ${index + 1} is at most ${MAX_DETAILS_LINE} chars`, line.length <= MAX_DETAILS_LINE, true);
   }
 }
 

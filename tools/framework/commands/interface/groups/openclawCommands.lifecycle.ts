@@ -104,18 +104,20 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "defaults to migrate.\n" +
       "--native takes a consistent snapshot WITHOUT stopping the gateway instead, via " +
       "OpenClaw's own `backup create --verify` in the running instance's sidecar rather than " +
-      "a raw tar over live state — full profile only. The archive it publishes is still an " +
-      "ordinary full backup (rotate/restore need no native-specific case), with the pristine " +
-      "OpenClaw archive embedded inside so `restore` can re-verify it before unpacking " +
-      "anything else.\n" +
+      "a raw tar over live state — full profile only.\n" +
+      "The archive it publishes is still an ordinary full backup (rotate/restore need no " +
+      "native-specific case), with the pristine OpenClaw archive embedded inside so " +
+      "`restore` can re-verify it before unpacking anything else.\n" +
       "What this actually guarantees: the SQLite state (config/state, config, identity, " +
       "devices) is a genuine point-in-time snapshot from OpenClaw's own mechanism, not from " +
-      "stopping the container. auth-secrets/ and any live file OpenClaw's own backup left out " +
-      "(in the pinned image: session transcripts under agents/<id>/sessions/) are copied in " +
-      "afterwards, computed generically — whatever exists live and is absent from OpenClaw's " +
-      "own payload, never a hardcoded name — and the count is reported. Those copies are hot: " +
-      "an append-only transcript's last line can be truncated by a write landing mid-copy, the " +
-      "same partial-write risk --hot accepts for the whole tree, narrowed here to log tails.\n" +
+      "stopping the container.\n" +
+      "auth-secrets/ and any live file OpenClaw's own backup left out (in the pinned image: " +
+      "session transcripts under agents/<id>/sessions/) are copied in afterwards, computed " +
+      "generically — whatever exists live and is absent from OpenClaw's own payload, never " +
+      "a hardcoded name — and the count is reported.\n" +
+      "Those copies are hot: an append-only transcript's last line can be truncated by a " +
+      "write landing mid-copy, the same partial-write risk --hot accepts for the whole " +
+      "tree, narrowed here to log tails.\n" +
       "If the application declares afterBackup (see docs/guide/data-and-backups.md: Extending " +
       "backup and restore), it " +
       "runs once the archive is published and rotated — never for an internal archive smoke " +
@@ -127,11 +129,11 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "would pick by default. --json for machine output.\n" +
       "prune-replaced — deletes `<data>.replaced-*` copies, which otherwise accumulate " +
       "forever: previews what would be removed by default, only --apply removes anything, " +
-      "--keep <n> keeps that many newest instead of deleting all of them. Refuses anything " +
-      "that is not exactly one of those copies (a symlink, the data directory itself, an " +
-      "unrelated name), takes the instance lock while --apply runs. Archive pruning is " +
-      "already handled by this command's own rotation (OC_BACKUP_KEEP) — prune-replaced " +
-      "never touches an archive.",
+      "--keep <n> keeps that many newest instead of deleting all of them.\n" +
+      "Refuses anything that is not exactly one of those copies (a symlink, the data " +
+      "directory itself, an unrelated name), takes the instance lock while --apply runs.\n" +
+      "Archive pruning is already handled by this command's own rotation (OC_BACKUP_KEEP) " +
+      "— prune-replaced never touches an archive.",
     arguments: BACKUP_ALL_ARGUMENTS,
   },
   restore: {
@@ -229,9 +231,10 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "A tag is re-resolved at the registry every run — that includes OPENCLAW_IMAGE once " +
       "it is already pinned to repo:tag@sha256:…, so upgrade with no --image still checks " +
       "whether the tracked tag has moved instead of comparing the pin to itself and always " +
-      "finding nothing to do. --image repo@sha256:… names exact content and is used as-is. " +
-      "A pin left with no tag (repo@sha256:… from before pins kept one) has no channel to " +
-      "recover without guessing, and is refused with --image <repo:tag> as the remedy.\n" +
+      "finding nothing to do.\n" +
+      "--image repo@sha256:… names exact content and is used as-is. A pin left with no tag " +
+      "(repo@sha256:… from before pins kept one) has no channel to recover without " +
+      "guessing, and is refused with --image <repo:tag> as the remedy.\n" +
       "Records the currently running digest, takes a consistent pre-upgrade backup (the " +
       "native path from `backup --native` when the image supports it, else a stopped full " +
       "backup), recreates the gateway on the new digest, waits for /startupz then /readyz, " +

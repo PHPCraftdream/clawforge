@@ -1,4 +1,4 @@
-// `./clawforge rollback --set` — reinstalling the previous set, and refusing honestly when it can't.
+// `./clawforge rollback --previous-set` — reinstalling the previous set, and refusing honestly when it can't.
 //
 // Two ways to have nothing to go back to: no previous set was ever recorded, or one was but
 // its artifact is gone from sets/. Both must refuse by name rather than fail deep inside
@@ -49,14 +49,14 @@ function stubContext(dataDir: string) {
   };
 }
 
-/** rollback --set dies on every refusal path below apply ever running, and die() throws. */
+/** rollback --previous-set dies on every refusal path below apply ever running, and die() throws. */
 async function refusal(ctx: Context): Promise<string> {
   let message = "";
   await withOutputSink(
     () => {},
     async () => {
       try {
-        await rollback(ctx, ["--set"]);
+        await rollback(ctx, ["--previous-set"]);
       } catch (error) {
         message = (error as Error).message;
       }
@@ -133,13 +133,13 @@ try {
       () => {},
       async () => {
         try {
-          await rollback(ctx, ["--set", "--no-restart"]);
+          await rollback(ctx, ["--previous-set", "--no-restart"]);
         } catch (error) {
           message = (error as Error).message;
         }
       },
     );
-    check("--set combined with a single-file-only flag is refused", message.includes("belong to the single-file path only"), true);
+    check("--previous-set combined with a single-file-only flag is refused", message.includes("belong to the single-file path only"), true);
   }
 } finally {
   useDeployment(resolve(monorepoRoot, "apps", "example app"));

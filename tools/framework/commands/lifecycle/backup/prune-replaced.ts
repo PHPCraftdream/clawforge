@@ -25,7 +25,7 @@ import { JSON_ARGUMENT } from "./list.ts";
  *  reused here (not redeclared) so the merged `backup` command never lists it twice. */
 export const BACKUP_PRUNE_ARGUMENTS: CommandArgument[] = [
   { name: "apply", description: "Actually delete; without it, only previews what would be removed", kind: "flag" },
-  { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option" },
+  { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];

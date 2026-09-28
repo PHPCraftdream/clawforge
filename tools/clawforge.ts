@@ -141,7 +141,7 @@ if (gateExit !== undefined) process.exit(gateExit);
 // not a command at all.
 const monorepoGateHelp = [
   ...gateHelpLines(gateCommands),
-  "  --app <name>      pick another deployment (default: the OC_APP one)",
+  "  --app <name>      pick another deployment, before the command (default: the OC_APP one)",
 ];
 
 // Every name this gate can dispatch without a loaded app.ts — a deployment's own app.ts may

@@ -67,7 +67,7 @@ export { collectSensitiveCheckoutNames, rootProbeScript, parseRootProbe, markerW
 /** Drives both deploy's own parser and its openclawCommands declaration. */
 export const DEPLOY_ARGUMENTS: CommandArgument[] = [
   { name: "target", description: "user@host", kind: "positional", required: true },
-  { name: "path", description: "Remote install directory", kind: "option" },
+  { name: "path", description: "Remote install directory", kind: "option", valueName: "path" },
   { name: "no-bootstrap", description: "Copy the files without starting anything", kind: "flag" },
   {
     name: "adopt",

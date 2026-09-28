@@ -13,7 +13,8 @@ import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "../integration/provision.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
 import { gateCommandHelp, reportUnknownCommand, type GateCommand } from "../integration/gate.ts";
-import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../core/app.ts";
+import { renderCommandHelp } from "../core/io/help-render.ts";
+import type { AppCommand, AppDefinition, CommandGroup } from "../core/app.ts";
 
 /** Fixed print order and heading for each CommandGroup — an operator scans intent sections
  *  top to bottom, not an alphabetical command list. tools/checks/foundation/cli/help-groups.check.ts
@@ -41,28 +42,28 @@ export function destructiveMarker(command: AppCommand): string {
   return command.readOnlyWhen === undefined ? " (destructive)" : " (destructive for some actions)";
 }
 
-function label(argument: CommandArgument): string {
-  if (argument.kind === "flag") return `--${argument.name}`;
-  if (argument.kind === "option") return `--${argument.name} <value>`;
-  return `<${argument.name}>`;
-}
-
-function formatArguments(command: AppCommand): string {
-  if (command.arguments === undefined || command.arguments.length === 0) return "";
-  return command.arguments
-    .map((argument) => (argument.required === true ? label(argument) : `[${label(argument)}]`))
-    .join(" ");
-}
-
 /** Lines shown between the command list and the closing "Run ./clawforge help ..." hint — the one
  *  part of this help screen that is gate-specific (monorepo: --app/new-app; installed: init)
  *  rather than something an AppDefinition or its commands could know. tools/clawforge.ts (several
  *  deployments under apps/<name>) and bin.ts (one deployment, this directory) each pass
  *  their own; this default is tools/clawforge.ts's, unchanged from before this became a parameter. */
 const DEFAULT_GATE_HELP = [
-  "  --app <name>      pick another deployment (default: the OC_APP one)",
+  "  --app <name>      pick another deployment, before the command (default: the OC_APP one)",
   "  new-app <name>    create a deployment under apps/",
 ];
+
+/** The two framework-owned lines every gate's `--help` footer carries beside its own
+ *  (check/new-app/list, or init): `control-mcp`, dispatched here rather than declared in
+ *  app.commands (see runApp below), and `help`, this dispatcher's own alias. Padded together
+ *  so the two stay visually aligned regardless of what a gate's own lines look like. */
+function builtinHelpLines(app: AppDefinition): string[] {
+  const entries: Array<[string, string]> = [
+    ["control-mcp", `expose ${app.name}'s commands as MCP tools — the entry point for agents`],
+    ["help <command>", "same as: <command> --help"],
+  ];
+  const width = Math.max(...entries.map(([name]) => name.length)) + 2;
+  return entries.map(([name, summary]) => `  ${name.padEnd(width)}${summary}`);
+}
 
 function usage(app: AppDefinition, gateHelp: string[]): void {
   log(`${app.name} — ${app.description}`);
@@ -101,7 +102,7 @@ function usage(app: AppDefinition, gateHelp: string[]): void {
   if (unknown.length > 0) printGroup("Other", unknown);
 
   for (const line of gateHelp) info(line);
-  info("  help <command>    same as: <command> --help");
+  for (const line of builtinHelpLines(app)) info(line);
   info("");
   info("Run `./clawforge help <command>` or `./clawforge <command> --help` for its full description.");
 }
@@ -114,18 +115,7 @@ function knownCommandNames(app: AppDefinition, gateCommands: GateCommand[]): str
 }
 
 function commandHelp(name: string, command: AppCommand): void {
-  log(`${name} — ${command.summary}`);
-  const signature = formatArguments(command);
-  if (signature !== "") info(`Usage: ./clawforge ${name} ${signature}`);
-  for (const argument of command.arguments ?? []) {
-    const required = argument.required === true ? " (required)" : "";
-    const choices = argument.choices === undefined ? "" : ` [${argument.choices.join("|")}]`;
-    info(`  ${label(argument).padEnd(22)} ${argument.description}${choices}${required}`);
-  }
-  if (command.details !== undefined) {
-    info("");
-    for (const line of command.details.split("\n")) info(line);
-  }
+  renderCommandHelp(name, command);
   if (command.destructive === true) {
     info("");
     info(command.readOnlyWhen === undefined

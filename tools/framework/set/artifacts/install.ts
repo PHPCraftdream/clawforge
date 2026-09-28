@@ -49,7 +49,7 @@ export interface InstalledSet {
   readonly requires: SetManifest["requires"];
   /** The apply operation that installed this set. Its own configSnapshot (operations.ts),
    *  when it took one, is the configuration exactly as the PREVIOUS set left it — what
-   *  `rollback --set` needs to restore precisely. Absent for a record written before this
+   *  `rollback --previous-set` needs to restore precisely. Absent for a record written before this
    *  field existed, or when no operation id was available to record. */
   readonly operationId?: string;
   /** The set this one replaced, so a rollback has somewhere to go back to. Absent for the
@@ -188,7 +188,7 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
     : { id: current.id, name: current.name, installedAt: current.installedAt };
   // A no-op re-apply of the SAME set (nothing changed, so applyFromSource() took its
   // "nothing to apply" early return and never opened a Journal or took a snapshot for this
-  // fresh operationId) must not overwrite the id that actually installed it — rollback --set
+  // fresh operationId) must not overwrite the id that actually installed it — rollback --previous-set
   // reads this field to find the one snapshot that matters, and a clobbered id points at an
   // operation record that was never written, silently losing the snapshot to restore from.
   const effectiveOperationId = sameSet ? current.operationId : operationId;

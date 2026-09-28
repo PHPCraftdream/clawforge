@@ -9,8 +9,8 @@ import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** The slice of `set`'s declaration `receipts`'s own argv actually uses. */
 export const SET_RECEIPTS_ARGUMENTS: CommandArgument[] = [
-  { name: "set-id", description: "With receipts: filter by immutable set id", kind: "option" },
-  { name: "receipt", description: "With receipts: show this receipt; requires --set-id", kind: "option" },
+  { name: "set-id", description: "With receipts: filter by immutable set id", kind: "option", valueName: "id" },
+  { name: "receipt", description: "With receipts: show this receipt; requires --set-id", kind: "option", valueName: "id" },
   { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
 ];
 

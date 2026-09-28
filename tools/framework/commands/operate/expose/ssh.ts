@@ -15,7 +15,7 @@ const PORT = /^[1-9][0-9]*$/;
 
 /** The slice of `expose`'s declaration this action's own argv actually uses. */
 export const EXPOSE_SSH_ARGUMENTS: CommandArgument[] = [
-  { name: "local-port", description: "With ssh: local port to bind (defaults to the gateway's own port)", kind: "option" },
+  { name: "local-port", description: "With ssh: local port to bind (defaults to the gateway's own port)", kind: "option", valueName: "port" },
   { name: "run", description: "With ssh: open the tunnel in the foreground until Ctrl+C; needs a real terminal", kind: "flag" },
 ];
 

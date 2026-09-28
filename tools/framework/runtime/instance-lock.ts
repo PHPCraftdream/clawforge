@@ -588,8 +588,8 @@ export async function runOwning<T>(held: HeldLock | undefined, body: () => Promi
 
 /** The command-level shape: hold the lock for the duration of `body` unless the calling
  *  chain already does. `provision-agent` under `apply`, `apply --set` under `rollback
- *  --set`, `set forget` under `apply` — each takes the lock when someone invoked it
- *  directly and rides its caller's when it runs as a step. */
+ *  --previous-set`, `set forget` under `apply` — each takes the lock when someone invoked
+ *  it directly and rides its caller's when it runs as a step. */
 export async function withLockUnlessHeld<T>(
   ctx: Context,
   what: string,

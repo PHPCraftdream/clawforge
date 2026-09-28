@@ -46,6 +46,14 @@ await withOutputSink((chunk) => {
 }, () => runApp(app, [], []));
 const lines = captured.split("\n");
 
+// control-mcp is the entry point agents use, and is dispatched in entry/cli.ts rather than
+// declared in openclawCommands — nothing above would otherwise put it in the top-level list.
+{
+  const controlMcpLine = lines.find((line) => /^\s*control-mcp\s/.test(line));
+  check("control-mcp is listed in the general help", controlMcpLine !== undefined, true);
+  check("its line carries a one-line summary, not just the bare name", controlMcpLine?.trim() === "control-mcp", false);
+}
+
 // Headings appear, each exactly once, in GROUP_ORDER's order.
 const headingIndex = new Map<string, number>();
 for (const heading of Object.values(GROUP_HEADINGS)) {

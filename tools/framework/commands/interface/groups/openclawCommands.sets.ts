@@ -19,7 +19,8 @@ export const setsCommands: Record<string, AppCommand> = {
       "Collects every recipe (served content and agent bundle, each file checksummed), " +
       "config/desired-state.json, the required framework version and image digest, and the " +
       "NAMES of the secrets the set needs — into sets/<name>-<id>.tar.gz inside the " +
-      "deployment directory. The id is over the manifest, not the archive bytes: two builds " +
+      "deployment directory.\n" +
+      "The id is over the manifest, not the archive bytes: two builds " +
       "of an unchanged tree give the same id, so it can be compared, committed and " +
       "installed against.\n" +
       "Built without a running instance — a set is content, the thing an instance is " +
@@ -41,13 +42,13 @@ export const setsCommands: Record<string, AppCommand> = {
       "prunes its workspace and memory.",
     arguments: [
       { name: "action", description: "What to do with sets", kind: "positional", choices: ["build", "validate", "diff", "receipts", "try", "forget"] },
-      { name: "from", description: "With diff: original artifact", kind: "option" },
-      { name: "to", description: "With diff: replacement artifact", kind: "option" },
-      { name: "set-id", description: "With receipts: filter by immutable set id", kind: "option" },
-      { name: "receipt", description: "With receipts: show this receipt; requires --set-id", kind: "option" },
-      { name: "name", description: "Set name (default: the deployment's name); with forget, the object's name", kind: "option" },
-      { name: "set", description: "Artifact to validate or try, instead of the working tree", kind: "option" },
-      { name: "kind", description: "With forget: agent, mcp-server, or cron-job", kind: "option", choices: ["agent", "mcp-server", "cron-job"] },
+      { name: "from", description: "With diff: original artifact", kind: "option", valueName: "artifact" },
+      { name: "to", description: "With diff: replacement artifact", kind: "option", valueName: "artifact" },
+      { name: "set-id", description: "With receipts: filter by immutable set id", kind: "option", valueName: "id" },
+      { name: "receipt", description: "With receipts: show this receipt; requires --set-id", kind: "option", valueName: "id" },
+      { name: "name", description: "Set name (default: the deployment's name); with forget, the object's name", kind: "option", valueName: "name" },
+      { name: "set", description: "Artifact to validate or try, instead of the working tree", kind: "option", valueName: "artifact" },
+      { name: "kind", description: "With forget: agent, mcp-server, or cron-job", kind: "option", valueName: "kind", choices: ["agent", "mcp-server", "cron-job"] },
       { name: "with-model", description: "With try: include acceptance checks that call the model", kind: "flag" },
       { name: "keep", description: "With try: leave the throwaway instance running instead of tearing it down", kind: "flag" },
       { name: "break-lock", description: "With forget: take over the instance lock held by another operation", kind: "flag" },

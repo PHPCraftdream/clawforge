@@ -8,7 +8,7 @@
 ./clawforge plan --set sets/<name>-<id>.tar.gz
 ./clawforge apply --set sets/<name>-<id>.tar.gz
 ./clawforge set try --set sets/<name>-<id>.tar.gz
-./clawforge rollback --set
+./clawforge rollback --previous-set
 ```
 
 Installation verifies the archive inventory and each file checksum before changing the

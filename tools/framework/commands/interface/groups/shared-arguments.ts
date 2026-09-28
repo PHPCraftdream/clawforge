@@ -8,6 +8,7 @@ export const PROFILE_ARGUMENT = {
   name: "profile",
   description: "full (everything), migrate (no provider keys or recipe-declared private files) or share (no keys, identity, or recipe-declared private files)",
   kind: "option",
+  valueName: "profile",
   choices: PROFILES,
 } as const;
 
@@ -31,4 +32,5 @@ export const BREAK_FOREIGN_LOCK_ARGUMENT = {
   name: "break-foreign-lock",
   description: "Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over",
   kind: "option",
+  valueName: "hostId",
 } as const;

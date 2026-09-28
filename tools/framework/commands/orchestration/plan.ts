@@ -31,7 +31,7 @@ import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both plan's own parser and its openclawCommands declaration. */
 export const PLAN_ARGUMENTS: CommandArgument[] = [
-  { name: "set", description: "Plan from a built set artifact instead of the working tree", kind: "option" },
+  { name: "set", description: "Plan from a built set artifact instead of the working tree", kind: "option", valueName: "artifact" },
   { name: "json", description: "Emit the plan as JSON", kind: "flag" },
 ];
 

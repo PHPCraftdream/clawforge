@@ -12,8 +12,8 @@ import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both configure-provider's own parser and its openclawCommands declaration. */
 export const CONFIGURE_PROVIDER_ARGUMENTS: CommandArgument[] = [
-  { name: "provider", description: "Provider id, for example openai", kind: "option" },
-  { name: "env", description: "Secret variable, for example OPENAI_API_KEY", kind: "option" },
+  { name: "provider", description: "Provider id, for example openai", kind: "option", valueName: "id" },
+  { name: "env", description: "Secret variable, for example OPENAI_API_KEY", kind: "option", valueName: "var" },
   { name: "force", description: "Replace an existing provider SecretRef", kind: "flag" },
 ];
 

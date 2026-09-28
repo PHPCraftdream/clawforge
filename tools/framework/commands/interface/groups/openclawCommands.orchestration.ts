@@ -31,17 +31,19 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "the vantage a probe from this machine lacks. Unreachable ones are reported as " +
       "EGRESS_UNREACHABLE, a warning: the instance is up and the outside world is not ours to " +
       "control.\n" +
-      "The deployment folder itself is compared against the running instance too: .env's four " +
-      "connection facts against the container's (ENV_STALE — naming the variable, never a " +
-      "value; the file mixes a real secret with the plumbing), the absence of " +
-      "config/desired-state.json while something is running (DECLARATION_MISSING), and the " +
-      "default local store missing a value the target still holds (STORE_INCOMPLETE — " +
-      "watched only when the store file exists, since bootstrap puts values on the target " +
-      "without creating one). All three are warnings that name the command that repairs " +
-      "them: recover-env, apply-config --dump, secrets --dump. The instance is fine; what " +
-      "is at risk is reproducing it. observed.connectionFacts and observed.secretStore " +
-      "carry the per-fact comparison and the store's missing names; absent means not " +
-      "checked, never checked-and-fine.\n" +
+      "The deployment folder itself is compared against the running instance too:\n" +
+      ".env's four connection facts against the container's (ENV_STALE — naming the " +
+      "variable, never a value; the file mixes a real secret with the plumbing),\n" +
+      "the absence of config/desired-state.json while something is running " +
+      "(DECLARATION_MISSING),\n" +
+      "and the default local store missing a value the target still holds " +
+      "(STORE_INCOMPLETE — watched only when the store file exists, since bootstrap puts " +
+      "values on the target without creating one).\n" +
+      "All three are warnings that name the command that repairs them: recover-env, " +
+      "apply-config --dump, secrets --dump. The instance is fine; what is at risk is " +
+      "reproducing it.\n" +
+      "observed.connectionFacts and observed.secretStore carry the per-fact comparison " +
+      "and the store's missing names; absent means not checked, never checked-and-fine.\n" +
       "Read-only: it starts, writes and registers nothing. `./clawforge plan` turns its findings " +
       "into actions.\n" +
       "The live agent/MCP/cron lists come from OpenClaw's own CLI, a container per call — " +
@@ -58,22 +60,22 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "The same inspection as `./clawforge inspect`, read for its problems rather than its " +
       "inventory — one gatherer, so the two can never disagree.\n" +
       "Exits non-zero when a blocking problem was found, which is the part a CI step or an " +
-      "agent can act on without reading the text. Warnings do not fail it: an instance with " +
-      "no lock file still works, and an outbound endpoint the container cannot reach this " +
-      "second — EGRESS_UNREACHABLE, asked of the container itself — is the outside world's " +
-      "doing, not the instance's. " +
+      "agent can act on without reading the text.\n" +
+      "Warnings do not fail it: an instance with no lock file still works, and an outbound " +
+      "endpoint the container cannot reach this second — EGRESS_UNREACHABLE, asked of the " +
+      "container itself — is the outside world's doing, not the instance's.\n" +
       "The deployment-folder findings — a stale .env fact, a missing desired-state.json, " +
       "an incomplete local store — are warnings for the same reason: the instance is doing " +
-      "its job, and a folder that is merely behind must not fail a build. " +
-      "A check that fails on everything it has an opinion about " +
-      "stops being consulted.\n" +
+      "its job, and a folder that is merely behind must not fail a build.\n" +
+      "A check that fails on everything it has an opinion about stops being consulted.\n" +
       "Also runs the security gate — `openclaw security audit` and `openclaw secrets audit` " +
       "inside the instance, plus what only the host side can see: the gateway published on " +
       "every interface (blocking unless acknowledged in config/security-suppressions.json), " +
       "a public port that Docker's DOCKER-USER chain may let bypass an active UFW, and the " +
-      "deployment's own secret file permissions. Never every ./clawforge inspect/plan call — " +
-      "each audit is a container exec — only doctor and accept. Suppress a finding by upstream " +
-      "checkId in config/security-suppressions.json; it stays visible but stops counting.",
+      "deployment's own secret file permissions.\n" +
+      "Never every ./clawforge inspect/plan call — each audit is a container exec — only " +
+      "doctor and accept. Suppress a finding by upstream checkId in " +
+      "config/security-suppressions.json; it stays visible but stops counting.",
     arguments: [{ name: "json", description: "Emit the verdict, problems and next actions as JSON", kind: "flag" }],
     structured: true,
     readOnly: true,
@@ -89,18 +91,20 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "talks to it, recipes last.\n" +
       "That order is the framework's job. Before this command it lived in whoever had " +
       "learned it.\n" +
-      "Each step says which finding put it there. A few steps are advisory: reconnecting " +
-      "an MCP client is something only the client can do, the lock file is never " +
-      "re-pinned automatically since doing that would rubber-stamp whatever drifted, and " +
-      "any other problem this framework has no specific step for yet still gets one — named " +
-      "advisory rather than left out, so a problem plan cannot act on is still a problem the " +
-      "reader sees, never one \"nothing to do\" quietly absorbs.\n" +
+      "Each step says which finding put it there.\n" +
+      "A few steps are advisory: reconnecting an MCP client is something only the client " +
+      "can do, the lock file is never re-pinned automatically since doing that would " +
+      "rubber-stamp whatever drifted,\n" +
+      "and any other problem this framework has no specific step for yet still gets one — " +
+      "named advisory rather than left out, so a problem plan cannot act on is still a " +
+      "problem the reader sees, never one \"nothing to do\" quietly absorbs.\n" +
       "Recovery steps appear early too: a stale .env plans ./clawforge recover-env " +
       "and a missing desired-state.json plans ./clawforge apply-config --dump, both run " +
       "exactly as planned — the dump's --force refusal protects an existing declaration, and " +
-      "this one is absent. An incomplete local store plans ./clawforge secrets --dump as " +
-      "advisory instead: it refuses to overwrite an existing store without --force, and " +
-      "whether the store's contents matter is the reader's decision, not a step.\n" +
+      "this one is absent.\n" +
+      "An incomplete local store plans ./clawforge secrets --dump as advisory instead: it " +
+      "refuses to overwrite an existing store without --force, and whether the store's " +
+      "contents matter is the reader's decision, not a step.\n" +
       "\"nothing to do\" prints only once inspect finds this deployment healthy with no " +
       "problems at all — never merely because plan has no step for what it found.\n" +
       "Changes nothing. `./clawforge apply` runs exactly this list.",
@@ -129,11 +133,11 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "re-pinning the lock file is a decision, not a repair, and so is the store recovery a " +
       "plan lists when the local secret store is incomplete — ./clawforge secrets --dump " +
       "would overwrite it only with --force, so apply reports the step as advisory and " +
-      "leaves the decision where it belongs. The operator-side recovery steps that are " +
-      "executable — recover-env, apply-config --dump — run under the same rules as every " +
-      "step: one operation id, a journal entry each, stop at the first failure; they write " +
-      "to the deployment folder rather than the instance, so their runners take no instance " +
-      "lock of their own.\n" +
+      "leaves the decision where it belongs.\n" +
+      "The operator-side recovery steps that are executable — recover-env, apply-config " +
+      "--dump — run under the same rules as every step: one operation id, a journal entry " +
+      "each, stop at the first failure; they write to the deployment folder rather than the " +
+      "instance, so their runners take no instance lock of their own.\n" +
       "--dry-run only lists what the plan computed — it touches nothing, so it cannot tell " +
       "you whether desired-state.json would actually validate against the target's own " +
       "schema. `./clawforge apply-config --dry-run` does: a real (lockless) `config set " +
@@ -186,12 +190,13 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "Without --operation it undoes the most recent run that took a snapshot. A run that " +
       "changed nothing took none and is not offered.\n" +
       "The rollback is itself recorded as an operation.\n" +
-      "--set is a different path entirely: reinstalls the set that was installed here before " +
-      "the one currently in force — prompts, MCP registrations, schedules and gateway " +
-      "settings together, through ./clawforge apply --set, not this command's own single-file " +
-      "restore. Refuses if no previous set is on record, or if its artifact is no longer in " +
-      "sets/. Neither path replaces the other: a deployment never installed from a set still " +
-      "has only the config-snapshot path above.",
+      "--previous-set is a different path entirely: reinstalls the set that was installed " +
+      "here before the one currently in force — prompts, MCP registrations, schedules and " +
+      "gateway settings together, through ./clawforge apply --set, not this command's own " +
+      "single-file restore.\n" +
+      "Refuses if no previous set is on record, or if its artifact is no longer in sets/.\n" +
+      "Neither path replaces the other: a deployment never installed from a set still has " +
+      "only the config-snapshot path above.",
     arguments: ROLLBACK_ARGUMENTS,
   },
   operations: {
@@ -224,11 +229,11 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "the same settings.\n" +
       "--dump is the reverse: reconstructs a lost desired-state.json from the live instance's " +
       "own openclaw.json. Recovery is honestly limited — the live config shows the outcome of " +
-      "the declaration, not the declaration itself — so only a fixed set of commonly declared " +
-      "paths is recovered (a value OpenClaw defaults to cannot be told apart from a declared " +
-      "one), paths the live config never set are omitted rather than guessed, and recipes are " +
-      "not part of this file at all. Refuses to overwrite an existing declaration unless " +
-      "--force is given.\n" +
+      "the declaration, not the declaration itself —\n" +
+      "so only a fixed set of commonly declared paths is recovered (a value OpenClaw " +
+      "defaults to cannot be told apart from a declared one), paths the live config never " +
+      "set are omitted rather than guessed, and recipes are not part of this file at all.\n" +
+      "Refuses to overwrite an existing declaration unless --force is given.\n" +
       "The flags are validated against the mode before anything is read or written: " +
       "--dry-run cannot be combined with --dump — a dump has no dry-run form, it either " +
       "writes the recovered declaration or does nothing — --break-lock and --break-foreign-lock " +

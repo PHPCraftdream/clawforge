@@ -39,8 +39,8 @@ import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shar
 
 /** Drives both apply's own parser and its openclawCommands declaration. */
 export const APPLY_ARGUMENTS: CommandArgument[] = [
-  { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option" },
-  { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option" },
+  { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option", valueName: "artifact" },
+  { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option", valueName: "checksum" },
   { name: "dry-run", description: "Show the steps without running any of them", kind: "flag" },
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
@@ -323,7 +323,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
 
       const operationId = newOperationId("apply");
       // Nesting-safe, the same way provisionAgent()'s own lock-taking already is: a caller
-      // (rollback --set) that already holds the instance lock for the whole operation must
+      // (rollback --previous-set) that already holds the instance lock for the whole operation must
       // not have this acquire refuse itself as "another operation changing this instance".
       await withLockUnlessHeld(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock"), breakForeignLockHost: parseBreakForeignLockHost(args) }, async () => {
         // First thing under the lock, before storeArtifactForRollback — the first bytes this
@@ -337,11 +337,11 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
         // live config already matched what this set declares) returns WITHOUT ever opening
         // a Journal or taking a config snapshot for operationId: there is nothing to run, so
         // there was nothing it thought worth recording. But recordInstalledSet() below is
-        // about to write installed.operationId = operationId regardless — and rollback --set
+        // about to write installed.operationId = operationId regardless — and rollback --previous-set
         // later reads exactly that field to find the one snapshot it needs to restore. A set
         // transition (this set's id differs from whatever was installed before, e.g. the same
         // set reinstalled under a new name) that happens to change nothing about the live
-        // config still needs a recorded operation for rollback --set to point at, or undoing
+        // config still needs a recorded operation for rollback --previous-set to point at, or undoing
         // it later finds nothing and refuses even though nothing here actually
         // needs restoring — the live config already IS what a rollback would reach. Recorded
         // after applyFromSource rather than before: this branch only runs when nothing was
@@ -353,7 +353,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
         // its correct, pre-change snapshot) exists but hit one transient read error right
         // after — that false positive used to make this branch re-open a fresh Journal and
         // take a NEW snapshot NOW, i.e. of the config AFTER the real steps already changed
-        // it, silently clobbering the correct pre-change snapshot rollback --set needs.
+        // it, silently clobbering the correct pre-change snapshot rollback --previous-set needs.
         if (!ranSteps) {
           const noopJournal = await Journal.open(ctx, "apply", deploymentName(), operationId);
           const snapshot = await snapshotConfig(ctx, operationId);

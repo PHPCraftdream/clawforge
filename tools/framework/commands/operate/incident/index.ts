@@ -59,7 +59,7 @@ import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../../interfac
 export const INCIDENT_ARGUMENTS: CommandArgument[] = [
   { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
   { name: "keep-exposure", description: "Proceed even though the gateway is published on every interface", kind: "flag" },
-  { name: "tail", description: "Lines of log to collect (default 500)", kind: "option" },
+  { name: "tail", description: "Lines of log to collect (default 500)", kind: "option", valueName: "n" },
   { name: "json", description: "Emit the report as JSON", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,

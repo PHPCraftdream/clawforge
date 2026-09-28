@@ -38,6 +38,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   agent asks before acting, structured like `inspect`/`doctor`/`plan` already are.
   `secrets --json` and `verify --json` carry names/locations/kinds only, never a credential
   value; a captured MCP call answers in JSON on all five even without the flag.
+* `control-mcp` — the entry point agents use — is now listed in `./clawforge help` alongside
+  `check`/`new-app`/`list`, with a one-line summary.
+* `CommandArgument.valueName`: every declared option now names its value (`--tail <n>`,
+  `--break-foreign-lock <hostId>`, `--since <duration|timestamp>`, …) instead of the generic
+  `--name <value>` every option rendered as before; shown in `--help` and folded into the
+  MCP tool description. A check fails the build if a declared option omits it.
 
 ### Fixed
 
@@ -82,6 +88,19 @@ All notable changes to `@clawforge/framework` will be documented here.
   only the validated `--since` still travels to the runtime.
 * An unknown `--flag` close to one the command declares now says "did you mean --<name>";
   every unknown-argument refusal from the CLI also points at `<command> --help`.
+* Gate command help (`check`/`new-app`/`list`/`init`) rendered from a copy of `--help`'s own
+  renderer that dropped `choices` — a gate command's accepted values now show there too.
+  `entry/cli.ts` and `integration/gate.ts` share one renderer (`core/io/help-render.ts`).
+* `rollback --set` — a boolean flag reinstalling the previously installed set — collided with
+  `plan`/`apply`/`accept`'s `--set <artifact>` option of the same name (one string, two types,
+  under one MCP schema property). Renamed to `rollback --previous-set`.
+* The general help's `--app <name>` line now says it belongs before the command, matching the
+  refusal already given for one placed after it.
+* `docs/guide/commands.md`'s command table was missing `set` and `exec`.
+* `details` paragraphs running to a thousand-plus characters on one line (`watch`, `incident`,
+  `recipe`, `backup`, and others) are now split by phase/action/concept — the same wall of
+  text either printed whole on a terminal or became an entire MCP tool description. A check
+  fails the build past a 400-character single line.
 
 ## 0.1.0
 

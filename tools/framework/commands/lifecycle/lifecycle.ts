@@ -22,7 +22,7 @@ import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/
 
 /** Drives both upgrade's own parser and its openclawCommands declaration. */
 export const UPGRADE_ARGUMENTS: CommandArgument[] = [
-  { name: "image", description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE", kind: "option" },
+  { name: "image", description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE", kind: "option", valueName: "ref" },
   { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
@@ -34,9 +34,9 @@ export const LOCK_ARGUMENTS: CommandArgument[] = [BREAK_LOCK_ARGUMENT, BREAK_FOR
 
 /** Drives logs's own parser and its openclawCommands declaration. */
 export const LOGS_ARGUMENTS: CommandArgument[] = [
-  { name: "tail", description: "Lines to return when reading rather than following", kind: "option" },
-  { name: "since", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option" },
-  { name: "grep", description: "Only lines matching this regular expression", kind: "option" },
+  { name: "tail", description: "Lines to return when reading rather than following", kind: "option", valueName: "n" },
+  { name: "since", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option", valueName: "duration|timestamp" },
+  { name: "grep", description: "Only lines matching this regular expression", kind: "option", valueName: "pattern" },
 ];
 
 function regexEscape(value: string): string {

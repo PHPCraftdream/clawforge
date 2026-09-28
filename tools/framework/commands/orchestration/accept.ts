@@ -39,7 +39,7 @@ import { parseDeclaredArgs } from "#src/core/arguments.ts";
 /** Drives both accept's own parser and its openclawCommands declaration. */
 export const ACCEPT_ARGUMENTS: CommandArgument[] = [
   { name: "recipe", description: "Recipe to check (default: every recipe that declares checks)", kind: "positional" },
-  { name: "set", description: "Check this verified artifact's declarations and save an acceptance receipt", kind: "option" },
+  { name: "set", description: "Check this verified artifact's declarations and save an acceptance receipt", kind: "option", valueName: "artifact" },
   { name: "with-model", description: "Include the checks that call the model, and pay for them", kind: "flag" },
   { name: "json", description: "Emit the report as JSON", kind: "flag" },
 ];

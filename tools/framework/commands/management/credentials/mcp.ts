@@ -19,7 +19,7 @@ import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both mcp-setup's own parser and its openclawCommands declaration. */
 export const MCP_SETUP_ARGUMENTS: CommandArgument[] = [
-  { name: "client", kind: "option", choices: ["claude", "codex", "both"], description: "Client configuration to update (default both)" },
+  { name: "client", kind: "option", valueName: "client", choices: ["claude", "codex", "both"], description: "Client configuration to update (default both)" },
   { name: "json", kind: "flag", description: "Report changed files as JSON" },
 ];
 

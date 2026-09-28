@@ -29,7 +29,7 @@ export const SECRETS_ARGUMENTS: CommandArgument[] = [
   { name: "init-store", description: "Create an empty store to fill in", kind: "flag" },
   { name: "apply", description: "Fill the target from a local store", kind: "flag" },
   { name: "dump", description: "Recover a local store from the running instance", kind: "flag" },
-  { name: "store", description: "Store name, e.g. local or prod", kind: "option" },
+  { name: "store", description: "Store name, e.g. local or prod", kind: "option", valueName: "name" },
   { name: "force", description: "Replace an existing store (with --init-store or --dump)", kind: "flag" },
   // Only --apply takes the lock; --break-lock stays unsupported, but an orphaned lock from
   // another machine still needs a way out.

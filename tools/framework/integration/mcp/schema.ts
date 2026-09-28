@@ -174,11 +174,17 @@ export function inputSchema(command: Declared): Record<string, unknown> {
   const required: string[] = [];
 
   for (const argument of command.arguments ?? []) {
+    // The value name (`hostId`, `n`, `artifact`…) is what --help already shows in the
+    // `--name <valueName>` label; folded into the description here too, since the schema
+    // has no separate slot for it and the property name itself stays the flag's own name.
+    const description = argument.kind === "option" && argument.valueName !== undefined
+      ? `${argument.description} (value: <${argument.valueName}>)`
+      : argument.description;
     properties[argument.name] = argument.kind === "variadic"
-      ? { type: "array", items: { type: "string" }, description: argument.description }
+      ? { type: "array", items: { type: "string" }, description }
       : {
         type: argument.kind === "flag" ? "boolean" : "string",
-        description: argument.description,
+        description,
         ...(argument.choices === undefined ? {} : { enum: [...argument.choices] }),
       };
     if (argument.required === true) required.push(argument.name);

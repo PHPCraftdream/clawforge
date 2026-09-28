@@ -43,7 +43,7 @@ export const DEFAULT_WATCH_INTERVAL_MINUTES = 5;
 
 /** The slice of `watch`'s declaration `install`'s own argv actually uses. */
 export const WATCH_INSTALL_ARGUMENTS: CommandArgument[] = [
-  { name: "interval", description: "With install: minutes between checks (default 5); 1-59, or an exact multiple of 60 up to 1440", kind: "option" },
+  { name: "interval", description: "With install: minutes between checks (default 5); 1-59, or an exact multiple of 60 up to 1440", kind: "option", valueName: "minutes" },
   { name: "apply", description: "With install/uninstall: mutate the target's crontab instead of only printing it", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,

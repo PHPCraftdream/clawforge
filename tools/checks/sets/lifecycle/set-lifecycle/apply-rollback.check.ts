@@ -1,4 +1,4 @@
-// `apply --set` / `rollback --set` — the core, deliberately SEQUENTIAL story: install A,
+// `apply --set` / `rollback --previous-set` — the core, deliberately SEQUENTIAL story: install A,
 // install B, roll back to A, then a series of refusal/edge-case scenarios that all build on
 // that same installed-set chain (a corrupt rollback artifact, an intervening ordinary
 // apply's snapshot, a no-op re-apply preserving operationId, runtime/image mismatches, a
@@ -55,9 +55,9 @@ try {
     const beforeFiles = JSON.stringify([...files]);
     const beforeInstalled = JSON.stringify(await readInstalledSet(ctx));
     const refused = [
-      ["--set", "--dry-run", "--json"],
-      ["--set", "--operation", "--no-restart"],
-      ["--set", "--json", "--unknown"],
+      ["--previous-set", "--dry-run", "--json"],
+      ["--previous-set", "--operation", "--no-restart"],
+      ["--previous-set", "--json", "--unknown"],
     ];
     for (const invalid of refused) {
       const result = await fixture.captured(() => rollback(ctx, invalid));
@@ -67,7 +67,7 @@ try {
     }
   }
 
-  const rolledBack = await fixture.captured(() => rollback(ctx, ["--set", "--json"]));
+  const rolledBack = await fixture.captured(() => rollback(ctx, ["--previous-set", "--json"]));
   assert.equal(rolledBack.error, undefined, rolledBack.error?.message);
   assert.equal((await readInstalledSet(ctx))?.id, built.id);
   assert.equal(files.get(`${sourceData}/workspace/MEMORY.md`), "keep me");
@@ -79,11 +79,11 @@ try {
   assert.equal(
     restoredConfig?.agents?.defaults?.name,
     undefined,
-    "rollback --set must undo a setting the newer set added but the older one never declared",
+    "rollback --previous-set must undo a setting the newer set added but the older one never declared",
   );
   assert.equal(restoredConfig?.gateway?.mode, "local", "the previous set's own declared settings are still in force after rollback");
 
-  // --- rollback --set must use the snapshot from the operation that installed the CURRENT
+  // --- rollback --previous-set must use the snapshot from the operation that installed the CURRENT
   // set, not "whatever snapshot is newest" — an ordinary apply run after that install also
   // takes one, and restoring THAT one would restore to a config that already includes
   // whatever the current set added. install B again, run an unrelated ordinary apply (which
@@ -104,7 +104,7 @@ try {
     const ordinary = await fixture.captured(() => apply(ctx, ["--json"]));
     assert.equal(ordinary.error, undefined, ordinary.error?.message);
 
-    const rolledBackAgain = await fixture.captured(() => rollback(ctx, ["--set", "--json"]));
+    const rolledBackAgain = await fixture.captured(() => rollback(ctx, ["--previous-set", "--json"]));
     assert.equal(rolledBackAgain.error, undefined, rolledBackAgain.error?.message);
     assert.equal((await readInstalledSet(ctx))?.id, built.id, "the set id still reverts to the previous one");
 
@@ -117,7 +117,7 @@ try {
     assert.equal(configAfter?.agents?.defaults?.temperature, undefined, "the ordinary apply's own addition is undone too");
   }
 
-  // --- rollback --set must verify the artifact BEFORE touching the live configuration -----
+  // --- rollback --previous-set must verify the artifact BEFORE touching the live configuration -----
   //
   // Before the fix, the config-snapshot restore ran before withUnpackedArtifact() ever
   // verified the artifact — a corrupt archive was refused only after the config was already
@@ -138,7 +138,7 @@ try {
     try {
       await writeFile(storedArtifact, "not a real gzip archive at all");
 
-      const corrupted = await fixture.captured(() => rollback(ctx, ["--set", "--json"]));
+      const corrupted = await fixture.captured(() => rollback(ctx, ["--previous-set", "--json"]));
       assert.notEqual(corrupted.error, undefined, "a corrupt rollback artifact must be refused");
       assert.equal(files.get(`${sourceData}/config/openclaw.json`), configBefore, "a refused rollback must leave the live configuration untouched");
       assert.equal((await readInstalledSet(ctx))?.id, installedBefore?.id, "and must not change which set is recorded as installed");
@@ -169,18 +169,18 @@ try {
       "a no-op re-apply must not overwrite the operationId that actually installed this set",
     );
 
-    const rolledBackThird = await fixture.captured(() => rollback(ctx, ["--set", "--json"]));
+    const rolledBackThird = await fixture.captured(() => rollback(ctx, ["--previous-set", "--json"]));
     assert.equal(rolledBackThird.error, undefined, rolledBackThird.error?.message);
     assert.equal((await readInstalledSet(ctx))?.id, built.id);
     const configAfterThird = JSON.parse(files.get(`${sourceData}/config/openclaw.json`) ?? "{}");
     assert.equal(
       configAfterThird?.agents?.defaults?.name,
       undefined,
-      "rollback --set must still undo the setting the set added, even after an intervening no-op re-apply",
+      "rollback --previous-set must still undo the setting the set added, even after an intervening no-op re-apply",
     );
   }
 
-  // --- rollback --set must check runtime/framework compatibility BEFORE the config-snapshot
+  // --- rollback --previous-set must check runtime/framework compatibility BEFORE the config-snapshot
   // restore, not only inside the nested apply() call that runs after it. --------------------
   {
     fixture.state.running = true;
@@ -194,7 +194,7 @@ try {
         runningImageIdentity: async () => ({ imageId: "wrong-img", digests: ["fixture@sha256:not-what-is-required"], containerId: "container-1" }),
       },
     } as unknown as Context;
-    const incompatible = await fixture.captured(() => rollback(incompatibleCtx, ["--set", "--json"]));
+    const incompatible = await fixture.captured(() => rollback(incompatibleCtx, ["--previous-set", "--json"]));
     assert.match(incompatible.error?.message ?? "", /cannot be reinstalled here/);
     assert.equal(
       files.get(`${sourceData}/config/openclaw.json`),
@@ -294,7 +294,7 @@ try {
     assert.equal((await readInstalledSet(ctx))?.id, beforeNoIdentity?.id);
   }
 
-  // --- rollback --set must re-verify the installed set under the lock, not act on a stale
+  // --- rollback --previous-set must re-verify the installed set under the lock, not act on a stale
   // pre-lock read — another apply --set can complete installing a newer set (C) in the
   // window between rollbackSet's initial readInstalledSet() and takeLock(). --------------
   {
@@ -328,7 +328,7 @@ try {
       },
     } as unknown as Context;
 
-    const rolledBackRaced = await fixture.captured(() => rollback(raceCtx, ["--set", "--json"]));
+    const rolledBackRaced = await fixture.captured(() => rollback(raceCtx, ["--previous-set", "--json"]));
     assert.match(rolledBackRaced.error?.message ?? "", /installed set changed while this rollback was preparing/);
     assert.equal(
       (await readInstalledSet(ctx))?.id,
@@ -337,7 +337,7 @@ try {
     );
   }
 
-  // --- rollback --set must refuse when the snapshot it needs is missing/gone, not silently
+  // --- rollback --previous-set must refuse when the snapshot it needs is missing/gone, not silently
   // skip the restore and report the reinstall a success. -----------------------------------
   {
     fixture.state.running = true;
@@ -364,7 +364,7 @@ try {
     const configBeforeMissingSnapshot = files.get(`${sourceData}/config/openclaw.json`);
     files.delete(snapshotPath);
 
-    const missingSnapshot = await fixture.captured(() => rollback(ctx, ["--set", "--json"]));
+    const missingSnapshot = await fixture.captured(() => rollback(ctx, ["--previous-set", "--json"]));
     assert.match(missingSnapshot.error?.message ?? "", /no configuration snapshot is available/);
     assert.equal(
       files.get(`${sourceData}/config/openclaw.json`),

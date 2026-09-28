@@ -16,7 +16,7 @@ import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/
 export const RECIPE_FLAG_ARGUMENTS: CommandArgument[] = [
   { name: "json", description: "With list: emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON", kind: "flag" },
   { name: "volumes", description: "With remove: delete its volumes too", kind: "flag" },
-  { name: "tail", description: "With logs/diagnose: lines to return per service", kind: "option" },
+  { name: "tail", description: "With logs/diagnose: lines to return per service", kind: "option", valueName: "n" },
   { name: "force-disabled", description: "With install: build a recipe marked disabled", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,

@@ -16,8 +16,9 @@
 // ship. Each gate therefore builds its own list instead of declaring all of them everywhere
 // and failing at call time.
 
-import { log, info, reportError } from "../core/io/log.ts";
+import { info, reportError } from "../core/io/log.ts";
 import { closestCommand } from "../core/arguments.ts";
+import { renderCommandHelp } from "../core/io/help-render.ts";
 import type { CommandArgument } from "../core/app.ts";
 
 export { closestCommand } from "../core/arguments.ts";
@@ -34,28 +35,11 @@ export interface GateCommand {
   readonly run: (args: string[]) => Promise<number>;
 }
 
-function label(argument: CommandArgument): string {
-  if (argument.kind === "flag") return `--${argument.name}`;
-  if (argument.kind === "option") return `--${argument.name} <value>`;
-  if (argument.kind === "variadic") return `<${argument.name}…>`;
-  return `<${argument.name}>`;
-}
-
-/** The `--help` screen for one gate command, from its declaration. */
+/** The `--help` screen for one gate command, from its declaration — the same renderer
+ *  entry/cli.ts uses for an AppCommand, so a gate command's `choices` and value names show
+ *  up here too instead of only on the deployment's own commands. */
 export function gateCommandHelp(command: GateCommand): void {
-  log(`${command.name} — ${command.summary}`);
-  const signature = (command.arguments ?? [])
-    .map((argument) => (argument.required === true ? label(argument) : `[${label(argument)}]`))
-    .join(" ");
-  if (signature !== "") info(`Usage: ./clawforge ${command.name} ${signature}`);
-  for (const argument of command.arguments ?? []) {
-    const required = argument.required === true ? " (required)" : "";
-    info(`  ${label(argument).padEnd(22)} ${argument.description}${required}`);
-  }
-  if (command.details !== undefined) {
-    info("");
-    for (const line of command.details.split("\n")) info(line);
-  }
+  renderCommandHelp(command.name, command);
 }
 
 /** Lines for the command list in `./clawforge help`, so a gate command appears beside the rest. */

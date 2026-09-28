@@ -214,16 +214,17 @@ export const managementCommands: Record<string, AppCommand> = {
       "--apply --store <name> installs that store's values into both runtime locations, and " +
       "the two locations take different paths from there: target-env values are re-read by " +
       "the gateway on restart, while repo-env values were interpolated into the container's " +
-      "environment at creation — so with an instance running, --apply recreates the container " +
-      "itself (it is replaced, not merely signalled), waits for health, and confirms the new " +
-      "values are in force without printing them; a stopped instance picks them up on the " +
-      "next start.\n" +
+      "environment at creation —\n" +
+      "so with an instance running, --apply recreates the container itself (it is replaced, " +
+      "not merely signalled), waits for health, and confirms the new values are in force " +
+      "without printing them; a stopped instance picks them up on the next start.\n" +
       "--dump --store <name> is the reverse: recovers what an already-running instance " +
       "actually holds — target-env from the target's own config/.env, repo-env (the " +
       "gateway token) from the running container's own environment, since it is never " +
-      "written to the target's filesystem at all — into a local store, for when the " +
-      "operator side's own copy was lost while the instance kept running. A name it " +
-      "cannot recover is left blank and named in the report, never guessed.\n" +
+      "written to the target's filesystem at all —\n" +
+      "into a local store, for when the operator side's own copy was lost while the " +
+      "instance kept running. A name it cannot recover is left blank and named in the " +
+      "report, never guessed.\n" +
       "up/bootstrap refuse to start when something required is missing, rather than let " +
       "the gateway crash-loop.\n" +
       "Over MCP, status and template operations need no confirmation; --apply, --init-store " +
@@ -281,27 +282,28 @@ export const managementCommands: Record<string, AppCommand> = {
       "or volumes.\n" +
       "Building happens on the target (a fresh Rust or Go build takes minutes and streams " +
       "rather than hangs silently); a recipe kept in the repository but marked disabled " +
-      "refuses `install` unless --force-disabled is given. " +
+      "refuses `install` unless --force-disabled is given.\n" +
       "install, remove, verify, onboard and diagnose take the instance lock for their whole run — " +
       "install across its build, so minutes — during which other mutating operations are refused " +
       "with the holder named, and a caller that already holds the lock runs them as its own steps " +
-      "instead of refusing itself; " +
+      "instead of refusing itself;\n" +
       "list, status and logs take no lock, and neither does import: it writes the repository's " +
-      "recipes/ directory, not the instance, so it works before bootstrap has prepared the lock home. " +
+      "recipes/ directory, not the instance, so it works before bootstrap has prepared the lock home.\n" +
       "An optional recipes/<name>/prepare.ts " +
       "hook belongs to the application and may generate private target config before build or " +
-      "reconcile the running service afterwards; " +
+      "reconcile the running service afterwards;\n" +
       "verify.ts and onboard.ts hooks expose app-owned checks and onboarding through MCP, " +
       "gated as mutations — confirm and the instance lock — because the framework cannot " +
-      "know what an app-owned hook touches; " +
+      "know what an app-owned hook touches;\n" +
       "install does not report success the moment up returns: recipe.json may declare " +
       "readiness — services, the compose services that must be running (healthy where they " +
       "declare a healthcheck), and timeoutMs, how long to wait, two minutes by default — and " +
       "install proceeds to afterStart only once every listed service has held that state for a " +
-      "five-second grace window; otherwise install fails, naming what never came up " +
+      "five-second grace window;\n" +
+      "otherwise install fails, naming what never came up " +
       "(missing / not running / not healthy), skips afterStart, and leaves the stack for " +
       "diagnose. A recipe with no readiness declaration still gets a five-second check of every " +
-      "service compose reports for the project, but no per-service wait to hold a slow starter to. " +
+      "service compose reports for the project, but no per-service wait to hold a slow starter to.\n" +
       "import copies <source> — a directory with its own recipe.json — into recipes/ under " +
       "new-name, defaulting to the source directory's own name, and refuses to overwrite; " +
       "the framework does not interpret domain-specific fields.\n" +
@@ -310,10 +312,11 @@ export const managementCommands: Record<string, AppCommand> = {
       "under privateFiles — a filter over file names, not a guarantee: a credential under " +
       "any other name is copied unless the source declares it.\n" +
       "Where the running recipe may keep generated credentials is a separate declaration in " +
-      "the same file: privatePaths — literal, data-relative paths. migrate and share snapshots " +
-      "exclude them, full keeps them, and the private-config helpers refuse a private write " +
-      "anywhere else. The two fields are not interchangeable: privateFiles is recipe-relative " +
-      "(what import copies), privatePaths is data-relative (where the target keeps secrets).\n" +
+      "the same file: privatePaths — literal, data-relative paths.\n" +
+      "migrate and share snapshots exclude them, full keeps them, and the private-config " +
+      "helpers refuse a private write anywhere else. The two fields are not interchangeable: " +
+      "privateFiles is recipe-relative (what import copies), privatePaths is data-relative " +
+      "(where the target keeps secrets).\n" +
       "diagnose bundles one report instead of several manual round trips: whether the " +
       "recipe's stack is running, a bounded tail of every service in it (not just one), " +
       "and the verify.ts hook's own result if it has one — gated like verify itself, since " +
@@ -423,18 +426,19 @@ export const managementCommands: Record<string, AppCommand> = {
       "Three actions, narrowest scope first.\n" +
       "ssh — for OC_TARGET_LOCATION=ssh deployments, prints the exact `ssh -N -L <local>:127.0.0.1:<gatewayPort> " +
       "<OC_SSH_HOST>` tunnel and the http://127.0.0.1:<local> URL it opens; --run runs it in the foreground " +
-      "through the local ssh client (needs a real terminal — refused under MCP or a plain pipe) until Ctrl+C. " +
+      "through the local ssh client (needs a real terminal — refused under MCP or a plain pipe) until Ctrl+C.\n" +
       "wsl/local targets are told no tunnel is needed: Docker Desktop's WSL2 integration already forwards the " +
       "published port to this machine's own loopback.\n" +
       "tailscale — probes, on the target, whether `tailscale` exists and is logged in (`tailscale status --json`), " +
       "then prints the exact `tailscale serve --bg http://127.0.0.1:<gatewayPort>` command — tailnet-only HTTPS, " +
-      "never `tailscale funnel` (refused outright, with the reason, whether or not --apply is given). --apply runs " +
-      "it on the target through the transport — mutating, so it needs MCP confirmation and the instance lock " +
-      "(guarded()), same as every other mutating command.\n" +
+      "never `tailscale funnel` (refused outright, with the reason, whether or not --apply is given).\n" +
+      "--apply runs it on the target through the transport — mutating, so it needs MCP confirmation and the " +
+      "instance lock (guarded()), same as every other mutating command.\n" +
       "status — the published bind address/port read back from the RUNNING container (never just .env, which can " +
       "be stale the moment OC_BIND_ADDRESS is edited without a recreate), whether that is loopback-only, and — if " +
       "tailscale is present — a summary of `tailscale serve status`. Warns loudly when the bind address is " +
-      "0.0.0.0 or ::. The same one-line summary appears in `./clawforge status`. --json emits the same facts " +
+      "0.0.0.0 or ::.\n" +
+      "The same one-line summary appears in `./clawforge status`. --json emits the same facts " +
       "structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.",
     arguments: [
       { name: "action", description: "ssh, tailscale or status", kind: "positional", required: true, choices: ["ssh", "tailscale", "status"] },
@@ -457,79 +461,88 @@ export const managementCommands: Record<string, AppCommand> = {
       "compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE — never " +
       "PROVIDER_MISSING, whose detection is unreliable enough that it would page degraded " +
       "forever on an instance answering fine, nor CONFIG_DRIFT or the rest, which are real " +
-      "but not about whether the instance is serving), then layers on two findings of its " +
-      "own: CHANNEL_UNHEALTHY (degraded) for a configured, enabled channel account that " +
-      "`openclaw channels status --json` reports not running, erroring or not connected " +
-      "(skipped while the gateway itself is down — nothing to exec a CLI call into; verified " +
-      "on OpenClaw 2026.6.34 — that CLI has no dead-letter/delivery-failure signal, only " +
-      "connection/auth trouble, so that is all this reports), and DISK_LOW/DISK_UNKNOWN for " +
-      "the data directory's free space against OC_WATCH_DISK_MIN_MB (default 1024 MB; " +
-      "degraded below it, down below 10% of it or 100 MB, whichever is higher; DISK_UNKNOWN " +
-      "— always degraded, never a silent ok — when `df` itself fails or cannot be parsed). " +
-      "All of this collapses into ok / degraded / down. If gathering the base findings itself " +
-      "fails outright — the Docker daemon down, an SSH host refusing the connection, wsl.exe " +
-      "never answering — that reads as down too, reason TARGET_UNREACHABLE, rather than " +
-      "dying before a cycle can alert or record anything (channel/disk are skipped in that " +
-      "case, and also while NOT_BOOTSTRAPPED — no data directory yet to measure). Compared " +
-      "against the last state persisted for this deployment (its own operator-side " +
+      "but not about whether the instance is serving),\n" +
+      "then layers on two findings of its own: CHANNEL_UNHEALTHY (degraded) for a " +
+      "configured, enabled channel account that `openclaw channels status --json` reports " +
+      "not running, erroring or not connected\n" +
+      "(skipped while the gateway itself is down — nothing to exec a CLI call into; " +
+      "verified on OpenClaw 2026.6.34 — that CLI has no dead-letter/delivery-failure " +
+      "signal, only connection/auth trouble, so that is all this reports),\n" +
+      "and DISK_LOW/DISK_UNKNOWN for the data directory's free space against " +
+      "OC_WATCH_DISK_MIN_MB (default 1024 MB; degraded below it, down below 10% of it or " +
+      "100 MB, whichever is higher; DISK_UNKNOWN — always degraded, never a silent ok — " +
+      "when `df` itself fails or cannot be parsed).\n" +
+      "All of this collapses into ok / degraded / down.\n" +
+      "If gathering the base findings itself fails outright — the Docker daemon down, an " +
+      "SSH host refusing the connection, wsl.exe never answering — that reads as down too, " +
+      "reason TARGET_UNREACHABLE, rather than dying before a cycle can alert or record " +
+      "anything (channel/disk are skipped in that case, and also while NOT_BOOTSTRAPPED — " +
+      "no data directory yet to measure).\n" +
+      "Compared against the last state persisted for this deployment (its own operator-side " +
       "directory, never <data>/config — atomic write); a webhook POST (OC_WATCH_WEBHOOK in " +
       "this deployment's .env, https only unless it is localhost) fires only on a " +
-      "TRANSITION, so an unchanged state never pages anyone twice. A failed POST leaves the " +
-      "persisted level at its old value on purpose, so the same unreported transition is " +
-      "retried next cycle instead of being silently accepted as normal — but the failure " +
-      "itself, and when it happened, is now recorded (`watch status`'s lastError/" +
-      "alertPending), so a broken webhook does not fail forever without a trace between " +
-      "cycles. A configuration error (a bad OC_WATCH_WEBHOOK/OC_WATCH_WEBHOOK_FORMAT/" +
+      "TRANSITION, so an unchanged state never pages anyone twice.\n" +
+      "A failed POST leaves the persisted level at its old value on purpose, so the same " +
+      "unreported transition is retried next cycle instead of being silently accepted as " +
+      "normal — but the failure itself, and when it happened, is now recorded (`watch " +
+      "status`'s lastError/alertPending), so a broken webhook does not fail forever without " +
+      "a trace between cycles.\n" +
+      "A configuration error (a bad OC_WATCH_WEBHOOK/OC_WATCH_WEBHOOK_FORMAT/" +
       "OC_WATCH_TELEGRAM_CHAT_ID/OC_WATCH_HEARTBEAT_URL) is recorded the same way, before a " +
-      "probe cycle ever runs. The exit code reflects the CURRENT state on every cycle, alert " +
-      "or not — 0 while ok, non-zero otherwise — for a scheduler to branch on without " +
-      "reading the text. The webhook URL is never printed, anywhere, including on failure.\n" +
+      "probe cycle ever runs.\n" +
+      "The exit code reflects the CURRENT state on every cycle, alert or not — 0 while ok, " +
+      "non-zero otherwise — for a scheduler to branch on without reading the text.\n" +
+      "The webhook URL is never printed, anywhere, including on failure.\n" +
       "The webhook payload shape follows OC_WATCH_WEBHOOK_FORMAT (generic/slack/discord/" +
       "telegram), or autodetects from the URL host when unset (hooks.slack.com, discord.com/" +
-      "discordapp.com with /api/webhooks/, api.telegram.org). generic keeps the original " +
-      "{deployment, from, to, reasons, at} JSON; slack/discord/telegram instead get a " +
-      "one-two line human message (deployment, from → to, reason codes with a short detail " +
-      "each, and the time), truncated to fit that format's own documented limit (Slack " +
-      "40000, Discord's `content` 2000, Telegram's `text` 4096). telegram additionally needs " +
-      "OC_WATCH_TELEGRAM_CHAT_ID — refused as a configuration error, the same way a bad URL " +
-      "is, before any probe cycle runs — and treats a 2xx response carrying `ok:false` as an " +
-      "undelivered alert exactly like a failed POST (state kept, retried next cycle).\n" +
+      "discordapp.com with /api/webhooks/, api.telegram.org).\n" +
+      "generic keeps the original {deployment, from, to, reasons, at} JSON; slack/discord/" +
+      "telegram instead get a one-two line human message (deployment, from → to, reason " +
+      "codes with a short detail each, and the time), truncated to fit that format's own " +
+      "documented limit (Slack 40000, Discord's `content` 2000, Telegram's `text` 4096).\n" +
+      "telegram additionally needs OC_WATCH_TELEGRAM_CHAT_ID — refused as a configuration " +
+      "error, the same way a bad URL is, before any probe cycle runs — and treats a 2xx " +
+      "response carrying `ok:false` as an undelivered alert exactly like a failed POST " +
+      "(state kept, retried next cycle).\n" +
       "OC_WATCH_HEARTBEAT_URL adds a dead-man's switch: a plain GET, fired every cycle whose " +
       "OWN level reads ok (never on degraded/down, and never affecting level or exit code on " +
       "its own) — https only unless it is localhost, a secret registered the same way the " +
-      "webhook is. Works with healthchecks.io, Uptime Kuma's push monitor and Better Stack's " +
-      "heartbeat monitor, all three of which accept a bare GET. When the instance, or the " +
-      "scheduler running `watch check` itself, stops entirely, the pings simply stop and " +
-      "that external service raises its own alert — the one failure mode a webhook fired " +
-      "FROM here can never report. A failed ping is a warning in this cycle's output and in " +
-      "`watch status` (last heartbeat error), never a level change or a non-zero exit by " +
-      "itself.\n" +
+      "webhook is.\n" +
+      "Works with healthchecks.io, Uptime Kuma's push monitor and Better Stack's heartbeat " +
+      "monitor, all three of which accept a bare GET.\n" +
+      "When the instance, or the scheduler running `watch check` itself, stops entirely, " +
+      "the pings simply stop and that external service raises its own alert — the one " +
+      "failure mode a webhook fired FROM here can never report.\n" +
+      "A failed ping is a warning in this cycle's output and in `watch status` (last " +
+      "heartbeat error), never a level change or a non-zero exit by itself.\n" +
       "install / uninstall — print (and, with --apply, install through the transport) a " +
       "crontab entry that runs `watch check` every --interval minutes (default 5; 1-59 steps " +
       "cron's own minute field, an exact multiple of 60 up to 1440 steps the hour field " +
-      "instead — anything else is refused rather than silently misfiring hourly), marked " +
-      "so a re-run replaces only its own line and uninstall removes only it. Only where " +
-      "this framework can actually trust an unattended cron to find this tooling's own " +
-      "node and checkout: a real SSH host (deploy already mirrored the checkout there) or a " +
-      "POSIX `local` target. A WSL target's Docker distro is not such a place, and neither " +
-      "is Windows itself (no crontab/systemd) — there this prints, instead of installing " +
-      "something that silently never runs, the exact command an operator-side scheduler " +
-      "(Task Scheduler on Windows) would need to invoke, using the transport's own " +
-      "clientInvocation(); it never creates or touches a real one.\n" +
+      "instead — anything else is refused rather than silently misfiring hourly),\n" +
+      "marked so a re-run replaces only its own line and uninstall removes only it.\n" +
+      "Only where this framework can actually trust an unattended cron to find this " +
+      "tooling's own node and checkout: a real SSH host (deploy already mirrored the " +
+      "checkout there) or a POSIX `local` target.\n" +
+      "A WSL target's Docker distro is not such a place, and neither is Windows itself (no " +
+      "crontab/systemd) — there this prints, instead of installing something that silently " +
+      "never runs, the exact command an operator-side scheduler (Task Scheduler on Windows) " +
+      "would need to invoke, using the transport's own clientInvocation(); it never creates " +
+      "or touches a real one.\n" +
       "status — the persisted last state, when it last changed, and whether a webhook/" +
       "heartbeat is configured (plus the heartbeat's own last successful ping time, and its " +
-      "last failure if the most recent ping did not succeed) — never either URL itself. Also " +
-      "reports when `watch check` last ran at all (a config error or a failed delivery still " +
-      "counts), the most recent config/delivery error, an alert still waiting to be " +
-      "delivered (since when, and what transition), and warns when that last run is stale — " +
+      "last failure if the most recent ping did not succeed) — never either URL itself.\n" +
+      "Also reports when `watch check` last ran at all (a config error or a failed delivery " +
+      "still counts), the most recent config/delivery error, an alert still waiting to be " +
+      "delivered (since when, and what transition), and warns when that last run is stale —\n" +
       "more than 3x the interval `watch install --apply` recorded, or 3x the default (5 " +
       "minutes) when no interval was ever recorded (a state file from before this field, or " +
       "a schedule wired up by hand outside `watch install`).\n" +
       "test — sends one webhook message (clearly marked as a test, never shaped like a real " +
       "transition) and one heartbeat ping through whichever of OC_WATCH_WEBHOOK/" +
       "OC_WATCH_HEARTBEAT_URL is configured, so delivery can be proven before a real outage " +
-      "is the first time it is tried. Reports success or failure per target and exits " +
-      "non-zero if a configured one failed; says so plainly when neither is configured. " +
+      "is the first time it is tried.\n" +
+      "Reports success or failure per target and exits non-zero if a configured one failed; " +
+      "says so plainly when neither is configured.\n" +
       "Never touches level/reasons or a pending alert — only the heartbeat's own last-ping " +
       "fields move, the same way a real cycle's heartbeat ping does.",
     arguments: [
@@ -553,26 +566,35 @@ export const managementCommands: Record<string, AppCommand> = {
     details:
       "OpenClaw's own incident runbook, in order: contain — turns off, on the target, only the " +
       "`tailscale serve` route(s) that proxy to THIS gateway (never `tailscale serve reset`, " +
-      "which would also drop every other service's own route on that host); when the route " +
-      "shape cannot be parsed reliably, nothing is turned off and the exact manual command is " +
-      "printed instead. Refuses the whole run outright while the gateway is published on every " +
+      "which would also drop every other service's own route on that host);\n" +
+      "when the route shape cannot be parsed reliably, nothing is turned off and the exact " +
+      "manual command is printed instead.\n" +
+      "Refuses the whole run outright while the gateway is published on every " +
       "interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and ./clawforge up, or pass " +
-      "--keep-exposure if that is already handled elsewhere. A contain failure (most commonly, " +
+      "--keep-exposure if that is already handled elsewhere.\n" +
+      "A contain failure (most commonly, " +
       "this account is not the tailscale operator on the target — the report names the fix) is " +
-      "noted, never fatal: rotate still runs. preserve — before rotate can recreate the " +
+      "noted, never fatal: rotate still runs.\n" +
+      "preserve — before rotate can recreate the " +
       "container, a log tail and a raw `docker inspect` of the container running right now are " +
-      "written into this run's own evidence directory; compose removes the old container once " +
-      "the new one is up, and its json-file log goes with it, so this has to happen first. " +
+      "written into this run's own evidence directory;\n" +
+      "compose removes the old container once " +
+      "the new one is up, and its json-file log goes with it, so this has to happen first.\n" +
       "rotate — a fresh OPENCLAW_GATEWAY_TOKEN, written to .env and recreated into the running " +
       "container so it actually takes effect (a repo-env value like this one is fixed at " +
-      "container-creation time); every MCP client paired against the old token needs " +
-      "./clawforge mcp-creds again. audit — the same security gate `./clawforge doctor`/`./clawforge accept` " +
-      "run, plus `openclaw doctor --lint`, both reported here rather than gating the run. collect " +
+      "container-creation time);\n" +
+      "every MCP client paired against the old token needs " +
+      "./clawforge mcp-creds again.\n" +
+      "audit — the same security gate `./clawforge doctor`/`./clawforge accept` " +
+      "run, plus `openclaw doctor --lint`, both reported here rather than gating the run.\n" +
+      "collect " +
       "— a bounded log tail of whatever is running by then, both audit outputs and a short " +
       "status summary, joined with preserve's own files into one manifest, into a private, " +
       "owner-only apps/<name>/incidents/<timestamp>/ directory — never inside the repository's " +
-      "tracked tree (apps/ is gitignored wholesale); every file is masked for known secrets " +
-      "before it is written. preserve and collect run and write unconditionally, even when " +
+      "tracked tree (apps/ is gitignored wholesale);\n" +
+      "every file is masked for known secrets " +
+      "before it is written.\n" +
+      "preserve and collect run and write unconditionally, even when " +
       "rotate or audit fails: the report still shows where the evidence landed, and the " +
       "original failure still reaches you afterwards as a non-zero exit.\n" +
       "Mutating (rotate recreates the gateway) — takes the instance lock. --dry-run prints the " +

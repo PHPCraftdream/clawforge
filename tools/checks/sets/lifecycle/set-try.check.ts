@@ -9,19 +9,7 @@ import { extname, relative, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem, parseSetTryArgs, setTryModuleUrl } from "#framework/commands/sets/set-try.ts";
 import { frameworkRoot } from "#framework/core/env.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 // --- findFreePort: skips a port something is actually listening on ------------------------
 
@@ -182,5 +170,4 @@ check("unknown target modes are refused", tryTargetProblem("other", "win32")?.in
   check("and restored in the same finally block that restores the real directory", restoredAt > finallyAt && finallyAt > 0, true);
 }
 
-process.stderr.write(failed === 0 ? "all set try checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("set try");

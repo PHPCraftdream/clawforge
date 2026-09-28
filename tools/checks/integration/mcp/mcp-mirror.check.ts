@@ -19,20 +19,7 @@ import { createApp, appsDir } from "#framework/integration/deployment/scaffold.t
 import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA } from "#framework/integration/mcp/server.ts";
 import { STRUCTURED_ENVELOPE_HELP } from "#framework/core/io/help-render.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function run(args: string[], input = ""): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolvePromise) => {
@@ -213,5 +200,4 @@ try {
   await rm(resolve(appsDir, deployment), { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all mcp-mirror checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("mcp-mirror");

@@ -14,19 +14,7 @@ import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { LocalTransport, SshTransport, WslTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix, describeInvocation } from "#framework/runtime/transport/transport.ts";
 import type { ExecResult, ExecOptions, CommandFailure } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 // --- local: a real directory tree -----------------------------------------------------
 
@@ -671,5 +659,4 @@ const NOISE_LINE_SOURCE = "'time=\"2026-09-27T00:00:00Z\" level=warning msg=\"' 
   check("local: the escalation lands well inside the child's failsafe window", elapsed < 8500, true);
 }
 
-process.stderr.write(failed === 0 ? "all transport listing checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("transport listing");

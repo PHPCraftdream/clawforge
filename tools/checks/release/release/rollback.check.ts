@@ -8,19 +8,7 @@ import { operationToRollback } from "#framework/commands/orchestration/rollback.
 import { Journal } from "#framework/service/operations.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function stubContext() {
   const files = new Map<string, string>();
@@ -131,5 +119,4 @@ async function refusal(ctx: Context, wanted?: string): Promise<string> {
   check("an explicitly named older operation is honoured", named.id, older.id);
 }
 
-process.stderr.write(failed === 0 ? "all rollback checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("rollback");

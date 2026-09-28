@@ -17,19 +17,7 @@ import type { LockPlugin, LockSkill } from "#framework/commands/management/exten
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 const files = { "server.ts": "a".repeat(64), "data/page.md": "b".repeat(64) };
 
@@ -329,5 +317,4 @@ check("and confirms secrets are already kept out of that new repository", initAd
   }
 }
 
-process.stderr.write(failed === 0 ? "all lock checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("lock");

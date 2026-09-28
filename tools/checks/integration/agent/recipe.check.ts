@@ -16,20 +16,7 @@ import {
   useRecipesDir,
 } from "#framework/service/recipe.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** Runs `fn`, returns the thrown message. Records a failure (and returns "") if it did not throw. */
 async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string> {
@@ -38,8 +25,7 @@ async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string>
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected a throw, got none\n`);
+  check(name, "did not throw", "threw");
   return "";
 }
 
@@ -691,5 +677,4 @@ try {
   await rm(scratch, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all recipe checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("recipe");

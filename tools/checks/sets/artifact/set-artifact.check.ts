@@ -7,12 +7,7 @@ import { checksumOf } from "#framework/service/checksums.ts";
 import { setManifestId } from "#framework/set/artifacts/model.ts";
 import { unpackArtifact, withUnpackedArtifact } from "#framework/set/artifacts/install.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) process.stderr.write(`  ok   ${name}\n`);
-  else { failed += 1; process.stderr.write(`  FAIL ${name}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}\n`); }
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-set-artifact-check-"));
 try {
@@ -51,5 +46,4 @@ try {
   await rm(root, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all set artifact checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("set artifact");

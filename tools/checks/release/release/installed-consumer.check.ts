@@ -18,19 +18,7 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 interface Run {
   code: number;
@@ -86,9 +74,10 @@ try {
   const tarballs = packed.code === 0 ? (await readdir(base)).filter((entry) => entry.endsWith(".tgz")) : [];
 
   if (tarballs.length === 0) {
-    failed += 1;
-    process.stderr.write(`  FAIL npm pack produced no tarball\n    ${packed.output.trim().split("\n").slice(-3).join("\n    ")}\n`);
-  } else {
+    process.stderr.write(`    ${packed.output.trim().split("\n").slice(-3).join("\n    ")}\n`);
+  }
+  check("npm pack produces a tarball", tarballs.length > 0, true);
+  if (tarballs.length > 0) {
     const extracted = join(base, "extracted");
     await mkdir(extracted, { recursive: true });
     // Relative paths, with the working directory doing the work: GNU tar reads `D:\x` as a
@@ -186,5 +175,4 @@ void summaryTypeGuard;
   await rm(base, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all installed consumer checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("installed consumer");

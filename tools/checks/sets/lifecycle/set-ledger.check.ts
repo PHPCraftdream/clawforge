@@ -33,19 +33,7 @@ import { InstalledSetUnreadableError, readInstalledSetStrict } from "#framework/
 import { buildSet } from "#framework/commands/sets/set.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { createFixture } from "./set-lifecycle/fixture.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function jsonResult(value: unknown) {
   return { code: 0, stdout: JSON.stringify(value), stderr: "" };
@@ -54,15 +42,9 @@ function jsonResult(value: unknown) {
 async function checkThrows(name: string, body: () => Promise<unknown>): Promise<void> {
   try {
     await body();
-    failed += 1;
-    process.stderr.write(`  FAIL ${name}\n    expected a throw, got none\n`);
+    check(name, "did not throw", "LedgerUnreadableError");
   } catch (error) {
-    if (error instanceof LedgerUnreadableError) {
-      process.stderr.write(`  ok   ${name}\n`);
-    } else {
-      failed += 1;
-      process.stderr.write(`  FAIL ${name}\n    expected LedgerUnreadableError, got ${(error as Error)?.name ?? error}\n`);
-    }
+    check(name, error instanceof LedgerUnreadableError ? "LedgerUnreadableError" : ((error as Error)?.name ?? String(error)), "LedgerUnreadableError");
   }
 }
 
@@ -558,5 +540,4 @@ function inspectionWith(problems: Problem[]): Inspection {
   }
 }
 
-process.stderr.write(failed === 0 ? "all set ledger checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("set ledger");

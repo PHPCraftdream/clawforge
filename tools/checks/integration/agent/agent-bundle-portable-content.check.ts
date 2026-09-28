@@ -58,20 +58,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -429,5 +416,4 @@ try {
   else useDeployment(previousDeployment);
 }
 
-process.stderr.write(failed === 0 ? "all agent-bundle portable-content checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("agent-bundle portable-content");

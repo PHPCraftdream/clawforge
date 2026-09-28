@@ -19,17 +19,7 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -274,5 +264,4 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
   check("a hot backup names the running stack", result.output.includes("remain running during this transaction"), true);
 }
 
-process.stderr.write(failed === 0 ? "all recipe lifecycle hook checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("recipe lifecycle hook");

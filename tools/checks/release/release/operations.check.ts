@@ -11,19 +11,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { LocalTransport } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** A target that is just a map of paths to contents. */
 function stubContext(seed: Record<string, string> = {}) {
@@ -446,5 +434,4 @@ async function captureCli(body: () => Promise<void>): Promise<string> {
   check("asking for an operation id nothing recorded refuses", message.includes("no operation"), true);
 }
 
-process.stderr.write(failed === 0 ? "all operation journal checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("operation journal");

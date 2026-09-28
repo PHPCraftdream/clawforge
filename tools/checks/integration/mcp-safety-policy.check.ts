@@ -1,7 +1,6 @@
 // Pins which MCP actions need confirmation, what that confirmation translates to, and
 // whether an action changed state. The real-server fixture uses a local transport only.
 
-import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,19 +9,9 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import { inputSchema, toArgv, toolEnvelope } from "#framework/integration/mcp/schema.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
 useLinuxHost();
-
-let failures = 0;
-function check(name: string, actual: unknown, expected: unknown): void {
-  try {
-    assert.deepEqual(actual, expected);
-    process.stderr.write(`  ok   ${name}\n`);
-  } catch {
-    failures += 1;
-    process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-  }
-}
 
 function runServer(script: string, input: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
@@ -117,5 +106,4 @@ function runServer(script: string, input: string): Promise<{ code: number | null
   }
 }
 
-process.stderr.write(failures === 0 ? "all MCP safety policy checks passed\n" : `${failures} failed\n`);
-if (failures > 0) process.exitCode = 1;
+finish("MCP safety policy");

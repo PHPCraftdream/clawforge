@@ -13,19 +13,7 @@ import { initApp } from "#framework/integration/deployment/init.ts";
 import { deploymentEnv as templateEnv, gitignoreLines as templateLines, nextStepsLines, isUnderSrv, updateGitignore } from "#framework/integration/deployment/deployment-template.ts";
 import { projectPort } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 async function run(root: string): Promise<string | undefined> {
   let message: string | undefined;
@@ -466,5 +454,4 @@ async function gatewayPortOf(root: string): Promise<number> {
   }
 }
 
-process.stderr.write(failed === 0 ? "all init checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("init");

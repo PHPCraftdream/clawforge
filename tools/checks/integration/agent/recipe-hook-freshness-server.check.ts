@@ -18,18 +18,19 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
+import { deepStrictEqual } from "node:assert/strict";
+import { check, finish } from "#checks/kit/harness.ts";
 
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
+// Tracks pass/fail alongside the harness's own counter, only so the diagnostic dump below
+// can stay conditional on "something in this file failed" — the harness keeps no such count.
+let anyFailed = false;
+function checkTracked(name: string, actual: unknown, expected: unknown): void {
+  check(name, actual, expected);
+  try {
+    deepStrictEqual(actual, expected);
+  } catch {
+    anyFailed = true;
   }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
 }
 
 /** One live stdio session: one request at a time, each answer awaited before the next
@@ -106,26 +107,25 @@ try {
     server.call({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "recipe", arguments: { action: "verify", name: "probe", confirm: true } } });
 
   const first = await verifyCall(1);
-  check("the first verify succeeds", (first.result as { isError?: boolean } | undefined)?.isError, undefined);
-  check("the first verify answers hook A's payload", revisionOf(first), 1);
+  checkTracked("the first verify succeeds", (first.result as { isError?: boolean } | undefined)?.isError, undefined);
+  checkTracked("the first verify answers hook A's payload", revisionOf(first), 1);
 
   await writeFile(verifyPath, hook(2), "utf8");
   const second = await verifyCall(2);
-  check(
+  checkTracked(
     "the same server, asked again after the file changed, answers the edited hook — not the module cached from the first call",
     revisionOf(second),
     2,
   );
 
   const third = await verifyCall(3);
-  check("a third call with no further edit keeps answering the fresh module", revisionOf(third), 2);
+  checkTracked("a third call with no further edit keeps answering the fresh module", revisionOf(third), 2);
 
   const code = await server.close();
-  check("the server survives the mid-session swap and exits cleanly", code, 0);
-  if (failed > 0) process.stderr.write(`server stderr:\n${server.diagnostics()}\n`);
+  checkTracked("the server survives the mid-session swap and exits cleanly", code, 0);
+  if (anyFailed) process.stderr.write(`server stderr:\n${server.diagnostics()}\n`);
 } finally {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all mcp-hook-freshness checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("mcp-hook-freshness");

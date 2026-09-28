@@ -18,20 +18,7 @@ import type { Settings } from "#framework/core/env.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 import type { Stack, StackServiceState } from "#framework/runtime/runtime.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** Runs `fn`, returns the thrown message. Records a failure (and returns "") if it did not throw. */
 async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string> {
@@ -40,8 +27,7 @@ async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string>
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected a throw, got none\n`);
+  check(name, "did not throw", "threw");
   return "";
 }
 
@@ -315,10 +301,13 @@ try {
       dockerCalls.some((args) => args.includes("ps") && args.includes("--all") && args.includes("--format")),
       true,
     );
+    // health is present-but-undefined, not absent: a service that declares no healthcheck
+    // has no health opinion at all (runtime.ts's StackServiceState), a fact distinct from
+    // never having asked — the field is always reported, only its value is unset.
     check(
       "(a) a stopped container is part of the reported states, not filtered out of them",
       states,
-      { gateway: { running: true }, worker: { running: false } },
+      { gateway: { running: true, health: undefined }, worker: { running: false, health: undefined } },
     );
 
     psOutput = [
@@ -412,5 +401,4 @@ try {
   await rm(scratch, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all recipe readiness checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("recipe readiness");

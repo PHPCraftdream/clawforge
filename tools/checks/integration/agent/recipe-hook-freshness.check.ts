@@ -15,8 +15,7 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
+import { check, finish } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -32,18 +31,6 @@ async function trySymlink(target: string, path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
 }
 
 /** A fresh stub `ctx` whose stack() returns spies recording build/up calls, and whose transport is
@@ -694,5 +681,4 @@ try {
   }
 }
 
-process.stderr.write(failed === 0 ? "all recipe hook freshness checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("recipe hook freshness");

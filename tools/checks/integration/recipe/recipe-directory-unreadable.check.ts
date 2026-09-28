@@ -8,19 +8,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { listRecipes, listBrokenRecipes, listAgentBundleRecipes, useRecipesDir, clearRecipesDir } from "#framework/service/recipe.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string> {
   try {
@@ -28,8 +16,7 @@ async function messageOf<T>(name: string, fn: () => Promise<T>): Promise<string>
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected a throw, got none\n`);
+  check(name, "did not throw", "threw");
   return "";
 }
 
@@ -51,5 +38,4 @@ try {
   await rm(root, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all recipe-directory-unreadable checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("recipe-directory-unreadable");

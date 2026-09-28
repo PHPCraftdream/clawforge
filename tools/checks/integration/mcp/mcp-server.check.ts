@@ -22,21 +22,9 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
 useLinuxHost();
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
 
 const lines = [
   "null",
@@ -160,7 +148,7 @@ try {
   // must not quietly promise a shape the rest do not return.
   check("a command that returns a log does not claim one", byName.get("status")?.outputSchema, undefined);
   check("the recipe tool declares one envelope schema for every action", byName.get("recipe")?.outputSchema !== undefined, true);
-  deep("and it is the envelope schema itself", byName.get("recipe")?.outputSchema, STRUCTURED_OUTPUT_SCHEMA);
+  check("and it is the envelope schema itself", byName.get("recipe")?.outputSchema, STRUCTURED_OUTPUT_SCHEMA);
   check("nor does a gate command", byName.get("check")?.outputSchema, undefined);
 } finally {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
@@ -226,7 +214,7 @@ try {
   check("recipe diagnose is mutating for MCP gating, same reason as verify", openclawCommands.recipe!.readOnlyWhen?.(["diagnose"]), false);
   const recipeProperties = inputSchema(openclawCommands.recipe!).properties as Record<string, { enum?: string[] }> | undefined;
   const recipeActionSchema = recipeProperties?.action;
-  deep(
+  check(
     "recipe MCP schema documents import/verify/onboard/diagnose actions",
     recipeActionSchema?.enum,
     ["list", "import", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
@@ -261,11 +249,11 @@ try {
   const recipeCommand = openclawCommands.recipe!;
   const declared = new Map((recipeCommand.arguments ?? []).map((argument) => [argument.name, argument]));
   const plain = { action: "import", name: "fixture-source", confirm: true };
-  deep("import without a rename validates clean", validate(recipeCommand, plain), []);
-  deep("and builds exactly the two positionals the dispatcher reads as source-only", toArgv(recipeCommand, plain), ["import", "fixture-source"]);
+  check("import without a rename validates clean", validate(recipeCommand, plain), []);
+  check("and builds exactly the two positionals the dispatcher reads as source-only", toArgv(recipeCommand, plain), ["import", "fixture-source"]);
   const renamed = { action: "import", name: "fixture-source", "new-name": "renamed", confirm: true };
-  deep("import with a rename validates clean", validate(recipeCommand, renamed), []);
-  deep("and builds the three positionals in the order the dispatcher destructures", toArgv(recipeCommand, renamed), ["import", "fixture-source", "renamed"]);
+  check("import with a rename validates clean", validate(recipeCommand, renamed), []);
+  check("and builds the three positionals in the order the dispatcher destructures", toArgv(recipeCommand, renamed), ["import", "fixture-source", "renamed"]);
   check("import's positional is described as the source, not the destination", declared.get("name")?.description?.includes("source"), true);
   check("the wrong 'destination' wording is gone from it", declared.get("name")?.description?.includes("destination"), false);
   check("the rename is declared as its own positional", declared.get("new-name")?.kind, "positional");
@@ -359,7 +347,7 @@ try {
     const onboardStructured = (byId.get(3)?.result as { structuredContent?: { changed?: boolean; result?: unknown } } | undefined)?.structuredContent;
     check("confirmed recipe onboard succeeds", byId.get(3)?.error, undefined);
     check("a confirmed onboard is not reported as changed:false", onboardStructured?.changed, true);
-    deep("onboard's own JSON rides in the envelope whole", onboardStructured?.result, { ok: true, steps: ["dashboard ready"] });
+    check("onboard's own JSON rides in the envelope whole", onboardStructured?.result, { ok: true, steps: ["dashboard ready"] });
     const listReply = byId.get(4)?.result as { structuredContent?: { changed?: boolean; result?: unknown } } | undefined;
     check("recipe list answers in the declared envelope too", listReply?.structuredContent !== undefined, true);
     check("a read-only action's envelope reports it changed nothing", listReply?.structuredContent?.changed, false);
@@ -419,10 +407,6 @@ try {
 // case that matters most is a command that reports findings and then fails on them: the
 // document it emitted is still valid and is still what the caller needs.
 
-function deep(name: string, actual: unknown, expected: unknown): void {
-  check(name, JSON.stringify(actual), JSON.stringify(expected));
-}
-
 /** Validates a value against the subset of JSON Schema the declared output schema uses —
  *  driven by the schema object itself, so a future envelope change tightens or loosens
  *  this sweep with it instead of leaving the two to drift. */
@@ -459,8 +443,8 @@ function conforms(
   check("a read-only command states it changed nothing", envelope?.changed, false);
   check("the verdict is carried", envelope?.healthy, false);
   check("problems come through whole", envelope?.problems.length, 2);
-  deep("warnings are the non-blocking subset", envelope?.warnings, [{ code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawforge lock" }]);
-  deep("the remedies are a list", envelope?.nextActions, ["./clawforge apply", "./clawforge lock"]);
+  check("warnings are the non-blocking subset", envelope?.warnings, [{ code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawforge lock" }]);
+  check("the remedies are a list", envelope?.nextActions, ["./clawforge apply", "./clawforge lock"]);
   check("the call names itself", envelope?.operationId, "op-1");
   check("and the command's own document is kept unaltered", JSON.stringify(envelope?.result), payload);
 }
@@ -480,7 +464,7 @@ function conforms(
   // the thread.
   const envelope = structuredResult({ summary: "s", structured: true }, JSON.stringify({ healthy: true }), "op-2");
   check("a mutating command that stays silent is assumed to have changed something", envelope?.changed, true);
-  deep("and absent fields stay absent rather than being invented", [envelope?.problems, envelope?.nextActions], [[], []]);
+  check("and absent fields stay absent rather than being invented", [envelope?.problems, envelope?.nextActions], [[], []]);
 }
 
 {
@@ -566,7 +550,7 @@ function conforms(
 
     const listed = ((byId.get(0)?.result as { tools?: Array<{ name: string; outputSchema?: unknown }> } | undefined)?.tools ?? []);
     const byName = new Map(listed.map((tool) => [tool.name, tool]));
-    deep("the sweep declares the same schema the real server does", byName.get("recipe")?.outputSchema, STRUCTURED_OUTPUT_SCHEMA);
+    check("the sweep declares the same schema the real server does", byName.get("recipe")?.outputSchema, STRUCTURED_OUTPUT_SCHEMA);
     check("a tool without structured metadata declares no schema", byName.get("notes")?.outputSchema, undefined);
 
     const schema = byName.get("recipe")?.outputSchema as Parameters<typeof conforms>[0] | undefined;
@@ -583,9 +567,9 @@ function conforms(
 
     const envelopeResult = (action: string): unknown =>
       (byId.get(actionChoices.indexOf(action) + 1)?.result as { structuredContent?: { result?: unknown } } | undefined)?.structuredContent?.result;
-    deep("verify: the hook's JSON rides in the envelope whole", envelopeResult("verify"), { ok: true, problems: [] });
-    deep("onboard: the same for its own document", envelopeResult("onboard"), { ok: true, steps: ["dashboard ready"] });
-    deep("diagnose: the same for its report", envelopeResult("diagnose"), { recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" });
+    check("verify: the hook's JSON rides in the envelope whole", envelopeResult("verify"), { ok: true, problems: [] });
+    check("onboard: the same for its own document", envelopeResult("onboard"), { ok: true, steps: ["dashboard ready"] });
+    check("diagnose: the same for its report", envelopeResult("diagnose"), { recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" });
     for (const action of ["list", "import", "install", "remove", "status", "logs"]) {
       check(`${action}: a text action carries its text as the result`, typeof envelopeResult(action) === "string" && String(envelopeResult(action)).length > 0, true);
     }
@@ -678,7 +662,7 @@ function conforms(
     check("gate-fail: and it masks the token too", gateErr?.text.includes(secret), false);
 
     check("mcp-creds is the one command declaring a deliberate export", openclawCommands["mcp-creds"]?.exportsSecrets === true, true);
-    deep(
+    check(
       "and no other command claims the exemption",
       Object.keys(openclawCommands).filter((name) => openclawCommands[name]?.exportsSecrets === true),
       ["mcp-creds"],
@@ -688,5 +672,4 @@ function conforms(
   }
 }
 
-process.stderr.write(failed === 0 ? "all mcp-server checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("mcp-server");

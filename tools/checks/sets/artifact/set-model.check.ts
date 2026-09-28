@@ -15,19 +15,7 @@ import {
 } from "#framework/set/artifacts/model.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { SetManifest, SetManifestInput, SetRecipe } from "#framework/set/artifacts/model.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 // A fake instance value: it must never appear in a manifest, but the scan that checks
 // that must itself be able to fire when one does.
@@ -318,5 +306,4 @@ check(
 check("the config declaration enters the file map by its deployment-relative path", Object.keys(builtOne.files).includes(DESIRED_STATE_PATH), true);
 check("the manifest carries the set format version", builtOne.version, SET_MANIFEST_VERSION);
 
-process.stderr.write(failed === 0 ? "all set model checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("set model");

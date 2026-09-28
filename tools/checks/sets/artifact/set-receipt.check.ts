@@ -6,15 +6,11 @@ import { tmpdir } from "node:os";
 import { checksumOf } from "#framework/service/checksums.ts";
 import { listReceipts, readReceipt, writeReceipt, type WriteReceiptInput } from "#framework/set/artifacts/receipt.ts";
 import { canonicalJson } from "#framework/set/artifacts/model.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
-let failed = 0;
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) process.stderr.write(`  ok   ${name}\n`);
-  else { failed += 1; process.stderr.write(`  FAIL ${name}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}\n`); }
-}
 async function rejects(name: string, operation: () => Promise<unknown>): Promise<void> {
-  try { await operation(); failed += 1; process.stderr.write(`  FAIL ${name}: did not reject\n`); }
-  catch { process.stderr.write(`  ok   ${name}\n`); }
+  try { await operation(); check(name, "did not reject", "rejected"); }
+  catch { check(name, "rejected", "rejected"); }
 }
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-set-receipt-check-"));
@@ -168,5 +164,4 @@ try {
   await rm(root, { recursive: true, force: true });
 }
 
-process.stderr.write(failed === 0 ? "all set receipt checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("set receipt");

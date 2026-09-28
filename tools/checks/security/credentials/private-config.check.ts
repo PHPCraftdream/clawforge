@@ -21,7 +21,7 @@ assert.equal(upsertEnvValue("A=1\nB=2\n", "B", "updated"), "A=1\nB=updated\n");
 assert.equal(upsertEnvValue("A=1\n", "B", "added"), "A=1\nB=added\n");
 assert.throws(() => upsertEnvValue("", "BAD-NAME", "x"), /invalid environment variable name/);
 assert.throws(() => upsertEnvValue("", "GOOD", "line\nbreak"), /contains a newline/);
-// P2-13: the write side is parseEnv's exact inverse — a padded value used to be written
+// The write side is parseEnv's exact inverse — a padded value used to be written
 // back bare and silently trimmed by the next read. Probe shapes below, not credentials.
 assert.equal(upsertEnvValue("A=1\nPADDED=x\n", "PADDED", " padded "), "A=1\nPADDED=' padded '\n");
 assert.deepEqual(parseEnv(upsertEnvValue("A=1\nPADDED=x\n", "PADDED", " padded ")), { A: "1", PADDED: " padded " });
@@ -461,7 +461,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
 // A link BETWEEN the data directory and the declared root moves the write outside the subtree
 // the declaration covers and is refused, by name; the data root itself may be a link for
 // private writes — they land in the tree the link points to. (Backup is the exception: it
-// refuses a symlinked data root outright, because tar would store the link itself — P2-02.)
+// refuses a symlinked data root outright, because tar would store the link itself.)
 // This needs a real shell over a real filesystem, so the group runs on a real POSIX
 // transport — the machine's own filesystem off Windows, a WSL distribution on it — and
 // skips, loudly through checkExec, only where neither exists.
@@ -518,7 +518,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       checkExec("the file really landed inside the declared root", landed.code, 0);
 
       // Case 3: the data ROOT itself may be a symlink — private writes land in the target
-      // tree (backup refuses such a root: P2-02).
+      // tree (backup refuses such a root).
       await transport.mkdirp(`${root}/data2/real-sub`);
       await transport.exec("ln", ["-s", "data2", `${root}/datalink`]);
       const linkCtx = { settings: { dataDir: `${root}/datalink`, env: {} }, transport } as unknown as Context;
@@ -532,7 +532,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
       checkExec("a symlinked data root stays allowed", linked, "ok");
       const linkedLanding = await transport.exec("test", ["-f", `${root}/data2/real-sub/g.env`], { allowFailure: true });
       checkExec("the write lands in the tree the link points to", linkedLanding.code, 0);
-      // Case 4 (audit 2026-09-22 round 2, P2-01): a link that textual normalization cancels
+      // Case 4: a link that textual normalization cancels
       // but the kernel still walks. `link` points outside the data directory, so
       // `link/../real-sub/f.env` normalizes to the declared `real-sub/f.env` — a scan over
       // the normalized ancestors sees no link at all, accepts, and the write lands at

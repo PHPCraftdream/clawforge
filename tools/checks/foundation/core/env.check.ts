@@ -92,7 +92,7 @@ check(
   },
 );
 
-// --- serializeEnvLine: the write side is parseEnv's exact inverse (P2-13) ----------
+// --- serializeEnvLine: the write side is parseEnv's exact inverse -----------------
 //
 // The store writers (secrets --apply/--dump, upsertEnvValue) route through this single
 // serializer. Every probe below is a structural shape, not a credential, and the check
@@ -180,8 +180,7 @@ try {
 // ensureDataDirs (runtime/datadir.ts) later resolves the canonical root on the target and
 // changes ownership only for what it creates or a provenance marker vouches for, so a loose
 // string here must never even reach that machinery: each of these is asserted to throw
-// before any Context (and so any transport) exists (audit 2026-09-23, XS round 4, P1-01;
-// round 6, P1-09).
+// before any Context (and so any transport) exists.
 
 function rejects(dataDir: string, label: string): void {
   try {
@@ -218,8 +217,8 @@ check("native Windows backupDir is a sibling", windowsSettings.backupDir, "C:\\s
 check("native Windows snapshotDir is a sibling", windowsSettings.snapshotDir, "C:\\srv\\openclaw\\snapshots");
 check("native Windows lock directory is a sibling", locksDir(windowsSettings.dataDir), "C:\\srv\\openclaw\\data-locks");
 
-// P1-09: depth is a backstop, not the safety property. A normal, valid-looking standard
-// directory two segments deep passes on purpose — the safety comes from ensureDataDirs
+// Depth is a backstop, not the safety property. A normal, valid-looking standard directory
+// two segments deep passes on purpose — the safety comes from ensureDataDirs
 // (runtime/datadir.ts), which resolves the canonical root through its ancestors and
 // provenance-gates every ownership change on the real filesystem before any mkdir/chown.
 check(

@@ -1,6 +1,6 @@
 // `./clawforge backup --native` — a consistent snapshot without stopping the gateway, via
 // OpenClaw's own `backup create --verify` in the sidecar, reshaped into the classic archive
-// layout so rotation, naming and restore need no native-specific case (task #7).
+// layout so rotation, naming and restore need no native-specific case.
 
 import { resolve } from "node:path";
 import { createBackup, NativeBackupUnsupportedError, NATIVE_MANIFEST_NAME, omittedOnPurpose } from "#framework/commands/lifecycle/backup.ts";

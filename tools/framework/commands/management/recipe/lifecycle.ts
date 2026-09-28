@@ -1,4 +1,4 @@
-// Recipe lifecycle participation (audit 2026-09-23, XXA round 6, P2-12): the hook-calling
+// Recipe lifecycle participation: the hook-calling
 // contract by which a recipe takes part in the framework's data-tree operations.
 //
 // A recipe participates by shipping app-owned hook files in its own recipe directory,

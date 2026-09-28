@@ -49,7 +49,7 @@ export const LOCK_ARGUMENTS: CommandArgument[] = [
 ];
 
 /** Printed once the lock is written. Its own constant so it can be checked against
- *  scaffold.ts's own git-init note for staying consistent (UX-12): `apps/` is entirely
+ *  scaffold.ts's own git-init note for staying consistent: `apps/` is entirely
  *  gitignored at the monorepo root (root .gitignore, docs/architecture.md), and
  *  setupProjectMcp already writes a NESTED .gitignore into every deployment directory — the
  *  two only make sense together if the deployment directory is meant to become a git

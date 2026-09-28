@@ -489,7 +489,7 @@ function stubContext(listAnswer: unknown) {
   check("a changed agent counts as drift", cronJobMatches({ ...liveJob(), agentId: "someone-else" }, CONFIG, "scheduled message"), false);
   check("a job left on chat delivery counts as drift", cronJobMatches({ ...liveJob(), delivery: { mode: "announce" } }, CONFIG, "scheduled message"), false);
   check("a job left on the main session counts as drift", cronJobMatches({ ...liveJob(), sessionTarget: "main" }, CONFIG, "scheduled message"), false);
-  // --all (task #188) makes a disabled job visible to ensureCronJob at all — it must not
+  // --all makes a disabled job visible to ensureCronJob at all — it must not
   // also count as "still matching" just because every other declared field agrees, or a
   // disabled job would sit disabled forever with nothing ever noticing.
   check("a disabled job does not match even with every other field agreeing", cronJobMatches({ ...liveJob(), enabled: false }, CONFIG, "scheduled message"), false);
@@ -524,8 +524,8 @@ function stubContext(listAnswer: unknown) {
 // The scope-upgrade self-heal these commands rely on lives in openclaw-cli.ts and is
 // covered by openclaw-cli.check.ts — not duplicated here.
 
-// --- P1-02 (docs/internal/review-2026-09-23-xxa-round-6.md): provisioning never writes ---
-// --- through a target symlink --------------------------------------------------------------
+// --- provisioning never writes through a target symlink ----------------------------------
+// --- (see docs/internal/review-2026-09-23-xxa-round-6.md) ---------------------------------
 //
 // syncRecipeFiles/writeWorkspacePromptFiles validated the SOURCE inventory but handed the
 // target path straight to mkdirp/writeFile, both of which follow the final symlink, and

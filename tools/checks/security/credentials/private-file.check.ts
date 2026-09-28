@@ -521,7 +521,7 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
   await dedupeChecks(root);
 }
 
-/** UX-08: the boundary report used to run fresh on every protectPrivateFile call — a
+/** The boundary report used to run fresh on every protectPrivateFile call — a
  *  bootstrap that both created and then generated a token for the same .env printed the same
  *  three-line warning twice before anything useful. Fully scripted (no real WSL install
  *  needed) so this runs in CI the same as everywhere else. */

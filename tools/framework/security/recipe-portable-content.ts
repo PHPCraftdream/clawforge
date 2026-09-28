@@ -1,5 +1,5 @@
 // The recipe portable-content policy: what may LEAVE the recipe's own directory, in one
-// module, for every carrier of recipe bytes (audit 2026-09-22 XA round 2, P1-03).
+// module, for every carrier of recipe bytes.
 //
 // Four commands move recipe content around, and until now only `recipe import` consulted
 // the privateFiles declaration — the other three each had their own answer, which is how a
@@ -22,11 +22,11 @@
 // Two exclusion rules, one boundary matcher. The sensitive-NAME regex is a generic
 // heuristic over the framework's own credential conventions; privateFiles is the
 // application naming its own files the way only it can. Entries match LITERALLY —
-// `vault[1]` is a file name, never a glob (P1-02 was two readers disagreeing about globs,
+// `vault[1]` is a file name, never a glob (two readers once disagreed about globs,
 // and the same mistake must not be rebuilt here). A declaration is read strictly
 // (declaredPrivateFiles): a manifest that exists but cannot be read, parsed or validated
 // stops the carrier instead of reading as "nothing declared" — the quiet-empty failure
-// that once walked a private file into a share archive (audit 2026-09-21, P1-01). An
+// that once walked a private file into a share archive. An
 // ABSENT manifest is honest, not a failure: agent/MCP bundles and plain directories carry
 // no recipe.json and no declaration, and the generic name policy still applies to them.
 //
@@ -36,7 +36,7 @@
 // elsewhere; the audit's recommendation verbatim is to refuse or verify the resolved
 // target stays inside the source root before reading through.
 //
-// The walk ROOT is inside this rule too (round 6, P1-05): containment used to be asked
+// The walk ROOT is inside this rule too: containment used to be asked
 // only of entries whose Dirent reported "symlink", so a walk root that was itself the
 // escape — an `agent/` that is really a link to a directory outside the recipe — had that
 // directory's files walk in as ordinary children. The root is now resolved and
@@ -44,7 +44,7 @@
 // the Dirent claims, and a root that exists but does not resolve fails loudly instead of
 // reading as an absent bundle.
 //
-// Staying inside is necessary but not sufficient, and that gap was the round-3 P1-01: an
+// Staying inside is necessary but not sufficient: an
 // INTERNAL link whose own name is public and whose target is a declared private file or
 // directory read through the alias as if the target had never been declared — by checksums,
 // by the set manifest, by the workspace mirror. So the policy is applied twice over: to the
@@ -101,7 +101,7 @@ export function excludesPortablePath(relativePath: string, declared: readonly st
  *  A symlink resolving outside the recipe directory throws — a link is followed only once
  *  its target is proven to stay inside the recipe's own tree; a directory that points
  *  inside is walked, anything else verified-inside is carried as a file. The WALK ROOT is
- *  held to the same rule before anything is listed (P1-05): it is resolved and contained
+ *  held to the same rule before anything is listed: it is resolved and contained
  *  first, because when the root itself is the escape — an `agent/` that is really a link
  *  to elsewhere — no child Dirent can ever report it; and containment is decided on the
  *  resolved path of every entry, whatever type the Dirent reports. INSIDE is not the
@@ -148,13 +148,13 @@ export async function collectPortableRecipeFiles(
       // MOVES the path — the entry is a link, or is reached through one — and then the two
       // checks above must hold for the real path too. A public name pointing at a private
       // target is still the private target, and a declaration written against the real path
-      // must not be dodgeable by reaching the same directory under an alias (round 3, P1-01).
+      // must not be dodgeable by reaching the same directory under an alias.
       const real = entry.isSymbolicLink()
         ? await realpath(full).catch((error: NodeJS.ErrnoException) => {
             if (error.code === "ENOENT") {
               // A child link that resolves nowhere is a broken bundle, not an absent one:
               // fail the walk under the link's own name rather than a bare ENOENT a caller
-              // could misread as "nothing here" (P1-05).
+              // could misread as "nothing here".
               throw new Error(`${recipeRelative} is a symlink that does not resolve`);
             }
             throw error;
@@ -172,7 +172,7 @@ export async function collectPortableRecipeFiles(
         }
       }
       // Containment is decided on the RESOLVED path of every entry, whatever the Dirent
-      // reports (P1-05): the type bit is the walk's own bookkeeping, not evidence of where
+      // reports: the type bit is the walk's own bookkeeping, not evidence of where
       // the bytes live. Inside a contained walk a plain entry is contained by
       // construction, so this only fires once the walk itself has already escaped — the
       // same refusal a symlink earns, without first asking the Dirent's opinion.
@@ -223,7 +223,7 @@ export async function collectPortableRecipeFiles(
   } catch (error) {
     // A root that is genuinely not there rethrows for the caller to interpret (the agent
     // bundle reads a plain missing agent/ as an honest undefined); a root that EXISTS but
-    // does not resolve — a dangling link — is untrusted, not absent (P1-05), and must fail
+    // does not resolve — a dangling link — is untrusted, not absent, and must fail
     // the walk instead of reading as "no files".
     if (
       (error as NodeJS.ErrnoException).code === "ENOENT"
@@ -256,12 +256,12 @@ export async function collectPortableRecipeFiles(
  *  (commands/management/provision-agent/declaration.ts) used to each answer "what agent
  *  files exist and may this carrier touch them" with their own walk — one policy-checked,
  *  one a raw readdir — which is exactly how a declared-private prompt file stayed out of the
- *  checksum map while direct provisioning copied it anyway (audit 2026-09-23, P1-03). Both
+ *  checksum map while direct provisioning copied it anyway. Both
  *  now call this instead: same walkRoot trick as collectPortableRecipeFiles (declarations
  *  stay recipe-relative even though the walk is rooted at `agent/`), and the same answer to
  *  "no agent bundle at all" — undefined, not a thrown ENOENT, since a plain service recipe
  *  with no agent/ directory is a normal shape, not a failure — and that verdict is the
- *  walk root's OWN absence and nothing else (P1-05): the wrapper probes agent/ directly
+ *  walk root's OWN absence and nothing else: the wrapper probes agent/ directly
  *  and nets no ENOENT around the walk, so a dangling link named agent/, a child link that
  *  does not resolve, or an entry that vanishes mid-walk stops the caller instead of
  *  reading as an honestly-empty bundle. Any other error (an escaping or unresolvable

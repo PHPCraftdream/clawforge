@@ -229,7 +229,7 @@ try {
             return { code: 1, stdout: "", stderr: "" };
           }
           if (command === "readlink" && args[0] === "-f") {
-            // The canonical-ancestry check (P1-09) resolves through the ancestors; a fresh
+            // The canonical-ancestry check resolves through the ancestors; a fresh
             // host has no links, so every path resolves to itself.
             return { code: 0, stdout: `${args[1] ?? ""}\n`, stderr: "" };
           }
@@ -269,7 +269,7 @@ try {
       paths: { toContainer: (path: string) => path },
       runtime: {
         async portConflict(): Promise<string | undefined> { return undefined; },
-        // R9-07 residual: preflightPort now also probes raw listening sockets unless the
+        // preflightPort also probes raw listening sockets unless the
         // deployment's own gateway is already running. A fresh host is not, so this must
         // answer false rather than be missing — undefined-as-a-function threw here before
         // ss/netstat were even asked, well short of the summary this test checks for.
@@ -323,7 +323,7 @@ try {
 // ensureDataDirs' own guard against a symlinked data root: `chown -R` dereferences a symlink
 // named directly on its command line before recursing, so a data directory that is actually
 // a link would hand the recursive chown to whatever it points at instead of this
-// deployment's own tree (audit 2026-09-23, XS round 4, P1-01). No real chown happens on
+// deployment's own tree. No real chown happens on
 // either path below — the stub transport records every exec call, and the check is that
 // "chown" never appears among them once the symlink is reported.
 {
@@ -376,7 +376,7 @@ try {
   );
 }
 
-// P1-09: the root-symlink guard above sees only the FINAL component. A symlink one level
+// The root-symlink guard above sees only the FINAL component. A symlink one level
 // up redirects an externally-deep-looking path into a different tree entirely; the
 // canonical-ancestry check must catch it before any mkdir/chown runs. The stub reports the
 // data directory itself as not-a-link (and absent), but its deepest existing ancestor
@@ -426,7 +426,7 @@ try {
   );
 }
 
-// P1-09: the central "do not auto-adopt" clause — a pre-existing standard tree with the
+// The central "do not auto-adopt" clause — a pre-existing standard tree with the
 // wrong owner and no provenance marker must be refused outright, never silently re-owned.
 // A tree that merely LOOKS like a data directory (someone else's /srv/openclaw/data) must
 // not be handed to the fixed uid just because bootstrap happened to point at it.

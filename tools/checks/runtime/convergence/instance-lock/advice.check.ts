@@ -1,11 +1,11 @@
-// UX-04: a refusal must never advise a flag the refused command does not accept.
+// A refusal must never advise a flag the refused command does not accept.
 //
 // `refusalMessage`/`unreadableLockMessage` take a `breakLockSupported` flag from the calling
 // command's own `guarded()`/`withLockUnlessHeld()` call site (instance-lock.ts) rather than
 // always assuming --break-lock is executable. This file cross-references that against
 // openclawCommands' own declarations (the same list --help, the MCP schema and argv
 // validation read — commands/interface/index.ts), proves the message wording actually changes
-// with the flag, proves the new pid-liveness fact in refusalMessage (task #33) fires only for
+// with the flag, proves the new pid-liveness fact in refusalMessage fires only for
 // a holder recorded on THIS machine, and proves bootstrap/pull's own parsers — which used to
 // reject --break-lock before this fix even reached guarded() — now let it through.
 
@@ -73,7 +73,7 @@ for (const name of ["backup", "configure-provider", "secrets"]) {
   check("and never bare-advises --break-lock", unsupported.includes("take it over with --break-lock"), false);
 }
 
-// --- task #33: a holder provably dead on THIS machine is named as such, never guessed at ------
+// --- a holder provably dead on THIS machine is named as such, never guessed at ----------------
 
 {
   const holder: LockHolder = {

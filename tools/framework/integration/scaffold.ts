@@ -138,7 +138,7 @@ async function updateGitignore(directory: string): Promise<void> {
 }
 
 /** Printed as part of createApp's next-steps, and its own constant so lock.ts's COMMIT_ADVICE
- *  can be checked for staying consistent with it (UX-12). apps/ is entirely gitignored at
+ *  can be checked for staying consistent with it. apps/ is entirely gitignored at
  *  the monorepo root, so this directory has no git history of its own yet — deliberately not
  *  run automatically here (`git init` is the operator's call, not this command's), but named
  *  so "commit it" (lock.ts) has somewhere to point. */

@@ -23,7 +23,7 @@ export function checksumOf(content: string | Uint8Array): string {
  *  prompt, not part of what the recipe serves. See agentBundleChecksums for why that
  *  exclusion must not extend past this function.
  *
- *  The walk runs through the shared portable-content policy (audit 2026-09-22, P1-03), so
+ *  The walk runs through the shared portable-content policy, so
  *  policy-excluded files — declared privateFiles, sensitive names — are left out of this
  *  map too: every consumer of it (set build's manifest, inspect, the lock) shares one
  *  portable-content notion instead of checksumming bytes no carrier may have moved. */
@@ -48,7 +48,7 @@ export async function recipeFileChecksums(recipeDir: string): Promise<Record<str
  *  changed, and has the agent's own definition changed. Both mean the recipe needs
  *  re-provisioning; only the first means the mirror is stale.
  *
- *  Walked through collectPortableAgentBundleFiles (audit 2026-09-23, P1-03) — the same
+ *  Walked through collectPortableAgentBundleFiles — the same
  *  agent-bundle walk loadRecipeAgentBundle uses to actually read the bundle, so a declared
  *  private or sensitive-named prompt/cron file is held out of this checksum map for exactly
  *  the reason direct provisioning holds it out of the workspace, not two independent guesses

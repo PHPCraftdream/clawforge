@@ -1,4 +1,4 @@
-// P1-03 (audit 2026-09-22): the privateFiles declaration is a policy over EVERY carrier of
+// The privateFiles declaration is a policy over EVERY carrier of
 // recipe content, not just `recipe import` — one declaration, four verbs, all reading the
 // same walker in security/recipe-portable-content.ts. These checks prove it against real
 // temp file trees:
@@ -14,13 +14,13 @@
 //   - deploy must REFUSE while a declared private file currently exists in the recipes
 //     tree, before any remote mutation — and must NOT refuse once it is absent, the normal
 //     state after `recipe import` (declared-but-absent is inert);
-//   - and round 3's P1-03 (2026-09-22): that refusal reads the same shared walker as the
+//   - and that refusal reads the same shared walker as the
 //     other three carriers, so an UNDECLARED but sensitive-named file gets one verdict per
 //     name from deploy too, over recipes/ and the synced config/ alike;
 //   - and the symlink containment rule: a link verified to stay inside the recipe tree is
 //     followed (its bytes travel under the link's own name), one resolving outside is
 //     refused by both carriers;
-//   - and round 3's P1-01 (2026-09-22): staying INSIDE was never the whole rule for a link.
+//   - and staying INSIDE was never the whole rule for a link.
 //     An internal alias whose own name is public but whose target is the recipe's own
 //     declared private file or directory used to read through the alias as if the
 //     declaration had never existed — by checksums, by the set manifest, by the mirror.
@@ -112,16 +112,16 @@ function recordingDeployCtx(calls: { command: string; args: string[] }[]): Conte
       description: "stub",
       async exec(command: string, args: string[]): Promise<ExecResult> {
         calls.push({ command, args });
-        // deploy() probes the remote root before its first --delete (round 6, P1-06) —
-        // this stub answers it as an already-empty, unmarked, canonical root, so deploy
-        // proceeds exactly as it did before that probe existed. Not this file's scope
-        // (root adoption has its own dedicated coverage); this only keeps the P1-03
-        // private-declaration scenario below reachable.
-        // deploy() probes the remote root before its first --delete (round 6, P1-06) —
-        // this stub answers it as an already-empty, unmarked, canonical root, so deploy
-        // proceeds exactly as it did before that probe existed. Not this file's scope
-        // (root adoption has its own dedicated coverage); this only keeps the P1-03
-        // private-declaration scenario below reachable.
+        // deploy() probes the remote root before its first --delete — this stub answers it
+        // as an already-empty, unmarked, canonical root, so deploy proceeds exactly as it
+        // did before that probe existed. Not this file's scope (root adoption has its own
+        // dedicated coverage); this only keeps the private-declaration scenario below
+        // reachable.
+        // deploy() probes the remote root before its first --delete — this stub answers it
+        // as an already-empty, unmarked, canonical root, so deploy proceeds exactly as it
+        // did before that probe existed. Not this file's scope (root adoption has its own
+        // dedicated coverage); this only keeps the private-declaration scenario below
+        // reachable.
         if (command === "ssh" && args.includes("sh") && args.includes("-c")) {
           const script = args.at(-1) ?? "";
           // deploy() never receives --path in this file's scenarios, so the remote root is
@@ -338,7 +338,7 @@ try {
     );
     check("with the declared file absent deploy completes and the recipes rsync still happens", recipesSync !== undefined, true);
 
-    // Round 3, P1-03 — one verdict per name: deploy's answer is the policy's answer. The
+    // One verdict per name: deploy's answer is the policy's answer. The
     // scan used to read only privateFiles, so an UNDECLARED but sensitive-named file
     // (.env.local, service.secrets.env, api.token, nested/.env.production) deployed while
     // import, set build and the mirror held the same bytes back — they all walk this same
@@ -460,7 +460,7 @@ try {
     }
   }
 
-  // --- Group F: an internal alias to a private target (round 3, P1-01) -------------------
+  // --- Group F: an internal alias to a private target -------------------------------------
   //
   // Group E proved a link is followed once it stays inside and refused when it escapes. The
   // gap between those two facts is this case: a link that stays inside and lands on the

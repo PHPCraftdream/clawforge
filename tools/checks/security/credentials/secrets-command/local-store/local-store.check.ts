@@ -176,7 +176,7 @@ try {
     },
   } as unknown as Context;
 
-  // --- P2-01: after applying, the operator must be told the action that actually applies
+  // --- after applying, the operator must be told the action that actually applies
   // the change — restart for a running instance, up only for a stopped one — and that the
   // file is already written while the running instance has NOT read it. `up` runs compose
   // up --detach, which leaves an already-running gateway alone, so the old wording
@@ -254,7 +254,7 @@ try {
   check("the status hint names up for a stopped instance", statusStoppedOutput.includes("then ./clawforge up"), true);
   check("the status hint for a stopped instance does not name restart", statusStoppedOutput.includes("./clawforge restart"), false);
 
-  // --- P3-03: the status listing mixes optional requirements in with required ones, and an
+  // --- the status listing mixes optional requirements in with required ones, and an
   // optional secret that is simply not set yet is not missing anything the gateway needs —
   // printing it as MISSING under a "required secrets" heading left the summary line ("all
   // required secrets are present") and the listing contradicting each other. The mark is
@@ -292,7 +292,7 @@ try {
   check("no MISSING mark appears when only an optional entry is absent", successOutput.includes("MISSING"), false);
   check("the optional entry is marked optional on the success path too", successOutput.includes("optional REPO_SECRET"), true);
 
-  // --- P1-02: the store follows the deployment .env's safe-creation contract — owner-only
+  // --- the store follows the deployment .env's safe-creation contract — owner-only
   // from the first byte, on Windows a closed DACL rather than the POSIX mode argument
   // Windows ignores — secrets/ itself is sealed so an editor's atomic replacement does not
   // hand the file back wide inherited permissions, and --apply reports a store whose

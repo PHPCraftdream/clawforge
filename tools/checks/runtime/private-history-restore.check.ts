@@ -1,4 +1,4 @@
-// P1-02 of docs/internal/review-2026-09-22-xa-round-3.md: the privacy ledger lives operator-side at
+// The privacy ledger (see docs/internal/review-2026-09-22-xa-round-3.md) lives operator-side at
 // <deployment>/config/private-paths.json, but a full backup publishes a copy into the data
 // root at <dataDir>/config/clawforge-private-paths.json (createArchive, profile "full"), and
 // restoreArchive imports it back into the deployment ledger after verifyRestoredLayout.
@@ -11,7 +11,7 @@
 // ledger that exists but cannot be read is still fail-open for one that is simply not there.
 //
 // Part A drives the ledger/history contract itself — the publish unit (including the
-// adopt-existing-target and explicit-forget-still-clears-both-copies scenarios of P2-01,
+// adopt-existing-target and explicit-forget-still-clears-both-copies scenarios (see
 // docs/internal/review-2026-09-23-xs-round-4.md), the import's merge and its two refusals. It needs no
 // target and runs everywhere.
 // Part B is the whole scenario over real GNU tar and a real POSIX filesystem (LocalTransport
@@ -100,7 +100,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
 }
 
 /** Writes test-fixture content into a real target path that a prior restore may already have
- *  re-owned to the fixed container uid (round 6/7 P1-09): the content travels as a positional
+ *  re-owned to the fixed container uid: the content travels as a positional
  *  shell argument, never interpolated, so it needs no quoting regardless of what it contains. */
 async function privilegedWrite(ctx: Context, transport: Transport, path: string, content: string): Promise<void> {
   const prefix = await sudoFor(ctx, path);
@@ -163,7 +163,7 @@ try {
   // A real recorded write (the ledger itself, no target), then the publish unit: the copy is
   // written through the transport's private write into the data root, and names exactly what
   // was recorded — sorted, as writeLedger writes it. The declared boundary is passed
-  // explicitly (round 3, P2-01): recordPrivateWrite no longer infers ancestors from the path
+  // explicitly: recordPrivateWrite no longer infers ancestors from the path
   // alone, so a synthetic "vault" directory declaration is named here the way a real caller
   // (assertDeclaredPrivatePath) would.
   await recordPrivateWrite("vault/credentials.env", "vault");
@@ -192,7 +192,7 @@ try {
   // ledger and expects exactly RECORDED there.
   await rm(privatePathsLedgerFile(), { force: true });
 
-  // P2-01 of docs/internal/review-2026-09-23-xs-round-4.md: an empty LOCAL ledger used to make
+  // An empty LOCAL ledger (see docs/internal/review-2026-09-23-xs-round-4.md) used to make
   // publishPrivatePathsHistory remove any target copy outright — which does not distinguish
   // "the operator explicitly forgot this history" from "this deployment folder never wrote a
   // ledger of its own, and the target is the only surviving record" (a lost or freshly
@@ -425,7 +425,7 @@ try {
     // Defense in depth, the snapshot.check shape: an archive with no exclusions at all — so,
     // unlike createArchive, this deliberately walks straight into sidecar-private AND
     // auth-secrets. Real read access to either needs the same per-source escalation
-    // createArchive itself now asks for (round 6 P2-05, round 7 P2-08 CI fallout): a CI
+    // createArchive itself now asks for: a CI
     // identity that owns this tree's other files outright still cannot open a directory
     // locked to 1000:1000 mode 700 — ensureDataDirs' own auth-secrets among them once its
     // ownership actually differs from this identity, not just the recipe's sidecar-private.
@@ -504,7 +504,7 @@ try {
     );
   }
 
-  // === PART C — P2-02 (audit 2026-09-23 round 4): a failure staged AFTER the history import
+  // === PART C — a failure staged AFTER the history import
   // succeeded must undo that import along with the data tree =========================================
   //
   // importRestoredHistory runs before fresh-identity and ensureDataDirs, inside the try whose

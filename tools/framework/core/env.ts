@@ -128,7 +128,7 @@ export function projectPort(taken: ReadonlySet<number> = new Set(), start = rand
  *  whatever the value contains, so even `'it's'` parses back to it's. A value holding a
  *  newline or carriage return cannot live on one line at all (a `\n` splits into two
  *  lines; a trailing `\r` is eaten by the reader's line trim as a CRLF terminator) and
- *  is refused with the key named rather than written lossily — P2-13: the store writers
+ *  is refused with the key named rather than written lossily: the store writers
  *  used to emit bare NAME=value text, so every apply cycle silently ate the padding of a
  *  value like ` sample ` and re-wrapped quote-shaped values. */
 export function serializeEnvLine(name: string, value: string): string {
@@ -178,8 +178,8 @@ const WINDOWS_ROOT = /^[A-Za-z]:[\\/]/;
 /** Guards the one string that later reaches a recursive `chown -R 1000:1000` in
  *  ensureDataDirs() (runtime/datadir.ts). Run here, before a Context or transport exists,
  *  because that chown is destructive and this string — straight out of .env — is the only
- *  thing standing between it and the whole target filesystem (audit 2026-09-23, XS round 4,
- *  P1-01: an unvalidated OC_DATA_DIR=/ turns bootstrap into `chown -R 1000:1000 /`).
+ *  thing standing between it and the whole target filesystem (an unvalidated
+ *  OC_DATA_DIR=/ turns bootstrap into `chown -R 1000:1000 /`).
  *
  *  Rejects rather than silently repairs: a trailing slash or a stray ".." the operator did
  *  not intend to write is exactly the kind of mistake this exists to surface, not to correct
@@ -194,7 +194,7 @@ const WINDOWS_ROOT = /^[A-Za-z]:[\\/]/;
  *  below its root, so requiring two rejects all of them at once without needing to name each
  *  one and keep the list current.
  *
- *  Depth is a backstop, not the primary control (P1-09): standard directories deeper than
+ *  Depth is a backstop, not the primary control: standard directories deeper than
  *  one segment ("/var/lib") pass here on purpose — a string in .env cannot prove what a
  *  path resolves to on the target. The primary check is filesystem-level, in ensureDataDirs
  *  (runtime/datadir.ts): canonical-ancestor resolution before any mkdir/chown/chmod, and

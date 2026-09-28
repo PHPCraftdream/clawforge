@@ -58,7 +58,8 @@ export async function createFixture(): Promise<LifecycleFixture> {
   const sourceData = "/tmp/set-lifecycle-real/data";
   // A provider already configured, with an explicit (non-env-sourced) apiKey so this does
   // not invent a new SECRET_MISSING requirement of its own: this fixture is about
-  // apply/set/rollback mechanics, not about UX-09's PROVIDER_MISSING or secret status, and a
+  // apply/set/rollback mechanics, not about the no-provider-configured PROVIDER_MISSING
+  // case or secret status, and a
   // live config with no provider configured would fail every plan/apply run here on a
   // blocking finding these checks have nothing to do with.
   const files = new Map<string, string>([
@@ -110,12 +111,12 @@ export async function createFixture(): Promise<LifecycleFixture> {
         else mkdirp(path);
       } else if (command === "test" && args[0] === "-d") code = dirs.has(args[1]) ? 0 : 1;
       // This simulated filesystem has no symlink concept — ensureDataDirs' root guard
-      // (P1-01) checks this first, and the unconditional code=0 default would otherwise
+      // checks this first, and the unconditional code=0 default would otherwise
       // misread every data directory as a symlink.
       else if (command === "test" && args[0] === "-L") code = 1;
       // GNU readlink -f answers the canonical path: every component but the last must
       // exist. This simulated filesystem has no symlinks, so a path whose ancestors exist
-      // resolves to itself — exactly what ensureDataDirs' canonical-ancestry check (P1-09)
+      // resolves to itself — exactly what ensureDataDirs' canonical-ancestry check
       // demands, and what its absence (an empty default answer) would fail closed on.
       else if (command === "readlink" && args[0] === "-f") {
         const target = args.at(-1)!;
@@ -139,7 +140,7 @@ export async function createFixture(): Promise<LifecycleFixture> {
           files.set(destination, content);
           files.delete(source);
         } else if (dirs.has(source)) {
-          // The instance lock's takeover/release CAS (round 6, P2-03) moves its own
+          // The instance lock's takeover/release CAS moves its own
           // generation-marker DIRECTORY with `mv`, not a file — without this branch the
           // marker is never relocated, `claimOwnedLockDirectory` still reports success, and
           // the lock root is left permanently "held" for the rest of this process.
@@ -151,7 +152,7 @@ export async function createFixture(): Promise<LifecycleFixture> {
       else if (command === "stat") stdout = args.includes("%Y") ? "0" : args.includes("%y") ? "1970-01-01 00:00:00.000000000 +0000" : args.includes("%a") ? "700" : "1000:1000";
       else if (command === "rm") await transport.remove(args.at(-1)!);
       // The instance lock's release empties its own root with a plain `rmdir` once the
-      // marker and holder are gone (round 6, P2-03) — without this, the lock directory
+      // marker and holder are gone — without this, the lock directory
       // this fixture's `mkdir` created stays in `dirs` forever, and every guarded() call
       // after the first one in the same check file dies "locked by an operation that did
       // not record who it is" against a lock nobody still holds.

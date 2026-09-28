@@ -1,4 +1,4 @@
-// P2-02 of docs/internal/review-2026-09-22-xa-round-3.md: the ledger's update cycle — read, merge,
+// The ledger's update cycle (see docs/internal/review-2026-09-22-xa-round-3.md) — read, merge,
 // temporary write, rename — used to run with nothing serializing two cycles against the
 // same ledger file. The rename keeps the JSON intact; it does not merge concurrent changes.
 // Two private-write helpers inside one hook's Promise.all could both read the same old
@@ -17,7 +17,7 @@
 // a refusal would jam every mutation queued behind it. Part B pins the same contract end to
 // end through the real helpers: concurrent recordPrivateWrite calls under two DIFFERENT
 // declarations — different branches, so nothing shared sits behind which a lost update
-// could hide (the audit's precondition, and with P2-01's boundary recording the two
+// could hide (the audit's precondition, and with the boundary recording the two
 // recorded pairs share no entry at all) — then a record racing forgetPrivatePaths, then a
 // restored-history import racing a record. Checks share one process, so the deployment this
 // file selects is restored in the finally.
@@ -150,7 +150,7 @@ try {
 
   // === PART B — the contract through the real helpers =============================================
 
-  // Two private writes under two DIFFERENT declarations: with P2-01's boundary recording
+  // Two private writes under two DIFFERENT declarations: with the boundary recording
   // each records the pair (written path, declared boundary) and the pairs share no entry,
   // so every lost update is visible in the final set.
   await Promise.all([

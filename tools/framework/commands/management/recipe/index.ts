@@ -26,7 +26,7 @@ import { safeName } from "#src/core/names.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import type { Stack, StackServiceState } from "#src/runtime/runtime.ts";
-import { isCaptured, shouldFollow, emit } from "#src/core/output.ts";
+import { isCaptured, shouldFollow, emit, sleep } from "#src/core/output.ts";
 import { takeTail } from "../../lifecycle/lifecycle.ts";
 
 /** The action a bare `recipe` runs. */
@@ -124,9 +124,9 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
  *  `import()` answers from the process-wide module map keyed by URL, so in a long-lived
  *  process — every MCP session — re-importing the same hook file returned the first load
  *  forever: a hook edited on disk kept running its previous code on the next tool call,
- *  while a freshly started CLI process picked the new one up (audit 2026-09-22 round 3,
- *  P2-04). A relative import graph made that worse — editing a helper without touching
- *  prepare.ts/verify.ts left a session running the helper's old code (round 4, P2-06) —
+ *  while a freshly started CLI process picked the new one up. A relative import graph made
+ *  that worse — editing a helper without touching prepare.ts/verify.ts left a session
+ *  running the helper's old code —
  *  so the gate that decides whether a reload is due hashes the whole local import graph,
  *  not just the entry file: dependencyGraphChecksum below.
  *
@@ -150,9 +150,8 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
  *  `import.meta.url` points at the real file, and sibling assets sit where relative
  *  reads expect them. Nothing is copied to temp storage, so there is no shared cache
  *  directory to win a race against, no pre-existing file to silently adopt, and no
- *  bytes of framework-controlled temp state at all (audit 2026-09-23 round 6, P1-08,
- *  P2-01; the copy machinery this replaces also deadlocked on genuine A→B→A cycles —
- *  P2-02 — which ESM now handles natively). */
+ *  bytes of framework-controlled temp state at all (the copy machinery this replaces also
+ *  deadlocked on genuine A→B→A cycles, which ESM now handles natively). */
 const hookModules = new Map<string, { checksum: string; loaded: Record<string, unknown> }>();
 
 /** Query parameter carrying the hook graph's checksum on every versioned hook URL. */
@@ -260,7 +259,7 @@ async function runRecipeHook(ctx: Context, spec: Recipe, kind: "verify" | "onboa
  *  never waits on a service it never described. The same window is also the minimum a stack
  *  must HOLD a ready verdict before install believes it, declared readiness or not: the
  *  first ready answer says nothing about the next moment, and a container that reports
- *  running for one poll and crashes before the next must fail (audit 2026-09-23, P2-09). */
+ *  running for one poll and crashes before the next must fail. */
 const DEFAULT_READINESS_GRACE_MS = 5000;
 
 /** Default timeout for a recipe that declares readiness but not its own timeoutMs — long
@@ -300,8 +299,8 @@ function readinessProblemDetail(problems: { missing: string[]; notRunning: strin
 }
 
 /** Bounds one awaited operation to `budgetMs`: a hung service-state probe must not outwait
- *  the readiness deadline that is supposed to bound the whole loop (audit 2026-09-23,
- *  P2-09). The underlying operation keeps running past the timeout — there is no way to
+ *  the readiness deadline that is supposed to bound the whole loop. The underlying
+ *  operation keeps running past the timeout — there is no way to
  *  cancel it — but this caller stops waiting on it. */
 function bounded<T>(operation: Promise<T>, budgetMs: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -325,8 +324,7 @@ function bounded<T>(operation: Promise<T>, budgetMs: number, label: string): Pro
  *  remaining budget, so a hung probe cannot defeat the deadline. Replaces the old
  *  immediate `isRunning()` probe, which read as ready the instant `up --detach` returned,
  *  before a container had any chance to crash, and which one live sidecar satisfied even
- *  with the recipe's main service down (audit 2026-09-23, P2-04; grace window and probe
- *  bound: P2-09). */
+ *  with the recipe's main service down. */
 async function waitForRecipeReadiness(stack: Stack, readiness: RecipeReadiness | undefined, timeoutMs: number): Promise<RecipeReadinessResult> {
   const deadline = Date.now() + timeoutMs;
   // Set when the first fully-ready answer lands; the grace floor keeps the window wide
@@ -378,7 +376,7 @@ async function waitForRecipeReadiness(stack: Stack, readiness: RecipeReadiness |
         };
       }
     }
-    await new Promise((resolveWait) => setTimeout(resolveWait, Math.min(READINESS_POLL_INTERVAL_MS, Math.max(0, phaseEnd - Date.now()))));
+    await sleep(Math.min(READINESS_POLL_INTERVAL_MS, Math.max(0, phaseEnd - Date.now())));
   }
 }
 
@@ -391,8 +389,8 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
     // drops it and inspect reports it. Answering "no recipes yet" over one sent an operator
     // reading code to explain a discrepancy their own deployment showed.
     const bundles = await listAgentBundleRecipes();
-    // A recipe.json that exists but fails to load (bad shape, invalid ports/variables — the
-    // P3-01 case). listRecipes() drops these so one broken manifest cannot take the working
+    // A recipe.json that exists but fails to load (bad shape, invalid ports/variables).
+    // listRecipes() drops these so one broken manifest cannot take the working
     // recipes down with it; this is the other half — the same manifest still gets a named,
     // visible entry in the catalog instead of quietly not existing.
     const broken = await listBrokenRecipes();
@@ -462,12 +460,12 @@ async function runRecipeAction(ctx: Context, action: string, name: string, rest:
       // target-side privatePaths policy, never a filter over file names here. The
       // declaration is read strictly — a manifest that exists but cannot be read stops the
       // import rather than reading as "nothing declared", the quiet-empty failure that once
-      // walked a private file into a share archive (audit 2026-09-21, P1-01); the
+      // walked a private file into a share archive; the
       // application-specific names the dispatcher used to hardcode moved into declarations
       // in the same change that added the field, so no currently excluded name lost its
       // exclusion. The regex and the boundary matcher now live in the shared
-      // portable-content policy (security/recipe-portable-content.ts, audit 2026-09-22,
-      // P1-03) — the single implementation that set build, the provision-agent mirror and
+      // portable-content policy (security/recipe-portable-content.ts) — the single
+      // implementation that set build, the provision-agent mirror and
       // deploy read too, so no carrier of recipe bytes can drift from this answer.
       const declared = await declaredPortablePrivateFiles(source).catch((error: unknown) =>
         die(error instanceof Error ? error.message : String(error)),
@@ -576,8 +574,7 @@ async function runRecipeAction(ctx: Context, action: string, name: string, rest:
 
       // Checked before afterStart, not the instant `up --detach` returns: a container that
       // starts and crashes moments later, or a multi-service recipe whose main service never
-      // came up while a sidecar did, used to be reported "running" regardless (audit
-      // 2026-09-23, P2-04).
+      // came up while a sidecar did, used to be reported "running" regardless.
       const readiness = await waitForRecipeReadiness(stack, spec.readiness, readinessTimeoutMs);
       const report = { recipe: spec.name, status: readiness.status, detail: readiness.detail, services: readiness.services };
 

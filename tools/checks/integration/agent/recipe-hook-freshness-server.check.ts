@@ -1,5 +1,4 @@
-// Checks that a long-lived MCP server does not keep executing a stale recipe hook
-// (audit 2026-09-22 round 3, P2-04).
+// Checks that a long-lived MCP server does not keep executing a stale recipe hook.
 //
 // recipe.ts loads app-owned hooks with `import()`, and Node's module map is keyed by URL:
 // a process that lives across calls — every MCP session — used to answer every later call

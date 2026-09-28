@@ -5,7 +5,7 @@
 // and secret stores must not appear in any argument, and the remote bootstrap must name the
 // deployment it is supposed to bring up.
 //
-// Split from the round-6 P1-06/P1-07 root-boundary additions (root-boundary.check.ts,
+// Split from the root-boundary additions (root-boundary.check.ts,
 // same directory) when the combined file passed the source layout's 700-line limit — see
 // fixture.ts for why this is a sibling directory rather than a sibling file.
 
@@ -256,7 +256,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
   check("escaping recipesDir is refused", refusal.includes("outside the deployment"), true);
 }
 
-// --- the sensitive-name policy refuses too (round 3, P1-03) ----------------------
+// --- the sensitive-name policy refuses too ----------------------------------------
 //
 // The pre-flight scan used to consult only the declared privateFiles list, so an
 // UNDECLARED file whose name the shared policy holds back — .env.local,
@@ -387,17 +387,17 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
   }
 }
 
-// --- P1-05: the same sensitive name refuses identically wherever it sits -----------------
+// --- the same sensitive name refuses identically wherever it sits -----------------------
 //
-// Round 3 (P1-03) taught the pre-flight scan to hold back a sensitive-named file inside a
+// The pre-flight scan was taught to hold back a sensitive-named file inside a
 // recipe or inside the deployment's own config/ — both go through collectPortableRecipeFiles.
 // The checkout root the FIRST rsync sends wholesale went through no such scan: it only has
 // EXCLUDES, a fixed glob list with no `.env.*` or `*.secrets.env` shape and no notion of a
 // `secrets/` directory nested somewhere other than the deployment's own. So the identical
 // name, one directory further out — an arbitrary checkout subtree nobody declared a recipe
 // or a deployment config for, e.g. tools/local/.env.production — shipped while the SAME
-// name inside a recipe or config/ already refused the whole deploy (audit 2026-09-23 round
-// 4, P1-05). One table of sensitive-name shapes, three locations each, one required outcome.
+// name inside a recipe or config/ already refused the whole deploy. One table of
+// sensitive-name shapes, three locations each, one required outcome.
 //
 // This is deliberately run against the REAL checkout root (monorepoRoot), not a synthetic
 // one: deploy() always resolves its framework-sync source from frameworkSourceRoot() with
@@ -484,7 +484,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
 
     // (3) In an arbitrary checkout subtree — no recipe, no deployment config, just a
     // directory inside the real checkout the first rsync would otherwise mirror wholesale.
-    // This is the case that shipped before P1-05: cases (1) and (2) already refused for the
+    // This is the case that shipped before the fix: cases (1) and (2) already refused for the
     // very same name.
     {
       const root = await mkdtemp(join(tmpdir(), "clawforge-p1-05-checkout-"));
@@ -501,7 +501,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
           refusal = (error as Error).message;
         }
         check(
-          `checkout-subtree/${relativePath} refuses the deploy — same as recipe/config (P1-05)`,
+          `checkout-subtree/${relativePath} refuses the deploy — same as recipe/config`,
           refusal.includes("sensitive-name policy"),
           true,
         );
@@ -530,8 +530,8 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
   // An UNTRACKED byte-identical copy of a tracked template — exactly what `npm run build`
   // leaves at tools/framework/dist/.env.example, a verbatim copy of the tracked source next
   // to it — must not refuse either: the same reviewed bytes, just also sitting at a second,
-  // gitignored path a build script produced (audit 2026-09-23 round 4, P1-05 follow-up: the
-  // path-only tracked check missed exactly this, and broke a plain `npm run build` + deploy).
+  // gitignored path a build script produced (a follow-up fix: the path-only tracked check
+  // missed exactly this, and broke a plain `npm run build` + deploy).
   // A DIFFERENT untracked file at a sensitive name must still refuse — proving the content
   // check does not widen the hole into "any untracked file near a tracked one is fine".
   {

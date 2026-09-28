@@ -1,5 +1,5 @@
-// Restore's symlink boundary, end to end on a real filesystem: P1-01 of
-// docs/internal/review-2026-09-22-xa-round-2.md.
+// Restore's symlink boundary, end to end on a real filesystem
+// (see docs/internal/review-2026-09-22-xa-round-2.md).
 //
 // inspectArchive() used to reason only about what an archive records. That left restore
 // writing THROUGH a link the archive shipped at the restore root or at a standard layout
@@ -11,7 +11,7 @@
 // Every scenario here is the real thing: a real GNU tar archive, a real symlink, a real
 // unpack through the framework's own transport — local off Windows, a WSL distribution on
 // it. A simulated tar cannot reproduce this class of bug, which is the same lesson the
-// 2026-09-21 audit recorded for the private-snapshot checks (its P1-02).
+// 2026-09-21 audit recorded for the private-snapshot checks.
 //
 // No instance and no gateway: restoreArchive(..., { force: true, noStart: true }) is driven
 // directly, the shape the audit used, with a runtime stub that fails loudly if the gateway
@@ -148,7 +148,7 @@ if (transport === undefined) {
     }
   }
 
-  // --- a composite link chain, real tar included: P1-04 of docs/internal/review-2026-09-23-xs-round-4.md
+  // --- a composite link chain, real tar included (see docs/internal/review-2026-09-23-xs-round-4.md)
   //
   // `data/a -> b` alone never leaves the root; `data/b -> ../../outside` alone is only a
   // dangling warning when nothing is written through it directly. Chained, content nested
@@ -275,7 +275,7 @@ if (transport === undefined) {
       const outcome = await attemptRestore(transport, `${root}/data`, archive);
       check("an archive with an external auth-secrets link is refused", outcome.refused, true);
       check("chmod 700 of auth-secrets never reached the external directory", await modeOf(transport, outside), "755");
-      // P2-02 (audit 2026-09-23 round 4): unlike the root-link case above, this refusal
+      // Unlike the root-link case above, this refusal
       // happens INSIDE verifyRestoredLayout, AFTER a real extraction actually created
       // `${root}/data` — and `${root}/data` never existed before this attempt, so `aside`
       // stays undefined the whole way through. A catch that only cleans up when there was
@@ -322,7 +322,7 @@ if (transport === undefined) {
 
   // --- the sibling-directory boundary: a target sharing the root's raw string prefix ---------
   // `.../dataEVIL` starts with the string `.../data` but is not nested under `.../data/` —
-  // exactly what a bare string-prefix comparison would wave through (P2-05's prefix bug, in
+  // exactly what a bare string-prefix comparison would wave through, in
   // miniature, at the restore boundary). The refusal must use the path-separator form.
   {
     const root = `/tmp/clawforge-restore-prefix-${randomBytes(4).toString("hex")}`;

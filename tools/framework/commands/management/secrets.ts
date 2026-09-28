@@ -63,7 +63,7 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   const values = parseEnv(raw);
   // Asked of the PROSPECTIVE configuration (live + declared overlay), not the live one
   // alone: a secret a not-yet-applied config/desired-state.json is about to need is a real
-  // requirement here too — gatherInspection (task #197) already asks the same question the
+  // requirement here too — gatherInspection already asks the same question the
   // same way. Without this, installing a key for a provider the declaration just added (but
   // apply hasn't run yet) computed `needed` from the live config only, which did not know
   // about it yet — an empty or short `needed` list then made loadSecrets() refuse with
@@ -252,9 +252,10 @@ async function dumpToStore(ctx: Context, storeName: string, force: boolean): Pro
   const targetRaw = targetEntries.length > 0 ? await dumpSecrets(ctx) : undefined;
   const targetValues = targetRaw !== undefined ? parseEnv(targetRaw) : {};
 
-  const canReadRunningEnvironment = typeof ctx.runtime.runningEnvironment === "function";
-  const runningEnvironment = repoEntries.length > 0 && canReadRunningEnvironment
-    ? await ctx.runtime.runningEnvironment!()
+  const runningEnvironmentMethod = ctx.runtime.runningEnvironment?.bind(ctx.runtime);
+  const canReadRunningEnvironment = runningEnvironmentMethod !== undefined;
+  const runningEnvironment = repoEntries.length > 0 && runningEnvironmentMethod !== undefined
+    ? await runningEnvironmentMethod()
     : undefined;
 
   const values: Record<string, string | undefined> = {};
@@ -355,7 +356,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
     // Writes config/.env on the target — the same class of mutation apply/restore/rollback
     // guard against each other for, and this used to bypass entirely. No --break-lock support
     // (its own parser above rejects it): breakLockSupported: false keeps a refusal from
-    // offering a flag it cannot accept (UX-04).
+    // offering a flag it cannot accept.
     await guarded(ctx, "secrets", [], () => applyStore(ctx, store), { breakLockSupported: false });
     return;
   }

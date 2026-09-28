@@ -5,7 +5,7 @@
 // never the top-level .Image, which is a resolved ID a .env never wrote.
 //
 // No docker and no network: the transport is a stub answering the container lookup (a bare
-// `docker ps --filter label=...`, UX-17 — no compose invocation and no environment file
+// `docker ps --filter label=...` — no compose invocation and no environment file
 // needed to ask Docker about its own labels) with a canned container id, and the inspect
 // with canned JSON.
 
@@ -108,7 +108,7 @@ try {
       ["inspect", "--format", "{{json .}}", "container-one"],
     );
     check("the inspect never names the configured image", inspects(execArgs)[0].join(" ").includes("x"), false);
-    check("the container lookup needs no compose environment file at all (UX-17)", writes.length, 0);
+    check("the container lookup needs no compose environment file at all", writes.length, 0);
   }
 
   {

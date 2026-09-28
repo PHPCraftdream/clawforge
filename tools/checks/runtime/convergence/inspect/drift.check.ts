@@ -40,8 +40,8 @@ try {
       let restarts = 0;
       fixture.ctx.runtime.restart = async () => { restarts += 1; };
       // A provider already configured, with an explicit (non-env-sourced) apiKey: these
-      // scenarios are about declaration-merge semantics, not about UX-09's PROVIDER_MISSING
-      // or secret status, and a live config with none configured would fail apply on a
+      // scenarios are about declaration-merge semantics, not about the no-provider-configured
+      // PROVIDER_MISSING case or secret status, and a live config with none configured would fail apply on a
       // blocking finding none of them are testing.
       const PROVIDER = { models: { providers: { zai: { apiKey: "fixture-explicit-key" } } } };
       const cases = [
@@ -355,7 +355,7 @@ try {
     // The set-requirement check (readInstalledSet + requirementProblems) must compare
     // against the RUNNING CONTAINER's actual image, not ctx.runtime.imageReference() — the
     // same "stale local tag" scenario apply --set's own pre/post-checks already learned not
-    // to trust (task #172): a container running digest B, a local tag re-pulled and now
+    // to trust: a container running digest B, a local tag re-pulled and now
     // resolving to digest A, imageReference() reporting A (a false match), only
     // runningImageIdentity() (what the fix uses) seeing the real, still-running B.
     const requiredImage = `ghcr.io/openclaw/openclaw@sha256:${"a".repeat(64)}`;
@@ -453,7 +453,7 @@ try {
     check("and it says where the value belongs", secret?.detail.includes("<data>/config/.env"), true);
   }
 
-  // --- UX-09: no model provider configured at all ---------------------------------------
+  // --- no model provider configured at all -----------------------------------------------
 
   {
     // "OpenClaw is up" after a bootstrap with no provider key: the gateway container runs

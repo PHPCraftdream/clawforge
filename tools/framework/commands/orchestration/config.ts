@@ -41,7 +41,7 @@ export function stagedFileName(dryRun: boolean): string {
  *  without a live instance — see bootstrap.ts's/set-try.ts's/apply.ts's own calls, all of
  *  which pass `restartAdvice: false` because each starts or restarts the gateway itself a
  *  few lines later: printing "restart to pick it up" right before doing exactly that read as
- *  the command contradicting itself (UX-10). */
+ *  the command contradicting itself. */
 export function appliedHeadline(restartAdvice: boolean): string {
   return restartAdvice
     // Deliberately not ./clawforge up: a healthy container is already what `up` converges

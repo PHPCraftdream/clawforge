@@ -22,7 +22,7 @@ export class HelperNotRunning extends Error {
  *  that shells out to compose needs somewhere to write its own private files (the docker
  *  runtime's per-call env file, beside the data directory), and creating that somewhere is
  *  exactly the mkdir a still-root-owned parent refuses pre-bootstrap — surfacing as a raw
- *  transport error instead of a clear "run bootstrap first" (UX-05). Callers that know how to
+ *  transport error instead of a clear "run bootstrap first". Callers that know how to
  *  answer plainly (status, doctor, inspect) catch this specifically; anything else propagates
  *  as before. */
 export class NotBootstrapped extends Error {
@@ -214,7 +214,7 @@ export interface Stack {
    *  running (and healthy, where a healthcheck is declared) or `timeoutSeconds` elapses —
    *  only requested by a caller that already has a bounded readiness declaration for this
    *  stack, so a recipe with no such declaration and a healthcheck that never turns healthy
-   *  cannot hang install indefinitely (audit 2026-09-23, P2-04). */
+   *  cannot hang install indefinitely. */
   up(options?: { wait?: boolean; timeoutSeconds?: number }): Promise<void>;
   /** Stops and removes it; --volumes only when explicitly asked. */
   down(removeVolumes?: boolean): Promise<void>;

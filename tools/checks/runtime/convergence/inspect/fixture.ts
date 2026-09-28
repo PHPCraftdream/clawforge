@@ -117,7 +117,7 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
       settings: {
         dataDir,
         // A digest by default: the fixture models an already-pinned deployment (what
-        // bootstrap now leaves behind, task #32), so a case that says nothing about the
+        // bootstrap now leaves behind), so a case that says nothing about the
         // image provokes neither IMAGE_UNPINNED nor IMAGE_TAG_MOVED. folder.check.ts's own
         // image-pinning section overrides this to exercise both.
         image: spec.image ?? "ghcr.io/openclaw/openclaw@sha256:abc",

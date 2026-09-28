@@ -36,18 +36,18 @@
 // Mutating — guarded() takes the instance lock, and it is marked destructive. --dry-run prints
 // the plan and performs none of it, not even taking the lock, on upgrade's own precedent.
 
-import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die, registerSecret, maskSecrets } from "../core/log.ts";
 import { emit, isCaptured } from "../core/output.ts";
 import type { Context } from "../core/context.ts";
 import { guarded } from "../runtime/instance-lock.ts";
+import { generateGatewayToken } from "../integration/provision.ts";
 import { envFile, deploymentDir, deploymentName } from "../runtime/deployment.ts";
 import { upsertEnvValue } from "../security/private-config.ts";
 import { replacePrivateFile, createPrivateFile, protectPrivateDirectory } from "../security/private-file.ts";
 import { probeTailscale, tailscaleGatewayRoutes, tailscaleServeOffCommand } from "../expose/tailscale.ts";
-import { summarizeExposure, exposureOneLiner } from "../expose/status.ts";
+import { summarizeExposure, exposureOneLiner, safeConnectionFacts } from "../expose/status.ts";
 import { runSecurityAudit, type SecurityAuditReport } from "../security-audit/index.ts";
 import { blockingProblems } from "../service/inspection.ts";
 import type { CommandArgument } from "../core/app.ts";
@@ -113,12 +113,7 @@ function parseArgs(args: string[]): IncidentOptions {
  *  publicly bound would be worth nothing. `undefined` facts (not running, or this runtime
  *  cannot introspect it) has nothing to refuse on. */
 export async function refuseIfPubliclyExposed(ctx: Context, options: IncidentOptions): Promise<void> {
-  let facts: { bindAddress?: string; port?: string } | undefined;
-  try {
-    facts = await ctx.runtime.runningConnectionFacts?.();
-  } catch {
-    facts = undefined;
-  }
+  const facts = await safeConnectionFacts(ctx);
   if (facts === undefined) return;
   const summary = summarizeExposure(ctx, facts);
   if (!summary.wildcard) return;
@@ -206,7 +201,7 @@ export async function rotateToken(ctx: Context, options: IncidentOptions): Promi
     return { phase: "rotate", actions, notes };
   }
 
-  const token = randomBytes(32).toString("hex");
+  const token = generateGatewayToken();
   registerSecret(token);
   await replacePrivateFile(path, upsertEnvValue(content, "OPENCLAW_GATEWAY_TOKEN", token));
   actions.push(`rotated OPENCLAW_GATEWAY_TOKEN in ${path}`);
@@ -264,12 +259,7 @@ export async function runAudits(ctx: Context): Promise<{ phase: IncidentPhase; s
  *  from commands/. */
 async function captureStatus(ctx: Context): Promise<string> {
   const lines: string[] = [`target: ${ctx.transport.description} / runtime: ${ctx.runtime.description}`];
-  let facts: { bindAddress?: string; port?: string } | undefined;
-  try {
-    facts = await ctx.runtime.runningConnectionFacts?.();
-  } catch {
-    facts = undefined;
-  }
+  const facts = await safeConnectionFacts(ctx);
   lines.push(`exposure: ${exposureOneLiner(summarizeExposure(ctx, facts))}`);
   let running = false;
   try {

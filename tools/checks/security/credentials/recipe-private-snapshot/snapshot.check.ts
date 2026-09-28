@@ -1,10 +1,10 @@
-// P1-01/P1-02: a recipe's declared private paths must really stay out of migrate and share
+// A recipe's declared private paths must really stay out of migrate and share
 // snapshots, and a broken recipe manifest must stop archiving and verification instead of
 // reading as "nothing declared".
 //
 // The previous version of this check simulated tar with a stub that shared the
 // implementation's own assumptions — it treated the brackets of an --exclude pattern as
-// literals, exactly as the escaping code does. That is precisely why P1-02 shipped green: a
+// literals, exactly as the escaping code does. That is precisely why the old check shipped green: a
 // stub cannot contradict the code it was modelled on, and only real GNU tar shows the two
 // failure directions of tar's old glob reading (a declaration `vault[1]` excluded the
 // undeclared sibling vault1 while the literal directory vault[1] shipped). The assertions
@@ -18,8 +18,8 @@
 // The two fixture recipes (fixture-recipe/fixture-sidecar, fixture-recipe/fixture-bracket)
 // declare their private paths and write into them through the real helpers, their prepare.ts
 // driven the way `recipe install` drives it. A third recipe is written by the check itself
-// (no fixture of its own): it declares one exact FILE inside the public workspace/ subtree —
-// the P1-03 shape, whose crash leftover is a staging SIBLING of the declared path
+// (no fixture of its own): it declares one exact FILE inside the public workspace/ subtree,
+// whose crash leftover is a staging SIBLING of the declared path
 // (`<file>.clawforge-private-<hex>`, transport.ts), a name the declaration's exact path never
 // matches and which the share allow-list passed without a staging-specific rule. The share
 // round-trip is the enforcement half of
@@ -103,7 +103,7 @@ const previousRecipes = (() => {
 })();
 
 const DECLARED = ["sidecar-private", "vault[1]"] as const;
-// The exact file inside a public subtree that the check's own third recipe declares (P1-03).
+// The exact file inside a public subtree that the check's own third recipe declares.
 const DECLARED_FILE = "workspace/agent-cred.json";
 // Recipes are enumerated directory by directory and the order of that enumeration is not
 // contractual (it differs between filesystems), so the declaration SET is compared sorted.
@@ -145,7 +145,7 @@ try {
 
   // --- a malformed manifest stops the policy readers (pure: no target needed) -------------------
   //
-  // P1-01's other half: a recipe.json that exists but cannot be parsed must never read as
+  // The other half of the declaration-reading contract: a recipe.json that exists but cannot be parsed must never read as
   // "nothing declared" — that is exactly how a private file once walked into a share
   // archive. Reading the declaration is strictly local, so these run unconditionally, on
   // every platform; the archiving and verification halves of this scenario drive the real
@@ -180,7 +180,7 @@ try {
 
   // --- the staging-marker rules (pure group: no WSL needed) --------------------------------------
   //
-  // P1-03's policy half. A crash leftover is named AFTER the declared file, so neither a
+  // The staging-marker policy half. A crash leftover is named AFTER the declared file, so neither a
   // literal nor a prefix rule can match it; the markers are matched as substrings, and full —
   // credential-complete by design — still forbids nothing structurally.
 
@@ -275,7 +275,7 @@ try {
     await transport.mkdirp(`${DATA}/vault1`);
     await transport.writeFile(`${DATA}/vault1/credentials.env`, "FIXTURE_CREDENTIAL=review-p1-02-control-sibling recipe=none\n");
 
-    // --- P1-03: a successful write, then the crash it must survive --------------------------------
+    // --- a successful write, then the crash it must survive ----------------------------------------
     //
     // The declared file is written through the real helper — the happy path ends with the
     // staging sibling renamed over the target and nothing left beside it. The leftovers are
@@ -339,7 +339,7 @@ try {
     const share = `${ARCHIVES}/share.tar.gz`;
     await createArchive(ctx, { archive: share, profile: "share" });
     const shareListing = await listArchive(ctx, share);
-    // The exposure P1-03 closes: workspace/ is on the share allow-list, so the exclusion is
+    // The exposure this policy closes: workspace/ is on the share allow-list, so the exclusion is
     // the only thing standing between the leftover and the archive.
     check("a share archive leaves out the interrupted private-write leftover", shareListing.includes(`data/workspace/${DECLARED_FILE}.clawforge-private-${tag}`), false);
     check("a share archive leaves out the exact-file declaration itself", shareListing.includes(`data/${DECLARED_FILE}`), false);

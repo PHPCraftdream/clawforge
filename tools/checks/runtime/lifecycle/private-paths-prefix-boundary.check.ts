@@ -1,4 +1,4 @@
-// P2-05 of docs/internal/review-2026-09-22-xa-round-2.md: the verifier applied a bare string prefix
+// The verifier (see docs/internal/review-2026-09-22-xa-round-2.md) applied a bare string prefix
 // test to every forbidden rule, literal declarations and generated-file prefixes alike — so
 // the declaration `vault` also forbade the public sibling `vault-public/`, and the exact
 // file `config/private.env` its `.example` neighbor. The archiver (component-boundary tar
@@ -197,7 +197,7 @@ try {
     await transport.writeFile(`${DATA}/config/private.env`, "PRIVATE=exact-file\n");
     await transport.writeFile(`${DATA}/config/private.env.example`, "EXAMPLE=not-a-secret\n");
     await transport.writeFile(`${DATA}/workspace/SOUL.md`, "# fixture\n");
-    // UX-02: ensureDataDirs' own provenance marker, exactly as it leaves it on a real tree.
+    // ensureDataDirs' own provenance marker, exactly as it leaves it on a real tree.
     await transport.writeFile(`${DATA}/${DATA_DIR_MARKER}`, "clawforge data directory\n");
     const ctx = { settings: { dataDir: DATA, env: {} }, transport } as unknown as Context;
 
@@ -218,7 +218,7 @@ try {
     check("the archiver keeps the .example neighbor", migrateListing.includes("data/config/private.env.example"), true);
     check("the archiver still leaves the declared vault out", migrateListing.includes("data/vault/secret.env"), false);
     check("the archiver still leaves the declared exact file out", migrateListing.includes("data/config/private.env"), false);
-    check("migrate excludes the data-dir provenance marker (UX-02)", migrateListing.includes(`data/${DATA_DIR_MARKER}`), false);
+    check("migrate excludes the data-dir provenance marker", migrateListing.includes(`data/${DATA_DIR_MARKER}`), false);
     check(
       "the migrate publish gate sees no violation in a neighbors archive",
       JSON.stringify(forbiddenViolations("migrate", await installedRecipePrivatePaths(), relativeOf(migrateListing))),
@@ -234,7 +234,7 @@ try {
     await createArchive(ctx, { archive: shareArchive, profile: "share" });
     const shareListing = await listArchive(ctx, shareArchive);
     check("the share archive keeps both neighbors too", shareListing.includes("data/vault-public/notes.txt") && shareListing.includes("data/config/private.env.example"), true);
-    check("share excludes the data-dir provenance marker (UX-02)", shareListing.includes(`data/${DATA_DIR_MARKER}`), false);
+    check("share excludes the data-dir provenance marker", shareListing.includes(`data/${DATA_DIR_MARKER}`), false);
     check(
       "the share gate sees no violation in a neighbors archive",
       JSON.stringify(forbiddenViolations("share", await installedRecipePrivatePaths(), relativeOf(shareListing))),
@@ -242,7 +242,7 @@ try {
     );
     // Share is judged by a second, deliberate mechanism on top of the forbidden rules: its
     // allowed set is stated positively (SHARE_ALLOWED), so unknown top-level content — these
-    // neighbors included — is reported as not allowed BY DESIGN. The P2-05 claim is that the
+    // neighbors included — is reported as not allowed BY DESIGN. The claim is that the
     // forbidden rules must not be the reason: the refusal must carry no "must exclude"
     // finding, only the allowlist one.
     const shareOutput: string[] = [];
@@ -282,7 +282,7 @@ try {
     check("the share refusal names the declared vault", rawOutput.join("").includes("vault"), true);
     check("the share refusal names the declared exact file", rawOutput.join("").includes("config/private.env"), true);
 
-    // UX-02, isolated from the vault-public/allowlist noise above: a data dir carrying only
+    // Isolated from the vault-public/allowlist noise above: a data dir carrying only
     // the marker and SHARE_ALLOWED content must pass share's own privacy check outright —
     // this is the exact shape `smoke` hit on every fresh bootstrap before the fix.
     const CLEAN = `${PARENT}/clean-data`;

@@ -62,7 +62,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   // file beside the data directory — and on a deployment nobody has bootstrapped yet, that
   // data directory does not exist, so creating a place beside it is exactly the mkdir a
   // still-root-owned parent refuses. NotBootstrapped is DockerRuntime's own way of saying so
-  // (runtime-docker.ts's #withEnvFile) instead of a raw transport error (UX-05); caught here
+  // (runtime-docker.ts's #withEnvFile) instead of a raw transport error; caught here
   // rather than left to crash a read-only command, and reported as its own finding rather
   // than folded into GATEWAY_DOWN — "./clawforge up" is not a working remedy pre-bootstrap.
   let running: boolean;
@@ -80,7 +80,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   // a deployment with nothing on the target yet has NOT_BOOTSTRAPPED naming the one remedy
   // that applies, and ./clawforge upgrade (this finding's own remedy) needs a running instance
   // to roll back to. A digest never moves; a tag can, and is shared with every other
-  // deployment on this Docker daemon that names it (task #32).
+  // deployment on this Docker daemon that names it.
   if (notBootstrapped === undefined && !declared.image.includes("@sha256:")) {
     problems.push(problem("IMAGE_UNPINNED", `OPENCLAW_IMAGE is "${declared.image}", a tag rather than a digest`));
   }
@@ -117,7 +117,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   // The same config secrets --apply and provision-agent already read providers from
   // (collectConfiguredProviders), not a guess from environment variable names: a bootstrap
   // with no provider key ends "OpenClaw is up" and doctor "nothing blocking" while every
-  // agent turn fails at the first model call (UX-09) — a gap this loop's own SECRET_MISSING
+  // agent turn fails at the first model call — a gap this loop's own SECRET_MISSING
   // above never reports, because a provider's apiKey is inferred from the configured id, and
   // with no id configured at all there is no requirement yet to be missing. Skipped pre-
   // bootstrap (notBootstrapped): configure-provider needs config/.env on the target, which
@@ -174,7 +174,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
 
   // The mirror image of the requirement match's own caution just above: THERE, resolving the
   // tag locally would wrongly answer for a container never recreated onto what it now points
-  // to (task #172). HERE, that is exactly the fact worth surfacing — asked only for a tag
+  // to. HERE, that is exactly the fact worth surfacing — asked only for a tag
   // still in force (a digest is content-addressed and cannot move) and only while running
   // (nothing to compare a stopped container's digest against), so a pinned deployment pays for
   // this extra `docker image inspect` never at all.
@@ -208,7 +208,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
         // REFERENCE (typically a tag) currently points to locally, which a later `docker
         // pull` moves even when the running container was never recreated and is still on
         // the old digest — apply --set's own pre/post-checks (apply.ts) already learned this
-        // the hard way (task #172); this check never did.
+        // the hard way; this check never did.
         { framework: await frameworkVersion(), imageDigest: matchRequiredDigest(runningDigestList, installedManifest) },
       ),
     );
@@ -241,7 +241,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
       // The actually-running container's own digest (the same fetch as above, no manifest
       // to prefer against here), not ctx.runtime.imageReference() (whatever the configured
       // image REFERENCE currently resolves to locally) — the SET_REQUIREMENT_UNMET check
-      // above learned this the hard way (task #195): a `docker pull` moves the local tag's
+      // above learned this the hard way: a `docker pull` moves the local tag's
       // digest even when the running container was never recreated, and reporting THAT here
       // contradicted the very warning this same inspection had just produced a few lines
       // above it. Deliberately no fallback to imageReference() when nothing was found: an

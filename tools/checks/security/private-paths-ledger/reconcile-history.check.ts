@@ -1,9 +1,9 @@
-// P1-04 and P2-04 of docs/internal/review-2026-09-23-xxa-round-6.md: the privacy history has TWO
+// The privacy history (see docs/internal/review-2026-09-23-xxa-round-6.md) has TWO
 // copies — the operator-side ledger at <deployment>/config/private-paths.json and the
 // target-side copy at <dataDir>/config/clawforge-private-paths.json — and every reader that
 // never publishes used to ask only the first one.
 //
-// P1-04: a deployment folder pointed at already-existing target data — a lost or freshly
+// A deployment folder pointed at already-existing target data — a lost or freshly
 // recreated one, another machine adopting the same instance — reaches migrate or share with
 // no restore and no full backup ever run, and built its exclusions from a record that was
 // not there. createArchive() now reconciles the target copy into the ledger before the
@@ -12,7 +12,7 @@
 // by a failed restore's rollback, which used to fabricate an empty ledger file (a witness
 // to a forget nobody asked for) where none had existed.
 //
-// P2-04: publishPrivatePathsHistory wrote the target copy through the private writer,
+// publishPrivatePathsHistory wrote the target copy through the private writer,
 // which is an EXCLUSIVE create on every real transport — the second full backup died
 // against the copy the first one had just written, and the republish after an adoption hit
 // the same wall. It is now an atomic replace that skips the write when the bytes are
@@ -496,7 +496,7 @@ try {
 
     // Two sequential full backups: the first carries the history physically (the copy is
     // already canonical, so its publish writes nothing), the second — with a newly recorded
-    // path — used to die exclusive-creating the copy the first had just written (P2-04).
+    // path — used to die exclusive-creating the copy the first had just written.
     const fullFresh = `${ARCHIVES}/full-fresh.tar.gz`;
     await createArchive(ctx, { archive: fullFresh, profile: "full" });
     const fullEntries = await listArchive(ctx, fullFresh);

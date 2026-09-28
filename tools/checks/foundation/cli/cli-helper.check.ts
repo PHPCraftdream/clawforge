@@ -172,8 +172,8 @@ function withFileOps(transport: Transport): Transport {
     description: "stub",
     async exec(command: string, args: string[]): Promise<ExecResult> {
       calls.push([command, ...args]);
-      // #containerId() (runtime-docker.ts, UX-17) asks Docker directly by label instead of
-      // through `docker compose ... ps` — same simulated container, a different call shape.
+      // #containerId() asks Docker directly by label instead of through
+      // `docker compose ... ps` — same simulated container, a different call shape.
       if (args[0] === "compose" || args.some((arg) => arg.startsWith("label=com.docker.compose.service="))) {
         return { code: 0, stdout: "abc123\n", stderr: "" };
       }
@@ -219,8 +219,8 @@ function withFileOps(transport: Transport): Transport {
     description: "stub",
     async exec(command: string, args: string[]): Promise<ExecResult> {
       calls.push([command, ...args]);
-      // #containerId() (runtime-docker.ts, UX-17) asks Docker directly by label instead of
-      // through `docker compose ... ps` — same simulated container, a different call shape.
+      // #containerId() asks Docker directly by label instead of through
+      // `docker compose ... ps` — same simulated container, a different call shape.
       if (args[0] === "compose" || args.some((arg) => arg.startsWith("label=com.docker.compose.service="))) {
         return { code: 0, stdout: "abc123\n", stderr: "" };
       }

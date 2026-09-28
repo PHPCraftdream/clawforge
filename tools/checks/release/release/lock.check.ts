@@ -282,7 +282,7 @@ check(
   check("a composition that never asked about plugins/skills reports nothing about them", compareLock(withExtensions([lockedPlugin], [lockedSkill]), composition()), []);
 }
 
-// --- UX-12: lock's "commit it" and new-app's own next-steps agree on the model --------------
+// --- lock's "commit it" and new-app's own next-steps agree on the model ---------------------
 //
 // apps/ is entirely gitignored at the monorepo root (root .gitignore, docs/architecture.md),
 // so a bare "commit it" reads as if this repository's own history was the target — which

@@ -19,8 +19,8 @@ export const OWNER = "1000:1000";
  *  restored tree before creating, chmod-ing or deleting anything through them. */
 export const DATA_SUBDIRS = ["config", "workspace", "auth-secrets"] as const;
 
-/** Provenance marker written by ensureDataDirs into a data root it created or adopted
- *  (P1-09): its presence tells the next run "this tree was set up by clawforge", which is
+/** Provenance marker written by ensureDataDirs into a data root it created or adopted:
+ *  its presence tells the next run "this tree was set up by clawforge", which is
  *  what licenses the narrow drift re-owning — and whose absence makes ensureDataDirs refuse
  *  to re-own anything. Exported for the check fixtures that provision realistic trees. */
 export const DATA_DIR_MARKER = ".clawforge-data-dir";
@@ -36,9 +36,9 @@ const DATA_DIR_MARKER_CONTENT =
  *  a chown to some OTHER owner will succeed — POSIX lets an unprivileged owner keep or drop
  *  their own file, never hand it to a different uid — so a caller that already knows the
  *  target owner differs from the current identity forces the sudo-availability path instead
- *  of trusting `test -w` (audit 2026-09-23, XS round 4: a CI runner whose own uid is not
- *  1000 owns its own /tmp fixtures outright, so the writability probe answered "no escalation
- *  needed" right before an unprivileged `chown -R 1000:1000` failed on every file). */
+ *  of trusting `test -w` (a CI runner whose own uid is not 1000 owns its own /tmp
+ *  fixtures outright, so the writability probe answered "no escalation needed" right
+ *  before an unprivileged `chown -R 1000:1000` failed on every file). */
 export async function sudoFor(ctx: Context, path: string, options: { force?: boolean } = {}): Promise<string[]> {
   let probe = path;
   while (probe !== "/" && probe !== "") {
@@ -199,7 +199,7 @@ async function physicalPath(ctx: Context, path: string): Promise<string> {
   return canonical;
 }
 
-/** The canonical destructive root, verified before anything is created or re-owned (P1-09).
+/** The canonical destructive root, verified before anything is created or re-owned.
  *
  *  `test -L dataDir` sees only the final component: a symlink one level UP
  *  (`/srv/openclaw -> /elsewhere`) redirects every later mkdir/chown/chmod into a different
@@ -245,7 +245,7 @@ async function assertResolvesInsideRoot(ctx: Context, path: string, root: string
 }
 
 /** Hands exactly `paths` to the fixed owner — one chown invocation naming only these paths,
- *  never `-R` (P1-09): ownership changes follow creation and provenance, not whatever a
+ *  never `-R`: ownership changes follow creation and provenance, not whatever a
  *  directory happens to contain. */
 async function chownToOwner(ctx: Context, paths: string[], why: string): Promise<void> {
   const wrong: string[] = [];
@@ -283,7 +283,7 @@ async function dataDirSymlinkTarget(ctx: Context, dataDir: string): Promise<stri
 
 /** Creates config/, workspace/ and auth-secrets/ and makes sure uid 1000 owns them.
  *
- *  Ordered so that every verification precedes every mutation (P1-09): the root is resolved
+ *  Ordered so that every verification precedes every mutation: the root is resolved
  *  through its ancestors and each pre-existing standard path through itself BEFORE the first
  *  mkdir, and ownership is changed only for paths this run can account for — the ones it
  *  created itself, plus, on a tree carrying this framework's provenance marker, the standard

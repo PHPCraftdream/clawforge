@@ -180,7 +180,7 @@ async function run(ctx: Context): Promise<string> {
   );
 }
 
-// --- UX-07: the "no passwordless sudo" refusal advises the whole family, not just one path ---
+// --- the "no passwordless sudo" refusal advises the whole family, not just one path ----------
 //
 // The bug: bootstrap refused on the lock home alone ("sudo install -d ... data-locks"), and
 // once that was done by hand it refused again the same way on the data directory, then again
@@ -227,7 +227,7 @@ async function familyRefusal(owner: string): Promise<string> {
 }
 
 {
-  // The WSL-default-user case (task UX-07's part b): whoever runs the tooling already is
+  // The WSL-default-user case: whoever runs the tooling already is
   // uid 1000, same as the container — every directory this deployment needs collapses into
   // one owner, and the advice is one line for the whole family instead of one per path.
   const message = await familyRefusal("1000:1000");

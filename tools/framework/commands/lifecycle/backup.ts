@@ -300,7 +300,7 @@ async function createNativeArchive(
  *  operation cost nothing extra here. */
 export async function createBackup(ctx: Context, options: BackupOptions = {}): Promise<string> {
   // No --break-lock support: its own parser (backup() below) rejects it, so a refusal here
-  // must not offer a flag it will then reject as unknown (UX-04).
+  // must not offer a flag it will then reject as unknown.
   return guarded(ctx, "backup", [], () => createBackupLocked(ctx, options), { breakLockSupported: false });
 }
 
@@ -316,7 +316,7 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
 
   // tar is handed the data directory's name relative to its parent, so a symlinked root
   // is archived as the link itself — one entry, no data, and a "successful" backup that
-  // cannot be restored anywhere (audit 2026-09-22 round 2, P2-02). Refused before the
+  // cannot be restored anywhere. Refused before the
   // gateway is stopped: there is no consistent snapshot of this layout to take.
   const linkTarget = await symlinkedDataRoot(ctx);
   if (linkTarget !== undefined) {
@@ -391,7 +391,7 @@ async function createBackupLocked(ctx: Context, options: BackupOptions): Promise
     // tar exiting 0 and the file landing are not evidence the data is inside: an archive
     // that holds nothing beneath its root — what a symlinked root used to produce —
     // restores nothing anywhere. Checked on the staging archive, before it can become
-    // the newest backup (audit 2026-09-22 round 2, P2-02).
+    // the newest backup.
     if (!archiveCarriesContent(await listArchive(ctx, stagingArchive))) {
       throw new Error(`the fresh archive of ${dataDir} carries no data beneath its root — refusing to publish it as a backup`);
     }

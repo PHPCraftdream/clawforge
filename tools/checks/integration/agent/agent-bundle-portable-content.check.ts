@@ -1,4 +1,4 @@
-// P1-03 (audit 2026-09-23, round 4): the agent bundle (recipes/<name>/agent/) used to have
+// The agent bundle (recipes/<name>/agent/) used to have
 // its own reader. checksums.ts (agentBundleChecksums, for the set manifest and the lock) and
 // inspect (via that same function and via loadRecipeAgentBundle) walked the shared
 // portable-content policy in security/recipe-portable-content.ts. Direct provisioning —
@@ -30,7 +30,7 @@
 //     any file is read — proven by asserting the rejection carries none of the private bytes
 //     an unguarded readFile would have picked up;
 //   - an `agent/` that is ITSELF a symlink out of the recipe is refused by every reader
-//     before anything is walked or read (round 6, P1-05) — the escape is the root, so no
+//     before anything is walked or read — the escape is the root, so no
 //     child Dirent could report it — and so is a root or child link that does not resolve,
 //     which used to ENOENT its way into an honestly-empty bundle;
 //   - a recipe whose agent/ is a plain real directory still walks and provisions exactly
@@ -42,8 +42,8 @@
 //
 // Windows/privilege caveat: creating symlinks can fail without developer mode or elevated
 // privileges (file links have no fallback; directory links fall back to a junction, which
-// needs neither). Any group whose links cannot be created degrades exactly the way round
-// 3's P1-01 check (runtime/lifecycle/recipe-portable-content.check.ts) already does: it
+// needs neither). Any group whose links cannot be created degrades exactly the way the
+// portable-content check (runtime/lifecycle/recipe-portable-content.check.ts) already does: it
 // prints `skip` and never fails, and the rest of the file still runs.
 
 import { createHash } from "node:crypto";
@@ -189,8 +189,8 @@ try {
   check("set build holds back the same two names too", ["private.md", ".env"].some((rel) => rel in bundledManifestAgentFiles), false);
   check("the set artifact carries no private bytes", JSON.stringify(bundledBuilt.manifest).includes(MARKER), false);
 
-  // --- Group B: an internal alias to the recipe's own declared-private prompt (round 3, P1-01
-  //     pattern) — same three-way parity, now for a public-named symlink onto a private target.
+  // --- Group B: an internal alias to the recipe's own declared-private prompt — same
+  //     three-way parity, now for a public-named symlink onto a private target.
 
   const aliasCreated = await trySymlink(resolve(bundledDir, "agent", "private.md"), resolve(bundledDir, "agent", "alias-private.md"));
   if (!aliasCreated) {
@@ -257,7 +257,7 @@ try {
   //
   // Group C's escape rides inside an otherwise-real agent/, so a child Dirent reported
   // "symlink" and the walker refused. When agent/ ITSELF is the link, every entry arrives
-  // as an ordinary child: the escape is the root, and no Dirent ever reports it (P1-05).
+  // as an ordinary child: the escape is the root, and no Dirent ever reports it.
   // The walker must vet the root before the first readdir, and every carrier must stop.
 
   const rootLinkDir = resolve(tempRoot, "recipes", "rootlink");
@@ -297,7 +297,7 @@ try {
   //
   // "No agent bundle" is answered only by the root's own absence. An agent/ that IS a link
   // but resolves nowhere used to ENOENT straight into that answer: the checksum map quietly
-  // returned {} and provisioning misreported a missing config.json (P1-05). Every carrier
+  // returned {} and provisioning misreported a missing config.json. Every carrier
   // now refuses loudly instead.
 
   const danglingDir = resolve(tempRoot, "recipes", "danglingroot");
@@ -321,7 +321,7 @@ try {
   //
   // A dangling CHILD link used to ENOENT through the bundle wrapper's catch-all and read as
   // "no bundle at all" — an empty checksum map, a provisioning refusal aimed at config.json
-  // that missed the actual breakage (P1-05). The wrapper probes the root and nets nothing
+  // that missed the actual breakage. The wrapper probes the root and nets nothing
   // around the walk, so the walk's own failures now stop the caller under their own name.
 
   const brokenChildDir = resolve(tempRoot, "recipes", "brokenchild");

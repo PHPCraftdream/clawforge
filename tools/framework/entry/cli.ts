@@ -216,7 +216,7 @@ export async function runApp(
 
   // Recovery repairs the very facts a Context is validated from, so it cannot owe its own
   // dispatch to a built one: with OC_DATA_DIR absent, createContext dies in the settings
-  // parser before the command that exists to fill that fact can even start (P2-10). Its
+  // parser before the command that exists to fill that fact can even start. Its
   // bootstrap builds only what the container read needs — transport and project identity
   // (commands/recover-env/bootstrap.ts). Compared by identity so the declaration stays the
   // single source of truth: if the declaration ever wires a different run, this branch

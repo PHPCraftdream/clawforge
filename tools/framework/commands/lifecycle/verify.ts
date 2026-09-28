@@ -49,7 +49,7 @@ export const VERIFY_ARGUMENTS: CommandArgument[] = [
  *  plus the profile's own secrets file and share's identity/state directories. An entry violates
  *  a literal when it IS the declared path or lives INSIDE it — compared on '/' boundaries, the
  *  same discipline verifyRestoredLayout() applies to restored roots. A bare string prefix here
- *  is the P2-05 bug: the declaration `vault` forbade the public sibling `vault-public`, and the
+ *  is a bare-prefix bug: the declaration `vault` forbade the public sibling `vault-public`, and the
  *  exact file `config/private.env` its `.example` neighbor — valid content the archiver's
  *  component-boundary tar --exclude correctly keeps, so pull deleted backups verify refused.
  *
@@ -91,7 +91,7 @@ export function forbiddenRules(profile: Profile, recipePrivatePaths: readonly st
 }
 
 /** True when an archive entry IS the declared path or lives inside it: equality, or a '/'
- *  continuation — never a bare string prefix (P2-05). Declarations may carry a trailing slash
+ *  continuation — never a bare string prefix. Declarations may carry a trailing slash
  *  (share's directory rules above), so it is normalized away; the archive's own directory
  *  entries keep theirs and still match through the boundary test. */
 function violatesLiteralPath(entry: string, declared: string): boolean {
@@ -267,7 +267,7 @@ export async function verifySnapshot(
   const structural = inspectArchive(entries, await listArchiveLinks(ctx, archive));
   // OpenClaw's own links into the container image (a plugin's skill, a codex-home tool
   // shim) are an ordinary artefact of installing inside it — real snapshots carry dozens,
-  // and naming each individually buried the warnings worth reading (UX-15). Folded into one
+  // and naming each individually buried the warnings worth reading. Folded into one
   // summary line instead; anything else, fatal or not, is still named exactly as before.
   const { toReport, foldedImageLinks } = reportableProblems(structural);
   for (const problem of toReport) {

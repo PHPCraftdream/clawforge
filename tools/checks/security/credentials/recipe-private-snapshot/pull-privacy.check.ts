@@ -1,7 +1,7 @@
 // Both backup staging and pull publication enforce recipe-declared private paths. A dirty
 // migrate archive is rejected during backup verification, before either archive is published.
 //
-// The third scenario is P2-05 (docs/internal/review-2026-09-22-xa-round-2.md): entries that merely
+// The third scenario (see docs/internal/review-2026-09-22-xa-round-2.md) is entries that merely
 // share a string prefix with a declaration — the public sibling `vault-public` of a declared
 // `vault`, the `.example` neighbor of a declared exact file — are valid content, and a
 // migrate pull carrying only those must publish, not reject and delete.
@@ -79,7 +79,7 @@ try {
     true,
   );
 
-  // P2-05: the old bare-prefix matching read `vault-public/notes.txt` as violating the
+  // The old bare-prefix matching read `vault-public/notes.txt` as violating the
   // declaration `vault`; shared-prefix neighbors must continue to pass backup verification.
   const neighbors = pullScenario("private-neighbor");
   let neighborsThrew = false;

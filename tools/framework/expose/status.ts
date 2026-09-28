@@ -43,6 +43,19 @@ export function summarizeExposure(
   };
 }
 
+/** `runningConnectionFacts()` behind one try/catch: not running and "this runtime could not
+ *  introspect it" both read as `undefined` here, since every caller treats them the same —
+ *  nothing to check right now either way. */
+export async function safeConnectionFacts(
+  ctx: Context,
+): Promise<{ bindAddress?: string; port?: string } | undefined> {
+  try {
+    return await ctx.runtime.runningConnectionFacts?.();
+  } catch {
+    return undefined;
+  }
+}
+
 /** The one line `./clawforge status` folds this command's whole answer into. */
 export function exposureOneLiner(summary: ExposureSummary): string {
   const scope = summary.wildcard

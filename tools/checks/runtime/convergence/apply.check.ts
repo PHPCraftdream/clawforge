@@ -252,7 +252,7 @@ function localTransport(): {
     await mkdir(resolve(deployment, "secrets"), { recursive: true });
     // One stale fact among matching ones, and a token whose VALUE nothing may assert about —
     // only that the line survives the merge untouched. The port both sides carry differently
-    // is the P2-03 round-3 case: a planned run must not choose a direction for it.
+    // is the direction-ambiguous case: a planned run must not choose a direction for it.
     const envBefore = [
       "OC_DATA_DIR=/srv/clawforge/data",
       "OPENCLAW_GATEWAY_PORT=9999",
@@ -300,7 +300,7 @@ function localTransport(): {
     await journal.close("failed", "stopped at apply-config-dump");
 
     // The runner here is deliberately the BARE (safe) form: it fills what .env is missing
-    // entirely and never picks the direction for facts both sides carry (P2-03, round 3) —
+    // entirely and never picks the direction for facts both sides carry —
     // which is why a diverged port survives it.
     check("the recovery step really runs and reports done", outcomes[0], { id: "recover-env", status: "done" });
     check("the diverged port is NOT written over — the direction is the operator's, not a planned run's", (await readFile(resolve(deployment, ".env"), "utf8")).includes("OPENCLAW_GATEWAY_PORT=18790"), false);
@@ -389,7 +389,7 @@ function localTransport(): {
   }
 }
 
-// --- a composite run keeps up with its own .env rewrites (P2-03) ------------------------------
+// --- a composite run keeps up with its own .env rewrites ---------------------------------------
 //
 // recover-env and secrets --apply rewrite the deployment .env mid-run — the file the Context
 // was built from at process start. Every later step used to keep interpolating that stale
@@ -496,7 +496,7 @@ function localTransport(): {
     });
     check("the run starts on the coordinates the plan and lock were taken for", ctx.settings.dataDir, "/srv/clawforge/data");
 
-    // Planning no longer adds an executable recover-env for a diverged .env (P2-03, round 3):
+    // Planning no longer adds an executable recover-env for a diverged .env:
     // whether the container's facts or the file's are authoritative is the operator's call, so
     // the plan names both directions instead of picking one. What this scenario pins is the
     // machinery UNDER that decision — a step that does write .env re-derives the Context, and

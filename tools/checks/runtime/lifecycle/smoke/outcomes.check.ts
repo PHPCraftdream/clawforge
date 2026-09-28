@@ -122,7 +122,7 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   check("a runtime that cannot answer at all is could-not-check", silent.results.map((result) => result.status), ["could-not-check"]);
 }
 
-// --- UX-09: a silent agent names PROVIDER_MISSING as the cause, when it applies ------------
+// --- a silent agent names PROVIDER_MISSING as the cause, when it applies ------------------
 
 {
   const agent = checks.find((entry) => entry.name === "agent answers end to end");

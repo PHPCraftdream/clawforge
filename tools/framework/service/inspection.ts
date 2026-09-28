@@ -76,7 +76,7 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     // data directory yet, and every compose invocation (even a read like `compose ps`) writes
     // its private env file into a directory beside it — a write a still-root-owned parent
     // refuses, surfacing as a raw transport error ("mkdir ... Permission denied") in place of
-    // an answer (UX-05). The data directory's own absence is read first and answers this
+    // an answer. The data directory's own absence is read first and answers this
     // without ever reaching for the runtime.
     summary: "this deployment has never been bootstrapped — there is nothing on the target yet",
     nextAction: "./clawforge bootstrap",
@@ -222,7 +222,7 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     // What is at risk is invisible drift on THIS deployment's own next recreate (up, restart
     // after compose changes, apply) — a moving tag is shared with every other deployment on
     // the same Docker daemon that names it, and any one of them pulling it moves what all of
-    // them get next (task #32). `./clawforge bootstrap` pins this itself the moment it first
+    // them get next. `./clawforge bootstrap` pins this itself the moment it first
     // pulls; an instance that still names a bare tag either predates that or was edited back
     // to one.
     summary: "OPENCLAW_IMAGE names a tag rather than a digest — a pull elsewhere on this Docker daemon can move what this deployment runs next",

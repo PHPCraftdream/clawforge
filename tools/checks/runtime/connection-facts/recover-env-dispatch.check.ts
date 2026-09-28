@@ -1,4 +1,4 @@
-// P2-10's two reachability holes, driven through the REAL surfaces rather than by calling
+// Two reachability holes, driven through the REAL surfaces rather than by calling
 // the underlying functions — that is the whole point of the regression:
 //
 //   (1) the bootstrap order. `./clawforge recover-env` dispatched through the real
@@ -117,7 +117,7 @@ useDeployment(deployDir);
 const recoverDeclaration = managementCommands["recover-env"];
 const recoverApp: AppDefinition = {
   name: "dispatch-fixture",
-  description: "P2-10 dispatcher fixture",
+  description: "dispatcher fixture",
   commands: { "recover-env": recoverDeclaration },
 };
 
@@ -149,7 +149,7 @@ try {
     await writeFile(envFile(), seedWithoutDataDir, "utf8");
     const plainApp: AppDefinition = {
       name: "control-fixture",
-      description: "P2-10 control fixture",
+      description: "control fixture",
       commands: { noop: { summary: "noop", run: async () => {} } },
     };
     const { error } = await capture(() => runApp(plainApp, ["noop"]));
@@ -172,7 +172,7 @@ try {
     check("the bootstrap run succeeds against a stubbed container", error, "");
     const merged = await readFile(envFile(), "utf8");
     check("the missing OC_DATA_DIR is filled from the container", merged.includes("OC_DATA_DIR=/srv/data"), true);
-    // OC_COMPOSE_PROJECT is absent here too, but UX-03 compares an absent (or empty) value
+    // OC_COMPOSE_PROJECT is absent here too, but the divergence check compares an absent (or empty) value
     // against its own EFFECTIVE default — the directory-derived project name, exactly as
     // composeProjectName() falls back — rather than the raw string. "fresh-project" is a
     // genuinely different explicit value from that default, so it is diverged, not missing,
@@ -276,7 +276,7 @@ try {
       useDeployment(${JSON.stringify(deployDir)});
       await serveMcp({
         name: "recover-fixture",
-        description: "P2-10 MCP fixture",
+        description: "MCP fixture",
         commands: { "recover-env": managementCommands["recover-env"] },
       });
     `;

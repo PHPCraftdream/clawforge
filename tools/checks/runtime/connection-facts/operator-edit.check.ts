@@ -1,4 +1,4 @@
-// `./clawforge apply` must not undo an operator's .env edit (P2-03, round 3).
+// `./clawforge apply` must not undo an operator's .env edit.
 //
 // The operator changes OPENCLAW_GATEWAY_PORT in .env and runs apply WITHOUT any recovery
 // step. The container still answers with the old port, so the inspection reports ENV_STALE —

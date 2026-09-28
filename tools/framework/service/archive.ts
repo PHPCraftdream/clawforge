@@ -25,7 +25,7 @@ export function isProfile(value: string): value is Profile {
   return (PROFILES as string[]).includes(value);
 }
 
-/** Shorthand flags for `backup` and `pull` (UX-13), one map so both parsers agree. */
+/** Shorthand flags for `backup` and `pull`, one map so both parsers agree. */
 export const PROFILE_SHORTHAND_FLAGS: ReadonlyMap<string, Profile> = new Map([
   ["--share", "share"],
   ["--with-secrets", "full"],
@@ -142,13 +142,13 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
     // Same instance, different host: keep identity, hand the keys over separately.
     excludes.push(
       `${root}/config/.env`,
-      // The privacy history is published for full backups (audit 2026-09-22 round 3, P1-02);
+      // The privacy history is published for full backups;
       // a profile-limited snapshot does not carry it, and this profile's readers do not
       // expect it — verify's SHARE_ALLOWED would refuse a share archive holding it.
       `${root}/config/clawforge-private-paths.json`,
       `${root}/clawforge-operations`,
       ...LEGACY_PREFIXES.map((prefix) => `${root}/${prefix}-operations`),
-      `${root}/${DATA_DIR_MARKER}`, // UX-02: names the OLD host; restore's trustExisting writes a fresh one
+      `${root}/${DATA_DIR_MARKER}`, // names the OLD host; restore's trustExisting writes a fresh one
     );
   }
 
@@ -156,7 +156,7 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
     // Handing the agent to someone else: only its personality travels.
     excludes.push(
       `${root}/config/.env`,
-      `${root}/config/clawforge-private-paths.json`, // published for full backups only (round 3, P1-02)
+      `${root}/config/clawforge-private-paths.json`, // published for full backups only
       `${root}/config/identity`,
       `${root}/config/devices`,
       `${root}/config/state`,
@@ -168,7 +168,7 @@ export function excludesFor(profile: Profile, dataName: string, recipePrivatePat
       `${root}/clawforge-operations`,
       `${root}/clawforge-managed.json`,
       `${root}/clawforge-installed-set.json`,
-      `${root}/${DATA_DIR_MARKER}`, // UX-02, same reasoning as migrate above
+      `${root}/${DATA_DIR_MARKER}`, // same reasoning as migrate above
       ...LEGACY_PREFIXES.flatMap((prefix) => [
         `${root}/${prefix}-operations`,
         `${root}/${prefix}-managed.json`,
@@ -210,7 +210,7 @@ export function archiveRoot(entries: string[]): string {
  *  A successful tar is not evidence of a backup: pointed at a data directory that is
  *  itself a symlink, tar stores one entry — the link — and exits 0, and an archive that
  *  holds nothing beneath its root restores nothing anywhere. createBackup() checks the
- *  staging archive with this before publishing it (audit 2026-09-22 round 2, P2-02). */
+ *  staging archive with this before publishing it. */
 export function archiveCarriesContent(entries: string[]): boolean {
   let root: string;
   try {
@@ -229,7 +229,7 @@ export interface ArchiveProblem {
   /** Unpacking would write outside the destination. Anything else is worth reporting but
    *  not worth refusing an otherwise valid archive. */
   readonly fatal: boolean;
-  /** Non-fatal dangling symlink into the image (UX-15); fatal is decided by writesThrough alone. */
+  /** Non-fatal dangling symlink into the image; fatal is decided by writesThrough alone. */
   readonly expectedImageLink?: boolean;
 }
 
@@ -247,7 +247,7 @@ function isOpenClawImageLink(root: string, source: string, target: string): bool
   return OPENCLAW_IMAGE_LINK_LOCATIONS.some((pattern) => pattern.test(relative));
 }
 
-/** What to name, and how many expected image links (UX-15) fold into one summary line instead. */
+/** What to name, and how many expected image links fold into one summary line instead. */
 export function reportableProblems(problems: readonly ArchiveProblem[]): { toReport: ArchiveProblem[]; foldedImageLinks: number } {
   const folded = (problem: ArchiveProblem): boolean => !problem.fatal && problem.expectedImageLink === true;
   return {
@@ -308,7 +308,7 @@ export function canonicalArchiveEntries(entries: readonly string[]): string[] {
  *  are walked by the same rules: an intermediate target segment that names a link is
  *  resolved (its own target visited) BEFORE a following `..` consumes it, which is what
  *  makes `b/../safe` mean what the kernel means by it rather than the lexically simplified
- *  `safe` (audit 2026-09-23, P2-07: `b` registered as a link to `../../outside` used to be
+ *  `safe` (`b` registered as a link to `../../outside` used to be
  *  popped off unread, and a chain written through the first link read as safely inside the
  *  root). A link key visited twice is a cycle; the substitution counter restates the old
  *  loop bound, though `seen` alone already caps substitutions at the number of links. */
@@ -615,8 +615,8 @@ export async function listArchiveLinks(ctx: Context, archive: string): Promise<M
 /** The data directory is a symlink, and where it resolves — undefined when it is not one.
  *
  *  tar is invoked with the data directory's NAME relative to its parent, so a symlinked
- *  data root is archived as the link itself: one entry, none of the data behind it (audit
- *  2026-09-22 round 2, P2-02). createBackup() refuses that layout before stopping the
+ *  data root is archived as the link itself: one entry, none of the data behind it.
+ *  createBackup() refuses that layout before stopping the
  *  gateway and createArchive() refuses again at the point of archiving; this is the check
  *  both run. Exit codes other than 0/1 are thrown, not read as "not a link" — a check
  *  that cannot answer must not wave the backup through. */
@@ -647,16 +647,15 @@ export async function createArchive(
   // Taken before the policy read and before a full publish: migrate and share never publish,
   // so this is the one point a deployment folder pointed at already-existing target data —
   // no restore, no full backup yet — learns what the target alone still remembers. A history
-  // that exists but cannot be read refuses the backup loudly (audit 2026-09-23 XXA round 6,
-  // P1-04).
+  // that exists but cannot be read refuses the backup loudly.
   await reconcilePrivatePathsHistory(ctx);
   // The privacy history must be inside the tree before tar runs, so a full backup carries
   // it physically and a restore can hand it back to whichever deployment directory manages
-  // the target next (audit 2026-09-22 round 3, P1-02). Full only: migrate and share exclude
+  // the target next. Full only: migrate and share exclude
   // the copy from their archives — instance-local metadata does not travel with the
   // profile-limited snapshots — though they reconcile with it first (above).
   // publishPrivatePathsHistory adopts an existing target copy instead of erasing it when this
-  // deployment folder never recorded anything locally (audit 2026-09-23, XS round 4, P2-01).
+  // deployment folder never recorded anything locally.
   if (options.profile === "full") await publishPrivatePathsHistory(ctx);
   const name = dataDirName(dataDir);
   const parent = dataDirParent(dataDir);

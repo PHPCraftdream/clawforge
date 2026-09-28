@@ -1,8 +1,8 @@
-// Shared stub transport for deploy's check files, split out when round 6's P1-06/P1-07
-// additions pushed deploy.check.ts past the source layout's 700-line limit
-// (tools/checks/foundation/layout.check.ts). tools/checks/runtime/service/ is already at
-// its 7-entries cap, so the split becomes a sibling directory rather than a sibling file —
-// same move round 4 made for instance-lock.check.ts. Each check file that imports this runs
+// Shared stub transport for deploy's check files, split out when its remote-root and
+// sensitive-checkout additions pushed deploy.check.ts past the source layout's 700-line
+// limit (tools/checks/foundation/layout.check.ts). tools/checks/runtime/service/ is already
+// at its 7-entries cap, so the split becomes a sibling directory rather than a sibling
+// file — the same move made for instance-lock.check.ts. Each check file that imports this runs
 // as its own process (check files run for their side effects), so importing `ctx` here
 // does not share mutable state between files — only the setup code.
 
@@ -31,7 +31,7 @@ export const ctx = {
   runtime: { requiredTools: ["docker"] },
 } as unknown as Context;
 
-/** Round 6 (P1-06) gave deploy() a remote-root question it asks through runRemote before
+/** deploy() asks a remote-root question through runRemote before
  *  its first --delete: does the path exist, is it canonical (no symlinked component), does
  *  it carry this deployment's marker, is it empty. Every stub transport here answers it
  *  the way a cooperating server would. The canonical answer echoes the path the deploy

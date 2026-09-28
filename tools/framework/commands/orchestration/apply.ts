@@ -82,13 +82,13 @@ const RUNNERS: Record<string, (ctx: Context, action: PlanAction) => Promise<void
   // in the same plan mutate the instance; these ride along under it harmlessly.
   // Bare recover-env is the safe form: it fills the connection facts .env is missing
   // entirely and never writes over a value both sides carry — which side is authoritative
-  // for those is the operator's call (P2-03, round 3), so no planned run picks it.
+  // for those is the operator's call, so no planned run picks it.
   "recover-env": (ctx) => recoverEnv(ctx, []),
   secrets: (ctx) => secrets(ctx, ["--apply"]),
   // restartAdvice: false — planActions() only ever schedules this step alongside "up" or
   // "restart" in the SAME plan (plan.ts: CONFIG_DRIFT unconditionally implies one of them),
   // so the default "restart to pick it up" line would always be immediately contradicted by
-  // this same run's next step (UX-10).
+  // this same run's next step.
   "apply-config": (ctx) => applyConfig(ctx, [], { restartAdvice: false }),
   // Planned advisory (see planActions), with a runner anyway: if a future plan ever emits it
   // as executable, it must fail loudly at exactly the --force refusal — never overwrite the
@@ -340,7 +340,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
         // transition (this set's id differs from whatever was installed before, e.g. the same
         // set reinstalled under a new name) that happens to change nothing about the live
         // config still needs a recorded operation for rollback --set to point at, or undoing
-        // it later finds nothing and refuses (task #185) even though nothing here actually
+        // it later finds nothing and refuses even though nothing here actually
         // needs restoring — the live config already IS what a rollback would reach. Recorded
         // after applyFromSource rather than before: this branch only runs when nothing was
         // executed, so the config here is exactly the config before this call too.

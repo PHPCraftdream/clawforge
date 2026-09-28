@@ -1,6 +1,6 @@
 // `./clawforge bootstrap` pins OPENCLAW_IMAGE the moment a fresh pull proves what a shared tag
-// actually holds — the fresh-deployment half of task #32 (a pull in one deployment silently
-// moving a shared tag for its neighbours on the same Docker daemon). `upgrade` already resolves
+// actually holds — the fresh-deployment half of the problem where a pull in one deployment
+// silently moves a shared tag for its neighbours on the same Docker daemon. `upgrade` already resolves
 // by digest and pins on success (upgrade.check.ts, this same directory); this is bootstrap's
 // own version of that, on the FIRST pull rather than on an explicit, later upgrade — reusing
 // upgrade's own pinImageReference() (lifecycle.ts) for the write.

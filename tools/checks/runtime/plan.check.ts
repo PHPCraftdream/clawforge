@@ -73,7 +73,7 @@ function ids(problems: Problem[], running = true): string[] {
   const store = actions.find((action) => action.id === "secrets-dump");
   // A divergence between .env and the container is two readings the plan cannot tell apart —
   // a rotted file, or an edit the container has not caught up with. Planning the repair as an
-  // executable step picked a side and rewrote deliberate edits (P2-03, round 3); the step
+  // executable step picked a side and rewrote deliberate edits; the step
   // names both directions instead and leaves the choice with the reader.
   check("the .env step is advisory — a divergence alone never plans a write to .env", [recover?.advisory, recover?.command], [true, undefined]);
   check("it names both directions", [(recover?.summary ?? "").includes("--adopt-runtime"), (recover?.summary ?? "").includes("./clawforge up")], [true, true]);
@@ -88,7 +88,7 @@ function ids(problems: Problem[], running = true): string[] {
 }
 
 // A diverged .env on its own must plan nothing executable at all — that is the whole point
-// of the advisory step (P2-03, round 3, at the plan layer).
+// of the advisory step, at the plan layer.
 {
   const actions = planActions(inspectionWith([
     problem("ENV_STALE", "OPENCLAW_GATEWAY_PORT differs from the running container"),
@@ -107,7 +107,7 @@ function ids(problems: Problem[], running = true): string[] {
   check("the declaration dump precedes the apply-config that writes the target", withDrift.slice(0, 2), ["apply-config-dump", "apply-config"]);
 }
 
-// --- UX-11: "apply it" only when apply would actually run something -----------------------
+// --- "apply it" only when apply would actually run something ------------------------------
 
 function action(advisory: boolean): PlanAction {
   return { id: "x", summary: "x", because: [], advisory: advisory ? true : undefined };

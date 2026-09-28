@@ -247,8 +247,8 @@ check("the failed verification publishes no backup", [...present].some((path) =>
         }
         if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
-        // The instance lock's release now empties its directory with `rmdir` (round 6,
-        // P2-03), not a recursive remove of the whole lock path.
+        // The instance lock's release now empties its directory with `rmdir`, not a
+        // recursive remove of the whole lock path.
         if (command === "rmdir") {
           if (args[0]?.endsWith("operation.lock")) lockExists = false;
           return { code: 0, stdout: "", stderr: "" };
@@ -347,8 +347,8 @@ check("the failed verification publishes no backup", [...present].some((path) =>
         if (command === "test" && args[0] === "-d") return { code: lockExists ? 0 : 1, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
-        // The instance lock's release now empties its directory with `rmdir` (round 6,
-        // P2-03), not a recursive remove of the whole lock path.
+        // The instance lock's release now empties its directory with `rmdir`, not a
+        // recursive remove of the whole lock path.
         if (command === "rmdir") {
           if (args[0]?.endsWith("operation.lock")) lockExists = false;
           return { code: 0, stdout: "", stderr: "" };
@@ -599,7 +599,7 @@ for (const fail of ["write", "chown", "mv"] as SecretFailure[]) {
   check(`secrets (${fail} failure) leave no staging file behind`, [...scenario.files.keys()].length, 1);
 }
 
-// --- P2-05: owning the staging file is not the right to hand it to another uid ------------
+// --- owning the staging file is not the right to hand it to another uid -------------------
 //
 // chown 1000:1000 is a privileged operation whenever the current identity is not 1000:1000,
 // no matter who owns the file being handed over — POSIX lets an owner keep or drop their own
@@ -610,9 +610,9 @@ for (const fail of ["write", "chown", "mv"] as SecretFailure[]) {
 {
   const scenario = secretsScenario({});
   const threw = await runLoadSecrets(scenario);
-  check("P2-05: a runner whose own identity is the gateway's chowns without escalating", scenario.sudoCalls.length, 0);
-  check("P2-05: that install still succeeds", threw, false);
-  check("P2-05: the owner still ends 1000:1000", scenario.files.get(SECRETS_FINAL)?.owner, "1000:1000");
+  check("a runner whose own identity is the gateway's chowns without escalating", scenario.sudoCalls.length, 0);
+  check("that install still succeeds", threw, false);
+  check("the owner still ends 1000:1000", scenario.files.get(SECRETS_FINAL)?.owner, "1000:1000");
 }
 
 {
@@ -622,16 +622,16 @@ for (const fail of ["write", "chown", "mv"] as SecretFailure[]) {
   const stagedPath = stageEvent.slice("stage:0600:".length);
   const chownIndex = scenario.events.indexOf(`chown:1000:1000:${stagedPath}`);
   const mvEvents = scenario.events.filter((event) => event.startsWith("mv:"));
-  check("P2-05: another identity makes exactly one sudo call", scenario.sudoCalls.length, 1);
+  check("another identity makes exactly one sudo call", scenario.sudoCalls.length, 1);
   check(
-    "P2-05: that sudo call wraps the real chown to the gateway's owner",
+    "that sudo call wraps the real chown to the gateway's owner",
     scenario.sudoCalls[0]?.includes("chown") === true && scenario.sudoCalls[0]?.includes("1000:1000") === true,
     true,
   );
-  check("P2-05: the escalated install still succeeds", threw, false);
-  check("P2-05: the final file is owned by the gateway user", scenario.files.get(SECRETS_FINAL)?.owner, "1000:1000");
+  check("the escalated install still succeeds", threw, false);
+  check("the final file is owned by the gateway user", scenario.files.get(SECRETS_FINAL)?.owner, "1000:1000");
   check(
-    "P2-05: the chown still precedes the single rename",
+    "the chown still precedes the single rename",
     mvEvents.length === 1 && chownIndex > -1 && chownIndex < scenario.events.indexOf(mvEvents[0] ?? ""),
     true,
   );
@@ -640,10 +640,10 @@ for (const fail of ["write", "chown", "mv"] as SecretFailure[]) {
 {
   const scenario = secretsScenario({ identity: "1001:1001", noSudo: true });
   const threw = await runLoadSecrets(scenario);
-  check("P2-05: the install is refused when sudo is unavailable", threw, true);
-  check("P2-05: the refusal leaves the previous keys byte-for-byte intact", JSON.stringify(scenario.files.get(SECRETS_FINAL)), JSON.stringify({ content: SECRETS_PREVIOUS, mode: "600", owner: "1000:1000" }));
-  check("P2-05: the refusal leaves no file at the final path that is not the previous one", [...scenario.files.keys()].filter((path) => path !== SECRETS_FINAL).length, 0);
-  check("P2-05: the refusal publishes nothing, not even a rename", scenario.events.some((event) => event.startsWith("mv:")), false);
+  check("the install is refused when sudo is unavailable", threw, true);
+  check("the refusal leaves the previous keys byte-for-byte intact", JSON.stringify(scenario.files.get(SECRETS_FINAL)), JSON.stringify({ content: SECRETS_PREVIOUS, mode: "600", owner: "1000:1000" }));
+  check("the refusal leaves no file at the final path that is not the previous one", [...scenario.files.keys()].filter((path) => path !== SECRETS_FINAL).length, 0);
+  check("the refusal publishes nothing, not even a rename", scenario.events.some((event) => event.startsWith("mv:")), false);
 }
 
 process.stderr.write(failed === 0 ? "all state checks passed\n" : `${failed} failed\n`);

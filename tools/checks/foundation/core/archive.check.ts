@@ -80,7 +80,7 @@ check(
   "false",
 );
 
-// --- UX-15: OpenClaw's own links into the container image are expected, not noise --------
+// --- OpenClaw's own links into the container image are expected, not noise ---------------
 //
 // Matched by fixed shape AND target, never by prefix alone — a prefix match alone would let
 // a hostile link planted at the wrong depth, or under a similarly-named but different
@@ -216,14 +216,12 @@ checkRejects(
   new Map([["data/hardlink", { kind: "hardlink", target: "../outside" }]]),
 );
 
-// --- composite link chains: P1-04 of docs/internal/review-2026-09-23-xs-round-4.md --------
+// --- composite link chains -----------------------------------------------------------------
 //
-// inspectArchive() used to judge each link on its own single hop. `data/a -> b` looks safe
-// alone — "b" stays inside the root — and `data/b -> ../../outside` alone is only a dangling
-// warning when nothing is written through it directly. Chained, `data/a/file` is written
-// through BOTH: the audit's clean call over exactly this listing returned one non-fatal
-// warning and no fatal finding at all. The fix walks a link's own chain to wherever it
-// ultimately lands before deciding fatal or not.
+// inspectArchive() must judge a link by where its chain ultimately lands, not by its own
+// single hop. `data/a -> b` looks safe alone — "b" stays inside the root — and
+// `data/b -> ../../outside` alone is only a dangling warning when nothing is written through
+// it directly. Chained, `data/a/file` is written through BOTH and must be fatal.
 
 checkRejects(
   "two symlinks in a chain: content nested under the first hop, the second escapes",
@@ -444,7 +442,7 @@ check("share allow-list does not contradict its exclusions", contradiction, unde
   check("and the two lists still agree", stillContradicts, undefined);
 }
 
-// --- UX-02: ensureDataDirs' provenance marker is not agent state -------------------------
+// --- ensureDataDirs' provenance marker is not agent state ---------------------------------
 //
 // The marker names the host that set the tree up, not anything about the agent. share and
 // migrate both leave it out — a full backup still keeps it (it is credential-complete by
@@ -478,7 +476,7 @@ for (const profile of ["migrate", "share"] as const) {
   check(`base exclude wildcards remain active (${profile})`, excludes.includes("data\\[1\\]/config/.env.clawforge-*"), true);
 }
 
-// --- P2-05: the privilege prefix is chosen per capability over every path involved --------
+// --- the privilege prefix is chosen per capability over every path involved --------------
 //
 // createArchive() used to ask only about the archive destination's writability (and
 // extractArchive() only about the destination), which is the wrong question for the other
@@ -582,7 +580,7 @@ for (const profile of ["migrate", "share"] as const) {
   );
 }
 
-// --- P2-07: an intermediate link is resolved before `..` pops it; keys are canonical ------
+// --- an intermediate link is resolved before `..` pops it; keys are canonical ------------
 //
 // resolveLinkChain() used to process a symlink target segment-by-segment and answer `..`
 // with a lexical pop. When the popped segment named a registered link that had not been

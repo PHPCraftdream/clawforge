@@ -243,8 +243,8 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
               break;
             }
             const { output, failure } = await captureGateRun(gateCommand, toArgv(gateCommand, args));
-            // The mask follows the answer, not the exit status (audit 2026-09-22 round 3,
-            // P2-05): a gate command's healthy output gets the same treatment as its failure.
+            // The mask follows the answer, not the exit status: a gate command's healthy
+            // output gets the same treatment as its failure.
             reply(request.id, {
               ...(failure === undefined ? {} : { isError: true }),
               content: [{
@@ -294,7 +294,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           const structured = command.structured === true
             ? toolEnvelope(effectiveCommand, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv)
             : undefined;
-          // Redaction is not an error-path courtesy (audit 2026-09-22 round 3, P2-05): a
+          // Redaction is not an error-path courtesy: a
           // successful diagnostic prints the same logs, hook output and machine JSON a
           // failure would have, so registered values are masked here too — in the text and
           // in every key and value of the envelope. The one exception is declared on the

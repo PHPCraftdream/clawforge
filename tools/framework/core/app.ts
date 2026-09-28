@@ -134,7 +134,7 @@ export interface AppCommand {
   readonly forceOnConfirmation?: boolean;
   /** The command's successful output carries registered credential values on purpose —
    *  `mcp-creds` is the one — so the response redaction that guards every other healthy
-   *  answer (audit 2026-09-22 round 3, P2-05) lets it through instead of answering with
+   *  answer lets it through instead of answering with
    *  "***" where the caller asked for the value. Declared here, on the record beside the
    *  command, rather than left as an implicit hole in the dispatcher. A failure is never
    *  deliberate: the mask applies to it as to every other command. */

@@ -1,5 +1,5 @@
 // Hook freshness for recipe hooks, driven through the same in-process dispatcher the MCP
-// calls dispatch into (audit 2026-09-22 round 3, P2-04): hook modules are cached against
+// calls dispatch into: hook modules are cached against
 // the checksum of their file, so an edit between two calls of one long-lived process —
 // the MCP-session shape — takes effect on the second call instead of serving the first
 // load's module forever. Split out of recipe.check.ts, which outgrew the check-file line
@@ -82,7 +82,7 @@ function stubContext(env: Record<string, string>): { ctx: Context; calls: string
         if (command === "test" && args[0] === "-d") {
           return { code: dirs.has(args[1]) ? 0 : 1, stdout: "", stderr: "" };
         }
-        // The instance lock's takeover/release CAS (round 6, P2-03) moves its own
+        // The instance lock's takeover/release CAS moves its own
         // generation-marker directory with `mv`, then removes it with `rm -rf` — both must
         // be tracked here or the marker never leaves `dirs` and the lock root never empties.
         if (command === "mv") {
@@ -264,7 +264,7 @@ try {
   await rm(freshRoot, { recursive: true, force: true });
 }
 
-// Helper-file freshness (audit 2026-09-23 round 4, P2-06): editing a relative import the
+// Helper-file freshness: editing a relative import the
 // hook pulls in — never verify.ts/prepare.ts itself — must be visible on the very next call
 // of the same process. Before the fix the versioned checksum covered only the hook file
 // itself; shared.ts stayed at an unversioned URL and kept serving its first-loaded content
@@ -348,14 +348,14 @@ try {
   }
 }
 
-// Package-internal `#imports` (round 9, R9-05): resolved through the recipe's own nearest
+// Package-internal `#imports`: resolved through the recipe's own nearest
 // package.json `imports` map — a supported string or node/import/default target inside the
 // recipe directory is folded into the freshness graph (package.json AND its resolved
 // target), so editing the helper OR repointing the import map is picked up on the very next
 // call of the same process, exactly like a plain relative import. Anything the graph cannot
 // safely track — a bare package target, an absolute path, an escape via `..` or a symlink,
-// an unsupported condition — is refused before the hook ever executes; this closed the P2-03
-// refusal by actually supporting the shape instead of always failing closed.
+// an unsupported condition — is refused before the hook ever executes, instead of always
+// failing closed regardless of shape.
 {
   const aliasRoot = resolve(tmpdir(), `clawforge-recipe-hook-alias-${Date.now()}`);
   try {
@@ -499,7 +499,7 @@ try {
   }
 }
 
-// Bare imports (audit 2026-09-23 round 6, P2-01): the documented hook shape imports
+// Bare imports: the documented hook shape imports
 // `@clawforge/framework/private-config`, a package specifier resolved from the recipe's
 // own node_modules. The loader this replaces executed rewritten copies from a scratch
 // cache directory whose package scope had no node_modules, so even an unmodified first
@@ -547,7 +547,7 @@ try {
   }
 }
 
-// Relative-import cycles (audit 2026-09-23 round 6, P2-02): a genuine A→B→A cycle
+// Relative-import cycles: a genuine A→B→A cycle
 // between files with exported functions must evaluate to the composed result — once
 // every module executes from its real URL, ESM handles the cycle itself — and must keep
 // doing so after an edit inside the cycle. The copy machinery this replaces deadlocked
@@ -602,7 +602,7 @@ try {
   }
 }
 
-// No shared hook cache to adopt from (audit 2026-09-23 round 6, P1-08): the loader this
+// No shared hook cache to adopt from: the loader this
 // replaces wrote content-addressed copies into a predictable `clawforge-hook-cache`
 // directory under the system temp dir and imported whatever file was already sitting at
 // the expected name — a local attacker who won that race got their code executed with
@@ -658,7 +658,7 @@ try {
   }
 }
 
-// The bounded deadline behind cycle handling (audit 2026-09-23 round 6, P2-02): a hook
+// The bounded deadline behind cycle handling: a hook
 // whose evaluation never settles must fail with a clear timeout error instead of a hung
 // call holding the instance lock. CLAWFORGE_HOOK_IMPORT_TIMEOUT_MS exists so this path
 // is testable in seconds; the stub recipe's verify never resolves its top-level await.

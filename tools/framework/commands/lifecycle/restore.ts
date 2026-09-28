@@ -131,7 +131,7 @@ async function confirm(question: string): Promise<boolean> {
  *  check never saw. "Absent" is only trusted when both probes answer a clean 1 AND those
  *  same privileges can search the path's parent: `test` reports an untraversable parent
  *  exactly like a missing path, so an answer that cannot be known is refused rather than
- *  skipped as absent (audit 2026-09-22 round 3, P1-04). */
+ *  skipped as absent. */
 async function verifyRestoredLayout(ctx: Context, dataDir: string): Promise<void> {
   const prefix = await sudoFor(ctx, dataDir);
   if (await isLink(ctx, prefix, dataDir)) {
@@ -158,7 +158,7 @@ async function isLink(ctx: Context, prefix: string[], path: string): Promise<boo
  *  in its target. A clean 1 from both probes is only believed when the same privileges
  *  can search the path's parent: `test` answers an untraversable directory exactly like
  *  a missing one, and skipping a mandatory path the check could not actually see is what
- *  lets a privileged act travel it (audit 2026-09-22 round 3, P1-04). */
+ *  lets a privileged act travel it. */
 async function presenceOf(ctx: Context, prefix: string[], path: string): Promise<boolean> {
   for (const flag of ["-e", "-L"] as const) {
     const [head, ...rest] = [...prefix, "test", flag, path];
@@ -208,7 +208,7 @@ async function verifyDataDirAncestry(ctx: Context, dataDir: string): Promise<voi
 }
 
 /** Brings the archive's privacy history back to the deployment-side ledger, before anything
- *  acts on the restored data (audit 2026-09-22 round 3, P1-02).
+ *  acts on the restored data.
  *
  *  The ledger describes the target but lives in the operator-side deployment directory, so
  *  restoring through a different one — a new folder, a lost one — used to arrive with the
@@ -295,7 +295,7 @@ export async function restoreArchive(
   // to write outside the data directory, and this runs before anything is stopped.
   const problems = inspectArchive(entries, await listArchiveLinks(ctx, archive));
   // OpenClaw's own links into the container image are expected on every real snapshot
-  // (UX-15) — folded into one summary line instead of one warning per plugin-skill and
+  // folded into one summary line instead of one warning per plugin-skill and
   // codex-home tool shim; anything else, fatal or not, is still named exactly as before.
   const { toReport, foldedImageLinks } = reportableProblems(problems);
   for (const problem of toReport.filter((entry) => !entry.fatal)) warn(problem.message);
@@ -360,8 +360,8 @@ export async function restoreArchive(
     // The ledger state this restore's history import may change, taken right before
     // that import runs: fresh-identity and ensureDataDirs run AFTER the import, so a
     // failure there must undo the import along with the data tree, or the old instance
-    // keeps policy boundaries from an archive that was never actually accepted (audit
-    // 2026-09-23 round 4, P2-02). Inside the try, so a snapshot read that itself fails
+    // keeps policy boundaries from an archive that was never actually accepted. Inside the
+    // try, so a snapshot read that itself fails
     // (an unreadable existing ledger) is handled by the same data-tree rollback below —
     // historyImported stays false, so no ledger write is attempted on the way out.
     ledgerBefore = await privatePathsLedgerState();
@@ -390,8 +390,7 @@ export async function restoreArchive(
     // A half-unpacked or rejected directory is worse than nothing: this operation's own
     // staging root must never survive its own failure, whether or not there was previous
     // data to put back in its place — a clean target left with a failed extraction's
-    // leftovers reads as existing state to the next bootstrap/restore (audit 2026-09-23
-    // round 4, P2-02).
+    // leftovers reads as existing state to the next bootstrap/restore.
     warn(oldDataMoved ? "restore failed — restoring the previous data" : "restore failed — removing the unpacked tree");
     const compensationErrors: unknown[] = [];
     if (restoreMayHaveWritten) {
@@ -411,8 +410,7 @@ export async function restoreArchive(
     // added" — a concurrent change during the same held lock is not expected, and this is the
     // rollback of THIS restore's own effect, nothing else's. The rollback restores that state
     // FAITHFULLY, absence included: writing an empty ledger when none existed before used to
-    // fabricate a forget-shaped file — a witness to a forget this operator never asked for
-    // (audit 2026-09-23 XXA round 6, P1-04).
+    // fabricate a forget-shaped file — a witness to a forget this operator never asked for.
     if (historyImported) {
       warn("restore failed after privacy history was imported — reverting the ledger");
       const snapshot = ledgerBefore;
@@ -452,7 +450,7 @@ export async function restoreArchive(
   // command's to do. A sidecar mounting a file or directory under the data directory
   // therefore still holds the previous data: the moved-aside tree when one was moved,
   // the replaced file's old content otherwise. Named here so the gap is the operator's
-  // decision, not a silent one (audit 2026-09-22 round 2, P2-04).
+  // decision, not a silent one.
   const sidecars = await runningRecipeStacks(ctx);
   if (sidecars.length > 0) {
     warn(

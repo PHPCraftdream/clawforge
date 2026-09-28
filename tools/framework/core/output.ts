@@ -56,3 +56,9 @@ export function emit(text: string): void {
   if (sink !== undefined) sink(text);
   else process.stdout.write(text);
 }
+
+/** Delays without blocking the event loop — the one polling primitive every wait loop in
+ *  this framework shares, rather than each spelling out its own setTimeout promise. */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

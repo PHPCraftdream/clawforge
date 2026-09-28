@@ -284,7 +284,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
   }
 }
 
-// --- UX-10: the restart advice is suppressed exactly when a caller starts/restarts itself ----
+// --- the restart advice is suppressed exactly when a caller starts/restarts itself -----------
 
 check("by default (a bare ./clawforge apply-config), the restart advice is printed", appliedHeadline(true), "desired state applied — restart to pick it up: ./clawforge restart");
 check("with restartAdvice: false, it is not — the caller starts/restarts itself", appliedHeadline(false).includes("restart to pick it up"), false);

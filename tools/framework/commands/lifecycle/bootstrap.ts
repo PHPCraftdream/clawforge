@@ -40,7 +40,7 @@ export const BOOTSTRAP_ARGUMENTS: CommandArgument[] = [
 /** After a fresh pull, this deployment's OWN OPENCLAW_IMAGE is repointed from the moving tag
  *  to the exact digest that tag was just proven to hold — so a LATER pull of the same shared
  *  tag by some other deployment on this Docker daemon can no longer silently switch what THIS
- *  deployment recreates onto next (up, restart after compose changes, apply — task #32). An
+ *  deployment recreates onto next (up, restart after compose changes, apply). An
  *  already-pinned deployment (`image` already carries "@sha256:") is left alone: only
  *  ./clawforge upgrade moves those, deliberately, never a bootstrap re-run.
  *
@@ -124,7 +124,7 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
       log(`pulling ${fresh.image}`);
       await live.runtime.pullImage();
       // Fallback (digest unresolvable at the registry): the pull moved the local tag for every
-      // deployment on it; at least this one is pinned to what it got (task #32).
+      // deployment on it; at least this one is pinned to what it got.
       live = await pinFreshPull(live, fresh.image);
     }
   }
@@ -137,7 +137,7 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
   // which stopped bootstrap before this step ever ran. Built-in providers (zai and the
   // rest) are exempt from that requirement, so this order costs them nothing.
   // restartAdvice: false — the gateway starts a few lines below, in this same run; the
-  // default "restart to pick it up" line would contradict that (UX-10).
+  // default "restart to pick it up" line would contradict that.
   await applyConfig(live, [], { restartAdvice: false });
   await configureProvider(live, []);
 
@@ -165,7 +165,7 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
   // configureProvider() above had nothing to reference. Read the same way inspect does
   // (collectConfiguredProviders against the live config), not guessed from which env vars
   // happen to be set — doctor would otherwise say "nothing blocking" over an instance that
-  // cannot actually do its one job (UX-09). Best effort: an unreadable or unparseable config
+  // cannot actually do its one job. Best effort: an unreadable or unparseable config
   // here is doctor's finding to make, not a reason to fail a bootstrap that just succeeded.
   try {
     const liveConfig = JSON5.parse(await live.transport.readFile(`${fresh.dataDir}/config/openclaw.json`)) as unknown;

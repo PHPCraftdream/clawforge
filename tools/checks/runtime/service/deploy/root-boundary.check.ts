@@ -1,5 +1,5 @@
-// The round-6 half of deploy's checks: the remote-root marker protocol (P1-06) and the
-// tightened sensitive-checkout exemptions (P1-07). Split from checkout-policy.check.ts
+// The other half of deploy's checks: the remote-root marker protocol and the tightened
+// sensitive-checkout exemptions. Split from checkout-policy.check.ts
 // (same directory) when the combined file passed the source layout's 700-line limit — see
 // fixture.ts for why this is a sibling directory rather than a sibling file.
 
@@ -40,10 +40,10 @@ function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
 }
 
-// --- P1-06: the first --delete may only run in a root deploy created ---------------
+// --- the first --delete may only run in a root deploy created ----------------------
 //
 // `deploy --path <dir>` used to reach `mkdir -p` and then rsync --delete with no
-// examination of the destination at all (audit 2026-09-23 round 6, P1-06): a typo could
+// examination of the destination at all: a typo could
 // point the mirror at a filesystem root, a shared top-level directory or a data/backups
 // tree, and the first sync would delete whatever unrelated content sat there that the
 // mirror does not carry — an unlimited blast radius for an ordinary operation. The local
@@ -214,13 +214,13 @@ function skip(name: string): void {
   }
 }
 
-// --- P1-07a: a tracked sensitive NAME is not tracked BYTES --------------------------
+// --- a tracked sensitive NAME is not tracked BYTES -----------------------------------
 //
 // The checkout scan's tracked-path exemption used to end at `git ls-files`: a path that
 // had been committed once was exempt forever, so a tracked `.env.example` edited in place
 // — the template `new-app` copies onto every deployment, filled with local values —
 // sat at a reviewed PATH with unreviewed BYTES, and the first rsync shipped the working
-// copy (audit 2026-09-23 round 6, P1-07). Exemption now asks git's own filter-aware
+// copy. Exemption now asks git's own filter-aware
 // question — `git status` — whether the working tree still holds the committed bytes,
 // failing closed to "dirty" when it cannot run. This is the gate's own unit coverage in
 // a throwaway repository: deploy() itself always scans the real checkout, whose tracked
@@ -274,15 +274,15 @@ function skip(name: string): void {
   }
 }
 
-// --- P1-07b: the recipes root is scanned whole, files and links included -------------
+// --- the recipes root is scanned whole, files and links included ---------------------
 //
 // The recipes scan walked only entries with isDirectory(), so a shared.secrets.env or
 // .env.local DIRECTLY under the recipes root was scanned by nothing: the checkout scan
 // skips top-level apps/ (where this root lives in a monorepo), EXCLUDES holds no generic
-// pattern for either shape, and the recipes rsync ships the whole root regardless
-// (audit 2026-09-23 round 6, P1-07). Every top-level entry — file, symlink, directory —
-// now gets the same sensitive-NAME policy half the recipe trees themselves get, while an
-// ordinary top-level file still deploys. Deploy-level, like the P1-03 block: the refusal
+// pattern for either shape, and the recipes rsync ships the whole root regardless. Every
+// top-level entry — file, symlink, directory — now gets the same sensitive-NAME policy half
+// the recipe trees themselves get, while an ordinary top-level file still deploys.
+// Deploy-level, like the sensitive-name-inside-a-recipe case above: the refusal
 // is deploy's, the rsync is deploy's.
 {
   const recipesRoot = await mkdtemp(join(tmpdir(), "clawforge-deploy-recipes-root-"));

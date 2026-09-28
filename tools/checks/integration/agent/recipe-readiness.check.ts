@@ -1,4 +1,4 @@
-// Regression for the audited bug (2026-09-23, P2-04): after `compose up`, install used to
+// Regression: after `compose up`, install used to
 // print "<name> is running" and call afterStart the instant `up` returned, with no check
 // beyond "does a container from this project exist" — which a single live sidecar
 // satisfies even while a multi-service recipe's own main service crashed. A recipe that
@@ -224,9 +224,8 @@ try {
     check("install reports ready once every declared service is up and healthy", output.includes('"status":"ready"'), true);
   }
 
-  // --- P3-01: malformed ports/variables are rejected at load, isolated at listing, and ---
+  // --- malformed ports/variables are rejected at load, isolated at listing, and ----------
   // --- surfaced as a visible catalog entry rather than a thrown render -------------------
-  // --- (docs/internal/review-2026-09-23-xs-round-4.md) ------------------------------------
 
   const malformedManifests: Array<{ name: string; json: unknown; expects: string }> = [
     { name: "bad-port-host-type", json: { description: "port host is not an integer", ports: [{ host: "8080", container: 80 }] }, expects: "ports[0].host must be an integer" },
@@ -278,7 +277,7 @@ try {
     }
   }
 
-  // --- P2-09 (runtime backend): the compose ps listing must include stopped containers ----
+  // --- runtime backend: the compose ps listing must include stopped containers -----------
   // --- (--all) and aggregate replicas, or a crashed service silently leaves the -----------
   // --- requirement set and a surviving sidecar answers for the whole recipe ----------------
 
@@ -337,7 +336,7 @@ try {
     );
   }
 
-  // --- P2-09 (default derivation): with no readiness declared, the required set comes -----
+  // --- default derivation: with no readiness declared, the required set comes ------------
   // --- from the full listing, so a crashed service is a named failure, not a shrunk set ----
 
   await writeRecipe("no-readiness-crashed-service", {
@@ -359,7 +358,7 @@ try {
     check("(a) the default-derived readiness report never calls this ready", output.includes('"status":"ready"'), false);
   }
 
-  // --- P2-09 (grace): a ready answer must HOLD for the grace window; a flip inside it ------
+  // --- grace: a ready answer must HOLD for the grace window; a flip inside it -------------
   // --- fails readiness, naming the service that flipped ------------------------------------
 
   await writeRecipe("ready-then-crash", {
@@ -386,7 +385,7 @@ try {
     check("(b) the grace-window flip is not reported as ready", output.includes('"status":"ready"'), false);
   }
 
-  // --- P2-09 (probe bound): a hung serviceStates() must not defeat the readiness -----------
+  // --- probe bound: a hung serviceStates() must not defeat the readiness -----------------
   // --- deadline — it fires with a timeout message and an unknown verdict -------------------
 
   await writeRecipe("hung-state-probe", {

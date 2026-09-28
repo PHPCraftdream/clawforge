@@ -539,7 +539,7 @@ export const managementCommands: Record<string, AppCommand> = {
     group: "integrations",
     run: mcpCreds,
     // Its whole job is handing over the credential: masking its healthy output (the
-    // response redaction every other successful answer now goes through, P2-05) would
+    // response redaction every other successful answer now goes through) would
     // answer with "***" where the caller asked for the token. The deliberate reveal is
     // declared here, not left as an implicit hole in the dispatcher.
     exportsSecrets: true,

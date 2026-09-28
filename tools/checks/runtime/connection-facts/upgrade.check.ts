@@ -1,7 +1,7 @@
 // `./clawforge upgrade` — resolve the target image to a digest (never moving a shared local
 // tag), take a pre-upgrade backup, recreate the gateway, and roll back to the digest it was
 // running before on any failure — restoring that backup too when the failure was a migration
-// (upstream: exit 78) that may already have changed the data (task #8).
+// (upstream: exit 78) that may already have changed the data.
 //
 // Lives here rather than under lifecycle/ or orchestration/: both are already at the
 // directory's 7-entry layout cap, and this command's central fact — OPENCLAW_IMAGE — is one

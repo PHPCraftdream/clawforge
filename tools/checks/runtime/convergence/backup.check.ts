@@ -215,7 +215,7 @@ function stubBackupCtx(
 
 // leaveStopped is for a caller (smoke's round-trip check) about to restore right back into
 // the same data directory: restarting here just to have restore stop it again a moment later
-// reopens the window a paused gateway is meant to close (audit 2026-09-23, P1-02).
+// reopens the window a paused gateway is meant to close.
 {
   const { ctx, calls } = stubBackupCtx(false);
   await withOutputSink(() => {}, () => createBackup(ctx, { leaveStopped: true }));
@@ -320,7 +320,7 @@ function rotationContext(
 }
 
 // A data directory that is itself a symlink used to produce a "successful" one-entry
-// archive — the link, none of the data (audit 2026-09-22 round 2, P2-02). The refusal
+// archive — the link, none of the data. The refusal
 // must come before the gateway is ever touched.
 {
   const { ctx, calls, files } = stubBackupCtx(false, { symlinkedRoot: true });
@@ -370,7 +370,7 @@ function rotationContext(
   check("a publication failure restarts the gateway", calls.includes("start") && calls.includes("waitForHealth"), true);
 }
 
-// --- P2-02 (audit 2026-09-22 round 2): a symlinked data root, end to end on a real filesystem.
+// --- a symlinked data root, end to end on a real filesystem. -----------------------------------
 //
 // createBackup() used to hand tar the link's own name and report success: the archive held
 // exactly one entry — the link — and none of the data. Every scenario here is the real
@@ -560,7 +560,7 @@ if (p202Transport === undefined) {
       await p202Transport.mkdirp(`${dataDir}/workspace`);
       await p202Transport.writeFile(`${dataDir}/config/openclaw.json`, '{"provider":{}}\n');
       await p202Transport.writeFile(`${dataDir}/workspace/SOUL.md`, "fixture\n");
-      // The provenance marker a clawforge-created tree carries (P1-09): it travels with the
+      // The provenance marker a clawforge-created tree carries: it travels with the
       // archive, so the restore's ensureDataDirs sees a tree of this framework's own making
       // and may narrow its ownership work to the standard paths instead of refusing a tree
       // it cannot vouch for.
@@ -592,14 +592,13 @@ if (p202Transport === undefined) {
     }
   }
 
-  // ensureDataDirs' chown escalation must not be decided from directory writability alone
-  // (audit 2026-09-23, XS round 4): a CI runner whose own uid is not 1000 owns its /tmp
-  // fixtures outright — `test -w` says yes — but POSIX still refuses an unprivileged
-  // `chown 1000:1000` on a file that uid does not already own, exactly the shape that made
-  // this round-trip fail for real on GitHub Actions (runner uid 1001, not 1000). P1-09 pins
-  // the shape of the escalation too: one chown naming exactly the paths this run created,
-  // never -R — the blanket recursive chown of whatever pre-existed is the bug this round
-  // removes.
+  // ensureDataDirs' chown escalation must not be decided from directory writability alone:
+  // a CI runner whose own uid is not 1000 owns its /tmp fixtures outright — `test -w` says
+  // yes — but POSIX still refuses an unprivileged `chown 1000:1000` on a file that uid does
+  // not already own, exactly the shape that made this round-trip fail for real on GitHub
+  // Actions (runner uid 1001, not 1000). The escalation's shape matters too: one chown naming
+  // exactly the paths this run created, never -R — a blanket recursive chown of whatever
+  // pre-existed would be a bug.
   {
     const dataDir = "/srv/owner-check/data";
     const calls: { command: string; args: string[] }[] = [];
@@ -610,11 +609,11 @@ if (p202Transport === undefined) {
       async exec(command: string, args: string[]): Promise<ExecResult> {
         calls.push({ command, args });
         if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
-        // Not a symlink — ensureDataDirs' root guard (P1-01) checks this before anything
+        // Not a symlink — ensureDataDirs' root guard checks this before anything
         // else, and the default "everything else succeeds" fallback below would otherwise
         // misread it as one.
         if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
-        // The canonical-ancestry check (P1-09) resolves through the ancestors; nothing here
+        // The canonical-ancestry check resolves through the ancestors; nothing here
         // is a link, so every path resolves to itself.
         if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: `${args[1] ?? ""}\n`, stderr: "" };
         if (command === "id" && args[0] === "-u") return { code: 0, stdout: "1001\n", stderr: "" };

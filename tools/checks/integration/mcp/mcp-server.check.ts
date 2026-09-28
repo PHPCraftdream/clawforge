@@ -476,7 +476,7 @@ function conforms(
   check("nor does JSON that is not a document", structuredResult({ summary: "s", structured: true }, "42", "op-5"), undefined);
 }
 
-// --- the declared schema is checked against EVERY action's actual response (P3-01) --------
+// --- the declared schema is checked against EVERY action's actual response ---------------
 //
 // tools/list used to declare the outputSchema by asking structuredWhen for the one action
 // name it happened to return true for, while the dispatcher attached structuredContent to
@@ -579,7 +579,7 @@ function conforms(
   }
 }
 
-// --- a healthy answer goes through the same redaction as a failure (P2-05) ----------------
+// --- a healthy answer goes through the same redaction as a failure -----------------------
 //
 // Masking used to live only on the error branch, so a hook or a log that echoed a value the
 // registry already knew — recipe diagnose being the named case — reached the MCP transcript

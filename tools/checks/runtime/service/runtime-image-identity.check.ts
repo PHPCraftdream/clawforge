@@ -3,7 +3,7 @@
 // Three topics, one stubbed transport: the image identity it reports (the running container's,
 // never the configured tag), the environment compose is given (a file, never `env VAR=…`
 // arguments — the gateway token used to be visible in `ps` for the duration of every
-// container command, and longest for the ones that run longest), and — task #33 — that a
+// container command, and longest for the ones that run longest), and that a
 // crash-abandoned temporary environment file from a PAST call is swept before the next one,
 // never a live or foreign one.
 
@@ -31,7 +31,7 @@ try {
   const transport={
     exec:async(command:string,args:string[])=>{
       calls.push(args);
-      // #containerId() (runtime-docker.ts, UX-17) asks Docker directly by label rather than
+      // #containerId() asks Docker directly by label rather than
       // through `docker compose ... ps` — same simulated backend state as the compose-ps
       // branch below, just a different shape of call reaching it.
       if (command === "docker" && args[0] === "ps" && args.some((arg) => arg.startsWith("label=com.docker.compose.service="))) {
@@ -66,7 +66,7 @@ try {
   await assert.rejects(probeStack.isRunning(), /synthetic daemon failure/);
   process.stderr.write("all running image identity checks passed\n");
 
-  // --- UX-16: health() distinguishes missing / stopped / starting / healthy / unhealthy ----
+  // --- health() distinguishes missing / stopped / starting / healthy / unhealthy ----------
   //
   // Docker leaves the LAST healthcheck verdict in `.State.Health.Status` in place after a
   // plain `docker stop` rather than clearing it — a container stopped while healthy, or one
@@ -121,7 +121,7 @@ try {
     process.stderr.write("all runtime health checks passed\n");
   }
 
-  // --- UX-17: the container-id lookup costs one exec, not a whole compose invocation -------
+  // --- the container-id lookup costs one exec, not a whole compose invocation -------------
   //
   // health(), startedAt(), runningConnectionFacts(), runningImageIdentity() and
   // runningEnvironment() each used to reach for their own #containerId() — a full
@@ -243,7 +243,7 @@ try {
   // Each operation owns its file, outside the replaceable data directory. It also writes an
   // owner record (pid, machine, this process's own start time) beside it, BEFORE it — so a
   // crash between the two writes still leaves an owner a later run can judge by when sweeping
-  // an abandoned directory (task #33; runtime-docker.ts's #sweepStaleComposeEnvs).
+  // an abandoned directory (runtime-docker.ts's #sweepStaleComposeEnvs).
   const envWrites = writes.filter((write) => write.path.endsWith("/compose.env"));
   const ownerWrites = writes.filter((write) => write.path.endsWith("/owner.json"));
   assert.equal(envWrites.length, 3, "each compose operation gets its own environment file");
@@ -552,7 +552,7 @@ if (runnableImage === undefined) {
   }
 }
 
-// --- task #33: a crash-abandoned compose-<uuid> directory from a PAST call is swept --------
+// --- a crash-abandoned compose-<uuid> directory from a PAST call is swept ------------------
 //
 // A crash mid `docker compose` call (crash 139, an OOM kill — anything that skips this
 // process's own finally block) used to leave `<data>-locks/compose-<uuid>/compose.env` behind

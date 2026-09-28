@@ -65,7 +65,7 @@ export function parseAgentConfig(raw: unknown): AgentConfig {
 
 /** Every regular file under `dir`, recursively, as POSIX-style relative paths — except
  *  anything under a top-level directory named `excludeDir`. A thin delegate to the shared
- *  portable-content policy (security/recipe-portable-content.ts, audit 2026-09-22, P1-03):
+ *  portable-content policy (security/recipe-portable-content.ts):
  *  declared privateFiles and sensitive-name matches are held back, and the walker holds
  *  nothing back silently — it warns — while a symlink resolving outside the recipe
  *  directory stops the walk instead of being read through. Every caller of this function
@@ -81,14 +81,14 @@ export async function collectRecipeFiles(dir: string, excludeDir: string): Promi
  *  one config.json, each with its own defaults, is how an inspection comes to disagree with
  *  the command it is supposed to be checking.
  *
- *  Reads through the SAME canonical walker as the set manifest and agentBundleChecksums
- *  (audit 2026-09-23, P1-03): a raw `readdir`+`readFile` here used to bypass the
+ *  Reads through the SAME canonical walker as the set manifest and agentBundleChecksums:
+ *  a raw `readdir`+`readFile` here used to bypass the
  *  portable-content policy entirely, so `privateFiles: ["agent/private.md"]` kept the file
  *  out of the manifest and the checksum map while direct provisioning copied it into the
  *  agent's workspace anyway, and a public-named symlink was read straight through with no
  *  containment check. The walk runs once, before any file is read, so containment and
  *  exclusion are both settled before a single byte moves. The walk root itself is vetted
- *  the same way (round 6, P1-05): an `agent/` that is itself a link out of the recipe — or
+ *  the same way: an `agent/` that is itself a link out of the recipe — or
  *  one that does not resolve — refuses provisioning exactly as an escaping child link
  *  does, while a plainly absent agent/ stays the honest "no bundle" case. config.json and — when the recipe
  *  declares a cron job — cron-message.txt are treated as mandatory: if the policy holds

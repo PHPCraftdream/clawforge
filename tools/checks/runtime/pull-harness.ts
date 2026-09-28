@@ -80,8 +80,8 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
         // createBackup() asks `test -L` before archiving; the modeled data directory is a
         // real one, and the fall-through below would answer 0 — "is a symlink".
         if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
-        // The instance lock's release now empties its directory with `rmdir` (round 6,
-        // P2-03), not a recursive remove of the whole lock path — the same event this stub
+        // The instance lock's release now empties its directory with `rmdir`, not a
+        // recursive remove of the whole lock path — the same event this stub
         // already answers for a plain `remove()` of the lock path.
         if (command === "rmdir") {
           if (args[0]?.endsWith("/operation.mutation")) mutationGuardExists = false;
@@ -145,7 +145,7 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
             code: 0,
             stdout: failure === "private-path"
               ? "data/\ndata/config/openclaw.json\ndata/recipe-private/credentials.env\n"
-              // P2-05: entries that share a string prefix with a declared private path
+              // Entries that share a string prefix with a declared private path
               // (`vault` vs `vault-public`, `config/private.env` vs `config/private.env.example`)
               // but are public content — the false positive that made pull delete the backup
               // it had just taken.
@@ -165,7 +165,7 @@ export function pullScenario(failure?: PullFailure): { ctx: Context; files: Map<
         return { code: 0, stdout: "", stderr: "" };
       },
     },
-    // createBackup() now probes installed recipes' sidecar stacks for its P2-04 warning
+    // createBackup() now probes installed recipes' sidecar stacks for its running-recipe warning
     // (backup.ts calls runningRecipeStacks, one Stack.isRunning() per recipe). The harness
     // has recipes installed and, like the gateway above, answers for them: none running.
     runtime: {

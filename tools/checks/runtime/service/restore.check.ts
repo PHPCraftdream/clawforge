@@ -177,7 +177,7 @@ check("the gateway is never started when a required secret is missing", startCal
   check("a corrupted restored config is not reported as a successful restore", corruptThrew, true);
 }
 
-// --- P2-04 (audit 2026-09-22 round 2): a restore names the recipe stacks it did not recreate.
+// --- a restore names the recipe stacks it did not recreate. ------------------------------
 //
 // restoreArchive() stops the gateway's project and moves the data directory aside;
 // recipe stacks are separate Compose projects, so their containers survive with mounts
@@ -316,7 +316,7 @@ if (process.platform !== "win32") {
   }
 }
 
-// --- P1-04 (audit 2026-09-22 round 3): the restored layout is verified with the
+// --- the restored layout is verified with the
 // privileges that act through it.
 //
 // extractArchive() unpacks through sudoFor() and keeps the archive's numeric ownership,
@@ -571,7 +571,7 @@ function deniedContext(
 //
 // createNativeArchive (backup.ts) reshapes a native backup into this same classic layout,
 // with the pristine OpenClaw archive embedded at NATIVE_MANIFEST_NAME. restoreArchive must
-// feed that back to `openclaw backup verify` and refuse before touching any data (task #7).
+// feed that back to `openclaw backup verify` and refuse before touching any data.
 
 {
   const dataName = "data"; // dataDirName(DATA_DIR) — the archive root restoreArchive expects

@@ -31,7 +31,7 @@ import type { Context } from "../core/context.ts";
 import { deploymentDir, envFile, secretsDir } from "../runtime/deployment.ts";
 import { problem, type Problem, type Severity } from "../service/inspection.ts";
 import { openclawCliJson } from "../service/openclaw-cli.ts";
-import { summarizeExposure } from "../expose/status.ts";
+import { summarizeExposure, safeConnectionFacts } from "../expose/status.ts";
 import { unprotectedPrivateFile } from "../security/private-file.ts";
 
 export type SecurityFindingSource = "security-audit" | "secrets-audit";
@@ -262,22 +262,13 @@ export const CONTAINER_BIND_FINDING = /non-loopback|bind is not loopback/i;
 
 /** True only when the running container's published address is known and loopback. */
 export async function publishedLoopbackOnly(ctx: Context): Promise<boolean> {
-  try {
-    const facts = await ctx.runtime.runningConnectionFacts?.();
-    if (facts?.bindAddress === undefined) return false;
-    return !summarizeExposure(ctx, facts).wildcard && /^(127\.|::1$|localhost$)/.test(facts.bindAddress);
-  } catch {
-    return false;
-  }
+  const facts = await safeConnectionFacts(ctx);
+  if (facts?.bindAddress === undefined) return false;
+  return !summarizeExposure(ctx, facts).wildcard && /^(127\.|::1$|localhost$)/.test(facts.bindAddress);
 }
 
 async function hostExposureProblems(ctx: Context, acknowledge: { reason: string } | undefined): Promise<Problem[]> {
-  let facts: { bindAddress?: string; port?: string } | undefined;
-  try {
-    facts = await ctx.runtime.runningConnectionFacts?.();
-  } catch {
-    facts = undefined; // could not introspect the container — nothing to check right now
-  }
+  const facts = await safeConnectionFacts(ctx);
   if (facts === undefined) return []; // not running, or this runtime cannot introspect it
   const summary = summarizeExposure(ctx, facts);
   if (!summary.wildcard) return [];

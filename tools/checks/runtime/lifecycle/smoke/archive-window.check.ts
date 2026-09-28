@@ -1,4 +1,4 @@
-// UX-14: the three archive-based checks (reject-secrets, accept-share, round-trip) share one
+// The three archive-based checks (reject-secrets, accept-share, round-trip) share one
 // gateway stop/start cycle instead of each managing its own — a stub runtime counts pause()/
 // start() calls to prove exactly one cycle covers the whole trio, however many of them are
 // selected and however many of them fail.

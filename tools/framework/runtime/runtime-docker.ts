@@ -6,6 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { composeFile, locksDir, toSettings, loadEnv, type Settings } from "../core/env.ts";
+import { sleep } from "../core/output.ts";
 import { deploymentDir, composeProjectName } from "./deployment.ts";
 import { machineName, ownProcessStartedAt, sweepStaleComposeEnvs } from "../security/instance-mutation-guard.ts";
 import { resolveImageDigest, lastExitCode } from "../diagnostics/image-digest.ts";
@@ -216,7 +217,7 @@ export class DockerRuntime implements Runtime {
    *  container would answer for the first — and asked of Docker directly rather than
    *  through `#compose()`: finding a container by Docker's own labels needs no environment
    *  interpolation at all, so it skips #withEnvFile's whole setup/teardown (five execs, one
-   *  wsl.exe spawn each) for a fact plain `docker ps` answers in one (UX-17). The same
+   *  wsl.exe spawn each) for a fact plain `docker ps` answers in one. The same
    *  shortcut recover-env's own bootstrap.ts already takes, for the same reason — reaching
    *  a container this way needs no compose invocation. Asked fresh every call, never cached:
    *  this runtime instance can outlive an external state change (an operator's own `docker
@@ -316,7 +317,7 @@ export class DockerRuntime implements Runtime {
    *  apart from a running-but-unhealthy one, because Docker leaves the last healthcheck
    *  verdict in place after a plain `docker stop` rather than clearing it — so a container
    *  stopped while healthy, or one that failed its LAST check before stopping, both read
-   *  "unhealthy" for as long as they sit stopped (UX-16). Checked first, before the health
+   *  "unhealthy" for as long as they sit stopped. Checked first, before the health
    *  verdict is even asked about. "starting"/"healthy"/"unhealthy"/"none" — Docker's own
    *  verdict for a container that IS running, same as before. */
   async health(): Promise<string> {
@@ -661,7 +662,7 @@ export class DockerRuntime implements Runtime {
         // --all: without it compose lists only running containers, and the recipe installer
         // derives the required set from this very response when a recipe declares none — a
         // crashed service absent from the listing would shrink the requirement set to
-        // whichever sidecars happened to survive. (audit 2026-09-23, P2-09)
+        // whichever sidecars happened to survive.
         const result = await compose(["ps", "--all", "--format", "json"], false).catch(() => undefined);
         if (result === undefined) return {};
         const states: Record<string, StackServiceState> = {};
@@ -692,7 +693,7 @@ export class DockerRuntime implements Runtime {
       if (!(await this.isRunning())) {
         throw new Error("the service container stopped while starting up — check ./clawforge logs");
       }
-      await new Promise((resolveWait) => setTimeout(resolveWait, 2000));
+      await sleep(2000);
     }
     throw new Error(`the service did not become healthy within ${timeoutSeconds}s`);
   }

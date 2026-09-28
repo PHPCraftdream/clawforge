@@ -628,7 +628,7 @@ export function parseBreakForeignLockHost(args: string[]): string | undefined {
  *  `options.breakLockSupported` is the one thing a call site still states explicitly: a
  *  command whose own parser refuses --break-lock (backup, configure-provider, secrets, the
  *  internal smoke round-trip step) passes false so its refusal never offers a flag it cannot
- *  accept (UX-04). */
+ *  accept. */
 export async function guarded<T>(
   ctx: Context,
   what: string,

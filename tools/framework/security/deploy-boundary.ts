@@ -1,5 +1,5 @@
 // The privacy/destructive-write boundary for `./clawforge deploy`, split out of
-// commands/management/deploy.ts when round 6's P1-06/P1-07 fixes pushed that file past the
+// commands/management/deploy.ts when its remote-root and sensitive-checkout fixes pushed that file past the
 // source layout's 700-line limit (tools/checks/foundation/layout.check.ts). deploy.ts's own
 // commands/management/ directory is already at its 7-entries cap, so this lives beside the
 // other privacy-boundary modules (private-config.ts, recipe-portable-content.ts,
@@ -37,7 +37,7 @@ export const EXCLUDES = [
 ];
 
 /** The file that records a remote directory as CREATED for a ClawForge deployment
- *  (audit 2026-09-23 round 6, P1-06). `mkdir -p` proves a path can exist — never that it
+ *  `mkdir -p` proves a path can exist — never that it
  *  was made for this deployment, never that it is empty, never that nothing else owns it —
  *  so deploy writes this marker the first time it takes a root over and refuses any root
  *  carrying someone else's. The marker's first line names the deployment (MARKER_PREFIX);
@@ -76,7 +76,7 @@ async function gitTrackedFiles(root: string): Promise<Set<string> | undefined> {
  *  filter-aware answer to "is the working tree still the index?" (CRLF conversion already
  *  applied by git itself, rather than re-guessed here byte by byte). `git ls-files` proves
  *  a PATH was reviewed once, never that the bytes sitting there NOW are the reviewed ones
- *  (audit 2026-09-23 round 6, P1-07): a tracked tools/framework/.env.example with local
+ *  a tracked tools/framework/.env.example with local
  *  values typed into it still sits at a reviewed path, and the old scan exempted it on the
  *  path alone while rsync shipped the unreviewed bytes. A tracked path therefore ships
  *  only when git reports it COMPLETELY clean — no staged edit, no worktree edit, no
@@ -115,8 +115,8 @@ function gitBlobHash(content: Buffer): string {
 
 /** The blob hashes of every COMMITTED file in `root` — the bytes a reviewer actually
  *  saw. Read from `git ls-tree -r HEAD` rather than `git ls-files -s`, because the INDEX
- *  also carries staged-but-uncommitted blobs, and staged bytes were never reviewed (audit
- *  2026-09-23 round 6, P1-07: the tracked-path exemption had exactly that hole, and this
+ *  also carries staged-but-uncommitted blobs, and staged bytes were never reviewed (the
+ *  tracked-path exemption had exactly that hole, and this
  *  byte-identity half must not be a second door into it — the exemption's claim is "these
  *  exact bytes were committed and reviewed somewhere", which only the committed tree proves).
  *  No extra file reads, since the committed tree carries each blob's hash directly.
@@ -144,7 +144,7 @@ async function gitTrackedBlobHashes(root: string): Promise<Set<string> | undefin
 /** Walks `root` — the tree the FIRST rsync (the framework checkout) sends wholesale, before
  *  the recipe/deployment config scan below ever runs — for any name the shared sensitive-name
  *  policy (recipe-portable-content.ts, SENSITIVE_RECIPE_NAME) holds private, wherever in the
- *  checkout it sits (audit 2026-09-23 round 4, P1-05: recipes and config/ went through that
+ *  checkout it sits (recipes and config/ went through that
  *  policy, but the checkout root that ships first did not, and its own EXCLUDES above is a
  *  fixed glob list with no `.env.*` or `*.secrets.env` — a tools/local/.env.production or
  *  notes/service.secrets.env outside apps/ and secrets/ shipped, while the same name one
@@ -173,7 +173,7 @@ async function gitTrackedBlobHashes(root: string): Promise<Set<string> | undefin
  *  being recursed into, the same as a matching directory would in collectPortableRecipeFiles —
  *  an exemption that only ever fires on file content cannot be satisfied by a directory path.
  *
- *  Round 6 (audit 2026-09-23, P1-07) tightened the tracked-path half of that exemption:
+ *  A later fix tightened the tracked-path half of that exemption:
  *  path presence in `git ls-files` is not byte identity. A tracked `.env.example` with
  *  local values typed into it sits at a path that was reviewed once and ships bytes
  *  nobody reviewed, and the exemption fired on the path alone. It now additionally
@@ -198,7 +198,7 @@ async function gitTrackedBlobHashes(root: string): Promise<Set<string> | undefin
  *  off the wire elsewhere in the tree — this scan's contract is REFUSAL, the same contract
  *  every other carrier already keeps, and a name silently passed over here because a
  *  differently-scoped glob elsewhere would also have excluded it is exactly the
- *  inconsistent, unrefused, "held back one carrier at a time" gap P1-05 is closing.
+ *  inconsistent, unrefused, "held back one carrier at a time" gap this scan closes.
  *
  *  Symlinks are reported by their own name but never followed: rsync -a sends a symlink as
  *  a link, not its target's bytes, so reading through one here would test content that
@@ -210,7 +210,7 @@ async function gitTrackedBlobHashes(root: string): Promise<Set<string> | undefin
 export async function collectSensitiveCheckoutNames(root: string): Promise<{ path: string; reason: string }[]> {
   const found: { path: string; reason: string }[] = [];
   const tracked = await gitTrackedFiles(root);
-  // Round 6 (P1-07): the OTHER half of the tracking evidence. `git ls-files` answers
+  // The OTHER half of the tracking evidence. `git ls-files` answers
   // "was this path reviewed"; this answers "are the bytes here now the ones that were
   // reviewed", and `undefined` (git missing, not a checkout) means every tracked path is
   // dirty — a status that cannot be obtained never clears anything.
@@ -282,7 +282,7 @@ export function quoted(value: string): string {
 }
 
 /** The first question about the remote root, asked before anything is mirrored into it
- *  (audit 2026-09-23 round 6, P1-06). Does it exist; is every component of it a REAL
+ *  Does it exist; is every component of it a REAL
  *  directory (`cd` + `pwd -P` canonicalizes the whole path, so a symlinked component shows
  *  up as a canonical answer that differs from the one asked for — --delete on the target
  *  follows links, and a link turning the mirror into "erase whatever this points at" is
@@ -348,7 +348,7 @@ export function markerWriteScript(markerPath: string, line1: string, line2: stri
 
 /** What an adopted root actually holds, listed BEFORE the destructive sync — the audit's
  *  requirement that taking over an existing tree be an explicit operation with the
- *  affected inventory on screen (audit 2026-09-23 round 6, P1-06). Two levels and two
+ *  affected inventory on screen. Two levels and two
  *  hundred lines are enough to recognize a tree without turning the log into the tree. */
 export function rootInventoryScript(remotePath: string): string {
   return [
@@ -361,7 +361,7 @@ export function rootInventoryScript(remotePath: string): string {
 }
 
 /** The remote root deploy may mirror into, examined locally before anything remote runs
- *  (audit 2026-09-23 round 6, P1-06). `--path <dir>` used to reach `mkdir -p` and then
+ *  `--path <dir>` used to reach `mkdir -p` and then
  *  rsync --delete with no validation at all: a typo could select a filesystem root, a
  *  shared top-level directory, or a data/backups tree, and the first sync would delete
  *  whatever unrelated content sat there that the mirror does not carry — an unlimited

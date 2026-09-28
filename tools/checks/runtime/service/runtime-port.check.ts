@@ -148,7 +148,7 @@ function contextWithConflict(holder: string | undefined, fixture: PortFixture = 
   check("no conflict and a free port means preflightPort does not throw", threw, false);
 }
 
-// --- R9-07 residual: a non-Docker listener on the same address:port ---------------------
+// --- a non-Docker listener on the same address:port --------------------------------------
 
 {
   // ss finds something listening that Docker never published — a bare process squatting

@@ -60,7 +60,7 @@ export interface RecipePort {
 /** What `recipe install` must see before it treats the stack as up: every named compose
  *  service running and, where that service declares a healthcheck, healthy — not just
  *  "some container from this project is alive", which one surviving sidecar satisfies even
- *  while the recipe's own main service is down (audit 2026-09-23, P2-04). Declaring this is
+ *  while the recipe's own main service is down. Declaring this is
  *  optional: a recipe without it still gets a short grace check against whatever services
  *  compose reports for the project (management/recipe/index.ts), just without a name to hold a
  *  slow starter to. */
@@ -294,7 +294,7 @@ export interface BrokenRecipe {
 
 /** The listing's other half: every recipe directory whose recipe.json exists but fails to
  *  load, with the reason, so `recipe list` can name the problem instead of the directory
- *  quietly vanishing from the catalog (P3-01: a broken manifest becoming a silent omission
+ *  quietly vanishing from the catalog (a broken manifest becoming a silent omission
  *  is exactly the gap that let one bad `ports` entry masquerade as "no such recipe").
  *  Directories without a recipe.json are not broken recipes — an agent/MCP bundle or
  *  unrelated directory, already accounted for by listAgentBundleRecipes — so they are
@@ -375,12 +375,12 @@ async function strictDeclaredPrivatePaths(): Promise<string[]> {
  *      quiet when nothing is declared — no recipe root, an absent root, a directory with no
  *      recipe.json — and stop on a recipe.json that exists but cannot be read, parsed or
  *      validated: a broken declaration read as "nothing declared" is exactly how a private
- *      file once walked into a share archive, audit 2026-09-21, P1-01);
+ *      file once walked into a share archive);
  *    - what PAST private writes recorded (persistedPrivatePaths — the deployment-side
  *      ledger private-config.ts appends to on every private write). Removing a recipe, or
  *      switching to a set without it, takes the declaration away while the runtime files
  *      stay on the target; without the record, the exclusions and the refusals would drop
- *      at exactly that moment (audit 2026-09-22, P1-02). Entries leave only through
+ *      at exactly that moment. Entries leave only through
  *      explicit cleanup — never silently, and never because the source tree changed.
  *
  *  Both halves fail closed: a broken manifest or an unreadable ledger stops the policy
@@ -398,9 +398,9 @@ export async function installedRecipePrivatePaths(): Promise<string[]> {
  *  from a directory that is not yet a recipe of this deployment, so the strict enumeration
  *  over the recipes root does not apply. Read strictly all the same: a manifest that exists
  *  but cannot be read, parsed or validated throws rather than reading as "nothing declared"
- *  — the quiet-empty failure is how a private file once walked into a share archive (audit
- *  2026-09-21, P1-01). Entries are literal — no globs, one meaning only (P1-02 was two
- *  readers disagreeing about globs) — and an absent declaration is honest: the caller's
+ *  — the quiet-empty failure is how a private file once walked into a share archive.
+ *  Entries are literal — no globs, one meaning only (two readers once disagreed about
+ *  globs) — and an absent declaration is honest: the caller's
  *  generic policy still applies. */
 export async function declaredPrivateFiles(sourceDirectory: string): Promise<string[]> {
   const manifest = resolve(sourceDirectory, "recipe.json");

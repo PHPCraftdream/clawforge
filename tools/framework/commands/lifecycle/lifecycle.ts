@@ -5,7 +5,7 @@
 
 import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/log.ts";
-import { shouldFollow, emit, withOutputSink } from "#src/core/output.ts";
+import { shouldFollow, emit, withOutputSink, sleep } from "#src/core/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
@@ -306,7 +306,11 @@ interface UpgradeTarget {
 /** An explicit digest is used as-is. Anything else — including a pinned `repo:tag@sha256:…`
  *  OPENCLAW_IMAGE — is a channel re-resolved at the registry, so a plain `upgrade` asks whether
  *  the tag moved. A tagless pin has no recoverable channel and is refused. */
-async function resolveUpgradeTarget(ctx: Context, requestedImage: string | undefined): Promise<UpgradeTarget> {
+async function resolveUpgradeTarget(
+  ctx: Context,
+  requestedImage: string | undefined,
+  resolveImageDigest: (reference: string) => Promise<string | undefined>,
+): Promise<UpgradeTarget> {
   if (requestedImage !== undefined && requestedImage.includes("@sha256:")) {
     return { targetDigest: requestedImage };
   }
@@ -328,7 +332,7 @@ async function resolveUpgradeTarget(ctx: Context, requestedImage: string | undef
     }
   }
 
-  const targetDigest = await ctx.runtime.resolveImageDigest!(channel);
+  const targetDigest = await resolveImageDigest(channel);
   if (targetDigest === undefined) die(`could not resolve a digest for ${channel} — refusing to upgrade to an unverified reference`);
   return { targetDigest, channel };
 }
@@ -347,7 +351,7 @@ async function waitForUpgradeHealth(ctx: Context, timeoutMs = 180_000): Promise<
       if (exitCode !== undefined && exitCode !== 0 && !(await ctx.runtime.isRunning())) {
         return { ok: false, migrationExit78: false, reason: `the container exited ${exitCode} while waiting for /${endpoint}` };
       }
-      await new Promise((resolveWait) => setTimeout(resolveWait, 2000));
+      await sleep(2000);
     }
     if (!ready) return { ok: false, migrationExit78: false, reason: `the gateway did not answer /${endpoint} within ${timeoutMs / 1000}s` };
   }
@@ -386,7 +390,7 @@ async function runDoctorLint(ctx: Context): Promise<{ ok: true } | { ok: false; 
  *  config/desired state (see README on why apply never rewrites the lock); this is one of two
  *  exceptions, the same way secrets --apply rewrites .env for a rotated repo-env value.
  *  Shared by upgrade (the digest it just confirmed healthy) and bootstrap (the digest a fresh
- *  pull just resolved to, task #32) — the one place either command is allowed to rewrite .env
+ *  pull just resolved to) — the one place either command is allowed to rewrite .env
  *  on its own, and both for the identical reason: what actually ran was just proven, by a
  *  healthy upgrade or by the pull itself, and pinning it is recording a fact, not a decision. */
 export async function pinImageReference(digestReference: string): Promise<void> {
@@ -395,13 +399,20 @@ export async function pinImageReference(digestReference: string): Promise<void> 
   await replacePrivateFile(path, content);
 }
 
-async function rollbackUpgrade(ctx: Context, previousDigest: string, backupArchive: string, restoreData: boolean, reason: string): Promise<never> {
+async function rollbackUpgrade(
+  ctx: Context,
+  previousDigest: string,
+  backupArchive: string,
+  restoreData: boolean,
+  reason: string,
+  recreateWithImage: (reference: string) => Promise<void>,
+): Promise<never> {
   warn(`upgrade failed — rolling back to ${previousDigest}: ${reason}`);
   if (restoreData) {
     warn(`migrations may have run against the new image — restoring the pre-upgrade backup: ${backupArchive}`);
     await restoreArchive(ctx, backupArchive, { force: true });
   } else {
-    await ctx.runtime.recreateWithImage!(previousDigest);
+    await recreateWithImage(previousDigest);
     try {
       await ctx.runtime.waitForHealth();
     } catch (rollbackHealthError) {
@@ -414,7 +425,12 @@ async function rollbackUpgrade(ctx: Context, previousDigest: string, backupArchi
   throw new Error(`upgrade failed and was rolled back to ${previousDigest}: ${reason}`);
 }
 
-async function upgradeLocked(ctx: Context, previousDigest: string, targetDigest: string): Promise<void> {
+async function upgradeLocked(
+  ctx: Context,
+  previousDigest: string,
+  targetDigest: string,
+  recreateWithImage: (reference: string) => Promise<void>,
+): Promise<void> {
   log(`upgrading from ${previousDigest} to ${targetDigest}`);
 
   log("taking a pre-upgrade backup");
@@ -429,15 +445,15 @@ async function upgradeLocked(ctx: Context, previousDigest: string, targetDigest:
   log(`pre-upgrade backup: ${backupArchive}`);
 
   log(`recreating the gateway on ${targetDigest}`);
-  await ctx.runtime.recreateWithImage!(targetDigest);
+  await recreateWithImage(targetDigest);
 
   const health = await waitForUpgradeHealth(ctx);
-  if (!health.ok) await rollbackUpgrade(ctx, previousDigest, backupArchive, health.migrationExit78, health.reason);
+  if (!health.ok) await rollbackUpgrade(ctx, previousDigest, backupArchive, health.migrationExit78, health.reason, recreateWithImage);
 
   log("running openclaw doctor --lint");
   const lint = await runDoctorLint(ctx);
   if (!lint.ok) {
-    await rollbackUpgrade(ctx, previousDigest, backupArchive, false, `openclaw doctor --lint reported blocking finding(s): ${lint.detail}`);
+    await rollbackUpgrade(ctx, previousDigest, backupArchive, false, `openclaw doctor --lint reported blocking finding(s): ${lint.detail}`, recreateWithImage);
   }
 
   await pinImageReference(targetDigest);
@@ -459,8 +475,10 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
   if (ctx.runtime.resolveImageDigest === undefined || ctx.runtime.recreateWithImage === undefined) {
     die(`${ctx.runtime.description} does not support ./clawforge upgrade`);
   }
+  const resolveImageDigest = ctx.runtime.resolveImageDigest.bind(ctx.runtime);
+  const recreateWithImage = ctx.runtime.recreateWithImage.bind(ctx.runtime);
 
-  const target = await resolveUpgradeTarget(ctx, options.image);
+  const target = await resolveUpgradeTarget(ctx, options.image, resolveImageDigest);
 
   const identity = await ctx.runtime.runningImageIdentity?.();
   if (identity === undefined || identity.digests.length === 0) {
@@ -492,5 +510,5 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
-  await guarded(ctx, "upgrade", args, () => upgradeLocked(ctx, previousDigest, target.targetDigest));
+  await guarded(ctx, "upgrade", args, () => upgradeLocked(ctx, previousDigest, target.targetDigest, recreateWithImage));
 }

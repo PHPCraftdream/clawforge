@@ -83,10 +83,10 @@ try {
       async remove(): Promise<void> {},
       async mkdirp(): Promise<void> {},
       async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-        // Not a symlink — ensureDataDirs' root guard (P1-01) checks this first, and the
+        // Not a symlink — ensureDataDirs' root guard checks this first, and the
         // otherwise-unconditional "everything succeeds" stub below would misread it as one.
         if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
-        // The canonical-ancestry check (P1-09) resolves through the ancestors: no symlinks
+        // The canonical-ancestry check resolves through the ancestors: no symlinks
         // here, so every path resolves to itself.
         if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: `${args[1] ?? ""}\n`, stderr: "" };
         // The tree pre-exists with the right owner, so ensureDataDirs' provenance gate
@@ -104,7 +104,7 @@ try {
         calls.push({ kind: "port-check", args: [] });
         return conflictingContainer;
       },
-      // R9-07 residual: preflightPort also checks raw listening sockets unless this
+      // preflightPort also checks raw listening sockets unless this
       // deployment's own gateway is already running, which it never is at bootstrap time.
       async isRunning(): Promise<boolean> {
         return false;
@@ -183,7 +183,7 @@ try {
   check("set try applies declared settings before configuring the provider, same as bootstrap", applyAt < configureAt, true);
 }
 
-// --- UX-09: a bootstrap that ends with no model provider configured says so in its final
+// --- a bootstrap that ends with no model provider configured says so in its final
 // next steps — "OpenClaw is up" read as done, while an agent could not answer a single
 // prompt until an operator noticed doctor's separate PROVIDER_MISSING finding on a LATER
 // run. Read from the live config the same way collectConfiguredProviders() (secrets.ts)

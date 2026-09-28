@@ -1,4 +1,4 @@
-// Checks the P2-12 recipe lifecycle hooks: a recipe that declares quiesce.ts/resume.ts is
+// Checks the recipe lifecycle hooks: a recipe that declares quiesce.ts/resume.ts is
 // quiesced for exactly the window backup pauses the gateway for, and resumed on every exit
 // path; an uncovered or failed hook refuses the snapshot and still compensates; and the two
 // caller-owned modes (--hot, leaveStopped) call nothing.

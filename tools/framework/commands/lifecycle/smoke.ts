@@ -19,7 +19,7 @@
 //
 // It and the two verifier checks each need an archive taken with the gateway down. Run alone
 // (as the tests do) each manages its own stop/start; run together by smoke() they used to cost
-// three outages, ~70s (UX-14). Only taking an archive needs the window, so runArchiveChecks()
+// three outages, ~70s. Only taking an archive needs the window, so runArchiveChecks()
 // pauses once, takes both archives independently, restarts, then verifies and restore-diffs
 // with the gateway back up.
 //
@@ -157,7 +157,7 @@ export const checks: Check[] = [
         if (result.stdout.includes("SMOKE-OK")) return;
         expect(false, `agent replied: ${result.stdout.trim().slice(0, 120)}`);
       } catch (error) {
-        // A silent OR unreachable agent is most often PROVIDER_MISSING (UX-09), whichever way
+        // A silent OR unreachable agent is most often PROVIDER_MISSING, whichever way
         // this check failed — named instead of just the symptom, when the live config really
         // configures none (best effort: noProviderConfigured() never replaces a real failure
         // with an unrelated guess).
@@ -263,8 +263,8 @@ export const checks: Check[] = [
     // data directory, then compares private paths as normalized archive streams. It never
     // writes a witness into the live data root: that used to be a migrate-profile snapshot
     // pushed straight back over the working tree, which
-    // dropped every privatePath on the floor while still reporting success (audit
-    // 2026-09-23, XA round 6, P1-01). A live overwrite-and-restore drill, if anyone wants
+    // dropped every privatePath on the floor while still reporting success. A live
+    // overwrite-and-restore drill, if anyone wants
     // one, is an explicit, separately confirmed operation — not a side effect of `smoke`.
     //
     // Self-contained on purpose: called directly (as the tests beside this file do), it
@@ -272,11 +272,11 @@ export const checks: Check[] = [
     // archive-based checks through the real `smoke` command, runArchiveChecks() (below,
     // near runSmokeSuite()) runs the offline half of this same check — roundTripUsingArchive
     // — against an archive the shared window already took, so the whole trio costs one
-    // outage instead of three (UX-14).
+    // outage instead of three.
     name: ROUND_TRIP_CHECK,
     run: async (ctx) => {
       // `smoke` itself declares no --break-lock (only --quick): a refusal from this internal
-      // step must not offer a flag the command has nowhere to read it from (UX-04).
+      // step must not offer a flag the command has nowhere to read it from.
       await guarded(ctx, "smoke round-trip", [], () => roundTripCheck(ctx), { breakLockSupported: false });
     },
   },
@@ -348,7 +348,7 @@ function describeError(error: unknown): string {
 
 /** Folds compensation failures into whatever the body already decided: never swallowed — a
  *  compensation error always surfaces — and never allowed to replace the body's own verdict
- *  either (P2-06). Shared by the round-trip check's standalone and offline-consolidated
+ *  either. Shared by the round-trip check's standalone and offline-consolidated
  *  shapes below, since both owe the same discipline to their own scratch-root cleanup. */
 function settleWithCompensation(bodyError: unknown, compensationErrors: unknown[]): void {
   if (bodyError !== undefined) {
@@ -366,11 +366,11 @@ function settleWithCompensation(bodyError: unknown, compensationErrors: unknown[
 /** The round-trip check's standalone shape: reads the gateway's own starting state,
  *  collects the witnesses, pauses (via createBackup's own leaveStopped-aware pause) to take
  *  the full backup, restores into an isolated root and compares, then always restarts to the
- *  state it found the gateway in (P2-06) — its own single stop/start cycle, unrelated to any
+ *  state it found the gateway in — its own single stop/start cycle, unrelated to any
  *  other check. This is what `checks` above runs, and what the tests beside this file call
  *  directly. */
 async function roundTripCheck(ctx: Context): Promise<void> {
-  // P2-06: the initial service state is read before anything is touched. This read cannot
+  // The initial service state is read before anything is touched. This read cannot
   // be compensated if it fails — but it is also the only thing that happens before the
   // first mutation, so a failure here aborts the check with the instance exactly as it
   // was found.
@@ -396,7 +396,7 @@ async function roundTripCheck(ctx: Context): Promise<void> {
     bodyError = error;
   }
 
-  // Compensation, on every exit path (P2-06): the scratch root is this check's own litter;
+  // Compensation, on every exit path: the scratch root is this check's own litter;
   // the gateway goes back to the state the check found it in.
   const compensationErrors: unknown[] = [];
 
@@ -525,7 +525,7 @@ function foldRestartFailure(result: SmokeResult, restartError: unknown): SmokeRe
   return { ...result, detail: result.detail === undefined ? note : `${result.detail}; ${note}` };
 }
 
-/** UX-14: the three archive checks in ONE stop window (see the header). The full backup
+/** The three archive checks in ONE stop window (see the header). The full backup
  *  serves both the reject-check and the round-trip restore; it and the share snapshot are
  *  taken independently so one failing does not block the other; verification runs after the
  *  restart. The checks stay in `checks` for standalone use, each managing its own window.
@@ -543,7 +543,7 @@ async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>): Prom
       initialRunning = await reach("ask whether the gateway is running", () => ctx.runtime.isRunning());
     } catch (error) {
       // Nothing has been touched yet — the same boundary the standalone round-trip check's
-      // own initial read draws (P2-06): abort every archive check the same unanswered way
+      // own initial read draws: abort every archive check the same unanswered way
       // rather than guess at a starting state to restore later.
       return names.map((name) => toResult(name, error));
     }
@@ -644,7 +644,7 @@ async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>): Prom
 
 /** The whole selected run: ordinary checks one at a time, exactly as runChecks() does; the
  *  three archive-based checks, wherever they appear in `selected`, consolidated into one
- *  stop/start cycle via runArchiveChecks() (UX-14) — their results are emitted together at
+ *  stop/start cycle via runArchiveChecks() — their results are emitted together at
  *  the position the first of them holds. This is what smoke() below runs; runChecks() stays
  *  as it always was for anything that runs a check (or a stand-in one) on its own. */
 export async function runSmokeSuite(ctx: Context, selected: Check[], onResult: (result: SmokeResult) => void = printResult): Promise<SmokeSummary> {

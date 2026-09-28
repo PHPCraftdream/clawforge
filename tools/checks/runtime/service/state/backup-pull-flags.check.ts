@@ -1,4 +1,4 @@
-// UX-13: `backup` and `pull` must accept the same profile shorthand vocabulary
+// `backup` and `pull` must accept the same profile shorthand vocabulary
 // (--share/--with-secrets/--migrate, alongside --profile and --hot), only their DEFAULT
 // profile differs (backup: full, pull: migrate). Before this fix, `./clawforge backup --share`
 // failed with "unknown argument: --share".

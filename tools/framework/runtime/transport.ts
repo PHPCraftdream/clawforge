@@ -81,7 +81,7 @@ function privateWriteCommand(path: string): [string, string[]] {
 /** Builds a publish command for a POSIX target: content lands in a temp sibling that is
  *  renamed over the wanted name. rename(2) swaps the directory entry, so an existing
  *  symlink at the target is replaced rather than written through, and a reader sees either
- *  the old or the new content — never a partial file (P1-02,
+ *  the old or the new content — never a partial file (see
  *  docs/internal/review-2026-09-23-xxa-round-6.md). */
 function publishCommand(path: string): [string, string[]] {
   const temporary = `${path}${PUBLISH_STAGING_MARKER}${randomBytes(8).toString("hex")}`;

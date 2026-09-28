@@ -29,7 +29,7 @@ try {
     // A clean, known state: live config forced to something neither set below declares, so
     // installing A first is guaranteed to find real drift and take a real snapshot.
     // A provider stays configured (explicit apiKey, so it invents no SECRET_MISSING of its
-    // own): these tests are about the snapshot chain, not about UX-09.
+    // own): these tests are about the snapshot chain, not about provider configuration.
     files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ models: { providers: { zai: { apiKey: "fixture-explicit-key" } } }, gateway: { mode: "remote" } }));
     await writeFile(join(root, "config", "desired-state.json"), '[{"path":"gateway.mode","value":"local"}]');
     const setA = await buildSet(ctx, "lifecycle-noop-a");
@@ -60,7 +60,7 @@ try {
   }
 
   // --- apply --set must not corrupt the rollback snapshot when a single TRANSIENT read
-  // error strikes right after a REAL apply (task #193, P1). Before the fix, apply.ts probed
+  // error strikes right after a REAL apply. Before the fix, apply.ts probed
   // readOperation(ctx, operationId) after applyFromSource returned, to decide whether the
   // no-op fast path had skipped taking a snapshot. readOperation() also returns undefined
   // for a genuine, unrelated read failure on a record that DOES exist — a real apply run
@@ -72,7 +72,7 @@ try {
   {
     fixture.state.running = true;
     // A provider stays configured (explicit apiKey, so it invents no SECRET_MISSING of its
-    // own): these tests are about the snapshot chain, not about UX-09.
+    // own): these tests are about the snapshot chain, not about provider configuration.
     files.set(`${sourceData}/config/openclaw.json`, JSON.stringify({ models: { providers: { zai: { apiKey: "fixture-explicit-key" } } }, gateway: { mode: "remote" } }));
     await writeFile(join(root, "config", "desired-state.json"), '[{"path":"gateway.mode","value":"local"}]');
     const setA2 = await buildSet(ctx, "lifecycle-transient-a");
@@ -80,7 +80,7 @@ try {
     assert.equal(installA2.error, undefined, installA2.error?.message);
 
     // setB2 declares a real, additional setting A never did — a genuine drift, so this
-    // install runs executable steps for real (not the no-op fast path task #189 covers).
+    // install runs executable steps for real (not the no-op fast path covered elsewhere).
     await writeFile(
       join(root, "config", "desired-state.json"),
       '[{"path":"gateway.mode","value":"local"},{"path":"agents.defaults.name","value":"transient-b"}]',

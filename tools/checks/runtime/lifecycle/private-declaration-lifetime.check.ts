@@ -1,4 +1,4 @@
-// P1-02 of docs/internal/review-2026-09-22-xa-round-2.md: a privatePaths declaration lives in the
+// A privatePaths declaration (see docs/internal/review-2026-09-22-xa-round-2.md) lives in the
 // recipe's source tree, but the files it covers live on the target. Removing the recipe —
 // deleting its directory, or switching to a set that no longer includes it — takes the
 // declaration away while the runtime credentials stay put, and the security policy used to
@@ -256,7 +256,7 @@ try {
       JSON.stringify(["set-two-private"]),
     );
 
-    // --- scenario 3 (P2-01 of round 3): a private write under a SHARED directory --------------------
+    // --- scenario 3: a private write under a SHARED directory --------------------------------------
     //
     // The declaration names one FILE inside a shared config root — the shape the old
     // ancestor recording broke: it entered `config` into the ledger, and the policy reader
@@ -317,7 +317,7 @@ try {
       true,
     );
     // Share's allowlist deliberately refuses the unknown config/public-setting.json — the
-    // P2-01 claim is only that the refusal is never a forbidden-path one.
+    // claim is only that the refusal is never a forbidden-path one.
     const sharedRefusal: string[] = [];
     check(
       "share refuses the archive only through its own allowlist",

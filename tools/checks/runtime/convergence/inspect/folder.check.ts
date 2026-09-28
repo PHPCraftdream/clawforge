@@ -164,7 +164,7 @@ try {
     ]);
   }
 
-  // --- B2. UX-03: an empty OC_COMPOSE_PROJECT is the directory-derived default, not drift -----
+  // --- B2. an empty OC_COMPOSE_PROJECT is the directory-derived default, not drift -----------
 
   {
     await reset();
@@ -311,7 +311,7 @@ try {
   }
 
   // --- K. IMAGE_UNPINNED / IMAGE_TAG_MOVED: a tag is a name every OTHER deployment on this
-  // Docker daemon can move out from under this one (task #32). Read straight off
+  // Docker daemon can move out from under this one. Read straight off
   // ctx.settings.image and the runtime's own digest reads — nothing here writes anything, the
   // same as every other finding in this file. -------------------------------------------------
 
@@ -356,7 +356,7 @@ try {
 
   {
     // The tag now resolves somewhere else than what is actually running — some OTHER
-    // deployment on this daemon pulling it is exactly how (task #32). The lock is re-pinned
+    // deployment on this daemon pulling it is exactly how. The lock is re-pinned
     // to the same "moved" digest first, the same way operator-edit.check.ts avoids an
     // incidental warning crowding a case that is not testing it: lock.ts's own digest read
     // (currentComposition's image.digest) is the identical runtime.imageReference() call this
@@ -396,7 +396,7 @@ try {
 check("no .env value reached any inspection answer", allJson.includes(TOKEN), false);
 check("no .env value reached any doctor output", allOutput.includes(TOKEN), false);
 
-// --- K. UX-05: a deployment nobody has bootstrapped yet ------------------------------------
+// --- K. a deployment nobody has bootstrapped yet --------------------------------------------
 //
 // Every runtime call that shells out to compose — even a read like `compose ps` — writes its
 // own private env file into a directory beside the data directory (runtime-docker.ts's

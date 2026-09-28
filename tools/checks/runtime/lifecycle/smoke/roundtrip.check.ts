@@ -349,7 +349,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
       [...files.keys()].some((path) => path.includes(".clawforge-smoke-roundtrip-"));
     // A plain `.includes(DATA_DIR)` would also match the lock's own sibling directory
     // (`${DATA_DIR}-locks`, see core/env.ts's locksDir) — the instance lock's release now
-    // moves its own generation marker within that directory (round 6, P2-03), which is an
+    // moves its own generation marker within that directory, which is an
     // `mv:` event but not a move of the data root. Only an exact arg, or a path properly
     // rooted under it, counts.
     const movedDataDir = (events: string[]): boolean =>
@@ -398,7 +398,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
       check("the live data root was still never moved aside", movedDataDir(events), false);
     }
 
-    // Failure in every stage, from both initial states. The contract (P2-06): the check
+    // Failure in every stage, from both initial states. The contract: the check
     // fails, the scratch root is still cleaned up, and the gateway always ends
     // in its initial state — started back up only when it was running before, never
     // started when it was not.

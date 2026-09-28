@@ -16,6 +16,11 @@ import { envFile, deploymentName } from "../runtime/deployment.ts";
 import { deploymentEnv } from "./scaffold.ts";
 import { createPrivateFile, protectPrivateFile, replacePrivateFile } from "../security/private-file.ts";
 
+/** A fresh OPENCLAW_GATEWAY_TOKEN: 32 random bytes, hex. Bootstrap and incident rotation share it. */
+export function generateGatewayToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
 /** Creates .env on first run, with this deployment's own paths and port rather than the
  *  template's — a copied template would put two deployments on the same data directory. */
 async function ensureEnvFile(): Promise<void> {
@@ -45,7 +50,7 @@ async function ensureToken(): Promise<string> {
   if (current !== null && current[1].trim() !== "") return current[1].trim();
 
   log("generating a gateway token");
-  const token = randomBytes(32).toString("hex");
+  const token = generateGatewayToken();
   const updated =
     current === null
       ? `${content.trimEnd()}\nOPENCLAW_GATEWAY_TOKEN=${token}\n`

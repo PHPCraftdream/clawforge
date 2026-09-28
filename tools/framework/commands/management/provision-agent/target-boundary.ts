@@ -1,5 +1,5 @@
-// Target-side containment for provisioning writes: P1-02 of
-// docs/internal/review-2026-09-23-xxa-round-6.md.
+// Target-side containment for provisioning writes
+// (see docs/internal/review-2026-09-23-xxa-round-6.md).
 //
 // syncRecipeFiles/writeWorkspacePromptFiles validated the SOURCE inventory but handed the
 // target path straight to mkdirp/writeFile. A process running inside the instance can leave

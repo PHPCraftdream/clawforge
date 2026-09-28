@@ -142,7 +142,7 @@ export function planActions(inspection: Inspection): PlanAction[] {
     // file must already carry, and a wholly absent .env cannot be recovered at all —
     // reaching the target to inspect anything already requires it.
     //
-    // Advisory since the direction problem (P2-03, round 3): a divergence between .env and
+    // Advisory since the direction problem: a divergence between .env and
     // the running container has two readings this code cannot tell apart — the file rotted
     // while the container kept the answers, or the operator just edited it and the container
     // has not caught up. Planning the repair as an executable step picked a side, and
@@ -338,7 +338,7 @@ export async function plan(ctx: Context, args: string[]): Promise<void> {
 
 /** What to tell the reader once the numbered steps are printed: apply runs the executable
  *  ones, so advising it when there are none would send them to a command that does nothing —
- *  UX-10/11/12 found this exact case (a plan of entirely advisory steps still said "apply
+ *  This exact case used to slip through (a plan of entirely advisory steps still said "apply
  *  it"). Exported so the checks can pin the wording without a live instance. */
 export function planNextStepLine(actions: readonly PlanAction[]): string {
   const executable = actions.filter((action) => action.advisory !== true);

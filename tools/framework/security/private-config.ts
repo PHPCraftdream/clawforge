@@ -75,7 +75,7 @@ exit 0
  *  the snapshots exclude; the data root itself may be a link (a deployment layout decision
  *  — a private write lands in the tree the link points to; backup is the exception and
  *  refuses a symlinked data root outright, because tar is handed the link's own name and
- *  would store the link instead of its content — audit 2026-09-22 round 2, P2-02), and a
+ *  would store the link instead of its content), and a
  *  link at the final component of a FILE target is replaced (mv -T), not written through.
  *  This is armor against a recipe author's
  *  path-assembly mistake, not isolation from hostile JavaScript — the hook already holds a
@@ -87,14 +87,14 @@ exit 0
  *  raw path's directory prefixes, not the normalized ones. With no link among them,
  *  textual and physical resolution agree, and the single verified path returned here is
  *  what every subsequent mkdir/write/mv uses; the helpers never fall back to the raw
- *  string (audit 2026-09-22 round 2, P2-01). A link at the final component of a DIRECTORY
+ *  string. A link at the final component of a DIRECTORY
  *  target is refused too: `mkdir -p` and `chmod` do not replace it the way `mv -T` does,
  *  they act through it.
  *
  *  Returns the target's normalized data-relative path together with the declaration that
  *  covered it — the pair the private-paths ledger records, so a declared directory stays a
  *  declared directory after its declaration is gone while an undeclared ancestor of a file
- *  write never becomes one (audit 2026-09-22, P1-02; round 3, P2-01) — and the target's
+ *  write never becomes one — and the target's
  *  absolute form for the write. */
 async function assertDeclaredPrivatePath(
   ctx: Context,
@@ -159,7 +159,7 @@ export async function ensurePrivateTargetDirectory(ctx: Context, path: string): 
   if (!path.startsWith("/")) throw new Error(`private target directory must be absolute: ${path}`);
   const { ledger, boundary, target } = await assertDeclaredPrivatePath(ctx, path, "directory");
   // Recorded before anything is created: a write that cannot be remembered is refused
-  // rather than made and left unprotected once its declaration disappears (P1-02).
+  // rather than made and left unprotected once its declaration disappears.
   await recordPrivateWrite(ledger, boundary);
   await createPrivateDirectory(ctx, target);
 }
@@ -176,7 +176,7 @@ export async function replacePrivateTargetFile(ctx: Context, path: string, conte
   if (!path.startsWith("/")) throw new Error(`private target file must be absolute: ${path}`);
   const { ledger, boundary, target } = await assertDeclaredPrivatePath(ctx, path, "file");
   // Recorded before anything is written, same contract as ensurePrivateTargetDirectory:
-  // a write that cannot be remembered is refused rather than left unprotected (P1-02).
+  // a write that cannot be remembered is refused rather than left unprotected.
   await recordPrivateWrite(ledger, boundary);
   // Created and validated through the file's own declaration rather than via
   // ensurePrivateTargetDirectory: a declaration may name the exact file, and that entry
@@ -269,7 +269,7 @@ export async function execWithSecrets(
  *
  *  The written line comes from serializeEnvLine — the lossless inverse of parseEnv — so a
  *  value with edge whitespace or embedded quotes survives the next read byte-identically
- *  instead of being rewritten bare and trimmed (P2-13). Name and value are validated by
+ *  instead of being rewritten bare and trimmed. Name and value are validated by
  *  that call before any line is touched; the refusal messages are the same ones this
  *  function has always thrown. */
 export function upsertEnvValue(content: string, name: string, value: string): string {

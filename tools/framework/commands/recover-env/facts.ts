@@ -14,7 +14,7 @@
 // different values for a name both sides carry is equally consistent with a rotted file and
 // with an edit the operator just made that the container has not caught up with. Collapsing
 // both into "stale" is how a deliberate port change got rewritten back to the container's
-// old value (P2-03, round 3).
+// old value.
 
 import { deploymentName } from "#src/runtime/deployment.ts";
 
@@ -47,7 +47,7 @@ export interface ConnectionFactDiff {
  *  value to the deployment directory's own name — deployment.ts's composeProjectName(), the
  *  same fallback useComposeProjectOverride() applies when a Context is built, and the name
  *  compose itself resolved into the running container's label. Comparing the raw empty
- *  string against that label reported a difference that was never there (UX-03): a fresh
+ *  string against that label reported a difference that was never there: a fresh
  *  deployment's own default read back as ENV_STALE. The other three facts have no such
  *  default — an empty OC_DATA_DIR/OPENCLAW_GATEWAY_PORT/OPENCLAW_IMAGE is not a legitimate
  *  value, so only this one name gets the substitution. */

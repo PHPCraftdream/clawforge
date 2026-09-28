@@ -14,15 +14,14 @@
 // portable-content policy the other carriers of recipe bytes use (the checkout root only
 // against the generic sensitive-NAME half of it, having no recipe.json to declare files
 // against), and a file that policy holds private refuses the whole deploy instead of being
-// left for rsync globs to guess at (audit 2026-09-22 round 3, P1-03; audit 2026-09-23
-// round 4, P1-05 closed the checkout-root gap in that gate).
+// left for rsync globs to guess at.
 //
-// Two more gates stood up in audit 2026-09-23 round 6. The destructive mirror may only run
-// in a remote root deploy itself created — marked, symlink-canonical and probed before
-// every sync, adoptable only on purpose (P1-06: --path reached `mkdir -p` and rsync
-// --delete with no validation at all). And the checkout scan's tracked-path exemption now
+// Two more gates stand between the mirror and the target. The destructive mirror may only
+// run in a remote root deploy itself created — marked, symlink-canonical and probed before
+// every sync, adoptable only on purpose (--path used to reach `mkdir -p` and rsync
+// --delete with no validation at all). And the checkout scan's tracked-path exemption
 // requires byte identity, not a reviewed PATH: git status decides whether the bytes there
-// now are the committed ones (P1-07).
+// now are the committed ones.
 //
 // Prerequisites on the server are the user's responsibility, as everywhere else — this
 // installs nothing and reports precisely what is missing.
@@ -172,8 +171,8 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   if (target === undefined) die("usage: ./clawforge deploy user@host [--path <dir>] [--adopt] [--no-bootstrap]");
 
   // The destination of a --delete mirror gets its local examination before anything
-  // remote runs — no connection, no mkdir, no rsync (audit 2026-09-23 round 6, P1-06).
-  // The marker protocol below asks the remote half of the same question.
+  // remote runs — no connection, no mkdir, no rsync. The marker protocol below asks the
+  // remote half of the same question.
   remotePath = validatedRemoteRoot(remotePath);
 
   const name = deploymentName();
@@ -188,13 +187,13 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // Exclusion was the other option (rsync --exclude, like the syncs below), and it was
   // rejected on the policy's own terms: rsync patterns are globs with no literal-[ escape,
   // so a literal declaration like vault[1] would either leak through as a copy or
-  // over-exclude an undeclared sibling — the same two failure directions P1-02 fixed for
-  // tar globs (audit 2026-09-22, P1-03) — and unlike a local mirror, deploy lands bytes on
+  // over-exclude an undeclared sibling — the same two failure directions fixed for
+  // tar globs — and unlike a local mirror, deploy lands bytes on
   // another host where nothing can review what was held back afterwards. A refusal is the
   // only answer that puts the decision back in front of the operator while everything is
   // still on this machine.
   //
-  // WHAT is refused is no longer deploy's own opinion (audit 2026-09-22 round 3, P1-03):
+  // WHAT is refused is not deploy's own opinion:
   // the scan reads collectPortableRecipeFiles — the same walker `recipe import`, set build
   // (service/checksums.ts) and the provision-agent mirror read — so a name gets one answer
   // from all four carriers. That walker holds back declared privateFiles, the
@@ -205,10 +204,10 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // declared bytes are absent (import copies the declaration, not the files) and deploying
   // is fine. A third tree gets the same sensitive-NAME half of the policy below, over the
   // same names EXCLUDES cannot express: the checkout root itself, the FIRST thing that
-  // travels, below (audit 2026-09-23 round 4, P1-05).
+  // travels, below.
   const recipesRoot = recipesDir();
   const carrying: string[] = [];
-  // Round 6, P1-07: this used to read the top level of the recipes root and keep only
+  // This used to read the top level of the recipes root and keep only
   // where a `.filter(entry => entry.isDirectory())` sat — so a shared.secrets.env or
   // .env.local DIRECTLY under the root was walked by nothing (the checkout scan skips
   // top-level apps/, where this root lives in a monorepo, and EXCLUDES has no generic
@@ -216,9 +215,9 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // top-level entry now gets the generic sensitive-NAME half of the same policy — files,
   // symlinks and directories alike — and each recipe directory is then walked by the
   // shared policy for everything inside it, exactly as before. No generic pattern is
-  // added to EXCLUDES to cover the file case: this file's doctrine is REFUSE, not exclude
-  // (P1-03), and rsync globs would compute a second, independently-divergent list —
-  // precisely the "two answers for one name" the audit keeps finding.
+  // added to EXCLUDES to cover the file case: this file's doctrine is REFUSE, not exclude,
+  // and rsync globs would compute a second, independently-divergent list —
+  // precisely the "two answers for one name" this doctrine avoids.
   let recipeEntries: { name: string; isDirectory(): boolean }[] = [];
   try {
     recipeEntries = await readdir(recipesRoot, { withFileTypes: true });
@@ -260,8 +259,8 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
   // recipe and carries no privateFiles declaration, but the generic sensitive-NAME half of
   // the same policy still applies to it: a stray tools/local/.env.production or
   // notes/service.secrets.env outside apps/ and secrets/ must refuse exactly like the same
-  // name would one directory over, inside a recipe or config/ (audit 2026-09-23 round 4,
-  // P1-05 — EXCLUDES below is a fixed glob list with no `.env.*` or `*.secrets.env`).
+  // name would one directory over, inside a recipe or config/ — EXCLUDES below is a fixed
+  // glob list with no `.env.*` or `*.secrets.env`.
   for (const entry of await collectSensitiveCheckoutNames(sourceRoot)) {
     carrying.push(`${entry.path} (${entry.reason})`);
   }
@@ -335,8 +334,8 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
     );
   }
 
-  // The remote root is examined before its first --delete (audit 2026-09-23 round 6,
-  // P1-06). The doctrine: only a directory CREATED for this deployment may receive the
+  // The remote root is examined before its first --delete. The doctrine: only a
+  // directory CREATED for this deployment may receive the
   // mirror — `mkdir -p` above proves a path can exist, never that it was made for this,
   // that it is empty, or that anything else owns it. Adoption of an existing tree is an
   // explicit --adopt operation that first lists what the mirror would replace, and a root

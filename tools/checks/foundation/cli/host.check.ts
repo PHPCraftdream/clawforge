@@ -255,10 +255,9 @@ check("both flags together are consent", rootElevationRequested(true, true), tru
 
 const realEngineDistro = realHostEnvironment.platform === "win32" && (await realHostEnvironment.listWslDistros()).includes(ENGINE_DISTRO);
 if (realEngineDistro) {
-  // The auditors' exact probe, read-only (id -u, the only command this runs in the distro):
-  // what the engine context REALLY arrives as before any flag is read. This is the assertion
-  // the review that passed P2-04 was missing — argv was checked where only the effective uid
-  // could answer.
+  // The exact probe, read-only (id -u, the only command this runs in the distro): what the
+  // engine context REALLY arrives as before any flag is read. argv alone cannot answer this —
+  // only the effective uid can.
   const execution = await resolveHostContext(ctxWith(recordingTransport().transport), "engine");
   const probe = await execution.exec("id", ["-u"], { input: "", allowFailure: true, timeoutMs: 120_000 });
   const uid = probe.stdout.trim().split("\n").at(-1)?.trim() ?? "";
@@ -276,9 +275,9 @@ if (realEngineDistro) {
 }
 
 // --- the effective-identity gate: consent answers what the probe found ------------------------
-// P2-11, pinned: the gate must ask "will this command actually run as root", not "do we
-// recognize this backend as root-granting". Every root answer below is printed by a stub,
-// so no check here ever really runs anything as root.
+// The gate must ask "will this command actually run as root", not "do we recognize this
+// backend as root-granting". Every root answer below is printed by a stub, so no check here
+// ever really runs anything as root.
 
 check("the uid probe reads a bare number off the last stdout line", probeUidAnswer({ code: 0, stdout: "banner\n0\n", stderr: "" }), "0");
 check("a non-numeric stdout line is no answer", probeUidAnswer({ code: 0, stdout: "ok\n", stderr: "" }), undefined);

@@ -9,7 +9,7 @@
 // Which side is authoritative when the two disagree is not decidable here: the file could
 // have rotted while the container kept the answers, or the operator could have just edited
 // it with the container not caught up yet — and writing the container's values over the
-// second reading silently discards a deliberate edit (P2-03, round 3). So a plain
+// second reading silently discards a deliberate edit. So a plain
 // recover-env writes only the UNAMBIGUOUS case — a fact name the .env does not carry at
 // all — and reports facts both sides carry differently without writing over them. The
 // direction is chosen explicitly:
@@ -32,7 +32,7 @@
 // journal's recovery steps and MCP's dispatch go this way. recoverEnvBeforeContext is the
 // recovery-first dispatch (entry/cli.ts): with OC_DATA_DIR absent, the Context the normal
 // dispatch builds first cannot be constructed, and the command that exists to fill that
-// fact would die in the settings parser before it started (P2-10). It builds only what the
+// fact would die in the settings parser before it started. It builds only what the
 // container read genuinely needs — see ./bootstrap.ts.
 
 import { access, readFile } from "node:fs/promises";
@@ -178,7 +178,7 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
     die(`${ctx.runtime.description} cannot introspect its running container, so the connection facts cannot be recovered here`);
   }
 
-  const facts = await ctx.runtime.runningConnectionFacts!();
+  const facts = await ctx.runtime.runningConnectionFacts();
   if (facts === undefined) {
     die(
       `${ctx.runtime.description} is not running, or its container could not be inspected — the connection ` +
@@ -199,7 +199,7 @@ export interface RecoveryBootstrapOptions {
   transport?: Transport;
 }
 
-/** The recovery-first entry point (P2-10): everything the container read genuinely needs,
+/** The recovery-first entry point: everything the container read genuinely needs,
  *  built without the validated Context the dispatcher would otherwise demand first. Where
  *  the missing fact is OC_DATA_DIR, that Context cannot be constructed at all — dying in
  *  the settings parser before the one command that could fill it runs was the bug. The

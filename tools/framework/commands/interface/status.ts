@@ -18,7 +18,7 @@ export async function status(ctx: Context, _args: string[]): Promise<void> {
   // showStatus() shells out to compose, which needs somewhere to write its own private env
   // file beside the data directory — absent pre-bootstrap, which is exactly the mkdir a
   // still-root-owned parent refuses. NotBootstrapped is how the runtime says so instead of a
-  // raw transport error (UX-05); caught here so status answers plainly instead of crashing,
+  // raw transport error; caught here so status answers plainly instead of crashing,
   // and every other runtime call below is skipped — there is nothing to report on any of
   // them either.
   try {

@@ -6,7 +6,7 @@
 // absent .env — which recovery cannot create, because reaching the target already
 // requires it (bootstrap does).
 //
-// The direction problem (P2-03, round 3) is the shape of every case here now: a plain
+// The direction problem is the shape of every case here now: a plain
 // recover-env fills only the fact NAMES the file is missing entirely and reports the ones
 // both sides carry differently without writing over them, while `--adopt-runtime` is the
 // container-authoritative direction that also merges those over the file's existing values.
@@ -160,7 +160,7 @@ try {
     check("a full match is reported as nothing to recover", output.includes("nothing to recover"), true);
   }
 
-  // --- UX-03: an empty OC_COMPOSE_PROJECT is the directory-derived default, not a divergence -
+  // --- an empty OC_COMPOSE_PROJECT is the directory-derived default, not a divergence -----
 
   {
     const emptyProjectEnv = SEED.replace("OC_COMPOSE_PROJECT=old-project", "OC_COMPOSE_PROJECT=");

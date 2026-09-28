@@ -133,6 +133,19 @@ function commandHelp(name: string, command: AppCommand): void {
   }
 }
 
+/** `--opt=value` for a declared option becomes `--opt value`, so every reader of argv — the
+ *  declared parser and the few that scan it directly — sees one form. Commands that pass
+ *  their argv through verbatim (a variadic argument) are left untouched. */
+export function splitInlineOptions(command: AppCommand, args: string[]): string[] {
+  const declared = command.arguments ?? [];
+  if (declared.some((argument) => argument.kind === "variadic")) return args;
+  const options = new Set(declared.filter((argument) => argument.kind === "option").map((argument) => argument.name));
+  return args.flatMap((arg) => {
+    const match = /^--([^=]+)=(.*)$/s.exec(arg);
+    return match !== null && options.has(match[1]) ? [`--${match[1]}`, match[2]] : [arg];
+  });
+}
+
 /** Entry point: dispatches argv against an application definition. `gateHelp` is the
  *  gate-specific footer (see DEFAULT_GATE_HELP) — omit it from a monorepo-style gate, or
  *  pass an installed-mode gate's own lines. */
@@ -239,7 +252,7 @@ export async function runApp(
     secrets: app.secrets,
   });
 
-  await command.run(ctx, args);
+  await command.run(ctx, splitInlineOptions(command, args));
   return 0;
 }
 

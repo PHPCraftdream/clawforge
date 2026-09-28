@@ -162,9 +162,9 @@ export async function deploy(ctx: Context, args: string[]): Promise<void> {
 
   const parsed = parseDeclaredArgs(DEPLOY_ARGUMENTS, args);
   const target = parsed.target as string | undefined;
-  let remotePath = parsed.path === undefined
-    ? "/opt/openclaw"
-    : parsed.path === "" ? die("--path needs a directory") : parsed.path as string;
+  // An empty --path is caught below by validatedRemoteRoot() ("must be an absolute POSIX
+  // path"), which already names the value and the reason — no separate check needed here.
+  let remotePath = parsed.path === undefined ? "/opt/openclaw" : parsed.path as string;
   const bootstrapRemote = parsed["no-bootstrap"] !== true;
   const adopt = parsed.adopt === true;
 

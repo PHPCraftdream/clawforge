@@ -178,7 +178,11 @@ try {
   if (sole !== undefined) {
     name = sole;
     deploymentDir = resolve(monorepoRoot, "apps", name);
-    info(`using the only deployment: ${name}`);
+    // --json output must stay parseable, and a non-interactive caller (script, cron) has no one
+    // to read this for — only print for a human at a real terminal.
+    if (!argv.includes("--json") && process.stderr.isTTY === true) {
+      info(`using the only deployment: ${name}`);
+    }
   } else if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
     // help/--help/-h must work even in a completely fresh checkout, before any deployment
     // exists — that is exactly when someone reaches for it. Built from openclawCommands
@@ -194,7 +198,8 @@ try {
       commands: openclawCommands,
     };
     await main(genericApp, argv, monorepoGateHelp, gateCommands);
-    process.exit(0);
+    // runApp sets process.exitCode on error (e.g. unknown command) — respect it instead of forcing 0.
+    process.exit(process.exitCode ?? 0);
   } else if (!baseCommandNames.includes(argv[0])) {
     // The typo case this all exists for: nothing declares this name in this checkout, so no
     // deployment's app.ts could ever make it valid either — answer the typo, not "deployment

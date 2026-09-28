@@ -48,6 +48,11 @@ await writeDeployment(
     "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
 );
 await writeDeployment(
+  "auto-target",
+  "OC_DATA_DIR=/srv/autotarget/data\nOPENCLAW_GATEWAY_PORT=18006\n" +
+    "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable\n",
+);
+await writeDeployment(
   "unpinned",
   "OC_DATA_DIR=/srv/unpinned/data\nOC_TARGET_LOCATION=ssh\nOC_SSH_HOST=user@example.com\n" +
     "OPENCLAW_GATEWAY_PORT=18002\nOPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable\n",
@@ -70,8 +75,8 @@ await writeDeployment(
 );
 await mkdir(resolve(root, "no-env"), { recursive: true }); // a directory with no .env at all
 
-function stubContext(isRunning: () => Promise<boolean>): Context {
-  return { runtime: { isRunning } } as unknown as Context;
+function stubContext(isRunning: () => Promise<boolean>, transportDescription: string): Context {
+  return { runtime: { isRunning }, transport: { description: transportDescription } } as unknown as Context;
 }
 
 async function buildContext(_app: AppDefinition, directory: string): Promise<Context> {
@@ -80,17 +85,18 @@ async function buildContext(_app: AppDefinition, directory: string): Promise<Con
   // stub actually exercises that switch too.
   useDeployment(directory);
   const name = basename(directory);
-  if (name === "healthy") return stubContext(async () => true);
-  if (name === "unpinned") return stubContext(async () => false);
+  if (name === "healthy") return stubContext(async () => true, "local");
+  if (name === "auto-target") return stubContext(async () => true, "wsl:Ubuntu-24.04");
+  if (name === "unpinned") return stubContext(async () => false, "ssh:user@example.com");
   if (name === "not-bootstrapped") {
     return stubContext(async () => {
       throw new NotBootstrapped("/srv/notboot/data");
-    });
+    }, "local");
   }
   if (name === "conn-error") {
     return stubContext(async () => {
       throw new Error("connection refused");
-    });
+    }, "local");
   }
   throw new Error(`unexpected buildContext call for ${name}`);
 }
@@ -102,6 +108,7 @@ const summaries = await listDeployments({ appsRoot: root, buildContext });
 const byName = new Map(summaries.map((entry) => [entry.name, entry]));
 
 check("every fixture directory gets a row", [...byName.keys()].sort(), [
+  "auto-target",
   "broken-app",
   "conn-error",
   "healthy",
@@ -116,6 +123,15 @@ check("a running deployment reports running, with its config", byName.get("healt
   port: "18001",
   image: "ghcr.io/openclaw/openclaw:extended-stable@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   pinned: true,
+  state: "running",
+});
+
+check("an auto target resolves to the context's actual transport once checked", byName.get("auto-target"), {
+  name: "auto-target",
+  target: "wsl:Ubuntu-24.04",
+  port: "18006",
+  image: "ghcr.io/openclaw/openclaw:extended-stable",
+  pinned: false,
   state: "running",
 });
 
@@ -141,6 +157,7 @@ const connError = byName.get("conn-error");
 check("an unreachable target is an error row, not a thrown exception", connError?.state, "error");
 check("its reason names the actual failure", connError?.reason?.includes("connection refused"), true);
 check("its configuration is still shown despite the failed status check", connError?.port, "18004");
+check("its target is still resolved from context, even on a failed status check", connError?.target, "local");
 
 const brokenApp = byName.get("broken-app");
 check("a broken app.ts is an error row, not a thrown exception", brokenApp?.state, "error");
@@ -189,6 +206,18 @@ check(
   "--no-status leaves a broken app.ts unread — nothing calls it",
   unchecked.find((entry) => entry.name === "broken-app")?.state,
   "unchecked",
+);
+check(
+  "--no-status flags an unresolved auto target instead of showing it bare",
+  unchecked.find((entry) => entry.name === "auto-target"),
+  {
+    name: "auto-target",
+    target: "auto (not resolved)",
+    port: "18006",
+    image: "ghcr.io/openclaw/openclaw:extended-stable",
+    pinned: false,
+    state: "unchecked",
+  },
 );
 
 // --- an apps/ directory that does not exist at all: an empty list, not a crash -------------

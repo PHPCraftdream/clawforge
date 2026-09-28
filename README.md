@@ -59,11 +59,11 @@ left alone by `bootstrap`, and `./clawforge upgrade` is the way to move it from 
 | Understand what's wrong and why | `./clawforge inspect` | every declared-vs-running difference, each with a stable code and a remedy; read-only, never fails the process |
 | Prove the instance actually works, not just runs | `./clawforge smoke` | exercises it end to end — the agent answers, config drift self-heals, snapshots round-trip — `status`/`inspect`/`doctor` only observe |
 | Change the declared configuration | edit the declaration, then `./clawforge plan` → `./clawforge apply` | `apply-config` re-applies the current declaration as it stands, without planning first — the only path before the instance exists at all (bootstrap uses it) and, with `--dry-run`, the only one that actually validates against the target rather than just listing the plan; `configure-provider` only wires a model provider from a secret; `secrets --apply` only pushes secret values into force — none of the three touch `desired-state.json` itself |
-| Save or restore a point-in-time snapshot | `./clawforge backup` / `./clawforge restore` | one archive of this instance's data, by name, kept on this machine |
+| Save or restore a point-in-time snapshot | `./clawforge backup` / `./clawforge restore` | one archive of this instance's data, by name, kept on the target (the server itself for SSH, not this machine) |
 | Move or share an instance's state | `./clawforge pull` / `./clawforge push` | same archive format as backup, meant to travel instead — `migrate`/`share` profiles leave secrets out |
 | Update the OpenClaw image | `./clawforge upgrade` | resolves to a digest, backs up first, rolls back automatically on failure |
 | Reach a loopback-bound gateway from outside this host | `./clawforge expose` | an SSH tunnel, a tailnet-only `tailscale serve`, or a status report — narrowest scope first |
-| Get paged when the instance breaks | `./clawforge watch install` | a cron probe plus a webhook fired only on a state transition |
+| Get paged when the instance breaks | `./clawforge watch install` | a cron probe plus a webhook fired only on a state transition — on Windows/WSL it only prints the command for an external scheduler, it installs nothing |
 | Respond to a suspected compromise | `./clawforge incident` | contain exposure → preserve evidence → rotate the gateway token → audit → collect |
 | Move a deployment onto a server | `./clawforge deploy user@host` | mirrors the framework and this deployment's config over SSH; credentials never leave this machine |
 | See every deployment in this checkout | `./clawforge list` | monorepo checkouts only; one line each, naming why a deployment can't be read when it can't |

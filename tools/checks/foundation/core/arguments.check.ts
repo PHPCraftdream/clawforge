@@ -3,6 +3,7 @@
 // No instance and no target: these are the pure parts of the contract.
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { splitInlineOptions } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp-server.ts";
 import { parseDeclaredArgs } from "#framework/argv/parse-args.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
@@ -199,6 +200,53 @@ for (const [name, command] of Object.entries(openclawCommands)) {
   check(`${name}: every declared flag/option parses from its own toArgv()`, parses(declared, argv), true);
   check(`${name}: an undeclared flag is refused`, parses(declared, [...argv, "--totally-undeclared-flag"]), false);
 }
+
+// --- generic parser: --opt=value, a repeated positional, and a missing option value --------
+// die() throws rather than exiting, so the message is the observable.
+function deathOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return "";
+}
+
+const OPTION_ARG: CommandArgument = { name: "path", description: "d", kind: "option" };
+const FLAG_ARG: CommandArgument = { name: "dry-run", description: "d", kind: "flag" };
+const POSITIONAL_ARG: CommandArgument = { name: "host", description: "d", kind: "positional" };
+
+check(
+  "--opt=value is accepted, the same inline syntax --app= already understood at the gate",
+  parseDeclaredArgs([OPTION_ARG], ["--path=/tmp"]),
+  { path: "/tmp" },
+);
+check(
+  "--opt value (two tokens) still works",
+  parseDeclaredArgs([OPTION_ARG], ["--path", "/tmp"]),
+  { path: "/tmp" },
+);
+check(
+  "--flag=value is refused — a flag carries no value to assign",
+  deathOf(() => parseDeclaredArgs([FLAG_ARG], ["--dry-run=x"])),
+  "unknown argument: --dry-run=x",
+);
+check(
+  "a second bare positional is refused, not silently replacing the first",
+  deathOf(() => parseDeclaredArgs([POSITIONAL_ARG], ["h1", "h2"])),
+  "unknown argument: h2",
+);
+check(
+  "an option with nothing after it dies with one consistent message",
+  deathOf(() => parseDeclaredArgs([OPTION_ARG], ["--path"])),
+  "--path needs a value",
+);
+
+
+// --- --opt=value reaches every argv reader as two tokens --------------------------------
+check("an inline declared option is split", splitInlineOptions(openclawCommands.apply, ["--set=x", "--dry-run"]), ["--set", "x", "--dry-run"]);
+check("an undeclared inline flag is left for the parser to refuse", splitInlineOptions(openclawCommands.apply, ["--bogus=1"]), ["--bogus=1"]);
+check("a passthrough command's argv is untouched", splitInlineOptions(openclawCommands.exec, ["--set=x"]), ["--set=x"]);
 
 process.stderr.write(failed === 0 ? "all argument checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

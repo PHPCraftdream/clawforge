@@ -99,6 +99,16 @@ try {
     realCommandBeforeSetup.stdout.includes("not found") && realCommandBeforeSetup.code !== 0,
     true,
   );
+
+  // Before this fix, this branch always ended in process.exit(0) regardless of what runApp()
+  // reported — a typo'd sub-argument printed "unknown command" yet still exited success.
+  const helpTypoBeforeSetup = await runGate(["--app", neverCreated, "help", "lsit"]);
+  check("./clawforge help <typo> exits non-zero", helpTypoBeforeSetup.code === 0, false);
+  check(
+    "./clawforge help <typo> still names the unknown command",
+    helpTypoBeforeSetup.stdout.includes("unknown command: lsit"),
+    true,
+  );
 } finally {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
 }

@@ -361,12 +361,21 @@ export async function runCheck(ctx: Context, recipe: string, check: AcceptanceCh
 }
 
 export async function accept(ctx: Context, args: string[]): Promise<void> {
-  const index = args.indexOf("--set");
-  if (index === -1) return withModelApproval(args.includes("--with-model"), () => acceptFromSource(ctx, args));
-  const artifact = args[index + 1];
-  if (artifact === undefined || artifact.startsWith("--")) die("--set needs an artifact path");
-  const rest = [...args.slice(0, index), ...args.slice(index + 2)];
-  if (rest.includes("--set")) die("--set may be provided only once");
+  const inline = args.find((arg) => arg.startsWith("--set="));
+  let artifact: string | undefined;
+  let rest: string[];
+  if (inline !== undefined) {
+    artifact = inline.slice("--set=".length);
+    if (artifact === "") die("--set needs an artifact path");
+    rest = args.filter((arg) => arg !== inline);
+  } else {
+    const index = args.indexOf("--set");
+    if (index === -1) return withModelApproval(args.includes("--with-model"), () => acceptFromSource(ctx, args));
+    artifact = args[index + 1];
+    if (artifact === undefined || artifact.startsWith("--")) die("--set needs an artifact path");
+    rest = [...args.slice(0, index), ...args.slice(index + 2)];
+  }
+  if (rest.includes("--set") || rest.some((arg) => arg.startsWith("--set="))) die("--set may be provided only once");
   return withModelApproval(rest.includes("--with-model"), () =>
     withUnpackedArtifact(artifact, (staging, verified) => withSetSource(staging, () => acceptFromSource(ctx, rest, verified))),
   );

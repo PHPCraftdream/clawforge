@@ -16,13 +16,21 @@ export const SET_RECEIPTS_ARGUMENTS: CommandArgument[] = [
 
 /** Repetition and value-shape checks the generic parser deliberately leaves to the caller
  *  (see parse-args.ts) — kept here so a second --set-id/--receipt, or one with nothing
- *  usable after it, still refuses by name rather than silently keeping the last one. */
+ *  usable after it, still refuses by name rather than silently keeping the last one.
+ *  Recognizes `--flag value` and `--flag=value` — the generic parser above already accepts
+ *  both forms for a declared option, so this must too or `--flag=value` would silently
+ *  validate as known yet never reach this extraction. */
 function value(args: string[], flag: string): string | undefined {
+  const prefix = `${flag}=`;
+  const plainCount = args.filter((arg) => arg === flag).length;
+  const inlineMatch = args.find((arg) => arg.startsWith(prefix));
+  const inlineCount = args.filter((arg) => arg.startsWith(prefix)).length;
+  if (plainCount + inlineCount === 0) return undefined;
+  if (plainCount + inlineCount > 1) die(`${flag} may be given only once`);
+  if (inlineMatch !== undefined) return inlineMatch.slice(prefix.length);
   const index = args.indexOf(flag);
-  if (index < 0) return undefined;
   const result = args[index + 1];
   if (result === undefined || result.startsWith("--")) die(`${flag} needs a value`);
-  if (args.indexOf(flag, index + 1) >= 0) die(`${flag} may be given only once`);
   return result;
 }
 

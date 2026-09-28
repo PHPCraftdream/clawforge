@@ -227,7 +227,15 @@ function configSummary(name: string, settings: Settings): Omit<DeploymentSummary
   const target = settings.location === "ssh" && settings.sshHost !== ""
     ? `ssh:${settings.sshHost}`
     : settings.location;
-  return { name, target, port: settings.gatewayPort, image: settings.image, pinned: settings.image.includes("@sha256:") };
+  // "auto" is unresolved until a Context picks a transport (checkStatus does, below) — flag
+  // it so --no-status doesn't read as if the target were literally named "auto".
+  return {
+    name,
+    target: target === "auto" ? "auto (not resolved)" : target,
+    port: settings.gatewayPort,
+    image: settings.image,
+    pinned: settings.image.includes("@sha256:"),
+  };
 }
 
 async function summarizeDeployment(
@@ -262,10 +270,17 @@ async function summarizeDeployment(
   }
 
   try {
-    const running = await (await buildContext(app, directory)).runtime.isRunning();
-    return { ...config, state: running ? "running" : "stopped" };
+    const context = await buildContext(app, directory);
+    // The context resolved "auto" to a real transport — show that instead of the raw setting.
+    const resolved = { ...config, target: context.transport.description };
+    try {
+      const running = await context.runtime.isRunning();
+      return { ...resolved, state: running ? "running" : "stopped" };
+    } catch (error) {
+      if (error instanceof NotBootstrapped) return { ...resolved, state: "not-bootstrapped" };
+      return { ...resolved, state: "error", reason: maskSecrets((error as Error).message) };
+    }
   } catch (error) {
-    if (error instanceof NotBootstrapped) return { ...config, state: "not-bootstrapped" };
     return { ...config, state: "error", reason: maskSecrets((error as Error).message) };
   }
 }

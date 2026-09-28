@@ -130,6 +130,7 @@ jobs:
             tools/checks/integration/agent/recipe-readiness.check.ts
             tools/checks/integration/agent/recipe.check.ts
             tools/checks/integration/recipe/recipe-arguments.check.ts
+            tools/checks/integration/recipe/recipe-directory-unreadable.check.ts
             tools/checks/integration/recipe/recipe-lifecycle-hooks.check.ts
             tools/checks/integration/apps/app-hooks.check.ts
             tools/checks/integration/apps/app-recipes-dir.check.ts

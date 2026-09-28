@@ -15,13 +15,14 @@
 // same wiki — and the model can still answer differently the second time. Reproducing an
 // answer is a different problem and this file does not claim to solve it.
 
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { frameworkRoot } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
 import { requirements } from "#src/service/secrets.ts";
+import { listRecipeDirectories } from "#src/service/recipe.ts";
 import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { openclawCliBatch } from "#src/service/openclaw-cli.ts";
 import { nextActions, problem } from "#src/service/inspection.ts";
@@ -113,14 +114,10 @@ export async function frameworkVersion(): Promise<string | undefined> {
 }
 
 async function recipeNames(): Promise<string[]> {
-  try {
-    return (await readdir(recipesDir(), { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-  } catch {
-    return [];
-  }
+  return (await listRecipeDirectories(recipesDir()))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
 }
 
 /** What the lock would say if written now. Exported so `plan` and the checks can ask for it

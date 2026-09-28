@@ -39,3 +39,26 @@ for (const path of listed) {
 }
 assert.deepEqual(missing, [], "ci.yml names check files that do not exist (moved or deleted)");
 process.stderr.write("source layout limits passed\n");
+
+// service/recipe.ts's listRecipeDirectories() is the framework's one readdir of a recipes
+// directory: everything else turning an unreadable root into a silent "no recipes" is the
+// gap this whole file exists to close. A second direct readdir(recipesDir()) or
+// readdir(recipesDirectory()) anywhere else would reopen it outside review.
+const RECIPE_READDIR = /readdir\(\s*recipesDir(?:ectory)?\(\)/;
+async function auditRecipeReaddirSites(dir: string): Promise<void> {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory() && entry.name !== "dist" && entry.name !== "node_modules") {
+      await auditRecipeReaddirSites(full);
+      continue;
+    }
+    if (!entry.isFile() || !/\.(?:ts|js)$/.test(entry.name)) continue;
+    const content = await readFile(full, "utf8");
+    assert.ok(
+      !RECIPE_READDIR.test(content),
+      `${full} reads the recipes directory directly — route it through service/recipe.ts's listRecipeDirectories() instead`,
+    );
+  }
+}
+await auditRecipeReaddirSites(resolve(monorepoRoot, "tools", "framework"));
+process.stderr.write("no second readdir of the recipes directory outside listRecipeDirectories\n");

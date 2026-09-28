@@ -4,11 +4,16 @@
 // no check — it reports success on a broken deployment. The stub stands in for the target so
 // each failure can be provoked deliberately.
 
-import { runCheck, requiresModel, summarize, acceptanceSpecError } from "#framework/commands/orchestration/accept.ts";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { accept, runCheck, requiresModel, summarize, acceptanceSpecError } from "#framework/commands/orchestration/accept.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
 import type { AcceptanceCheck } from "#framework/commands/orchestration/accept.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
 
 let failed = 0;
 
@@ -271,6 +276,32 @@ async function run(answers: Answers, declared: AcceptanceCheck) {
   check("a kind the framework does not implement cannot be checked", unknown.status, "could-not-check");
   // Skipping it silently would let a recipe declare anything it liked and always be green.
   check("naming the kind it does not know", unknown.detail?.includes("teleport_the_instance"), true);
+}
+
+// --- a recipes root that is not a directory must die, not report "nothing declares
+// acceptance" ------------------------------------------------------------------------------
+//
+// recipesWithAcceptance() used to catch every readdir failure and answer "no recipes", which
+// `accept` then read as "nothing to check" — indistinguishable from a deployment that
+// genuinely declares none. An unreadable root must fail loudly instead.
+
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-accept-check-"));
+  await writeFile(resolve(deployment, "recipes"), "not a directory");
+  useDeployment(deployment);
+  try {
+    let message = "";
+    try {
+      await accept({} as unknown as Context, []);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    check("a recipes root that is a file dies rather than reporting nothing declared", message !== "", true);
+    check("naming the recipes path", message.includes(resolve(deployment, "recipes")), true);
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+    useDeployment(resolve(monorepoRoot, "apps", "example app"));
+  }
 }
 
 process.stderr.write(failed === 0 ? "all acceptance checks passed\n" : `${failed} failed\n`);

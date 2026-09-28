@@ -3,9 +3,10 @@
 // see helpers.ts (this same directory) for the pure pieces these use, drift.ts for the
 // per-facet declared-vs-target comparisons, and live.ts for what the target itself reports.
 
-import { access, lstat, readdir, readFile } from "node:fs/promises";
+import { access, lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { deploymentName, desiredStateFile, envFile, recipesDir } from "#src/runtime/deployment.ts";
+import { listRecipeDirectories } from "#src/service/recipe.ts";
 import { loadRecipeAgentBundle } from "#src/commands/management/provision-agent/index.ts";
 import type { RecipeAgentBundle } from "#src/commands/management/provision-agent/index.ts";
 import { problem } from "#src/service/inspection.ts";
@@ -23,15 +24,9 @@ export interface RecipeExpectation {
 
 export async function recipeExpectations(): Promise<RecipeExpectation[]> {
   const found: RecipeExpectation[] = [];
-  let entries: string[];
-  try {
-    entries = (await readdir(recipesDir(), { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return found;
-    throw new Error(`${recipesDir()} could not be read: ${(error as Error).message}`);
-  }
+  const entries = (await listRecipeDirectories(recipesDir()))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
 
   for (const recipe of entries.sort()) {
     const agentDir = resolve(recipesDir(), recipe, "agent");

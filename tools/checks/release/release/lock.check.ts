@@ -5,12 +5,18 @@
 // tag that stayed the same while the image behind it moved, a framework version bump, a
 // declaration replaced wholesale, a secret the instance did not use to need.
 
-import { compareLock, COMMIT_ADVICE, LOCK_VERSION, declarationChecksum } from "#framework/commands/management/lock.ts";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { compareLock, COMMIT_ADVICE, LOCK_VERSION, declarationChecksum, currentComposition } from "#framework/commands/management/lock.ts";
 import { gitInitAdvice } from "#framework/integration/deployment/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
 import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList } from "#framework/commands/management/extensions.ts";
 import type { LockPlugin, LockSkill } from "#framework/commands/management/extensions.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
 
@@ -296,6 +302,32 @@ const initAdvice = gitInitAdvice("demo");
 check("new-app's own note explains why (apps/ is gitignored here)", initAdvice.includes("gitignore"), true);
 check("and names the concrete command, not just the idea", initAdvice.includes("git init"), true);
 check("and confirms secrets are already kept out of that new repository", initAdvice.includes(".env") && initAdvice.includes("secrets/"), true);
+
+// --- a recipes root that is not a directory must die naming it, not pin an empty lock -----
+//
+// recipeNames() used to catch every readdir failure and answer "no recipes"; `lock` would
+// then happily write "recipes (none)" over a deployment whose recipes/ exists but cannot be
+// read (ENOTDIR, a permissions error, ...). It must fail the same way recipe list and
+// accept now do.
+
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-lock-check-"));
+  await writeFile(resolve(deployment, "recipes"), "not a directory");
+  useDeployment(deployment);
+  try {
+    let message = "";
+    try {
+      await currentComposition({} as unknown as Context);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    check("a recipes root that is a file dies rather than pinning an empty composition", message !== "", true);
+    check("naming the recipes path", message.includes(resolve(deployment, "recipes")), true);
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+    useDeployment(resolve(monorepoRoot, "apps", "example app"));
+  }
+}
 
 process.stderr.write(failed === 0 ? "all lock checks passed\n" : `${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

@@ -15,7 +15,7 @@
 // ctx.settings (the deployment's declared image) is read.
 
 import { randomBytes } from "node:crypto";
-import { mkdtemp, mkdir, readdir, readFile, rename, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { die } from "#src/core/io/log.ts";
@@ -25,6 +25,7 @@ import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentDir, desiredStateFile, recipesDir, secretsTemplateFile } from "#src/runtime/deployment.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
+import { listRecipeDirectories } from "#src/service/recipe.ts";
 import { desiredStateShapeError } from "#src/set/ownership/validate.ts";
 import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { frameworkVersion, readLock } from "../management/lock.ts";
@@ -118,21 +119,10 @@ async function agentDeclaration(recipe: string): Promise<AgentConfig> {
 /** Recipe directory names, sorted: readdir order differs between machines and the id must
  *  not notice. Same rule as the lock's recipeNames. */
 async function recipeNames(): Promise<string[]> {
-  const dir = recipesDir();
-  try {
-    return (await readdir(dir, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-  } catch (error) {
-    // ENOENT is a deployment with no recipes at all; anything else is a source that exists
-    // and cannot be read, and calling that an empty inventory would publish a read failure
-    // as the removal of every recipe — which plan and the ownership ledger would then act
-    // on as real removals.
-    if (absentRecipesSource(error)) return [];
-    const code = (error as NodeJS.ErrnoException).code;
-    die(`cannot read the recipes source at ${dir}: ${code ?? (error as Error).message}`);
-  }
+  return (await listRecipeDirectories(recipesDir()))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
 }
 
 /** True when a readdir error says only that there is no recipes directory at all — how a

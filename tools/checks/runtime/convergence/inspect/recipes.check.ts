@@ -3,8 +3,13 @@
 // inspect.check.ts; see fixture.ts for the shared stub and on-disk deployment,
 // inspect-drift.check.ts and inspect-lock.check.ts for the rest.
 
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
+import { recipeExpectations } from "#framework/commands/orchestration/inspect/declared.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes, matchingJob } from "./fixture.ts";
 
 let failed = 0;
@@ -178,6 +183,29 @@ try {
     );
     const unhealthy = inspection.problems.find((entry) => entry.code === "GATEWAY_UNHEALTHY");
     check("a failing probe on a healthy container is still a finding", unhealthy?.detail.includes("readyz answered 503"), true);
+  }
+
+  // --- a recipes root that is not a directory must die, matching lock/accept/recipe list --
+  //
+  // recipeExpectations() feeds both inspect and plan; a file where recipes/ should be must
+  // fail naming the path rather than reading as a deployment with none declared.
+  {
+    const badDeployment = await mkdtemp(join(tmpdir(), "clawforge-inspect-recipes-check-"));
+    await writeFile(resolve(badDeployment, "recipes"), "not a directory");
+    useDeployment(badDeployment);
+    try {
+      let message = "";
+      try {
+        await recipeExpectations();
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      check("inspect/plan's recipe read dies rather than reporting none declared", message !== "", true);
+      check("naming the recipes path", message.includes(resolve(badDeployment, "recipes")), true);
+    } finally {
+      await rm(badDeployment, { recursive: true, force: true });
+      useDeployment(deployment);
+    }
   }
 } finally {
   await teardownFixtureDeployment(deployment);

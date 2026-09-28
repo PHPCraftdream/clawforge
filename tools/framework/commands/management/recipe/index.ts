@@ -4,7 +4,7 @@
 // Building happens on the target: a Rust or Go build from scratch takes minutes, and the
 // output is streamed rather than swallowed — silent waiting looks like a hang.
 
-import { access, readdir } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { dieUnknownAction } from "#src/core/arguments.ts";
@@ -12,6 +12,7 @@ import type { Context } from "#src/core/context.ts";
 import {
   listAgentBundleRecipes,
   listBrokenRecipes,
+  listRecipeDirectories,
   listRecipes,
   loadRecipe,
   projectName,
@@ -67,15 +68,9 @@ function describe(recipe: Recipe): void {
  *  stack must not disappear from the quiesce decision. */
 export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
   const running: Recipe[] = [];
-  let entries;
-  try {
-    entries = await readdir(recipesDirectory(), { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return running;
-    throw error;
-  }
+  const entries = (await listRecipeDirectories(recipesDirectory())).filter((candidate) => candidate.isDirectory());
 
-  for (const entry of entries.filter((candidate) => candidate.isDirectory())) {
+  for (const entry of entries) {
     const directory = resolve(recipesDirectory(), entry.name);
     try {
       await access(resolve(directory, "recipe.json"));

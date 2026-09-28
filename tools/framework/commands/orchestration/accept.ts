@@ -17,11 +17,12 @@
 // running. The count of what was skipped is always reported: a suite that silently omits
 // what it did not run is how coverage disappears.
 
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { recipesDir, deploymentName } from "#src/runtime/deployment.ts";
+import { listRecipeDirectories } from "#src/service/recipe.ts";
 import { openclawCliJson, withModelApproval } from "#src/service/openclaw-cli.ts";
 import { recipeServerContainerPath, mcpServerMatches } from "../management/provision-agent/index.ts";
 import type { CheckOutcome } from "../check-outcome.ts";
@@ -157,12 +158,7 @@ export async function loadChecks(recipe: string): Promise<AcceptanceCheck[] | un
 }
 
 async function recipesWithAcceptance(): Promise<string[]> {
-  let entries: string[];
-  try {
-    entries = (await readdir(recipesDir(), { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-  } catch {
-    return [];
-  }
+  const entries = (await listRecipeDirectories(recipesDir())).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   const found: string[] = [];
   for (const name of entries.sort()) {
     if ((await loadChecks(name)) !== undefined) found.push(name);

@@ -9,7 +9,7 @@ import { die } from "#src/core/io/log.ts";
 import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";
 import { collectPortableRecipeFiles, SENSITIVE_RECIPE_NAME } from "#src/security/privacy/recipe-portable-content.ts";
 import { collectSensitiveCheckoutNames } from "#src/security/privacy/deploy-boundary.ts";
-import { readdir } from "node:fs/promises";
+import { listRecipeDirectories } from "#src/service/recipe.ts";
 import { resolve } from "node:path";
 
 /** Every path the portable-content policy holds back across the three trees deploy sends:
@@ -20,15 +20,8 @@ export async function collectRefusals(sourceRoot: string): Promise<string[]> {
   const carrying: string[] = [];
 
   const recipesRoot = recipesDir();
-  let recipeEntries: { name: string; isDirectory(): boolean }[] = [];
-  try {
-    recipeEntries = await readdir(recipesRoot, { withFileTypes: true });
-    recipeEntries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  } catch (error) {
-    // No recipes directory: nothing synced to scan, and the later rsync of recipes/ fails
-    // exactly as it does today. Any other read error is not ours to interpret.
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
+  const recipeEntries = (await listRecipeDirectories(recipesRoot))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const entry of recipeEntries) {
     // A sensitive-named top-level entry — file, link or directory — refuses on its own,
     // before the walk below could even be reached.

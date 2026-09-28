@@ -190,6 +190,13 @@ All notable changes to `@clawforge/framework` will be documented here.
   added). `serializeEnvLine` quotes a value containing ` #` so it survives the next read;
   `inspect`/`doctor` report `ENV_LINE_INVALID` for a line whose key is not a usable variable
   name. The accepted format is documented in docs/guide/deploy-and-mcp.md.
+* `recipes/` existing but unreadable (a file where a directory belongs, a permissions error)
+  used to read as an empty catalog: `recipe list` said "no recipes yet", `lock` wrote
+  `recipes (none)`, and `accept` said nothing declares acceptance, while `inspect`/`plan`
+  already refused with a named error. Every enumeration of `recipes/` now goes through one
+  shared reader (`listRecipeDirectories`) that turns ENOENT into "no recipes" and any other
+  error into a refusal naming the path and errno — `recipe list`, `lock`, `accept`, `deploy`
+  and set build now fail the same way `inspect`/`plan` always did.
 
 ## 0.1.0
 

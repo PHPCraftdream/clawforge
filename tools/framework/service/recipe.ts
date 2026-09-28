@@ -26,6 +26,7 @@ import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { monorepoRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
+import { die } from "../core/io/log.ts";
 import { recipesDir } from "../runtime/deployment.ts";
 import { persistedPrivatePaths } from "../security/privacy/private-paths-ledger.ts";
 
@@ -46,6 +47,19 @@ export function clearRecipesDir(): void {
 
 export function recipesDirectory(): string {
   return explicitRecipesDir ?? recipesDir();
+}
+
+/** The one readdir of a recipes directory (layout.check.ts greps for a second). ENOENT is no
+ *  recipes; any other errno dies naming the path, never reads as "empty". Returns raw entries:
+ *  each caller decides whether it wants files too. */
+export async function listRecipeDirectories(root: string): Promise<Dirent[]> {
+  try {
+    return await readdir(root, { withFileTypes: true });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return [];
+    die(`cannot read the recipes directory at ${root}: ${code ?? (error as Error).message}`);
+  }
 }
 
 export interface RecipePort {
@@ -261,14 +275,9 @@ export async function loadRecipe(name: string): Promise<Recipe> {
 }
 
 export async function listRecipes(): Promise<Recipe[]> {
-  let entries: string[];
-  try {
-    entries = (await readdir(recipesDirectory(), { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch {
-    return [];
-  }
+  const entries = (await listRecipeDirectories(recipesDirectory()))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
 
   const recipes: Recipe[] = [];
   for (const name of entries) {
@@ -299,14 +308,9 @@ export interface BrokenRecipe {
  *  unrelated directory, already accounted for by listAgentBundleRecipes — so they are
  *  excluded here rather than reported. */
 export async function listBrokenRecipes(): Promise<BrokenRecipe[]> {
-  let entries: string[];
-  try {
-    entries = (await readdir(recipesDirectory(), { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch {
-    return [];
-  }
+  const entries = (await listRecipeDirectories(recipesDirectory()))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
 
   const broken: BrokenRecipe[] = [];
   for (const name of entries) {
@@ -331,16 +335,10 @@ async function strictDeclaredPrivatePaths(): Promise<string[]> {
     return [];
   }
 
-  let entries: Dirent[];
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw new Error(`could not enumerate the recipes root ${root}: ${(error as Error).message}`);
-  }
+  const entries = (await listRecipeDirectories(root)).filter((candidate) => candidate.isDirectory());
 
   const paths: string[] = [];
-  for (const entry of entries.filter((candidate) => candidate.isDirectory())) {
+  for (const entry of entries) {
     const manifest = resolve(root, entry.name, "recipe.json");
     let raw: string;
     try {
@@ -441,16 +439,14 @@ export async function declaredPrivateFiles(sourceDirectory: string): Promise<str
  *  list` can account for what it does not list instead of answering "no recipes yet" over a
  *  deployment that plainly has recipes. */
 export async function listAgentBundleRecipes(): Promise<string[]> {
-  let entries: Dirent[];
-  try {
-    entries = await readdir(recipesDirectory(), { withFileTypes: true });
-  } catch {
-    return [];
-  }
+  const names = (await listRecipeDirectories(recipesDirectory()))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
 
   const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
   const bundles: string[] = [];
-  for (const name of entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort()) {
+  for (const name of names) {
     const directory = resolve(recipesDirectory(), name);
     const [hasService, hasBundle] = await Promise.all([
       exists(resolve(directory, "recipe.json")),

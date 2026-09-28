@@ -25,9 +25,10 @@ import {
   type GateCommand,
 } from "./framework/integration/gate.ts";
 import { reportError, info } from "./framework/core/log.ts";
+import { emit } from "./framework/core/output.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
-import { createApp } from "./framework/integration/scaffold.ts";
+import { createApp, listDeployments, printDeploymentList } from "./framework/integration/scaffold.ts";
 import { safeName } from "./framework/core/names.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
 import type { AppDefinition } from "./framework/core/app.ts";
@@ -84,6 +85,34 @@ const gateCommands: GateCommand[] = [
         return 1;
       }
       await createApp(target);
+      return 0;
+    },
+  },
+  {
+    name: "list",
+    summary: "Overview of every deployment under apps/",
+    details:
+      "One line per apps/<name>: target (OC_TARGET_LOCATION, plus OC_SSH_HOST for ssh), " +
+      "gateway port, image (pinned when it carries @sha256:), and whether the gateway is " +
+      "running.\n" +
+      "A deployment this cannot fully read — no .env yet, a broken app.ts, an unreachable " +
+      "target — gets its own line naming why instead of failing the whole listing.\n" +
+      "--no-status skips asking the target altogether, for a fast read of configuration " +
+      "alone; state then reads \"not checked\".\n" +
+      "--json prints the same rows as an array of objects instead.",
+    arguments: [
+      { name: "json", description: "Emit as a JSON array instead of text", kind: "flag" },
+      { name: "no-status", description: "Configuration only — do not query any target", kind: "flag" },
+    ],
+    run: async (args) => {
+      const unknown = args.find((arg) => arg !== "--json" && arg !== "--no-status");
+      if (unknown !== undefined) {
+        reportError(`unknown argument: ${unknown}`);
+        return 1;
+      }
+      const summaries = await listDeployments({ checkStatus: !args.includes("--no-status") });
+      if (args.includes("--json")) emit(`${JSON.stringify(summaries)}\n`);
+      else printDeploymentList(summaries);
       return 0;
     },
   },

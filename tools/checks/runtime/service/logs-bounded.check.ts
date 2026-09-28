@@ -14,7 +14,7 @@ import { recipe } from "#framework/commands/management/recipe/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink, outputSink } from "#framework/core/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;
@@ -60,6 +60,7 @@ for (const bad of [["--tail"], ["--tail", "--since"], ["--tail", "lots"]]) {
 
 interface Seen {
   followed: boolean;
+  followRest?: string[];
   readTail?: string;
   readRest?: string[];
 }
@@ -68,8 +69,12 @@ function ctxWith(seen: Seen): Context {
   return {
     settings: { dataDir: "/srv/openclaw/data", env: {} },
     runtime: {
-      async followLogs(): Promise<void> {
+      async followLogs(rest: string[] = []): Promise<void> {
         seen.followed = true;
+        seen.followRest = rest;
+        // Simulates a chunk arriving mid-stream, the same way the real transport hands text
+        // to whatever sink is active — a no-op unless --grep installed one (grepFollowSink).
+        outputSink()?.("kept line\ndropped line\n");
       },
       async readLogs(tail?: string, rest: string[] = []): Promise<string> {
         seen.readTail = tail;
@@ -80,11 +85,109 @@ function ctxWith(seen: Seen): Context {
   } as unknown as Context;
 }
 
+// --- --since: validated rather than passed through unchecked --------------------------------
+
+for (const bad of ["", "10", "1x", "not-a-date", "10m "]) {
+  let threw = false;
+  try {
+    await withOutputSink(() => {}, async () => {
+      await logs(ctxWith({ followed: false }), ["--since", bad]);
+    });
+  } catch {
+    threw = true;
+  }
+  check(`--since "${bad}" is refused`, threw, true);
+}
+
+{
+  let threw = false;
+  try {
+    await logs(ctxWith({ followed: false }), ["--since"]);
+  } catch {
+    threw = true;
+  }
+  check("--since with no value is refused", threw, true);
+}
+
+for (const good of ["10m", "2h", "1h30m", "45s", "2024-01-02", "2024-01-02T15:04:05Z", "2024-01-02T15:04:05.123+02:00"]) {
+  const seen: Seen = { followed: false };
+  await withOutputSink(() => {}, async () => {
+    await logs(ctxWith(seen), ["--since", good]);
+  });
+  check(`--since "${good}" is accepted and still reaches the runtime`, seen.readRest, ["--since", good]);
+}
+
+// --- --grep: a bad pattern is refused, a good one filters lines both ways -------------------
+
+for (const bad of ["(", "[", "*"]) {
+  let threw = false;
+  try {
+    await withOutputSink(() => {}, async () => {
+      await logs(ctxWith({ followed: false }), ["--grep", bad]);
+    });
+  } catch {
+    threw = true;
+  }
+  check(`--grep "${bad}" (invalid regex) is refused`, threw, true);
+}
+
+{
+  let threw = false;
+  try {
+    await logs(ctxWith({ followed: false }), ["--grep"]);
+  } catch {
+    threw = true;
+  }
+  check("--grep with no value is refused", threw, true);
+}
+
+{
+  const seen: Seen = { followed: false };
+  const written: string[] = [];
+  await withOutputSink((chunk) => written.push(chunk), async () => {
+    await logs(ctxWith(seen), ["--since", "10m", "--grep", "two"]);
+  });
+  check("--grep never reaches the runtime as an argument", seen.readRest, ["--since", "10m"]);
+  check("--grep filters the bounded read down to the matching line", written.join(""), "line two\n");
+}
+
+{
+  const written: string[] = [];
+  await withOutputSink((chunk) => written.push(chunk), async () => {
+    await logs(ctxWith({ followed: false }), ["--grep", "nomatch"]);
+  });
+  check("--grep with nothing matching returns nothing", written.join(""), "");
+}
+
 {
   const seen: Seen = { followed: false };
   await logs(ctxWith(seen), []);
   check("on a terminal the log is followed", seen.followed, true);
   check("nothing is read in bounded form on a terminal", seen.readTail === undefined && seen.readRest === undefined, true);
+}
+
+{
+  // --grep while following: inherited stdio (the plain terminal case above) cannot be
+  // filtered by this process at all, so this path trades it for a piped one it CAN filter
+  // (logs()'s withOutputSink(grepFollowSink(...), ...)) — asserted here by capturing what
+  // reaches the real process.stdout.write instead of the fake sink used everywhere else in
+  // this file, since a real write is exactly what a filtered follow still owes the terminal.
+  const seen: Seen = { followed: false };
+  const written: string[] = [];
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stdout.write as any) = (chunk: string): boolean => {
+    written.push(chunk);
+    return true;
+  };
+  try {
+    await logs(ctxWith(seen), ["--grep", "kept"]);
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  check("on a terminal with --grep the log is still followed", seen.followed, true);
+  check("--grep does not reach the runtime as an argument while following either", seen.followRest, []);
+  check("--grep filters a followed stream down to the matching lines", written.join(""), "kept line\n");
 }
 
 {

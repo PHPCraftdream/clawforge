@@ -78,9 +78,16 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "last lines and returns them instead — following would never produce the single " +
       "result a tool call owes its caller.\n" +
       "--tail sets how many lines the bounded read returns; without it the deployment's own " +
-      "declared default applies.",
+      "declared default applies.\n" +
+      "--since takes a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time, passed to " +
+      "compose as-is; anything else is refused rather than forwarded.\n" +
+      "--grep filters lines by a JS RegExp, on the bounded read and on a followed stream " +
+      "alike (filtered line by line as it arrives); an invalid pattern is refused before " +
+      "anything runs.",
     arguments: [
       { name: "tail", description: "Lines to return when reading rather than following", kind: "option" },
+      { name: "since", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option" },
+      { name: "grep", description: "Only lines matching this regular expression", kind: "option" },
     ],
   },
   backup: {

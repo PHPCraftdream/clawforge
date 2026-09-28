@@ -36,6 +36,14 @@ export function useDeployment(directory: string): void {
   activeDir = directory;
 }
 
+/** The active deployment directory, or undefined before anything has selected one — unlike
+ *  deploymentDir() this never throws, so a caller that must step through several deployments
+ *  in turn (list) can save this first and restore it when done, rather than leaving whichever
+ *  one it looked at last as the global for everything that runs after it. */
+export function currentDeploymentDir(): string | undefined {
+  return activeDir;
+}
+
 /** Selects an application's recipe root for the active deployment. */
 export function useApplicationRecipesDir(directory: string | undefined): void {
   if (directory === undefined) {

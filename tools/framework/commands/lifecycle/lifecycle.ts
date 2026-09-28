@@ -5,7 +5,7 @@
 
 import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/log.ts";
-import { shouldFollow, emit } from "#src/core/output.ts";
+import { shouldFollow, emit, withOutputSink } from "#src/core/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
@@ -167,14 +167,22 @@ export async function down(ctx: Context, args: string[]): Promise<void> {
  *  name: it is one capability, and the mirror is meant to expose it, not a second spelling
  *  of it. recipe.ts's logs action makes the same choice the same way. */
 export async function logs(ctx: Context, args: string[]): Promise<void> {
-  const { tail, rest } = takeTail(args);
+  const { tail, rest: afterTail } = takeTail(args);
+  validateSince(afterTail);
+  const { pattern, rest } = takeGrep(afterTail);
 
   if (shouldFollow()) {
-    await ctx.runtime.followLogs(rest);
+    if (pattern === undefined) {
+      await ctx.runtime.followLogs(rest);
+      return;
+    }
+    // A sink makes the output captured, so the child never inherits stdio and can be filtered.
+    await withOutputSink(grepFollowSink(pattern), () => ctx.runtime.followLogs(rest));
     return;
   }
 
-  emit(await ctx.runtime.readLogs(tail, rest));
+  const output = await ctx.runtime.readLogs(tail, rest);
+  emit(pattern === undefined ? output : filterLines(output, pattern));
 }
 
 /** Pulls `--tail <n>` out of the arguments, leaving the rest for the runtime. Declared as an
@@ -188,6 +196,80 @@ export function takeTail(args: string[]): { tail?: string; rest: string[] } {
   if (!/^\d+$/.test(value)) die(`--tail takes a number of lines, not "${value}"`);
 
   return { tail: value, rest: [...args.slice(0, at), ...args.slice(at + 2)] };
+}
+
+// A Go-style duration (docker compose's own --since grammar): at least one of hours,
+// minutes, seconds, each a bare integer plus its unit, in that order.
+const SINCE_DURATION = /^(?:\d+h)?(?:\d+m)?(?:\d+s)?$/;
+// RFC3339/ISO: a date, optionally followed by a time with optional fractional seconds and
+// an offset or "Z". Deliberately not node:util's Date.parse, which accepts far more than
+// compose's own --since does and would let an otherwise-meaningless string through.
+const SINCE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})?)?$/;
+
+function isValidSince(value: string): boolean {
+  return (SINCE_DURATION.test(value) && /\d/.test(value)) || SINCE_TIMESTAMP.test(value);
+}
+
+/** `--since` is forwarded to compose as-is (already part of `rest`, the way `--tail`'s
+ *  leftovers always have been) — validated here rather than left to whatever compose makes
+ *  of an arbitrary string, so a typo fails with a clear reason instead of quietly changing
+ *  what compose thinks "since" means. */
+function validateSince(args: string[]): void {
+  const at = args.indexOf("--since");
+  if (at === -1) return;
+  const value = args[at + 1];
+  if (value === undefined || value.startsWith("-")) {
+    die("--since needs a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time");
+  }
+  if (!isValidSince(value)) {
+    die(`--since takes a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time, not "${value}"`);
+  }
+}
+
+function compileGrep(pattern: string): RegExp {
+  try {
+    return new RegExp(pattern);
+  } catch (error) {
+    die(`--grep takes a valid regular expression: ${(error as Error).message}`);
+  }
+}
+
+/** Pulls `--grep <pattern>` out of the arguments the same way takeTail() pulls `--tail`:
+ *  compose never sees it, since filtering happens here in tooling, not in the container. */
+function takeGrep(args: string[]): { pattern?: RegExp; rest: string[] } {
+  const at = args.indexOf("--grep");
+  if (at === -1) return { rest: args };
+
+  const value = args[at + 1];
+  if (value === undefined || value.startsWith("-")) die("--grep needs a pattern");
+
+  return { pattern: compileGrep(value), rest: [...args.slice(0, at), ...args.slice(at + 2)] };
+}
+
+/** Keeps only the lines `pattern` matches, preserving a trailing newline when the input had
+ *  one. The bounded read arrives as one string; grepFollowSink below does the same job for a
+ *  stream that never does. */
+function filterLines(text: string, pattern: RegExp): string {
+  const endsWithNewline = text.endsWith("\n");
+  const body = endsWithNewline ? text.slice(0, -1) : text;
+  if (body === "") return "";
+  const kept = body.split("\n").filter((line) => pattern.test(line));
+  return kept.length === 0 ? "" : kept.join("\n") + (endsWithNewline ? "\n" : "");
+}
+
+/** A withOutputSink() collector for a followed log: buffers chunks into lines (a chunk is
+ *  never guaranteed to end on one) and writes only the matching lines straight to stdout. A
+ *  trailing partial line with no newline yet is held back and lost if the process is killed
+ *  before the next chunk arrives — the same loss a piped `| grep` would show. */
+function grepFollowSink(pattern: RegExp): (chunk: string) => void {
+  let pending = "";
+  return (chunk: string): void => {
+    pending += chunk;
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
+    const kept = lines.filter((line) => pattern.test(line));
+    if (kept.length > 0) process.stdout.write(`${kept.join("\n")}\n`);
+  };
 }
 
 /** The sha256 hash of a `repo@sha256:…`/`repo:tag@sha256:…` reference, or the whole string

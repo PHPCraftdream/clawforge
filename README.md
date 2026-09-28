@@ -261,7 +261,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `up` | `[--break-lock] [--break-foreign-lock <hostId>]` | Start and wait for `/healthz`; secrets and port availability are checked before the start, not after |
 | `restart` | `[--break-lock] [--break-foreign-lock <hostId>]` | Restart in place so the instance re-reads its configuration — what `apply-config` and `configure-provider` need, and what `up` cannot do. It re-reads files the container can see (bind-mounted config) and nothing compose baked into it: the environment was interpolated from `.env` at creation, so a rotated repo-env secret needs the recreate `secrets --apply` performs, or `up` |
 | `down` | `[--break-lock] [--break-foreign-lock <hostId>]` | Stop and remove the containers; data in bind mounts is untouched |
-| `logs` | `[--tail <n>]` | Follow the service log on a terminal; called as a tool, read the last `n` lines and return them |
+| `logs` | `[--tail <n>] [--since <duration\|timestamp>] [--grep <pattern>]` | Follow the service log on a terminal; called as a tool, read the last `n` lines and return them. `--since` takes a Go-style duration (`10m`, `2h`, `1h30m`) or an RFC3339/ISO date-time, passed straight to `docker compose logs --since`; anything else is refused rather than forwarded. `--grep` filters lines by a JS `RegExp`, on both the bounded read and the following stream — an invalid pattern is refused before anything runs |
 | `status` | — | Containers, image, health probes (HTTP probes and Docker's own verdict side by side — they can disagree), disk usage |
 | `inspect` | `[--json]` | What is declared, what is running, and where they disagree — one answer, every finding carrying a stable code. Also probes, from inside the container, the outbound endpoints the live config names, and compares the deployment folder itself — `.env`'s connection facts, the desired-state file, the default secret store — against the instance, as warnings. Read-only |
 | `doctor` | `[--json]` | The same inspection read as a verdict; exits non-zero when something blocking was found; outbound reachability is a warning, never a failure |
@@ -297,6 +297,7 @@ below is what does not fit in `--help` — the whole model, file formats, diagno
 | `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
 | `check` | — | Framework checks with no instance — paths, archives, arguments, what a server delivery contains |
 | `new-app <name>` | — | Create a deployment directory (framework-level, available before `--app` is resolved) |
+| `list` | `[--json] [--no-status]` | One line per `apps/<name>`: target, gateway port, image (pinned when it carries `@sha256:`), and whether the gateway is running (framework-level, monorepo checkouts only — an installed, single-deployment checkout has nothing to list beside itself). A deployment this cannot fully read — no `.env` yet, a broken `app.ts`, an unreachable target — gets its own line naming why, instead of failing the whole listing. `--no-status` skips querying any target, for a fast configuration-only read; `--json` prints the same rows as an array of objects |
 | `init` | — | Scaffold the current directory as the single deployment (framework-level, installed mode only — see "Installing in a separate repository") |
 
 ## The machine itself: `host`
@@ -525,7 +526,8 @@ more of them than fit here:
 | `provision-agent.check.ts` | path and argv builders, `collectRecipeFiles` excluding `agent/`, the create-vs-skip decisions, and cron reconciliation against the declaration |
 | `mcp-mirror.check.ts` | the promise itself: every command `./clawforge help` lists is a tool or an explained exemption, and every tool is a command the console offers — both surfaces read from real processes |
 | `gate-commands.check.ts` | the gate's own commands: dispatch, `--help` from the declaration, and the same schema/argv derivation the deployment's commands get |
-| `logs-bounded.check.ts` | `logs` and `recipe logs` follow on a terminal and read a bounded tail under a sink, with `--tail` parsed rather than passed on |
+| `logs-bounded.check.ts` | `logs` and `recipe logs` follow on a terminal and read a bounded tail under a sink, with `--tail` parsed rather than passed on; `--since` accepting a duration or an RFC3339/ISO date-time and refusing anything else; `--grep` compiling to a `RegExp` or refusing an invalid pattern, filtering the bounded read, and filtering a followed stream line by line under a sink |
+| `deployment-list.check.ts` | `listDeployments()` against a scratch `apps/` and a stubbed context: the four configuration fields plus `pinned` read straight from `.env`; a missing `.env`, a broken `app.ts` and a failing `isRunning()` each produce their own row and reason rather than failing the whole call; `NotBootstrapped` maps to its own state; `--no-status` never builds a context at all; and the active deployment global is restored to what it was before `list` ran |
 | `openclaw-cli.check.ts` | the shared wrapper around OpenClaw's CLI: capture, the scope-upgrade approve-and-retry, and that an unrelated failure is not retried into a second error |
 | `restart.check.ts` | `restart` refuses a stopped instance, does not restart into a config with missing secrets, and waits for health |
 | `runtime/service/runtime-image-identity.check.ts` | what compose is handed — a private env file, never `env VAR=…` arguments; `reconcile()` re-reading the deployment `.env` from disk rather than the process-start snapshot; and, where this machine can run a container, a synthetic rotation proven live: `restart` keeping the created environment in force, `reconcile` replacing the container, the rotated value read back from `docker inspect`; each temporary environment file's owner record (pid, machine) written before the token-bearing file itself; and a crash-abandoned `compose-<uuid>` directory — an owner recorded on this machine, its pid provably gone — swept before the next call, while one still owned by a live pid, one whose owner cannot be read at all, and one recorded on a different machine are each left alone; `health()` distinguishing `missing`/`stopped`/`starting`/`healthy`/`unhealthy` — a container stopped while healthy (or mid-failure) reports `stopped`, never Docker's stale last verdict; and the container-id lookup costing one bare `docker ps --filter label=…` exec, shared by `health()`/`startedAt()`/`runningConnectionFacts()`/`runningImageIdentity()`/`runningEnvironment()`, never a whole compose invocation each |
@@ -591,7 +593,12 @@ differs is the data directory, the port and the keys.
 ./clawforge new-app staging               # a directory with .env, config/, secrets/, recipes/
 ./clawforge --app staging bootstrap       # its own environment, keys and snapshots
 ./clawforge --app staging status
+./clawforge list                          # every deployment under apps/, one line each
 ```
+
+`./clawforge list` is the overview `status` cannot be, since `status` always answers for one
+already-chosen deployment: target, port, image and running/stopped for each `apps/<name>`,
+with `--json` for scripting and `--no-status` to skip querying targets entirely.
 
 Choosing a deployment: `--app`, the `OC_APP` variable, otherwise `openclaw`. `--app` (or
 `--app=<name>`) must lead the command line, before the command name — after it, an

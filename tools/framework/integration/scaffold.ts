@@ -1,8 +1,9 @@
-// Creating a new deployment.
+// Creating a new deployment, and listing the ones that already exist.
 //
 // A deployment is a directory of configuration, not a codebase: .env, desired state,
 // secret stores, recipes, and an app.ts saying which service it manages. The framework
-// supplies the logic.
+// supplies the logic. Both halves of this file share that same directory, apps/ — one
+// writes it, the other reads what several of them, side by side, add up to.
 //
 // The measure of whether this is usable: the generated deployment must run immediately
 // after its .env is filled in.
@@ -16,11 +17,16 @@
 import { mkdir, writeFile, access, readdir, readFile } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
-import { log, info, die } from "../core/log.ts";
-import { monorepoRoot, frameworkRoot, parseEnv, projectPort } from "../core/env.ts";
+import { pathToFileURL } from "node:url";
+import { log, info, die, maskSecrets } from "../core/log.ts";
+import { monorepoRoot, frameworkRoot, parseEnv, projectPort, toSettings, type Settings } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { setupProjectMcp } from "./mcp-project.ts";
 import { createPrivateFile } from "../security/private-file.ts";
+import { createContext, type Context } from "../core/context.ts";
+import { useDeployment, currentDeploymentDir } from "../runtime/deployment.ts";
+import { NotBootstrapped } from "../runtime/runtime.ts";
+import type { AppDefinition } from "../core/app.ts";
 
 export const appsDir = resolve(monorepoRoot, "apps");
 
@@ -178,4 +184,144 @@ export async function createApp(name: string): Promise<void> {
   info("open the deployment directory in Claude Code or Codex; project MCP settings are already prepared");
   info("secrets and snapshots stay inside this directory, so deployments never share them");
   info(gitInitAdvice(name));
+}
+
+// --- listing every deployment under apps/ ------------------------------------------------
+
+/** "running"/"stopped" answer isRunning(); "not-bootstrapped" is NotBootstrapped (the data
+ *  directory was never created); "unchecked" means --no-status skipped the target entirely;
+ *  "error" covers everything else that stopped one deployment's row short of a verdict — a
+ *  missing .env, a broken app.ts, an unreachable target — with `reason` naming which. */
+export interface DeploymentSummary {
+  readonly name: string;
+  readonly target?: string;
+  readonly port?: string;
+  readonly image?: string;
+  readonly pinned?: boolean;
+  readonly state: "running" | "stopped" | "not-bootstrapped" | "unchecked" | "error";
+  readonly reason?: string;
+}
+
+export interface ListDeploymentsOptions {
+  /** Configuration only, no isRunning() call — for a fast read of many deployments. */
+  checkStatus?: boolean;
+  /** Where deployments live. Overridable so a check can point at a scratch directory instead
+   *  of the apps/ this repository shares with every real deployment. */
+  appsRoot?: string;
+  /** Builds the Context isRunning() is asked of. Overridable so a check can hand back a
+   *  stub instead of a real transport and Docker; production always loads the deployment's
+   *  own app.ts, the same as every other command run against it. */
+  buildContext?: (app: AppDefinition, directory: string) => Promise<Context>;
+}
+
+async function defaultBuildContext(app: AppDefinition, directory: string): Promise<Context> {
+  useDeployment(directory);
+  return createContext({ mounts: app.mounts, service: app.service, settings: app.settings, secrets: app.secrets });
+}
+
+/** The four configuration fields plus pinning, read straight from .env — never through an
+ *  app.ts, which may not even load: these are always literal environment values, not
+ *  something an application computes, so a deployment answers this much even when its own
+ *  app.ts is broken. */
+function configSummary(name: string, settings: Settings): Omit<DeploymentSummary, "state"> {
+  const target = settings.location === "ssh" && settings.sshHost !== ""
+    ? `ssh:${settings.sshHost}`
+    : settings.location;
+  return { name, target, port: settings.gatewayPort, image: settings.image, pinned: settings.image.includes("@sha256:") };
+}
+
+async function summarizeDeployment(
+  name: string,
+  directory: string,
+  checkStatus: boolean,
+  buildContext: (app: AppDefinition, directory: string) => Promise<Context>,
+): Promise<DeploymentSummary> {
+  let env: Record<string, string>;
+  try {
+    env = parseEnv(await readFile(resolve(directory, ".env"), "utf8"));
+  } catch {
+    return { name, state: "error", reason: `no .env — run ./clawforge --app ${name} bootstrap` };
+  }
+
+  let settings: Settings;
+  try {
+    settings = toSettings(env);
+  } catch (error) {
+    return { name, state: "error", reason: maskSecrets((error as Error).message) };
+  }
+  const config = configSummary(name, settings);
+
+  if (!checkStatus) return { ...config, state: "unchecked" };
+
+  let app: AppDefinition;
+  try {
+    const module = (await import(pathToFileURL(resolve(directory, "app.ts")).href)) as { default: AppDefinition };
+    app = module.default;
+  } catch (error) {
+    return { ...config, state: "error", reason: `cannot load app.ts: ${maskSecrets((error as Error).message)}` };
+  }
+
+  try {
+    const running = await (await buildContext(app, directory)).runtime.isRunning();
+    return { ...config, state: running ? "running" : "stopped" };
+  } catch (error) {
+    if (error instanceof NotBootstrapped) return { ...config, state: "not-bootstrapped" };
+    return { ...config, state: "error", reason: maskSecrets((error as Error).message) };
+  }
+}
+
+/** One row per apps/<name>, read-only throughout. Deployments are visited one at a time
+ *  rather than concurrently: buildContext's useDeployment() is a single global the runtime
+ *  reads at call time (deploymentDir(), composeProjectName()), not only while the Context is
+ *  built, so two deployments in flight together would have the second one's isRunning() call
+ *  silently answer for whichever directory happened to be active when it actually ran. The
+ *  global is restored to whatever it was before this ran (an active MCP session naming its
+ *  own deployment must not find itself pointed at apps/'s last entry once `list` returns);
+ *  left alone when nothing had selected one yet, since the monorepo gate exits right after a
+ *  gate command runs and there is nothing left to corrupt. */
+export async function listDeployments(options: ListDeploymentsOptions = {}): Promise<DeploymentSummary[]> {
+  const root = options.appsRoot ?? appsDir;
+  const checkStatus = options.checkStatus ?? true;
+  const buildContext = options.buildContext ?? defaultBuildContext;
+
+  let entries: Dirent[];
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const names = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+
+  const restore = currentDeploymentDir();
+  try {
+    const summaries: DeploymentSummary[] = [];
+    for (const name of names) {
+      summaries.push(await summarizeDeployment(name, resolve(root, name), checkStatus, buildContext));
+    }
+    return summaries;
+  } finally {
+    if (restore !== undefined) useDeployment(restore);
+  }
+}
+
+function displayState(state: DeploymentSummary["state"]): string {
+  if (state === "not-bootstrapped") return "not bootstrapped";
+  if (state === "unchecked") return "not checked";
+  return state;
+}
+
+/** `./clawforge list`'s console rendering — kept beside listDeployments() rather than in the gate
+ *  script, the same split createApp's own log/info calls already draw. */
+export function printDeploymentList(summaries: DeploymentSummary[]): void {
+  if (summaries.length === 0) {
+    info("no deployments under apps/ — create one with ./clawforge new-app <name>");
+    return;
+  }
+  for (const entry of summaries) {
+    log(`${entry.name} — ${displayState(entry.state)}`);
+    if (entry.target !== undefined) {
+      info(`target: ${entry.target}   port: ${entry.port}   image: ${entry.image}${entry.pinned === true ? " (pinned)" : ""}`);
+    }
+    if (entry.reason !== undefined) info(entry.reason);
+  }
 }

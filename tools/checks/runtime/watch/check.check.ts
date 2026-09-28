@@ -66,7 +66,7 @@ async function deathOf(run: () => unknown): Promise<string> {
   check("GATEWAY_DOWN alone -> down (blocking severity)", watchLevel(findings(["GATEWAY_DOWN"])).level, "down");
   check("GATEWAY_UNHEALTHY alone -> down (blocking severity)", watchLevel(findings(["GATEWAY_UNHEALTHY"])).level, "down");
   check("NOT_BOOTSTRAPPED alone -> down (blocking severity)", watchLevel(findings(["NOT_BOOTSTRAPPED"])).level, "down");
-  // PROVIDER_MISSING is excluded from liveness on purpose (B4): detection cannot see an
+  // PROVIDER_MISSING is excluded from liveness on purpose: detection cannot see an
   // env-keyed/subscription/CLI-backend provider, so it would page "degraded" forever on an
   // instance that answers every prompt fine — doctor still reports it, watch never does.
   check("PROVIDER_MISSING alone never moves the level -> ok, no reasons", watchLevel(findings(["PROVIDER_MISSING"])), { level: "ok", reasons: [] });
@@ -356,7 +356,7 @@ try {
     }
   }
 
-  // --- resolveWatchOutcome() / B3: gatherInspection throwing (a transport error unrelated to
+  // --- resolveWatchOutcome(): gatherInspection throwing (a transport error unrelated to
   // NotBootstrapped — a downed Docker daemon, a refused SSH host, wsl.exe never answering)
   // reads as TARGET_UNREACHABLE/down instead of killing the whole cycle before an alert or a
   // state write ever happens -----------------------------------------------------------------

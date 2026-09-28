@@ -28,7 +28,7 @@ try {  const ctx = {
       async writeFile(): Promise<void> {},
       async remove(): Promise<void> {},
       async listFiles(): Promise<string[]> { return []; },
-      // secrets --apply now takes the instance lock (#186) — a plain mkdir is the atomic
+      // secrets --apply takes the instance lock — a plain mkdir is the atomic
       // claim takeLock() makes; harmless here since nothing else is contending for it.
       async exec(): Promise<{ code: number; stdout: string; stderr: string }> {
         return { code: 0, stdout: "", stderr: "" };

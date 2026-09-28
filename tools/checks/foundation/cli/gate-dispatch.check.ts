@@ -173,7 +173,7 @@ check("nothing close enough suggests nothing", closestCommand("xyzxyzxyz", candi
   );
 
   // status does not pass its own arguments through, so --app after it is refused as
-  // misplaced rather than silently acting on a different deployment (N1).
+  // misplaced rather than silently acting on a different deployment.
   const misplaced = await runGate(["status", "--app", "not-a-deployment"]);
   check("a misplaced --app exits non-zero", misplaced.code === 0, false);
   check(

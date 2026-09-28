@@ -115,7 +115,7 @@ async function run(ctx: Context): Promise<string | undefined> {
   check("the command waits for health instead of returning immediately", seen.waited, true);
 }
 
-// --- N1/N2: an unrecognised argument is refused before the lock is ever taken -------------
+// --- an unrecognised argument is refused before the lock is ever taken -------------------
 //
 // up, restart and down all validate their argv the same way (parseDeclaredArgs against the
 // same lock-takeover-only declaration) before calling guarded() — proven once here for all
@@ -157,7 +157,8 @@ for (const [name, command] of [["up", up], ["restart", restart], ["down", down]]
 }
 
 {
-  // The exact N2 scenario: down must not forward --rmi to compose, nor even reach the lock.
+  // The unrecognised-argument scenario, specifically: down must not forward --rmi to compose,
+  // nor even reach the lock.
   const message = await runCommand(down, ["--rmi", "all"]);
   check("down refuses --rmi all before taking the lock or touching compose", message, "unknown argument: --rmi");
 }

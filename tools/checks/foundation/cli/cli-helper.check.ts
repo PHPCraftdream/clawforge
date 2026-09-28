@@ -579,7 +579,7 @@ check("exec is no longer kept out of MCP", openclawCommands.exec.consoleOnly, un
 }
 
 {
-  // N1: an undeclared argument (e.g. a misplaced --app that leaked past the gate) must be
+  // An undeclared argument (e.g. a misplaced --app that leaked past the gate) must be
   // refused before the runtime is ever touched, not silently ignored.
   const ctx = {
     runtime: runtimeStub({

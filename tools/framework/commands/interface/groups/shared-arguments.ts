@@ -23,7 +23,7 @@ export const BREAK_LOCK_ARGUMENT = {
   kind: "flag",
 } as const;
 
-/** R9-R1: an orphaned mutation guard whose owner is recorded on another machine — plain
+/** An orphaned mutation guard whose owner is recorded on another machine — plain
  *  --break-lock refuses it forever, since a remote pid's liveness cannot be checked from
  *  here. This confirms the exact host id and records the takeover; see
  *  docs/architecture.md's instance-lock runbook. */

@@ -3,7 +3,7 @@ import { configureProvider } from "#framework/commands/management/credentials/pr
 import type { Context } from "#framework/core/context.ts";
 
 const calls: string[][] = [];
-// configure-provider now takes the instance lock (#186) — a plain mkdir is the atomic claim
+// configure-provider takes the instance lock — a plain mkdir is the atomic claim
 // takeLock() makes; harmless here since nothing else is contending for it in these checks.
 const noContention = {
   exec: async () => ({ code: 0, stdout: "", stderr: "" }),

@@ -321,7 +321,7 @@ try {
     return threw;
   };
 
-  // B1 — absence is preserved as absence: the old rollback wrote an empty ledger file here,
+  // Absence is preserved as absence: the old rollback wrote an empty ledger file here,
   // a false witness to a forget the operator never asked for — and a fresh ledger would
   // then have read as "deliberately empty" to the next publish or reconcile.
   {
@@ -336,7 +336,7 @@ try {
     check("a preserved absence still adopts the target's history", sorted(await persistedPrivatePaths()), sorted(RESTORED_ONLY));
   }
 
-  // B2 — a deliberate forget survives the same rollback: the import resurrects the path the
+  // A deliberate forget survives the same rollback: the import resurrects the path the
   // tombstone names (an archive that brings the data back supersedes the forget), and the
   // rollback must put that tombstone back, or the rejected archive's entry survives.
   {

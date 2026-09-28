@@ -68,7 +68,7 @@ check(
 );
 
 // --- cronSchedule(): 1-59 steps cron's own minute field; an exact multiple of 60 up to a
-// day steps the hour field instead — `*/N` for N>=60 would silently misfire (B5) ----------
+// day steps the hour field instead — `*/N` for N>=60 would silently misfire ----------------
 
 for (const [minutes, expected] of [
   [1, "*/1 * * * *"],

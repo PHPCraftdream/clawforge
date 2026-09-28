@@ -81,7 +81,7 @@ function fakeCtx(files: Map<string, string>, calls: string[][], cronJobs: { id: 
         calls.push(args);
         // --all required, the same way OpenClaw's own cron list itself requires it to show
         // a disabled job (docs.openclaw.ai/cli/cron) — omitting it here would silently make
-        // every fixture job "invisible", the exact bug #188 fixed.
+        // every fixture job "invisible".
         if (args[0] === "cron" && args[1] === "list") return jsonResult({ jobs: args.includes("--all") ? cronJobs : [] });
         return jsonResult({});
       },
@@ -386,10 +386,10 @@ function inspectionWith(problems: Problem[]): Inspection {
 }
 
 {
-  // A DISABLED job (not merely absent) is the case #188 fixed: without --all in the lookup,
-  // OpenClaw's own cron list hides it entirely (docs.openclaw.ai/cli/cron) — before the fix,
-  // that made this indistinguishable from "already gone", so cron rm was never called and
-  // the job was left behind, its ownership record deleted regardless.
+  // A DISABLED job (not merely absent): without --all in the lookup, OpenClaw's own cron
+  // list hides it entirely (docs.openclaw.ai/cli/cron), which would make this
+  // indistinguishable from "already gone", so cron rm would never be called and the job
+  // would be left behind, its ownership record deleted regardless.
   const files = new Map<string, string>([["/srv/clawforge/clawforge-managed.json", JSON.stringify({ version: LEDGER_VERSION, objects: [owned("cron-job", "disabled-cron", "beta")] })]]);
   const calls: string[][] = [];
   const ctx = fakeCtx(files, calls, [{ id: "job-42", name: "disabled-cron" }]);

@@ -174,7 +174,8 @@ check(
 // --- generic parser: every declared flag/option round-trips through argv, an undeclared
 // one is refused. Run against the same list help/MCP already build from (not against each
 // command's own run()), so this catches a declaration/parser drift for every command,
-// converted to parseDeclaredArgs or not — the class of bug B8 was. ---------------------
+// converted to parseDeclaredArgs or not — an argument a command's run() accepts without
+// declaring it (missing from --help and the MCP schema) is exactly this class of bug. ---
 
 function plausibleValue(argument: CommandArgument): unknown {
   if (argument.kind === "flag") return true;

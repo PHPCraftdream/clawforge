@@ -525,7 +525,7 @@ async function takeLockClaim(
  *  the refusal never names a flag it will then reject as unknown).
  *
  *  `breakForeignLockHost` is the exact host id an operator has confirmed as an orphaned
- *  mutation-guard owner's own machine (R9-R1; instance-mutation-guard.ts, runbook in
+ *  mutation-guard owner's own machine (instance-mutation-guard.ts, runbook in
  *  docs/architecture.md) — never inferred, always typed out by a human. */
 export interface LockOptions {
   readonly breakLock?: boolean;
@@ -607,9 +607,10 @@ export async function withLockUnlessHeld<T>(
 }
 
 /** Pulls the confirmed host id out of `--break-foreign-lock <hostId>`, for the commands that
- *  parse their own argv well enough to leave it in place — see R9-R1 and
- *  instance-mutation-guard.ts. Exported so the few direct `withLockUnlessHeld()`/`takeLock()`
- *  callers (apply.ts, provision-agent, set.ts) read it the same way `guarded()` does below. */
+ *  parse their own argv well enough to leave it in place — see the `breakForeignLockHost` doc
+ *  on `LockOptions` above and instance-mutation-guard.ts. Exported so the few direct
+ *  `withLockUnlessHeld()`/`takeLock()` callers (apply.ts, provision-agent, set.ts) read it the
+ *  same way `guarded()` does below. */
 export function parseBreakForeignLockHost(args: string[]): string | undefined {
   const index = args.indexOf("--break-foreign-lock");
   return index === -1 ? undefined : args[index + 1];

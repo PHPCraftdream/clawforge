@@ -259,7 +259,7 @@ await withDeployment(async (dir) => {
 
 /** `absent` means `sh -c 'command -v <name>'` answers "not found" (exit 1, empty stdout) —
  *  the same shape a real SshTransport/WslTransport gives for a genuinely missing command,
- *  never an exception (that is the B9 bug this stub exists to pin: a raw exec's exit 127
+ *  never an exception (that is the bug this stub exists to pin: a raw exec's exit 127
  *  must not be the only way "not installed" is told apart from "installed but failed"). */
 function ufwTransport(
   ufw: "absent" | ExecResult,

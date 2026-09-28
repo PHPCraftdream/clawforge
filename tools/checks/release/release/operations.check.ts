@@ -349,9 +349,9 @@ function stubContext(seed: Record<string, string> = {}) {
 // --- the CLI command's own report: what a reader actually sees --------------------------------
 //
 // listOperations()/readOperation() already prove the data on disk is right; this proves the
-// *command* computes the same facts from it. Found missing during #152's own verification —
-// mutating the real command's failed-count filter to also match a legacy "skipped" status went
-// uncaught by every check in this file, because none of them called the command itself.
+// *command* computes the same facts from it. Found missing when mutating the real command's
+// failed-count filter to also match a legacy "skipped" status went uncaught by every check in
+// this file, because none of them called the command itself.
 
 /** Captures everything operations() prints, without routing through withOutputSink(): that
  *  helper makes isCaptured() true, and operations() branches on isCaptured() to choose between

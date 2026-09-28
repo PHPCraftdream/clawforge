@@ -164,7 +164,7 @@ try {
     ]);
   }
 
-  // --- B2. an empty OC_COMPOSE_PROJECT is the directory-derived default, not drift -----------
+  // --- an empty OC_COMPOSE_PROJECT is the directory-derived default, not drift -----------
 
   {
     await reset();
@@ -184,7 +184,7 @@ try {
     ]);
   }
 
-  // --- B3. an empty OC_COMPOSE_PROJECT still reports a genuinely different running project ----
+  // --- an empty OC_COMPOSE_PROJECT still reports a genuinely different running project ----
 
   {
     await reset();

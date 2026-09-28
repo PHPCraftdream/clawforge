@@ -105,7 +105,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
   check("and the runbook", message.includes("docs/architecture.md"), true);
 }
 
-// --- R9-R1: an explicit, host-confirmed takeover of a foreign guard --------------------------
+// --- an explicit, host-confirmed takeover of a foreign guard --------------------------------
 //
 // Plain --break-lock never breaks a foreign owner (proven above: "an unverifiable guard is not
 // replaced"). --break-foreign-lock <hostId> is the separate, explicit path: it must refuse on

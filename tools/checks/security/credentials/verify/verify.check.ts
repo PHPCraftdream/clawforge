@@ -109,7 +109,7 @@ check("an ordinary archive is unpacked for the content scan", clean.calls.some((
 //
 // Before the fix, collectSecrets() only read config/.env and the identity file — a provider
 // apiKey stored as a plain string directly in openclaw.json (a legitimate shape per the
-// schema, confirmed in #154) was never added to the critical list, so the content scan had
+// schema) was never added to the critical list, so the content scan had
 // no value to look for and a share archive carrying that live credential inside its own
 // (allowed) openclaw.json passed clean.
 
@@ -222,7 +222,7 @@ function makeCtxWithArchivedKey(liveApiKey: string | undefined, archivedApiKey: 
           return { code: 0, stdout: "", stderr: "" };
         }
         // grep deliberately never reports a hit: isolates this test to the archive-direct
-        // check, independent of the live-config-derived scan #163 already covers.
+        // check, independent of the live-config-derived scan already covered elsewhere.
         if (command === "grep") return { code: 1, stdout: "", stderr: "" };
         return { code: 0, stdout: "", stderr: "" };
       },

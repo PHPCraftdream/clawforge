@@ -10,9 +10,9 @@
 // The group owns the set lifecycle commands; it fails explicitly on anything else
 // rather than pretending it is there.
 
-import { die, log, info, warn } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
-import { spawnLocal } from "#src/runtime/transport.ts";
+import { die, log, info, warn } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
+import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { validateSet } from "#src/set/ownership/validate.ts";
@@ -27,7 +27,7 @@ import { withSetSource } from "#src/set/artifacts/source.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, collectManifest, defaultSetName } from "./set-manifest.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** The slice of `set`'s declaration build/validate/forget share — `try` parses its own
  *  (set-try.ts), `diff`/`receipts` parse theirs (set-diff.ts/set-receipts.ts). */

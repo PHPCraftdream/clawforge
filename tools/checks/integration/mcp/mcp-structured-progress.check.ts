@@ -2,17 +2,17 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnLocal } from "#framework/runtime/transport.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-structured-"));
 try {
   await mkdir(join(root, "config"));
   await writeFile(join(root, ".env"), "OC_DATA_DIR=/tmp/fixture\nOC_TARGET_LOCATION=local\n");
   const modulePath: Record<string, string> = {
-    "mcp-server": "integration/mcp-server",
+    "mcp-server": "integration/mcp/server",
     deployment: "runtime/deployment",
-    output: "core/output",
-    log: "core/log",
+    output: "core/io/output",
+    log: "core/io/log",
   };
   const moduleUrl = (name: string) => new URL(`../../../framework/${modulePath[name]}.ts`, import.meta.url).href;
   const script = `

@@ -10,10 +10,10 @@ import { parseSnapshotArchive } from "#framework/service/archive.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { takeLock } from "#framework/runtime/instance-lock.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
-import { pullScenario, type PullFailure } from "../../pull-harness.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
+import { pullScenario, type PullFailure } from "./pull-harness.ts";
 
 let failed = 0;
 

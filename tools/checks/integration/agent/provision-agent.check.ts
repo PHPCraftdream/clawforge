@@ -28,7 +28,7 @@ import {
   cronRmArgv,
 } from "#framework/commands/management/provision-agent/index.ts";
 import type { Context } from "#framework/core/context.ts";
-import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport.ts";
+import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { checksumOf } from "#framework/service/checksums.ts";
 

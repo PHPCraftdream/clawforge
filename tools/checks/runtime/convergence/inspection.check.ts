@@ -74,7 +74,7 @@ check(
     "MCP_SERVER_MISSING",
     // Reported instead of ever asking the runtime, on a deployment nobody has bootstrapped.
     "NOT_BOOTSTRAPPED",
-    // Third-party plugins/skills against config/deployment.lock.json — extensions/index.ts.
+    // Third-party plugins/skills against config/deployment.lock.json — security/extensions.ts.
     "PLUGIN_DRIFT",
     "PRIVATE_FILE_INSECURE",
     // The gateway runs, but nothing can answer a prompt without one.

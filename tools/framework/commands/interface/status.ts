@@ -5,11 +5,11 @@
 // disagree — an image whose healthcheck binary is missing reports "unhealthy" forever
 // while the gateway serves traffic.
 
-import { log, info } from "#src/core/log.ts";
+import { log, info } from "#src/core/io/log.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
-import { summarizeExposure, exposureOneLiner } from "#src/expose/index.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { summarizeExposure, exposureOneLiner } from "#src/commands/operate/expose/index.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 export async function status(ctx: Context, args: string[]): Promise<void> {
   // Takes nothing — an unrecognised argument (e.g. a misplaced --app) must not run silently.

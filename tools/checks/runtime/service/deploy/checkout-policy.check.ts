@@ -14,11 +14,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { deploy, frameworkSourceRoot, collectSensitiveCheckoutNames } from "#framework/commands/management/deploy.ts";
 import { useDeployment, useComposeProjectOverride, useApplicationRecipesDir } from "#framework/runtime/deployment.ts";
-import { EXCLUDES } from "#framework/security/deploy-boundary.ts";
+import { EXCLUDES } from "#framework/security/privacy/deploy-boundary.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { ctx, probeReply, isRootProbe } from "./fixture.ts";
 
 let failed = 0;

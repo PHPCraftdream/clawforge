@@ -12,10 +12,10 @@ import { restoreArchive, newestArchive } from "#framework/commands/lifecycle/res
 import { NATIVE_MANIFEST_NAME } from "#framework/commands/lifecycle/backup.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
-import { UserError } from "#framework/core/log.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
+import { UserError } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
-import { LocalTransport, type ExecResult } from "#framework/runtime/transport.ts";
+import { LocalTransport, type ExecResult } from "#framework/runtime/transport/transport.ts";
 import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";

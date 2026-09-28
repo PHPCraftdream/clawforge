@@ -5,7 +5,7 @@
 // (tools/checks/run.ts imports them one after another) would let one file's failure count leak
 // into another's. Each check file keeps its own trivial copy of those instead.
 
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 /** A target with the one property the lock is built on: `mkdir` of an existing directory

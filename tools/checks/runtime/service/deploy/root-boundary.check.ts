@@ -11,11 +11,11 @@ import { promisify } from "node:util";
 import { deploy, collectSensitiveCheckoutNames, rootProbeScript, parseRootProbe, markerWriteScript, markerVerifyScript } from "#framework/commands/management/deploy.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import { spawnLocal, SshTransport } from "#framework/runtime/transport.ts";
-import { MARKER_FILE } from "#framework/security/deploy-boundary.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import { spawnLocal, SshTransport } from "#framework/runtime/transport/transport.ts";
+import { MARKER_FILE } from "#framework/security/privacy/deploy-boundary.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { ctx, probeReply, isRootProbe, markerLine } from "./fixture.ts";
 
 const execFileAsync = promisify(execFile);

@@ -16,7 +16,7 @@
 // ship. Each gate therefore builds its own list instead of declaring all of them everywhere
 // and failing at call time.
 
-import { log, info, reportError } from "../core/log.ts";
+import { log, info, reportError } from "../core/io/log.ts";
 import type { CommandArgument } from "../core/app.ts";
 
 export interface GateCommand {

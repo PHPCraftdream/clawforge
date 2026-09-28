@@ -26,8 +26,8 @@
 import { host, parseHostArgs, rootElevationRequested } from "#framework/commands/interface/host/index.ts";
 import { ENGINE_DISTRO, parseWslDistroListing, probeUidAnswer, realHostEnvironment, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp-server.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

@@ -7,7 +7,7 @@
 
 import { applyConfig, appliedHeadline, stagedFileName } from "#framework/commands/orchestration/config.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";

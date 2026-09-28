@@ -21,7 +21,7 @@ import { rollback } from "#framework/commands/orchestration/rollback.ts";
 import { readInstalledSet } from "#framework/set/artifacts/install.ts";
 import { createFixture } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecOptions } from "#framework/runtime/transport.ts";
+import type { ExecOptions } from "#framework/runtime/transport/transport.ts";
 
 const fixture = await createFixture();
 const { root, sourceData, files, ctx, baseEnv } = fixture;

@@ -21,7 +21,7 @@
 
 import { realpath } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
-import { type ExecOptions, type ExecResult, type Transport } from "#src/runtime/transport.ts";
+import { type ExecOptions, type ExecResult, type Transport } from "#src/runtime/transport/transport.ts";
 
 /** Verifies on the target that every path — after resolving every symlink it crosses —
  *  stays inside root. Throws, naming the escape, otherwise.

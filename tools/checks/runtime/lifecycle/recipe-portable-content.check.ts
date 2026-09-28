@@ -38,14 +38,14 @@ import { join, resolve } from "node:path";
 import { buildSet } from "#framework/commands/sets/set.ts";
 import { deploy } from "#framework/commands/management/deploy.ts";
 import { recipeMirrorTargetDir, syncRecipeFiles } from "#framework/commands/management/provision-agent/index.ts";
-import { collectPortableRecipeFiles, declaredPortablePrivateFiles, excludesPortablePath } from "#framework/security/recipe-portable-content.ts";
+import { collectPortableRecipeFiles, declaredPortablePrivateFiles, excludesPortablePath } from "#framework/security/privacy/recipe-portable-content.ts";
 import { agentBundleChecksums, checksumOf, recipeFileChecksums } from "#framework/service/checksums.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { LocalTransport } from "#framework/runtime/transport.ts";
+import { LocalTransport } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

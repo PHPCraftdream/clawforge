@@ -2,10 +2,10 @@
 // network namespace and data mounts.
 //
 
-import { die } from "#src/core/log.ts";
-import { isCaptured, emit } from "#src/core/output.ts";
+import { die } from "#src/core/io/log.ts";
+import { isCaptured, emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import type { ExecResult } from "#src/runtime/transport.ts";
+import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { HelperNotRunning } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "./cli-helper.ts";
 

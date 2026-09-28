@@ -16,13 +16,13 @@ import {
   withModelApproval,
 } from "#framework/service/openclaw-cli.ts";
 import { accept } from "#framework/commands/orchestration/accept.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

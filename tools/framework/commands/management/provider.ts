@@ -1,14 +1,14 @@
 // Configure OpenClaw provider credentials without storing key values in JSON.
 
 import JSON5 from "json5";
-import { log, info, die } from "#src/core/log.ts";
+import { log, info, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "#src/service/secrets.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both configure-provider's own parser and its openclawCommands declaration. */
 export const CONFIGURE_PROVIDER_ARGUMENTS: CommandArgument[] = [

@@ -23,7 +23,7 @@
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { info, warn } from "#src/core/log.ts";
+import { info, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import type { Recipe } from "#src/service/recipe.ts";
 import { importHookModule } from "./index.ts";

@@ -11,12 +11,12 @@ import { resolve } from "node:path";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { listBrokenRecipes, loadRecipe, listRecipes, useRecipesDir } from "#framework/service/recipe.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
+import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import type { Settings } from "#framework/core/env.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
-import type { Transport } from "#framework/runtime/transport.ts";
+import type { Transport } from "#framework/runtime/transport/transport.ts";
 import type { Stack, StackServiceState } from "#framework/runtime/runtime.ts";
 
 let failed = 0;

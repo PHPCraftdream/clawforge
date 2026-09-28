@@ -15,9 +15,9 @@ import { pull } from "#framework/commands/lifecycle/state.ts";
 import { PROFILE_SHORTHAND_FLAGS } from "#framework/service/archive.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

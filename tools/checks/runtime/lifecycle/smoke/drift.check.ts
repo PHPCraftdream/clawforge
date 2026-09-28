@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown): void {

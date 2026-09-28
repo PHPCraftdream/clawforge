@@ -601,24 +601,24 @@ not the same thing as a scenario that has run.
 ### Source layout
 
 The TypeScript source is grouped by responsibility. Each source directory has at most
-seven direct entries, and no source file exceeds 700 lines; checks are grouped the same way, so a module and its regressions stay
-near their theme without creating a flat catalogue.
+seven direct entries, and no source file exceeds 700 lines. The limit is never raised to fit a
+new module — hitting it means regrouping by meaning into a named subdirectory instead; see
+CONTRIBUTING.md. `tools/checks` mirrors `tools/framework` by meaning, not by identical paths, so
+a module and its regressions stay near their theme without creating a flat catalogue.
 
-- `tools/framework/core`: shared types, environment, paths and output
-- `tools/framework/runtime`: deployment, transport, runtime and lock handling
+- `tools/framework/core`: shared types, environment, paths and argument parsing
+  (`core/io/` for console output and the MCP capture sink)
+- `tools/framework/runtime`: deployment and lock handling; `runtime/docker/` for the Docker
+  runtime and its diagnostics, `runtime/transport/` for local/WSL/SSH transports
 - `tools/framework/service`: archives, inspection, OpenClaw integration and secrets
-- `tools/framework/security`: private credential files and platform access protection
-- `tools/framework/integration`: gates, scaffolding and MCP setup
-- `tools/framework/commands`: lifecycle, orchestration, management, sets and interface
+- `tools/framework/security`: `security/privacy/` for what must never leave a deployment
+  (private files, the deploy boundary, recipe portability), plus the security audit and
+  third-party extension tracking
+- `tools/framework/integration`: gates, scaffolding, listing and MCP setup (`integration/mcp/`)
+- `tools/framework/commands`: lifecycle, orchestration, management, sets and interface — plus
+  `commands/operate/` (`expose`, `watch`, `incident`, `recover-env`): what an operator runs
+  against an already-deployed instance
 - `tools/framework/set`: artifact and ownership concerns
-- `tools/framework/expose`: `./clawforge expose` — SSH tunnel, `tailscale serve` and exposure
-  status. A top-level module rather than nested under `commands/management/`: every
-  command-family directory already sits at the seven-entry cap, and `tools/framework/` itself
-  has no direct source file of its own, so it is exempt from the cap and the one place a new
-  command family fits without relocating something unrelated just to free a slot
-- `tools/framework/watch`: `./clawforge watch` — liveness monitoring, transition-only webhook
-  alerts (generic/Slack/Discord/Telegram), an optional heartbeat dead-man's switch, and the
-  crontab install/uninstall cycle. Top-level for the same reason `expose` is
 - `tools/checks`: foundation, runtime, integration, security, sets and release checks
 
 Run `npm run format:check` for the native TypeScript check and Oxlint before opening a
@@ -815,7 +815,7 @@ What cannot be mirrored at all is a short list, and each entry says why:
 | `help` | a client already holds the text: every tool's description is the same summary and details `help <command>` prints, from the same declaration |
 | `--app <name>` | it settles which deployment the server serves when the client launches it; switching mid-session would change what every other tool refers to |
 
-The list lives in `MCP_EXEMPTIONS` (`framework/integration/mcp-server.ts`) rather than in prose, and
+The list lives in `MCP_EXEMPTIONS` (`framework/integration/mcp/server.ts`) rather than in prose, and
 `mcp-mirror.check.ts` compares the two real surfaces against it — so a command added without
 a tool, or a tool without a command, fails `./clawforge check` rather than being noticed later.
 
@@ -947,7 +947,7 @@ rejected at load instead of silently excluding nothing:
   `<data>/sidecar-credentials/../escape.env` is refused even though the string carries a
   declared prefix, and `//` and `.` fold away before the comparison.
 
-The helpers in `#framework/security/private-config.ts` enforce the same declaration from the
+The helpers in `#framework/security/privacy/private-config.ts` enforce the same declaration from the
 writing side: `ensurePrivateTargetDirectory` and `replacePrivateTargetFile` only proceed inside
 a declared path, files land mode 600 and directories 700, and a symlink between the data
 directory and the declared root is refused (the data root itself may be a link, and a link at
@@ -956,7 +956,7 @@ author's path-assembly mistake, not isolation from hostile code — the hook alr
 full context. A prepare hook that uses them:
 
 ```ts
-import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "#framework/security/private-config.ts";
+import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "#framework/security/privacy/private-config.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { Recipe } from "#framework/service/recipe.ts";
 

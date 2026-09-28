@@ -7,8 +7,8 @@
 // the real failure reason, and streamed progress reaching the operator during bootstrap/smoke,
 // were two of its findings.
 
-import { spawnLocal } from "#framework/runtime/transport.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 
 let failed = 0;
 

@@ -23,7 +23,7 @@ import {
   reportUnknownCommand,
   soleDeploymentFallback,
 } from "#framework/integration/gate.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 
 let failed = 0;
 

@@ -15,8 +15,8 @@ import { copyFile, lstat, mkdir, mkdtemp, rm, readFile, rename } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { die, log } from "#src/core/log.ts";
-import { spawnLocal } from "#src/runtime/transport.ts";
+import { die, log } from "#src/core/io/log.ts";
+import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import { checksumOf, checksumOfFileMap } from "#src/service/checksums.ts";
 import { parseAgentConfig } from "#src/commands/management/provision-agent/index.ts";

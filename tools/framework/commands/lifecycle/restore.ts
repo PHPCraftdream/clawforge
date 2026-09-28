@@ -6,7 +6,7 @@
 
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline/promises";
-import { log, info, warn, die } from "#src/core/log.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation } from "#src/runtime/datadir.ts";
@@ -22,7 +22,7 @@ import {
   reportableProblems,
 } from "#src/service/archive.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { SshTransport } from "#src/runtime/transport.ts";
+import { SshTransport } from "#src/runtime/transport/transport.ts";
 import { openclawCli } from "#src/service/openclaw-cli.ts";
 import { NATIVE_MANIFEST_NAME } from "./backup.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
@@ -35,10 +35,10 @@ import {
   privatePathsLedgerState,
   removePrivatePathsLedger,
   type PrivatePathsLedgerState,
-} from "#src/security/private-paths-ledger.ts";
+} from "#src/security/privacy/private-paths-ledger.ts";
 import { runningRecipeStacks } from "../management/recipe/index.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both restore's own parser and its openclawCommands declaration. */

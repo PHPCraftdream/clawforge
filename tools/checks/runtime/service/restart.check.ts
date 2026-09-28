@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 import { restart, up, down } from "#framework/commands/lifecycle/lifecycle.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

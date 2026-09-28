@@ -5,13 +5,13 @@
 import { mkdir, mkdtemp, rm, writeFile, chmod } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { runSecurityAudit } from "#framework/security-audit/index.ts";
+import { runSecurityAudit } from "#framework/security/audit.ts";
 import { blockingProblems } from "#framework/service/inspection.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
-import { createPrivateFile, protectPrivateDirectory } from "#framework/security/private-file.ts";
-import { spawnLocal } from "#framework/runtime/transport.ts";
+import { createPrivateFile, protectPrivateDirectory } from "#framework/security/privacy/private-file.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

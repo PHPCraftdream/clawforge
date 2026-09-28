@@ -17,8 +17,8 @@ import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { mcpSetup, mcpServerEntries, mcpConfigFilePath } from "#framework/commands/management/mcp.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
-import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME } from "#framework/integration/mcp-project.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME } from "#framework/integration/mcp/project.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

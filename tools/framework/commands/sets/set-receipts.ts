@@ -1,11 +1,11 @@
 // `./clawforge set receipts` — inspect durable acceptance evidence written for a set.
 
-import { die, info, log } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { die, info, log } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/artifacts/receipt.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** The slice of `set`'s declaration `receipts`'s own argv actually uses. */
 export const SET_RECEIPTS_ARGUMENTS: CommandArgument[] = [

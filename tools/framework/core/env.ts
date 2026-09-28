@@ -10,7 +10,7 @@ import { readFile, access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomInt } from "node:crypto";
-import { die } from "./log.ts";
+import { die } from "./io/log.ts";
 import { envFile } from "../runtime/deployment.ts";
 
 // Two different roots, kept apart on purpose (npm distribution: tools/framework/ is meant

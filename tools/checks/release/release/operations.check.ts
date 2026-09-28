@@ -9,7 +9,7 @@ import { operations } from "#framework/commands/orchestration/operations.ts";
 import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { LocalTransport } from "#framework/runtime/transport.ts";
+import { LocalTransport } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

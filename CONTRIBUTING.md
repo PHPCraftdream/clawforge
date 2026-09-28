@@ -19,6 +19,20 @@ The check suite uses recording transports and disposable directories. It does no
 OpenClaw gateway or call a model. Live Docker/WSL and SSH scenarios are separate and must be
 clearly identified in a change description.
 
+## Source layout
+
+`tools/checks/foundation/layout.check.ts` caps every source directory at 7 direct entries
+(files or subdirectories) and every file at 700 lines. The limits are not raised to fit a new
+module — hitting either one means the directory has stopped mapping onto a single idea, and
+the fix is to regroup by meaning: pull the files that share a real topic into a named
+subdirectory (`runtime/docker/` for the Docker runtime and its diagnostics, `security/privacy/`
+for what must never leave a deployment, and so on), not to drop a new file into whichever
+directory still has a free slot. `tools/checks/` mirrors `tools/framework/` by meaning, not by
+identical paths: a check lives next to the concept it tests, not necessarily inside a
+directory of the same name as the module it happens to import. `tools/framework/` itself has
+no source files of its own directly under it, so the cap does not apply at that root — new
+top-level groupings still need a name that describes what belongs there, not "wherever fits".
+
 ## Pull requests
 
 Explain the user-visible behavior, security implications, and validation performed. Keep

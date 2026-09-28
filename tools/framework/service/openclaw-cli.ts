@@ -24,9 +24,9 @@
 // on compose's own progress output before the real error is reached.
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { log } from "../core/log.ts";
+import { log } from "../core/io/log.ts";
 import type { Context } from "../core/context.ts";
-import type { ExecResult } from "../runtime/transport.ts";
+import type { ExecResult } from "../runtime/transport/transport.ts";
 
 /** OpenClaw's own default agent id — the one that exists in every instance. */
 const APPROVAL_AGENT_ID = "main";

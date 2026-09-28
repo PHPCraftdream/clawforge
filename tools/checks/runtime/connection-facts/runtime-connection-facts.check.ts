@@ -9,9 +9,9 @@
 // needed to ask Docker about its own labels) with a canned container id, and the inspect
 // with canned JSON.
 
-import { DockerRuntime } from "#framework/runtime/runtime-docker.ts";
+import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
-import type { ExecResult, Transport } from "#framework/runtime/transport.ts";
+import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 import type { Settings } from "#framework/core/env.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
 

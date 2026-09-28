@@ -12,10 +12,10 @@
 // own uid (Windows: the shell's integrity level) for local. A probe that cannot answer
 // refuses the command until explicit consent is given.
 
-import { die, info } from "#src/core/log.ts";
-import { emit, shouldFollow } from "#src/core/output.ts";
+import { die, info } from "#src/core/io/log.ts";
+import { emit, shouldFollow } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import type { ExecOptions } from "#src/runtime/transport.ts";
+import type { ExecOptions } from "#src/runtime/transport/transport.ts";
 import { probeHostIdentity, realHostEnvironment, resolveHostContext, type HostContextName, type HostEnvironment } from "./contexts.ts";
 
 export interface HostInvocation {

@@ -1,4 +1,4 @@
-import type { ExecOptions, ExecResult } from "../runtime/transport.ts";
+import type { ExecOptions, ExecResult } from "../runtime/transport/transport.ts";
 
 /** Lists files through a remote transport; only a missing root is empty. */
 export async function listFilesVia(

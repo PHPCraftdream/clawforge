@@ -13,8 +13,8 @@ import { mkdir, writeFile, rm, readFile, cp } from "node:fs/promises";
 import { join, dirname, resolve, extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
-import { log, info, warn, die } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, frameworkRoot } from "#src/core/env.ts";
 import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride } from "#src/runtime/deployment.ts";
 import { createContext } from "#src/core/context.ts";
@@ -30,7 +30,7 @@ import { applyConfig } from "../orchestration/config.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { down } from "../lifecycle/lifecycle.ts";
 import { loadSecrets } from "../lifecycle/state.ts";
-import { createPrivateFile, protectPrivateDirectory } from "#src/security/private-file.ts";
+import { createPrivateFile, protectPrivateDirectory } from "#src/security/privacy/private-file.ts";
 import { provisionAgent } from "../management/provision-agent/index.ts";
 import { runCheck, requiresModel, summarize, acceptanceSpecError } from "../orchestration/accept.ts";
 import { withModelApproval } from "#src/service/openclaw-cli.ts";
@@ -39,7 +39,7 @@ import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { unpackForTry, findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 export * from "./set-try-env.ts";
 

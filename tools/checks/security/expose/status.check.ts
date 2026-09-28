@@ -3,10 +3,10 @@
 // not-running, and the full command: it must warn loudly on 0.0.0.0/::, stay quiet on a
 // loopback address, and fold in a tailscale summary only when tailscale is present.
 
-import { exposeStatus, summarizeExposure, exposureOneLiner } from "#framework/expose/status.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { exposeStatus, summarizeExposure, exposureOneLiner } from "#framework/commands/operate/expose/status.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

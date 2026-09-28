@@ -37,10 +37,10 @@
 // as a package, monorepoRoot resolves to whatever directory happens to sit two levels above
 // the package, and mirroring that with --delete would put an unrelated tree on the server.
 
-import { log, info, die } from "#src/core/log.ts";
+import { log, info, die } from "#src/core/io/log.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, recipesDir, applicationRecipesSetting } from "#src/runtime/deployment.ts";
-import { collectPortableRecipeFiles, SENSITIVE_RECIPE_NAME } from "#src/security/recipe-portable-content.ts";
+import { collectPortableRecipeFiles, SENSITIVE_RECIPE_NAME } from "#src/security/privacy/recipe-portable-content.ts";
 import {
   EXCLUDES,
   MARKER_FILE,
@@ -53,14 +53,14 @@ import {
   rootInventoryScript,
   rootProbeScript,
   validatedRemoteRoot,
-} from "#src/security/deploy-boundary.ts";
+} from "#src/security/privacy/deploy-boundary.ts";
 import type { Context } from "#src/core/context.ts";
-import type { ExecResult } from "#src/runtime/transport.ts";
+import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 export { collectSensitiveCheckoutNames, rootProbeScript, parseRootProbe, markerWriteScript, markerVerifyScript };
 

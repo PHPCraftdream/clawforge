@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { bootstrap } from "#framework/commands/lifecycle/bootstrap.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

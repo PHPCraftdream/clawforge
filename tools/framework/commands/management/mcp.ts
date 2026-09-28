@@ -6,16 +6,16 @@
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, die } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { log, info, die } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { HelperNotRunning } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "../interface/cli-helper.ts";
-import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp-project.ts";
-import type { McpClient } from "#src/integration/mcp-project.ts";
+import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
+import type { McpClient } from "#src/integration/mcp/project.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both mcp-setup's own parser and its openclawCommands declaration. */
 export const MCP_SETUP_ARGUMENTS: CommandArgument[] = [

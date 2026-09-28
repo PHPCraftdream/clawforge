@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createContext, refreshContext } from "#framework/core/context.ts";
 import type { Context } from "#framework/core/context.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 
 let failed = 0;
 

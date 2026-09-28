@@ -7,9 +7,9 @@ import { tmpdir } from "node:os";
 import { rotate, createBackup } from "#framework/commands/lifecycle/backup.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport.ts";
+import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import { listArchive } from "#framework/service/archive.ts";
 

@@ -33,7 +33,7 @@ import { randomBytes } from "node:crypto";
 import { basename, dirname } from "node:path";
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
-import { log, info, warn, UserError } from "#src/core/log.ts";
+import { log, info, warn, UserError } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { CouldNotCheck, NotChecked } from "../check-outcome.ts";
 import type { CheckOutcome } from "../check-outcome.ts";
@@ -50,7 +50,7 @@ import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { valueAt } from "../orchestration/inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both smoke's own parser and its openclawCommands declaration. */
 export const SMOKE_ARGUMENTS: CommandArgument[] = [

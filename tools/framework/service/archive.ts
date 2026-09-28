@@ -10,8 +10,8 @@
 
 import type { Context } from "../core/context.ts";
 import { DATA_DIR_MARKER, sudoFor } from "../runtime/datadir.ts";
-import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "../runtime/transport.ts";
-import { publishPrivatePathsHistory, reconcilePrivatePathsHistory } from "../security/private-paths-ledger.ts";
+import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "../runtime/transport/transport.ts";
+import { publishPrivatePathsHistory, reconcilePrivatePathsHistory } from "../security/privacy/private-paths-ledger.ts";
 import { installedRecipePrivatePaths } from "./recipe.ts";
 
 const LEGACY_PREFIXES = ["oc", "cf"] as const;

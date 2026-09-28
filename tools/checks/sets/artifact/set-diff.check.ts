@@ -9,8 +9,8 @@ import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { SetManifest } from "#framework/set/artifacts/model.ts";
 import { setDiff } from "#framework/commands/sets/set-diff.ts";
 import { diffManifests } from "#framework/set/artifacts/diff.ts";
-import { withOutputSink } from "#framework/core/output.ts";
-import { spawnLocal } from "#framework/runtime/transport.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

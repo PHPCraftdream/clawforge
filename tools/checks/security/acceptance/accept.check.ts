@@ -8,7 +8,7 @@ import { runCheck, requiresModel, summarize, acceptanceSpecError } from "#framew
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
 import type { AcceptanceCheck } from "#framework/commands/orchestration/accept.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

@@ -36,7 +36,7 @@ import {
   privatePathsHistoryFile,
   privatePathsLedgerFile,
   recordPrivateWrite,
-} from "#framework/security/private-paths-ledger.ts";
+} from "#framework/security/privacy/private-paths-ledger.ts";
 
 let failed = 0;
 

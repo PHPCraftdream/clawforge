@@ -11,7 +11,7 @@
 
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
-import { die } from "#src/core/log.ts";
+import { die } from "#src/core/io/log.ts";
 import { unpackArtifactVerified } from "#src/set/artifacts/install.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 

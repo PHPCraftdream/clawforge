@@ -31,10 +31,10 @@
 
 import { forbiddenViolations, verifySnapshot } from "#framework/commands/lifecycle/verify.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport.ts";
-import { replacePrivateTargetFile } from "#framework/security/private-config.ts";
+import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport/transport.ts";
+import { replacePrivateTargetFile } from "#framework/security/privacy/private-config.ts";
 import { createArchive, listArchive } from "#framework/service/archive.ts";
 import {
   installedRecipePrivatePaths,

@@ -22,11 +22,11 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { runApp } from "#framework/entry/cli.ts";
 import { managementCommands } from "#framework/commands/interface/groups/openclawCommands.management.ts";
-import { recoverEnvBeforeContext } from "#framework/commands/recover-env/index.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp-schema.ts";
+import { recoverEnvBeforeContext } from "#framework/commands/operate/recover-env/index.ts";
+import { inputSchema, toArgv, validate } from "#framework/integration/mcp/schema.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
-import { withOutputSink } from "#framework/core/output.ts";
-import { spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
+import { spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 
 let failed = 0;
@@ -270,7 +270,7 @@ try {
     // OC_DATA_DIR is absent on purpose: MCP must run recovery without building a Context.
     const moduleUrl = (name: string) => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
     const mcpScript = `
-      const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp-server"))});
+      const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
       const { managementCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.management"))});
       const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
       useDeployment(${JSON.stringify(deployDir)});

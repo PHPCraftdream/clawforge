@@ -12,8 +12,8 @@ import { mkdtemp, mkdir, writeFile, rm, chmod, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { LocalTransport, SshTransport, WslTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix, describeInvocation } from "#framework/runtime/transport.ts";
-import type { ExecResult, ExecOptions, CommandFailure } from "#framework/runtime/transport.ts";
+import { LocalTransport, SshTransport, WslTransport, listFilesVia, existsVia, spawnLocal, withEnvPrefix, describeInvocation } from "#framework/runtime/transport/transport.ts";
+import type { ExecResult, ExecOptions, CommandFailure } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

@@ -39,9 +39,9 @@ import { join, sep } from "node:path";
 import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
-import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport.ts";
+import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport/transport.ts";
 import { createArchive, listArchive } from "#framework/service/archive.ts";
 import { clearRecipesDir, installedRecipePrivatePaths, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
 import {
@@ -53,7 +53,7 @@ import {
   publishPrivatePathsHistory,
   reconcilePrivatePathsHistory,
   recordPrivateWrite,
-} from "#framework/security/private-paths-ledger.ts";
+} from "#framework/security/privacy/private-paths-ledger.ts";
 
 let failed = 0;
 

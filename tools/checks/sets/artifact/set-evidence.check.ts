@@ -6,7 +6,7 @@ import { buildSet } from "#framework/commands/sets/set.ts";
 import { accept } from "#framework/commands/orchestration/accept.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { listReceipts, readReceipt } from "#framework/set/artifacts/receipt.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { RunOneOffOptions } from "#framework/runtime/runtime.ts";
 

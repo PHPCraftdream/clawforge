@@ -14,8 +14,8 @@
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, die } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { log, info, die } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentName, deploymentDir } from "#src/runtime/deployment.ts";
 import { Journal, readOperation, latestRollbackable, newOperationId } from "#src/service/operations.ts";
 import { restart } from "../lifecycle/lifecycle.ts";
@@ -26,7 +26,7 @@ import { apply } from "./apply.ts";
 import type { OperationRecord } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both rollback's own parser and its openclawCommands declaration. */
 export const ROLLBACK_ARGUMENTS: CommandArgument[] = [

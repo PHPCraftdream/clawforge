@@ -15,7 +15,7 @@ import { recipeFileChecksums } from "#framework/service/checksums.ts";
 import { nextActions } from "#framework/service/inspection.ts";
 import type { Problem } from "#framework/service/inspection.ts";
 import { currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "./fixture.ts";
 import type { TargetSpec } from "./fixture.ts";
 

@@ -14,14 +14,14 @@ import { mcpServe, mcpSetup, mcpCreds, MCP_SETUP_ARGUMENTS, MCP_CREDS_ARGUMENTS 
 import { deploy, DEPLOY_ARGUMENTS } from "#src/commands/management/deploy.ts";
 import { lock, LOCK_ARGUMENTS } from "#src/commands/management/lock.ts";
 import { secrets, SECRETS_ARGUMENTS } from "#src/commands/management/secrets.ts";
-import { recoverEnv, RECOVER_ENV_ARGUMENTS } from "#src/commands/recover-env/index.ts";
+import { recoverEnv, RECOVER_ENV_ARGUMENTS } from "#src/commands/operate/recover-env/index.ts";
 import { recipe, recipeActionIsReadOnly } from "#src/commands/management/recipe/index.ts";
 import { provisionAgent, PROVISION_AGENT_ARGUMENTS } from "#src/commands/management/provision-agent/index.ts";
-import { expose, exposeActionIsReadOnly, EXPOSE_SSH_ARGUMENTS, EXPOSE_TAILSCALE_ARGUMENTS } from "#src/expose/index.ts";
-import { watch, watchActionIsReadOnly } from "#src/watch/index.ts";
-import { WATCH_CHECK_ARGUMENTS } from "#src/watch/check.ts";
-import { WATCH_INSTALL_ARGUMENTS } from "#src/watch/install.ts";
-import { incident, INCIDENT_ARGUMENTS } from "#src/incident/index.ts";
+import { expose, exposeActionIsReadOnly, EXPOSE_SSH_ARGUMENTS, EXPOSE_TAILSCALE_ARGUMENTS } from "#src/commands/operate/expose/index.ts";
+import { watch, watchActionIsReadOnly } from "#src/commands/operate/watch/index.ts";
+import { WATCH_CHECK_ARGUMENTS } from "#src/commands/operate/watch/check.ts";
+import { WATCH_INSTALL_ARGUMENTS } from "#src/commands/operate/watch/install.ts";
+import { incident, INCIDENT_ARGUMENTS } from "#src/commands/operate/incident/index.ts";
 
 function secretsWrites(args: string[]): boolean {
   if (["--init-store", "--dump", "--apply"].some((flag) => args.includes(flag))) return true;

@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { checksumOf } from "#framework/service/checksums.ts";
 import { setManifestId } from "#framework/set/artifacts/model.ts";
 import { unpackArtifact, withUnpackedArtifact } from "#framework/set/artifacts/install.ts";
-import { spawnLocal } from "#framework/runtime/transport.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 function check(name: string, actual: unknown, expected: unknown): void {

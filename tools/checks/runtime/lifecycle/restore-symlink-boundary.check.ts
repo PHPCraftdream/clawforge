@@ -20,9 +20,9 @@
 import { randomBytes } from "node:crypto";
 import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
 import { inspectArchive, listArchive, listArchiveLinks } from "#framework/service/archive.ts";
-import { UserError } from "#framework/core/log.ts";
-import { withOutputSink } from "#framework/core/output.ts";
-import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport.ts";
+import { UserError } from "#framework/core/io/log.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
+import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
 

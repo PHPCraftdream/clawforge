@@ -13,7 +13,7 @@ import { resolve } from "node:path";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

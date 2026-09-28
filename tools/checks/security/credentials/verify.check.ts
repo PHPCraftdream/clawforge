@@ -5,9 +5,9 @@
 // "the check reported a failure" but "tar -xzf was never invoked".
 
 import { verifySnapshot, verifySnapshotQuietly } from "#framework/commands/lifecycle/verify.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import { LocalTransport, SshTransport, WslTransport, spawnLocal, type ExecResult } from "#framework/runtime/transport.ts";
+import { LocalTransport, SshTransport, WslTransport, spawnLocal, type ExecResult } from "#framework/runtime/transport/transport.ts";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

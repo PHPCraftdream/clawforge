@@ -3,10 +3,10 @@
 // agree with exposeActionIsReadOnly, the declared arguments are well formed, and the MCP
 // schema/argv round trip matches every other command's contract.
 
-import { expose, exposeActionIsReadOnly } from "#framework/expose/index.ts";
+import { expose, exposeActionIsReadOnly } from "#framework/commands/operate/expose/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp-server.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

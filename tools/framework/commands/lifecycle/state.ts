@@ -4,7 +4,7 @@
 // already stop the gateway before touching sqlite and move existing data aside instead of
 // deleting it.
 
-import { log, info, warn, die } from "#src/core/log.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
@@ -19,7 +19,7 @@ import { restoreArchive } from "./restore.ts";
 import { forbiddenViolations, verifySnapshot } from "./verify.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 const SECRETS_SUFFIX = ".secrets.env";

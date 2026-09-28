@@ -12,13 +12,13 @@ import { tmpdir } from "node:os";
 import {
   refuseIfPubliclyExposed, containExposure, rotateToken, runAudits, preserveEvidence, collectEvidence, runPhases,
   IncidentPhaseFailure,
-} from "#framework/incident/index.ts";
+} from "#framework/commands/operate/incident/index.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
-import { unprotectedPrivateFile } from "#framework/security/private-file.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { unprotectedPrivateFile } from "#framework/security/privacy/private-file.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import { redactInspectEnv } from "#framework/diagnostics/incident-snapshot.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import { redactInspectEnv } from "#framework/runtime/docker/incident-snapshot.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

@@ -5,7 +5,8 @@
 // would change. That is the whole point of the indirection — it is checked by grepping the
 // command files for "docker" and "compose".
 
-import type { ExecResult } from "./transport.ts";
+import type { ExecResult } from "./transport/transport.ts";
+import type { Context } from "../core/context.ts";
 
 /** Thrown by `execInHelper` when the helper container is not up, so callers can fall back
  *  to `runOneOff` without mistaking it for the command itself having failed. */
@@ -233,4 +234,24 @@ export interface Stack {
    *  require ALL of a multi-service recipe's declared services instead of being satisfied by
    *  one live container. */
   serviceStates(): Promise<Record<string, StackServiceState>>;
+}
+
+/** Delays without blocking the event loop — the one polling primitive every wait loop that
+ *  watches a runtime transition (restart, readiness) shares, rather than each spelling out
+ *  its own setTimeout promise. */
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** `runningConnectionFacts()` behind one try/catch: not running and "this runtime could not
+ *  introspect it" both read as `undefined` here, since every caller treats them the same —
+ *  nothing to check right now either way. */
+export async function safeConnectionFacts(
+  ctx: Context,
+): Promise<{ bindAddress?: string; port?: string } | undefined> {
+  try {
+    return await ctx.runtime.runningConnectionFacts?.();
+  } catch {
+    return undefined;
+  }
 }

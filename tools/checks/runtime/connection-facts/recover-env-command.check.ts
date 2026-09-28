@@ -14,8 +14,8 @@
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { recoverEnv } from "#framework/commands/recover-env/index.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { recoverEnv } from "#framework/commands/operate/recover-env/index.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { useDeployment, deploymentDir, deploymentName, envFile } from "#framework/runtime/deployment.ts";
 import type { Context } from "#framework/core/context.ts";
 

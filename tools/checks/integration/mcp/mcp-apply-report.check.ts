@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnLocal } from "#framework/runtime/transport.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-apply-report-"));
 try {
@@ -15,11 +15,11 @@ try {
   await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_TOKEN=${token}\n`);
   const moduleUrl = (path: string): string => new URL(`../../../framework/${path}.ts`, import.meta.url).href;
   const script = `
-    const {serveMcp}=await import(${JSON.stringify(moduleUrl("integration/mcp-server"))});
+    const {serveMcp}=await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
     const {useDeployment}=await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
     const {openclawCommands}=await import(${JSON.stringify(moduleUrl("commands/interface/index"))});
-    const {emit}=await import(${JSON.stringify(moduleUrl("core/output"))});
-    const {registerSecret}=await import(${JSON.stringify(moduleUrl("core/log"))});
+    const {emit}=await import(${JSON.stringify(moduleUrl("core/io/output"))});
+    const {registerSecret}=await import(${JSON.stringify(moduleUrl("core/io/log"))});
     let target=0;
     const apply={...openclawCommands.apply,run:async(_ctx,args)=>{
       if (args.includes("--dry-run")) {

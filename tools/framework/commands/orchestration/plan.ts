@@ -17,8 +17,8 @@
 // their purpose (rewriting the lock file would silently re-pin whatever just drifted;
 // overwriting the secret store would discard whatever recovery cannot reach).
 
-import { log, info, die } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { log, info, die } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum } from "../management/lock.ts";
 import { isHealthy } from "#src/service/inspection.ts";
@@ -27,7 +27,7 @@ import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import type { Inspection, Problem, ProblemCode } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both plan's own parser and its openclawCommands declaration. */
 export const PLAN_ARGUMENTS: CommandArgument[] = [
@@ -274,7 +274,7 @@ export function planActions(inspection: Inspection): PlanAction[] {
   // a supply-chain surface, and — unlike every other step above — this framework does not
   // even have proof its own reinstall command names the right package: the pinned image's own
   // `plugins list --json` already shows an npm-origin plugin's id differing from its
-  // manifest name (extensions/index.ts), so a spec built from either could install something
+  // manifest name (security/extensions.ts), so a spec built from either could install something
   // else. Each finding carries its own best-effort command (compareExtensions); this only
   // turns it into a step the reader sees.
   for (const entry of problems.filter((candidate) => candidate.code === "PLUGIN_DRIFT" || candidate.code === "SKILL_DRIFT")) {

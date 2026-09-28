@@ -6,7 +6,7 @@
 
 import { operationToRollback } from "#framework/commands/orchestration/rollback.ts";
 import { Journal } from "#framework/service/operations.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

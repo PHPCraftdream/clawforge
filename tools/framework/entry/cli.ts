@@ -4,13 +4,13 @@
 // declares its commands. Adding a command to an application must not require touching any
 // file in framework/ — that is the property this module exists to guarantee.
 
-import { reportError, UserError, log, info } from "../core/log.ts";
+import { reportError, UserError, log, info } from "../core/io/log.ts";
 import { createContext } from "../core/context.ts";
-import { recoverEnv, recoverEnvBeforeContext } from "../commands/recover-env/index.ts";
+import { recoverEnv, recoverEnvBeforeContext } from "../commands/operate/recover-env/index.ts";
 import { clearRecipesDir } from "../service/recipe.ts";
 import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "../integration/provision.ts";
-import { serveMcp } from "../integration/mcp-server.ts";
+import { serveMcp } from "../integration/mcp/server.ts";
 import { gateCommandHelp, reportUnknownCommand, type GateCommand } from "../integration/gate.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../core/app.ts";
 
@@ -231,7 +231,7 @@ export async function runApp(
   // dispatch to a built one: with OC_DATA_DIR absent, createContext dies in the settings
   // parser before the command that exists to fill that fact can even start. Its
   // bootstrap builds only what the container read needs — transport and project identity
-  // (commands/recover-env/bootstrap.ts). Compared by identity so the declaration stays the
+  // (commands/operate/recover-env/bootstrap.ts). Compared by identity so the declaration stays the
   // single source of truth: if the declaration ever wires a different run, this branch
   // stops firing and the recover-env dispatch regression fails on the settings parser's
   // refusal instead of recovery's own.

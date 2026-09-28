@@ -16,7 +16,7 @@ import { join, resolve } from "node:path";
 import { bootstrap } from "#framework/commands/lifecycle/bootstrap.ts";
 import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/datadir.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

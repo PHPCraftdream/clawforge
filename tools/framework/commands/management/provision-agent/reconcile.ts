@@ -6,7 +6,7 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log } from "#src/core/log.ts";
+import { log } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { openclawCli, openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { readLedger, forgetOwned, ownerOf } from "#src/set/ownership/ledger.ts";

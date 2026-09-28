@@ -7,8 +7,8 @@
 // get, from the same functions.
 
 import { runGateCommand, gateHelpLines, gateCommandHelp, type GateCommand } from "#framework/integration/gate.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp-server.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 
 let failed = 0;
 

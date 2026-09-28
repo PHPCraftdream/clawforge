@@ -2,7 +2,7 @@
 // real helpers, exactly the way a deployed recipe does. The credential value is an
 // obviously-fake marker — this file exists so the snapshot checks drive the real write
 // path, not because the value means anything.
-import { ensurePrivateTargetDirectory, replacePrivateTargetFile } from "#framework/security/private-config.ts";
+import { ensurePrivateTargetDirectory, replacePrivateTargetFile } from "#framework/security/privacy/private-config.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { Recipe } from "#framework/service/recipe.ts";
 

@@ -22,9 +22,9 @@ import type { SetManifest } from "#framework/set/artifacts/model.ts";
 import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
 import { useApplicationRecipesDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { spawnLocal } from "#framework/runtime/transport.ts";
-import type { ExecOptions, ExecResult } from "#framework/runtime/transport.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
+import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

@@ -171,7 +171,7 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   PLUGIN_DRIFT: {
     severity: "warning",
-    // Third-party code, not this framework's own config — see extensions/index.ts's header
+    // Third-party code, not this framework's own config — see security/extensions.ts's header
     // for why a version-pinned reinstall is only ever offered as a plan step to run
     // yourself, never one apply performs unattended.
     summary: "an OpenClaw plugin's presence or version differs from what config/deployment.lock.json pinned",
@@ -299,7 +299,7 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     nextAction: "./clawforge plan",
   },
 
-  // The security gate (doctor/accept only — security-audit/index.ts): OpenClaw's own
+  // The security gate (doctor/accept only — security/audit.ts): OpenClaw's own
   // audits read from inside the instance, plus a few things only the host side can see.
   SECURITY_AUDIT_CRITICAL: {
     severity: "blocking",

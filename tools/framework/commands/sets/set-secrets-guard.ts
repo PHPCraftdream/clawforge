@@ -6,7 +6,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
-import { die } from "#src/core/log.ts";
+import { die } from "#src/core/io/log.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { envFile, secretsDir } from "#src/runtime/deployment.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";

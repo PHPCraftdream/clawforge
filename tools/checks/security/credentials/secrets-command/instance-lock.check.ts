@@ -8,7 +8,7 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { secrets } from "#framework/commands/management/secrets.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "./fixture.ts";
 

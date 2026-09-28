@@ -34,10 +34,10 @@
 // (install.ts, set.ts, inspect/, several checks), all of which import from
 // "../management/provision-agent/index.ts" (or the equivalent relative depth).
 
-import { log, info, die } from "#src/core/log.ts";
+import { log, info, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { safeName } from "#src/core/names.ts";
 import { withLockUnlessHeld } from "#src/runtime/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";

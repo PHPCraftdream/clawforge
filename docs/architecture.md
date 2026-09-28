@@ -27,11 +27,13 @@ directory's whole existence, stays the operator's.
 
 ```
 tools/framework/          package metadata and shared service definition
-  core/                    types, environment, paths and output
-  runtime/                 deployment, transport, runtime and locks
+  core/                    types, environment, paths, argument parsing (core/io/ for output)
+  runtime/                 deployment and locks; runtime/docker/ and runtime/transport/ by transport
   service/                 archives, inspection, OpenClaw integration and secrets
-  integration/             gates, scaffolding and MCP setup
-  commands/                lifecycle, orchestration, management, sets and interface
+  security/                private-write boundary (security/privacy/), audit, extensions
+  integration/             gates, scaffolding, listing and MCP setup (integration/mcp/)
+  commands/                lifecycle, orchestration, management, sets, interface, operate
+    operate/                 expose, watch, incident, recover-env — run against a live instance
   set/                     artifact and ownership modules
   docker-compose.yml       the service definition, shared by every deployment
 tools/clawforge.ts               the gate: picks a deployment and hands over to the framework
@@ -42,6 +44,11 @@ apps/openclaw/            git-ignored: one host's configuration
   secrets/<target>.env    key values (git-ignored)
   recipes/<name>/         things that live beside the instance
 ```
+
+Every source directory here caps at 7 direct entries and every file at 700 lines
+(`tools/checks/foundation/layout.check.ts`); hitting either means regrouping by meaning into a
+subdirectory, never raising the limit or dropping a new file into whichever directory still has
+room (see CONTRIBUTING.md).
 
 `docker-compose.yml` lives inside `tools/framework/` rather than at the repository root, so
 that it ends up in the npm package if the framework is ever installed as a dependency in
@@ -348,7 +355,7 @@ A command receives the context: `ctx.transport` (access to the target), `ctx.pat
 translation), `ctx.runtime` (operating the service). Where the target lives and what
 runtime is there is none of its business.
 
-### `expose`: narrowest scope first, and why it lives outside `commands/`
+### `expose`: narrowest scope first
 
 `./clawforge expose` reaches a loopback-bound gateway from outside this host without ever
 publishing it: `ssh` prints (and, with `--run`, opens) the SSH tunnel for
@@ -360,14 +367,13 @@ from the running container rather than trusting `.env`, which can be stale the m
 `OC_BIND_ADDRESS` is edited without a recreate — the same class of drift `recover-env` exists
 to catch for the other connection facts.
 
-Its implementation lives at `tools/framework/expose/`, not nested under
-`commands/management/`: every command-family directory in this repository (`commands/` itself,
-`management/`, `orchestration/`, `lifecycle/`, `sets/`, `interface/`) already sits exactly at
-`layout.check.ts`'s seven-direct-entry cap, and `tools/framework/` has no direct source file of
-its own, so the cap does not apply to it — the one place a new command family fits without
-relocating something unrelated just to free a slot (`tools/framework/diagnostics/` took the
-same route). It is still wired into `managementCommands` exactly like every other command's
-`run`, resolved through the same `#src/*` import map every other module uses.
+Its implementation lives at `tools/framework/commands/operate/expose/`, grouped with `watch/`,
+`incident/` and `recover-env/` — things an operator runs against an already-deployed instance,
+as distinct from `management/`'s configuration commands and `lifecycle/`'s start/stop/backup
+ones. It is wired into `managementCommands` exactly like every other command's `run` — the
+`--help` grouping there is by operator intent (`CommandGroup` in `core/app.ts`), independent of
+which directory a command's implementation lives in — resolved through the same `#src/*` import
+map every other module uses.
 
 ### `watch`: liveness only, transitions only, and one place each finding lives
 
@@ -387,7 +393,7 @@ target. That split matters here more than almost anywhere else in this framework
 point of watching an instance is noticing when it goes down, and a state file that lived on
 the target would be exactly as unreachable as everything else the moment that happens. It is
 published the way every other control file in this codebase is (`set/ownership/ledger.ts`'s
-`writeFileAtomic`, `security/private-file.ts`'s `replacePrivateFile`): written to a temporary
+`writeFileAtomic`, `security/privacy/private-file.ts`'s `replacePrivateFile`): written to a temporary
 sibling and renamed over the final name, so an interrupted write can never leave a state file
 a reader mistakes for valid.
 
@@ -397,7 +403,7 @@ the very first cycle after `watch install` (there is nothing to have changed FRO
 establishes a baseline instead of paging on one). A failed delivery leaves the persisted state
 at its OLD value on purpose: the next cycle still sees the same unreported transition and
 retries the alert, rather than quietly accepting the new state as normal. The webhook URL is
-registered with `core/log.ts`'s secret masking the same way `OPENCLAW_GATEWAY_TOKEN` is
+registered with `core/io/log.ts`'s secret masking the same way `OPENCLAW_GATEWAY_TOKEN` is
 (`core/context.ts`), and nothing in `watch/` ever hands it to `log()`/`info()` in the first
 place — masking is the second layer, not the only one.
 
@@ -414,7 +420,7 @@ rather than installing something that would silently never fire. Every entry is 
 `# clawforge-watch:<deployment>` comment so a re-run replaces only its own line and `uninstall`
 removes only it, never a sibling deployment's or a foreign entry already in that crontab.
 
-Lives at `tools/framework/watch/`, top-level for the same reason `expose/` is.
+Lives at `tools/framework/commands/operate/watch/`, beside `expose/` for the same reason.
 
 ## Recipes, and agents built from them
 

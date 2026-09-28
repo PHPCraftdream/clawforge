@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { rotateSnapshots } from "#framework/commands/lifecycle/state.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

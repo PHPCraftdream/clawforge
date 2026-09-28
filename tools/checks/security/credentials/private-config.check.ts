@@ -10,10 +10,10 @@ import {
   replacePrivateTargetFile,
   ensurePrivateTargetDirectory,
   execWithSecrets,
-} from "#framework/security/private-config.ts";
+} from "#framework/security/privacy/private-config.ts";
 import { clearRecipesDir, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
 import { locksDir, parseEnv } from "#framework/core/env.ts";
-import { LocalTransport, WslTransport, spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport.ts";
+import { LocalTransport, WslTransport, spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
 

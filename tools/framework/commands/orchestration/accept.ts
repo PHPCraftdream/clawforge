@@ -19,8 +19,8 @@
 
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, warn, die } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { recipesDir, deploymentName } from "#src/runtime/deployment.ts";
 import { openclawCliJson, withModelApproval } from "#src/service/openclaw-cli.ts";
 import { recipeServerContainerPath, mcpServerMatches } from "../management/provision-agent/index.ts";
@@ -32,9 +32,9 @@ import { withSetSource } from "#src/set/artifacts/source.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { isHealthy, blockingProblems } from "#src/service/inspection.ts";
-import { runSecurityAudit, type SecurityFinding } from "#src/security-audit/index.ts";
+import { runSecurityAudit, type SecurityFinding } from "#src/security/audit.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both accept's own parser and its openclawCommands declaration. */
 export const ACCEPT_ARGUMENTS: CommandArgument[] = [
@@ -91,7 +91,7 @@ export interface AcceptanceReport {
    *  a broken deployment to report success. */
   readonly healthy: boolean;
   readonly receipt?: { id: string; setId: string; verdict: string };
-  /** The security gate (security-audit/index.ts): OpenClaw's own audits plus what only
+  /** The security gate (security/audit.ts): OpenClaw's own audits plus what only
    *  the host side can see. Present whenever the gate ran, even with zero findings — a
    *  reader must be able to tell "ran clean" from "field not implemented yet". */
   readonly security: { findings: readonly SecurityFinding[]; blocking: number; warnings: number };
@@ -444,7 +444,7 @@ async function acceptFromSource(ctx: Context, args: string[], verified?: Verifie
   }
 
   // The security gate: only doctor and accept run it (each audit is a container exec) — see
-  // security-audit/index.ts. A blocking finding fails acceptance the same way a failed
+  // security/audit.ts. A blocking finding fails acceptance the same way a failed
   // check does; a warning is reported but does not.
   const security = await runSecurityAudit(ctx);
   const securityBlocking = blockingProblems(security.problems).length;

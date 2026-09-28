@@ -11,8 +11,8 @@
 // stop the far more ordinary case of applying steps that were chosen for a different
 // version of the repository.
 
-import { log, info, warn, die } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { computePlan } from "./plan.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum, frameworkVersion } from "../management/lock.ts";
@@ -21,7 +21,7 @@ import { applyConfig } from "./config.ts";
 import { secrets } from "../management/secrets.ts";
 import { up, restart } from "../lifecycle/lifecycle.ts";
 import { provisionAgent, removeOwnedObject } from "../management/provision-agent/index.ts";
-import { recoverEnv } from "../recover-env/index.ts";
+import { recoverEnv } from "../operate/recover-env/index.ts";
 import { readLedgerStrict } from "#src/set/ownership/ledger.ts";
 import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
@@ -34,7 +34,7 @@ import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both apply's own parser and its openclawCommands declaration. */
 export const APPLY_ARGUMENTS: CommandArgument[] = [

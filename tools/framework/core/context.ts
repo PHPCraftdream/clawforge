@@ -5,10 +5,10 @@
 // knowledge about WSL, SSH, Docker or Windows drive letters.
 
 import { loadEnv, toSettings, monorepoRoot, type Env, type Settings } from "./env.ts";
-import { registerSecret } from "./log.ts";
-import { createTransport, WslTransport, SshTransport, type Transport } from "../runtime/transport.ts";
+import { registerSecret } from "./io/log.ts";
+import { createTransport, WslTransport, SshTransport, type Transport } from "../runtime/transport/transport.ts";
 import { createPathBridge, type PathBridge, type MountPoint } from "./paths.ts";
-import { DockerRuntime } from "../runtime/runtime-docker.ts";
+import { DockerRuntime } from "../runtime/docker/runtime-docker.ts";
 import { useComposeProjectOverride } from "../runtime/deployment.ts";
 import type { Runtime } from "../runtime/runtime.ts";
 import type { AppSecret, AfterBackupInfo, BeforeRestoreInfo } from "./app.ts";

@@ -26,11 +26,12 @@ import {
   soleDeploymentFallback,
   type GateCommand,
 } from "./framework/integration/gate.ts";
-import { reportError, info } from "./framework/core/log.ts";
-import { emit } from "./framework/core/output.ts";
+import { reportError, info } from "./framework/core/io/log.ts";
+import { emit } from "./framework/core/io/output.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
-import { createApp, listDeployments, printDeploymentList } from "./framework/integration/scaffold.ts";
+import { createApp } from "./framework/integration/scaffold.ts";
+import { listDeployments, printDeploymentList } from "./framework/integration/list.ts";
 import { safeName } from "./framework/core/names.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
 import type { AppDefinition } from "./framework/core/app.ts";

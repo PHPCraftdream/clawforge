@@ -6,13 +6,13 @@
 
 import { access, readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { log, info, warn, die } from "#src/core/log.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Drives both apply-config's own parser and its openclawCommands declaration. */
 export const APPLY_CONFIG_ARGUMENTS: CommandArgument[] = [

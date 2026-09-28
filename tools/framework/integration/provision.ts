@@ -11,10 +11,10 @@
 
 import { randomBytes } from "node:crypto";
 import { readFile, access } from "node:fs/promises";
-import { log, registerSecret } from "../core/log.ts";
+import { log, registerSecret } from "../core/io/log.ts";
 import { envFile, deploymentName } from "../runtime/deployment.ts";
 import { deploymentEnv } from "./scaffold.ts";
-import { createPrivateFile, protectPrivateFile, replacePrivateFile } from "../security/private-file.ts";
+import { createPrivateFile, protectPrivateFile, replacePrivateFile } from "../security/privacy/private-file.ts";
 
 /** A fresh OPENCLAW_GATEWAY_TOKEN: 32 random bytes, hex. Bootstrap and incident rotation share it. */
 export function generateGatewayToken(): string {

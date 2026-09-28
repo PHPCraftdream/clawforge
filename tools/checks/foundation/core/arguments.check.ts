@@ -4,8 +4,8 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { splitInlineOptions } from "#framework/entry/cli.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp-server.ts";
-import { parseDeclaredArgs } from "#framework/argv/parse-args.ts";
+import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
+import { parseDeclaredArgs } from "#framework/core/arguments.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 
 let failed = 0;

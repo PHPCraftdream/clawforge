@@ -15,10 +15,10 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { toSettings } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecOptions } from "#framework/runtime/transport.ts";
+import type { ExecOptions } from "#framework/runtime/transport/transport.ts";
 
 export interface LifecycleFixtureState {
   running: boolean;

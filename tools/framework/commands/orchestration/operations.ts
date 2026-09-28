@@ -4,12 +4,12 @@
 // Without it the record would be a file on the target that only someone who already knew
 // where to look could find, which is not much better than no record at all.
 
-import { log, info, warn, die } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { listOperations, readOperation, operationsDir } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 const DEFAULT_LIMIT = 10;
 

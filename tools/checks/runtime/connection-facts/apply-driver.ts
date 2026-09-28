@@ -10,7 +10,7 @@
 import { json, matchingJob, CONFIG_FILE, MIRROR, DATA } from "../convergence/inspect/fixture.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
 import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
-import type { ExecResult, Transport } from "#framework/runtime/transport.ts";
+import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 
 /** The live config as the fixture's stub presents it, so the plan is quiet except for the
  *  finding each scenario is about. */

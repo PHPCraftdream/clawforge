@@ -27,7 +27,7 @@ import { apply, runSteps } from "#framework/commands/orchestration/apply.ts";
 import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { problem } from "#framework/service/inspection.ts";
 import type { Inspection, Problem } from "#framework/service/inspection.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { InstalledSetUnreadableError, readInstalledSetStrict } from "#framework/set/artifacts/install.ts";
 import { buildSet } from "#framework/commands/sets/set.ts";

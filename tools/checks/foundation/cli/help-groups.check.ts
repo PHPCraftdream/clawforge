@@ -12,7 +12,7 @@
 import { defineApp } from "#framework/core/app.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { runApp, GROUP_HEADINGS, GROUP_ORDER, destructiveMarker } from "#framework/entry/cli.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 
 let failed = 0;
 

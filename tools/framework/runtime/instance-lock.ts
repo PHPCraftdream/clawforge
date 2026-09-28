@@ -27,7 +27,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 
 import { locksDir } from "../core/env.ts";
-import { log, die } from "../core/log.ts";
+import { log, die } from "../core/io/log.ts";
 import { withMutationGuard } from "../security/instance-mutation-guard.ts";
 import { newOperationId } from "../service/operations.ts";
 import { machineName, ownProcessStartedAt } from "../security/instance-mutation-guard.ts";

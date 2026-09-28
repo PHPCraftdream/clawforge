@@ -11,13 +11,13 @@ import { createServer as createNetServer } from "node:net";
 import { EGRESS_EXEC_TIMEOUT_MS, egressProbeScript } from "#framework/commands/orchestration/inspect/egress-probe.ts";
 import { gatherInspection, renderJson, doctor } from "#framework/commands/orchestration/inspect/gather.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { HelperNotRunning } from "#framework/runtime/runtime.ts";
-import { spawnLocal } from "#framework/runtime/transport.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "./fixture.ts";
 import type { TargetSpec } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

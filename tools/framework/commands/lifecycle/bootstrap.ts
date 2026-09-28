@@ -15,7 +15,7 @@
 //   7. only then start and wait for /healthz
 
 import JSON5 from "json5";
-import { log, info, warn } from "#src/core/log.ts";
+import { log, info, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
 import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
@@ -25,9 +25,9 @@ import { preflightSecrets } from "../management/secrets.ts";
 import { preflightPort, pinImageReference } from "./lifecycle.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
-import { imageChannel } from "#src/diagnostics/image-digest.ts";
+import { imageChannel } from "#src/runtime/docker/image-digest.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both bootstrap's own parser and its openclawCommands declaration. */

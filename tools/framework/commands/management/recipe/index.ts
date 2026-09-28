@@ -7,7 +7,7 @@
 import { cp, access, readdir } from "node:fs/promises";
 import { register } from "node:module";
 import { basename, dirname, relative, resolve } from "node:path";
-import { log, info, warn, die } from "#src/core/log.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
 import { pathToFileURL } from "node:url";
 import { dependencyGraphChecksum } from "./hook-graph.ts";
 import type { Context } from "#src/core/context.ts";
@@ -21,12 +21,12 @@ import {
   type Recipe,
   type RecipeReadiness,
 } from "#src/service/recipe.ts";
-import { SENSITIVE_RECIPE_NAME, declaredPortablePrivateFiles, excludesPortablePath } from "#src/security/recipe-portable-content.ts";
+import { SENSITIVE_RECIPE_NAME, declaredPortablePrivateFiles, excludesPortablePath } from "#src/security/privacy/recipe-portable-content.ts";
 import { safeName } from "#src/core/names.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
-import type { Stack, StackServiceState } from "#src/runtime/runtime.ts";
-import { isCaptured, shouldFollow, emit, sleep } from "#src/core/output.ts";
+import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
+import { isCaptured, shouldFollow, emit } from "#src/core/io/output.ts";
 import { takeTail } from "../../lifecycle/lifecycle.ts";
 
 /** The action a bare `recipe` runs. */

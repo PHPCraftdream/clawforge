@@ -1,5 +1,5 @@
 import { frameworkVersion } from "#src/commands/management/lock.ts";
-import { maskSecrets } from "#src/core/log.ts";
+import { maskSecrets } from "#src/core/io/log.ts";
 import { writeReceipt } from "./receipt.ts";
 import type { ReceiptObservations, AcceptanceReceipt, ReceiptCheckInput, ReceiptSource } from "./receipt.ts";
 import type { SetManifest } from "./model.ts";

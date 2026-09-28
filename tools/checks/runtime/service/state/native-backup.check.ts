@@ -6,12 +6,12 @@ import { resolve } from "node:path";
 import { createBackup, NativeBackupUnsupportedError, NATIVE_MANIFEST_NAME, omittedOnPurpose } from "#framework/commands/lifecycle/backup.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
 import { excludesFor } from "#framework/service/archive.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

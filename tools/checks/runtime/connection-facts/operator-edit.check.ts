@@ -11,7 +11,7 @@ import { resolve } from "node:path";
 import { apply } from "#framework/commands/orchestration/apply.ts";
 import type { ApplyOutcome } from "#framework/commands/orchestration/apply.ts";
 import { createContext } from "#framework/core/context.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { useComposeProjectOverride } from "#framework/runtime/deployment.ts";
 import { currentComposition, lockFile } from "#framework/commands/management/lock.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";

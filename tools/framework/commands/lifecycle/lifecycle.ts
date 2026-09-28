@@ -4,19 +4,20 @@
 // transport in the context decide how the instance is actually started.
 
 import { readFile } from "node:fs/promises";
-import { log, info, warn, die } from "#src/core/log.ts";
-import { shouldFollow, emit, withOutputSink, sleep } from "#src/core/output.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
+import { shouldFollow, emit, withOutputSink } from "#src/core/io/output.ts";
+import { sleep } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { guarded } from "#src/runtime/instance-lock.ts";
 import { envFile } from "#src/runtime/deployment.ts";
-import { upsertEnvValue } from "#src/security/private-config.ts";
-import { replacePrivateFile } from "#src/security/private-file.ts";
+import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
+import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "./backup.ts";
 import { restoreArchive } from "./restore.ts";
-import { imageChannel, channelHasTag } from "#src/diagnostics/image-digest.ts";
+import { imageChannel, channelHasTag } from "#src/runtime/docker/image-digest.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both upgrade's own parser and its openclawCommands declaration. */

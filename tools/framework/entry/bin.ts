@@ -20,7 +20,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, type GateCommand } from "../integration/gate.ts";
-import { reportError } from "../core/log.ts";
+import { reportError } from "../core/io/log.ts";
 import { useDeployment } from "../runtime/deployment.ts";
 import { initApp } from "../integration/init.ts";
 import type { AppDefinition } from "../core/app.ts";

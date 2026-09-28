@@ -9,7 +9,7 @@
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { collectPortableAgentBundleFiles, collectPortableRecipeFiles } from "../security/recipe-portable-content.ts";
+import { collectPortableAgentBundleFiles, collectPortableRecipeFiles } from "../security/privacy/recipe-portable-content.ts";
 
 export function checksumOf(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");

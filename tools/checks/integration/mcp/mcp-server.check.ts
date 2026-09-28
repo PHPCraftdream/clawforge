@@ -19,7 +19,7 @@ import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createApp, appsDir } from "#framework/integration/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toArgv, toolDescription, validate } from "#framework/integration/mcp-server.ts";
+import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 let failed = 0;
@@ -499,11 +499,11 @@ function conforms(
   const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
   await writeFile(join(sweepRoot, ".env"), `OC_DATA_DIR=${join(sweepRoot, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
   const script = `
-    const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp-server"))});
+    const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
     const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
     const { managementCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.management"))});
-    const { log, info } = await import(${JSON.stringify(moduleUrl("core/log"))});
-    const { emit } = await import(${JSON.stringify(moduleUrl("core/output"))});
+    const { log, info } = await import(${JSON.stringify(moduleUrl("core/io/log"))});
+    const { emit } = await import(${JSON.stringify(moduleUrl("core/io/output"))});
     const outputs = {
       list: () => { log("available recipes"); info("sidecar          a probe service"); },
       import: () => { log('imported recipe "sidecar"'); info("destination: recipes/sidecar"); },
@@ -592,11 +592,11 @@ function conforms(
   await writeFile(join(redactionRoot, ".env"), `OC_DATA_DIR=${join(redactionRoot, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_TOKEN=${secret}\n`, "utf8");
   const moduleUrl = (name: string): string => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
   const script = `
-    const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp-server"))});
+    const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
     const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
     const { openclawCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/index"))});
-    const { emit } = await import(${JSON.stringify(moduleUrl("core/output"))});
-    const { log, registerSecret } = await import(${JSON.stringify(moduleUrl("core/log"))});
+    const { emit } = await import(${JSON.stringify(moduleUrl("core/io/output"))});
+    const { log, registerSecret } = await import(${JSON.stringify(moduleUrl("core/io/log"))});
     const leaked = ${JSON.stringify(secret)}; registerSecret(leaked);
     await useDeployment(${JSON.stringify(redactionRoot)});
     const gateEcho = { name: "gate-echo", summary: "prints the token and succeeds", run: async () => { emit("gate says " + leaked + "\\n"); return 0; } };

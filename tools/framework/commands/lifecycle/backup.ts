@@ -4,7 +4,7 @@
 // OpenClaw keeps state in SQLite databases with multi-megabyte -wal files, and a copy
 // taken mid-write is not restorable. --hot skips the stop for those who accept that.
 
-import { log, info, warn, die } from "#src/core/log.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { randomUUID } from "node:crypto";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
@@ -19,7 +19,7 @@ import { quiesceRecipeStacks, resumeRecipeStacks } from "../management/recipe/li
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "./verify.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 

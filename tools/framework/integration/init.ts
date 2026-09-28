@@ -13,11 +13,11 @@
 
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
 import { resolve, basename, relative } from "node:path";
-import { log, info, die } from "../core/log.ts";
+import { log, info, die } from "../core/io/log.ts";
 import { frameworkRoot, projectPort } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
-import { setupProjectMcp } from "./mcp-project.ts";
-import { createPrivateFile } from "../security/private-file.ts";
+import { setupProjectMcp } from "./mcp/project.ts";
+import { createPrivateFile } from "../security/privacy/private-file.ts";
 
 const DECLARATION = `// This deployment.
 //

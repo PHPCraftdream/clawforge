@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 

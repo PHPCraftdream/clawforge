@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
-import { inputSchema, toArgv, toolEnvelope } from "#framework/integration/mcp-schema.ts";
+import { inputSchema, toArgv, toolEnvelope } from "#framework/integration/mcp/schema.ts";
 
 let failures = 0;
 function check(name: string, actual: unknown, expected: unknown): void {
@@ -71,12 +71,12 @@ function runServer(script: string, input: string): Promise<{ code: number | null
   await writeFile(join(root, ".env"), `OC_DATA_DIR=${join(root, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
   const url = (name: string): string => new URL(`../../framework/${name}.ts`, import.meta.url).href;
   const script = `
-    const { serveMcp } = await import(${JSON.stringify(url("integration/mcp-server"))});
+    const { serveMcp } = await import(${JSON.stringify(url("integration/mcp/server"))});
     const { useDeployment } = await import(${JSON.stringify(url("runtime/deployment"))});
     const { managementCommands } = await import(${JSON.stringify(url("commands/interface/groups/openclawCommands.management"))});
     const { lifecycleCommands } = await import(${JSON.stringify(url("commands/interface/groups/openclawCommands.lifecycle"))});
     const { setsCommands } = await import(${JSON.stringify(url("commands/interface/groups/openclawCommands.sets"))});
-    const { log } = await import(${JSON.stringify(url("core/log"))});
+    const { log } = await import(${JSON.stringify(url("core/io/log"))});
     await useDeployment(${JSON.stringify(root)});
     const spy = async (_ctx, args) => { log(args.join(" ") || "status"); };
     await serveMcp({ name: "policy", commands: {

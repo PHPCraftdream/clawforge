@@ -7,8 +7,8 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { die, info, log } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { die, info, log } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";

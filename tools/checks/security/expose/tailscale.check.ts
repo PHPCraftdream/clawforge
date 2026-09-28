@@ -5,10 +5,10 @@
 // instance-lock.check.ts uses (a stub transport implementing just enough of mkdir/test/mv/rm
 // for instance-lock.ts's real claim/release code to run against).
 
-import { exposeTailscale, probeTailscale, tailscaleServeCommand, tailscaleGatewayRoutes, tailscaleServeOffCommand } from "#framework/expose/tailscale.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { exposeTailscale, probeTailscale, tailscaleServeCommand, tailscaleGatewayRoutes, tailscaleServeOffCommand } from "#framework/commands/operate/expose/tailscale.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-import type { ExecResult } from "#framework/runtime/transport.ts";
+import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 let failed = 0;
 

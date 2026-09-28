@@ -5,7 +5,7 @@
 // filesystem actually demands them — blindly prefixing sudo would prompt for a password on
 // every routine run, which is how the shell version once hung.
 
-import { log, info, die } from "../core/log.ts";
+import { log, info, die } from "../core/io/log.ts";
 import type { Context } from "../core/context.ts";
 import { lockHome } from "./instance-lock.ts";
 

@@ -5,9 +5,9 @@
 // executes; "local" is the bare machine, unwrapped. Resolution reports where the command
 // actually ended up, and says so when a role collapsed onto another one on this host.
 
-import { die } from "#src/core/log.ts";
+import { die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
-import { spawnLocal, type ExecOptions, type ExecResult } from "#src/runtime/transport.ts";
+import { spawnLocal, type ExecOptions, type ExecResult } from "#src/runtime/transport/transport.ts";
 
 export type HostContextName = "target" | "engine" | "local";
 

@@ -9,11 +9,11 @@
 // Real pull() is driven through the shared harness, and the stub listing is the seam —
 // listing fidelity against real tar is snapshot.check.ts's job, not this file's.
 
-import { pullScenario } from "../../../runtime/pull-harness.ts";
+import { pullScenario } from "../../../runtime/service/state/pull-harness.ts";
 import { pull } from "#framework/commands/lifecycle/state.ts";
 import { clearRecipesDir, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

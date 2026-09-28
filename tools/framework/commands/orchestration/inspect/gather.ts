@@ -25,13 +25,13 @@
 // keeps its name and signature — apply.ts, plan.ts and the checks all import from
 // "./inspect/gather.ts" (or the barrel-free direct path, since there is no index.ts here).
 
-import { log, info, warn, reportBlocking } from "#src/core/log.ts";
-import { emit, isCaptured } from "#src/core/output.ts";
+import { log, info, warn, reportBlocking } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import { requirementsForConfig, statusForRequirements, collectConfiguredProviders } from "#src/service/secrets.ts";
 import { compareLock, readLock, currentComposition } from "#src/commands/management/lock.ts";
-import { pluginsForLock, skillsForLock } from "#src/extensions/index.ts";
+import { pluginsForLock, skillsForLock } from "#src/security/extensions.ts";
 import { readInstalledSet, requirementProblems, runningDigests, matchRequiredDigest } from "#src/set/artifacts/install.ts";
 import {
   problem,
@@ -43,9 +43,9 @@ import type { Problem, Inspection } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { prospectiveConfig, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
 import { declaredState, observeConfig, observeLive, observeConnectionFacts, observeSecretStore, observeDeclarationFile } from "./observe.ts";
-import { runSecurityAudit } from "#src/security-audit/index.ts";
+import { runSecurityAudit } from "#src/security/audit.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
 /** Shared by inspect and doctor: both take only --json. */
 export const JSON_ONLY_ARGUMENTS: CommandArgument[] = [
@@ -221,7 +221,7 @@ export async function gatherInspection(ctx: Context): Promise<Inspection> {
   // Plugins/skills are folded in here rather than fetched by currentComposition() itself:
   // `live` already carries them from observeLive's own batched read (openclawCliBatch, above)
   // and a second fetch would spend a second container on the same question — exactly what
-  // that batching exists to avoid (openclaw-cli.ts, extensions/index.ts).
+  // that batching exists to avoid (openclaw-cli.ts, security/extensions.ts).
   const composition = await currentComposition(ctx);
   problems.push(
     ...compareLock(await readLock(), {

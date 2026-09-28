@@ -6,8 +6,8 @@
 // No transport is exercised here at all: exposeSsh never calls ctx.transport (the tunnel is a
 // LOCAL process on the operator's own machine, reached through spawnLocal, not the target).
 
-import { exposeSsh, sshTunnelCommand } from "#framework/expose/ssh.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { exposeSsh, sshTunnelCommand } from "#framework/commands/operate/expose/ssh.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 
 let failed = 0;

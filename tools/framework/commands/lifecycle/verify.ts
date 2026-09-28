@@ -11,11 +11,11 @@
 
 import { randomBytes } from "node:crypto";
 import JSON5 from "json5";
-import { log, info, warn, die } from "#src/core/log.ts";
-import { withOutputSink, outputSink } from "#src/core/output.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
+import { withOutputSink, outputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { sudoFor } from "#src/runtime/datadir.ts";
-import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "#src/runtime/transport.ts";
+import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "#src/runtime/transport/transport.ts";
 import {
   archiveRoot,
   inspectArchive,
@@ -30,9 +30,9 @@ import {
 import { parseEnv } from "#src/core/env.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
-import { privatePathsPolicy } from "#src/security/private-paths-ledger.ts";
+import { privatePathsPolicy } from "#src/security/privacy/private-paths-ledger.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/argv/parse-args.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both verify's own parser and its openclawCommands declaration. */

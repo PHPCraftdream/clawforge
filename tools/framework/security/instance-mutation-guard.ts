@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import { locksDir } from "../core/env.ts";
 import type { Context } from "../core/context.ts";
-import type { Transport } from "../runtime/transport.ts";
+import type { Transport } from "../runtime/transport/transport.ts";
 
 const execFileAsync = promisify(execFile);
 

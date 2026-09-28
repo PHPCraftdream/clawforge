@@ -27,7 +27,7 @@ import { resolve } from "node:path";
 import { monorepoRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { recipesDir } from "../runtime/deployment.ts";
-import { persistedPrivatePaths } from "../security/private-paths-ledger.ts";
+import { persistedPrivatePaths } from "../security/privacy/private-paths-ledger.ts";
 
 /** Default location. An application declares its own via AppDefinition.recipesDir: the
  *  mechanism is the framework's, the recipes are the application's data. */

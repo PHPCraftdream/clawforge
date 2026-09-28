@@ -6,8 +6,8 @@ import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { secrets } from "#framework/commands/management/secrets.ts";
-import { withOutputSink } from "#framework/core/output.ts";
-import { spawnLocal } from "#framework/runtime/transport.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 import { setupDeployment, teardownDeployment } from "../fixture.ts";
 

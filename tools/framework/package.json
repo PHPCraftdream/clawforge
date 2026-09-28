@@ -41,8 +41,8 @@
       "default": "./dist/commands/interface/index.js"
     },
     "./private-config": {
-      "types": "./dist/security/private-config.d.ts",
-      "default": "./dist/security/private-config.js"
+      "types": "./dist/security/privacy/private-config.d.ts",
+      "default": "./dist/security/privacy/private-config.js"
     }
   },
   "files": [

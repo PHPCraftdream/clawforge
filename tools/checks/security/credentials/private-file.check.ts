@@ -8,9 +8,9 @@ import { access, chmod, mkdir, mkdtemp, open, readdir, readFile, rm, stat, write
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPrivateFile, installedWslDistros, probeWslOpen, protectPrivateFile, replacePrivateFile, resetWslBoundaryDedupe, withToolRunner } from "#framework/security/private-file.ts";
-import { spawnLocal } from "#framework/runtime/transport.ts";
-import { withOutputSink } from "#framework/core/output.ts";
+import { createPrivateFile, installedWslDistros, probeWslOpen, protectPrivateFile, replacePrivateFile, resetWslBoundaryDedupe, withToolRunner } from "#framework/security/privacy/private-file.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 
 let failed = 0;
 

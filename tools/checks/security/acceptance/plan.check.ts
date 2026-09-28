@@ -154,7 +154,7 @@ check("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIFT", 
 // --- plugins/skills: always advisory, never one apply runs unattended ----------------------
 //
 // Third-party code is a supply-chain surface, and this framework does not even have proof
-// its own reinstall command names the right package (extensions/index.ts's header) — so a
+// its own reinstall command names the right package (security/extensions.ts's header) — so a
 // finding always becomes a step for the reader, never one apply performs.
 
 {

@@ -8,7 +8,13 @@ const MAX_LINES = 700;
 async function inspect(dir: string): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true });
   const source = entries.some((entry) => entry.isFile() && /\.(?:ts|tsx|js|jsx)$/.test(entry.name));
-  if (source) assert.ok(entries.length <= 7, `${dir} has ${entries.length} direct entries`);
+  if (source) {
+    assert.ok(
+      entries.length <= 7,
+      `${dir} has ${entries.length} direct entries — the limit is not raised for this; ` +
+        "regroup by meaning into a subdirectory instead (see CONTRIBUTING.md, \"Source layout\")",
+    );
+  }
   for (const entry of entries) {
     const full = resolve(dir, entry.name);
     if (entry.isFile() && /\.(?:ts|js)$/.test(entry.name)) {

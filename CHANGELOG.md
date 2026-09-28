@@ -236,6 +236,19 @@ All notable changes to `@clawforge/framework` will be documented here.
   host — that fact lived only in README's troubleshooting table. The final output now names
   the actual data directory the `.env` it just wrote chose, and when it is under `/srv` points
   at `./clawforge bootstrap --check` as the next step, before `bootstrap` itself.
+* The instance lock judged staleness from when it was taken, never refreshed while the holder
+  stayed alive — so `recipe install`, which holds the lock across a whole build, could outlive
+  the 30-minute threshold and get refused with "longer than any operation should take … may be
+  left over from a run that died", pointing at `--break-lock` for a run that was still working.
+  The holder now rewrites a `heartbeatAt` field every 30 seconds for as long as it holds the
+  lock, and staleness is judged from that once a record has one (10 minutes of silence; a
+  record from before this field existed keeps the old 30-minutes-since-taken rule). The refusal
+  now states the facts instead — who holds it, since when, and "not refreshed for N minutes" or
+  "refreshed N seconds ago — the operation is still running" — and only ever suggests
+  `--break-lock` once the holder is actually stale or provably dead. `configure-provider` was
+  also the one lock-taking command with no `--break-lock` of its own and a refusal pointing at
+  a different command to break it; it now declares and threads `--break-lock`/
+  `--break-foreign-lock` like every other ordinary lock-taking command.
 
 ## 0.1.0
 

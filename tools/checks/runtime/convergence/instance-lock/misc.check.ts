@@ -25,7 +25,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
   const fresh = { operationId: "op-1", what: "apply", by: "coder@box pid 1", takenAt: new Date().toISOString() };
   const message = refusalMessage(fresh);
   check("a fresh lock suggests waiting", message.includes("Wait for it to finish"), true);
-  check("and does not call it stale", message.includes("may be left over"), false);
+  check("and does not call it stale", message.includes("not refreshed for"), false);
 }
 
 // --- the lock is not inside the tree restore replaces ------------------------------------------

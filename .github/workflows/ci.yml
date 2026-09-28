@@ -183,6 +183,7 @@ jobs:
             tools/checks/runtime/convergence/inspect/recipes.check.ts
             tools/checks/runtime/convergence/instance-lock/advice.check.ts
             tools/checks/runtime/convergence/instance-lock/claims.check.ts
+            tools/checks/runtime/convergence/instance-lock/heartbeat.check.ts
             tools/checks/runtime/convergence/instance-lock/misc.check.ts
             tools/checks/runtime/convergence/instance-lock/nesting.check.ts
             tools/checks/runtime/convergence/instance-lock/takeover.check.ts

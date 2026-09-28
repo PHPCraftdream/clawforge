@@ -154,18 +154,27 @@ A `mkdir` that fails is not automatically a lock that is held: if the directory 
 afterwards, the failure was something else — a permission, most likely — and it is reported
 as that, with the real error and without offering a `--break-lock` that could not help.
 
-A lock left by a run that died — including one killed by a pipe closing, which does happen —
-is reported as stale, with its age, and still refused. Silently taking it is the same bug one
-layer down: the run that lost it has no idea. `--break-lock` overrides, deliberately by hand,
-and deliberately not `--force`: `--force` means "yes, I mean it" for a destructive command and
-is set automatically from an MCP caller's `confirm`, so sharing the name would have made every
-confirmed tool call seize whatever lock someone else was holding. Every pid a lock records is
-this tool's own — wherever `clawforge` itself runs, never anything on a WSL or SSH transport's
-target — so when the holder was recorded on this same machine and its pid is provably gone,
-the refusal says so plainly; `--break-lock` is still required either way. Not every
-lock-taking command accepts `--break-lock` (`backup`, `configure-provider` and `secrets` guard
-a single operation each run and take no takeover flag); a refusal from one of those names a
-command that does instead, rather than advising a flag it will then reject.
+The holder proves it is still alive on its own, rather than being trusted just for having
+taken the lock recently: it rewrites a `heartbeatAt` field every 30 seconds for as long as it
+holds the lock, and a lock is reported as stale once that heartbeat has gone quiet for 10
+minutes — not simply because it was taken more than half an hour ago, which `recipe install`'s
+own from-source build routinely runs past on its own. A record from before this field existed
+keeps the old rule (stale past 30 minutes since taken). Either way it is described, never
+silently taken: silently taking it is the same bug one layer down, the run that lost it has no
+idea. The refusal says which is true — "not refreshed for N minutes" or "refreshed N seconds
+ago — the operation is still running" — and only ever suggests `--break-lock` once the holder
+is actually stale or provably dead; a live, recently-refreshed holder is told to wait, or to
+check `./clawforge operations <id>` for what it is doing, never to break its own lock.
+`--break-lock` overrides, deliberately by hand, and deliberately not `--force`: `--force` means
+"yes, I mean it" for a destructive command and is set automatically from an MCP caller's
+`confirm`, so sharing the name would have made every confirmed tool call seize whatever lock
+someone else was holding. Every pid a lock records is this tool's own — wherever `clawforge`
+itself runs, never anything on a WSL or SSH transport's target — so when the holder was
+recorded on this same machine and its pid is provably gone, the refusal says so plainly;
+`--break-lock` is still required either way. Not every lock-taking command accepts
+`--break-lock` (`backup` and `secrets` guard a single operation each run and take no takeover
+flag); a refusal from one of those names a command that does instead, rather than advising a
+flag it will then reject.
 
 A shorter-lived internal guard around the lock's own bookkeeping can end up recording its
 owner on a *different* machine (two operators, one crashing mid-release) — a case

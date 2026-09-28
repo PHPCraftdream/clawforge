@@ -47,7 +47,10 @@ function check(name: string, actual: unknown, expected: unknown): void {
   // A refusal that does not say who holds it leaves the reader deleting files and hoping.
   check("the refusal names the holder's operation", message.includes("op-1"), true);
   check("and what it is doing", message.includes("apply"), true);
-  check("and offers the way out", message.includes("--break-lock"), true);
+  // The lock was just taken by this same live process: not stale, not dead, so the refusal
+  // never offers a takeover it cannot need yet — only a stale or dead holder gets that advice.
+  check("and does not offer a takeover of a lock that is still alive", message.includes("--break-lock"), false);
+  check("it says to wait, and how to see what is running", message.includes("./clawforge operations op-1"), true);
 
   await first.release();
   const second = await takeLock(ctx, "provision-agent demo", "op-2");

@@ -16,6 +16,8 @@ import {
   guarded,
   parseBreakForeignLockHost,
   lockPath,
+  isStale,
+  STALE_AFTER_MS,
   type LockHolder,
 } from "#framework/runtime/lock/instance-lock.ts";
 import { machineName } from "#framework/runtime/lock/process-identity.ts";
@@ -61,10 +63,10 @@ function declaresBreakForeignLock(name: string): boolean {
 // --- every command whose guarded()/withLockUnlessHeld() call reads real argv for --break-lock
 // declares it, and every command that deliberately does not is left undeclared too ------------
 
-for (const name of ["up", "restart", "down", "restore", "push", "apply", "rollback", "apply-config", "recipe", "provision-agent", "set", "bootstrap", "pull"]) {
+for (const name of ["up", "restart", "down", "restore", "push", "apply", "rollback", "apply-config", "recipe", "provision-agent", "set", "bootstrap", "pull", "configure-provider"]) {
   check(`${name} declares --break-lock`, declaresBreakLock(name), true);
 }
-for (const name of ["configure-provider", "secrets"]) {
+for (const name of ["secrets"]) {
   check(`${name} does not declare --break-lock (its own parser rejects it)`, declaresBreakLock(name), false);
 }
 
@@ -119,7 +121,12 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
 // --- the message itself only ever names a flag the caller says is supported -------------------
 
 {
-  const holder: LockHolder = { operationId: "op-1", what: "apply", by: "coder@box pid 1", takenAt: new Date().toISOString() };
+  // A stale holder (heartbeatAt absent, taken long past STALE_AFTER_MS): --break-lock is
+  // actually on the table here, so it is the case worth telling supported from unsupported.
+  const holder: LockHolder = {
+    operationId: "op-1", what: "apply", by: "coder@box pid 1",
+    takenAt: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(),
+  };
   const supported = refusalMessage(holder, Date.now(), true);
   const unsupported = refusalMessage(holder, Date.now(), false);
   check("supported: advises --break-lock", supported.includes("--break-lock"), true);
@@ -129,6 +136,19 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
   // The example named above must itself actually accept the flag, or this message would repeat
   // exactly the bug it exists to fix.
   check("and that example command really does declare it", declaresBreakLock("up"), true);
+}
+
+{
+  // A live, recently-refreshed holder is a different case entirely: `recipe install` can hold
+  // this lock for a whole build, and it is never told to break its own lock over that.
+  const holder: LockHolder = {
+    operationId: "op-live-fresh", what: "recipe install", by: "coder@box pid 1",
+    takenAt: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), heartbeatAt: new Date().toISOString(),
+  };
+  const message = refusalMessage(holder);
+  check("a live heartbeat overrides an old takenAt", isStale(holder), false);
+  check("and is never advised to break its own lock", message.includes("--break-lock"), false);
+  check("it is told to wait instead", message.includes("Wait for it to finish"), true);
 }
 
 {

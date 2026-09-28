@@ -37,7 +37,7 @@ function check(name: string, actual: unknown, expected: unknown): void {
 
   const message = await refused(() => takeLock(ctx, "apply", "op-new"));
   check("but it still refuses rather than taking it", message !== "", true);
-  check("saying it may be left over from a run that died", message.includes("may be left over"), true);
+  check("saying it has not been refreshed", message.includes("not refreshed for"), true);
   check("and that the reader is the one who decides", message.includes("--break-lock"), true);
   check("the dead holder is still in place", (await readLockHolder(ctx))?.operationId, "op-dead");
 

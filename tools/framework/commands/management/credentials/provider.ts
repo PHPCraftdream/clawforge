@@ -10,12 +10,15 @@ import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both configure-provider's own parser and its openclawCommands declaration. */
 export const CONFIGURE_PROVIDER_ARGUMENTS: CommandArgument[] = [
   { name: "provider", description: "Provider id, for example openai", kind: "option", valueName: "id" },
   { name: "env", description: "Secret variable, for example OPENAI_API_KEY", kind: "option", valueName: "var" },
   { name: "force", description: "Replace an existing provider SecretRef", kind: "flag" },
+  BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
 /** Gateway flags used by headless onboarding. */
@@ -46,10 +49,11 @@ function parseArgs(args: string[]): { force: boolean; provider?: string; env?: s
 /** Configure every selected provider using a target-side SecretRef. */
 export async function configureProvider(ctx: Context, args: string[]): Promise<void> {
   await requireBootstrapped(ctx);
-  // No --break-lock support here (same choice backup.ts's own guarded() fix made): this
-  // command does not declare that flag, so nothing in args is read by guarded() either —
-  // and breakLockSupported: false keeps a refusal here from offering it anyway.
-  return guarded(ctx, "configure-provider", [], () => configureProviderLocked(ctx, args), { breakLockSupported: false });
+  // `recipe install` can hold this same instance lock for a whole build; configure-provider
+  // used to be the only lock-taking command with no way out of a genuinely stuck one, and its
+  // own refusal pointed at a different command to break it. Same shape as restore/apply now:
+  // real argv threaded through, breakLockSupported defaulting to true.
+  return guarded(ctx, "configure-provider", args, () => configureProviderLocked(ctx, args));
 }
 
 async function configureProviderLocked(ctx: Context, args: string[]): Promise<void> {

@@ -31,12 +31,20 @@ import { log, die } from "../../core/io/log.ts";
 import { withMutationGuard } from "../../security/instance-mutation-guard.ts";
 import { newOperationId } from "../../service/operations.ts";
 import { machineName, ownProcessStartedAt, removeEmptyDirectory } from "./process-identity.ts";
+import { heartbeatScheduler, startHeartbeat } from "./heartbeat.ts";
 import type { Context } from "../../core/context.ts";
 
-/** After this, a lock is described as stale — long enough that no ordinary operation is
- *  still holding it (`apply` on a slow target is minutes, not tens of them) and short
- *  enough that a crashed run does not block the instance for a working day. */
+/** Legacy fallback only: judges staleness for a holder with no `heartbeatAt` at all — a
+ *  record written by a framework version before that field existed. Anything newer is judged
+ *  by HEARTBEAT_STALE_AFTER_MS instead (isStale below), since `recipe install` legitimately
+ *  holds the lock across a whole build that can run well past this. */
 export const STALE_AFTER_MS = 30 * 60 * 1000;
+
+/** A holder with a heartbeat this old has stopped refreshing — not merely "running a long
+ *  operation", which is exactly the false positive STALE_AFTER_MS alone used to produce for a
+ *  live `recipe install`. Far above HEARTBEAT_INTERVAL_MS (heartbeat.ts) so a few missed
+ *  writes in a row are never mistaken for a dead holder. */
+export const HEARTBEAT_STALE_AFTER_MS = 10 * 60 * 1000;
 
 export interface LockHolder {
   readonly operationId: string;
@@ -61,6 +69,11 @@ export interface LockHolder {
   /** This process's own approximate start time, recorded to catch pid reuse — nothing here
    *  compares it yet (see isProvablyDeadHere's own note), but a later reader can. */
   readonly startedAt?: string;
+  /** Last time the holder proved it is still alive, rewritten on heartbeatScheduler's
+   *  interval (heartbeat.ts) — set at acquisition too, so a lock never spends its first
+   *  HEARTBEAT_INTERVAL_MS looking legacy. Absent only on a record written before this field
+   *  existed; isStale() then falls back to `takenAt` under STALE_AFTER_MS. */
+  readonly heartbeatAt?: string;
 }
 
 /** Whether `holder`'s process is provably gone: recorded on THIS machine — never a WSL/SSH
@@ -120,6 +133,13 @@ function lockResource(ctx: Context): string {
 
 function holderPath(ctx: Context): string {
   return `${lockPath(ctx)}/holder.json`;
+}
+
+/** The one place holder.json is written, initial claim and every later heartbeat refresh
+ *  alike — transport.writeFile is write-temp-then-rename on every transport, so a reader never
+ *  sees a partial record. */
+async function writeHolderRecord(ctx: Context, holder: LockHolder): Promise<void> {
+  await ctx.transport.writeFile(holderPath(ctx), `${JSON.stringify(holder, null, 2)}\n`);
 }
 
 /** A directory marker that proves this process won the lock directory, and which
@@ -264,13 +284,27 @@ async function claimTakeover(
   return { won: true, detail: "" };
 }
 
+/** Since the lock was taken — "how long has this operation been running", never affected by
+ *  the heartbeat. Used for the refusal's "started by X, N ago" line. */
 export function ageMs(holder: LockHolder, now = Date.now()): number {
   const taken = Date.parse(holder.takenAt);
   return Number.isNaN(taken) ? 0 : now - taken;
 }
 
+/** Since the holder last proved it is alive: `heartbeatAt` when the record has one, `takenAt`
+ *  for a legacy record that never did — which reads as "never refreshed", correctly. */
+export function heartbeatAgeMs(holder: LockHolder, now = Date.now()): number {
+  const at = Date.parse(holder.heartbeatAt ?? holder.takenAt);
+  return Number.isNaN(at) ? 0 : now - at;
+}
+
+/** A legacy record with no heartbeatAt is judged by how long ago it was simply taken
+ *  (STALE_AFTER_MS) — the only signal it ever recorded. Everything since then is judged by how
+ *  long its heartbeat has gone quiet (HEARTBEAT_STALE_AFTER_MS) instead, regardless of how long
+ *  ago it was taken: that is the fix for a live `recipe install` outliving STALE_AFTER_MS. */
 export function isStale(holder: LockHolder, now = Date.now()): boolean {
-  return ageMs(holder, now) > STALE_AFTER_MS;
+  if (holder.heartbeatAt === undefined) return ageMs(holder, now) > STALE_AFTER_MS;
+  return heartbeatAgeMs(holder, now) > HEARTBEAT_STALE_AFTER_MS;
 }
 
 function humanAge(ms: number): string {
@@ -278,6 +312,14 @@ function humanAge(ms: number): string {
   if (minutes < 1) return "less than a minute";
   if (minutes < 60) return `${minutes} minute(s)`;
   return `${Math.floor(minutes / 60)} hour(s)`;
+}
+
+/** Same as humanAge, but with second-level resolution below a minute — the refusal's "still
+ *  running" line names how recently the holder was heard from, and "less than a minute ago" is
+ *  a worse answer to that than "12 seconds ago" is. */
+function humanShortAge(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  return seconds < 60 ? `${seconds} second(s)` : humanAge(ms);
 }
 
 /** Every command that supports break-lock must actually accept it (checks/.../advice.check.ts
@@ -304,18 +346,22 @@ export function refusalMessage(holder: LockHolder, now = Date.now(), breakLockSu
   // of staleness — a crash seconds ago is just as dead as one thirty minutes ago, and the
   // reader should not have to wait out the clock to be told the process itself already is.
   const deadHere = isProvablyDeadHere(holder);
-  if (stale) {
-    // Described, not acted on. Whoever is reading can tell whether that run is really gone;
-    // this process cannot, short of the pid check above.
-    lines.push("That is longer than any operation should take, so it may be left over from a run that died.");
-  }
+  // Facts, not a guess at how long an operation "should" take — `recipe install` holds this
+  // lock across a whole build, which routinely runs longer than STALE_AFTER_MS on its own.
+  lines.push(
+    stale
+      ? `not refreshed for ${humanAge(heartbeatAgeMs(holder, now))}.`
+      : `refreshed ${humanShortAge(heartbeatAgeMs(holder, now))} ago — the operation is still running.`,
+  );
   if (deadHere) {
     lines.push("Its recorded process is not running on this machine anymore — not a guess, the pid itself is gone.");
   }
   lines.push(
     stale || deadHere
+      // --break-lock is only ever offered once one of the two facts above actually supports
+      // it — a live, recently-refreshed holder is never told to break its own lock.
       ? `If you are sure nothing is running, ${breakLockAdvice(breakLockSupported)}.`
-      : `Wait for it to finish, or ${breakLockAdvice(breakLockSupported)} if you are sure it is not running.`,
+      : `Wait for it to finish, or run ./clawforge operations ${holder.operationId} to see what it is doing.`,
   );
   return lines.join("\n");
 }
@@ -423,15 +469,19 @@ async function takeLockClaim(
   // took it, which is what claimTakeover now guards against.
   const generation = randomBytes(12).toString("hex");
 
+  const takenAt = new Date().toISOString();
   const holder: LockHolder = {
     operationId,
     what,
     by: `${process.env.USERNAME ?? process.env.USER ?? "unknown"}@${machineName()} pid ${process.pid}`,
-    takenAt: new Date().toISOString(),
+    takenAt,
     generation,
     host: machineName(),
     pid: process.pid,
     startedAt: ownProcessStartedAt(),
+    // Set at acquisition too, not left for the first tick: a lock must not spend its first
+    // HEARTBEAT_INTERVAL_MS looking like a pre-heartbeat legacy record.
+    heartbeatAt: takenAt,
   };
 
   // A fresh mkdir — an uncontested claim's own, or the one a won takeover just repeated —
@@ -452,7 +502,7 @@ async function takeLockClaim(
   }
 
   try {
-    await ctx.transport.writeFile(holderPath(ctx), `${JSON.stringify(holder, null, 2)}\n`);
+    await writeHolderRecord(ctx, holder);
   } catch (error) {
     // The holder never got written, so whether this directory is still ours is settled by
     // the marker alone — and by one atomic operation rather than a read followed by a
@@ -468,6 +518,11 @@ async function takeLockClaim(
     }
     throw error;
   }
+
+  // Refreshes heartbeatAt on an interval for as long as this acquisition is held — the fix
+  // for STALE_AFTER_MS alone reading a live `recipe install` as abandoned mid-build.
+  const heartbeatTimer = startHeartbeat(ctx, generation, readLockHolder, writeHolderRecord);
+
   let released = false;
   const resource = lockResource(ctx);
   let handle: HeldLock;
@@ -478,6 +533,7 @@ async function takeLockClaim(
     async release(): Promise<void> {
       if (released) return;
       released = true;
+      heartbeatScheduler.cancel(heartbeatTimer);
 
       const binding = heldScopes.get(handle);
       if (binding !== undefined) {
@@ -618,9 +674,10 @@ export function parseBreakForeignLockHost(args: string[]): string | undefined {
  *  already holding the lock, so acquiring again would refuse the run that started them.
  *
  *  `options.breakLockSupported` is the one thing a call site still states explicitly: a
- *  command whose own parser refuses --break-lock (backup, configure-provider, secrets, the
- *  internal smoke round-trip step) passes false so its refusal never offers a flag it cannot
- *  accept. */
+ *  command whose own parser refuses --break-lock (backup, secrets, the internal smoke
+ *  round-trip step) passes false so its refusal never offers a flag it cannot accept.
+ *  configure-provider used to be in that list too; it now threads --break-lock like every
+ *  other ordinary lock-taking command. */
 export async function guarded<T>(
   ctx: Context,
   what: string,

@@ -4,19 +4,7 @@ import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts"
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -211,5 +199,4 @@ for (const failure of [
 }
 
 
-process.stderr.write(failed === 0 ? "all snapshot rotation checks passed\n" : `${failed} failed\n`);
-if (failed > 0) process.exitCode = 1;
+finish("snapshot rotation");

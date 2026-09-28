@@ -26,19 +26,7 @@ import { exposeTailscale } from "#framework/commands/operate/expose/tailscale.ts
 import { watchInstall } from "#framework/commands/operate/watch/install.ts";
 import { backupInstall } from "#framework/commands/lifecycle/backup/install.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve("/tmp", "clawforge-requires-bootstrapped-check"));
 
@@ -172,5 +160,4 @@ for (const kase of [
 // checks (restore-symlink-boundary.check.ts, bootstrap-lock.check.ts, bootstrap-provider-
 // order.check.ts); nothing further is pinned here, this file only owns the refusal side.
 
-process.stderr.write(failed === 0 ? "all requires-bootstrapped checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("requires-bootstrapped");

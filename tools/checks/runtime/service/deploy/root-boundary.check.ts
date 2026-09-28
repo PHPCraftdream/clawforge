@@ -19,21 +19,10 @@ import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { ctx, probeReply, isRootProbe, markerLine } from "./fixture.ts";
 
 const execFileAsync = promisify(execFile);
+import { check, finish } from "#checks/kit/harness.ts";
 
-let failed = 0;
+
 let skipped = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
 
 function skip(name: string): void {
   skipped += 1;
@@ -440,6 +429,4 @@ function skip(name: string): void {
   }
 }
 
-const verdict = failed === 0 ? "all deploy root-boundary checks passed" : `${failed} failed`;
-process.stderr.write(skipped > 0 ? `${verdict} (${skipped} skipped)\n` : `${verdict}\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("deploy root-boundary");

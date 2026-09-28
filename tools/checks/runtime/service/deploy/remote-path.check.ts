@@ -10,20 +10,8 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { ctx, probeReply, isRootProbe } from "./fixture.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
 
 function runCtxWithRemotePath(remotePath: string, calls: { command: string; args: string[] }[]): Context {
   return {
@@ -90,5 +78,4 @@ const flatten = (calls: { command: string; args: string[] }[]) => calls.map((cal
   check("--path equal to OC_REMOTE_PATH prints no mismatch note", output.includes("differs from OC_REMOTE_PATH"), false);
 }
 
-process.stderr.write(failed === 0 ? "all deploy remote-path checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("deploy remote-path");

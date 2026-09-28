@@ -7,13 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
-let failed = 0;
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) { process.stderr.write(`  ok   ${name}\n`); return; }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
 // --- drift cleanup is a restore after the verdict --------------------------------------------
 
 {
@@ -125,5 +120,4 @@ function check(name: string, actual: unknown, expected: unknown): void {
   }
 }
 
-process.stderr.write(failed === 0 ? "all smoke drift checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("smoke drift");

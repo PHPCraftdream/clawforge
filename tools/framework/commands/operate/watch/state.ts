@@ -110,7 +110,13 @@ function parseAlertPending(value: unknown): WatchState["alertPending"] | undefin
   if (!isWatchLevel(from) || !isWatchLevel(to) || typeof since !== "string") return undefined;
   if (fromCodes !== undefined && !isStringArray(fromCodes)) return undefined;
   if (toCodes !== undefined && !isStringArray(toCodes)) return undefined;
-  return { from, to, since, fromCodes, toCodes };
+  return {
+    from,
+    to,
+    since,
+    ...(fromCodes !== undefined ? { fromCodes } : {}),
+    ...(toCodes !== undefined ? { toCodes } : {}),
+  } as WatchState["alertPending"];
 }
 
 /** Every field is optional: a diagnostics-only write (a configuration error recorded before

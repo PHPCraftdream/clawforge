@@ -21,20 +21,10 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { ctx, probeReply, isRootProbe } from "./fixture.ts";
+import { check, finish } from "#checks/kit/harness.ts";
 
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+// This file's own real deploy() calls, and its "arbitrary checkout subtree" fixture below,
+// such file in this directory claims it before doing either.
 
 const calls: { command: string; args: string[] }[] = [];
 
@@ -581,5 +571,4 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
   }
 }
 
-process.stderr.write(failed === 0 ? "all deploy checkout-policy checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("deploy checkout-policy");

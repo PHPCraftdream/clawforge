@@ -18,20 +18,7 @@ import type { WatchFinding } from "#framework/commands/operate/watch/health.ts";
 import type { ChannelsStatusResponse } from "#framework/service/inspection.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 // --- channelFindings(): only a configured, enabled account's own trouble is reported -------
 
@@ -225,5 +212,4 @@ function dfOutput(availableKb: number): ExecResult {
   check("a degraded finding never downgrades an existing down", mergeFindings(base, [finding]).level, "down");
 }
 
-process.stderr.write(failed === 0 ? "all watch health checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("watch health");

@@ -12,17 +12,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext, refused } from "#checks/runtime/convergence/instance-lock/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 const DATA_DIR = "/srv/openclaw/data";
 
@@ -183,5 +173,4 @@ function named(index: number): string {
   check("a genuine <dataDir>.replaced-<stamp> sibling passes verification", message, "");
 }
 
-process.stderr.write(failed === 0 ? "all backup prune-replaced checks passed\n" : `${failed} failed\n`);
-if (failed > 0) process.exitCode = 1;
+finish("backup prune-replaced");

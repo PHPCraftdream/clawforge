@@ -9,17 +9,7 @@ import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts"
 import { monorepoRoot } from "#framework/core/env.ts";
 import { resolve } from "node:path";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 const NAME = deploymentName();
@@ -97,5 +87,4 @@ function emptyContext(): Context {
   check("no replaced copies reports an empty list", parsed.replacedCopies, []);
 }
 
-process.stderr.write(failed === 0 ? "all backup list checks passed\n" : `${failed} failed\n`);
-if (failed > 0) process.exitCode = 1;
+finish("backup list");

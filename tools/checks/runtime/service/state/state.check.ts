@@ -14,19 +14,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { pullScenario, type PullFailure } from "./pull-harness.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function modelMutationGuard(ctx: Context): void {
   const exec = ctx.transport.exec.bind(ctx.transport);
@@ -646,5 +634,4 @@ for (const fail of ["write", "chown", "mv"] as SecretFailure[]) {
   check("the refusal publishes nothing, not even a rename", scenario.events.some((event) => event.startsWith("mv:")), false);
 }
 
-process.stderr.write(failed === 0 ? "all state checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("state");

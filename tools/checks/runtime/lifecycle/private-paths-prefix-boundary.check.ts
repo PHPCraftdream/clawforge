@@ -27,19 +27,7 @@ import { deploymentDir, useDeployment } from "#framework/runtime/deployment.ts";
 import { LocalTransport, spawnLocal, WslTransport, type Transport } from "#framework/runtime/transport/transport.ts";
 import { archiveRoot, createArchive, listArchive } from "#framework/service/archive/index.ts";
 import { clearRecipesDir, installedRecipePrivatePaths, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
@@ -316,9 +304,4 @@ try {
   if (previousDeployment !== undefined) useDeployment(previousDeployment);
 }
 
-process.stderr.write(
-  failed === 0
-    ? "all private-paths-prefix-boundary checks passed\n"
-    : `${failed} private-paths-prefix-boundary check(s) failed\n`,
-);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("private-paths-prefix-boundary");

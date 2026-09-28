@@ -25,19 +25,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport } from "#framework/runtime/transport/transport.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** A real POSIX filesystem with real symlinks and real GNU tar: this machine off Windows,
  *  a WSL distribution on it. Where neither exists the group is skipped, loudly. */
@@ -397,7 +385,4 @@ if (transport === undefined) {
   }
 }
 
-process.stderr.write(
-  failed === 0 ? "all restore symlink-boundary checks passed\n" : `${failed} restore symlink-boundary check(s) failed\n`,
-);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("restore symlink-boundary");

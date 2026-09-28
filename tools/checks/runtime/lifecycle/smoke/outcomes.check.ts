@@ -4,18 +4,7 @@ import { checks, report, runChecks } from "#framework/commands/lifecycle/smoke/i
 import type { Check, SmokeResult } from "#framework/commands/lifecycle/smoke/index.ts";
 import { CouldNotCheck, NotChecked } from "#framework/commands/check-outcome.ts";
 import type { Context } from "#framework/core/context.ts";
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 /** Captures everything report() prints, without withOutputSink(): that helper makes
  *  isCaptured() true and reroutes log() into the sink, so patching the raw writer keeps
@@ -197,5 +186,4 @@ check("could-not-check is not a species of not-checked — the run gate depends 
   check("without inventing a provider cause that does not apply", unreachableConfigured.results[0].detail?.includes("configure-provider"), false);
 }
 
-process.stderr.write(failed === 0 ? "all smoke outcome checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("smoke outcome");

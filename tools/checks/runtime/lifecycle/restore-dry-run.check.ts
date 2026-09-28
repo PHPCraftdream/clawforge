@@ -11,17 +11,7 @@ import { UserError } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { resolve } from "node:path";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -162,5 +152,4 @@ const NO_IDENTITY_ENTRIES = ["data/", "data/config/", "data/config/openclaw.json
   check("--dry-run --force does not throw", threw, false);
 }
 
-process.stderr.write(failed === 0 ? "all restore --dry-run checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("restore --dry-run");

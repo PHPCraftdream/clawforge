@@ -19,19 +19,7 @@ import { LocalTransport, type ExecResult } from "#framework/runtime/transport/tr
 import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (actual === expected) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefined> {
   try { await run(); } catch (error) { return (error as Error).message; }
@@ -643,5 +631,4 @@ function deniedContext(
   }
 }
 
-process.stderr.write(failed === 0 ? "all restore checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("restore");

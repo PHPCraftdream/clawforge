@@ -11,20 +11,7 @@
 
 import { WATCH_HEARTBEAT_URL_ENV, parseHeartbeatUrl, postHeartbeat, watchHeartbeatUrlRaw } from "#framework/commands/operate/watch/webhook.ts";
 import type { Context } from "#framework/core/context.ts";
-
-let failed = 0;
-
-function check(name: string, actual: unknown, expected: unknown): void {
-  const same = JSON.stringify(actual) === JSON.stringify(expected);
-  if (same) {
-    process.stderr.write(`  ok   ${name}\n`);
-    return;
-  }
-  failed += 1;
-  process.stderr.write(
-    `  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`,
-  );
-}
+import { check, finish } from "#checks/kit/harness.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -123,5 +110,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-process.stderr.write(failed === 0 ? "all watch heartbeat checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("watch heartbeat");

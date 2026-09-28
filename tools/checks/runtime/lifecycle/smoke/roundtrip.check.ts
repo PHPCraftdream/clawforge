@@ -14,13 +14,8 @@ import { parseBackupArchive } from "#framework/service/archive/index.ts";
 import { recordPrivateWrite } from "#framework/security/privacy/private-paths-ledger.ts";
 import { installedRecipePrivatePaths } from "#framework/service/recipe.ts";
 import { createHash } from "node:crypto";
+import { check, finish } from "#checks/kit/harness.ts";
 
-let failed = 0;
-function check(name: string, actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) === JSON.stringify(expected)) { process.stderr.write(`  ok   ${name}\n`); return; }
-  failed += 1;
-  process.stderr.write(`  FAIL ${name}\n    expected ${JSON.stringify(expected)}\n    got      ${JSON.stringify(actual)}\n`);
-}
 // --- full backup restored into an isolated root, preserving live state -----------------------
 // The modeled tar snapshots files at archive time and replays those bytes at extraction.
 
@@ -469,5 +464,4 @@ function check(name: string, actual: unknown, expected: unknown): void {
   }, false);
 }
 
-process.stderr.write(failed === 0 ? "all smoke round-trip checks passed\n" : `${failed} failed\n`);
-process.exitCode = failed === 0 ? 0 : 1;
+finish("smoke round-trip");

@@ -162,6 +162,217 @@ function replyError(id: number | string | undefined, code: number, message: stri
   send({ jsonrpc: "2.0", id, error: { code, message: maskSecrets(message) } });
 }
 
+function handleInitialize(id: number | string | undefined, app: AppDefinition): void {
+  reply(id, {
+    protocolVersion: PROTOCOL_VERSION,
+    capabilities: { tools: { listChanged: false } },
+    serverInfo: { name: `${app.name}-control`, version: "1" },
+  });
+}
+
+function handleToolsList(id: number | string | undefined, tools: [string, AppCommand][], gateTools: GateCommand[]): void {
+  reply(id, {
+    tools: [
+      ...tools.map(([name, command]) => ({
+        name,
+        description: toolDescription(name, command),
+        inputSchema: inputSchema(command),
+        // Declared from the command's own metadata alone — a structured tool
+        // answers every action in the envelope, so one honest schema covers all of
+        // them and no action name is consulted here.
+        ...(command.structured === true ? { outputSchema: STRUCTURED_OUTPUT_SCHEMA } : {}),
+      })),
+      ...gateTools.map((command) => ({
+        name: command.name,
+        description: toolDescription(command.name, command),
+        inputSchema: inputSchema(command),
+      })),
+      {
+        name: "help",
+        description: HELP_TOOL.summary,
+        inputSchema: inputSchema(HELP_TOOL),
+      },
+    ],
+  });
+}
+
+/** The `help` tool call: not an AppCommand or a GateCommand, so it never reaches the
+ *  `tools`/`gateTools` lookup in handleToolsCall. */
+async function handleHelpTool(
+  id: number | string | undefined,
+  args: Record<string, unknown>,
+  app: AppDefinition,
+  gateCommands: GateCommand[],
+  gateHelp: string[],
+): Promise<void> {
+  const problems = validate(HELP_TOOL, args);
+  if (problems.length > 0) {
+    reply(id, {
+      isError: true,
+      content: [{ type: "text", text: maskSecrets(`help: ${problems.join("; ")}`) }],
+    });
+    return;
+  }
+  const target = typeof args.command === "string" && args.command !== "" ? args.command : undefined;
+  const chunks: string[] = [];
+  await withOutputSink((chunk) => { chunks.push(chunk); }, async () => {
+    renderHelp(target, app, gateCommands, gateHelp);
+  });
+  const output = chunks.join("").trim();
+  reply(id, {
+    content: [{ type: "text", text: output === "" ? "(no output)" : maskSecrets(output) }],
+  });
+}
+
+/** A tool name not found among the app's own commands: the gate's own list, or -32602. */
+async function handleGateToolCall(
+  id: number | string | undefined,
+  name: string,
+  args: Record<string, unknown>,
+  gateTools: GateCommand[],
+): Promise<void> {
+  const gateCommand = gateTools.find((command) => command.name === name);
+  if (gateCommand === undefined) {
+    replyError(id, -32602, `unknown tool: ${name}`);
+    return;
+  }
+  const problems = validate(gateCommand, args);
+  if (problems.length > 0) {
+    reply(id, {
+      isError: true,
+      content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
+    });
+    return;
+  }
+  const { output, failure } = await captureGateRun(gateCommand, toArgv(gateCommand, args));
+  // The mask follows the answer, not the exit status: a gate command's healthy
+  // output gets the same treatment as its failure.
+  reply(id, {
+    ...(failure === undefined ? {} : { isError: true }),
+    content: [{
+      type: "text",
+      text: maskSecrets(failure === undefined
+        ? (output === "" ? "(no output)" : output)
+        : (output === "" ? failure : `${output}\n\n${failure}`)),
+    }],
+  });
+}
+
+async function handleAppToolCall(
+  id: number | string | undefined,
+  app: AppDefinition,
+  name: string,
+  command: AppCommand,
+  args: Record<string, unknown>,
+): Promise<void> {
+  const problems = validate(command, args);
+  if (problems.length > 0) {
+    reply(id, {
+      isError: true,
+      content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
+    });
+    return;
+  }
+
+  const argv = toArgv(command, args);
+  const readOnly = command.readOnly === true || command.readOnlyWhen?.(argv) === true;
+  const requiresConfirmation = command.requiresConfirmationWhen?.(argv) ?? !readOnly;
+  if (command.destructive === true && requiresConfirmation && args.confirm !== true) {
+    reply(id, {
+      isError: true,
+      content: [{ type: "text", text: maskSecrets(`${name} replaces or destroys state — pass confirm: true`) }],
+    });
+    return;
+  }
+
+  try {
+    const { output, machineOutput, failure } = await captureRun(app, command, argv);
+    const effectiveCommand = { ...command, readOnly };
+    // Built from the output alone, never from the output plus the failure text: a
+    // command that reports findings and then fails on them — doctor is the one that
+    // does — still emitted a valid document, and that is what the caller needs most
+    // in exactly that case. A structured command wraps EVERY action's output in the
+    // envelope it declared — text included — so the declared schema is true of each
+    // response rather than of the actions someone remembered to list.
+    const structured = command.structured === true
+      ? toolEnvelope(effectiveCommand, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv)
+      : undefined;
+    // Redaction is not an error-path courtesy: a
+    // successful diagnostic prints the same logs, hook output and machine JSON a
+    // failure would have, so registered values are masked here too — in the text and
+    // in every key and value of the envelope. The one exception is declared on the
+    // command (mcp-creds): its success is a deliberate reveal, and masking it would
+    // answer the call with nothing. A failure keeps the mask even there.
+    const deliberate = command.exportsSecrets === true;
+    const responseStructured = structured === undefined || (deliberate && failure === undefined)
+      ? structured
+      : maskStructuredResult(structured);
+
+    if (failure === undefined) {
+      reply(id, {
+        content: [{
+          type: "text",
+          text: output === "" ? "(no output)" : (deliberate ? output : maskSecrets(output)),
+        }],
+        ...(responseStructured === undefined ? {} : { structuredContent: responseStructured }),
+      });
+      return;
+    }
+
+    // The command's own output first, then why it stopped — the order a console shows
+    // them in, and the order that reads as an explanation rather than a bare verdict.
+    const failureOutput = structured === undefined ? output : maskStructuredOutput(output, machineOutput, structured);
+    reply(id, {
+      isError: true,
+      content: [{
+        type: "text",
+        text: maskSecrets(failureOutput === "" ? failure : `${failureOutput}\n\n${failure}`),
+      }],
+      ...(responseStructured === undefined ? {} : { structuredContent: responseStructured }),
+    });
+  } catch (error) {
+    // Left for what captureRun cannot catch: a failure while building the sink itself.
+    const message = maskSecrets(error instanceof UserError || error instanceof Error
+      ? error.message
+      : String(error));
+    reply(id, { isError: true, content: [{ type: "text", text: message }] });
+  }
+}
+
+async function handleToolsCall(
+  request: JsonRpcRequest,
+  app: AppDefinition,
+  tools: [string, AppCommand][],
+  gateTools: GateCommand[],
+  gateCommands: GateCommand[],
+  gateHelp: string[],
+): Promise<void> {
+  const params = request.params ?? {};
+  // Never String(params.name ?? "") — an object whose toString is not callable (e.g.
+  // {"toString": null}) makes String() throw ("Cannot convert object to primitive
+  // value"), and nothing here catches it: the whole process would exit, answering
+  // neither this request nor any queued after it. Anything not already a string is
+  // simply not a valid tool name, reported the same way as any other unknown one.
+  const name = typeof params.name === "string" ? params.name : "";
+  const args = (params.arguments ?? {}) as Record<string, unknown>;
+
+  // Not an AppCommand or a GateCommand — the dispatcher's own alias (see entry/cli.ts)
+  // — so it is handled here rather than through the `tools`/`gateTools` lookup below.
+  if (name === "help") {
+    await handleHelpTool(request.id, args, app, gateCommands, gateHelp);
+    return;
+  }
+
+  const entry = tools.find(([toolName]) => toolName === name);
+  if (entry === undefined) {
+    await handleGateToolCall(request.id, name, args, gateTools);
+    return;
+  }
+
+  const [, command] = entry;
+  await handleAppToolCall(request.id, app, name, command, args);
+}
+
 export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] = [], gateHelp: string[] = []): Promise<void> {
   const tools = mcpCommands(app);
   // Presented as one list: a client is offered what `./clawforge` can do, not a map of which layer
@@ -200,11 +411,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
 
     switch (request.method) {
       case "initialize":
-        reply(request.id, {
-          protocolVersion: PROTOCOL_VERSION,
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: `${app.name}-control`, version: "1" },
-        });
+        handleInitialize(request.id, app);
         break;
 
       case "notifications/initialized":
@@ -212,171 +419,12 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
         break;
 
       case "tools/list":
-        reply(request.id, {
-          tools: [
-            ...tools.map(([name, command]) => ({
-              name,
-              description: toolDescription(name, command),
-              inputSchema: inputSchema(command),
-              // Declared from the command's own metadata alone — a structured tool
-              // answers every action in the envelope, so one honest schema covers all of
-              // them and no action name is consulted here.
-              ...(command.structured === true ? { outputSchema: STRUCTURED_OUTPUT_SCHEMA } : {}),
-            })),
-            ...gateTools.map((command) => ({
-              name: command.name,
-              description: toolDescription(command.name, command),
-              inputSchema: inputSchema(command),
-            })),
-            {
-              name: "help",
-              description: HELP_TOOL.summary,
-              inputSchema: inputSchema(HELP_TOOL),
-            },
-          ],
-        });
+        handleToolsList(request.id, tools, gateTools);
         break;
 
-      case "tools/call": {
-        const params = request.params ?? {};
-        // Never String(params.name ?? "") — an object whose toString is not callable (e.g.
-        // {"toString": null}) makes String() throw ("Cannot convert object to primitive
-        // value"), and nothing here catches it: the whole process would exit, answering
-        // neither this request nor any queued after it. Anything not already a string is
-        // simply not a valid tool name, reported the same way as any other unknown one.
-        const name = typeof params.name === "string" ? params.name : "";
-        const args = (params.arguments ?? {}) as Record<string, unknown>;
-
-        // Not an AppCommand or a GateCommand — the dispatcher's own alias (see entry/cli.ts)
-        // — so it is handled here rather than through the `tools`/`gateTools` lookup below.
-        if (name === "help") {
-          const problems = validate(HELP_TOOL, args);
-          if (problems.length > 0) {
-            reply(request.id, {
-              isError: true,
-              content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
-            });
-            break;
-          }
-          const target = typeof args.command === "string" && args.command !== "" ? args.command : undefined;
-          const chunks: string[] = [];
-          await withOutputSink((chunk) => { chunks.push(chunk); }, async () => {
-            renderHelp(target, app, gateCommands, gateHelp);
-          });
-          const output = chunks.join("").trim();
-          reply(request.id, {
-            content: [{ type: "text", text: output === "" ? "(no output)" : maskSecrets(output) }],
-          });
-          break;
-        }
-
-        const entry = tools.find(([toolName]) => toolName === name);
-
-        if (entry === undefined) {
-          const gateCommand = gateTools.find((command) => command.name === name);
-          if (gateCommand !== undefined) {
-            const problems = validate(gateCommand, args);
-            if (problems.length > 0) {
-              reply(request.id, {
-                isError: true,
-                content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
-              });
-              break;
-            }
-            const { output, failure } = await captureGateRun(gateCommand, toArgv(gateCommand, args));
-            // The mask follows the answer, not the exit status: a gate command's healthy
-            // output gets the same treatment as its failure.
-            reply(request.id, {
-              ...(failure === undefined ? {} : { isError: true }),
-              content: [{
-                type: "text",
-                text: maskSecrets(failure === undefined
-                  ? (output === "" ? "(no output)" : output)
-                  : (output === "" ? failure : `${output}\n\n${failure}`)),
-              }],
-            });
-            break;
-          }
-          replyError(request.id, -32602, `unknown tool: ${name}`);
-          break;
-        }
-
-        const [, command] = entry;
-
-        const problems = validate(command, args);
-        if (problems.length > 0) {
-          reply(request.id, {
-            isError: true,
-            content: [{ type: "text", text: maskSecrets(`${name}: ${problems.join("; ")}`) }],
-          });
-          break;
-        }
-
-        const argv = toArgv(command, args);
-        const readOnly = command.readOnly === true || command.readOnlyWhen?.(argv) === true;
-        const requiresConfirmation = command.requiresConfirmationWhen?.(argv) ?? !readOnly;
-        if (command.destructive === true && requiresConfirmation && args.confirm !== true) {
-          reply(request.id, {
-            isError: true,
-            content: [{ type: "text", text: maskSecrets(`${name} replaces or destroys state — pass confirm: true`) }],
-          });
-          break;
-        }
-
-        try {
-          const { output, machineOutput, failure } = await captureRun(app, command, argv);
-          const effectiveCommand = { ...command, readOnly };
-          // Built from the output alone, never from the output plus the failure text: a
-          // command that reports findings and then fails on them — doctor is the one that
-          // does — still emitted a valid document, and that is what the caller needs most
-          // in exactly that case. A structured command wraps EVERY action's output in the
-          // envelope it declared — text included — so the declared schema is true of each
-          // response rather than of the actions someone remembered to list.
-          const structured = command.structured === true
-            ? toolEnvelope(effectiveCommand, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv)
-            : undefined;
-          // Redaction is not an error-path courtesy: a
-          // successful diagnostic prints the same logs, hook output and machine JSON a
-          // failure would have, so registered values are masked here too — in the text and
-          // in every key and value of the envelope. The one exception is declared on the
-          // command (mcp-creds): its success is a deliberate reveal, and masking it would
-          // answer the call with nothing. A failure keeps the mask even there.
-          const deliberate = command.exportsSecrets === true;
-          const responseStructured = structured === undefined || (deliberate && failure === undefined)
-            ? structured
-            : maskStructuredResult(structured);
-
-          if (failure === undefined) {
-            reply(request.id, {
-              content: [{
-                type: "text",
-                text: output === "" ? "(no output)" : (deliberate ? output : maskSecrets(output)),
-              }],
-              ...(responseStructured === undefined ? {} : { structuredContent: responseStructured }),
-            });
-            break;
-          }
-
-          // The command's own output first, then why it stopped — the order a console shows
-          // them in, and the order that reads as an explanation rather than a bare verdict.
-          const failureOutput = structured === undefined ? output : maskStructuredOutput(output, machineOutput, structured);
-          reply(request.id, {
-            isError: true,
-            content: [{
-              type: "text",
-              text: maskSecrets(failureOutput === "" ? failure : `${failureOutput}\n\n${failure}`),
-            }],
-            ...(responseStructured === undefined ? {} : { structuredContent: responseStructured }),
-          });
-        } catch (error) {
-          // Left for what captureRun cannot catch: a failure while building the sink itself.
-          const message = maskSecrets(error instanceof UserError || error instanceof Error
-            ? error.message
-            : String(error));
-          reply(request.id, { isError: true, content: [{ type: "text", text: message }] });
-        }
+      case "tools/call":
+        await handleToolsCall(request, app, tools, gateTools, gateCommands, gateHelp);
         break;
-      }
 
       default:
         replyError(request.id, -32601, `method not found: ${request.method}`);

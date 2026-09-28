@@ -303,6 +303,90 @@ async function dumpToStore(ctx: Context, storeName: string, force: boolean): Pro
   }
 }
 
+/** --dump: read-only against the target and the running container, and the store file it
+ *  writes locally is the same one --init-store writes without taking the instance lock
+ *  either — nothing here mutates the instance, so there is nothing for the lock to
+ *  serialize. */
+async function runDumpAction(ctx: Context, store: string, force: boolean): Promise<void> {
+  await dumpToStore(ctx, store, force);
+}
+
+/** --apply: writes config/.env on the target — the same class of mutation apply/restore/
+ *  rollback guard against each other for, so it takes the same lock. No --break-lock
+ *  support (its own parser above never declares it): breakLockSupported: false keeps a
+ *  refusal from offering a flag it cannot accept. Only --break-foreign-lock is forwarded. */
+async function runApplyAction(ctx: Context, store: string, breakForeignLockHost: string | undefined): Promise<void> {
+  await requireBootstrapped(ctx);
+  const guardArgs = breakForeignLockHost === undefined ? [] : ["--break-foreign-lock", breakForeignLockHost];
+  await guarded(ctx, "secrets", guardArgs, () => applyStore(ctx, store), { breakLockSupported: false });
+}
+
+/** The default read-only report: every declared secret's presence, or the JSON mirror of
+ *  the same. */
+async function runStatusReport(ctx: Context, jsonOnly: boolean): Promise<void> {
+  const entries = await status(ctx);
+  const emitJson = jsonOnly || isCaptured();
+
+  if (entries.length === 0) {
+    if (emitJson) {
+      emit(`${JSON.stringify({ secrets: [], missing: [] }, null, 2)}\n`);
+      return;
+    }
+    info("no configuration on the target yet — run ./clawforge bootstrap first");
+    return;
+  }
+
+  if (emitJson) {
+    // Names/state/where-found only — SecretStatus never carries a value.
+    const absent = missing(entries);
+    // Only asked when it decides something (the same condition the text path's own restart-
+    // vs-up hint is gated on below) — a fact, not the sentence built from it, so a caller
+    // does not have to string-match "then ./clawforge restart" to act on it.
+    const running = absent.length > 0 ? await ctx.runtime.isRunning() : null;
+    emit(
+      `${JSON.stringify(
+        {
+          secrets: entries.map((entry) => ({
+            name: entry.name,
+            location: entry.location,
+            usedBy: entry.usedBy,
+            required: entry.required,
+            present: entry.present,
+          })),
+          missing: absent.map((entry) => entry.name),
+          running,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    if (absent.length > 0) throw new Error(`missing: ${absent.map((entry) => entry.name).join(", ")}`);
+    return;
+  }
+
+  log("required secrets");
+  for (const entry of entries) {
+    const mark = entry.present ? "ok     " : entry.required ? "MISSING" : "optional";
+    info(`${mark} ${entry.name.padEnd(24)} ${entry.location.padEnd(11)} ${entry.usedBy}`);
+  }
+
+  const absent = missing(entries);
+  if (absent.length > 0) {
+    warn(`${absent.length} secret(s) missing — the gateway will refuse to start`);
+    info("repo-env   → add to .env next to the repository");
+    // The same contract as --apply's hint: which command applies the change depends on
+    // whether an instance is there to restart.
+    info(
+      `target-env → add to <data>/config/.env on the target, then ${
+        (await ctx.runtime.isRunning()) ? "./clawforge restart" : "./clawforge up"
+      }`,
+    );
+    throw new Error(`missing: ${absent.map((entry) => entry.name).join(", ")}`);
+  }
+
+  log("all required secrets are present");
+}
+
 export async function secrets(ctx: Context, args: string[]): Promise<void> {
   const parsed = parseDeclaredArgs(SECRETS_ARGUMENTS, args);
   const writeTemplate = parsed.template === true;
@@ -365,21 +449,12 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   }
 
   if (dump) {
-    // Read-only against the target and the running container, and the store file it writes
-    // locally is the same one --init-store writes without taking the instance lock either —
-    // nothing here mutates the instance, so there is nothing for the lock to serialize.
-    await dumpToStore(ctx, store, force);
+    await runDumpAction(ctx, store, force);
     return;
   }
 
   if (apply) {
-    // Writes config/.env on the target — the same class of mutation apply/restore/rollback
-    // guard against each other for, so it takes the same lock. No --break-lock support
-    // (its own parser above never declares it): breakLockSupported: false keeps a refusal
-    // from offering a flag it cannot accept. Only --break-foreign-lock is forwarded.
-    await requireBootstrapped(ctx);
-    const guardArgs = breakForeignLockHost === undefined ? [] : ["--break-foreign-lock", breakForeignLockHost];
-    await guarded(ctx, "secrets", guardArgs, () => applyStore(ctx, store), { breakLockSupported: false });
+    await runApplyAction(ctx, store, breakForeignLockHost);
     return;
   }
 
@@ -395,67 +470,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
-  const entries = await status(ctx);
-  const emitJson = jsonOnly || isCaptured();
-
-  if (entries.length === 0) {
-    if (emitJson) {
-      emit(`${JSON.stringify({ secrets: [], missing: [] }, null, 2)}\n`);
-      return;
-    }
-    info("no configuration on the target yet — run ./clawforge bootstrap first");
-    return;
-  }
-
-  if (emitJson) {
-    // Names/state/where-found only — SecretStatus never carries a value.
-    const absent = missing(entries);
-    // Only asked when it decides something (the same condition the text path's own restart-
-    // vs-up hint is gated on below) — a fact, not the sentence built from it, so a caller
-    // does not have to string-match "then ./clawforge restart" to act on it.
-    const running = absent.length > 0 ? await ctx.runtime.isRunning() : null;
-    emit(
-      `${JSON.stringify(
-        {
-          secrets: entries.map((entry) => ({
-            name: entry.name,
-            location: entry.location,
-            usedBy: entry.usedBy,
-            required: entry.required,
-            present: entry.present,
-          })),
-          missing: absent.map((entry) => entry.name),
-          running,
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    if (absent.length > 0) throw new Error(`missing: ${absent.map((entry) => entry.name).join(", ")}`);
-    return;
-  }
-
-  log("required secrets");
-  for (const entry of entries) {
-    const mark = entry.present ? "ok     " : entry.required ? "MISSING" : "optional";
-    info(`${mark} ${entry.name.padEnd(24)} ${entry.location.padEnd(11)} ${entry.usedBy}`);
-  }
-
-  const absent = missing(entries);
-  if (absent.length > 0) {
-    warn(`${absent.length} secret(s) missing — the gateway will refuse to start`);
-    info("repo-env   → add to .env next to the repository");
-    // The same contract as --apply's hint: which command applies the change depends on
-    // whether an instance is there to restart.
-    info(
-      `target-env → add to <data>/config/.env on the target, then ${
-        (await ctx.runtime.isRunning()) ? "./clawforge restart" : "./clawforge up"
-      }`,
-    );
-    throw new Error(`missing: ${absent.map((entry) => entry.name).join(", ")}`);
-  }
-
-  log("all required secrets are present");
+  return runStatusReport(ctx, jsonOnly);
 }
 
 /** Thrown by preflightSecrets specifically for missing secrets — the one case callers like

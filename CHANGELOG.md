@@ -29,6 +29,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   `restore` would pick by default. `backup prune-replaced [--apply] [--keep <n>]`: deletes
   those `.replaced-*` copies, which otherwise accumulate forever — previews by default,
   takes the instance lock and refuses anything that is not exactly one of those siblings.
+* `restore --dry-run`: runs the same archive selection and validation as a real restore,
+  takes no lock, and reports the archive (name, size, date), whether it carries identity,
+  the `<data>.replaced-<stamp>` it would move the current data to, and the ordered steps a
+  real restore would run — nothing is stopped, moved, written or extracted; the same refusal
+  a real restore gives when the archive is missing or fails validation.
 * `list`: one line per deployment under `apps/`, across the whole checkout.
 * `logs --since`/`--grep`: bounded reads and follows filtered by time and by pattern.
 * Typo-aware command dispatch (did-you-mean instead of the full help), `--app` recognised

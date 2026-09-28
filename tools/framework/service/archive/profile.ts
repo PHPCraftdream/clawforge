@@ -78,6 +78,17 @@ export function parseReplacedCopyName(baseName: string, dataDirName: string): { 
   return REPLACED_COPY_STAMP.test(match[1]) ? { stamp: match[1] } : undefined;
 }
 
+/** Whether an archive's listing carries `config/identity` under its root — what
+ *  --fresh-identity drops and a share-profile archive already excludes. Used by restore's
+ *  --dry-run plan; never unpacks anything to answer it. */
+export function archiveIncludesIdentity(entries: readonly string[], root: string): boolean {
+  const marker = `${root}/config/identity`;
+  return entries.some((entry) => {
+    const path = entry.replace(/^\.\//, "");
+    return path === marker || path.startsWith(`${marker}/`);
+  });
+}
+
 /** Parses the exact snapshot name produced by `pull`. */
 export function snapshotDeploymentNames(deployment: string): string[] {
   return deployment === "openclaw" ? [deployment, "open_claw"] : [deployment];

@@ -36,7 +36,7 @@ import { randomBytes } from "node:crypto";
 import { access, chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
-import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
+import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";

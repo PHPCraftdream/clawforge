@@ -5,7 +5,7 @@ import { resolve, join } from "node:path";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { archiveCarriesContent, createArchive, listArchive } from "#framework/service/archive/index.ts";
-import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
+import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { rotate, createBackup } from "#framework/commands/lifecycle/backup/index.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";

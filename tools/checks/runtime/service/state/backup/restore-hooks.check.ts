@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
-import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
+import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { createContext } from "#framework/core/context.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";

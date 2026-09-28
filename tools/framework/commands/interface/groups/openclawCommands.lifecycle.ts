@@ -6,7 +6,7 @@ import type { AppCommand } from "#src/core/app.ts";
 import { up, down, logs, restart, upgrade, UPGRADE_ARGUMENTS, LOCK_ARGUMENTS, LOGS_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
 import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap.ts";
 import { backup, BACKUP_ALL_ARGUMENTS, backupActionIsReadOnly } from "#src/commands/lifecycle/backup/index.ts";
-import { restore, RESTORE_ARGUMENTS } from "#src/commands/lifecycle/restore.ts";
+import { restore, RESTORE_ARGUMENTS, isRestoreDryRun } from "#src/commands/lifecycle/restore/index.ts";
 import { verify, VERIFY_ARGUMENTS } from "#src/commands/lifecycle/verify.ts";
 import { pull, push, PULL_ARGUMENTS, PUSH_ARGUMENTS } from "#src/commands/lifecycle/state.ts";
 import { smoke, SMOKE_ARGUMENTS } from "#src/commands/lifecycle/smoke/index.ts";
@@ -142,6 +142,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     run: restore,
     destructive: true,
     forceOnConfirmation: true,
+    readOnlyWhen: isRestoreDryRun,
     details:
       "The archive is validated before anything is stopped or overwritten —\n" +
       "every entry is checked for absolute paths, `..` escapes and links that would " +
@@ -156,7 +157,11 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "If the application declares beforeRestore (see docs/guide/data-and-backups.md: " +
       "Extending backup and restore), it runs first — nothing is stopped or moved yet — and can decrypt or fetch " +
       "the real archive, returning the path to restore from instead. A hook that fails stops " +
-      "the restore before anything on the target is touched.",
+      "the restore before anything on the target is touched.\n" +
+      "--dry-run runs the same selection and validation, takes no lock, and reports the " +
+      "archive it picked (name, size, date), whether it carries identity, where the current " +
+      "data would move to, and the ordered steps a real restore would run — nothing is " +
+      "stopped, moved, written or extracted.",
     arguments: RESTORE_ARGUMENTS,
   },
   pull: {

@@ -89,7 +89,7 @@ export async function listBackupArchives(ctx: Context, backupDir: string): Promi
 /** Which archive a bare `./clawforge restore` (no argument) would pick — restore.ts's
  *  newestArchive() applies the same rule (first FULL profile in newest-first order) over
  *  its own `ls -1t` listing; kept as a separate, tiny reimplementation here rather than a
- *  cross-import into commands/lifecycle/restore.ts so `backup list` (service layer) never
+ *  cross-import into commands/lifecycle/restore/ so `backup list` (service layer) never
  *  depends on a command module. Both read the same directory and the same profile field, so
  *  they agree in practice; a change to the rule itself has to be made in both places. */
 export function defaultRestoreArchive(archives: readonly BackupArchiveInfo[]): BackupArchiveInfo | undefined {

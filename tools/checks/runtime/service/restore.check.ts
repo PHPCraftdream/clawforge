@@ -8,7 +8,7 @@
 import { resolve } from "node:path";
 import { access, mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { restoreArchive, newestArchive } from "#framework/commands/lifecycle/restore.ts";
+import { restoreArchive, newestArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { NATIVE_MANIFEST_NAME } from "#framework/commands/lifecycle/backup/index.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";

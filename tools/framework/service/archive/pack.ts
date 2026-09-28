@@ -250,3 +250,18 @@ export async function fileSize(ctx: Context, path: string): Promise<string> {
   const result = await ctx.transport.exec(head, rest, { allowFailure: true });
   return result.stdout.split("\t")[0]?.trim() ?? "?";
 }
+
+/** Size in bytes and last-modified time of one file — undefined fields when `stat` fails
+ *  rather than guessed at. Used by restore's --dry-run plan to describe the archive. */
+export async function fileStat(ctx: Context, path: string): Promise<{ sizeBytes: number | undefined; modifiedAt: string | undefined }> {
+  const prefix = await sudoFor(ctx, path);
+  const [head, ...rest] = [...prefix, "stat", "-c", "%s %Y", path];
+  const result = await ctx.transport.exec(head, rest, { allowFailure: true });
+  const [sizeField, epochField] = result.stdout.trim().split(" ");
+  const sizeBytes = Number(sizeField);
+  const epochSeconds = Number(epochField);
+  return {
+    sizeBytes: result.code === 0 && Number.isFinite(sizeBytes) ? sizeBytes : undefined,
+    modifiedAt: result.code === 0 && Number.isFinite(epochSeconds) ? new Date(epochSeconds * 1000).toISOString() : undefined,
+  };
+}

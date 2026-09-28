@@ -18,7 +18,7 @@
 // is ever asked to start.
 
 import { randomBytes } from "node:crypto";
-import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
+import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { inspectArchive, listArchive, listArchiveLinks } from "#framework/service/archive/index.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";

@@ -26,7 +26,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { restoreArchive } from "#framework/commands/lifecycle/restore.ts";
+import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { verifySnapshot } from "#framework/commands/lifecycle/verify.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
 import type { Context } from "#framework/core/context.ts";

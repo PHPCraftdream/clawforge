@@ -15,7 +15,7 @@ import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { requirements, template } from "#src/service/secrets.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { createBackup } from "./backup/index.ts";
-import { restoreArchive } from "./restore.ts";
+import { restoreArchive } from "./restore/index.ts";
 import { forbiddenViolations, verifySnapshot } from "./verify.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";

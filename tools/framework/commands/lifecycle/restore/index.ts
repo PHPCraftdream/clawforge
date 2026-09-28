@@ -25,8 +25,9 @@ import {
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { SshTransport } from "#src/runtime/transport/transport.ts";
 import { openclawCli } from "#src/service/openclaw-cli.ts";
-import { NATIVE_MANIFEST_NAME } from "./backup/index.ts";
-import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
+import { NATIVE_MANIFEST_NAME } from "../backup/index.ts";
+import { buildRestorePlan, printRestorePlan } from "./plan.ts";
+import { preflightSecrets, MissingSecretsError } from "../../management/secrets.ts";
 import {
   importRestoredPrivatePathsHistory,
   mutatePrivatePathsLedgerState,
@@ -37,7 +38,7 @@ import {
   removePrivatePathsLedger,
   type PrivatePathsLedgerState,
 } from "#src/security/privacy/private-paths-ledger.ts";
-import { runningRecipeStacks } from "../management/recipe/index.ts";
+import { runningRecipeStacks } from "../../management/recipe/index.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -50,7 +51,14 @@ export const RESTORE_ARGUMENTS: CommandArgument[] = [
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
   { name: "no-start", description: "Leave the service stopped afterwards", kind: "flag" },
+  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag" },
 ];
+
+/** Whether argv requests --dry-run (an option value is never mistaken for the flag) — same
+ *  shape as apply.ts's isApplyDryRun. */
+export function isRestoreDryRun(args: readonly string[]): boolean {
+  return parseDeclaredArgs(RESTORE_ARGUMENTS, args)["dry-run"] === true;
+}
 
 export interface RestoreOptions {
   force?: boolean;
@@ -293,18 +301,21 @@ async function verifyEmbeddedNativeManifest(ctx: Context, archive: string, manif
 }
 
 /** Prepared inputs for the restore transaction: hook applied, archive validated
- *  structurally and against the native manifest, ancestry checked, confirmation taken. */
-interface PreparedRestore {
+ *  structurally and against the native manifest, ancestry checked. Exported: --dry-run
+ *  builds its plan from exactly this, never from a second, looser validation pass. */
+export interface PreparedRestore {
   archive: string;
   entries: string[];
   name: string;
   dataDir: string;
   parent: string;
+  nativeManifestVerified: boolean;
 }
 
-/** Validate/prepare phase: runs the beforeRestore hook, checks the archive is safe to
- *  unpack (structure, root name, embedded native manifest), and confirms with the operator.
- *  Nothing is stopped or moved yet — a die() here leaves the instance untouched. */
+/** Validate/prepare phase: runs the beforeRestore hook and checks the archive is safe to
+ *  unpack (structure, root name, embedded native manifest). Nothing is stopped or moved yet,
+ *  and no operator confirmation is asked here — a die() leaves the instance untouched, and
+ *  --dry-run stops right after this returns. */
 async function prepareRestore(ctx: Context, archive: string, options: RestoreOptions): Promise<PreparedRestore> {
   // Before anything else — nothing is validated, stopped or moved yet. A hook can decrypt
   // or fetch the real archive and hand back the path to use instead; a failure here means
@@ -349,19 +360,12 @@ async function prepareRestore(ctx: Context, archive: string, options: RestoreOpt
   }
 
   const nativeManifestEntry = `${name}/${NATIVE_MANIFEST_NAME}`;
-  if (entries.some((entry) => entry.replace(/^\.\//, "") === nativeManifestEntry)) {
-    await verifyEmbeddedNativeManifest(ctx, archive, nativeManifestEntry);
-  }
+  const nativeManifestVerified = entries.some((entry) => entry.replace(/^\.\//, "") === nativeManifestEntry);
+  if (nativeManifestVerified) await verifyEmbeddedNativeManifest(ctx, archive, nativeManifestEntry);
 
   await verifyDataDirAncestry(ctx, dataDir);
 
-  if (options.force !== true) {
-    warn(`this will replace the contents of ${dataDir}`);
-    info(`the current directory is kept as ${dataDir}.replaced-<timestamp>`);
-    if (!(await confirm("Type 'yes' to continue: "))) die("aborted");
-  }
-
-  return { archive, entries, name, dataDir, parent };
+  return { archive, entries, name, dataDir, parent, nativeManifestVerified };
 }
 
 /** State performRestore's try block accumulates, needed by rollbackRestore if it fails. */
@@ -566,8 +570,21 @@ export async function restoreArchive(
   options: RestoreOptions = {},
 ): Promise<void> {
   const prepared = await prepareRestore(ctx, archive, options);
+  if (options.force !== true) {
+    warn(`this will replace the contents of ${prepared.dataDir}`);
+    info(`the current directory is kept as ${prepared.dataDir}.replaced-<timestamp>`);
+    if (!(await confirm("Type 'yes' to continue: "))) die("aborted");
+  }
   const aside = await performRestore(ctx, prepared, options);
   await reportRestoreOutcome(ctx, prepared.archive, aside, options);
+}
+
+/** `--dry-run`: the same selection and validation a real restore runs (prepareRestore),
+ *  reported instead of acted on — performRestore() is never reached, so nothing here stops,
+ *  moves, writes or extracts anything on the target. */
+export async function restoreDryRun(ctx: Context, archive: string, options: RestoreOptions = {}): Promise<void> {
+  const prepared = await prepareRestore(ctx, archive, options);
+  printRestorePlan(await buildRestorePlan(ctx, prepared, options));
 }
 
 export async function restore(ctx: Context, args: string[]): Promise<void> {
@@ -576,6 +593,7 @@ export async function restore(ctx: Context, args: string[]): Promise<void> {
   if (parsed.force === true) options.force = true;
   if (parsed["fresh-identity"] === true) options.freshIdentity = true;
   if (parsed["no-start"] === true) options.noStart = true;
+  const dryRun = parsed["dry-run"] === true;
   let archive = parsed.archive as string | undefined;
 
   if (archive === undefined) {
@@ -600,6 +618,13 @@ export async function restore(ctx: Context, args: string[]): Promise<void> {
     const pickedName = archive.slice(archive.lastIndexOf("/") + 1);
     const pickedStamp = parseBackupArchive(pickedName, deploymentName())?.stamp;
     log(`using the newest archive: ${pickedName}${pickedStamp === undefined ? "" : ` (${formatArchiveStamp(pickedStamp)})`}`);
+  }
+
+  if (dryRun) {
+    // Read-only, same convention as apply --dry-run/plan: no instance lock taken, so this
+    // never blocks a concurrent apply/restore/push longer than the validation itself takes.
+    await restoreDryRun(ctx, archive, options);
+    return;
   }
 
   // The most destructive command here, and until now the only mutating one taking no lock:

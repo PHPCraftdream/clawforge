@@ -24,7 +24,8 @@ export const JSON_ARGUMENT: CommandArgument = { name: "json", description: "Emit
 
 export const BACKUP_LIST_ARGUMENTS: CommandArgument[] = [JSON_ARGUMENT];
 
-function humanSize(bytes: number | undefined): string {
+/** Exported for restore's --dry-run plan, which reports an archive's size the same way. */
+export function humanSize(bytes: number | undefined): string {
   if (bytes === undefined || !Number.isFinite(bytes)) return "unknown size";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;

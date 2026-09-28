@@ -18,7 +18,7 @@ import type { Context } from "#src/core/context.ts";
 import { CouldNotCheck } from "../../check-outcome.ts";
 import { createBackup } from "../backup/index.ts";
 import { pull } from "../state.ts";
-import { restoreArchive } from "../restore.ts";
+import { restoreArchive } from "../restore/index.ts";
 import { verifySnapshotQuietly } from "../verify.ts";
 import { dataDirName, dataDirParent } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";

@@ -162,18 +162,48 @@ export function toolDescription(name: string, command: Declared): string {
   return `${command.summary}${destructiveMarker(command)}\n\nFull description: call the \`help\` tool with command=${name}.`;
 }
 
+/** Hard cut for a shortened argument description; `help <command>` keeps the full text. */
+const SHORT_DESCRIPTION_LIMIT = 60;
+
+/** True when the description only restates the argument name (exact or after "the/a/an"). */
+function isTrivialDescription(name: string, description: string): boolean {
+  const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const normalizedName = normalize(name);
+  const normalizedDescription = normalize(description).replace(/^(the|a|an) /, "");
+  return normalizedDescription === normalizedName;
+}
+
+/** First sentence or clause, parentheticals dropped. `:` is not a boundary ("With x: …" would
+ *  keep the qualifier and lose what it qualifies); no early boundary → cut at a word. */
+function shortenDescription(description: string): string {
+  const stripped = description.replace(/\s*\([^()]*\)/g, "").replace(/\s{2,}/g, " ").trim();
+  // Not "e.g." / "i.e." — an abbreviation's period is not a clause boundary either.
+  const boundary = /(?<!\be\.g)(?<!\bi\.e)[.;](\s|$)/.exec(stripped);
+  const clause = boundary !== null && boundary.index >= 8
+    ? stripped.slice(0, boundary.index).trim()
+    : stripped;
+  if (clause.length <= SHORT_DESCRIPTION_LIMIT) return clause;
+  const cut = clause.slice(0, SHORT_DESCRIPTION_LIMIT);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > SHORT_DESCRIPTION_LIMIT * 0.4 ? cut.slice(0, lastSpace) : cut).trim();
+}
+
+/** The argument description in the MCP schema; `--help` and `help` keep it whole. */
+export function schemaArgumentDescription(argument: CommandArgument): string | undefined {
+  if (isTrivialDescription(argument.name, argument.description)) return undefined;
+  const short = shortenDescription(argument.description);
+  return argument.kind === "option" && argument.valueName !== undefined
+    ? `${short} (value: <${argument.valueName}>)`
+    : short;
+}
+
 /** JSON Schema for a command, derived from its declared arguments. */
 export function inputSchema(command: Declared): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
 
   for (const argument of command.arguments ?? []) {
-    // The value name (`hostId`, `n`, `artifact`…) is what --help already shows in the
-    // `--name <valueName>` label; folded into the description here too, since the schema
-    // has no separate slot for it and the property name itself stays the flag's own name.
-    const description = argument.kind === "option" && argument.valueName !== undefined
-      ? `${argument.description} (value: <${argument.valueName}>)`
-      : argument.description;
+    const description = schemaArgumentDescription(argument);
     properties[argument.name] = argument.kind === "variadic"
       ? { type: "array", items: { type: "string" }, description }
       : {

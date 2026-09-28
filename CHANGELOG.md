@@ -165,6 +165,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   tool (input: `command`, optional), which returns exactly what `./clawforge help <command>`
   prints — or the command list when called without one. A check keeps `tools/list` under a
   byte budget and every description under 400 characters.
+* `tools/list`'s `inputSchema` still carried every argument's full `--help` description —
+  100-300 characters each, most of it detail `help <command>` already gives whole. Each
+  argument description in the schema is now cut to its first sentence or clause (parenthetical
+  asides dropped, ≤60 characters), and omitted entirely when it only restated the argument's
+  own name; `help <command>` and `--help` are unaffected. `tools/list` is down from ~40 KB to
+  ~37 KB; the check's byte budget is lowered from 46 KB to 38 KB (30 KB was tried and found
+  unreachable without cutting an argument description below the point of still saying
+  anything).
 * A command's captured output was decoded per ~64 KB pipe chunk, corrupting multibyte
   characters split across a boundary into U+FFFD (logs, `config get`, large `--json`). It is
   now decoded as one continuing UTF-8 stream.

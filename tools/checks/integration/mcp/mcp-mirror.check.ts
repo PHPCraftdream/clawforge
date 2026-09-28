@@ -79,7 +79,9 @@ try {
   const response = listed.stdout
     .split("\n")
     .filter((line) => line.trim() !== "")
-    .map((line) => JSON.parse(line) as { result?: { tools?: Array<{ name: string; description?: string }> } })
+    .map((line) => JSON.parse(line) as {
+      result?: { tools?: Array<{ name: string; description?: string; inputSchema?: { properties?: Record<string, { description?: string }> } }> };
+    })
     .find((entry) => entry.result?.tools !== undefined);
   const fullTools = response?.result?.tools ?? [];
   const tools = fullTools.map((tool) => tool.name).sort();
@@ -107,17 +109,36 @@ try {
   }
 
   // tools/list's byte budget: an agent pays this in context before its first real call, every
-  // session — each description is now a one-line summary plus a pointer to `help`, not the
-  // whole `--help` text. inputSchema (argument names, descriptions, choices) is unchanged and
-  // is most of what remains, measured at ~40 KB for 43 tools; the budget leaves headroom for
-  // that to grow without silently ballooning back toward the 88 KB this replaced.
-  const TOOLS_LIST_BUDGET = 46 * 1024;
+  // session — each tool description is a one-line summary plus a pointer to `help`, not the
+  // whole `--help` text. What is left is inputSchema: argument names, choices, and now a
+  // short (~60 char) clause per description instead of its full `--help` text — schema.ts's
+  // schemaArgumentDescription cuts each at its first sentence/clause boundary, drops
+  // parenthetical asides, and omits a description that only restates the argument's own
+  // name. `help <command>` (renderHelp) and the CLI `--help` still carry every description
+  // whole; only the copy sent up front in tools/list is shortened.
+  //
+  // 30 KB (30720 bytes) was the target for this budget; it is not reachable without cutting
+  // an argument description well below the point where it still says anything a name did
+  // not already say — the ~19 KB left once every inputSchema description is empty is tool
+  // names/descriptions, outputSchema (declared once per structured command) and JSON
+  // structure, none of which this check's scope covers. 37471 bytes is what shortening
+  // reaches while keeping a real clause per argument; the budget below sits just above that,
+  // not at the 30 KB originally asked for.
+  const TOOLS_LIST_BUDGET = 38 * 1024;
   const toolsListBytes = Buffer.byteLength(JSON.stringify(response?.result ?? {}), "utf8");
   process.stderr.write(`  tools/list is ${toolsListBytes} bytes (budget ${TOOLS_LIST_BUDGET})\n`);
   check("tools/list stays under its byte budget", toolsListBytes <= TOOLS_LIST_BUDGET, true);
 
   const overLong = fullTools.filter((tool) => (tool.description ?? "").length > 400).map((tool) => tool.name);
   check("every tool description is at most 400 characters", overLong, []);
+
+  // Every argument description in the schema is a short clause, not the `--help` paragraph
+  // it was cut from — guards the shortening itself, not just the total it adds up to.
+  const overLongArguments = fullTools.flatMap((tool) =>
+    Object.entries(tool.inputSchema?.properties ?? {})
+      .filter(([, property]) => (property.description ?? "").length > 90)
+      .map(([argumentName]) => `${tool.name}.${argumentName}`));
+  check("every argument description in the schema is a short clause", overLongArguments, []);
 
   // `help` is the pointer every shrunk description gives — it has to answer for every real
   // command, not only the ones exercised elsewhere.
@@ -146,6 +167,14 @@ try {
     helpTextFor("recipe"),
     (consoleRecipeHelp.stdout + consoleRecipeHelp.stderr).trim(),
   );
+
+  // A cut argument description is not a lost one: `recipe`'s `new-name` carries its full
+  // sentence in help, and only a shortened clause in the schema an agent pays for up front.
+  const recipeTool = fullTools.find((tool) => tool.name === "recipe");
+  const newNameSchemaDescription = recipeTool?.inputSchema?.properties?.["new-name"]?.description ?? "";
+  const newNameFullDescription = "With import: import under this name instead of the source directory's own name";
+  check("the schema description was actually shortened", newNameSchemaDescription.length < newNameFullDescription.length, true);
+  check("the full argument description is still reachable through help", helpTextFor("recipe").includes(newNameFullDescription), true);
 
   const helpBareRun = await run(
     ["--app", deployment, "control-mcp"],

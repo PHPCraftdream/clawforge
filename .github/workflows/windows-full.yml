@@ -32,6 +32,11 @@ jobs:
         run: npm ci --include=dev
 
       - name: Run full checks
+        # This runner has real WSL and Docker (checked above): a check that requires either
+        # one and still cannot reach it must fail loudly, not skip — OC_CHECK_REQUIRE turns
+        # the check runner's capability skip into a failure for the capabilities named here.
+        env:
+          OC_CHECK_REQUIRE: docker,wsl
         run: npm test
 
       - name: Typecheck and lint

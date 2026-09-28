@@ -76,6 +76,14 @@ const checkArguments: CommandArgument[] = [
     kind: "option",
     valueName: "n",
   },
+  {
+    name: "require",
+    description:
+      "Comma-separated capabilities (docker, wsl, posix-sh, rsync, linux-host) whose absence must fail a " +
+      "check that needs them, instead of skipping it — merged with OC_CHECK_REQUIRE",
+    kind: "option",
+    valueName: "cap,...",
+  },
 ];
 
 const gateCommands: GateCommand[] = [
@@ -88,9 +96,13 @@ const gateCommands: GateCommand[] = [
       "instead.\n" +
       "With no filter, every check runs. One or more substrings narrow that down to checks " +
       "whose path contains at least one of them, e.g. `./clawforge check gate` or " +
-      "`npm run check -- foundation runtime`. `--list` prints the matching paths without " +
-      "running them. A filter matching nothing is refused rather than silently running " +
-      "everything.",
+      "`npm run check -- foundation runtime`. `--list` prints the matching paths (and, where " +
+      "one is declared, the host capabilities a file needs) without running them. A filter " +
+      "matching nothing is refused rather than silently running everything.\n" +
+      "A file naming a capability it cannot run without (docker, wsl, posix-sh, rsync, " +
+      "linux-host) is skipped, not failed, when this host lacks it. `--require` (or " +
+      "OC_CHECK_REQUIRE) names capabilities this host is expected to have, turning a skip " +
+      "into a failure for those.",
     arguments: checkArguments,
     run: async (args) => {
       const parsed = parseDeclaredArgs(checkArguments, args);
@@ -98,8 +110,10 @@ const gateCommands: GateCommand[] = [
       const list = parsed.list === true;
       const jobsRaw = parsed.jobs as string | undefined;
       const jobs = jobsRaw === undefined ? undefined : Number(jobsRaw);
+      const requireRaw = parsed.require as string | undefined;
+      const require = requireRaw === undefined ? undefined : requireRaw.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
       const { runChecks } = await import("./checks/kit/run.ts");
-      return runChecks({ filters, list, jobs: jobs !== undefined && jobs > 0 ? jobs : undefined });
+      return runChecks({ filters, list, jobs: jobs !== undefined && jobs > 0 ? jobs : undefined, require });
     },
   },
   {

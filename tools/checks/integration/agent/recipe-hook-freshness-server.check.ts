@@ -19,7 +19,13 @@ import { createInterface } from "node:readline";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { deepStrictEqual } from "node:assert/strict";
+import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+
+// Forces "auto" onto LocalTransport in this process and the server it spawns below (NODE_OPTIONS
+// propagates), the same as mcp-server.check.ts: the lock this file's verify call takes needs a
+// working transport, and LocalTransport's plain fs calls need neither wsl.exe nor a WSL distro.
+useLinuxHost();
 
 // Tracks pass/fail alongside the harness's own counter, only so the diagnostic dump below
 // can stay conditional on "something in this file failed" — the harness keeps no such count.
@@ -86,15 +92,14 @@ try {
   await writeFile(verifyPath, hook(1), "utf8");
 
   // A confirmed verify reaches a lock-taking command, so the data directory — and with it
-  // the instance lock's home — stays inside the scratch app. Spelled as the target sees
-  // the path, the same way mcp-server.check.ts maps a drive letter through wsl.exe.
+  // the instance lock's home — stays inside the scratch app. useLinuxHost() above resolves
+  // "auto" onto LocalTransport, which takes this host's own path as-is — no wsl.exe mount
+  // translation needed.
   const envPath = resolve(appsDir, deploymentName, ".env");
   const dataDir = resolve(appsDir, deploymentName, "data");
-  const drive = /^([A-Za-z]):[\\/](.*)$/.exec(dataDir);
-  const targetDataDir = drive === null ? dataDir : `/mnt/${drive[1].toLowerCase()}/${drive[2].replaceAll("\\", "/")}`;
   await writeFile(
     envPath,
-    (await readFile(envPath, "utf8")).replace(/^OC_DATA_DIR=.*$/m, `OC_DATA_DIR=${targetDataDir}`),
+    (await readFile(envPath, "utf8")).replace(/^OC_DATA_DIR=.*$/m, `OC_DATA_DIR=${dataDir}`),
     "utf8",
   );
 

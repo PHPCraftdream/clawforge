@@ -29,15 +29,11 @@ async function inspect(dir: string): Promise<void> {
 await inspect(resolve(monorepoRoot, "tools", "framework"));
 await inspect(resolve(monorepoRoot, "tools", "checks"));
 
-// The Windows CI job lists its checks by path; a moved check must not break it only in CI.
+// ci.yml's Windows job runs plain `npm run check` (capability probing — see
+// tools/checks/kit/capabilities/ — skips what the host lacks), not a hand-maintained list of
+// check paths: a moved or renamed check must not silently drop out of Windows CI again.
 const workflow = await readFile(resolve(monorepoRoot, ".github", "workflows", "ci.yml"), "utf8");
-const listed = [...workflow.matchAll(/^\s+(tools\/checks\/\S+\.check\.ts)\s*$/gm)].map((match) => match[1]!);
-assert.ok(listed.length > 0, "ci.yml lists no check files — the pattern above no longer matches its format");
-const missing: string[] = [];
-for (const path of listed) {
-  await readFile(resolve(monorepoRoot, path)).catch(() => missing.push(path));
-}
-assert.deepEqual(missing, [], "ci.yml names check files that do not exist (moved or deleted)");
+assert.ok(!workflow.includes("tools/checks/"), "ci.yml names a tools/checks/ path — the hand-maintained check list must not come back");
 process.stderr.write("source layout limits passed\n");
 
 // service/recipe.ts's listRecipeDirectories() is the framework's one readdir of a recipes

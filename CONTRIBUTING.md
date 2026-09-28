@@ -61,12 +61,54 @@ file cannot affect another. A fixture that stands in for the host
 its sibling check files) inherit normally. `npm run check:linux` runs the same suite, filtered
 the same way, inside a Linux container — see "Reproducing Linux CI locally" below.
 
+### Host capability labels
+
+Most checks assert everything without touching a real docker daemon, WSL distro or POSIX
+shell — a stub transport records what a real one would have been asked to run, so a file
+skipping SOME of its own assertions ("real sh not spawnable here") because a tool happens to
+be missing on THIS machine is normal, and stays a small `if (!available) skip(...)` inside an
+otherwise-meaningful file (`tools/checks/kit/harness.ts` has no opinion on this — it is a
+file-local convention).
+
+A file that cannot run AT ALL without a host capability — real docker, a real WSL distro, a
+real `sh`, `rsync`, or a Linux host — says so instead, in its header (first 2KB, same budget
+as `// check:exclusive`):
+
+```ts
+// check:requires docker
+```
+
+or several, comma-separated: `// check:requires docker, wsl`. Recognized capabilities live in
+`tools/checks/kit/capabilities/capabilities.ts`: `docker` (`docker info` succeeds), `wsl`
+(`wsl.exe -l -q` lists at least one distro), `posix-sh` (a `sh` that runs a trivial command —
+never via wsl.exe), `rsync` (a real rsync binary), `linux-host` (`process.platform ===
+"linux"`). Each is probed at most once per run, only when some selected file actually requires
+it, and a probe failure (missing tool, timeout, anything) reads as "absent" rather than
+crashing the run.
+
+The runner (`tools/checks/kit/run.ts`) never starts a file whose requirement is unmet: it
+prints `SKIP <label> — needs <cap>` and counts it separately from passed/failed files in the
+closing summary (`N check file(s) passed, M skipped (needs docker: 3, wsl: 2)`). `--list`
+shows each file's requirements too. To run only what THIS host can actually satisfy, do
+nothing special — `npm run check` already skips what it lacks. To instead demand a capability
+this host is supposed to have (CI on a runner that is meant to carry Docker, or the
+WSL+Docker self-hosted job), pass `--require docker,wsl` or set `OC_CHECK_REQUIRE=docker,wsl`:
+an unmet requirement in that set fails the run instead of skipping it.
+
+Adding a check that genuinely cannot run without one of these: add the header, not a scattered
+`if (process.platform === "win32") return` — the runner's skip line and summary count already
+say exactly what a check file printing its own "skip" line to stderr would otherwise have to
+repeat by hand, and a moved or renamed file keeps working everywhere without anyone updating a
+CI path list.
+
 ## Reproducing Linux CI locally
 
-CI runs two jobs: `ubuntu-latest` (the full check suite, typecheck/lint, build, pack:check) and
-`windows-latest` (a Windows-safe subset of the same, since this project's dev machines are
-Windows and can't run the Linux job's shell/wording assumptions natively). A change to
-transport, shell invocation, or path handling can pass on Windows and still fail on Linux — a
+CI runs two jobs: `ubuntu-latest` and `windows-latest`, both `npm run check` plus
+typecheck/lint, build, pack:check — the "host capability labels" section above is what keeps
+the Windows job green without a hand-maintained path list: a file that genuinely cannot run
+there names the capability it is missing, is skipped (not failed), and the closing summary
+says so. A change to transport, shell invocation, or path handling can still pass on Windows
+and fail on Linux — a
 dash-vs-bash wording difference or a check that assumes `wsl.exe` is absent are two real
 examples this slipped through before. Run `npm run check:linux` before pushing any such
 change; it needs Docker (Desktop on Windows/macOS, Engine on Linux) and otherwise refuses with

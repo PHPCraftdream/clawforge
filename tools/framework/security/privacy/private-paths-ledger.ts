@@ -60,7 +60,7 @@ import { access, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { Context } from "../../core/context.ts";
 import { sudoFor } from "../../runtime/datadir.ts";
-import { deploymentDir } from "../../runtime/deployment.ts";
+import { deploymentDir, selectedDeployment } from "../../runtime/deployment.ts";
 import { renameOverPrivateFile } from "./private-file.ts";
 
 /** The ledger file: <deployment>/config/private-paths.json. */
@@ -247,14 +247,9 @@ export async function removePrivatePathsLedger(file: string): Promise<void> {
  *  parsed or validated — the same two-rule shape as the declaration reader it is merged
  *  with. */
 export async function persistedPrivatePaths(): Promise<string[]> {
-  let file: string;
-  try {
-    file = privatePathsLedgerFile();
-  } catch {
-    // No deployment selected: the same answer as "no recipes configured".
-    return [];
-  }
-  const { paths } = await readLedgerState(file);
+  // No deployment selected: the same answer as "no recipes configured".
+  if (selectedDeployment() === undefined) return [];
+  const { paths } = await readLedgerState(privatePathsLedgerFile());
   return [...paths];
 }
 
@@ -263,14 +258,9 @@ export async function persistedPrivatePaths(): Promise<string[]> {
  *  "no recipes configured"); strict when a ledger exists but cannot be read, parsed or
  *  validated, exactly as the recorded-half reader above. */
 export async function privatePathsLedgerState(): Promise<PrivatePathsLedgerState> {
-  let file: string;
-  try {
-    file = privatePathsLedgerFile();
-  } catch {
-    // No deployment selected: nothing recorded, and no file to have written either.
-    return { paths: [], forgotten: [], existed: false };
-  }
-  return readLedgerState(file);
+  // No deployment selected: nothing recorded, and no file to have written either.
+  if (selectedDeployment() === undefined) return { paths: [], forgotten: [], existed: false };
+  return readLedgerState(privatePathsLedgerFile());
 }
 
 /** The target-state copy of the history: <dataDir>/config/clawforge-private-paths.json. */
@@ -385,13 +375,8 @@ async function adoptExistingTargetHistory(
  *  anywhere before the rename leaves the previous copy exactly where it was. */
 export async function publishPrivatePathsHistory(ctx: Context): Promise<void> {
   const file = privatePathsHistoryFile(ctx.settings.dataDir);
-  let localFile: string | undefined;
-  try {
-    localFile = privatePathsLedgerFile();
-  } catch {
-    // No deployment selected: publish falls back to whatever the target already carries.
-    localFile = undefined;
-  }
+  // No deployment selected: publish falls back to whatever the target already carries.
+  const localFile = selectedDeployment() === undefined ? undefined : privatePathsLedgerFile();
   const localRecorded = localFile !== undefined && (await ledgerFileExists(localFile));
   // The target copy is read ONCE, before anything decides what to do about it: adoption input,
   // the remove decision below, and the baseline the write is skipped against. A copy that
@@ -473,12 +458,8 @@ export async function recordPrivateWrite(relativePath: string, declaredBoundary?
   if (boundary !== entry && !entry.startsWith(`${boundary}/`)) {
     throw new Error(`the declared private boundary must contain the written path: ${boundary} does not contain ${entry}`);
   }
-  let file: string;
-  try {
-    file = privatePathsLedgerFile();
-  } catch {
-    return;
-  }
+  if (selectedDeployment() === undefined) return;
+  const file = privatePathsLedgerFile();
   try {
     await access(dirname(file));
   } catch {
@@ -539,14 +520,10 @@ export async function forgetPrivatePaths(relativePaths: readonly string[]): Prom
  *  longer fabricates that shape. Union only: entries still leave through forgetPrivatePaths,
  *  never through a reconcile. */
 export async function reconcilePrivatePathsHistory(ctx: Context): Promise<void> {
+  // No deployment selected: nothing to merge into.
+  if (selectedDeployment() === undefined) return;
   const file = privatePathsHistoryFile(ctx.settings.dataDir);
-  let localFile: string;
-  try {
-    localFile = privatePathsLedgerFile();
-  } catch {
-    // No deployment selected: nothing to merge into.
-    return;
-  }
+  const localFile = privatePathsLedgerFile();
   // A copy that exists but cannot be read or validated throws: refuse loudly, and never read
   // the failure as "no history".
   const existing = await readTargetHistory(ctx, file);

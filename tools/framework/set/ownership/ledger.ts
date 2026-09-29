@@ -18,6 +18,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
+import { readFileCandidate } from "./candidate-file.ts";
 
 /** The kinds of instance object this framework creates. Cron jobs, agents and MCP server
  *  registrations are OpenClaw's own objects, created through its CLI; mirrored files are
@@ -55,28 +56,6 @@ export function ledgerFile(ctx: Context): string {
 
 function legacyLedgerFiles(ctx: Context): string[] {
   return LEGACY_NAMESPACES.map((namespace) => `${ctx.settings.dataDir}/${namespace}-managed.json`);
-}
-
-async function readCandidate(ctx: Context, path: string): Promise<{ present: boolean; text?: string }> {
-  // `exists` distinguishes a missing primary from an unreadable/corrupt one. That distinction
-  // makes the current name authoritative: a bad current ledger must never silently fall back
-  // to an older file and turn an ownership refusal into an adoption.
-  if (typeof ctx.transport.exists === "function") {
-    let present: boolean;
-    try { present = await ctx.transport.exists(path); }
-    catch { return { present: true }; }
-    if (!present) {
-      // Some transports expose an existence probe backed by a narrower view than readFile
-      // (notably test/remote adapters). Confirm the answer through the primary read before
-      // permitting a legacy fallback; a successful read still makes the current name win.
-      try { return { present: true, text: await ctx.transport.readFile(path) }; }
-      catch { return { present: false }; }
-    }
-    try { return { present: true, text: await ctx.transport.readFile(path) }; }
-    catch { return { present: true }; }
-  }
-  try { return { present: true, text: await ctx.transport.readFile(path) }; }
-  catch { return { present: false }; }
 }
 
 type LedgerParseResult = { readonly ok: true; readonly ledger: Ledger } | { readonly ok: false };
@@ -127,10 +106,10 @@ function parseLedger(text: string | undefined): Ledger {
 }
 
 export async function readLedger(ctx: Context): Promise<Ledger> {
-  const primary = await readCandidate(ctx, ledgerFile(ctx));
+  const primary = await readFileCandidate(ctx, ledgerFile(ctx));
   if (primary.present) return parseLedger(primary.text);
   for (const path of legacyLedgerFiles(ctx)) {
-    const candidate = await readCandidate(ctx, path);
+    const candidate = await readFileCandidate(ctx, path);
     if (candidate.present) return parseLedger(candidate.text);
   }
   return { version: LEDGER_VERSION, objects: [] };
@@ -159,14 +138,14 @@ export class LedgerUnreadableError extends Error {
  *  permanently, the moment the caller's own write lands. A file that is legitimately absent
  *  (no primary, no legacy) still reads as an empty ledger — there is nothing to lose there. */
 export async function readLedgerStrict(ctx: Context): Promise<Ledger> {
-  const primary = await readCandidate(ctx, ledgerFile(ctx));
+  const primary = await readFileCandidate(ctx, ledgerFile(ctx));
   if (primary.present) {
     const result = primary.text === undefined ? { ok: false as const } : parseLedgerResult(primary.text);
     if (!result.ok) throw new LedgerUnreadableError(ledgerFile(ctx));
     return result.ledger;
   }
   for (const path of legacyLedgerFiles(ctx)) {
-    const candidate = await readCandidate(ctx, path);
+    const candidate = await readFileCandidate(ctx, path);
     if (candidate.present) {
       const result = candidate.text === undefined ? { ok: false as const } : parseLedgerResult(candidate.text);
       if (!result.ok) throw new LedgerUnreadableError(path);
@@ -196,7 +175,7 @@ export async function writeFileAtomic(ctx: Context, path: string, content: strin
       throw new Error(`could not publish ${path}: ${(moved.stderr || moved.stdout).trim()}`);
     }
   } catch (error) {
-    if (typeof ctx.transport.remove === "function") await ctx.transport.remove(temporary).catch(() => {});
+    await ctx.transport.remove(temporary).catch(() => {});
     throw error;
   }
 }

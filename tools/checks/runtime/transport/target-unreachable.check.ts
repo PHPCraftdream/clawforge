@@ -23,7 +23,7 @@ import {
   isWrapperFailureCode,
 } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { useDeployment, currentDeploymentDir } from "#framework/runtime/deployment.ts";
+import { useDeployment, selectedDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { doctor, gatherInspection } from "#framework/commands/orchestration/inspect/gather.ts";
 import { plan } from "#framework/commands/orchestration/plan.ts";
@@ -112,7 +112,7 @@ function stubUnreachableContext(): Context {
   } as unknown as Context;
 }
 
-const previousDeployment = currentDeploymentDir();
+const previousDeployment = selectedDeployment();
 // A path that does not exist on disk: declaredState() reads it with the same ENOENT
 // tolerance it gives a genuinely empty deployment, so nothing here needs a real fixture.
 useDeployment(resolve(monorepoRoot, "apps", "clawforge-check-target-unreachable"));

@@ -20,6 +20,7 @@ import {
   secretsDir,
   secretsTemplateFile,
   secretStoreFile,
+  selectedDeployment,
   useDeployment,
   composeProjectName,
   useComposeProjectOverride,
@@ -81,12 +82,15 @@ async function checkNeverSelectedThrows(): Promise<void> {
 
 await checkNeverSelectedThrows();
 
+check("selectedDeployment() answers undefined rather than throwing, before useDeployment()", selectedDeployment(), undefined);
+
 // --- deployment.ts, once a deployment is selected -----------------------------
 
 const dir = resolve("apps", "example app");
 useDeployment(dir);
 
 check("deploymentDir() returns what useDeployment() set", deploymentDir(), dir);
+check("selectedDeployment() agrees, without throwing", selectedDeployment(), dir);
 check("deploymentName() is the directory's basename", deploymentName(), "example app");
 check("envFile() resolves under the deployment", envFile(), resolve(dir, ".env"));
 check(

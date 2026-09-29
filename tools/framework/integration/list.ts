@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { log, info, maskSecrets } from "../core/io/log.ts";
 import { parseEnv, toSettings, type Settings } from "../core/env.ts";
 import { createContext, type Context } from "../core/context.ts";
-import { useDeployment, currentDeploymentDir } from "../runtime/deployment.ts";
+import { useDeployment, selectedDeployment } from "../runtime/deployment.ts";
 import { NotBootstrapped } from "../runtime/runtime.ts";
 import type { AppDefinition } from "../core/app.ts";
 import { appsDir } from "./deployment/scaffold.ts";
@@ -140,7 +140,7 @@ export async function listDeployments(options: ListDeploymentsOptions = {}): Pro
   }
   const names = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
 
-  const restore = currentDeploymentDir();
+  const restore = selectedDeployment();
   try {
     const summaries: DeploymentSummary[] = [];
     for (const name of names) {

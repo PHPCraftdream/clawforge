@@ -37,10 +37,12 @@ export function useDeployment(directory: string): void {
 }
 
 /** The active deployment directory, or undefined before anything has selected one — unlike
- *  deploymentDir() this never throws, so a caller that must step through several deployments
- *  in turn (list) can save this first and restore it when done, rather than leaving whichever
- *  one it looked at last as the global for everything that runs after it. */
-export function currentDeploymentDir(): string | undefined {
+ *  deploymentDir() this never throws. Two uses: a caller that must step through several
+ *  deployments in turn (list) saves this first and restores it when done, rather than leaving
+ *  whichever one it looked at last as the global for everything that runs after it; a path
+ *  getter's caller tests this instead of catching deploymentDir()'s throw, so an unrelated
+ *  error from the getter propagates instead of reading as "no deployment". */
+export function selectedDeployment(): string | undefined {
   return activeDir;
 }
 

@@ -112,6 +112,9 @@ async function checkThrows(name: string, body: () => Promise<unknown>): Promise<
   const ctx = {
     settings: { dataDir: "/srv/clawforge" },
     transport: {
+      async exists(path: string): Promise<boolean> {
+        return files.has(path);
+      },
       async readFile(path: string): Promise<string> {
         const content = files.get(path);
         if (content === undefined) throw new Error(`no such file: ${path}`);
@@ -119,6 +122,9 @@ async function checkThrows(name: string, body: () => Promise<unknown>): Promise<
       },
       async writeFile(path: string, content: string): Promise<void> {
         files.set(path, content);
+      },
+      async remove(path: string): Promise<void> {
+        files.delete(path);
       },
     },
   } as unknown as Context;
@@ -171,6 +177,9 @@ async function checkThrows(name: string, body: () => Promise<unknown>): Promise<
   const ctx = {
     settings: { dataDir: "/srv/clawforge" },
     transport: {
+      async exists(path: string): Promise<boolean> {
+        return files.has(path);
+      },
       async readFile(path: string): Promise<string> {
         const content = files.get(path);
         if (content === undefined) throw new Error(`no such file: ${path}`);
@@ -178,6 +187,9 @@ async function checkThrows(name: string, body: () => Promise<unknown>): Promise<
       },
       async writeFile(path: string, content: string): Promise<void> {
         files.set(path, content);
+      },
+      async remove(path: string): Promise<void> {
+        files.delete(path);
       },
     },
   } as unknown as Context;

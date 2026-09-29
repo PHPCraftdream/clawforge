@@ -28,7 +28,7 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Context } from "../core/context.ts";
-import { deploymentDir, envFile, secretsDir } from "../runtime/deployment.ts";
+import { deploymentDir, envFile, secretsDir, selectedDeployment } from "../runtime/deployment.ts";
 import { problem, type Problem, type Severity } from "../service/inspection.ts";
 import { openclawCliJson } from "../service/openclaw-cli.ts";
 import { summarizeExposure } from "../commands/operate/expose/status.ts";
@@ -155,12 +155,8 @@ function suppressionsFile(): string {
 /** Fails closed, like every other config reader here: a file that exists but cannot be
  *  parsed or validated must stop the gate, never read as "nothing suppressed". */
 async function readSuppressions(): Promise<SecuritySuppressions> {
-  let file: string;
-  try {
-    file = suppressionsFile();
-  } catch {
-    return { suppressions: [] }; // no deployment selected
-  }
+  if (selectedDeployment() === undefined) return { suppressions: [] };
+  const file = suppressionsFile();
 
   let raw: string;
   try {
@@ -296,14 +292,10 @@ async function hostExposureProblems(ctx: Context, acknowledge: { reason: string 
  *  implementation of what "owner-only" means on this platform. Local node:fs paths only:
  *  these live beside the deployment, on the operator's own machine, never on the target. */
 async function privateFileProblems(): Promise<Problem[]> {
-  const candidates: string[] = [];
-  try {
-    candidates.push(envFile());
-    const entries = await readdir(secretsDir(), { withFileTypes: true }).catch(() => []);
-    for (const entry of entries) if (entry.isFile()) candidates.push(resolve(secretsDir(), entry.name));
-  } catch {
-    return []; // no deployment selected
-  }
+  if (selectedDeployment() === undefined) return [];
+  const candidates: string[] = [envFile()];
+  const entries = await readdir(secretsDir(), { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) if (entry.isFile()) candidates.push(resolve(secretsDir(), entry.name));
 
   const problems: Problem[] = [];
   for (const file of candidates) {

@@ -8,7 +8,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join, basename } from "node:path";
 import { listDeployments } from "#framework/integration/list.ts";
-import { useDeployment, currentDeploymentDir } from "#framework/runtime/deployment.ts";
+import { useDeployment, selectedDeployment } from "#framework/runtime/deployment.ts";
 import { NotBootstrapped } from "#framework/runtime/runtime.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
@@ -158,7 +158,7 @@ check("a missing .env is an error row, not a thrown exception", byName.get("no-e
 
 check(
   "the active-deployment global is restored to what it was before list ran",
-  currentDeploymentDir(),
+  selectedDeployment(),
   sentinel,
 );
 

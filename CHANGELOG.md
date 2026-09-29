@@ -91,6 +91,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* Internal refactor, no behavior change: the security audit, private-paths ledger and recipe
+  privacy readers test `selectedDeployment()` instead of catching "no deployment selected",
+  so an unrelated error from a path getter now propagates instead of reading as "nothing to
+  check"; the ownership ledger's and the installed-set marker's identical candidate-file
+  reader is now one shared function, and its dead `exists`/`remove` capability checks (both
+  are required `Transport` members) are gone.
 * `check`: each check file now runs in its own process instead of all of them sharing one,
   so a leaked global, an env mutation or a stray `process.exit()` in one file can no longer
   affect another. Runs with bounded parallelism by default (`--jobs <n>` / `OC_CHECK_JOBS` to
@@ -99,6 +105,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* `check`'s documentation-privacy check flagged a quoted regex literal (`(.*)`) and an
+  ellipsis placeholder (`…`) in a review doc as leaked credential values; a captured
+  "credential" now needs at least one letter or digit — no real token is pure punctuation.
 * `upgrade` with no `--image` re-resolves the pinned channel at the registry instead of
   comparing the digest pin to itself.
 * The security gate tells a missing `ufw` from one that failed to answer, on every transport.

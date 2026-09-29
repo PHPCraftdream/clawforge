@@ -69,6 +69,9 @@ function fakeCtx(files: Map<string, string>, calls: string[][], cronJobs: { id: 
       },
     },
     transport: {
+      async exists(path: string): Promise<boolean> {
+        return files.has(path);
+      },
       async readFile(path: string): Promise<string> {
         const content = files.get(path);
         if (content === undefined) throw new Error(`no such file: ${path}`);
@@ -76,6 +79,9 @@ function fakeCtx(files: Map<string, string>, calls: string[][], cronJobs: { id: 
       },
       async writeFile(path: string, content: string): Promise<void> {
         files.set(path, content);
+      },
+      async remove(path: string): Promise<void> {
+        files.delete(path);
       },
     },
   } as unknown as Context;

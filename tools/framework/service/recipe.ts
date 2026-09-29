@@ -27,7 +27,8 @@ import { resolve } from "node:path";
 import { monorepoRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { die } from "../core/io/log.ts";
-import { recipesDir } from "../runtime/deployment.ts";
+import { recipesDir, selectedDeployment } from "../runtime/deployment.ts";
+import { setSourceDir } from "../set/artifacts/source.ts";
 import { persistedPrivatePaths } from "../security/privacy/private-paths-ledger.ts";
 
 /** Default location. An application declares its own via AppDefinition.recipesDir: the
@@ -327,13 +328,12 @@ export async function listBrokenRecipes(): Promise<BrokenRecipe[]> {
 
 /** Strict enumeration behind installedRecipePrivatePaths. */
 async function strictDeclaredPrivatePaths(): Promise<string[]> {
-  let root: string;
-  try {
-    root = recipesDirectory();
-  } catch {
-    // No deployment selected, so no recipe root: the same answer as "no recipes configured".
+  // recipesDirectory() only throws (via recipesDir()'s deploymentDir()) when none of the three
+  // overrides apply — the same "no recipes configured" answer as an absent root.
+  if (explicitRecipesDir === undefined && setSourceDir() === undefined && selectedDeployment() === undefined) {
     return [];
   }
+  const root = recipesDirectory();
 
   const entries = (await listRecipeDirectories(root)).filter((candidate) => candidate.isDirectory());
 

@@ -500,32 +500,40 @@ async function rollbackUpgrade(
   previousDigest: string,
   backupArchive: string,
   restoreData: boolean,
-  reason: string,
+  cause: unknown,
   recreateWithImage: (reference: string) => Promise<void>,
 ): Promise<never> {
+  const reason = cause instanceof Error ? cause.message : String(cause);
   warn(`upgrade failed — rolling back to ${previousDigest}: ${reason}`);
-  if (restoreData) {
-    warn(`migrations may have run against the new image — restoring the pre-upgrade backup: ${backupArchive}`);
-    await restoreArchive(ctx, backupArchive, { force: true });
-  } else {
-    await recreateWithImage(previousDigest);
-    try {
-      await ctx.runtime.waitForHealth();
-    } catch (rollbackHealthError) {
-      throw new AggregateError(
-        [new Error(reason), rollbackHealthError as Error],
-        `upgrade failed and the rollback to ${previousDigest} did not become healthy either`,
-      );
+  try {
+    // Restore before starting the old code against data that migrations may have changed.
+    // noStart prevents restore from restarting the failed target's transient settings.
+    if (restoreData) {
+      warn(`migrations may have run against the new image — restoring the pre-upgrade backup: ${backupArchive}`);
+      await restoreArchive(ctx, backupArchive, { force: true, noStart: true });
     }
+    await recreateWithImage(previousDigest);
+    await ctx.runtime.waitForHealth();
+    const identity = await ctx.runtime.runningImageIdentity?.();
+    if (!identity?.digests.some((digest) => digestHash(digest) === digestHash(previousDigest))) {
+      throw new Error(`could not confirm the rollback gateway is running ${previousDigest}`);
+    }
+    await pinImageReference(previousDigest);
+  } catch (compensationError) {
+    const detail = compensationError instanceof Error ? compensationError.message : String(compensationError);
+    throw new AggregateError(
+      [cause, compensationError],
+      `upgrade failed: ${reason}; rollback to ${previousDigest} failed: ${detail}; pre-upgrade backup: ${backupArchive}`,
+    );
   }
-  throw new Error(`upgrade failed and was rolled back to ${previousDigest}: ${reason}`);
+  throw new Error(`upgrade failed and was rolled back to ${previousDigest}: ${reason}; pre-upgrade backup: ${backupArchive}`, { cause });
 }
 
 async function upgradeLocked(
   ctx: Context,
   previousDigest: string,
   targetDigest: string,
-  recreateWithImage: (reference: string) => Promise<void>,
+  recreateWithImage: (reference: string, onMutationStart?: () => void) => Promise<void>,
 ): Promise<void> {
   log(`upgrading from ${previousDigest} to ${targetDigest}`);
 
@@ -540,19 +548,37 @@ async function upgradeLocked(
   }
   log(`pre-upgrade backup: ${backupArchive}`);
 
-  log(`recreating the gateway on ${targetDigest}`);
-  await recreateWithImage(targetDigest);
+  let restoreData = false;
+  let mutationStarted = false;
+  try {
+    // From this call onward Compose may have changed the container even when it throws.
+    log(`recreating the gateway on ${targetDigest}`);
+    await recreateWithImage(targetDigest, () => { mutationStarted = true; });
 
-  const health = await waitForUpgradeHealth(ctx);
-  if (!health.ok) await rollbackUpgrade(ctx, previousDigest, backupArchive, health.migrationExit78, health.reason, recreateWithImage);
+    const health = await waitForUpgradeHealth(ctx);
+    if (!health.ok) {
+      restoreData = health.migrationExit78;
+      throw new Error(health.reason);
+    }
 
-  log("running openclaw doctor --lint");
-  const lint = await runDoctorLint(ctx);
-  if (!lint.ok) {
-    await rollbackUpgrade(ctx, previousDigest, backupArchive, false, `openclaw doctor --lint reported blocking finding(s): ${lint.detail}`, recreateWithImage);
+    log("running openclaw doctor --lint");
+    const lint = await runDoctorLint(ctx);
+    if (!lint.ok) throw new Error(`openclaw doctor --lint reported blocking finding(s): ${lint.detail}`);
+
+    const identity = await ctx.runtime.runningImageIdentity?.();
+    if (!identity?.digests.some((digest) => digestHash(digest) === digestHash(targetDigest))) {
+      throw new Error(`could not confirm the validated gateway is running ${targetDigest}`);
+    }
+    await pinImageReference(targetDigest);
+  } catch (error) {
+    if (!mutationStarted) throw error;
+    // An exception from recreation/probes can precede the normal exit-78 observation.
+    // Failure to query that code must not replace the original upgrade failure.
+    if (!restoreData) {
+      try { restoreData = (await ctx.runtime.lastExitCode?.()) === 78; } catch { /* unknown */ }
+    }
+    await rollbackUpgrade(ctx, previousDigest, backupArchive, restoreData, error, recreateWithImage);
   }
-
-  await pinImageReference(targetDigest);
   log(`upgrade complete: now running ${targetDigest}`);
   info("re-pin the deployment's own record of this: ./clawforge lock");
 }

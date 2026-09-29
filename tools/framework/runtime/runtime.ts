@@ -92,9 +92,10 @@ export interface Runtime {
    *  tag — a shared tag another deployment uses must not start pointing at different content
    *  just because this deployment checked it. Undefined when the registry can't be asked. */
   resolveImageDigest?(reference: string): Promise<string | undefined>;
-  /** Recreates the service pinned to `reference` for this one call only — .env is read but
-   *  never rewritten, so a rollback needs no undo of this step. */
-  recreateWithImage?(reference: string): Promise<void>;
+  /** Recreates on `reference`, keeping it in transient runtime settings for validation;
+   *  never rewrites .env. Signals immediately before the potentially mutating command,
+   *  so callers do not compensate preparation failures that cannot have changed it. */
+  recreateWithImage?(reference: string, onMutationStart?: () => void): Promise<void>;
   /** The running (or last) container's own exit code, or undefined when unreadable — a
    *  migration exiting during startup is otherwise indistinguishable from one still starting. */
   lastExitCode?(): Promise<number | undefined>;

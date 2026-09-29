@@ -189,9 +189,11 @@ export class ComposeOperations {
     stream = false,
     allowFailure = false,
     settings: Settings = this.#getSettings(),
+    beforeExec?: () => void,
   ): Promise<ExecResult> {
     return this.withEnvFile(async (envFile) => {
       const base = await this.#composeArgs(envFile);
+      beforeExec?.();
       return this.#transport.exec("docker", [...base, ...args], {
         stream,
         allowFailure,
@@ -256,15 +258,15 @@ export class ComposeOperations {
     return result.stdout.trim() !== "";
   }
 
-  /** reconcile(), pinned to a digest for this one call — compose pulls it, .env stays untouched. */
-  async recreateWithImage(reference: string): Promise<void> {
+  /** Recreate on a digest and keep that image in this runtime's transient settings for
+   *  subsequent validation and start calls. The deployment's durable .env stays untouched. */
+  async recreateWithImage(reference: string, onMutationStart?: () => void): Promise<void> {
     const current = this.#reconcileSettings !== undefined ? await this.#reconcileSettings() : toSettings(await loadEnv());
-    await this.compose(
-      ["up", "--detach", this.#service],
-      true,
-      false,
-      { ...current, image: reference, env: { ...current.env, OPENCLAW_IMAGE: reference } },
-    );
+    const target = { ...current, image: reference, env: { ...current.env, OPENCLAW_IMAGE: reference } };
+    await this.compose(["up", "--detach", this.#service], true, false, target, () => {
+      this.#setSettings(target);
+      onMutationStart?.();
+    });
   }
 
   /** `-T` is added whenever our stdout is not a terminal: compose otherwise allocates a

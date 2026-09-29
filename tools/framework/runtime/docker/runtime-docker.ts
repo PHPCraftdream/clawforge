@@ -116,8 +116,8 @@ export class DockerRuntime implements Runtime {
     return this.#compose.isRunning();
   }
 
-  async recreateWithImage(reference: string): Promise<void> {
-    return this.#compose.recreateWithImage(reference);
+  async recreateWithImage(reference: string, onMutationStart?: () => void): Promise<void> {
+    return this.#compose.recreateWithImage(reference, onMutationStart);
   }
 
   async runOneOff(service: string, args: string[], options: RunOneOffOptions = {}): Promise<ExecResult> {

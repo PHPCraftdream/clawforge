@@ -7,7 +7,7 @@
 // directory's 7-entry layout cap, and this command's central fact — OPENCLAW_IMAGE — is one
 // of the four connection facts this directory otherwise already covers.
 
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { upgrade } from "#framework/commands/lifecycle/lifecycle.ts";
@@ -18,6 +18,9 @@ import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
+import { toSettings, parseEnv } from "#framework/core/env.ts";
+import type { Transport, ExecOptions } from "#framework/runtime/transport/transport.ts";
 
 // pinImageReference (lifecycle.ts) writes the deployment's OWN .env on success — a real
 // repo-side file, not one ctx.transport can stand in for — so a real temporary deployment
@@ -91,9 +94,7 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
       description: "docker",
       async isRunning(): Promise<boolean> { return scenario !== "health-fail" && scenario !== "exit78"; },
       async pause(): Promise<void> {},
-      // A plain start() (restoreArchive's own final step) brings the container back up on
-      // whatever image THIS runtime's own settings still name — the original reference,
-      // since recreateWithImage() never touches them; simulated the same way here.
+      // Migration compensation restores while stopped, then recreates the previous image.
       async start(): Promise<void> { runningDigest = PREVIOUS_DIGEST; },
       async stop(): Promise<void> {},
       async waitForHealth(): Promise<void> {
@@ -108,8 +109,9 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
         calls.push(`resolveImageDigest ${reference}`);
         return reference === SHARED_TAG ? TARGET_DIGEST : undefined;
       },
-      async recreateWithImage(reference: string): Promise<void> {
+      async recreateWithImage(reference: string, onMutationStart?: () => void): Promise<void> {
         calls.push(`recreateWithImage ${reference}`);
+        onMutationStart?.();
         runningDigest = reference;
       },
       async runningImageIdentity(): Promise<{ imageId: string; digests: string[]; containerId: string }> {
@@ -181,8 +183,7 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
   });
   check("an exit-78 failure is reported as a failure", failure instanceof Error, true);
   check("the reported reason names the migration exit", failure instanceof Error && failure.message.includes("78"), true);
-  // restoreArchive() itself recreates the gateway via ctx.runtime.start(), on the settings this
-  // context was built with — the ORIGINAL (previous) reference, never the failed target.
+  // Compensation restores while stopped before recreating the exact previous digest.
   check("data is restored rather than merely recreated back", calls.some((call) => call.includes("-xzf")), true);
   check("the running digest is not left on the failed target", runningDigest() !== TARGET_DIGEST, true);
 }
@@ -269,6 +270,144 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
   check("--dry-run shows the currently running digest", output.includes(PREVIOUS_DIGEST), true);
   check("--dry-run names the channel it will re-resolve", output.includes(SHARED_TAG), true);
   check("--dry-run shows what the channel resolves to at the registry", output.includes(TARGET_DIGEST), true);
+}
+
+// Exercise the real DockerRuntime and Compose environment selection, with only the
+// transport standing in for Docker/the target filesystem. Backup uses the same POSIX
+// fixture as above; neither runOneOff nor recreateWithImage is independently mocked.
+type DockerScenario = "success" | "reject-b" | "cleanup" | "validator" | "pin" | "rollback" | "backup" | "prepare" | "migration-exception" | "identity";
+
+async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PREVIOUS_DIGEST}\n`);
+  const { ctx } = makeUpgradeCtx("success");
+  const delegate = ctx.transport;
+  const envFiles = new Map<string, string>();
+  const recreations: string[] = [];
+  const doctors: string[] = [];
+  let running = PREVIOUS_DIGEST;
+  let cleanupFailure = false;
+  let pinFileHidden = false;
+  let doctorDone = false;
+  let restored = false;
+  const ok = (stdout = ""): ExecResult => ({ code: 0, stdout, stderr: "" });
+  const settings = toSettings(parseEnv(await readFile(envFile(), "utf8")));
+  const transport = {
+    ...delegate,
+    async listFiles(): Promise<string[]> { return []; },
+    async writeFile(path: string, content: string | Uint8Array): Promise<void> {
+      envFiles.set(path, typeof content === "string" ? content : Buffer.from(content).toString("utf8"));
+      if (scenario === "prepare" && path.endsWith("compose.env") && envFiles.get(path)?.includes(TARGET_DIGEST)) {
+        throw new Error("target environment write denied");
+      }
+    },
+    async remove(path: string): Promise<void> {
+      if (path.includes("/compose-") && cleanupFailure) {
+        cleanupFailure = false;
+        throw new Error("target env cleanup denied");
+      }
+    },
+    async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
+      if (command === "curl") {
+        if (running === TARGET_DIGEST && scenario === "migration-exception") throw new Error("probe transport lost");
+        return ok("200");
+      }
+      if (command === "docker") {
+        if (args[0] === "ps") return ok("gateway-container");
+        if (args[0] === "inspect") {
+          if (args.includes("{{.State.ExitCode}}")) return ok(running === TARGET_DIGEST && scenario === "migration-exception" ? "78" : "0");
+          return ok(JSON.stringify({ Image: running, State: { Running: true } }));
+        }
+        if (args[0] === "image") {
+          if (doctorDone && running === TARGET_DIGEST && scenario === "pin" && !pinFileHidden) {
+            await rename(envFile(), `${envFile()}.saved`);
+            pinFileHidden = true;
+          }
+          return ok(JSON.stringify({ RepoDigests: [doctorDone && scenario === "identity" ? PREVIOUS_DIGEST : running] }));
+        }
+        if (args[0] === "compose") {
+          const envPath = args[args.indexOf("--env-file") + 1] ?? "";
+          const image = parseEnv(envFiles.get(envPath) ?? "").OPENCLAW_IMAGE;
+          if (args.includes("up")) {
+            recreations.push(image);
+            if (image === PREVIOUS_DIGEST && recreations.includes(TARGET_DIGEST)) {
+              if (scenario === "rollback") throw new Error("previous image recreation denied");
+              if (pinFileHidden) {
+                await rename(`${envFile()}.saved`, envFile());
+                pinFileHidden = false;
+              }
+            }
+            running = image;
+            if (image === TARGET_DIGEST && scenario === "cleanup") cleanupFailure = true;
+            return ok();
+          }
+          if (args.includes("run")) {
+            if (args.includes("backup")) return { code: 1, stdout: "", stderr: "error: unknown command 'backup'" };
+            if (args.includes("doctor")) {
+              doctors.push(image);
+              check(`${scenario}: durable pin stays A throughout doctor`, parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, PREVIOUS_DIGEST);
+              doctorDone = true;
+              if (scenario === "validator" || scenario === "rollback") throw new Error("validator transport lost");
+              const findings = scenario === "reject-b" && image === TARGET_DIGEST ? [{ severity: "error", checkId: "schema", message: "B rejects configuration" }] : [];
+              return ok(JSON.stringify({ findings }));
+            }
+          }
+          if (args.includes("ps")) return ok("gateway-container");
+          return ok();
+        }
+      }
+      if (command === "tar" && args.includes("-czf") && scenario === "backup") throw new Error("backup archive failed");
+      if (command === "tar" && args.includes("-xzf")) restored = true;
+      return delegate.exec(command, args, options);
+    },
+  } as Transport;
+  const paths = { ...ctx.paths, async toTarget(path: string): Promise<string> { return path; } };
+  const dockerCtx: Context = {
+    ...ctx, transport, paths,
+    runtime: new DockerRuntime(transport, settings, paths, { service: "gateway", reconcileSettings: async () => settings }),
+  };
+  let failure: unknown;
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(dockerCtx, ["--image", TARGET_DIGEST]); } catch (error) { failure = error; }
+  });
+  if (scenario === "success") {
+    check("Docker success returns without failure", failure, undefined);
+    check("Docker success running identity is B", running, TARGET_DIGEST);
+    check("Docker success publishes B after validation", parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, TARGET_DIGEST);
+  } else {
+    check(`${scenario}: upgrade reports failure`, failure instanceof Error, true);
+    check(`${scenario}: B is not durably pinned`, parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, PREVIOUS_DIGEST);
+    const expectedReason: Partial<Record<DockerScenario, string>> = {
+      "reject-b": "B rejects configuration",
+      cleanup: "target env cleanup denied",
+      validator: "validator transport lost",
+      rollback: "validator transport lost",
+      backup: "backup archive failed",
+      prepare: "target environment write denied",
+      "migration-exception": "probe transport lost",
+      identity: "could not confirm the validated gateway",
+      pin: "ENOENT",
+    };
+    check(`${scenario}: original failure is preserved`, failure instanceof Error && failure.message.includes(expectedReason[scenario] ?? ""), true);
+    if (scenario !== "backup" && scenario !== "prepare") {
+      check(`${scenario}: compensation attempts exact previous digest`, recreations, [TARGET_DIGEST, PREVIOUS_DIGEST]);
+    }
+    if (scenario === "backup" || scenario === "prepare") {
+      check(`${scenario}: failure never begins recreation or compensation`, recreations, []);
+    } else if (scenario === "rollback") {
+      check("failed compensation retains both causes", failure instanceof AggregateError && failure.errors.length === 2 && failure.message.includes("validator transport lost") && failure.message.includes("previous image recreation denied"), true);
+      check("failed compensation never claims rollback succeeded", failure instanceof Error && failure.message.includes("was rolled back"), false);
+    } else {
+      check(`${scenario}: exact previous digest is recreated`, recreations.includes(PREVIOUS_DIGEST), true);
+      check(`${scenario}: running identity is restored to A`, running, PREVIOUS_DIGEST);
+      check(`${scenario}: compensation outcome is reported`, failure instanceof Error && failure.message.includes("was rolled back") && failure.message.includes("pre-upgrade backup:"), true);
+    }
+  }
+  if (doctors.length > 0) check(`${scenario}: actual Compose doctor image is B`, doctors, [TARGET_DIGEST]);
+  check(`${scenario}: backup restoration is restricted to migration failure`, restored, scenario === "migration-exception");
+}
+
+for (const scenario of ["success", "reject-b", "cleanup", "validator", "pin", "rollback", "backup", "prepare", "migration-exception", "identity"] as const) {
+  await dockerUpgradeScenario(scenario);
 }
 
 await rm(deploymentDir, { recursive: true, force: true });

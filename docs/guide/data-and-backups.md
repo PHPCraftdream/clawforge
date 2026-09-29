@@ -299,11 +299,18 @@ explicitly.
 
 A pre-upgrade backup is taken (the native path above when the image supports it, else a
 stopped full backup), the gateway is recreated on the new digest, and `/startupz`/`/readyz`
-plus `openclaw doctor --lint` decide whether it stuck. Any failure recreates on the digest
-that was running before; a container that exited during migrations (upstream: exit code 78)
-also gets the pre-upgrade backup restored, since the data may already have changed. On
-success `OPENCLAW_IMAGE` in `.env` is pinned to `repo:tag@sha256:…` (the channel it was
-resolved from, alongside the new digest) — `apply` never rewrites
+plus `openclaw doctor --lint` from that same new digest decide whether it stuck. Validation
+uses transient target-image settings; the durable `.env` pin is not changed early. Before
+publishing the new pin, upgrade confirms the gateway's actual running digest again.
+Any failure from the start of recreation through validation or pinning attempts compensation
+to the exact digest that was running before (even when Compose or transport throws after a
+possible change). A container that exited during migrations (upstream: exit code 78) also
+gets the pre-upgrade backup restored while stopped, before the previous image is recreated.
+Failures before recreation do not trigger image rollback. A failed compensation reports both
+the original failure and the rollback error, with the pre-upgrade backup path; it never claims
+the rollback succeeded. Successful compensation confirms the previous running digest and
+pins it again. On upgrade success `OPENCLAW_IMAGE` in `.env` is pinned to `repo:tag@sha256:…`
+(the channel it was resolved from, alongside the new digest) — `apply` never rewrites
 `config/deployment.lock.json` (see [Instance settings as code](operations.md#instance-settings-as-code)),
 so re-pin it deliberately with `./clawforge lock` afterwards.
 

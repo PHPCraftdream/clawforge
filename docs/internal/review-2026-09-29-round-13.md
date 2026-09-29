@@ -27,7 +27,7 @@ OpenClaw, образа `extended-stable` локально нет — не тро
 | # | Сев. | Где | Суть |
 |---|------|-----|------|
 | U1 | P2 | `bootstrap --check`, `preparesEnvironment` | «read-only» проверка создаёт `.env` и пишет токен шлюза; то же при неверном аргументе: побочный эффект раньше разбора argv; воспроизведено |
-| U2 | P2 | `integration/provision.ts`, `incident` | токен ищут регулярками, а не `parseEnv`: `export OPENCLAW_GATEWAY_TOKEN=…` молча заменяется новым токеном при следующем `bootstrap`; воспроизведено |
+| U2 | P2 | `integration/provision.ts`, `incident` | токен ищут регулярками, а не `parseEnv`: строка с префиксом `export` для токена молча заменяется новым токеном при следующем `bootstrap`; воспроизведено |
 | U3 | P2 | `operate/schedule.ts` | `--interval 45m` / `7h` кодируются как `*/45` / `*/7`: срабатывания неравномерны, хотя код и сообщение обещают отказ; воспроизведено |
 | U4 | P2 | `recipe import` | молча отбрасывает `.env.example`, не перечисляет пропущенное, не использует общий сборщик содержимого; нигде не сказано, что хуки рецепта исполняются с правами оператора; воспроизведено |
 | U5 | P3 | `control-mcp` | `ping` не отвечает; вызовы обрабатываются строго по очереди, отмены и прогресса нет; `serverInfo.version` = `"1"` |
@@ -81,15 +81,15 @@ $ ./clawforge bootstrap --check
 После T2 `parseEnv` понимает `export KEY=v`, кавычки и `# комментарий`. Три места не были
 переведены:
 
-- `integration/provision.ts:48` — `ensureToken`: `/^OPENCLAW_GATEWAY_TOKEN=(.*)$/m`;
+- `integration/provision.ts:48` — `ensureToken`: регулярка по строке токена;
 - `commands/operate/incident/index.ts:186` — `TOKEN_LINE`, то же выражение;
 - `security/privacy/private-config.ts:276` — `upsertEnvValue` сравнивает `startsWith(\`${name}=\`)`.
 
-Воспроизведено (`ensureEnvironment` на `.env` с `export OPENCLAW_GATEWAY_TOKEN=abcdef… # my token`):
+Воспроизведено (`ensureEnvironment` на `.env` с `export OPENCLAW_GATEWAY_TOKEN=<токен> # my token`):
 регулярка не находит строку, `ensureToken` пишет вторую строку `OPENCLAW_GATEWAY_TOKEN=<новый>`,
 и, поскольку `parseEnv` берёт последнюю запись, действующий токен молча меняется — ровно то,
 чего `ensureToken` обещает не делать («regenerating would break every client»). С
-`OPENCLAW_GATEWAY_TOKEN='abcdef…'` (кавычки) `ensureEnvironment` возвращает значение вместе с
+`OPENCLAW_GATEWAY_TOKEN='<токен>'` (кавычки) `ensureEnvironment` возвращает значение вместе с
 кавычками и регистрирует его для маскирования в таком виде (реальное значение маскируется только
 после построения контекста). По коду: `incident … rotate` на строке с `export` отвечает «no
 OPENCLAW_GATEWAY_TOKEN configured — nothing to rotate» и не ротирует ничего.

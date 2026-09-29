@@ -1,20 +1,15 @@
 // Commands that run before a deployment exists.
 //
 // `check` describes the framework, `new-app`/`init` create the thing every other command
-// needs — so none of them can be an AppCommand: that type takes a Context, and a Context is
-// built from a deployment's .env. They are dispatched by the gate (tools/clawforge.ts,
-// framework/entry/bin.ts) rather than by the dispatcher in cli.ts.
+// needs — none can be an AppCommand (that type takes a Context, built from a deployment's
+// .env). Dispatched by the gate (tools/clawforge.ts, framework/entry/bin.ts), not cli.ts's
+// dispatcher, but still declared like a capability of `./clawforge`: one declaration feeds
+// dispatch, `--help` and the MCP tool list, so help text lives in the declaration, not as
+// literal strings at each call site.
 //
-// They are still capabilities of `./clawforge`, so they are declared rather than hand-written at
-// each call site. One declaration feeds three things — the gate's dispatch, its `--help`,
-// and the MCP tool list — which is the same property AppCommand already has, so `new-app`'s
-// help text lives in the declaration, not as literal strings inside the gate.
-//
-// Which entries exist depends on the gate: `new-app` belongs to the monorepo one (several
-// deployments under apps/), `init` to the installed one (exactly one, at the repository
-// root), and `check` needs this repository's own test suite, which the npm package does not
-// ship. Each gate therefore builds its own list instead of declaring all of them everywhere
-// and failing at call time.
+// Which entries exist depends on the gate: `new-app` belongs to the monorepo one, `init` to
+// the installed one (exactly one deployment, at the repo root), `check` needs this
+// repository's own test suite, which the npm package doesn't ship. Each gate builds its own list.
 
 import { info, reportError } from "../core/io/log.ts";
 import { closestCommand } from "../core/arguments.ts";
@@ -77,17 +72,15 @@ export async function runGateCommand(
 export interface AppFlagSplit {
   /** The name after --app/--app=, absent when --app did not lead argv at all. */
   readonly value: string | undefined;
-  /** --app led argv with no value after it (the very last token) — distinct from "absent" so
-   *  the caller can report the same "--app needs a deployment name" it always has, rather
-   *  than silently falling through to the default deployment. */
+  /** --app led argv with no value after it — distinct from "absent" so the caller can
+   *  report "--app needs a deployment name" rather than falling through to the default. */
   readonly missingValue: boolean;
   readonly rest: string[];
 }
 
 /** Recognises `--app`/`--app=<name>` only as the very first token(s) of argv — after the
  *  command name, an identically-spelled `--app` belongs to that command's own arguments
- *  (`exec`, `cli` and `host` all pass theirs through to something else verbatim), and must
- *  survive untouched rather than being cut out of the middle of argv. */
+ *  (exec/cli/host pass theirs through verbatim) and must survive untouched. */
 export function splitLeadingAppFlag(argv: string[]): AppFlagSplit {
   if (argv[0] === "--app") {
     const value = argv[1];
@@ -112,10 +105,8 @@ export function misplacedAppFlag(
   return args.find((arg) => arg === "--app" || arg.startsWith("--app="));
 }
 
-/** The standard answer to a command name nothing declares: the typo itself, a nearby spelling
- *  when one is close enough to be worth guessing, and a pointer to the real list — never the
- *  full help screen, which is what an operator was presumably trying to avoid scanning by
- *  typing a command in the first place. */
+/** The standard answer to a command name nothing declares: the typo, a nearby spelling
+ *  guess, and a pointer to the real list — never the full help screen. */
 export function reportUnknownCommand(name: string, candidates: string[]): void {
   reportError(`unknown command: ${name}`);
   const suggestion = closestCommand(name, candidates);

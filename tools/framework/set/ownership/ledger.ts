@@ -1,20 +1,15 @@
 // What this framework created, and therefore what it may remove.
 //
-// Without a record, dropping a recipe from a set changes nothing on the instance: the agent,
-// the MCP registration and the cron job it created stay, because nothing knows they were
-// ours. Leftovers from previous versions then accumulate until "this instance is the set"
-// stops being true in a way no command can see.
+// Without a record, dropping a recipe from a set changes nothing on the instance: nothing
+// knows the agent/MCP registration/cron job it created were ours, and leftovers accumulate
+// until "this instance is the set" stops being provably true.
 //
-// The alternative — inferring ownership from names, or assuming everything present is ours —
-// is worse in both directions. Assume too much and the framework deletes an MCP server
-// someone registered by hand; assume too little and nothing is ever cleaned up. So it is
-// written down at the moment of creation, which is the only moment the answer is known for
-// certain.
+// Inferring ownership from names, or assuming everything present is ours, is worse in both
+// directions — too much deletes a hand-registered MCP server, too little cleans up nothing.
+// So it is written down at creation time, the only moment the answer is known for certain.
 //
-// The ledger lives in the data directory, and that is deliberate: it describes what is IN
-// that directory, so it must travel with a restore. A ledger kept beside the deployment
-// would, after a restore from another host, describe objects that are not there and miss the
-// ones that are.
+// The ledger lives in the data directory (not beside the deployment) so it describes what
+// is IN that directory and travels with a restore.
 
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
@@ -69,9 +64,8 @@ function parseLedgerResult(text: string): LedgerParseResult {
     if (parsed === null || typeof parsed !== "object" || parsed.version !== LEDGER_VERSION || !Array.isArray(parsed.objects)) {
       return { ok: false };
     }
-    // A partially written or hand-edited ledger is not proof of ownership. Discarding the
-    // entire record is the safe direction for a READER: it may report objects as foreign, but
-    // can never turn malformed data into a deletion or an adoption decision on its own.
+    // A partially written or hand-edited ledger is not proof of ownership. Discarding it is
+    // the safe direction for a READER — it may report objects as foreign, never delete them.
     const seen = new Set<string>();
     const valid = parsed.objects.every((entry) => {
       if (entry === null || typeof entry !== "object") return false;
@@ -96,11 +90,9 @@ function parseLedgerResult(text: string): LedgerParseResult {
 
 function parseLedger(text: string | undefined): Ledger {
   if (text === undefined) return { version: LEDGER_VERSION, objects: [] };
-  // No ledger yet, or one that cannot be trusted: an instance provisioned before this existed
-  // (or whose ledger was hand-edited into something unrecognizable) owns nothing as far as
-  // anyone can prove. Treating it as empty is the safe reading for OBSERVATION — it means the
-  // framework will not remove anything it cannot show it created. It is NOT safe for a caller
-  // that is about to overwrite this file: see readLedgerStrict().
+  // No ledger yet, or one that can't be trusted, owns nothing as far as anyone can prove.
+  // Safe for OBSERVATION (the framework won't remove what it can't show it created) — NOT
+  // safe for a caller about to overwrite this file: see readLedgerStrict().
   const result = parseLedgerResult(text);
   return result.ok ? result.ledger : { version: LEDGER_VERSION, objects: [] };
 }
@@ -131,12 +123,10 @@ export class LedgerUnreadableError extends Error {
   }
 }
 
-/** Like readLedger(), but for callers about to WRITE a replacement (recordOwned, forgetOwned,
- *  updateOwnedPromptFiles): a ledger file that is PRESENT but unreadable or invalid must stop
- *  the caller rather than read as empty. Reading it as empty here is exactly what turns "the
- *  ledger is corrupt" into "the ledger has now genuinely lost every entry it could not prove",
- *  permanently, the moment the caller's own write lands. A file that is legitimately absent
- *  (no primary, no legacy) still reads as an empty ledger — there is nothing to lose there. */
+/** Like readLedger(), but for callers about to WRITE a replacement (recordOwned,
+ *  forgetOwned, updateOwnedPromptFiles): a ledger PRESENT but unreadable/invalid must stop
+ *  the caller rather than read as empty — that would permanently lose every entry it
+ *  couldn't prove the moment the write lands. A legitimately absent file still reads empty. */
 export async function readLedgerStrict(ctx: Context): Promise<Ledger> {
   const primary = await readFileCandidate(ctx, ledgerFile(ctx));
   if (primary.present) {
@@ -156,12 +146,10 @@ export async function readLedgerStrict(ctx: Context): Promise<Ledger> {
 }
 
 /** Publishes content at `path` so an interrupted write can never leave partial bytes under
- *  the final name — a half-written control ledger is exactly the corrupt marker the strict
- *  readers refuse, so the write that creates one must not be possible. The bytes land in a
- *  temporary sibling in the SAME directory (same filesystem, so the rename is atomic), and
- *  one `mv` moves them over the final name: a crash before the rename leaves the previous
- *  file intact plus a stray staged sibling every reader of the real name ignores. Transports
- *  without an exec capability (minimal test adapters) fall back to a direct write. */
+ *  the final name. Writes to a temporary sibling in the SAME directory (same filesystem,
+ *  atomic rename), then `mv`s it over the final name — a crash before the rename leaves the
+ *  previous file intact plus a stray sibling every reader ignores. Falls back to a direct
+ *  write for transports with no exec capability. */
 export async function writeFileAtomic(ctx: Context, path: string, content: string): Promise<void> {
   if (typeof ctx.transport.exec !== "function") {
     await ctx.transport.writeFile(path, content);
@@ -228,10 +216,8 @@ export function ownerOf(ledger: Ledger, kind: OwnedKind, name: string): OwnedObj
   return ledger.objects.find((owned) => owned.kind === kind && owned.name === name);
 }
 
-/** One object a recipe currently declares — what `orphanedBy` compares the ledger against.
- *  Keyed by kind AND name AND recipe, not by recipe alone, so a recipe that still exists but
- *  now declares a different agentId (a rename) is caught: the old (kind, name, recipe) triple
- *  stops appearing here even though the recipe itself is still in the set. */
+/** One object a recipe currently declares — what `orphanedBy` compares against. Keyed by
+ *  kind+name+recipe, not recipe alone, so a rename (same recipe, new agentId) is caught. */
 export interface DeclaredOwnership {
   readonly kind: OwnedKind;
   readonly name: string;
@@ -239,12 +225,9 @@ export interface DeclaredOwnership {
 }
 
 /** What the framework created that no longer matches any current declaration — a recipe
- *  dropped entirely, or a recipe still present but naming a different object (a rename).
- *
- *  Only objects it can show it created: anything on the instance that is not in the ledger is
- *  somebody else's and is never proposed for removal. That asymmetry is the whole point —
- *  the cost of leaving a stranger's MCP server alone is some clutter, and the cost of
- *  deleting it is somebody's working setup. */
+ *  dropped entirely, or one still present but naming a different object (a rename). Only
+ *  objects it can show it created: anything on the instance not in the ledger is somebody
+ *  else's and never proposed for removal — clutter costs less than deleting a stranger's setup. */
 export function orphanedBy(ledger: Ledger, declared: readonly DeclaredOwnership[]): OwnedObject[] {
   const separator = String.fromCharCode(0);
   const stillDeclared = new Set(declared.map((entry) => [entry.kind, entry.name, entry.recipe].join(separator)));

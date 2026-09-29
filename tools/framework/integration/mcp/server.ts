@@ -1,23 +1,20 @@
 // Exposing an application's commands as MCP tools.
 //
-// This is not the bridge to the managed service's own channels — that one belongs to the
-// application. This server offers *control* of the instance: bootstrap, status, backup,
-// secrets.
+// Not the bridge to the managed service's own channels — that belongs to the application.
+// This server offers *control* of the instance: bootstrap, status, backup, secrets.
 //
-// The surface is a mirror, and that is a promise rather than an accident: what `./clawforge` can
-// do from a terminal, a tool call can do. Three tiers reach the console and all three are
-// mirrored —
-//   - the application's own commands (app.commands, dispatched in cli.ts);
-//   - the dispatcher's (help, control-mcp);
-//   - the gate's, which run before a deployment is resolved (check, new-app / init).
-// A command whose console behaviour cannot survive being a tool call (it streams, or it
-// owns stdio) is mirrored in a bounded form instead, declared beside it. What cannot be
-// mirrored at all is listed in MCP_EXEMPTIONS below, with the reason, and
-// tools/checks/mcp-mirror.check.ts fails on anything that is neither.
+// The surface is a mirror: what `./clawforge` can do from a terminal, a tool call can do.
+// Three tiers reach the console and all three are mirrored — the application's own commands
+// (app.commands, dispatched in cli.ts); the dispatcher's (help, control-mcp); the gate's,
+// which run before a deployment is resolved (check, new-app / init). A command whose
+// console behaviour cannot survive being a tool call (it streams, or owns stdio) is
+// mirrored in a bounded form declared beside it. What cannot be mirrored at all is listed
+// in MCP_EXEMPTIONS below with the reason; tools/checks/mcp-mirror.check.ts fails on
+// anything that is neither.
 //
-// stdout carries JSON-RPC and nothing else. Commands write their progress to stderr
-// through the log helpers, so that output is captured and returned as the tool result
-// rather than corrupting the protocol stream.
+// stdout carries JSON-RPC and nothing else. Commands write progress to stderr through the
+// log helpers, so that output is captured as the tool result instead of corrupting the
+// protocol stream.
 
 import { createInterface } from "node:readline";
 import { mcpCommands, type AppCommand, type AppDefinition } from "../../core/app.ts";
@@ -38,14 +35,13 @@ export * from "./schema.ts";
 const PROTOCOL_VERSION = "2025-06-18";
 
 /** Console capabilities that deliberately have no tool, and why. Read by
- *  tools/checks/mcp-mirror.check.ts, so an entry here is a decision on the record rather
- *  than a comment someone can forget to write.
+ *  tools/checks/mcp-mirror.check.ts, so an entry here is a decision on the record.
  *
  *  mcp-serve and control-mcp are the same argument at different heights: a stdio JSON-RPC
- *  server cannot be started by a tool call inside a stdio JSON-RPC server, because both
- *  would then own the same stdout. `--app` is redundancy, not impossibility. `help` is not
- *  listed here: it is a tool (see HELP_TOOL below), the one every other tool's shrunk
- *  description now points at instead of carrying its own `--help` text whole. */
+ *  server cannot be started by a tool call inside a stdio JSON-RPC server — both would own
+ *  the same stdout. `help` is not listed here: it is a tool (see HELP_TOOL below), the one
+ *  every other tool's shrunk description points at instead of carrying its own `--help`
+ *  text whole. */
 export const MCP_EXEMPTIONS: Record<string, string> = {
   "mcp-serve": "it is a stdio JSON-RPC server; a client registers it directly (./clawforge mcp-setup does), rather than starting it through another one",
   "control-mcp": "it is this server — a tool that starts the server it runs inside answers nothing",
@@ -71,11 +67,9 @@ interface JsonRpcRequest {
 }
 
 /** Runs a command with its output captured, so the caller sees it as the tool result and
- *  stdout stays a pure JSON-RPC stream.
- *
- *  A failure returns rather than throws, and returns what the command had already said. On
- *  a console those lines are on the screen above the error; losing them here would leave a
- *  tool call with only the last sentence of a story it could otherwise tell in full. */
+ *  stdout stays a pure JSON-RPC stream. A failure returns rather than throws, carrying what
+ *  the command had already said — losing those lines would leave a tool call with only the
+ *  last sentence of a story it could otherwise tell in full. */
 async function captureRun(
   app: AppDefinition,
   command: AppCommand,
@@ -90,10 +84,9 @@ async function captureRun(
     },
     async () => {
       try {
-        // Same order as the console path: the environment is completed before the context is
-        // built from it, and the deployment's own recipes are the ones in scope. Gated by
-        // preparesEnvironmentFor the same way cli.ts's console path is — a read-only call
-        // (bootstrap check: true) creates nothing.
+        // Same order as the console path: environment completed before the context is
+        // built, deployment's own recipes in scope. Gated by preparesEnvironmentFor the
+        // same way cli.ts's console path is.
         useApplicationRecipesDir(app.recipesDir);
         clearRecipesDir();
         if (preparesEnvironmentFor(command, argv)) await ensureEnvironment();
@@ -127,8 +120,8 @@ async function captureRun(
 }
 
 /** The same capture as captureRun, for a command that runs without a Context. A non-zero
- *  exit is the failure here — a gate command reports by returning a code, the way a process
- *  does, rather than by throwing. */
+ *  exit is the failure here — a gate command reports by returning a code, like a process,
+ *  rather than by throwing. */
 async function captureGateRun(
   command: GateCommand,
   argv: string[],
@@ -158,9 +151,9 @@ function send(response: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(response)}\n`);
 }
 
-// A tools/call id lands here the moment `notifications/cancelled` answers it early, so the
-// call's own eventual reply — the command keeps running to completion, there being no clean
-// abort; the instance lock protects state either way — is dropped instead of sent twice.
+// A tools/call id lands here the moment `notifications/cancelled` answers it early — the
+// call keeps running to completion (no clean abort; the instance lock protects state
+// either way) but its own eventual reply is dropped instead of sent twice.
 const cancelledIds = new Set<number | string>();
 
 function reply(id: number | string | undefined, result: unknown): void {
@@ -190,9 +183,8 @@ function handleToolsList(id: number | string | undefined, tools: [string, AppCom
         name,
         description: toolDescription(name, command),
         inputSchema: inputSchema(command),
-        // Declared from the command's own metadata alone — a structured tool
-        // answers every action in the envelope, so one honest schema covers all of
-        // them and no action name is consulted here.
+        // Declared from the command's own metadata alone — a structured tool answers every
+        // action in the envelope, so one honest schema covers all of them.
         ...(command.structured === true ? { outputSchema: STRUCTURED_OUTPUT_SCHEMA } : {}),
       })),
       ...gateTools.map((command) => ({
@@ -258,8 +250,8 @@ async function handleGateToolCall(
     return;
   }
   const { output, failure } = await captureGateRun(gateCommand, toArgv(gateCommand, args));
-  // The mask follows the answer, not the exit status: a gate command's healthy
-  // output gets the same treatment as its failure.
+  // The mask follows the answer, not the exit status: a healthy gate command's output gets
+  // the same treatment as its failure.
   reply(id, {
     ...(failure === undefined ? {} : { isError: true }),
     content: [{
@@ -301,21 +293,18 @@ async function handleAppToolCall(
   try {
     const { output, machineOutput, failure } = await captureRun(app, command, argv);
     const effectiveCommand = { ...command, readOnly };
-    // Built from the output alone, never from the output plus the failure text: a
-    // command that reports findings and then fails on them — doctor is the one that
-    // does — still emitted a valid document, and that is what the caller needs most
-    // in exactly that case. A structured command wraps EVERY action's output in the
-    // envelope it declared — text included — so the declared schema is true of each
-    // response rather than of the actions someone remembered to list.
+    // Built from the output alone, never output plus failure text: a command that reports
+    // findings and then fails on them (doctor does) still emitted a valid document, and
+    // that is what the caller needs most in exactly that case. A structured command wraps
+    // EVERY action's output in its declared envelope — text included — so the schema stays
+    // true of each response rather than of the actions someone remembered to list.
     const structured = command.structured === true
       ? toolEnvelope(effectiveCommand, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv)
       : undefined;
-    // Redaction is not an error-path courtesy: a
-    // successful diagnostic prints the same logs, hook output and machine JSON a
-    // failure would have, so registered values are masked here too — in the text and
-    // in every key and value of the envelope. The one exception is declared on the
-    // command (mcp-creds): its success is a deliberate reveal, and masking it would
-    // answer the call with nothing. A failure keeps the mask even there.
+    // Redaction is not an error-path courtesy: a successful diagnostic prints the same
+    // logs, hook output and machine JSON a failure would have, so registered values are
+    // masked here too. The one exception is declared on the command (mcp-creds): its
+    // success is a deliberate reveal. A failure keeps the mask even there.
     const deliberate = command.exportsSecrets === true;
     const responseStructured = structured === undefined || (deliberate && failure === undefined)
       ? structured
@@ -333,7 +322,7 @@ async function handleAppToolCall(
     }
 
     // The command's own output first, then why it stopped — the order a console shows
-    // them in, and the order that reads as an explanation rather than a bare verdict.
+    // them in, reading as an explanation rather than a bare verdict.
     const failureOutput = structured === undefined ? output : maskStructuredOutput(output, machineOutput, structured);
     reply(id, {
       isError: true,
@@ -362,15 +351,13 @@ async function handleToolsCall(
 ): Promise<void> {
   const params = request.params ?? {};
   // Never String(params.name ?? "") — an object whose toString is not callable (e.g.
-  // {"toString": null}) makes String() throw ("Cannot convert object to primitive
-  // value"), and nothing here catches it: the whole process would exit, answering
-  // neither this request nor any queued after it. Anything not already a string is
-  // simply not a valid tool name, reported the same way as any other unknown one.
+  // {"toString": null}) makes String() throw, and nothing here catches it: the whole
+  // process would exit, answering neither this request nor any queued after it.
   const name = typeof params.name === "string" ? params.name : "";
   const args = (params.arguments ?? {}) as Record<string, unknown>;
 
-  // Not an AppCommand or a GateCommand — the dispatcher's own alias (see entry/cli.ts)
-  // — so it is handled here rather than through the `tools`/`gateTools` lookup below.
+  // Not an AppCommand or a GateCommand — the dispatcher's own alias (see entry/cli.ts) —
+  // so it is handled here rather than through the `tools`/`gateTools` lookup below.
   if (name === "help") {
     await handleHelpTool(request.id, args, app, gateCommands, gateHelp);
     return;
@@ -388,18 +375,18 @@ async function handleToolsCall(
 
 export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] = [], gateHelp: string[] = []): Promise<void> {
   const tools = mcpCommands(app);
-  // Presented as one list: a client is offered what `./clawforge` can do, not a map of which layer
-  // dispatches what. They are kept apart here only because they are invoked differently —
-  // a gate command takes no Context, having to run before there is one.
+  // Presented as one list: a client sees what `./clawforge` can do, not which layer
+  // dispatches what. Kept apart here only because they are invoked differently — a gate
+  // command takes no Context, having to run before there is one.
   const gateTools = gateCommands.filter((command) => MCP_EXEMPTIONS[command.name] === undefined);
 
   const lines = createInterface({ input: process.stdin });
 
-  // captureRun's output sink (core/io/output.ts) is one process-global slot, so two tools/call
-  // runs actually executing at once would interleave into each other's captured text. Every
-  // tools/call is chained onto this queue instead — one command runs at a time — while every
-  // other method (ping, tools/list, initialize, cancellation) is answered straight from the
-  // loop below and never waits behind it.
+  // captureRun's output sink (core/io/output.ts) is one process-global slot, so two
+  // tools/call runs executing at once would interleave into each other's captured text.
+  // Every tools/call is chained onto this queue instead — one command runs at a time —
+  // while every other method (ping, tools/list, initialize, cancellation) is answered
+  // straight from the loop below and never waits behind it.
   let callQueue: Promise<unknown> = Promise.resolve();
   const inFlightCallIds = new Set<number | string>();
 
@@ -411,16 +398,14 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
       parsed = JSON.parse(line);
     } catch {
       // Answered with a null id, as JSON-RPC requires: the request that failed to parse
-      // has no id to answer with, and a client waiting for a response would otherwise wait
-      // forever.
+      // has no id to answer with.
       send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } });
       continue;
     }
 
     // `null`, a number, a string, an array — all valid JSON, none a JSON-RPC request. Left
-    // unchecked, `request.method` below throws on `null` and crashes the whole loop: every
-    // request still waiting on a response, including a well-formed one sent later on the
-    // same connection, then gets nothing back, because the process has already exited.
+    // unchecked, `request.method` below throws on `null` and crashes the whole loop, so
+    // every request still waiting on a response gets nothing back.
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed) || typeof (parsed as { method?: unknown }).method !== "string") {
       const id = (parsed as { id?: unknown })?.id;
       const validId = typeof id === "string" || typeof id === "number" ? id : null;
@@ -450,9 +435,8 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
       case "tools/call": {
         const id = request.id;
         if (id !== undefined) inFlightCallIds.add(id);
-        // Not awaited: queuing (not blocking) this call is what keeps the loop free to read
-        // and answer the next line — a ping, a cancellation, another tools/list — while this
-        // one is still running.
+        // Not awaited: queuing (not blocking) this call keeps the loop free to read and
+        // answer the next line — a ping, a cancellation, another tools/list.
         callQueue = callQueue
           .then(() => {
             // Cancelled while still queued: never start it.
@@ -471,8 +455,8 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
       }
 
       case "notifications/cancelled": {
-        // Notification: no reply to this message itself. Answers the CALL it names instead,
-        // immediately, without waiting for it — see cancelledIds above.
+        // Notification: no reply to this message itself. Answers the CALL it names
+        // instead, immediately, without waiting for it — see cancelledIds above.
         const requestId = (request.params ?? {}).requestId;
         if (
           (typeof requestId === "string" || typeof requestId === "number")

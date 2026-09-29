@@ -20,16 +20,13 @@ export function dataDirParent(dataDir: string): string {
 }
 
 /** The privilege prefix for one archive command, decided per path the command touches.
- *
  *  Reading and writing are different capabilities: the archive destination being writable
- *  says nothing about whether the identity can read the tree tar is about to read (auth-secrets
- *  is locked to 1000:1000 mode 700 by ensureDataDirs regardless of who may write the archive
- *  file — the shape that made a real migrate archive fail with "tar: data/auth-secrets:
- *  Cannot open: Permission denied" on GitHub Actions), and an archive being readable says
- *  nothing about the destination it is unpacked into. Every path involved is asked
- *  individually — sources first, destination last — and the first path that demands
- *  escalation decides the prefix for the whole invocation; sudoFor itself falls back to the
- *  nearest existing ancestor for paths that do not exist yet. */
+ *  says nothing about whether the identity can read the tree tar reads (auth-secrets is
+ *  locked to 1000:1000 mode 700 by ensureDataDirs regardless of who may write the archive
+ *  file), and readability says nothing about the destination it unpacks into. Every path is
+ *  asked individually — sources first, destination last — and the first that demands
+ *  escalation decides the prefix for the whole invocation; sudoFor falls back to the
+ *  nearest existing ancestor for a path that doesn't exist yet. */
 export async function privilegePrefixFor(ctx: Context, readPaths: readonly string[], writePath?: string): Promise<string[]> {
   for (const path of readPaths) {
     let present: boolean;
@@ -169,13 +166,11 @@ export async function listArchiveLinks(ctx: Context, archive: string): Promise<M
 }
 
 /** The data directory is a symlink, and where it resolves — undefined when it is not one.
- *
  *  tar is invoked with the data directory's NAME relative to its parent, so a symlinked
  *  data root is archived as the link itself: one entry, none of the data behind it.
- *  createBackup() refuses that layout before stopping the
- *  gateway and createArchive() refuses again at the point of archiving; this is the check
- *  both run. Exit codes other than 0/1 are thrown, not read as "not a link" — a check
- *  that cannot answer must not wave the backup through. */
+ *  createBackup() refuses that layout before stopping the gateway, createArchive() refuses
+ *  again at archiving time; this is the check both run. Exit codes other than 0/1 are
+ *  thrown, not read as "not a link" — a check that cannot answer must not wave it through. */
 export async function symlinkedDataRoot(ctx: Context): Promise<string | undefined> {
   const { dataDir } = ctx.settings;
   const check = await ctx.transport.exec("test", ["-L", dataDir], { allowFailure: true });
@@ -200,18 +195,14 @@ export async function createArchive(
       `refusing to archive ${dataDir}: it is a symlink to ${linkTarget}, and tar would store the link itself — none of the data behind it`,
     );
   }
-  // Taken before the policy read and before a full publish: migrate and share never publish,
-  // so this is the one point a deployment folder pointed at already-existing target data —
-  // no restore, no full backup yet — learns what the target alone still remembers. A history
-  // that exists but cannot be read refuses the backup loudly.
+  // Taken before the policy read and before a full publish: this is the one point a
+  // deployment folder pointed at already-existing target data (no restore, no full backup
+  // yet) learns what the target alone still remembers. A history that exists but can't be
+  // read refuses the backup loudly.
   await reconcilePrivatePathsHistory(ctx);
-  // The privacy history must be inside the tree before tar runs, so a full backup carries
-  // it physically and a restore can hand it back to whichever deployment directory manages
-  // the target next. Full only: migrate and share exclude
-  // the copy from their archives — instance-local metadata does not travel with the
-  // profile-limited snapshots — though they reconcile with it first (above).
-  // publishPrivatePathsHistory adopts an existing target copy instead of erasing it when this
-  // deployment folder never recorded anything locally.
+  // Must be inside the tree before tar runs, so a full backup carries it physically for the
+  // next deployment directory to hand back. Full only — migrate/share reconcile with it
+  // above but exclude the copy, since instance-local metadata doesn't travel with them.
   if (options.profile === "full") await publishPrivatePathsHistory(ctx);
   const name = dataDirName(dataDir);
   const parent = dataDirParent(dataDir);

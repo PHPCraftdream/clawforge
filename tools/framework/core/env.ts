@@ -13,37 +13,25 @@ import { randomInt } from "node:crypto";
 import { die, log, warn } from "./io/log.ts";
 import { envFile } from "../runtime/deployment.ts";
 
-// Two different roots, kept apart on purpose (npm distribution: tools/framework/ is meant
-// to also work installed as a dependency in a separate consumer repo, not only colocated in
-// this checkout — see deployment.ts for the matching note on the app side):
-//
-//   frameworkRoot   where THIS file lives, zero climbing. Once tools/framework/ ships as an
-//                   npm package, this file sits at node_modules/<pkg>/env.ts (or one level
-//                   deeper for a scoped package) — climbing a fixed number of parents to
-//                   guess at anything above that would be exactly the kind of hidden
-//                   assumption this framework's own docs warn against elsewhere (paths.ts).
-//                   Used only for the framework's own shipped files (docker-compose.yml).
-//   monorepoRoot    two levels up from frameworkRoot — the clawforge checkout, valid only
-//                   when the framework runs colocated with apps/ the way it does today.
-//                   Every other call site below (apps/<name>, deploy's rsync source,
-//                   scaffold's templates, the check fixtures) genuinely means this, so it
-//                   keeps the old `repoRoot` computation unchanged, just under its real
-//                   name — an installed-as-dependency entry point would not use this at
-//                   all, it has no apps/ sibling to find.
+// Two roots, kept apart on purpose (tools/framework/ also ships as an installed npm
+// dependency, not only colocated here — see deployment.ts for the matching note):
+//   frameworkRoot  where THIS file lives, zero climbing — used only for the framework's
+//                  own shipped files (docker-compose.yml). Installed as a package this
+//                  sits at node_modules/<pkg>/, so climbing a fixed number of parents to
+//                  guess at anything above would be a hidden assumption (see paths.ts).
+//   monorepoRoot   two levels up — the clawforge checkout, valid only when the framework
+//                  runs colocated with apps/ the way it does today; every other call site
+//                  (apps/<name>, deploy's rsync source, scaffold templates) means this.
 // This module lives in core/ so the package root is one level above it in source and dist.
 export const frameworkRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const monorepoRoot = resolve(frameworkRoot, "..", "..");
 
 /** Whether `root` is a ClawForge checkout — proven by the gate script every checkout is
- *  built around, tools/clawforge.ts, rather than assumed from this file's own location.
- *
- *  monorepoRoot is a guess, and only a good one in the colocated mode: it climbs two fixed
- *  levels, which lands on the checkout from tools/framework/core/env.ts and on something
- *  arbitrary from anywhere else. Installed as a package the compiled env.js sits at
- *  <pkg>/dist/, so those two levels land on the *parent of the package* — a directory that
- *  has nothing to do with this deployment and, for an npm install, sits inside node_modules.
- *  Any command that derives a path from monorepoRoot has to ask this first: acting on the
- *  guess is how a wrong tree gets mirrored somewhere with --delete. */
+ *  built around (tools/clawforge.ts), not assumed from this file's location. monorepoRoot
+ *  is only a good guess in colocated mode: installed as a package, the same two climbed
+ *  levels land inside node_modules, nothing to do with this deployment. Any command
+ *  deriving a path from monorepoRoot must ask this first — acting on the guess is how a
+ *  wrong tree gets mirrored somewhere with --delete. */
 export async function isMonorepoCheckout(root: string = monorepoRoot): Promise<boolean> {
   return access(resolve(root, "tools", "clawforge.ts")).then(
     () => true,
@@ -51,22 +39,16 @@ export async function isMonorepoCheckout(root: string = monorepoRoot): Promise<b
   );
 }
 
-/** The service definition is shared by every deployment: two deployments run the same
- *  service with different settings, so it stays with the framework rather than being
- *  copied into each one. Ships inside tools/framework/ itself (not at the monorepo root)
- *  so it is part of the npm package once this directory is published. */
+/** Shared by every deployment (same service, different settings), so it stays with the
+ *  framework rather than being copied into each one; ships inside tools/framework/ itself. */
 export const composeFile = resolve(frameworkRoot, "docker-compose.yml");
 
 export type Env = Record<string, string>;
 
-/** The framework's own scratch directory on the target, beside the data directory.
- *
- *  Beside rather than inside, because `restore` replaces the data directory whole and
- *  anything kept in there leaves with the old tree. The data directory's own name is kept in
- *  it so two deployments sharing a parent cannot collide. Pure and taking the path rather
- *  than a Context: the instance lock lives here (instance-lock.ts) and so does the
- *  environment file compose reads (runtime-docker.ts), and those two must agree on where
- *  "here" is without importing each other. */
+/** The framework's own scratch directory on the target, beside the data directory — not
+ *  inside, since `restore` replaces the data directory whole. The data directory's own
+ *  name stays in it so two deployments sharing a parent don't collide. Pure/path-based so
+ *  instance-lock.ts and runtime-docker.ts agree on "here" without importing each other. */
 export function locksDir(dataDir: string): string {
   const separator = pathSeparator(dataDir);
   const cut = lastSeparator(dataDir);
@@ -85,10 +67,9 @@ function lastSeparator(path: string): number {
 
 const EXPORT_PREFIX = /^export\s+/;
 
-/** The key and raw (unparsed) value half of one line — a leading `export` and spacing round
- *  `=` are already resolved here, so every reader that needs "which variable does this line
- *  assign" (parseEnv, upsertEnvLine) agrees on the same line exactly once. undefined for a
- *  blank line, a comment, or one with no `=`. */
+/** The key and raw (unparsed) value half of one line, so every reader that needs "which
+ *  variable does this line assign" (parseEnv, upsertEnvLine) agrees on the same parse.
+ *  undefined for a blank line, a comment, or one with no `=`. */
 function splitEnvLine(rawLine: string): { key: string; valueRaw: string } | undefined {
   const line = rawLine.trim();
   if (line === "" || line.startsWith("#")) return undefined;
@@ -98,10 +79,9 @@ function splitEnvLine(rawLine: string): { key: string; valueRaw: string } | unde
   return { key: stripped.slice(0, eq).trim(), valueRaw: stripped.slice(eq + 1) };
 }
 
-/** Parses dotenv basics, the level compose reads the same file at: a leading `export ` is
- *  stripped, `#` starts a comment for a whole line or (after whitespace) partway through an
- *  UNQUOTED value, one outer quote pair is stripped literally (`#` inside stays data). No
- *  `${VAR}` interpolation; anything else is ignored rather than executed. */
+/** Parses dotenv basics, the level compose reads the same file at: leading `export ` is
+ *  stripped, `#` starts a comment (whole line, or partway through an UNQUOTED value after
+ *  whitespace), one outer quote pair is stripped literally. No interpolation; ignored otherwise. */
 export function parseEnv(text: string): Env {
   const env: Env = {};
   for (const rawLine of text.split("\n")) {
@@ -118,13 +98,10 @@ export function readEnvValue(text: string, name: string): string | undefined {
   return parseEnv(text)[name];
 }
 
-/** Replaces NAME's assignment in place, recognizing `export NAME=` and spacing round `=` the
- *  same way parseEnv reads them — not just the bare `NAME=` prefix a plain startsWith would
- *  need. Every line already assigning NAME is rewritten to the same value: parseEnv's own
- *  last-line-wins already treats duplicates as one variable, so leaving an earlier one
- *  unrewritten would keep it there as a shadow a later read could still pick up. Appends one
- *  only when no line assigns NAME yet. Line endings collapse to `\n`, the same normalization
- *  parseEnv's own `\r?\n` split already tolerates on read. */
+/** Replaces NAME's assignment in place, recognizing `export NAME=` and spacing round `=`
+ *  the same way parseEnv reads them. Every existing line assigning NAME is rewritten to
+ *  the same value (parseEnv's last-line-wins already treats duplicates as one variable);
+ *  appends one only when none exists. Line endings collapse to `\n`. */
 export function upsertEnvLine(text: string, name: string, value: string): string {
   const line = serializeEnvLine(name, value);
   const lines = text.split(/\r?\n/);
@@ -245,14 +222,11 @@ export function projectPort(taken: ReadonlySet<number> = new Set(), start = rand
   throw new Error("no deployment port is available in the configured range (20000–32767)");
 }
 
-/** The write side of the grammar above — the exact inverse of parseEnv's per-line read:
- *  parseEnv(serializeEnvLine(name, value))[name] is byte-identical to value for every
- *  value without a line terminator.
- *
- *  The bare form survives a round trip only when the value has no edge whitespace, no quote
- *  character and no whitespace-then-`#` (read back as an inline comment); anything else is
- *  written single-quoted and read back literally, `#` included. A value holding a newline or
- *  carriage return cannot live on one line and is refused with the key named. */
+/** The write side of the grammar above — parseEnv(serializeEnvLine(name, value))[name] is
+ *  byte-identical to value for every value without a line terminator. The bare form
+ *  survives only when the value has no edge whitespace, no quote character and no
+ *  whitespace-then-`#`; anything else is written single-quoted and read back literally. A
+ *  newline or carriage return cannot live on one line and is refused with the key named. */
 export function serializeEnvLine(name: string, value: string): string {
   if (!ENV_KEY_PATTERN.test(name)) throw new Error(`invalid environment variable name: ${name}`);
   if (/[\r\n]/.test(value)) throw new Error(`environment value for ${name} contains a newline or carriage return`);
@@ -351,30 +325,15 @@ const DATA_DIR_HINT =
 const WINDOWS_ROOT = /^[A-Za-z]:[\\/]/;
 
 /** Guards the one string that later reaches a recursive `chown -R 1000:1000` in
- *  ensureDataDirs() (runtime/datadir.ts). Run here, before a Context or transport exists,
- *  because that chown is destructive and this string — straight out of .env — is the only
- *  thing standing between it and the whole target filesystem (an unvalidated
- *  OC_DATA_DIR=/ turns bootstrap into `chown -R 1000:1000 /`).
- *
- *  Rejects rather than silently repairs: a trailing slash or a stray ".." the operator did
- *  not intend to write is exactly the kind of mistake this exists to surface, not to correct
- *  out from under them. Validated with plain string/regex checks rather than node:path's
- *  normalize — that would canonicalize every separator to the host's own style, which is
- *  exactly wrong for a path that may describe a different target than the one running this
- *  process (wsl/ssh are always POSIX regardless of this host) and for the one case that IS
- *  this host (OC_TARGET_LOCATION=local), which can use native Windows paths.
- *
- *  The depth-2 floor is deliberate rather than an explicit deny-list — every system top-level
- *  directory ("/", "/etc", "/home", "/root", "/usr", "/var", "C:\", …) has exactly one segment
- *  below its root, so requiring two rejects all of them at once without needing to name each
- *  one and keep the list current.
- *
- *  Depth is a backstop, not the primary control: standard directories deeper than
- *  one segment ("/var/lib") pass here on purpose — a string in .env cannot prove what a
- *  path resolves to on the target. The primary check is filesystem-level, in ensureDataDirs
- *  (runtime/datadir.ts): canonical-ancestor resolution before any mkdir/chown/chmod, and
- *  ownership changed only for what that run created or a provenance marker vouches for —
- *  never a blanket recursive chown. */
+ *  ensureDataDirs() (runtime/datadir.ts) — an unvalidated OC_DATA_DIR=/ would turn
+ *  bootstrap into `chown -R 1000:1000 /`. Rejects rather than repairs: a mistake the
+ *  operator didn't intend to write should surface, not be silently fixed. Plain
+ *  string/regex checks, not node:path's normalize, since that would canonicalize to this
+ *  host's separator style even when the target is a different platform (wsl/ssh are
+ *  always POSIX; local can be native Windows). The depth-2 floor is a backstop, not the
+ *  primary control — every system top-level directory has exactly one segment below root,
+ *  so it rejects them all without a deny-list; the real check is filesystem-level in
+ *  ensureDataDirs (canonical-ancestor resolution, chown only for what that run created). */
 function assertSafeDataDir(dataDir: string): void {
   const isPosixRoot = dataDir.startsWith("/");
   const isWindowsRoot = WINDOWS_ROOT.test(dataDir);

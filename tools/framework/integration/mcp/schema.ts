@@ -1,8 +1,7 @@
-// Pure Declared-command ↔ JSON-RPC/CLI-argv transforms for the MCP control server: the
-// tool description and input schema a client sees, argument validation, argv construction,
-// and the structured-output envelope. Split out of mcp-server.ts, which keeps the actual
-// protocol/I-O server (serveMcp and its stdio loop) and re-exports everything here under
-// its own name, so every external importer keeps importing from "./server.ts" unchanged.
+// Pure Declared-command ↔ JSON-RPC/CLI-argv transforms for the MCP control server: tool
+// description and input schema, argument validation, argv construction, structured-output
+// envelope. Split out of server.ts, which keeps the protocol/I-O loop and re-exports this
+// module, so external importers keep importing from "./server.ts" unchanged.
 
 import type { CommandArgument } from "../../core/app.ts";
 import { maskSecrets } from "../../core/io/log.ts";
@@ -25,16 +24,11 @@ export type Declared = {
   readonly forceOnConfirmation?: boolean;
 };
 
-/** The envelope every structured tool result carries.
- *
- *  A text log is written for a person: to act on it, an agent has to read prose and guess
- *  whether anything changed and what to do next — and it guesses differently each time. The
- *  fields below are the questions it actually has, answered once, in the same shape for
- *  every command that produces them.
- *
- *  Only what is known is filled in. A command that does not report whether the instance is
- *  healthy leaves `healthy` absent rather than claiming something; the alternative — a
- *  default that looks like an answer — is worse than a gap, because a gap can be seen. */
+/** The envelope every structured tool result carries. A text log is written for a person;
+ *  an agent has to read prose and guess whether anything changed — these fields answer
+ *  that once, in the same shape for every command that produces them. Only what is known
+ *  is filled in: a default that looks like an answer is worse than a gap, since a gap can
+ *  be seen. */
 export interface StructuredResult {
   /** Command operation id when the command reports one; otherwise a transient tool-call id. */
   readonly operationId: string;
@@ -49,13 +43,10 @@ export interface StructuredResult {
   readonly result: unknown;
 }
 
-/** Declared to clients so the shape above is known before a call rather than discovered
- *  from one. The same for every structured command, because the envelope is — types and
- *  required-ness only; a per-field description here would be the same ~90 bytes repeated on
- *  every structured tool for no gain, since it is the same field on all of them. The meaning
- *  of each (operationId/changed/healthy/problems/warnings/nextActions/result — see
- *  StructuredResult above) is in `help`'s output for a structured command instead
- *  (help-render.ts), which every client can already reach and pays for once, not per tool. */
+/** Declared to clients so the shape is known before a call, not discovered from one. Same
+ *  for every structured command — types and required-ness only, since a per-field
+ *  description would repeat ~90 bytes on every tool for no gain. Field meanings are in
+ *  `help`'s output instead (help-render.ts), reachable once rather than paid for per tool. */
 export const STRUCTURED_OUTPUT_SCHEMA = {
   type: "object",
   properties: {
@@ -74,11 +65,9 @@ function isWarning(problem: unknown): boolean {
   return (problem as { severity?: unknown } | null)?.severity === "warning";
 }
 
-/** Builds the envelope from what a structured command emitted.
- *
- *  Returns undefined when the output is not the single JSON document the command promised —
- *  the text result still stands, so a broken promise degrades to what every other tool
- *  returns instead of turning a working call into an error. */
+/** Builds the envelope from what a structured command emitted. Returns undefined when the
+ *  output is not the single JSON document promised — the text result still stands, so a
+ *  broken promise degrades rather than turning a working call into an error. */
 export function structuredResult(command: Declared, output: string, operationId: string, args: string[] = []): StructuredResult | undefined {
   let payload: unknown;
   try {
@@ -96,9 +85,8 @@ export function structuredResult(command: Declared, output: string, operationId:
 
   return {
     operationId: commandOperationId,
-    // A read-only command changes nothing by declaration. Anything else is asked, and when
-    // it does not say, taken to have changed something: an agent that re-checks
-    // unnecessarily loses a call, one that skips a check it needed loses the thread.
+    // A read-only command changes nothing by declaration. Anything else defaults to
+    // "changed" when unsaid: an unneeded re-check costs less than a skipped one that was needed.
     changed: command.changedWhen?.(args) ?? (command.readOnly === true ? false : (typeof fields.changed === "boolean" ? fields.changed : true)),
     healthy: typeof fields.healthy === "boolean" ? fields.healthy : undefined,
     problems,
@@ -109,14 +97,11 @@ export function structuredResult(command: Declared, output: string, operationId:
 }
 
 /** The envelope a structured tool call returns, whatever the action emitted.
- *
- *  structuredResult keeps the command's own JSON document when it emitted one. Every other
- *  successful output — progress text, a log tail — is wrapped in the same shape rather
- *  than returned bare, because the tool declares one outputSchema for all of its
- *  responses: a client that calls any action of a structured command gets the envelope,
- *  with the command's own output verbatim in `result` and nothing invented around it. A
- *  text action's envelope stays silent where a structured one speaks — no healthy, no
- *  problems, no nextActions — because a gap can be seen and a guess cannot be trusted. */
+ *  structuredResult keeps the command's own JSON document when emitted; every other
+ *  successful output (progress text, a log tail) is wrapped in the same shape instead of
+ *  returned bare, since the tool declares one outputSchema for all its actions. A text
+ *  action's envelope stays silent where a structured one speaks — no healthy, no problems,
+ *  no nextActions — a gap can be seen, a guess cannot be trusted. */
 export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = []): StructuredResult {
   return structuredResult(command, machineOutput ?? output, operationId, args) ?? {
     operationId,
@@ -205,9 +190,8 @@ export function schemaArgumentDescription(argument: CommandArgument): string | u
   const shared = SHARED_SCHEMA_DESCRIPTIONS[argument.name];
   if (shared !== undefined) return shared;
   const short = shortenDescription(argument.description);
-  // Which action(s) of a multi-action command this argument belongs to (backup's own
-  // --keep) — same wording help-render.ts prints, so an agent reading tools/list and one
-  // reading --help are told the same thing.
+  // Which action(s) of a multi-action command this argument belongs to — same wording
+  // help-render.ts prints, so tools/list and --help agree.
   const scoped = argument.actions === undefined ? short : `${short} (${argument.actions.join(", ")})`;
   return argument.kind === "option" && argument.valueName !== undefined
     ? `${scoped} (value: <${argument.valueName}>)`
@@ -290,10 +274,8 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
 }
 
 /** Turns tool arguments back into the argv the command already knows how to parse.
- *
- *  Positionals come first and in declaration order, because that is how the parsers read
- *  them; options keep their name — losing it would turn `--profile share` into a bare
- *  `share`, taken for a file name. */
+ *  Positionals come first, in declaration order, matching how the parsers read them;
+ *  options keep their name so `--profile share` isn't mistaken for a bare file name. */
 export function toArgv(command: Declared, args: Record<string, unknown>): string[] {
   const declared = command.arguments ?? [];
   const positional: string[] = [];

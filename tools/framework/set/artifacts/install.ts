@@ -1,15 +1,10 @@
-// Installing from an artifact rather than from whatever the working tree currently holds.
+// Installing from an artifact rather than from the working tree's current files.
 //
-// One engine, two sources. `plan` and `apply` keep every rule they already have — the
-// ordering, the journal, the instance lock, the confirming inspection, the blocking
-// remainder — and only the question "what does this deployment declare" is answered
-// differently: from an unpacked artifact instead of from the files on disk. A second command
-// family that installed sets its own way would be a second path to changing one instance,
-// which is the shape of every defect this framework has spent its rounds removing.
-//
-// What is recorded afterwards is the set's id, on the target. Without it "which set is
-// installed here" has no answer, and every later question — has it drifted, what would
-// rolling back mean — has nowhere to start.
+// One engine, two sources: plan/apply keep their existing rules (ordering, journal,
+// instance lock, confirming inspection) and only "what does this deployment declare"
+// changes — from an unpacked artifact instead of disk. Records the installed set's id on
+// the target afterwards, so later questions (has it drifted, what would rollback mean)
+// have somewhere to start.
 
 import { copyFile, lstat, mkdir, mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -23,18 +18,18 @@ import { parseAgentConfig } from "#src/commands/management/provision-agent/index
 import { acceptanceSpecError } from "#src/commands/orchestration/accept.ts";
 import { safeName } from "#src/core/names.ts";
 import { problem } from "#src/service/inspection.ts";
-import { writeFileAtomic } from "../ownership/ledger.ts";
-import { validateSet } from "../ownership/validate.ts";
-import { readFileCandidate } from "../ownership/candidate-file.ts";
+import { writeFileAtomic } from "#src/set/ownership/ledger.ts";
+import { validateSet } from "#src/set/ownership/validate.ts";
+import { readFileCandidate } from "#src/set/ownership/candidate-file.ts";
 import { withSetSource } from "./source.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { DESIRED_STATE_PATH, SET_MANIFEST_VERSION, setManifestId, canonicalJson } from "./model.ts";
 import type { SetManifest } from "./model.ts";
-import { renameOverPrivateFile } from "../../security/privacy/private-file.ts";
+import { renameOverPrivateFile } from "#src/security/privacy/private-file.ts";
 
-/** What was installed immediately before the current set — one level, not a stack, the same
- *  depth `./clawforge rollback`'s own single-file path already works at. */
+/** What was installed immediately before the current set — one level, not a stack, same
+ *  depth `rollback`'s single-file path already works at. */
 export interface PreviousSet {
   readonly id: string;
   readonly name: string;
@@ -47,12 +42,11 @@ export interface InstalledSet {
   readonly name: string;
   readonly installedAt: string;
   /** What the set required, kept beside the id so a later mismatch can be described without
-   *  the artifact being present — the machine that installed it may be long gone. */
+   *  the artifact present — the machine that installed it may be long gone. */
   readonly requires: SetManifest["requires"];
-  /** The apply operation that installed this set. Its own configSnapshot (operations.ts),
-   *  when it took one, is the configuration exactly as the PREVIOUS set left it — what
-   *  `rollback --previous-set` needs to restore precisely. Absent for a record written before this
-   *  field existed, or when no operation id was available to record. */
+  /** The apply operation that installed this set. Its configSnapshot (operations.ts), when
+   *  taken, is the configuration exactly as the PREVIOUS set left it — what `rollback
+   *  --previous-set` needs. Absent for a pre-existing record or when no operation id was available. */
   readonly operationId?: string;
   /** The set this one replaced, so a rollback has somewhere to go back to. Absent for the
    *  first set ever installed on this instance. */
@@ -77,9 +71,8 @@ function legacyInstalledSetFiles(ctx: Context): string[] {
 type InstalledSetParseResult = { readonly ok: true; readonly set: InstalledSet } | { readonly ok: false };
 
 /** Pure parse+validate, shared by the tolerant reader (readInstalledSet) and the strict one
- *  (readInstalledSetStrict) below — the only difference between them is what each does with an
- *  `ok: false` result: the tolerant reader treats it as "nothing installed", the strict one
- *  refuses. */
+ *  (readInstalledSetStrict): only difference is what each does with `ok: false` — tolerant
+ *  treats it as "nothing installed", strict refuses. */
 function parseInstalledSetResult(text: string): InstalledSetParseResult {
   try {
     const parsed = JSON.parse(text) as InstalledSet;
@@ -125,12 +118,10 @@ export class InstalledSetUnreadableError extends Error {
   }
 }
 
-/** Like readInstalledSet(), but for recordInstalledSet() below, which is about to WRITE a
- *  replacement marker: a marker file that is PRESENT but unreadable or invalid must stop the
- *  caller rather than read as "nothing installed". Reading it that way here is exactly what
- *  turns "the marker is corrupt" into "the rollback chain it carried is gone", permanently, the
- *  moment the write lands. A file that is legitimately absent (no primary, no legacy) still
- *  reads as "nothing installed" — there is nothing to lose there. */
+/** Like readInstalledSet(), but for recordInstalledSet() below, about to WRITE a
+ *  replacement marker: a marker PRESENT but unreadable/invalid must stop the caller rather
+ *  than read as "nothing installed" — that would permanently lose the rollback chain the
+ *  moment the write lands. A legitimately absent file still reads as "nothing installed". */
 export async function readInstalledSetStrict(ctx: Context): Promise<InstalledSet | undefined> {
   const primary = await readFileCandidate(ctx, installedSetFile(ctx));
   if (primary.present) {
@@ -154,11 +145,9 @@ function isSetId(value: unknown): value is string {
 }
 
 /** Records the set just installed, carrying the one it replaced forward as `previous`.
- *
- *  Re-recording the SAME id — apply re-run against a set already in force — must not
- *  overwrite `previous` with the set itself: that would make a rollback undo nothing. And a
- *  `previous` already on record survives an apply that changes nothing about which set is
- *  installed, for the same reason. */
+ *  Re-recording the SAME id (apply re-run against a set already in force) must not
+ *  overwrite `previous` with the set itself — that would make rollback undo nothing. An
+ *  existing `previous` also survives a no-op apply for the same reason. */
 export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id: string, operationId?: string): Promise<void> {
   if (!isSetId(id) || id !== setManifestId(manifest)) {
     throw new Error("refusing to record an installed set whose id does not match its manifest");
@@ -169,11 +158,9 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
   const previous: PreviousSet | undefined = current === undefined || sameSet
     ? current?.previous
     : { id: current.id, name: current.name, installedAt: current.installedAt };
-  // A no-op re-apply of the SAME set (nothing changed, so applyFromSource() took its
-  // "nothing to apply" early return and never opened a Journal or took a snapshot for this
-  // fresh operationId) must not overwrite the id that actually installed it — rollback --previous-set
-  // reads this field to find the one snapshot that matters, and a clobbered id points at an
-  // operation record that was never written, silently losing the snapshot to restore from.
+  // A no-op re-apply of the SAME set (nothing changed, so applyFromSource() never opened a
+  // Journal or took a snapshot for this operationId) must not overwrite the id that
+  // actually installed it — rollback --previous-set reads this to find the snapshot to restore from.
   const effectiveOperationId = sameSet ? current.operationId : operationId;
 
   const record: InstalledSet = {
@@ -289,9 +276,8 @@ async function verifyArtifact(artifact: string, staging: string): Promise<Verifi
     entries.push({ path, type: directory ? "directory" : "file" });
   }
   for (const line of verbose.stdout.split("\n").map((entry) => entry.trimEnd()).filter((entry) => entry !== "")) {
-    // GNU tar uses either `Sep 10 14:04` or `2026-09-10 14:04` for the date, and
-    // owner/group may be one field or two. Anchor on that date instead of counting
-    // columns; both forms are emitted by versions used on Windows and Linux.
+    // GNU tar uses `Sep 10 14:04` or `2026-09-10 14:04` for the date, owner/group may be
+    // one or two fields — anchor on the date rather than counting columns.
     const match = /^(\S)\S*\s+.*?\s+(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}|\d{4}-\d{2}-\d{2})\s+\S+\s+(.*)$/u.exec(line);
     if (match === null) throw new Error(`cannot safely parse artifact listing: ${line}`);
     const type = match[1];
@@ -342,7 +328,7 @@ async function verifyArtifact(artifact: string, staging: string): Promise<Verifi
 }
 
 /** Keeps a validated artifact in the deployment so rollback does not depend on its original
- * path still existing. The copy is complete before apply is allowed to mutate the target. */
+ *  path still existing. The copy is complete before apply is allowed to mutate the target. */
 export async function storeArtifactForRollback(artifact: string, verified: VerifiedArtifact): Promise<string> {
   safeName("set", verified.manifest.name);
   if (!isSetId(verified.id)) throw new Error("refusing to store an artifact with an invalid content id");
@@ -372,11 +358,9 @@ async function fileExists(path: string): Promise<boolean> {
   try { return (await lstat(path)).isFile(); } catch { return false; }
 }
 
-/** Unpacks an artifact into a temporary directory and hands back where it went.
- *
- *  `--force-local` on Windows because GNU tar reads the `D:` of an absolute path as a remote
- *  host and tries to connect — the same quirk the writing side handles, and a reminder that
- *  a platform workaround applied on one side only is a workaround that has not been applied. */
+/** Unpacks an artifact into a temp directory and hands back where it went. `--force-local`
+ *  on Windows: GNU tar reads the `D:` of an absolute path as a remote host and tries to
+ *  connect — same quirk the writing side handles. */
 export async function unpackArtifactVerified(artifact: string): Promise<{ staging: string; verified: VerifiedArtifact }> {
   const staging = await mkdtemp(join(tmpdir(), "clawforge-set-install-"));
   try {
@@ -393,27 +377,18 @@ export async function unpackArtifact(artifact: string): Promise<string> {
 }
 
 /** The digest of the image the CONTAINER actually runs, not what a tag currently resolves
- *  to locally. ctx.runtime.imageReference() inspects the configured reference itself — after
- *  a `docker pull` updates what a tag points to, that reports the newly-pulled digest even
- *  when the running container was never recreated and is still on the old one. This is the
- *  same primitive (and the same by-hash-suffix matching, since the digests array can carry
- *  more than one repo/tag form of the same image) evidence.ts's observeRuntime() already uses
- *  for exactly this reason. Lives here (not apply.ts, where it originated) rather than there,
- *  so inspect.ts's own SET_REQUIREMENT_UNMET check can use it too without inspect.ts and
- *  apply.ts importing each other (apply.ts already imports gatherInspection from inspect.ts). */
-/** One read of the runtime's own identity, shared by every caller in this module and by
- *  gather.ts's own two uses (the SET_REQUIREMENT_UNMET match below and the displayed
- *  observed.imageDigest) — exported so a caller needing both answers fetches this once
- *  rather than querying the runtime (a container inspect, not a free read) twice per
- *  inspection. */
+ *  to — ctx.runtime.imageReference() reports the newly-pulled digest after a `docker pull`
+ *  even when the running container was never recreated. Same primitive (matching by hash
+ *  suffix, since digests can carry more than one repo/tag form) evidence.ts's
+ *  observeRuntime() uses. Exported so gather.ts's two uses (the SET_REQUIREMENT_UNMET match
+ *  and observed.imageDigest) fetch the runtime identity once rather than twice. */
 export async function runningDigests(ctx: Context): Promise<string[]> {
   const running = await ctx.runtime.runningImageIdentity?.();
   return running?.digests ?? [];
 }
 
-/** Pure: which of the already-fetched digests matches what the manifest requires, or the
- *  first one when none does. Split out of runningImageDigest() so a caller already holding
- *  a runningDigests() result (gather.ts) can reuse it instead of fetching again. */
+/** Pure: which fetched digest matches what the manifest requires, or the first one when
+ *  none does. Split out so a caller already holding a runningDigests() result can reuse it. */
 export function matchRequiredDigest(digests: string[], manifest: SetManifest): string | undefined {
   const requiredHash = manifest.requires.image.split("@").at(-1);
   return digests.find((digest) => digest.split("@").at(-1) === requiredHash) ?? digests[0];
@@ -423,12 +398,9 @@ export async function runningImageDigest(ctx: Context, manifest: SetManifest): P
   return matchRequiredDigest(await runningDigests(ctx), manifest);
 }
 
-/** Whether this machine can install what the set requires.
- *
- *  Reported rather than enforced by refusal, and the distinction matters: a framework older
- *  than the set asked for may still install it correctly, and a reader who can see the
- *  mismatch decides. What must not happen is the mismatch going unmentioned — a set pins its
- *  requirements precisely so that installing it somewhere else is not a silent substitution. */
+/** Whether this machine can install what the set requires. Reported, not enforced by
+ *  refusal: an older framework may still install correctly, and the reader decides — what
+ *  must not happen is the mismatch going unmentioned. */
 export function requirementProblems(manifest: SetManifest, present: { framework?: string; imageDigest?: string }): Problem[] {
   const problems: Problem[] = [];
 
@@ -440,12 +412,9 @@ export function requirementProblems(manifest: SetManifest, present: { framework?
       ),
     );
   }
-  // By hash suffix, not the full string: matchRequiredDigest() (above) already picks the
-  // running digest by matching the SHA-256 hash alone, precisely so a container pulled
-  // through a different repository/registry (a mirror) still counts as the same image —
-  // the same identity check runtimeMatches() (evidence.ts) uses throughout. Comparing the
-  // full string here undid that: a mirrored image whose hash genuinely matched still failed
-  // this stricter check purely over the registry name.
+  // By hash suffix, not the full string: matchRequiredDigest() already matches the running
+  // digest by SHA-256 hash alone so a mirrored image (different registry) still counts as
+  // the same image, per runtimeMatches() (evidence.ts). Comparing the full string undid that.
   if (present.imageDigest !== undefined && present.imageDigest.split("@").at(-1) !== manifest.requires.image.split("@").at(-1)) {
     problems.push(
       problem(
@@ -457,9 +426,8 @@ export function requirementProblems(manifest: SetManifest, present: { framework?
   return problems;
 }
 
-/** Runs `body` with an artifact unpacked, and removes the staging directory afterwards
- *  whatever happens — a half-installed set is bad enough without leaving its unpacked copy
- *  behind for someone to mistake for the deployment. */
+/** Runs `body` with an artifact unpacked, removing the staging directory afterwards
+ *  whatever happens — a half-installed set left unpacked invites confusion with the deployment. */
 export async function withUnpackedArtifact<T>(artifact: string, body: (staging: string, verified: VerifiedArtifact) => Promise<T>): Promise<T> {
   const { staging, verified } = await unpackArtifactVerified(artifact);
   log(`installing from ${artifact}`);

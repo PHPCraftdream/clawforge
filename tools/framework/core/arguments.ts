@@ -29,13 +29,9 @@ function editDistance(a: string, b: string): number {
 
 /** The nearest candidate to a typed name, or undefined when nothing is close enough to be
  *  worth guessing at. The threshold scales with length so a couple of wrong letters in a
- *  long name still matches, while two short, unrelated names never suggest one another just
- *  for being short.
- *
- *  Lives here rather than in integration/gate.ts (its original home, for an unknown command
- *  name) because parseDeclaredArgs below needs the exact same match against a declared
- *  argument's name — one edit-distance implementation for both, not two that could drift.
- *  gate.ts re-exports this rather than keeping its own copy. */
+ *  long name still matches, while two short unrelated names never suggest each other.
+ *  Lives here (not integration/gate.ts, its original home) because parseDeclaredArgs below
+ *  needs the exact same match against a declared argument's name; gate.ts re-exports this. */
 export function closestCommand(input: string, candidates: readonly string[]): string | undefined {
   let best: string | undefined;
   let bestDistance = Infinity;
@@ -51,10 +47,8 @@ export function closestCommand(input: string, candidates: readonly string[]): st
   return bestDistance <= threshold ? best : undefined;
 }
 
-/** Thrown for a token that matches no declared argument. A UserError, reported and exited
- *  the same way, but distinct so the dispatcher that knows the running command's name
- *  (entry/cli.ts) can point at that command's own --help — parseDeclaredArgs itself never
- *  learns the name it is parsing for. */
+/** Thrown for a token matching no declared argument — a UserError, but distinct so the
+ *  dispatcher (entry/cli.ts) can point at that command's own --help. */
 export class UnknownArgumentError extends UserError {
   name = "UnknownArgumentError";
 }
@@ -76,10 +70,9 @@ export function dieUnknownAction(action: string, message: string, choices: reado
   throw new UnknownActionError(suggestion === undefined ? message : `${message} (did you mean ${suggestion}?)`);
 }
 
-/** Only for a multi-action command (backup) whose declaration spans several actions: the
- *  action currently being parsed, and the full cross-action declaration to check an
- *  unrecognized flag against before giving up on it as wholly unknown — see
- *  CommandArgument's own `actions` field. */
+/** Only for a multi-action command (backup): the action being parsed, and the full
+ *  cross-action declaration to check an unrecognized flag against before giving up on it
+ *  as wholly unknown — see CommandArgument's own `actions` field. */
 export interface ActionScope {
   readonly action: string;
   readonly siblings: readonly CommandArgument[];
@@ -107,26 +100,17 @@ function isDeclaredLongFlag(token: string, named: ReadonlyMap<string, CommandArg
   return named.has(eq === -1 ? token.slice(2) : token.slice(2, eq));
 }
 
-/** Answers only the syntactic question every hand-written parser answered the same way:
- *  which declared argument does this token belong to, and does every token belong to one.
- *  Throws UnknownArgumentError as `unknown argument: <token>` on an undeclared flag/option
- *  (naming the nearest declared one when it is close enough to be worth guessing at, or —
- *  given `scope` — the other action it actually belongs to), on `--flag=value` for a
- *  boolean flag (flags carry no value), and on a bare token with no positional or variadic
- *  slot left for it; dies as `--<name> needs a value` when an option is the last token in
- *  argv, or the next one is a `--flag`/`--option` this same declaration knows (so a missing
- *  value cannot silently swallow the next real argument — `--opt=-x`'s inline form still
- *  takes anything literally), and as `--<name> given more than once` on a second `--opt`.
- *  A bare `--` ends option parsing: every token after it is positional/variadic regardless
- *  of shape, the same convention `host`'s own hand-rolled parser already follows.
+/** Syntactic parsing only: which declared argument each token belongs to, and whether every
+ *  token belongs to one. Throws UnknownArgumentError on an undeclared flag/option (naming
+ *  the nearest declared one, or — given `scope` — the other action it belongs to), on
+ *  `--flag=value` for a boolean flag, and on a bare token with no positional/variadic slot
+ *  left. Dies as `--<name> needs a value` when an option is the last token or the next one
+ *  is itself a declared flag/option (so a missing value can't swallow the next real
+ *  argument — `--opt=-x`'s inline form still takes anything literally), and on a repeated
+ *  `--opt`. A bare `--` ends option parsing.
  *
- *  Deliberately does not enforce `required`, `choices`, or an option's value shape beyond
- *  the above — every command already validates those itself, in its own words, and keeps
- *  doing so against the values this returns. Some options already relied on taking
- *  literally whatever token follows, flag-shaped or not (an artifact path, a store name);
- *  this preserves that by never rejecting a `--opt value` value on the strength of its
- *  shape — only a token that is itself one of this declaration's own flags/options stops
- *  being swallowed. */
+ *  Does not enforce `required`, `choices`, or an option's value shape beyond the above —
+ *  each command validates those itself against the values this returns. */
 export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: readonly string[], scope?: ActionScope): ParsedArgs {
   const named = new Map<string, CommandArgument>();
   const positionals: CommandArgument[] = [];

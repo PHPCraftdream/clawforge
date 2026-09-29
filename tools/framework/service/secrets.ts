@@ -1,19 +1,11 @@
-// What secrets this instance needs, where each one is expected, and which are missing.
+// What secrets this instance needs, where each is expected, and which are missing.
 //
-// Two discoveries shaped this module, both from inspecting a live instance rather than
-// from the documentation:
-//
-//  1. Scanning openclaw.json for SecretRefs is NOT enough. The config contains exactly one
-//     ({"source":"env","id":"OPENCLAW_GATEWAY_TOKEN"}); the provider key is not referenced
-//     there at all — OpenClaw resolves it by convention from the configured auth profile.
-//     So provider requirements are inferred from configured ids and explicit SecretRefs.
-//
-//  2. The variables live in two different places, and confusing them produces a gateway
-//     that starts and then fails to authenticate:
-//       repo-env    .env next to this checkout, injected into the container by compose.
-//                   This is where compose-owned values belong.
-//       target-env  <data>/config/.env on the target, read by OpenClaw itself as its
-//                   trusted global environment. This is where provider keys belong.
+// Two things learned from inspecting a live instance, not the docs: (1) scanning
+// openclaw.json for SecretRefs is not enough — the provider key is resolved by convention
+// from the auth profile, not referenced there, so provider requirements are also inferred
+// from configured ids. (2) the variables live in two places and confusing them breaks
+// auth: repo-env is .env next to this checkout (compose-owned values); target-env is
+// <data>/config/.env on the target, OpenClaw's own trusted environment (provider keys).
 
 import JSON5 from "json5";
 import type { Context } from "../core/context.ts";
@@ -64,11 +56,9 @@ export function collectSecretRefs(config: unknown, path = ""): { name: string; u
   return found;
 }
 
-/** The provider id an auth.profiles entry actually names. Per OpenClaw's real schema
- *  (zod-schema.root-shape.ts), auth.profiles.<key> is z.strictObject({ provider, mode,
- *  email?, displayName? }) — the key itself is an arbitrary label, the id lives in the
- *  object's own .provider field. Not the key split on ":", which is not how the schema
- *  is actually shaped and misreads an arbitrarily-named profile as its own provider. */
+/** The provider id an auth.profiles entry names. Per OpenClaw's schema
+ *  (zod-schema.root-shape.ts) the key is an arbitrary label; the id is the object's own
+ *  .provider field, not the key split on ":". */
 function profileProviderId(profile: unknown): string | undefined {
   if (profile === null || typeof profile !== "object" || Array.isArray(profile)) return undefined;
   const id = (profile as { provider?: unknown }).provider;
@@ -92,10 +82,9 @@ export function collectConfiguredProviders(config: unknown): string[] {
   return [...ids];
 }
 
-/** Best-effort read of the live config for whether any model provider is configured at all —
- *  the likely cause behind a symptom as generic as "the agent did not answer". An unreadable
- *  or unparseable config must never replace a caller's own real failure with a different,
- *  unrelated one, so it answers false (not a guess of "configured") rather than throwing. */
+/** Best-effort read of the live config for whether any model provider is configured — the
+ *  likely cause behind a symptom as generic as "the agent did not answer". An unreadable
+ *  config answers false rather than throwing, never replacing a caller's real failure. */
 export async function noProviderConfigured(ctx: Context): Promise<boolean> {
   try {
     const config = JSON5.parse(await ctx.transport.readFile(`${ctx.settings.dataDir}/config/openclaw.json`)) as unknown;
@@ -129,13 +118,11 @@ export function providerSecretVariable(config: unknown, providerId: string): str
   return undefined;
 }
 
-/** Whether this provider has explicitly declared an auth mode that needs no apiKey at all —
- *  OAuth, the AWS SDK's own credential chain, or a bearer token issued some other way.
- *  Checked in both places OpenClaw records an auth mode: models.providers.<id>.auth (spelled
- *  "api-key" there) and a matching auth.profiles entry's own .mode (spelled "api_key" there,
- *  underscored — the two enums use different spellings in OpenClaw's own schema). A local
- *  subprocess service (localService) is the same story by a different route: it authenticates
- *  however it authenticates on its own, never through the conventional env-var guess. */
+/** Whether this provider declared an auth mode needing no apiKey — OAuth, the AWS SDK's
+ *  own credential chain, or a bearer token. Checked in both places OpenClaw records a mode:
+ *  models.providers.<id>.auth ("api-key") and auth.profiles' own .mode ("api_key" —
+ *  different spelling in the schema). A local subprocess service (localService)
+ *  authenticates its own way, never through the conventional env-var guess. */
 export function providerUsesNonApiKeyAuth(config: unknown, providerId: string): boolean {
   if (config === null || typeof config !== "object") return false;
   const node = config as {
@@ -159,10 +146,9 @@ export function providerUsesNonApiKeyAuth(config: unknown, providerId: string): 
   return false;
 }
 
-/** Whether apiKey is already set to something explicit that is not an env-sourced ref — a
- *  plain string, or a file/exec/store SecretRef. providerSecretVariable() only recognizes
- *  the env case; this is what stops the conventional fallback from firing on top of an
- *  already-satisfied, non-env credential and inventing a phantom second requirement. */
+/** Whether apiKey is already an explicit non-env value — a plain string, or a
+ *  file/exec/store SecretRef. Stops the conventional fallback from firing on top of an
+ *  already-satisfied credential and inventing a phantom second requirement. */
 export function providerApiKeyExplicit(config: unknown, providerId: string): boolean {
   if (config === null || typeof config !== "object") return false;
   const node = config as { models?: { providers?: Record<string, unknown> } };
@@ -171,12 +157,10 @@ export function providerApiKeyExplicit(config: unknown, providerId: string): boo
   return "apiKey" in provider;
 }
 
-/** Whether this provider's baseUrl points at a loopback address. OpenClaw's own
- *  ModelProviderSchema makes apiKey/auth/localService all fully optional with no
- *  superRefine requiring credentials — and its docs (e.g. a self-hosted LM Studio with
- *  authentication disabled) confirm a loopback endpoint is trusted without one. A provider
- *  that says nothing at all about credentials AND points at localhost is this legitimate
- *  case, not a misconfigured remote provider that simply forgot to set a key. */
+/** Whether this provider's baseUrl is loopback. OpenClaw's ModelProviderSchema makes
+ *  apiKey/auth/localService all optional with no superRefine requiring credentials — a
+ *  self-hosted local server with auth disabled (e.g. LM Studio) is a legitimate case
+ *  OpenClaw trusts without a key, not a misconfigured remote provider missing one. */
 export function providerIsLocalEndpoint(config: unknown, providerId: string): boolean {
   if (config === null || typeof config !== "object") return false;
   const node = config as { models?: { providers?: Record<string, unknown> } };
@@ -194,13 +178,10 @@ export function providerIsLocalEndpoint(config: unknown, providerId: string): bo
   }
 }
 
-/** Return secret names required by a configuration object — pure, no target involved.
- *  Exported so a caller that already has (or has built) a config object other than the
- *  live one can ask the same question: inspect's plan-relevant check asks it of the
- *  DECLARED configuration merged over the live one, not the live one alone, since a
- *  SecretRef a coder just added to config/desired-state.json is a real requirement
- *  before it has ever been applied — the instance not having the config yet is not a
- *  reason to pretend the requirement itself does not exist. */
+/** Secret names required by a configuration object — pure, no target involved. Exported so
+ *  inspect's plan-relevant check can ask the same question of the DECLARED config merged
+ *  over the live one: a SecretRef just added to desired-state.json is a real requirement
+ *  before it has ever been applied. */
 export function requirementsFromConfig(config: unknown): SecretRequirement[] {
   const result: SecretRequirement[] = [];
 
@@ -215,11 +196,9 @@ export function requirementsFromConfig(config: unknown): SecretRequirement[] {
     });
   }
 
-  // Conventional provider keys, which no SecretRef points at — but only for a provider
-  // that actually needs one. OAuth, the AWS SDK's own credential chain, a bearer token
-  // issued some other way, or a local subprocess service authenticate without an apiKey at
-  // all; guessing <PROVIDER>_API_KEY for one of those invents a requirement nothing needs
-  // and blocks a correctly configured instance from starting.
+  // Conventional provider keys no SecretRef points at — only for a provider that actually
+  // needs one. OAuth/AWS-SDK/token/local-service auth without an apiKey, so guessing
+  // <PROVIDER>_API_KEY there invents an unneeded requirement and blocks a correct instance.
   for (const provider of collectConfiguredProviders(config)) {
     if (providerUsesNonApiKeyAuth(config, provider)) continue;
 
@@ -231,14 +210,12 @@ export function requirementsFromConfig(config: unknown): SecretRequirement[] {
       continue;
     }
 
-    // apiKey already set to something explicit that is not an env ref — a plain string, or
-    // a file/exec/store SecretRef. Satisfied on its own; the convention guess is only for a
-    // provider that said nothing at all about its credentials.
+    // apiKey already explicit and non-env — satisfied on its own; the convention guess is
+    // only for a provider that said nothing about credentials.
     if (providerApiKeyExplicit(config, provider)) continue;
 
-    // A provider whose baseUrl is loopback and which said nothing about credentials is a
-    // self-hosted, unauthenticated local server (e.g. LM Studio with auth disabled) — a
-    // schema-valid shape OpenClaw itself trusts without a key, not a forgotten one.
+    // Loopback baseUrl with nothing said about credentials is a self-hosted,
+    // unauthenticated local server (e.g. LM Studio) — trusted by OpenClaw, not forgotten.
     if (providerIsLocalEndpoint(config, provider)) continue;
 
     const guessed = providerEnvironmentVariable(provider);
@@ -317,17 +294,16 @@ export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
   const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
   if (!(await ctx.transport.exists(configPath))) return requirementsForConfig(ctx, {});
 
-  // JSON5, not JSON: OpenClaw's own gateway config format IS JSON5 (docs.openclaw.ai/gateway/
-  // configuration — comments and trailing commas are valid), so a real target config can use
-  // syntax plain JSON.parse rejects outright, aborting this step (and the `up`/`apply` run it
+  // JSON5, not JSON: OpenClaw's own gateway config format IS JSON5 — comments and trailing
+  // commas are valid, and plain JSON.parse would abort this step (and the up/apply run it
   // is part of) before the gateway ever started.
   const config = JSON5.parse(await ctx.transport.readFile(configPath)) as unknown;
   return requirementsForConfig(ctx, config);
 }
 
 /** Requirements plus whether each is actually satisfied, for a caller-supplied list —
- *  exported so a caller can resolve presence for requirements computed some other way
- *  than requirements(ctx) itself (inspect's prospective, declared-merged requirements). */
+ *  resolves presence for requirements computed some other way than requirements(ctx)
+ *  (inspect's prospective, declared-merged requirements). */
 export async function statusForRequirements(ctx: Context, needed: SecretRequirement[]): Promise<SecretStatus[]> {
   const targetPath = `${ctx.settings.dataDir}/config/.env`;
   const targetEnv = (await ctx.transport.exists(targetPath))
@@ -340,8 +316,7 @@ export async function statusForRequirements(ctx: Context, needed: SecretRequirem
   });
 }
 
-/** Requirements plus whether each is actually satisfied. */
-/** Return requirements with presence resolved from repo and target environments. */
+/** Requirements with presence resolved from repo and target environments. */
 export async function status(ctx: Context): Promise<SecretStatus[]> {
   return statusForRequirements(ctx, await requirements(ctx));
 }
@@ -351,9 +326,7 @@ export function missing(entries: SecretStatus[]): SecretStatus[] {
   return entries.filter((entry) => entry.required && !entry.present);
 }
 
-/** A template listing the variables without their values — safe to commit and to ship
- *  alongside a snapshot. */
-/** Render a value-free environment template. */
+/** Renders a value-free environment template — safe to commit and ship alongside a snapshot. */
 export function template(entries: SecretRequirement[]): string {
   const lines = [
     "# Secrets required by this OpenClaw instance.",
@@ -369,8 +342,7 @@ export function template(entries: SecretRequirement[]): string {
     if (group.length === 0) continue;
     lines.push(`# --- ${location} ---`);
     // A repo-env value is owned by the repository's own .env (compose/bootstrap wrote it
-    // once) — an operator who invents a fresh one here produces a value nothing running
-    // agrees with.
+    // once) — inventing a fresh one here produces a value nothing running agrees with.
     if (location === "repo-env") {
       lines.push("# a repo-env value usually already exists in the repository's own .env — copy it here, do not invent a new one");
     }

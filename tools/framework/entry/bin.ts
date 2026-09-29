@@ -1,18 +1,16 @@
 #!/usr/bin/env node
 // The installed-mode gate — the package's own bin entry once tools/framework/ is installed
-// as an npm dependency in a consumer repo, as opposed to tools/clawforge.ts (the monorepo gate,
-// used only inside this clawforge checkout, where several deployments sit side by side
-// under apps/<name>).
+// as an npm dependency in a consumer repo, as opposed to tools/clawforge.ts (the monorepo
+// gate, several deployments side by side under apps/<name>).
 //
-// There is exactly one app here: the consumer's own project root. No --app/OC_APP
-// selection, no apps/<name> nesting — those exist in the monorepo gate to let several
-// deployments share one checkout, which is not what an installed dependency is for.
+// Exactly one app here: the consumer's own project root. No --app/OC_APP selection, no
+// apps/<name> nesting — those exist in the monorepo gate to share one checkout, not what
+// an installed dependency needs.
 //
-// The shebang is a plain `#!/usr/bin/env node`, and the flag is kept explicit when loading
-// the consumer's app.ts is added by re-executing this file (see below) rather than carried
-// there. `#!/usr/bin/env -S node --experimental-strip-types` looks tidier and does work with
-// GNU coreutils, but busybox `env` has no -S at all — on an Alpine image, the most common
-// Node base image there is, the npm-linked bin then fails before a single line of this runs.
+// The shebang is a plain `#!/usr/bin/env node`; loading the consumer's app.ts needs the
+// strip-types flag explicit (re-executing this file, see below) rather than in the
+// shebang, since busybox `env` has no -S — on Alpine, the common Node base image, the
+// npm-linked bin would fail before a single line of this ran.
 
 import { access } from "node:fs/promises";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -30,10 +28,8 @@ import type { AppDefinition } from "../core/app.ts";
 const argv = normalizeVersionAlias(process.argv.slice(2));
 const appRoot = process.cwd();
 
-// Creating the deployment happens before one can be loaded — there is no app.ts yet for a
-// fresh consumer repo. Declared rather than hand-dispatched so the help text, the dispatch
-// and the MCP tool all come from one place; see framework/integration/gate.ts. `check` is absent on
-// purpose: it runs this repository's own test suite, which the package does not ship.
+// Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
+// consumer repo. `check` is absent: it needs this repository's own test suite, unshipped.
 const gateCommands: GateCommand[] = [
   {
     name: "init",
@@ -72,16 +68,11 @@ try {
 // Set before anything reads configuration: every path below resolves against it.
 useDeployment(appRoot);
 
-/** This file again, with type stripping switched on.
- *
- *  app.ts belongs to the consumer and is never compiled by anything here, so loading it needs
- *  a consumer's app.ts. The flag cannot ride in the shebang (busybox `env` has no -S), and
- *  guessing from process.version or process.features would have to be right about every
- *  release; the import failing with "Unknown file extension" is the capability itself
- *  answering.
- *
- *  Only that one flag is passed on: whatever disabled stripping in this process (an explicit
- *  --no-experimental-strip-types, an old default) must not be inherited by the retry. */
+/** This file again, with type stripping switched on. app.ts belongs to the consumer, so
+ *  loading it needs the flag; it can't ride in the shebang (busybox `env` has no -S), and
+ *  guessing from process.version would have to be right about every release — the import
+ *  failing with "Unknown file extension" is the capability itself answering. Only that one
+ *  flag is passed on: whatever disabled stripping here must not be inherited by the retry. */
 function retryWithTypeStripping(): never {
   const result = spawnSync(
     process.execPath,

@@ -1,13 +1,11 @@
 // Where a command's output goes.
 //
-// On a terminal it goes to the terminal, and long-running child processes stream straight
-// through so the user sees progress. Under the MCP server neither is acceptable: stdout
-// carries JSON-RPC, and a child process that inherits it writes a container table into the
-// middle of a protocol message — which is exactly what happened.
+// On a terminal it goes to the terminal, and child processes stream straight through so
+// progress is visible. Under the MCP server neither works: stdout carries JSON-RPC, and an
+// inherited child process writes a container table into the middle of a protocol message.
 //
-// So there is a mode. It is a module-level sink rather than a parameter threaded through
-// every call because the thing that must not write to stdout is arbitrarily deep: a
-// command, a helper, a child process spawned by the runtime.
+// So there is a mode — a module-level sink, not a threaded parameter, because the thing
+// that must not write to stdout is arbitrarily deep: a command, a helper, a spawned process.
 
 type Sink = (chunk: string) => void;
 
@@ -39,12 +37,10 @@ export function isCaptured(): boolean {
   return sink !== undefined;
 }
 
-/** True only when a human is actually watching a real terminal right now — not merely
- *  "not the MCP server". A follow-forever call read through a plain pipe or subprocess
- *  (a script, an agent's shell tool, `... | less`) has no MCP sink either, so isCaptured()
- *  alone would still say "follow", and a caller that owes its invoker a return — the same
- *  reason the MCP path needs a bounded read — would hang until something outside kills it.
- *  stdout.isTTY is undefined (not false) off a terminal, hence the explicit === true. */
+/** True only when a human is actually watching a real terminal — not merely "not the MCP
+ *  server". A follow-forever call read through a plain pipe or subprocess (a script, `...
+ *  | less`) has no MCP sink either, so isCaptured() alone would still say "follow" and hang
+ *  a caller that owes its invoker a return. stdout.isTTY is undefined off a terminal, hence === true. */
 export function shouldFollow(): boolean {
   return !isCaptured() && process.stdout.isTTY === true;
 }

@@ -4,11 +4,9 @@
 // process, or reads an OS-specific path separator: the container side is always POSIX and the
 // host side never appears in these argv, only in check-linux.ts's own docker cp call.
 
-/** Where the clean snapshot lands inside the container and where checks run from. Never
- *  pre-created via a docker create `-w` flag: `docker cp` to a destination that does not yet
- *  exist creates it AS the copy (source contents become the destination directly), which
- *  sidesteps the trailing-`/.`-versus-trailing-`\.` split between POSIX and Windows Docker
- *  CLIs entirely — see check-linux.ts's own comment on buildCopyArgv's call site. */
+/** Where the clean snapshot lands and checks run from. Never pre-created via `-w`: `docker
+ *  cp` to a nonexistent destination creates it AS the copy, sidestepping the
+ *  trailing-`/.`-vs-`\.` split between POSIX and Windows Docker CLIs entirely. */
 export const CONTAINER_WORKDIR = "/repo";
 
 const IMAGE = "node:24";
@@ -24,10 +22,9 @@ export function shellQuoteSingle(word: string): string {
  *  (e.g. .env.example) through git, and the copy carries no .git of the host. */
 export const SNAPSHOT_REPO = "git init -q && git add -A && git -c user.name=snapshot -c user.email=snapshot@localhost commit -qm snapshot";
 
-/** The steps run as the unprivileged `node` user: install, the (optionally filtered) check
- *  suite, then typecheck/lint — the same steps ci.yml's ubuntu "checks" job runs. Build and
- *  pack:check are not mirrored: they exercise dist packaging, not the Linux-wording class of
- *  failure this tool exists to catch. */
+/** Runs as unprivileged `node`: install, the (optionally filtered) check suite, then
+ *  typecheck/lint — same steps ci.yml's ubuntu "checks" job runs. Build and pack:check are
+ *  not mirrored: they exercise dist packaging, not this tool's Linux-wording class of failure. */
 export function buildUserScript(filters: readonly string[]): string {
   const checkArgs = filters.length === 0 ? "" : ` -- ${filters.map(shellQuoteSingle).join(" ")}`;
   return `cd ${CONTAINER_WORKDIR} && ${SNAPSHOT_REPO} && npm ci && npm run check${checkArgs} && npm run format:check`;
@@ -66,10 +63,9 @@ export function buildRemoveArgv(containerName: string): string[] {
   return ["rm", "-f", containerName];
 }
 
-/** node_modules and tools/framework/dist are the two host-built trees the container must
- *  build fresh itself, not inherit from whatever happens to be on the dev machine — mirrors
- *  .gitignore's own entries exactly, as a defense-in-depth filter on top of `git ls-files
- *  -co --exclude-standard`, which should already exclude both. */
+/** node_modules and tools/framework/dist must be built fresh in the container, not
+ *  inherited from the dev machine — mirrors .gitignore, a defense-in-depth filter atop
+ *  `git ls-files -co --exclude-standard`, which should already exclude both. */
 export function isHostArtifactPath(relPath: string): boolean {
   return relPath.split("/").includes("node_modules") || relPath === "tools/framework/dist" || relPath.startsWith("tools/framework/dist/");
 }

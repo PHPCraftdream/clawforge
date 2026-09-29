@@ -274,11 +274,9 @@ export async function setupProjectMcp(root: string, mode: DeploymentMode, client
   }
   updates.push({ path: ignorePath, previous: previousIgnore, content: ignore });
 
-  // The launcher is committed, not gitignored — kept out of the loop above on purpose. A
-  // local edit is never overwritten silently: without an explicit ask, it is left alone and
-  // reported instead of joining `updates`. Switching mode (the deployment gained or lost the
-  // installed-mode shim) is not a local edit — it is still one of the two canonical variants —
-  // so that always applies, same as any other in-place refresh.
+  // The launcher is committed, not gitignored — kept out of the loop above. A local edit is
+  // never overwritten silently: without an explicit ask it is left alone and reported. A
+  // mode switch is not a local edit (still one of the two canonical variants), so it applies.
   const launcherPath = resolve(root, MCP_LAUNCHER_FILENAME);
   const launcherPrevious = await existingFile(launcherPath);
   const launcherContent = mcpLauncherContent(mode);

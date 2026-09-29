@@ -1,26 +1,20 @@
 // What a mutating run did, written down while it happens.
 //
-// `./clawforge apply` reports its steps and then the report is gone: the terminal scrolls, an MCP
-// tool result is read once, and a run that died halfway leaves nothing behind at all. The
-// question that then has no answer is the one that matters — what did it actually do before
-// it stopped, and what state is the instance in now.
+// `./clawforge apply` reports its steps, and the report is gone: the terminal scrolls, an
+// MCP result is read once, and a run that died halfway leaves nothing behind. So the
+// record lives on the target beside the instance, and each step is written as it finishes
+// — a killed run still leaves everything up to that step.
 //
-// So the record lives on the target, beside the instance it describes, and each step is
-// written as it finishes rather than at the end. A run that is killed mid-step still leaves
-// everything up to that step, which is exactly the case the record exists for.
-//
-// The id is the operation's, not a formatting detail: the same value goes into the journal
-// entry, the configuration snapshot taken before the run, the lock held during it and the
-// operationId an MCP caller gets back. One value ties them together, so "what happened in
-// operation X" has a single answer.
+// The id is the operation's, not a formatting detail: it goes into the journal entry, the
+// configuration snapshot, the lock held during the run and the operationId an MCP caller
+// gets back — one value ties them together.
 
 import { randomBytes } from "node:crypto";
 import type { Context } from "../core/context.ts";
 
 /** Four outcomes, not three-collapsed-into-one: "skipped" can mean "never this command's
- *  job" (advisory), "never got the chance" (an earlier step already failed), or "this plan
- *  names an action nobody implemented" — and a reader needs a different reaction to each.
- *  One label for all three would let an implementation gap hide inside a routine report.
+ *  job" (advisory), "never got the chance" (an earlier step failed), or "nobody
+ *  implemented this" (failed) — a reader needs a different reaction to each.
  *
  *   advisory  structural: not this command's job, on every run
  *   blocked   would have run, but an earlier step already failed
@@ -54,18 +48,12 @@ export interface OperationRecord {
 /** Last stamp handed out in this process, so two ids can never tie. */
 let lastStamp = "";
 
-/** Sortable and unique, without needing a clock the target agrees with.
- *
- *  The timestamp leads so that sorting the file names sorts the operations — with the
- *  command first, every "apply-…" would sort before every "rollback-…" whenever they were
- *  run, which is an ordering by alphabet wearing an ordering by time.
- *
- *  Milliseconds, and then a counter on top, so two operations started in the same
- *  millisecond stay ordered instead of being distinguished only by the random tail, which
- *  would leave their order arbitrary. When the clock has not moved, the stamp is
- *  incremented instead. That can produce a stamp that is not a valid time
- *  (…59999 + 1), which is fine: this is an identifier, and the record carries `startedAt`
- *  for the actual time. */
+/** Sortable and unique, without needing a clock the target agrees with. Timestamp leads so
+ *  sorting file names sorts operations — command-first would sort every "apply-…" before
+ *  every "rollback-…" regardless of when they ran. Milliseconds plus a counter, so two
+ *  operations in the same millisecond stay ordered; when the clock hasn't moved, the stamp
+ *  is incremented instead (can yield an invalid time like …59999+1, fine since this is an
+ *  id — `startedAt` carries the real time). */
 export function newOperationId(command: string): string {
   let stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 17);
   if (stamp <= lastStamp) stamp = (BigInt(lastStamp) + 1n).toString();
@@ -103,13 +91,10 @@ export class Journal {
     this.#record = record;
   }
 
-  /** Opens a journal entry and writes it immediately: an operation that fails on its very
-   *  first step must still have left a record that it started at all.
-   *
-   *  `id` is passed in when the caller already generated one — `apply` takes the instance
-   *  lock before opening its journal, and the lock, the journal entry, the configuration
-   *  snapshot and the operationId an MCP caller gets back all have to be the same value, or
-   *  "what happened in operation X" has two answers. */
+  /** Opens a journal entry and writes it immediately: a failure on the very first step must
+   *  still leave a record that it started. `id` is passed in when the caller already
+   *  generated one — apply takes the instance lock before opening its journal, and lock,
+   *  journal entry, snapshot and operationId all must be the same value. */
   static async open(ctx: Context, command: string, deployment: string, id = newOperationId(command)): Promise<Journal> {
     const journal = new Journal(ctx, {
       id,
@@ -159,15 +144,10 @@ export class Journal {
 }
 
 /** Copies the instance's live configuration aside, keyed by the operation about to change
- *  it, and answers where it went.
- *
- *  Taken before the first mutating step rather than after something fails: a copy made after
- *  the failure is a copy of the damage. Cheap enough to take unconditionally — one JSON file,
- *  not the data directory.
- *
- *  Returns undefined when there was nothing to copy: a first run against an instance with no
- *  configuration yet has nothing to go back to, and saying so is better than writing an empty
- *  file that `rollback` would later restore over a working one. */
+ *  it. Taken before the first mutating step, not after a failure — a copy made after is a
+ *  copy of the damage; cheap enough (one JSON file) to take unconditionally. Returns
+ *  undefined when there is nothing to copy — a first run with no configuration yet has
+ *  nothing to go back to, better than an empty file `rollback` would later restore over a working one. */
 export async function snapshotConfig(ctx: Context, operationId: string): Promise<string | undefined> {
   const live = `${ctx.settings.dataDir}/config/openclaw.json`;
   try { if (!(await ctx.transport.exists(live))) return undefined; } catch { return undefined; }
@@ -177,9 +157,8 @@ export async function snapshotConfig(ctx: Context, operationId: string): Promise
   // primitive cannot satisfy that guarantee, so the snapshot is intentionally skipped.
   if (ctx.transport.writePrivateFile === undefined) return undefined;
 
-  // Keep all checks that do not create the destination outside the writer's failure path:
-  // an unreadable source or a pre-existing collision must never trigger cleanup of a file
-  // we do not own.
+  // Keep every check that doesn't create the destination outside the writer's failure path
+  // — an unreadable source or pre-existing collision must never clean up a file we don't own.
   try { await ctx.transport.mkdirp(operationsDir(ctx)); } catch { return undefined; }
   try { if (await ctx.transport.exists(destination)) return undefined; } catch { return undefined; }
   let content: string;

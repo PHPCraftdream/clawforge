@@ -1,27 +1,12 @@
-// Calling OpenClaw's own CLI from a framework command.
-//
-// Two things every such call needs and neither of which belongs in the caller:
-//
-// Captured output. runOneOff streams by default, which leaves ExecResult empty; a caller
-// that parses `--json` output has to opt into capture, and the way to do that (a defined
-// `input`) is not obvious from the signature.
-//
-// The scope gate. A write-level call — `cron add` is the one met in practice — can need a
-// wider scope than the deployment's "cli" client is paired with. The gateway then queues a
-// scope-upgrade request and refuses the call. Approving it through an agent costs a model
-// turn, so this module permits that only inside an explicit `--with-model` operation.
-//
-// The approval names the request the gateway just refused, taken from the refusal itself,
-// never `devices approve --latest`. "Latest" is whatever is newest at the moment the agent
-// gets around to running it — on a gateway several people or devices pair against, that can
-// be someone else's pending request, and approving it would hand a stranger the scope they
-// asked for. An id parsed from our own error cannot be anyone else's by construction; when
-// there is no id to parse, this refuses and says how to approve by hand rather than
-// widening the target.
-//
-// The failure is detected from the complete output rather than from a thrown message: the
-// thrown one is truncated to a few lines, and with `docker compose` those lines are spent
-// on compose's own progress output before the real error is reached.
+// Calling OpenClaw's own CLI from a framework command. Two things every call needs, that
+// don't belong in the caller: captured output (runOneOff streams by default, so a caller
+// parsing `--json` must opt in explicitly), and the scope gate — a write-level call
+// (`cron add`) can need a wider scope than the "cli" client is paired with, and approving
+// the gateway's scope-upgrade request costs a model turn, so this module permits that only
+// inside an explicit `--with-model` operation, naming the exact request id parsed from the
+// refusal (never `--latest`, which on a shared gateway could approve someone else's
+// request). Failure is read from the complete output, not a thrown message truncated
+// before `docker compose`'s own progress lines are past.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { log } from "../core/io/log.ts";
@@ -50,15 +35,11 @@ export function isScopeUpgradePending(result: ExecResult): boolean {
 }
 
 /** The request id the gateway names when it refuses: "scope upgrade pending approval
- *  (requestId: abc123)".
- *
- *  The character class is deliberately narrow and the match is anchored on the closing
- *  parenthesis. The id ends up inside a command line another agent is asked to run, so
- *  anything that could end that command and start a second one — a space, a semicolon, a
- *  backtick — must not be part of it. Because the parenthesis has to follow immediately, a
- *  message carrying such a character does not match at all rather than yielding a half-read
- *  id: the caller then refuses and asks for a manual approval, which is the safe direction
- *  to fail in. */
+ *  (requestId: abc123)". The character class is narrow and anchored on the closing paren:
+ *  the id lands in a command line another agent runs, so anything that could end that
+ *  command (space, semicolon, backtick) must not match. A message with such a character
+ *  fails to match rather than yielding a half-read id — the caller then asks for manual
+ *  approval, the safe direction to fail in. */
 export function scopeUpgradeRequestId(result: ExecResult): string | undefined {
   const match = new RegExp(`${SCOPE_UPGRADE_MARKER}\\s*\\(requestId:\\s*([A-Za-z0-9._-]+)\\)`)
     .exec(`${result.stdout}\n${result.stderr}`);
@@ -153,25 +134,17 @@ export interface BatchedCliResult {
  *  enough that no CLI output (a version string, `--json` output) plausibly collides with it. */
 const BATCH_MARKER = "__clawforge_cli_batch__";
 
-/** Runs several OpenClaw CLI invocations in ONE throwaway container instead of one each.
- *  Every `docker compose run --rm` pays Compose's create/destroy cost again — measured
- *  directly against this deployment at ~5-7s (docker-compose.yml's own note on cli-helper) —
- *  and gatherInspection's reads (agents/mcp/cron list, --version) were paying that four
- *  times over for one inspection, which dominated its wall time far more than any single
- *  wsl.exe spawn does.
- *
- *  No scope-upgrade retry here (contrast openclawCli/run() above): every caller today is a
- *  read-only query made without model approval, where a refused call already falls back to
- *  an empty/absent answer — exactly the outcome a plain non-zero exit produces here too. A
- *  write that needs that retry belongs on openclawCli, one call at a time.
- *
- *  The script never uses `set -e` and never chains with `&&`: one command's failure must
- *  not skip the marker that lets its result be told apart from the next command's, and must
- *  not stop the remaining commands from running at all.
- *
- *  The exit marker always starts on its own line, so output without a trailing newline still
- *  parses; rejoining the lines between markers restores that output exactly. The temp
- *  directory is removed last: under `cli-start` the container outlives the call. */
+/** Runs several OpenClaw CLI invocations in ONE throwaway container instead of one each —
+ *  `docker compose run --rm` pays Compose's create/destroy cost again each time (~5-7s;
+ *  gatherInspection's reads paid that four times over for one inspection, dominating its
+ *  wall time far more than any single wsl.exe spawn). No scope-upgrade retry here (contrast
+ *  openclawCli/run() above): every caller today is a read-only query without model
+ *  approval, where a refused call already falls back to an empty/absent answer — the same
+ *  outcome a plain non-zero exit produces here. A write needing that retry belongs on
+ *  openclawCli, one call at a time. The script never uses `set -e`/`&&`: one command's
+ *  failure must not skip its own marker or stop the rest from running. The exit marker
+ *  always starts on its own line, so output without a trailing newline still parses; the
+ *  temp directory is removed last, since under `cli-start` the container outlives the call. */
 export async function openclawCliBatch(ctx: Context, commands: readonly string[][]): Promise<BatchedCliResult[]> {
   if (commands.length === 0) return [];
 
@@ -200,8 +173,7 @@ export async function openclawCliBatch(ctx: Context, commands: readonly string[]
     });
   } catch {
     // The container itself never ran (gateway unreachable, image missing, …): every command
-    // inside it is equally unanswered, the same gap a single failed runOneOff already left
-    // its one caller with.
+    // inside it is equally unanswered, same gap a single failed runOneOff leaves.
     return commands.map(() => ({ code: 1, stdout: "" }));
   }
 
@@ -209,9 +181,8 @@ export async function openclawCliBatch(ctx: Context, commands: readonly string[]
 }
 
 /** Splits one batch's combined stdout back into each command's own, by the markers
- *  openclawCliBatch's script wrote around it. A command whose markers never appear (the
- *  script itself failed before reaching that line) is reported failed rather than left to
- *  crash the caller with a missing array entry. */
+ *  openclawCliBatch wrote. A command whose markers never appear reports failed rather than
+ *  crashing the caller with a missing array entry. */
 function parseBatchOutput(stdout: string, count: number): BatchedCliResult[] {
   const results: BatchedCliResult[] = Array.from({ length: count }, () => ({ code: 1, stdout: "" }));
   const beginPattern = new RegExp(`^${BATCH_MARKER}(\\d+):begin$`);
@@ -239,9 +210,8 @@ function parseBatchOutput(stdout: string, count: number): BatchedCliResult[] {
   return results;
 }
 
-/** Builds the combined stdout parseBatchOutput() above expects, from each command's own
- *  result — the marker text a fake `runOneOff` needs to answer a batched call, without a
- *  test duplicating BATCH_MARKER itself and risking the two silently drifting apart.
+/** Builds the combined stdout parseBatchOutput() expects, from each command's own result —
+ *  what a fake `runOneOff` needs to answer a batched call without duplicating BATCH_MARKER.
  *  Exported for testing only (tools/checks/runtime/convergence/inspect/fixture.ts). */
 export function formatBatchStub(results: readonly { code: number; stdout: string }[]): string {
   return results

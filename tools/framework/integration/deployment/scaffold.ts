@@ -1,18 +1,15 @@
-// Creating a new deployment under apps/. Listing the ones that already exist is list.ts,
-// which shares this file's appsDir.
+// Creating a new deployment under apps/. Listing existing ones is list.ts, which shares
+// this file's appsDir.
 //
 // A deployment is a directory of configuration, not a codebase: .env, desired state,
 // secret stores, recipes, and an app.ts saying which service it manages. The framework
-// supplies the logic.
-//
-// The measure of whether this is usable: the generated deployment must run immediately
-// after its .env is filled in.
+// supplies the logic. Usable measure: the generated deployment must run immediately after
+// its .env is filled in.
 //
 // npm distribution: `declarationFor()` below hardcodes `"../../tools/framework/..."`
-// relative imports, correct only when the generated app.ts sits two levels under
-// monorepoRoot next to tools/ — this function is monorepo-only and should stay that way.
-// The installed-as-dependency init command has its own template in init.ts: it imports the
-// package specifier rather than a relative path into this monorepo.
+// relative imports, correct only when app.ts sits two levels under monorepoRoot next to
+// tools/ — monorepo-only, should stay that way. The installed-as-dependency init command
+// has its own template (init.ts), importing the package specifier instead.
 
 import { mkdir, writeFile, access } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -57,33 +54,24 @@ const DESIRED_STATE = `[
 ]
 `;
 
-/** The template's own settings, adjusted so a new deployment does not collide with the
- *  existing ones under apps/. Two deployments sharing a data directory or a port is not a
- *  conflict the user should have to discover from a compose error.
- *
- *  Exported because bootstrap creates the file too, when a deployment directory exists
- *  without one — both paths must produce the same isolated settings. */
+/** The template's own settings, adjusted so a new deployment doesn't collide with existing
+ *  ones under apps/. Exported because bootstrap creates the file too, when a deployment
+ *  directory exists without one — both paths must produce the same isolated settings. */
 export async function deploymentEnv(name: string, portStart?: number): Promise<string> {
   return templateEnv(name, appsDir, portStart);
 }
 
-/** Appended, not overwritten — shares its lines with init.ts's own updateGitignore call, minus
- *  the node_modules/ line an installed deployment needs and this one does not (there is no
- *  package installed under apps/<name>/).
- *
- *  This repository's own .gitignore excludes apps/ entirely (root .gitignore,
- *  docs/architecture.md), so nothing here is ever read by IT — this file only matters once
- *  the deployment directory becomes a git repository of its own (the next: note below), and
- *  that repository needs its secrets kept out of its history the same way init.ts's does. */
+/** Appended, not overwritten — shares its lines with init.ts's updateGitignore, minus the
+ *  node_modules/ line an installed deployment needs and this doesn't. This repository's
+ *  own .gitignore already excludes apps/ entirely, so this file only matters once the
+ *  deployment directory becomes a git repo of its own (see the next: note below). */
 async function writeGitignore(directory: string): Promise<void> {
   await updateGitignore(directory, gitignoreLines(false));
 }
 
-/** Printed as part of createApp's next-steps, and its own constant so lock.ts's COMMIT_ADVICE
- *  can be checked for staying consistent with it. apps/ is entirely gitignored at
- *  the monorepo root, so this directory has no git history of its own yet — deliberately not
- *  run automatically here (`git init` is the operator's call, not this command's), but named
- *  so "commit it" (lock.ts) has somewhere to point. */
+/** Printed as part of createApp's next-steps, and its own constant so lock.ts's
+ *  COMMIT_ADVICE can be checked for consistency. Deliberately not run automatically (`git
+ *  init` is the operator's call), but named so "commit it" (lock.ts) has somewhere to point. */
 export function gitInitAdvice(name: string): string {
   return (
     `apps/ is entirely in this repository's own .gitignore, so apps/${name} has no git history ` +

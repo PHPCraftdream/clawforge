@@ -1,16 +1,8 @@
-// What "this instance is in order" means, said once.
-//
-// Six commands need the same vocabulary — inspect gathers it, doctor renders it, lock
-// compares against it, plan turns it into actions, apply executes them and inspects again.
-// Written three times it would drift three ways, and the drift would be invisible: each
-// command would still look right on its own.
-//
-// The codes are the contract. A human reads the sentence next to a problem; an agent reads
-// the code and branches on it, which is only reliable if the same situation always produces
-// the same code and the same suggested remedy. That is why severity and next action are
-// properties OF THE CODE (the table below) rather than arguments each call site passes: a
-// caller cannot invent a CONFIG_DRIFT that is merely a warning and tells the reader to run
-// something else. Only the detail — what was actually observed, with values — is per call.
+// Vocabulary shared by inspect/doctor/lock/plan/apply for "this instance is in order".
+// Severity and next action are properties OF THE CODE (the table below), not arguments a
+// call site passes — a caller cannot invent a CONFIG_DRIFT that is merely a warning. Only
+// the detail (what was observed, with values) is per call. Codes are a stable contract: an
+// agent branches on them, so renaming one is a breaking change.
 
 import type { SecretStatus } from "./secrets.ts";
 import type { OwnedKind } from "../set/ownership/ledger.ts";
@@ -79,36 +71,24 @@ interface CodeMeaning {
 export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   NOT_BOOTSTRAPPED: {
     severity: "blocking",
-    // Reported instead of ever asking the runtime: on a fresh deployment the target has no
-    // data directory yet, and every compose invocation (even a read like `compose ps`) writes
-    // its private env file into a directory beside it — a write a still-root-owned parent
-    // refuses, surfacing as a raw transport error ("mkdir ... Permission denied") in place of
-    // an answer. The data directory's own absence is read first and answers this
-    // without ever reaching for the runtime.
+    // Read before ever asking the runtime: on a fresh deployment even `compose ps` writes
+    // into a directory beside the (absent) data dir, failing as a raw "mkdir ... Permission
+    // denied" instead of an answer.
     summary: "this deployment has never been bootstrapped — there is nothing on the target yet",
     nextAction: "./clawforge bootstrap",
   },
   TARGET_UNREACHABLE: {
     severity: "blocking",
-    // wsl.exe/ssh itself failed before ever reaching the target's own shell — a missing WSL
-    // distribution, WSL not running, a host ssh never connected to. Nothing else in this
-    // inspection can be trusted once this fires, since every later check needs the target
-    // to answer at all; the generic remedy below is replaced with a transport-specific one
-    // (which env var, which probe command) wherever the failure is actually reported.
+    // Transport itself failed before reaching the target's shell. Nothing else here can be
+    // trusted once this fires — later checks need the target to answer at all.
     summary: "the transport itself could not reach the target — no command got to run there at all",
     nextAction: "check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`",
   },
   TARGET_NOT_GNU: {
     severity: "blocking",
-    // The target-reached sibling of LOCAL_TARGET_UNSUPPORTED (transport.ts): that one refuses
-    // a `local` target on the wrong HOST before anything ever runs there; this is the same
-    // GNU-toolset requirement (find -printf, stat -c, readlink -f, sha256sum, tar
-    // --numeric-owner, /proc) found missing on a TARGET that IS reachable — BusyBox (Alpine
-    // without coreutils) or BSD (a macOS ssh target, a minimal container) userlands answer
-    // every other preflight check and then fail mid-mutation on the first GNU-only flag.
-    // Checked only by `bootstrap --check` (prereqs.ts's GNU-userland probe): doctor/plan/inspect
-    // never probe for it, since a target's userland does not change between checks and paying
-    // a round trip for it on every one of those calls would buy nothing.
+    // Target-reached sibling of LOCAL_TARGET_UNSUPPORTED (transport.ts): a reachable
+    // target whose userland (BusyBox/BSD) lacks a GNU-only flag (find -printf, stat -c, tar
+    // --numeric-owner, ...) that only shows up mid-mutation. Checked only by `bootstrap --check`.
     summary: "the target's userland is missing a GNU tool this framework's target-side commands require",
     nextAction: "./clawforge bootstrap --check",
   },
@@ -124,19 +104,16 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   EGRESS_UNREACHABLE: {
     severity: "warning",
-    // A warning on purpose: the gateway is doing its job and the failure is outside it, so a
-    // name that will not resolve this second must not fail a doctor that CI branches on.
-    // 2026-09-20: the gateway could not resolve its model provider for a whole day while
-    // every inbound probe stayed green — those probes are taken from the operator machine's
-    // network, not the container's.
+    // Warning on purpose: the gateway is doing its job and the failure is outside it —
+    // inbound probes run from the operator machine's network, not the container's, so they
+    // stay green while egress fails.
     summary: "the running gateway cannot reach an endpoint its own configuration names",
     nextAction: "./clawforge logs --tail 100",
   },
   CONFIG_DRIFT: {
     severity: "blocking",
-    // Blocking rather than a warning on purpose: the declaration is the source of truth, so
-    // an instance running something else is running something nobody declared, and the next
-    // person to read the repository will be reading fiction.
+    // Blocking: the declaration is the source of truth, so a live instance running
+    // something else means the repository describes fiction.
     summary: "the live configuration differs from config/desired-state.json",
     nextAction: "./clawforge apply",
   },
@@ -146,25 +123,21 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     nextAction: "./clawforge secrets --apply",
   },
   PROVIDER_MISSING: {
-    // A warning, not blocking: detection reads models.providers and auth.profiles only, and
-    // OpenClaw also answers through a built-in provider keyed from the environment, a
-    // subscription login or a CLI backend — none of which need to appear there. A false
-    // "blocking" would fail doctor and every apply on an instance that answers fine.
+    // Warning: detection reads models.providers/auth.profiles only; OpenClaw can also
+    // answer through a built-in/env/CLI-backend provider that never appears there.
     severity: "warning",
     summary: "no model provider is configured — the gateway runs, but nothing can answer a prompt",
     nextAction: "./clawforge configure-provider",
   },
   RESTART_REQUIRED: {
     severity: "blocking",
-    // The instance reads its configuration at startup, so a correct file it has not read is
-    // not yet in force — and the difference is invisible from the outside.
+    // Config is read at startup — a correct file not yet read is not yet in force, invisibly.
     summary: "configuration on disk has not been read by the running instance",
     nextAction: "./clawforge restart",
   },
   MCP_RESTART_REQUIRED: {
     severity: "warning",
-    // Nothing on this side can fix it: an MCP client owns its own server processes, and a
-    // long-lived one keeps serving the code it loaded at startup.
+    // Nothing on this side can fix it — an MCP client owns its own server process's lifetime.
     summary: "an MCP client is serving code or data older than what is on disk — reconnect it",
     nextAction: "reconnect the MCP client (in Claude Code: /mcp)",
   },
@@ -190,8 +163,8 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   LOCK_MISSING: {
     severity: "warning",
-    // Not blocking: an instance with no lock file works perfectly well. What it cannot do is
-    // prove it is the same instance as the one someone else brought up from this repository.
+    // Not blocking: an instance with no lock file works fine. What it cannot do is prove it
+    // is the same instance someone else brought up from this repository.
     summary: "this deployment has no lock file, so its composition is not pinned",
     nextAction: "./clawforge lock",
   },
@@ -202,9 +175,8 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   PLUGIN_DRIFT: {
     severity: "warning",
-    // Third-party code, not this framework's own config — see commands/management/extensions.ts's header
-    // for why a version-pinned reinstall is only ever offered as a plan step to run
-    // yourself, never one apply performs unattended.
+    // Third-party code, not this framework's config — see extensions.ts's header for why a
+    // version-pinned reinstall is only ever a plan step, never applied unattended.
     summary: "an OpenClaw plugin's presence or version differs from what config/deployment.lock.json pinned",
     nextAction: "./clawforge plan",
   },
@@ -215,17 +187,13 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
 
   // Operator-side findings: the deployment folder this repository keeps, not the instance.
-  // The instance can be perfectly healthy while its own reproduction quietly rots, so each
-  // names the command that reads the operator side back from the instance — which is only
-  // possible while the instance still holds what was lost.
+  // Each names the command that reads the operator side back from the instance, since that
+  // is only possible while the instance still holds what was lost.
   ENV_STALE: {
     severity: "warning",
-    // A warning, not blocking: the container runs on the values it was created with, so a
-    // stale .env costs nothing until the next restart — and a folder that is merely behind
-    // must not fail a doctor that CI branches on. The detail names WHICH variable drifted
-    // and never a value, not even a non-secret one: .env mixes a real secret
-    // (OPENCLAW_GATEWAY_TOKEN) with the plumbing, so nothing parsed from that file is
-    // printable beyond the four names.
+    // Warning: the container runs on the values it started with, so staleness costs nothing
+    // until next restart. Detail names WHICH variable drifted, never a value — .env mixes a
+    // real secret with plumbing, so nothing parsed from it is printable beyond the four names.
     summary: "a connection fact in the deployment's .env no longer matches the running container",
     nextAction: "./clawforge recover-env",
   },
@@ -237,49 +205,37 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   DECLARATION_MISSING: {
     severity: "warning",
-    // Warning, on LOCK_MISSING's precedent: the instance works and survives a restart,
-    // which is what blocking is reserved for; what it cannot do is be re-declared from
-    // this repository. An absent declaration is also a state the framework already treats
-    // as legitimate (an empty one), so blocking would fail every deployment that declares
-    // nothing through config.
+    // Warning, per LOCK_MISSING: the instance works and survives a restart. An absent
+    // declaration is also legitimate (an empty one), so blocking would fail every bare deployment.
     summary: "an instance is running, but config/desired-state.json does not exist to re-declare it",
     nextAction: "./clawforge apply-config --dump",
   },
   STORE_INCOMPLETE: {
     severity: "warning",
-    // Recovery reads the value back from the target while the target still holds it; once
-    // the target's copy is rotated or overwritten, the operator side's is gone for good.
-    // The warning exists to be heeded inside that window.
+    // Recovery reads the value back from the target while it still holds it; once the
+    // target's copy is rotated or overwritten, the operator side's is gone for good.
     summary: "the instance holds a secret the deployment's default local store does not",
     nextAction: "./clawforge secrets --dump",
   },
   IMAGE_UNPINNED: {
     severity: "warning",
-    // Not blocking: a tag still resolves to something and the instance is doing its job.
-    // What is at risk is invisible drift on THIS deployment's own next recreate (up, restart
-    // after compose changes, apply) — a moving tag is shared with every other deployment on
-    // the same Docker daemon that names it, and any one of them pulling it moves what all of
-    // them get next. `./clawforge bootstrap` pins this itself the moment it first
-    // pulls; an instance that still names a bare tag either predates that or was edited back
-    // to one.
+    // Not blocking: the tag still resolves and the instance works. Risk is drift on THIS
+    // deployment's own next recreate — a moving tag is shared with every other deployment on
+    // the same Docker daemon. `bootstrap` pins it the moment it first pulls.
     summary: "OPENCLAW_IMAGE names a tag rather than a digest — a pull elsewhere on this Docker daemon can move what this deployment runs next",
     nextAction: "./clawforge upgrade",
   },
   IMAGE_TAG_MOVED: {
     severity: "warning",
-    // The present-tense sibling of IMAGE_UNPINNED: not merely "this could drift" but "the tag
-    // already points somewhere else". The running container still holds what it was created
-    // with — only ITS next recreate would actually switch — so this is caught here, before
-    // that recreate is the first place anyone notices.
+    // Present-tense sibling of IMAGE_UNPINNED: the tag already points elsewhere, though the
+    // running container still holds what it was created with — only its next recreate switches.
     summary: "the local tag OPENCLAW_IMAGE names now resolves to different content than the running container — its next recreate would switch images",
     nextAction: "./clawforge upgrade",
   },
 
-  // Set-level findings. Their remedy is always an edit to the declaration rather than a
-  // command, so they all point back at the validator: run it again once the file is fixed.
-  // Separate codes rather than one SET_INVALID because they are separate mistakes with
-  // separate fixes, and a caller branching on them should not have to read prose to tell a
-  // missing file from a broken reference.
+  // Set-level findings. Remedy is always an edit to the declaration, so they all point back
+  // at the validator. Separate codes rather than one SET_INVALID: separate mistakes with
+  // separate fixes, so a caller branching on them need not read prose.
   SET_RECIPE_INCOMPLETE: {
     severity: "blocking",
     summary: "a recipe the set declares is absent, or lacks a file its own declaration implies",
@@ -304,20 +260,16 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   SET_DECLARATION_INVALID: {
     severity: "blocking",
-    // config/desired-state.json is a batch-file payload — OpenClaw's own `config set
-    // --batch-file` consumes it as a JSON array of { path, value } operations. Syntactically
-    // valid JSON of the wrong shape (an object, say) passes JSON.parse but is not a
-    // declaration at all; catching only "not valid JSON" let one through to build/install and
-    // fail only later, inside the container, when config set --batch-file itself chokes on it.
+    // config/desired-state.json is a batch-file payload for OpenClaw's `config set
+    // --batch-file` (JSON array of {path, value}); syntactically valid JSON of the wrong
+    // shape (an object, say) passes JSON.parse but is not a declaration.
     summary: "config/desired-state.json is valid JSON but not a valid list of {path, value} operations",
     nextAction: "./clawforge set validate",
   },
   SET_REQUIREMENT_UNMET: {
     severity: "warning",
-    // A warning rather than a refusal: an older framework may install the set correctly, and
-    // the reader is who decides. What must not happen is the mismatch going unmentioned — a
-    // set pins its requirements precisely so that installing it elsewhere is not a silent
-    // substitution.
+    // Warning, not a refusal: an older framework may install the set correctly, and the
+    // reader decides. What must not happen is the mismatch going unmentioned.
     summary: "this machine differs from what the installed set requires",
     nextAction: "./clawforge inspect",
   },
@@ -328,16 +280,15 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   SET_OBJECT_ORPHANED: {
     severity: "warning",
-    // A warning, not CONFIG_DRIFT's blocking treatment: a leftover agent, MCP server or cron
-    // job does not stop the instance doing its job the way an unapplied config setting does.
-    // Removing an agent prunes its workspace and memory, which is not automatic — the plan
-    // says so and leaves the decision to whoever reads it.
+    // Warning, not CONFIG_DRIFT's blocking: a leftover agent/MCP server/cron job doesn't
+    // stop the instance doing its job. Removing an agent also prunes workspace/memory, which
+    // plan leaves to the reader rather than doing unattended.
     summary: "this framework created something a recipe in the set no longer declares",
     nextAction: "./clawforge plan",
   },
 
-  // The security gate (doctor/accept only — security/audit.ts): OpenClaw's own
-  // audits read from inside the instance, plus a few things only the host side can see.
+  // The security gate (doctor/accept only — security/audit.ts): OpenClaw's own audits plus
+  // a few things only the host side can see.
   SECURITY_AUDIT_CRITICAL: {
     severity: "blocking",
     summary: "openclaw security audit or secrets audit found a critical/error-severity issue",
@@ -350,8 +301,8 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   GATEWAY_PUBLICLY_BOUND: {
     severity: "blocking",
-    // OpenClaw itself never sees this: gateway.bind inside the container can say loopback
-    // while Docker still publishes the port on every host interface.
+    // OpenClaw never sees this: gateway.bind inside the container can say loopback while
+    // Docker still publishes the port on every host interface.
     summary: "the gateway is published on every interface (0.0.0.0/::), not loopback-only",
     nextAction: "./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and ./clawforge up to recreate, or acknowledge it in config/security-suppressions.json)",
   },
@@ -374,9 +325,7 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
 
   // Upkeep findings: whether this deployment could actually be recovered, not whether it is
-  // currently serving — a healthy, fully-drifted-free instance can still have no way back
-  // from a lost disk. Always warnings: none of them are true today about the RUNNING
-  // instance, only about tomorrow's recovery from it.
+  // serving — always warnings, since none of them are true today about the running instance.
   BACKUP_MISSING: {
     severity: "warning",
     summary: "this deployment has never produced a full backup archive",
@@ -384,19 +333,16 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   },
   BACKUP_STALE: {
     severity: "warning",
-    // The scheduled job silently stopping — crontab rebuilt, a disabled Task Scheduler
-    // entry — is the ordinary way this fires, so the remedy re-installs the schedule
-    // rather than merely running one backup that would go stale again the same way.
+    // A silently-stopped scheduled job is the ordinary cause, so the remedy reinstalls the
+    // schedule rather than just running one backup that would go stale the same way.
     summary: "the newest full backup archive is older than OC_BACKUP_MAX_AGE allows",
     nextAction: "./clawforge backup install --apply",
   },
   DISK_LOW: {
     severity: "warning",
-    // Distinct from watch's own DISK_LOW (health.ts): that one is a liveness signal
-    // (degraded/down, data directory only, OC_WATCH_DISK_MIN_MB) polled on a schedule; this
-    // one is a doctor/inspect finding (warning only, data OR backup directory,
-    // OC_DISK_MIN_FREE_MB) read on demand. Two mechanisms, deliberately not merged — see
-    // upkeep.ts's own header.
+    // Distinct from watch's own DISK_LOW (health.ts): that one is a liveness signal on a
+    // schedule; this is a doctor/inspect finding read on demand. Deliberately not merged —
+    // see upkeep.ts's header.
     summary: "free space at the data directory or the backup directory is below OC_DISK_MIN_FREE_MB",
     nextAction: "./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)",
   },
@@ -411,14 +357,10 @@ export interface Problem {
   readonly nextAction: string;
 }
 
-/** Builds a problem from its code, so severity and remedy come from one table rather than
- *  from whichever call site got there first.
- *
- *  nextAction can be overridden for a problem whose remedy is more specific than the code's
- *  general one — a single named recipe to re-provision rather than the whole declaration,
- *  or (unreachableProblem, below) which env var to check for the transport that actually
- *  failed. The severity deliberately cannot — a caller deciding that its own CONFIG_DRIFT is
- *  only a warning is the failure this table exists to prevent. */
+/** Builds a problem from its code so severity/remedy come from one table, not from
+ *  whichever call site got there first. nextAction can be overridden for a more specific
+ *  remedy; severity deliberately cannot — a caller downgrading its own CONFIG_DRIFT is
+ *  exactly what this table exists to prevent. */
 export function problem(code: ProblemCode, detail: string, nextAction?: string): Problem {
   const meaning = PROBLEM_CODES[code];
   return {
@@ -429,9 +371,9 @@ export function problem(code: ProblemCode, detail: string, nextAction?: string):
   };
 }
 
-/** TARGET_UNREACHABLE, straight from the transport's own typed failure — the one place
- *  every caller (gatherInspection, status, backup list) turns "wsl.exe/ssh itself never
- *  reached the target" into the same code, message and remedy. */
+/** TARGET_UNREACHABLE from the transport's own typed failure — one place every caller
+ *  (gatherInspection, status, backup list) turns "transport never reached the target" into
+ *  the same code, message and remedy. */
 export function unreachableProblem(error: TransportUnreachableError): Problem {
   return problem("TARGET_UNREACHABLE", error.message, error.nextAction);
 }
@@ -446,12 +388,10 @@ export interface DeclaredState {
   readonly recipes: readonly string[];
 }
 
-/** One outbound endpoint the live configuration names, asked of the container itself. The
- *  states separate the ways this fails because a reader has to know which happened:
- *  "dns" — the name does not resolve from inside the container; "unreachable" — it resolves
- *  but does not answer; "invalid" — the configured value is not a usable URL at all;
- *  "timeout" — it gave no answer at all within the probe's whole deadline (DNS, connection,
- *  headers and body alike), so no reachability verdict is possible either way. */
+/** One outbound endpoint the live configuration names, probed from inside the container.
+ *  States: "dns" — name doesn't resolve; "unreachable" — resolves but doesn't answer;
+ *  "invalid" — not a usable URL; "timeout" — no answer within the whole probe deadline, so
+ *  no reachability verdict either way. */
 export interface EgressObservation {
   /** The configuration path that names it, e.g. models.providers.zai.baseUrl. */
   readonly path: string;
@@ -463,16 +403,15 @@ export interface EgressObservation {
 }
 
 /** One .env connection fact against the running container, by variable NAME — never a
- *  value: the file mixes a real secret with the plumbing, so nothing parsed from it is
- *  printable beyond the four names. "unrecovered" — the running container's answer did not
- *  carry this fact, so there was nothing to compare against; named, not guessed. */
+ *  value, since the file mixes a real secret with plumbing. "unrecovered" — the running
+ *  container's answer did not carry this fact, so there was nothing to compare against. */
 export interface ConnectionFactObservation {
   readonly name: string;
   readonly state: "match" | "stale" | "unrecovered";
 }
 
-/** The deployment's default local secret store — secrets/local.env, the store `secrets
- *  --dump` writes without a --store — against the values the target holds. */
+/** The deployment's default local secret store — secrets/local.env, written by `secrets
+ *  --dump` without a --store — against the values the target holds. */
 export interface SecretStoreObservation {
   readonly file: string;
   /** Required names present on the target with no value in the store. Names only. */
@@ -480,7 +419,7 @@ export interface SecretStoreObservation {
 }
 
 /** One channel account, as `openclaw channels status --json` reports it. Loosely typed on
- *  purpose: this is reading someone else's report to look for trouble in, not validating it. */
+ *  purpose: this reads someone else's report looking for trouble, not validating it. */
 export interface ChannelAccountStatus {
   readonly accountId?: unknown;
   readonly enabled?: unknown;
@@ -502,41 +441,33 @@ export interface ObservedState {
   readonly health?: string;
   /** HTTP probe results by endpoint, e.g. { healthz: 200 }. */
   readonly probes: Readonly<Record<string, number>>;
-  /** Outbound reachability of the endpoints the live configuration names, probed from INSIDE
-   *  the container — the vantage the inbound probes above (taken from the operator machine)
-   *  structurally lack. Present only when the instance is running and the probe could run at
-   *  all; an absent field is a gap, never a quiet claim that everything is reachable. */
+  /** Outbound reachability of endpoints the live config names, probed from inside the
+   *  container — the vantage the inbound probes above structurally lack. Present only when
+   *  running and probeable; absence is a gap, never a claim that everything is reachable. */
   readonly egress?: readonly EgressObservation[];
-  /** The deployment .env's connection facts against the running container, by variable
-   *  NAME. Present only when the comparison ran: a runtime that cannot introspect the
-   *  container, a container that is not running, or an absent .env each leave it absent —
-   *  a gap, never a quiet claim that the folder matches. */
+  /** The deployment .env's connection facts against the running container, by NAME.
+   *  Present only when the comparison ran; absence is a gap, never a claim the folder matches. */
   readonly connectionFacts?: readonly ConnectionFactObservation[];
-  /** The deployment's default local store against the values the target holds, by variable
-   *  NAME. Present only when a store file existed to read: bootstrap puts values on the
-   *  target without ever creating a store, so an absent store is not checked, and this
-   *  field's absence is that gap, never a claim that the store is complete. */
+  /** The deployment's default local store against the target's values, by NAME. Present
+   *  only when a store file existed — bootstrap can put values on the target without ever
+   *  creating one, so an absent store isn't checked and this field's absence is that gap. */
   readonly secretStore?: SecretStoreObservation;
-  /** `channels status --json`'s own answer, gathered in the same batched CLI call as
-   *  agents/mcp/cron/plugins/skills only when the caller opted in (gatherInspection's
-   *  `channels` option) — `./clawforge watch check` is the only one that does. Present only
-   *  then, and absent (a gap, never a verdict) when that option was not set or the command
-   *  itself failed: inspect/doctor/plan/apply never ask for it, so their own output never
-   *  carries this field. */
+  /** `channels status --json`'s answer, gathered in the same batched CLI call only when the
+   *  caller opts in (gatherInspection's `channels` option — only `watch check` does).
+   *  Absence is a gap, never a verdict. */
   readonly channels?: ChannelsStatusResponse;
   /** Image actually in use, and its digest when the runtime can resolve one. */
   readonly image?: string;
   readonly imageDigest?: string;
-  /** Live values for the paths the declaration names, so drift is a comparison rather than
-   *  a diff of two whole documents — a live config contains far more than we declare. */
+  /** Live values for the paths the declaration names — drift is a comparison, not a diff of
+   *  two whole documents, since a live config contains far more than we declare. */
   readonly config: Readonly<Record<string, unknown>>;
   readonly secrets: readonly SecretStatus[];
   readonly agents: readonly string[];
   readonly mcpServers: readonly string[];
   readonly cronJobs: readonly string[];
-  /** Present on the instance, absent from the ledger — this framework did not create it and
-   *  never proposes touching it. Reported so a reader can see the boundary rather than guess
-   *  at it. */
+  /** Present on the instance, absent from the ledger — not created by this framework, never
+   *  proposed for removal. Reported so the boundary is visible, not guessed at. */
   readonly foreignObjects: readonly { readonly kind: OwnedKind; readonly name: string }[];
   /** Framework and OpenClaw versions, for the answer to "what is running here". */
   readonly frameworkVersion?: string;
@@ -553,17 +484,11 @@ export function blockingProblems(problems: readonly Problem[]): readonly Problem
   return problems.filter((entry) => entry.severity === "blocking");
 }
 
-/** Whether the instance is doing its job: running, serving, and with nothing blocking.
- *
- *  Deliberately not "problems.length === 0" — a warning is a thing worth saying, not a
- *  reason to call a working instance broken.
- *
- *  And deliberately not "the runtime says healthy" alone. A container in its healthcheck's
- *  grace period reports "starting", which is the state every instance passes through on the
- *  way up: right after a restart the gateway answers every probe while the runtime has not
- *  concluded anything yet. Answering probes is the stronger evidence of serving, so it
- *  counts. A runtime that has actually decided the container is broken still overrules
- *  them — the two disagreeing that way is a real finding, not a grace period. */
+/** Instance is doing its job: running, serving, nothing blocking. Not "problems.length ===
+ *  0" — a warning is not a reason to call a working instance broken. Not "runtime says
+ *  healthy" alone either — a container in healthcheck grace period reports "starting" while
+ *  already answering every probe, so answering counts as evidence of serving; a runtime
+ *  that has actually decided the container is broken still overrules that. */
 export function isHealthy(inspection: Inspection): boolean {
   const { running, health, probes } = inspection.observed;
   if (!running) return false;
@@ -575,8 +500,8 @@ export function isHealthy(inspection: Inspection): boolean {
   return health === "healthy" || serving;
 }
 
-/** The remedies for the problems found, in the order the problems were reported and without
- *  repeats — what an agent should do next, as a list rather than as prose it has to read. */
+/** The remedies for the problems found, in report order and without repeats — what an
+ *  agent should do next, as a list rather than prose it has to read. */
 export function nextActions(problems: readonly Problem[]): string[] {
   return [...new Set(problems.map((entry) => entry.nextAction))];
 }

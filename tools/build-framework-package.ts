@@ -1,17 +1,12 @@
 // Builds tools/framework/ into a publishable npm package.
 //
-// This repo's own ./clawforge runs the framework's TypeScript directly — no build step, by
-// design. That stops working once the framework is installed as a dependency: Node
-// refuses to type-strip anything it loads from inside node_modules
-// (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), confirmed by actually packing and
-// installing the raw .ts sources and watching that error come back. There is no flag to
-// turn it off.
+// This repo's own ./clawforge runs the framework's TypeScript directly, no build step —
+// but Node refuses to type-strip anything it loads from inside node_modules
+// (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING, confirmed by actually installing the raw
+// .ts sources), so installed-as-dependency needs one. Node strips types for the JS build;
+// tsgo emits the declaration graph; both use published .js import paths.
 //
-// Node strips types for the JavaScript build; tsgo emits the declaration graph.
-// Both outputs use published .js import paths.
-//
-// Output goes to tools/framework/dist/ — git-ignored, regenerated on demand by this
-// script, never hand-edited, never the source of truth.
+// Output goes to tools/framework/dist/ — git-ignored, regenerated on demand, never hand-edited.
 
 import { readdir, readFile, writeFile, mkdir, rm, copyFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
@@ -40,14 +35,11 @@ async function collectTsFiles(dir: string): Promise<string[]> {
   return files;
 }
 
-/** Only rewrites the extension inside a quoted static or dynamic import/export specifier —
- *  never touches comments or unrelated string literals, which is why this is not a blanket
- *  ".ts" -> ".js" replace across the whole file.
- *
+/** Only rewrites the extension inside a quoted static/dynamic import/export specifier —
+ *  never comments or unrelated strings, so this isn't a blanket ".ts" -> ".js" replace.
  *  Also resolves "#src/..." subpath imports (tools/framework/package.json's own "imports"
- *  map, used in the source tree for readability) down to a plain relative path. dist/ ships
- *  with no package.json of its own, so nothing in it can rely on "#src/" resolving at
- *  runtime — the published package must be as self-contained as the pre-alias source was. */
+ *  map, source-tree only) down to a plain relative path — dist/ ships with no package.json
+ *  of its own, so nothing in it can rely on "#src/" resolving at runtime. */
 function rewriteSpecifiers(code: string, fileDir: string, sourceRoot = frameworkDir): string {
   return code.replace(
     /((?:from|import)\s*\(?\s*["'])(\.[^"']+|#src\/[^"']+)\.ts(["'])/g,
@@ -124,12 +116,9 @@ async function build(): Promise<void> {
     const outFile = resolve(distDir, rel);
     await mkdir(dirname(outFile), { recursive: true });
 
-    // The shebang travels unchanged. bin.ts's own comment says why: this compiled bin.js
-    // dynamically imports the CONSUMER's own app.ts at runtime (never compiled by this
-    // build — it is not this package's file), and the explicit type-stripping flag keeps
-    // loading deterministic across supported Node 24 releases. Omitting the flag leaves a
-    // published package unable to load a consumer's app.ts when that consumer disables
-    // stripping, with "Unknown file extension \".ts\"".
+    // The shebang travels unchanged (bin.ts's own comment says why): this compiled bin.js
+    // dynamically imports the CONSUMER's own app.ts at runtime, and the explicit
+    // type-stripping flag keeps loading deterministic across supported Node 24 releases.
     await writeFile(outFile, rewritten, "utf8");
   }
 

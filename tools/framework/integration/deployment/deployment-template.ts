@@ -72,23 +72,16 @@ export function gitignoreLines(nodeModules: boolean): string[] {
 }
 
 /** Whether a data directory sits under /srv — the template's own default (`deploymentEnv`
- *  above), and the one place a fresh host is most often root-owned before the first
- *  bootstrap. An operator's own OC_DATA_DIR (edited into .env after creation) may say
- *  anything; this only judges what was just written. */
+ *  above), and the one place a fresh host is most often root-owned before first bootstrap. */
 export function isUnderSrv(dataDir: string): boolean {
   return dataDir === "/srv" || dataDir.startsWith("/srv/");
 }
 
-/** The "next:" block printed once a deployment directory is written — shared by scaffold.ts's
- *  `new-app` and init.ts's `init`, which differ only in how bootstrap is invoked (`--app
- *  <name>` for a monorepo deployment, bare for an installed one).
- *
- *  Names the data directory the .env just chose rather than pointing at the file and leaving
- *  the reader to open it and find "data directory" only in a troubleshooting table
- *  (README's, previously the one place /srv's root-ownership was ever mentioned). Points at
- *  `bootstrap --check` rather than guessing a `sudo install -d` line here: this runs before
- *  any target exists to ask, so it cannot know the target user's actual name the way
- *  `bootstrap --check` (run against the real target) can. */
+/** The "next:" block printed once a deployment directory is written — shared by
+ *  scaffold.ts's `new-app` and init.ts's `init`, differing only in how bootstrap is
+ *  invoked. Names the data directory rather than pointing at the file and leaving the
+ *  reader to find it in a troubleshooting table. Points at `bootstrap --check` rather than
+ *  guessing a `sudo install -d` line here: this runs before any target exists to ask. */
 export function nextStepsLines(envFile: string, dataDir: string, bootstrapCommand: string): string[] {
   const lines = [`  1. data directory: ${dataDir}  (also check ${envFile} for the port and image)`];
   if (isUnderSrv(dataDir)) {

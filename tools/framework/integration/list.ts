@@ -52,10 +52,8 @@ async function defaultBuildContext(app: AppDefinition, directory: string): Promi
   });
 }
 
-/** The four configuration fields plus pinning, read straight from .env — never through an
- *  app.ts, which may not even load: these are always literal environment values, not
- *  something an application computes, so a deployment answers this much even when its own
- *  app.ts is broken. */
+/** The four configuration fields plus pinning, read straight from .env — never through
+ *  app.ts (may not load): always literal environment values, not something an app computes. */
 function configSummary(name: string, settings: Settings): Omit<DeploymentSummary, "state"> {
   const target = settings.location === "ssh" && settings.sshHost !== ""
     ? `ssh:${settings.sshHost}`
@@ -118,15 +116,11 @@ async function summarizeDeployment(
   }
 }
 
-/** One row per apps/<name>, read-only throughout. Deployments are visited one at a time
- *  rather than concurrently: buildContext's useDeployment() is a single global the runtime
- *  reads at call time (deploymentDir(), composeProjectName()), not only while the Context is
- *  built, so two deployments in flight together would have the second one's isRunning() call
- *  silently answer for whichever directory happened to be active when it actually ran. The
- *  global is restored to whatever it was before this ran (an active MCP session naming its
- *  own deployment must not find itself pointed at apps/'s last entry once `list` returns);
- *  left alone when nothing had selected one yet, since the monorepo gate exits right after a
- *  gate command runs and there is nothing left to corrupt. */
+/** One row per apps/<name>, read-only throughout. Visited one at a time, not concurrently:
+ *  buildContext's useDeployment() is a single global the runtime reads at call time, so two
+ *  deployments in flight would have the second one's isRunning() silently answer for
+ *  whichever directory was active. Restored to whatever it was before this ran (an active
+ *  MCP session must not find itself pointed at apps/'s last entry once `list` returns). */
 export async function listDeployments(options: ListDeploymentsOptions = {}): Promise<DeploymentSummary[]> {
   const root = options.appsRoot ?? appsDir;
   const checkStatus = options.checkStatus ?? true;

@@ -13,11 +13,9 @@ export function archiveRoot(entries: string[]): string {
   return [...roots][0];
 }
 
-/** Whether an archive listing holds anything beneath its single root directory.
- *
- *  A successful tar is not evidence of a backup: pointed at a data directory that is
- *  itself a symlink, tar stores one entry — the link — and exits 0, and an archive that
- *  holds nothing beneath its root restores nothing anywhere. createBackup() checks the
+/** Whether an archive listing holds anything beneath its single root directory. A
+ *  successful tar is not evidence of a backup: pointed at a data directory that is itself
+ *  a symlink, tar stores one entry (the link) and exits 0. createBackup() checks the
  *  staging archive with this before publishing it. */
 export function archiveCarriesContent(entries: string[]): boolean {
   let root: string;
@@ -64,21 +62,18 @@ export function reportableProblems(problems: readonly ArchiveProblem[]): { toRep
   };
 }
 
-/** Whether a hard-link target — given root-relative, the same coordinate space as every
- *  other archive member — names something outside that root. Unlike a symlink, there is no
- *  "dangling but harmless" case: extraction performs `link()` immediately, so an out-of-root
- *  target is read the moment the archive is unpacked, not only if something is written
- *  through it later. */
+/** Whether a hard-link target, given root-relative, names something outside that root.
+ *  Unlike a symlink there's no "dangling but harmless" case: extraction performs `link()`
+ *  immediately, so an out-of-root target is read the moment the archive unpacks. */
 function hardlinkEscapes(target: string, root: string): boolean {
   if (target.startsWith("/")) return true;
   if (target.split("/").includes("..")) return true;
   return target !== root && !target.startsWith(`${root}/`);
 }
 
-/** A link found in the archive listing: where it resolves and how it was declared. Kept
- *  separate from a plain string target because a symlink and a hard link resolve their
- *  target in different coordinate spaces (own directory vs. archive root) and carry
- *  different risk (dangling-but-harmless vs. read-on-extract). */
+/** A link found in the archive listing. Kept separate from a plain string target because a
+ *  symlink and a hard link resolve their target in different coordinate spaces (own
+ *  directory vs. archive root) and carry different risk (dangling-but-harmless vs. read-on-extract). */
 export interface ArchiveLink {
   readonly target: string;
   readonly kind: "symlink" | "hardlink";
@@ -86,12 +81,11 @@ export interface ArchiveLink {
 
 type ChainResolution = { readonly kind: "resolved" } | { readonly kind: "escaped" } | { readonly kind: "cycle" };
 
-/** One canonical spelling of an archive-relative path: "./" prefixes (repeated), internal
- *  "./" segments, doubled slashes and a trailing slash all name the same file and must key
- *  and compare as one — a link registered as "./data//a/" and a listing entry "data/a/file"
- *  otherwise disagree about whether content is written through the link. ".." is a real
- *  segment with meaning, not noise, and is preserved; the degenerate spellings of the root
- *  normalize to "". */
+/** One canonical spelling of an archive-relative path: repeated/internal "./" segments,
+ *  doubled slashes and a trailing slash all name the same file and must key and compare as
+ *  one — a link registered as "./data//a/" and a listing entry "data/a/file" otherwise
+ *  disagree about whether content is written through the link. ".." is preserved; the
+ *  degenerate spellings of the root normalize to "". */
 function normalizeArchivePath(path: string): string {
   return path.split("/").filter((segment) => segment !== "" && segment !== ".").join("/");
 }
@@ -108,18 +102,14 @@ export function canonicalArchiveEntries(entries: readonly string[]): string[] {
   return canonical;
 }
 
-/** Resolves an archive-relative path segment by segment, in order, through every link
- *  standing in it. `resolved` holds only segments already proven link-free — a link among
- *  them was substituted before any later segment was appended — so a `..` popping from it
- *  is genuinely lexical: there is no unresolved link left to pop across. Substituting a
- *  link splices its target in front of the pending remainder, so the target's own segments
- *  are walked by the same rules: an intermediate target segment that names a link is
- *  resolved (its own target visited) BEFORE a following `..` consumes it, which is what
- *  makes `b/../safe` mean what the kernel means by it rather than the lexically simplified
- *  `safe` (without resolving first, `b` registered as a link to `../../outside` would be
- *  popped off unread, and a chain written through the first link would read as safely
- *  inside the root). A link key visited twice is a cycle; the substitution counter restates the old
- *  loop bound, though `seen` alone already caps substitutions at the number of links. */
+/** Resolves an archive-relative path segment by segment through every link in it.
+ *  `resolved` holds only already-proven link-free segments, so a `..` popping from it is
+ *  genuinely lexical. Substituting a link splices its target in front of the remainder, so
+ *  an intermediate target segment that is itself a link is resolved BEFORE a following `..`
+ *  consumes it — this is what makes `b/../safe` mean what the kernel means, not the
+ *  lexically-simplified `safe` (unresolved, a link `b -> ../../outside` would be popped off
+ *  unread, and a chain written through it would read as safely inside the root). A link key
+ *  visited twice is a cycle. */
 function resolveLinkChain(segments: readonly string[], links: ReadonlyMap<string, ArchiveLink>, root: string): ChainResolution {
   const resolved: string[] = [];
   const pending = [...segments];
@@ -154,16 +144,13 @@ function resolveLinkChain(segments: readonly string[], links: ReadonlyMap<string
   return { kind: "resolved" };
 }
 
-/** Finds what an unpack of this archive could do outside the directory it is aimed at.
- *
- *  tar happily restores an absolute path, one climbing out through .., a symlink pointing
+/** Finds what an unpack of this archive could do outside the directory it is aimed at. tar
+ *  happily restores an absolute path, one climbing out through .., a symlink pointing
  *  anywhere, or a hard link to anything already on the filesystem. The first two write
  *  outside on their own and are refused. A symlink pointing outside is only dangerous when
  *  the archive also writes *through* it — a plugin's node_modules/openclaw -> /app is an
- *  ordinary artefact of installing inside the image, and refusing it would reject every
- *  real snapshot. A hard link is refused outright: extraction performs `link()` the moment
- *  the archive is unpacked, aliasing whatever the target already names — there is no
- *  dangling case to be lenient about. */
+ *  ordinary artefact of installing inside the image. A hard link is refused outright:
+ *  `link()` aliases the target the moment extraction runs, no dangling case to be lenient about. */
 export function inspectArchive(entries: string[], links: Map<string, ArchiveLink>): ArchiveProblem[] {
   const problems: ArchiveProblem[] = [];
 
@@ -193,16 +180,12 @@ export function inspectArchive(entries: string[], links: Map<string, ArchiveLink
   }
 
   // Full canonicalization, where `paths` above deliberately keeps its raw spelling: the
-  // structural checks must still see a leading "/" and every real ".." segment. Here, one
-  // name must key one map entry — a real archive's `tar -tv` listing carries the same "./"
-  // prefix on every entry, links included (GNU tar always does when the archive was made by
-  // tarring "." rather than a named subdirectory), and another producer can spell the same
-  // member with an internal "./", a doubled slash or a trailing slash. Left un-normalized,
-  // resolveLinkChain's own lookups (which key into this same map while walking a chain) and
-  // the writesThrough prefix match below disagree about whether content is written through a
-  // link — in the direction that reads a real escaping symlink as safe. A key canonicalizing
-  // to "" is a degenerate spelling of the root itself: it holds no name, and the root-as-link
-  // check below compares against `root` by name rather than by map key.
+  // structural checks must still see a leading "/" and every real ".." segment. One name
+  // must key one map entry — GNU tar's "./" prefix on every entry, or another producer's
+  // internal "./", doubled slash or trailing slash, could otherwise make resolveLinkChain's
+  // lookups and the writesThrough match below disagree about whether content is written
+  // through a link, in the direction that reads a real escaping symlink as safe. A key
+  // canonicalizing to "" is the root itself, handled separately below by name.
   const normalizedLinks = new Map(
     [...links]
       .map(([rawSource, link]) => [normalizeArchivePath(rawSource), link] as const)
@@ -212,11 +195,9 @@ export function inspectArchive(entries: string[], links: Map<string, ArchiveLink
   const normalizedPaths = paths.map(normalizeArchivePath);
 
   for (const [source, link] of normalizedLinks) {
-    // The root is the one entry every later restore step is relative to — the fresh-identity
-    // deletion, the standard subdirectories, the ownership and permission pass. An archive
-    // that ships it as a link would put a symlink where an ordinary directory belongs, and
-    // those steps would follow it wherever it points. No archive this tooling produces can
-    // contain one, so it is refused even when the target happens to stay inside the parent.
+    // The root is what every later restore step is relative to (fresh-identity deletion,
+    // standard subdirectories, ownership/permission pass) — an archive shipping it as a
+    // link would put a symlink where a directory belongs. No archive this tooling produces has one.
     if (source === root) {
       problems.push({
         message: `the archive root is a ${link.kind}, not an ordinary directory: ${source} -> ${link.target}`,
@@ -230,10 +211,9 @@ export function inspectArchive(entries: string[], links: Map<string, ArchiveLink
         problems.push({ message: `hard link points outside the archive: ${source} -> ${link.target}`, fatal: true });
         continue;
       }
-      // The target names another archive member, not a bare filesystem path — and that
-      // member can itself be a link (symlink or a further hard link) whose own chain leaves
-      // the root. link() aliases whatever the chain ultimately names the moment extraction
-      // runs, so this is refused just as unconditionally as a literal out-of-root target.
+      // The target names another archive member, which can itself be a link whose own
+      // chain leaves the root — link() aliases whatever it ultimately names, so this is
+      // refused just as unconditionally as a literal out-of-root target.
       const resolution = resolveLinkChain(link.target.split("/"), normalizedLinks, root);
       if (resolution.kind !== "resolved") {
         problems.push({ message: `hard link points outside the archive: ${source} -> ${link.target}`, fatal: true });
@@ -241,9 +221,8 @@ export function inspectArchive(entries: string[], links: Map<string, ArchiveLink
       continue;
     }
 
-    // Walk the symlink's own chain rather than just its first hop: `data/a -> b` alone
-    // never leaves the root, but if `data/b` is itself a link that does, content nested
-    // under `data/a` in this archive is written through both.
+    // Walk the symlink's own chain, not just its first hop: `data/a -> b` alone never
+    // leaves the root, but if `data/b` is itself an escaping link, content under `data/a` is too.
     const resolution = resolveLinkChain(source.split("/"), normalizedLinks, root);
     if (resolution.kind === "resolved") continue;
     const writesThrough = normalizedPaths.some((path) => path.startsWith(`${source}/`));

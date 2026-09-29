@@ -67,15 +67,12 @@ export async function createContext(options: ContextOptions = {}): Promise<Conte
   // Registered here rather than where it is generated: every entry point builds a context,
   // and a failing child process is reported with its whole command line.
   registerSecret(config.env.OPENCLAW_GATEWAY_TOKEN);
-  // `./clawforge watch`'s alert webhook and heartbeat URL: outbound URLs, not printed
-  // anywhere on purpose (watch/webhook.ts), but registered too so a future leak into a
-  // thrown message is scrubbed the same way a gateway token is.
+  // watch's alert webhook and heartbeat URL are outbound URLs never printed on purpose
+  // (watch/webhook.ts) but registered too, so a future leak into a message is scrubbed.
   registerSecret(config.env.OC_WATCH_WEBHOOK);
   registerSecret(config.env.OC_WATCH_HEARTBEAT_URL);
-  // Optional, and read from this same .env rather than a separate file: an instance that
-  // already exists under a compose project name the deployment directory itself cannot use
-  // (Docker allows underscores, safeName does not) is managed under its real name instead
-  // of being forced to rename.
+  // Read from .env rather than a separate file: an instance under a compose project name
+  // the deployment dir can't use (Docker allows underscores, safeName does not) keeps its real name.
   useComposeProjectOverride(config.env.OC_COMPOSE_PROJECT === "" ? undefined : config.env.OC_COMPOSE_PROJECT);
   const transport = options.transport ?? await createTransport({
     location: config.location,
@@ -142,15 +139,11 @@ export interface ContextRefresh {
 }
 
 /** Re-derives a context from the deployment's .env as it is on disk NOW, for a run whose
- *  own steps rewrote that file (recover-env, secrets --apply). Settings are rebuilt the
- *  same way createContext builds them — the application's computed settings layered back
- *  on top, so a re-derivation cannot lose variables the app defines that .env does not
- *  carry. Transport and path bridge are reused: they depend only on coordinates that are
- *  part of the target identity, and a caller seeing a non-empty targetChanges must stop
- *  rather than continue on the returned context. Returns undefined for a context not
- *  built by createContext (hand-assembled ones carry no creation record and cannot be
- *  re-derived); callers treat that as "nothing to refresh", which keeps direct-command
- *  callers — and the checks driving them — on their own lifecycle. */
+ *  own steps rewrote that file (recover-env, secrets --apply). Settings rebuild the same
+ *  way createContext does, application's computed settings layered back on top. Transport
+ *  and path bridge are reused — they depend only on target-identity coordinates — and a
+ *  caller seeing a non-empty targetChanges must stop rather than continue on the returned
+ *  context. Returns undefined for a context not built by createContext (no creation record). */
 export async function refreshContext(previous: Context): Promise<ContextRefresh | undefined> {
   const creation = creationRecords.get(previous);
   if (creation === undefined) return undefined;

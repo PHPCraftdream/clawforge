@@ -2,12 +2,10 @@
 // command names, each command's own flags, and — for a multi-action command's `action`
 // positional (CommandArgument.choices) — its flags placed under the right action
 // (CommandArgument.actions), the same field help-render.ts and the MCP schema already read.
-// A gate command like version/help: no deployment needed, works in a fresh checkout.
 //
-// bash/zsh call `./clawforge list --json` lazily, from inside the shell function, only once a
-// shell actually asks for `--app`'s value — never baked into the generated text. Output never
-// carries a machine path: only the invoked name, `clawforge` or `./clawforge`, which is why a
-// script registers completion for both.
+// bash/zsh call `./clawforge list --json` lazily, from inside the shell function, only once
+// a shell asks for `--app`'s value — never baked into the generated text. Output never
+// carries a machine path: only the invoked name, `clawforge` or `./clawforge`.
 
 import { parseDeclaredArgs } from "../core/arguments.ts";
 import { reportError } from "../core/io/log.ts";
@@ -29,14 +27,10 @@ export const COMPLETION_ARGUMENTS: CommandArgument[] = [
  *  expose, sets) — that action's own value list plus which flags apply under each one. */
 interface CommandCompletionSpec {
   readonly name: string;
-  /** Every flag/option this command declares with no `actions` scoping — the command's own
-   *  flags when it has no action positional, or (core/app.ts's own documented meaning of an
-   *  absent `actions` field: "every action of a multi-action one shares") the ones offered
-   *  under every action when it does. The same declaration --help and the MCP schema already
-   *  read scoping from; this generator trusts it rather than each command's own private
-   *  per-action parser, so a flag some action's own grammar happens not to accept can still
-   *  be offered here — the same gap --help already has. Always ends with `--help`, which
-   *  every command answers (entry/cli.ts's requestsHelp). */
+  /** Every flag/option this command declares with no `actions` scoping — its own flags when
+   *  it has no action positional, or the ones every action shares (core/app.ts's documented
+   *  meaning of an absent `actions` field). Trusts the same declaration --help/MCP schema
+   *  read, not a private per-action parser. Always ends with `--help`. */
   readonly flags: readonly string[];
   readonly action?: {
     readonly values: readonly string[];
@@ -67,10 +61,9 @@ function specFor(name: string, declared: readonly CommandArgument[] | undefined)
   return { name, flags: globalFlags, action: { values: [...actionArgument.choices].sort(), flags: perAction } };
 }
 
-/** Every name the console dispatcher can resolve, from the same declarations `--help`/the MCP
- *  tool list are built from — `help` and `control-mcp` are dispatcher-level (entry/cli.ts),
- *  never declared commands, so they get a fixed flags-only entry here, same as knownCommandNames
- *  (integration/gate.ts) adds them by hand for the same reason. */
+/** Every name the console dispatcher can resolve, from the same declarations --help/the MCP
+ *  tool list are built from — `help`/`control-mcp` are dispatcher-level (entry/cli.ts), so
+ *  they get a fixed flags-only entry here, same as knownCommandNames adds them by hand. */
 export function buildCompletionModel(gateCommands: readonly GateCommand[]): readonly CommandCompletionSpec[] {
   const gateSpecs = gateCommands.map((command) => specFor(command.name, command.arguments));
   const appSpecs = Object.entries(openclawCommands).map(([name, command]) => specFor(name, command.arguments));
@@ -113,9 +106,8 @@ function bashFunctionBody(commands: readonly CommandCompletionSpec[], appFlag: b
     ? `  if [[ "$prev" == "--app" ]]; then\n    COMPREPLY=( $(compgen -W "${LIST_NAMES_JSON}" -- "$cur") )\n    return\n  fi\n`
     : "";
   const arms = commands.map(bashCaseArm).join("");
-  // The --app skip only makes sense where the gate actually has one — an installed
-  // single-deployment gate (appFlag: false) has no --app at all, so the generated script
-  // must not mention it either.
+  // The --app skip only makes sense where the gate has one — an installed single-deployment
+  // gate (appFlag: false) must not mention --app in the generated script either.
   const appSkip = appFlag
     ? "    if [[ $skip -eq 1 ]]; then skip=0; continue; fi\n" + '    if [[ "$w" == "--app" ]]; then skip=1; continue; fi\n'
     : "";
@@ -234,12 +226,10 @@ export function renderCompletion(shell: CompletionShell, commands: readonly Comm
   return renderPwsh(commands, appFlag);
 }
 
-/** `siblingGateCommands` is the SAME array the caller (tools/clawforge.ts, entry/bin.ts)
- *  builds its own gate list into — this command is pushed onto it after the literal, so the
- *  closure below sees every entry (itself included) once `run` actually executes, without
- *  this module needing to know the gate's own command set up front. `appFlag` says whether
- *  the caller's gate has an `--app` selector at all (the monorepo gate does; the installed
- *  single-deployment one does not). */
+/** `siblingGateCommands` is the SAME array the caller builds its own gate list into — this
+ *  command is pushed onto it after the literal, so the closure sees every entry (itself
+ *  included) once `run` executes. `appFlag` says whether the caller's gate has an `--app`
+ *  selector (the monorepo gate does; the installed single-deployment one doesn't). */
 export function makeCompletionGateCommand(siblingGateCommands: readonly GateCommand[], appFlag: boolean): GateCommand {
   return {
     name: "completion",

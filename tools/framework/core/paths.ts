@@ -1,28 +1,16 @@
 // The path bridge: one place that knows how the same file is named in different worlds.
 //
-// There are four coordinate systems in play, and a path from one is meaningless in
-// another:
+// Four coordinate systems, each meaningless in another: tool (where this process runs —
+// D:\dev\x on Windows, /mnt/d/dev/x in WSL, /d/dev/x in Git Bash), target (the machine the
+// instance lives on, e.g. /srv/openclaw/data), container (inside the gateway, e.g.
+// /home/node/.openclaw), remote (an install dir on a server, e.g. /opt/openclaw).
 //
-//   tool       where this process runs. On Windows: D:\path\to\clawforge.
-//              Inside WSL: /mnt/d/path/to/clawforge. In Git Bash: /d/path/to/clawforge.
-//   target     the machine the instance lives on: /srv/openclaw/data.
-//   container  inside the gateway container: /home/node/.openclaw.
-//   remote     an install directory on a server: /opt/openclaw.
-//
-// Why this is centralised rather than done inline:
-//
-//   - `docker compose` runs on the target and is handed the compose file path — D:\dev\x
-//     means nothing there.
-//   - Arguments that end up INSIDE the container (a batch file for `config set`) must be
-//     expressed in container coordinates, not target ones.
-//   - The WSL automount root is configurable in /etc/wsl.conf; assuming /mnt breaks
-//     silently for anyone who changed it.
-//   - Bind mounts are nested (workspace lives inside the config mount), so translation has
-//     to prefer the longest match or a path lands in the wrong mount — a wrong answer, not
-//     an error.
+// Centralised because: docker compose runs on the target, not tool coordinates; a batch
+// file for `config set` must use container coordinates; the WSL automount root
+// (/etc/wsl.conf) is configurable, not always /mnt; bind mounts nest, so translation must
+// prefer the longest match or it silently lands in the wrong mount.
 //
 // Rule for the rest of the codebase: no string surgery on paths outside this module.
-// No "/mnt/" + drive, no "/home/node/..." literals.
 
 /** Where a path is meaningful. */
 export type PathSpace = "tool" | "target" | "container";

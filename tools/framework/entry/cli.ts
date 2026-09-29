@@ -20,20 +20,17 @@ import type { AppCommand, AppDefinition } from "../core/app.ts";
 // listing against the real grouping and wording rather than a copy that could drift from it.
 export { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker };
 
-/** Lines shown between the command list and the closing "Run ./clawforge help ..." hint — the one
- *  part of this help screen that is gate-specific (monorepo: --app/new-app; installed: init)
- *  rather than something an AppDefinition or its commands could know. tools/clawforge.ts (several
- *  deployments under apps/<name>) and bin.ts (one deployment, this directory) each pass
- *  their own; this default is tools/clawforge.ts's, unchanged from before this became a parameter. */
+/** Lines shown between the command list and the closing "Run ./clawforge help ..." hint —
+ *  gate-specific (monorepo: --app/new-app; installed: init), not something an AppDefinition
+ *  could know. tools/clawforge.ts and bin.ts each pass their own; this default is tools/clawforge.ts's. */
 const DEFAULT_GATE_HELP = [
   "  --app <name>      pick another deployment, before the command (default: the OC_APP one)",
   "  new-app <name>    create a deployment under apps/",
 ];
 
-/** Whether argv asks for this command's own `--help`, scanning only tokens before the first
- *  bare `--` — the same boundary `host`'s own parser draws (parseHostArgs). A command whose
- *  whole job is passing argv through to something else (`cli`, `exec`) reaches THAT tool's
- *  own `--help` by putting it after `--`; anywhere before it, `--help` is ours. */
+/** Whether argv asks for this command's own `--help`, scanning only tokens before the
+ *  first bare `--` (the same boundary `host`'s parser draws) — a command that passes argv
+ *  through (`cli`, `exec`) reaches THAT tool's `--help` by putting it after `--`. */
 export function requestsHelp(args: string[]): boolean {
   const sep = args.indexOf("--");
   return (sep === -1 ? args : args.slice(0, sep)).includes("--help");
@@ -68,19 +65,15 @@ export async function runApp(
     return name === undefined ? 1 : 0;
   }
 
-  // `./clawforge help` alone behaves like `--help`; `./clawforge help <command>` is the same lookup
-  // `<command> --help` does, just easier to reach for from a cold start — "what commands
-  // exist" and "what does this one do" are both spelled the same way, `help`. Shared with the
-  // MCP `help` tool (integration/mcp/server.ts) through renderHelp, so the two never answer
-  // the same question differently.
+  // `help` alone behaves like `--help`; `help <command>` is the same lookup `<command>
+  // --help` does. Shared with the MCP `help` tool (integration/mcp/server.ts) through
+  // renderHelp, so the two never answer the same question differently.
   if (name === "help") {
     return renderHelp(args[0], app, gateCommands, gateHelp) ? 0 : 1;
   }
 
-  // Framework-level command: serves the application's own commands as MCP tools, so the
-  // instance can be driven from a chat client as well as from a terminal. --help is
-  // checked before starting the server, not after — the server owns stdin/stdout for
-  // JSON-RPC once it runs.
+  // Serves the application's commands as MCP tools, so the instance can be driven from a
+  // chat client too. --help is checked before starting: the server owns stdio once it runs.
   if (name === "control-mcp") {
     if (args.includes("--help") || args.includes("-h")) {
       log(`control-mcp — expose ${app.name}'s commands as MCP tools`);
@@ -94,10 +87,8 @@ export async function runApp(
       info("by hand outside of testing.");
       return 0;
     }
-    // The gate's commands travel with the application's: the surface is a mirror of what
-    // `./clawforge` can do, and where a command happens to be dispatched from is our layering, not
-    // a distinction a client should have to know about. gateHelp rides along too — it is what
-    // the MCP `help` tool's no-argument form renders, same as the console's own usage screen.
+    // Gate commands travel with the application's — the surface mirrors what `./clawforge`
+    // can do. gateHelp rides along too, for the MCP `help` tool's no-argument form.
     await serveMcp(app, gateCommands, gateHelp);
     return 0;
   }
@@ -117,14 +108,11 @@ export async function runApp(
   useApplicationRecipesDir(app.recipesDir);
   clearRecipesDir();
 
-  // Recovery repairs the very facts a Context is validated from, so it cannot owe its own
-  // dispatch to a built one: with OC_DATA_DIR absent, createContext dies in the settings
-  // parser before the command that exists to fill that fact can even start. Its
-  // bootstrap builds only what the container read needs — transport and project identity
-  // (commands/operate/recover-env/bootstrap.ts). Compared by identity so the declaration stays the
-  // single source of truth: if the declaration ever wires a different run, this branch
-  // stops firing and the recover-env dispatch regression fails on the settings parser's
-  // refusal instead of recovery's own.
+  // Recovery repairs the very facts a Context is validated from, so it can't owe its own
+  // dispatch to a built one — with OC_DATA_DIR absent, createContext dies in the settings
+  // parser before recover-env could even start. Its own bootstrap builds only what the
+  // container read needs: transport and project identity (recover-env/bootstrap.ts).
+  // Compared by identity so the declaration stays the single source of truth.
   if (command.run === recoverEnv) {
     await recoverEnvBeforeContext(args, { service: app.service?.name });
     return 0;
@@ -132,9 +120,8 @@ export async function runApp(
 
   const runArgs = splitInlineOptions(command, args);
 
-  // Before the context: it parses .env and builds the runtime around it, so a command that
-  // is supposed to create that file cannot be the one to run afterwards. Only a call about to
-  // mutate prepares it: read-only (--check) and refused argv create nothing.
+  // Before the context: it parses .env and builds the runtime around it, so a command
+  // meant to create that file cannot run after it exists. Only a mutating call prepares it.
   try {
     if (preparesEnvironmentFor(command, runArgs)) await ensureEnvironment();
   } catch (error) {
@@ -167,12 +154,9 @@ export async function runApp(
   return 0;
 }
 
-/** The standard answer to a token no declared argument matches: the refusal itself (already
- *  carrying a did-you-mean guess at the nearest declared flag, from parseDeclaredArgs — see
- *  core/arguments.ts) plus a pointer to that command's own --help — a pointer only this
- *  dispatcher can add, since parseDeclaredArgs never learns the command name it is parsing
- *  for. Mirrors reportUnknownCommand's shape (integration/gate.ts) for the sibling case, an
- *  unrecognised command name rather than an unrecognised argument of a real one. */
+/** The standard answer to a token no declared argument matches: the refusal (already
+ *  carrying a did-you-mean guess from parseDeclaredArgs) plus a pointer to that command's
+ *  own --help. Mirrors reportUnknownCommand (integration/gate.ts) for the sibling case. */
 export function reportUnknownArgument(commandName: string, error: UnknownArgumentError): void {
   reportError(error);
   info(`run ./clawforge ${commandName} --help for its full argument list`);
@@ -193,10 +177,9 @@ export async function main(
     // A UserError is an expected, explained failure; anything else is a bug worth a trace.
     if (!(error instanceof UserError) && process.env.OC_DEBUG === "1") {
       console.error(error);
-      // spawnLocal shortens a failed command's headline to what failed rather than the full
-      // argv (a wsl.exe/env/Compose call can run ~600 characters of distro, path and
-      // project-identity plumbing that says nothing about the reason); the argv it was
-      // shortened from rides along on the error for exactly this branch.
+      // spawnLocal shortens a failed command's headline to what failed, not the full argv
+      // (a wsl.exe/Compose call can run ~600 chars of plumbing); the argv rides along on
+      // the error for exactly this branch.
       const fullCommand = (error as { fullCommand?: unknown }).fullCommand;
       if (typeof fullCommand === "string") console.error(`full command: ${fullCommand}`);
     }

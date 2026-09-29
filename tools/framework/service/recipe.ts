@@ -1,23 +1,15 @@
 // Recipes: third-party services deployed next to the managed instance.
 //
-// A recipe is a directory under the application's recipes/<name>/ containing:
+// A recipe is a directory under recipes/<name>/: recipe.json (metadata: ports, variables,
+// privatePaths/privateFiles — see their doc comments below), compose.yml (restart:
+// unless-stopped), optional app-owned prepare.ts/verify.ts/onboard.ts hooks (verify.ts
+// runs under the instance lock and MCP confirms it — the framework cannot know what an
+// app-owned hook touches), and an optional multi-stage Dockerfile (cloning/compiling stay
+// in the build stage, never reaching the host or final image).
 //
-//   recipe.json    metadata — description, ports, variables, and the privatePaths/privateFiles
-//                  declarations (see their doc comments below)
-//   compose.yml    the service definition, with restart: unless-stopped
-//   prepare.ts    optional app-owned preparation/afterStart hooks around build/up
-//   verify.ts     optional app-owned verification hook — not assumed read-only: it runs under
-//                  the instance lock and MCP confirms it, because the framework cannot know
-//                  what an app-owned hook touches
-//   onboard.ts    optional app-owned onboarding hook
-//   Dockerfile     multi-stage build: cloning and compiling happen in the build stage,
-//                  so git, toolchains and sources never reach the host or the final image
-//
-// Each recipe is its OWN compose project (<app>-recipe-<name>), deliberately not a service
-// inside the application's own definition. Three reasons:
-//   - up, down and status keep operating on the managed service alone
-//   - a broken recipe cannot take that service down with it
-//   - state snapshots must not pick up recipe images or volumes
+// Each recipe is its OWN compose project (<app>-recipe-<name>), not a service inside the
+// application's own definition: up/down/status stay on the managed service alone, a broken
+// recipe cannot take it down, and state snapshots don't pick up recipe images/volumes.
 //
 // The build runs on the target, so recipe paths are translated by the path bridge.
 
@@ -72,13 +64,11 @@ export interface RecipePort {
   readonly description?: string;
 }
 
-/** What `recipe install` must see before it treats the stack as up: every named compose
- *  service running and, where that service declares a healthcheck, healthy — not just
- *  "some container from this project is alive", which one surviving sidecar satisfies even
- *  while the recipe's own main service is down. Declaring this is
- *  optional: a recipe without it still gets a short grace check against whatever services
- *  compose reports for the project (management/recipe/index.ts), just without a name to hold a
- *  slow starter to. */
+/** What `recipe install` must see before treating the stack as up: every named compose
+ *  service running and, if it declares a healthcheck, healthy — not just "some container
+ *  from this project is alive", which one surviving sidecar satisfies. Optional: without
+ *  it, install does a short grace check against whatever compose reports, just without a
+ *  name to hold a slow starter to. */
 export interface RecipeReadiness {
   /** Compose service names that must all be running (and healthy, if they declare a
    *  healthcheck) before install proceeds to afterStart. Required and non-empty: a
@@ -98,11 +88,11 @@ export interface Recipe {
   readonly ports?: RecipePort[];
   /** Variables the recipe expects, with a short explanation each. */
   readonly variables?: Record<string, string>;
-  /** Data-relative paths (from the data directory root) this recipe keeps its generated
-   *  credentials under, e.g. ["generated-credentials"]. One declaration, three readers: archive.ts
-   *  excludes these from migrate and share snapshots, verify.ts refuses archives that
-   *  already carry them, and private-config.ts refuses private writes anywhere else.
-   *  full deliberately still contains them — it is credential-complete by design. */
+  /** Data-relative paths (from the data directory root) this recipe keeps generated
+   *  credentials under, e.g. ["generated-credentials"]. One declaration, three readers:
+   *  archive.ts excludes these from migrate/share snapshots, verify.ts refuses archives
+   *  carrying them, private-config.ts refuses private writes elsewhere. full still
+   *  contains them by design. */
   readonly privatePaths?: string[];
   /** What install waits for before calling afterStart and reporting success. See
    *  RecipeReadiness. */
@@ -135,9 +125,8 @@ function assertShape(value: unknown, name: string): asserts value is Partial<Rec
 }
 
 /** Validates one declared private path: non-empty, data-relative, no climbing, no absolute
- *  form — the care safeName takes with the recipe's own name, applied to a path. The
- *  declaration drives what snapshots exclude and what private-config refuses, so a sloppy
- *  entry is rejected at load rather than silently excluding nothing. */
+ *  form. The declaration drives what snapshots exclude and what private-config refuses, so
+ *  a sloppy entry is rejected at load rather than silently excluding nothing. */
 function privatePath(recipe: string, value: string): string {
   if (value === "") throw new Error(`recipes/${recipe}/recipe.json: privatePaths entries must be non-empty`);
   const segments = value.split("/");
@@ -166,12 +155,10 @@ function isPortNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65535;
 }
 
-/** Validates one declared port mapping: describe() in management/recipe/index.ts renders
- *  port.host/port.container unconditionally for every entry in a recipe's listing, so a
- *  malformed element here — null, a non-integer, an out-of-range host — would otherwise
- *  crash the WHOLE catalog rather than staying isolated to its own recipe. Validated and
- *  returned as-is rather than reconstructed, so an already-well-formed entry's key order
- *  survives untouched. */
+/** Validates one declared port mapping: describe() (management/recipe/index.ts) renders
+ *  port.host/port.container unconditionally for every entry, so a malformed element here
+ *  would otherwise crash the WHOLE catalog rather than staying isolated to its own recipe.
+ *  Returned as-is, not reconstructed, so a well-formed entry's key order survives. */
 function parsePort(recipe: string, value: unknown, index: number): RecipePort {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`recipes/${recipe}/recipe.json: ports[${index}] must be an object`);
@@ -195,13 +182,10 @@ function parsePorts(recipe: string, value: unknown): RecipePort[] | undefined {
   return value.map((entry, index) => parsePort(recipe, entry, index));
 }
 
-/** Validates the variables map: a plain object — Array.isArray excluded explicitly, since
- *  typeof [] === "object" passes the loose check this replaces — with every value a
- *  string. install (management/recipe/index.ts) reads each value as the human-readable reason
- *  it prints when the variable is unset; a non-string value turned that warning into
- *  "[object Object]" or worse, and also becomes the literal environment variable's
- *  intended value once set. Returned as-is so an already-valid object's key order and any
- *  extra own properties survive untouched. */
+/** Validates the variables map: a plain object (Array.isArray excluded explicitly, since
+ *  typeof [] === "object") with every value a string. install reads each value as the
+ *  reason it prints when the variable is unset, and as the literal env value once set — a
+ *  non-string value turns the warning into "[object Object]" or worse. */
 function parseVariables(recipe: string, value: unknown): Record<string, string> | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -214,8 +198,7 @@ function parseVariables(recipe: string, value: unknown): Record<string, string> 
 }
 
 /** Validates the optional readiness declaration: read strictly, like privatePaths above — a
- *  malformed declaration must stop the load rather than quietly readiness-check nothing,
- *  which would put install back where the audit found it. */
+ *  malformed declaration must stop the load rather than quietly readiness-check nothing. */
 function parseReadiness(recipe: string, value: unknown): RecipeReadiness | undefined {
   if (value === undefined) return undefined;
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -285,12 +268,9 @@ export async function listRecipes(): Promise<Recipe[]> {
     try {
       recipes.push(await loadRecipe(name));
     } catch {
-      // The listing's rule, and only the listing's: a catalogue must not break — or hide the
-      // working recipes — over one broken manifest. Dropped from THIS array on purpose — a
-      // caller after installable recipes has no use for one that failed to load — but not
-      // hidden altogether: listBrokenRecipes() below runs the same scan to surface it as a
-      // named entry (`./clawforge recipe <name>` also reports the specific problem). Policy
-      // readers use installedRecipePrivatePaths(), which does not.
+      // The listing's rule, and only the listing's: a catalogue must not break — or hide
+      // working recipes — over one broken manifest. Dropped from THIS array (a caller after
+      // installable recipes has no use for a failed one); surfaced by listBrokenRecipes() below.
     }
   }
   return recipes;
@@ -302,12 +282,9 @@ export interface BrokenRecipe {
 }
 
 /** The listing's other half: every recipe directory whose recipe.json exists but fails to
- *  load, with the reason, so `recipe list` can name the problem instead of the directory
- *  quietly vanishing from the catalog (a broken manifest becoming a silent omission
- *  is exactly the gap that let one bad `ports` entry masquerade as "no such recipe").
- *  Directories without a recipe.json are not broken recipes — an agent/MCP bundle or
- *  unrelated directory, already accounted for by listAgentBundleRecipes — so they are
- *  excluded here rather than reported. */
+ *  load, with the reason, so `recipe list` names the problem instead of the entry silently
+ *  vanishing from the catalog. Directories without a recipe.json (agent/MCP bundles,
+ *  unrelated dirs — accounted for by listAgentBundleRecipes) are excluded, not reported. */
 export async function listBrokenRecipes(): Promise<BrokenRecipe[]> {
   const entries = (await listRecipeDirectories(recipesDirectory()))
     .filter((entry) => entry.isDirectory())
@@ -364,41 +341,26 @@ async function strictDeclaredPrivatePaths(): Promise<string[]> {
 }
 
 /** Every private path this deployment's target may hold under the data directory,
- *  data-relative and deduplicated — the security-policy read: archive.ts excludes these
- *  from migrate and share, verify.ts refuses archives that already carry them,
- *  private-config.ts refuses private writes anywhere else. The union of two sources:
- *
- *    - what the CURRENT recipes declare (strictDeclaredPrivatePaths, strict on two rules:
- *      quiet when nothing is declared — no recipe root, an absent root, a directory with no
- *      recipe.json — and stop on a recipe.json that exists but cannot be read, parsed or
- *      validated: a broken declaration read as "nothing declared" is exactly how a private
- *      file once walked into a share archive);
- *    - what PAST private writes recorded (persistedPrivatePaths — the deployment-side
- *      ledger private-config.ts appends to on every private write). Removing a recipe, or
- *      switching to a set without it, takes the declaration away while the runtime files
- *      stay on the target; without the record, the exclusions and the refusals would drop
- *      at exactly that moment. Entries leave only through
- *      explicit cleanup — never silently, and never because the source tree changed.
- *
- *  Both halves fail closed: a broken manifest or an unreadable ledger stops the policy
- *  readers instead of reading as "nothing to protect". */
+ *  data-relative and deduplicated — the security-policy read (archive.ts excludes these
+ *  from migrate/share, verify.ts refuses archives carrying them, private-config.ts refuses
+ *  private writes elsewhere). Union of two sources: what CURRENT recipes declare
+ *  (strictDeclaredPrivatePaths — quiet when nothing is declared, but stops on a recipe.json
+ *  that exists yet fails to read/parse/validate) and what PAST private writes recorded
+ *  (persistedPrivatePaths, the deployment-side ledger) — removing a recipe drops the
+ *  declaration while runtime files stay on the target, so the ledger keeps the exclusion
+ *  until explicit cleanup. Both halves fail closed rather than reading as "nothing to protect". */
 export async function installedRecipePrivatePaths(): Promise<string[]> {
   const [declared, persisted] = await Promise.all([strictDeclaredPrivatePaths(), persistedPrivatePaths()]);
   return [...new Set([...declared, ...persisted])];
 }
 
-/** The privateFiles declaration: files and directories inside a recipe's own directory that
- *  hold credentials, for `recipe import` to leave out of the copy. Adjacent to privatePaths
- *  on purpose, not the same field: privatePaths are data-relative paths describing the
- *  target's runtime layout, read as security policy by archive/verify/private-config, while
- *  these are recipe-tree-relative paths describing the source tree — and import reads them
- *  from a directory that is not yet a recipe of this deployment, so the strict enumeration
- *  over the recipes root does not apply. Read strictly all the same: a manifest that exists
- *  but cannot be read, parsed or validated throws rather than reading as "nothing declared"
- *  — the quiet-empty failure is how a private file once walked into a share archive.
- *  Entries are literal — no globs, one meaning only (two readers once disagreed about
- *  globs) — and an absent declaration is honest: the caller's
- *  generic policy still applies. */
+/** The privateFiles declaration: files/directories inside a recipe's own directory holding
+ *  credentials, for `recipe import` to leave out of the copy. Adjacent to privatePaths, not
+ *  the same field — privatePaths are data-relative target runtime paths (security policy),
+ *  these are recipe-tree-relative source paths, read from a directory not yet part of this
+ *  deployment. Read strictly: a manifest that fails to read/parse/validate throws rather
+ *  than reading as "nothing declared". Entries are literal, no globs (two readers once
+ *  disagreed); absent means the caller's generic policy still applies. */
 export async function declaredPrivateFiles(sourceDirectory: string): Promise<string[]> {
   const manifest = resolve(sourceDirectory, "recipe.json");
   let raw: string;
@@ -434,10 +396,9 @@ export async function declaredPrivateFiles(sourceDirectory: string): Promise<str
   });
 }
 
-/** Directories that hold an agent/MCP bundle but no service definition: provisioned and
- *  inspected rather than installed, which is why listRecipes drops them. Named so `recipe
- *  list` can account for what it does not list instead of answering "no recipes yet" over a
- *  deployment that plainly has recipes. */
+/** Directories with an agent/MCP bundle but no service definition — provisioned and
+ *  inspected, not installed, which is why listRecipes drops them. Named so `recipe list`
+ *  can account for what it doesn't list. */
 export async function listAgentBundleRecipes(): Promise<string[]> {
   const names = (await listRecipeDirectories(recipesDirectory()))
     .filter((entry) => entry.isDirectory())

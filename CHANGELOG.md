@@ -403,6 +403,10 @@ All notable changes to `@clawforge/framework` will be documented here.
   the secret was already on the screen by the time the command gave up. It now runs the same
   bootstrap check every other guarded command does before printing anything.
 
+### Internal
+
+* Comments condensed to the invariant; imports of one style per file.
+
 ## 0.1.0
 
 The initial development release, under the dual MIT or Apache-2.0 license. It provides

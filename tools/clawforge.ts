@@ -5,14 +5,14 @@
 // hands over. No command logic lives here.
 //
 // A deployment is a directory under apps/ holding .env, config/, secrets/, recipes/ and
-// an app.ts that says which service it manages. Several can sit side by side:
+// an app.ts naming its service. Several can sit side by side:
 //
 //   ./clawforge status                    the default deployment
 //   OC_APP=staging ./clawforge status     another one
 //   ./clawforge --app staging status      same, as an argument
 //
-// With neither set and no "openclaw" deployment, a checkout holding exactly one deployment
-// under apps/ uses it automatically — there is nothing to disambiguate.
+// With neither set and no "openclaw" deployment, a checkout with exactly one deployment
+// under apps/ uses it automatically.
 
 import { resolve } from "node:path";
 import { access, readdir } from "node:fs/promises";
@@ -67,10 +67,9 @@ const REMOVE_APP_ARGUMENTS: CommandArgument[] = [
   { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag" },
 ];
 
-// Both of these run before a deployment is resolved — the checks describe the framework
-// rather than an instance, and new-app creates the very thing every other command needs.
-// Declared rather than hand-dispatched so that the help text, the argument list and the MCP
-// tool all come from one place; see framework/gate.ts.
+// Both run before a deployment is resolved — the checks describe the framework rather
+// than an instance, and new-app creates the thing every other command needs. Declared
+// rather than hand-dispatched so help text, argument list and MCP tool come from one place.
 const checkArguments: CommandArgument[] = [
   {
     name: "filter",
@@ -231,10 +230,8 @@ const monorepoGateHelp = [
   "  --app <name>      pick another deployment, before the command (default: the OC_APP one)",
 ];
 
-// Every name this gate can dispatch without a loaded app.ts — a deployment's own app.ts may
-// declare more, which only it can answer for once loaded (see the missing-deployment branch
-// below). Used both to tell a typo from a real command here, and as the pool one is compared
-// against.
+// Every name this gate can dispatch without a loaded app.ts — a deployment's own app.ts
+// may declare more (see the missing-deployment branch below).
 const baseCommandNames = [
   ...Object.keys(openclawCommands),
   ...gateCommands.map((command) => command.name),
@@ -272,11 +269,9 @@ try {
       info(`using the only deployment: ${name}`);
     }
   } else if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
-    // help/--help/-h must work even in a completely fresh checkout, before any deployment
-    // exists — that is exactly when someone reaches for it. Built from openclawCommands
-    // directly rather than a real app.ts (there isn't one yet): every deployment's own
-    // declaration just re-exports this same set unless it adds commands of its own, so this
-    // is the accurate answer for "what commands exist" up until one actually does that.
+    // help/--help/-h must work in a completely fresh checkout, before any deployment
+    // exists. Built from openclawCommands directly (there's no app.ts yet): every
+    // deployment's own declaration just re-exports this set unless it adds commands of its own.
     const pick = available.length === 0
       ? "this checkout has no deployments yet"
       : `no deployment "${name}" — available: ${available.join(", ")} (pick one with --app <name> or OC_APP)`;
@@ -289,9 +284,8 @@ try {
     // runApp sets process.exitCode on error (e.g. unknown command) — respect it instead of forcing 0.
     process.exit(process.exitCode ?? 0);
   } else if (!baseCommandNames.includes(argv[0])) {
-    // The typo case this all exists for: nothing declares this name in this checkout, so no
-    // deployment's app.ts could ever make it valid either — answer the typo, not "deployment
-    // not found", which sends the reader looking in the wrong place entirely.
+    // The typo case this exists for: nothing declares this name here, so no deployment's
+    // app.ts could make it valid either — answer the typo, not "deployment not found".
     reportUnknownCommand(argv[0], baseCommandNames);
     process.exit(1);
   } else {

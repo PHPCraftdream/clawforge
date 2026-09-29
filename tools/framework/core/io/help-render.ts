@@ -68,10 +68,9 @@ export const GROUP_HEADINGS: Record<CommandGroup, string> = {
 };
 export const GROUP_ORDER = Object.keys(GROUP_HEADINGS) as CommandGroup[];
 
-/** Precise, metadata-derived wording instead of a flat "(destructive)" that is only true for
- *  some invocations. Takes the minimal shape rather than AppCommand so the MCP tool
- *  description (integration/mcp/schema.ts's Declared) can reuse it without importing
- *  AppCommand. */
+/** Precise, metadata-derived wording instead of a flat "(destructive)" that's only true for
+ *  some invocations. Minimal shape, not AppCommand, so the MCP tool description
+ *  (integration/mcp/schema.ts's Declared) reuses it without importing AppCommand. */
 export function destructiveMarker(command: {
   readonly destructive?: boolean;
   readonly readOnlyWhen?: (args: string[]) => boolean;
@@ -101,8 +100,7 @@ export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
   const width = Math.max(...Object.keys(app.commands).map((name) => name.length)) + 2;
   const byGroup = new Map<CommandGroup, [string, AppCommand][]>();
   // Belt and suspenders: help-groups.check.ts fails the build before an ungrouped command
-  // ships, but a command that reaches here without a known group is still listed rather than
-  // silently dropped from --help.
+  // ships, but one that reaches here is still listed rather than silently dropped.
   const unknown: [string, AppCommand][] = [];
   for (const entry of Object.entries(app.commands)) {
     const [, command] = entry;
@@ -134,11 +132,9 @@ export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
   info("Run `./clawforge help <command>` or `./clawforge <command> --help` for its full description.");
 }
 
-/** The envelope every structured tool call answers in (integration/mcp/schema.ts's
- *  StructuredResult) — field meanings only, not repeated in the MCP outputSchema itself
- *  (which declares types and required-ness, identically, on every structured tool). This is
- *  where that meaning lives instead, reachable through `help <command>` the same as any
- *  other detail `tools/list` shortens. */
+/** The envelope every structured tool call answers in (mcp/schema.ts's StructuredResult) —
+ *  field meanings only, not repeated in the MCP outputSchema (which declares types
+ *  identically on every structured tool). Reachable through `help <command>`. */
 export const STRUCTURED_ENVELOPE_HELP =
   "Every call answers in one envelope: operationId (a stable id), changed (bool), " +
   "healthy (bool, when known), problems/warnings (findings), nextActions (commands to run " +

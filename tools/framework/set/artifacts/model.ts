@@ -1,37 +1,21 @@
-// The set: a versioned kit of everything a deployment installs.
+// The set: a versioned kit of everything a deployment installs — recipes, the config
+// declaration (config/desired-state.json), required framework version/image digest, and
+// secret NAMES. Vocabulary lives here so later commands (build/validate/install) don't
+// each grow their own spelling.
 //
-// A set names the recipes (served content, agent bundle, acceptance checks), the config
-// declaration (config/desired-state.json), the framework version and image digest it
-// needs, and the names of the secrets the instance must be given. Later commands build,
-// validate and install it; the vocabulary lives here so they cannot each grow their own
-// spelling of the same ideas.
+// Three entities every set operation must say which it touches: set (recipes,
+// desired-state.json, required versions, secret NAMES), instance (.env, ports, data
+// directory, secret VALUES), state (workspace/*, transcripts, identity, devices,
+// auth-secrets). Not the framework's own code: it pins the version it needs, and a
+// mismatch is reported, never silently substituted.
 //
-// Three entities, and every set operation must be able to say which it touches:
-//   set      — recipes, config/desired-state.json, required versions, secret NAMES
-//   instance — .env, ports, the data directory, secret VALUES
-//   state    — workspace/*, transcripts, identity, devices, auth-secrets
+// The id canonicalises (object keys sorted recursively, arrays in declared order — order
+// is semantic) so identical content gives the same id anywhere. No `generatedAt`, unlike
+// the lock: a set is content, not a pinning event. Secrets are names only, same rule as
+// the lock — the shape has no field a value could go into.
 //
-// A set is NOT the framework's code. It pins the version it needs; installing it with a
-// different framework version is a reported mismatch, never a silent substitution. If an
-// artifact carried the tooling, shipping a set would be a way to ship tooling.
-//
-// The id canonicalises because the same inputs collected on two machines must give the
-// same id, and one changed byte must not. canonicalJson sorts object keys recursively and
-// serialises arrays in declared order — array order is semantic (acceptance checks are a
-// sequence), so sorting them would change what the set means, not just how it prints.
-//
-// No `generatedAt`, unlike the lock: a lock records an event (when the composition was
-// pinned), a set is content. A timestamp would give every build a different id for
-// identical content.
-//
-// Known tension, recorded rather than papered over: config/desired-state.json today mixes
-// set-level settings (model catalog, agent defaults) with host-flavoured ones
-// (gateway.bind, gateway.controlUi.allowedOrigins). It goes into the set whole for now; a
-// host-specific override would be an instance concern and its own change.
-//
-// Secrets are names only, same rule as the lock: the shape has no field a value could go
-// into. A manifest that carried values would be a credential store that looks like a kit —
-// and it is meant to be committed.
+// Known tension: desired-state.json today mixes set-level settings with host-flavoured
+// ones (gateway.bind); it goes into the set whole for now.
 
 import { checksumOf } from "#src/service/checksums.ts";
 import { safeName } from "#src/core/names.ts";
@@ -73,10 +57,9 @@ export interface SetManifest {
   readonly version: number; // SET_MANIFEST_VERSION
   readonly name: string;
   readonly requires: SetRequirements;
-  /** Every file the set installs, keyed by path relative to the deployment directory —
-   *  the set's own complete inventory (config/desired-state.json included, which belongs to
-   *  no recipe). Per-recipe maps above use recipe-relative keys: that is the lock's
-   *  vocabulary, so a set and a lock can be compared without translation. */
+  /** Every file the set installs, keyed by path relative to the deployment directory — the
+   *  set's own complete inventory (config/desired-state.json included). Per-recipe maps
+   *  above use recipe-relative keys, the lock's own vocabulary, for translation-free comparison. */
   readonly files: Record<string, string>;
   readonly recipes: Record<string, SetRecipe>;
   /** Secret NAMES only. The shape has no field a value could go into — same rule as the lock:
@@ -95,10 +78,8 @@ export interface SetManifestInput {
   readonly acceptance: Record<string, readonly AcceptanceCheck[]>;
 }
 
-/** Rejects any path that is not a clean deployment-relative POSIX path. Empty keys,
- *  absolute paths (leading `/` or a Windows drive), `..` segments and backslashes are
- *  refused with a reason: paths relative to the deployment directory are what keeps the id
- *  machine-independent — an absolute or Windows path would bake one machine into the id. */
+/** Rejects any path that is not a clean deployment-relative POSIX path — an absolute,
+ *  Windows or `..`-containing path would bake one machine into the id. */
 function assertCleanRelativePath(where: string, path: string): void {
   if (path === "") {
     throw new Error(`${where}: a file key is empty — an empty name is not a file`);
@@ -148,10 +129,8 @@ export function buildSetManifest(input: SetManifestInput): SetManifest {
 }
 
 /** Deterministic serialisation: object keys sorted recursively, arrays in declared order
- *  (array order is semantic — acceptance checks are a sequence), a key whose value is
- *  `undefined` counts as absent, everything else via JSON.stringify. Exported because the
- *  canonical form is part of the model's contract,
- *  not a private detail. */
+ *  (semantic — acceptance checks are a sequence), `undefined` counts as absent. Exported —
+ *  the canonical form is part of the model's contract, not a private detail. */
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;

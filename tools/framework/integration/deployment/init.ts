@@ -1,15 +1,13 @@
 // `clawforge init` — the installed-mode counterpart to the monorepo's `new-app` (scaffold.ts).
 //
-// scaffold.ts creates one of several deployments side by side under a monorepo's apps/,
-// named by argument. This creates the one and only deployment a consumer repo has, in the
-// repo's own root — no name argument, no apps/<name> nesting. Two different templates, not
-// a shared one with a branch: declarationFor() below imports from the package specifier
-// ("@clawforge/framework/app") rather than a relative path into tools/framework/, which
-// only makes sense once the framework is installed as a dependency, never inside this
-// monorepo itself.
+// scaffold.ts creates one of several deployments under a monorepo's apps/, named by
+// argument. This creates the one and only deployment a consumer repo has, in its own root
+// — no name argument, no apps/<name> nesting. The declaration below imports from the
+// package specifier ("@clawforge/framework/app"), which only makes sense once the
+// framework is installed as a dependency, never inside this monorepo.
 //
-// The measure of whether this is usable, same as scaffold.ts: the generated deployment
-// must run immediately after its .env is filled in.
+// Same measure of usable as scaffold.ts: the generated deployment must run immediately
+// after its .env is filled in.
 
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
 import { resolve, basename, dirname, relative } from "node:path";
@@ -50,11 +48,10 @@ const DESIRED_STATE = `[
 ]
 `;
 
-// The only framework-adjacent file committed to a consumer repo. It invokes the installed
+// The only framework-adjacent file committed to a consumer repo — invokes the installed
 // package directly so Git Bash under WSL works even when only `node.exe` is on PATH.
-//
-// Bash-only, same as this monorepo's own ./clawforge — Windows users can use npm's generated
-// node_modules/.bin/clawforge.cmd or .ps1 instead.
+// Bash-only, same as this monorepo's own ./clawforge; Windows users can use npm's
+// generated node_modules/.bin/clawforge.cmd or .ps1 instead.
 const SHIM = `#!/usr/bin/env bash
 # Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works
 # without typing a package path or npx by hand.
@@ -215,10 +212,8 @@ async function applyModuleType(root: string, action: ModuleTypeAction): Promise<
 }
 
 export async function initApp(root: string): Promise<void> {
-  // The directory's own name becomes the compose project name (deploymentName() derives it
-  // from deploymentDir()'s basename, unconditionally — see deployment.ts) — checked before
-  // anything is written, because there is no argument here to fall back to the way
-  // scaffold.ts's new-app has one.
+  // The directory's own name becomes the compose project name (deploymentDir()'s basename
+  // — see deployment.ts) — checked first, since there's no argument to fall back to here.
   const base = basename(root);
   try {
     safeName("deployment", base);
@@ -236,10 +231,8 @@ export async function initApp(root: string): Promise<void> {
   );
   if (exists) die(`${appFile} already exists — this directory is already initialised`);
 
-  // Checked BEFORE anything is written: app.ts existing is not the only way this directory
-  // could already hold state init is about to overwrite — an .env or a desired-state.json
-  // left over from something else (or a previous init that failed partway through) must be
-  // refused by name, not silently discarded.
+  // Checked BEFORE anything is written: app.ts isn't the only leftover state init could
+  // overwrite — an .env or desired-state.json from a failed prior init must be refused by name.
   const envFile = resolve(root, ".env");
   const desiredStateFile = resolve(root, "config", "desired-state.json");
   for (const conflict of [envFile, desiredStateFile]) {

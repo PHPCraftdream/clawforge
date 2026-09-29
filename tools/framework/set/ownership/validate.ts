@@ -1,21 +1,12 @@
 // Everything about a set that can be decided without a running instance.
 //
-// The point is where the error is found, not that it is found: a coherence mistake caught
-// here costs an edit, and the same mistake caught during `apply` costs a half-changed
-// instance and a rollback. So every question answerable from files alone is answered from
-// files alone, and the ones that genuinely need the instance are named as such rather than
-// guessed at.
+// A coherence mistake caught here costs an edit; the same mistake caught during `apply`
+// costs a half-changed instance and a rollback. Every question answerable from files alone
+// is answered from files alone; what genuinely needs the instance is named as such.
 //
-// What is deliberately NOT attempted here:
-//
-//   - whether the pinned image's OpenClaw actually supports what the recipes use. Knowing
-//     that means having the image, which means a target; probing `--help` text for feature
-//     detection would test the help text rather than the capability, and break silently the
-//     day someone rewords it. `apply` compares versions against the live instance, where the
-//     answer is real.
-//   - full cron semantics. This rejects what is clearly not a schedule (see cronProblem);
-//     a set whose schedule passes here is not thereby proven to run when its author meant.
-//     Saying so is the point — "not rejected" and "valid" are different claims.
+// Deliberately NOT attempted: whether the pinned image's OpenClaw supports what the
+// recipes use (needs the image; `apply` compares versions against the live instance); full
+// cron semantics (rejects what is clearly not a schedule — "not rejected" is not "valid").
 
 import { readFile } from "node:fs/promises";
 import { access } from "node:fs/promises";
@@ -24,7 +15,7 @@ import { recipesDir, desiredStateFile } from "#src/runtime/deployment.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
-import type { SetManifest } from "../artifacts/model.ts";
+import type { SetManifest } from "#src/set/artifacts/model.ts";
 
 async function exists(path: string): Promise<boolean> {
   return access(path).then(
@@ -33,13 +24,10 @@ async function exists(path: string): Promise<boolean> {
   );
 }
 
-/** Whether a cron field is one this framework will accept.
- *
- *  Deliberately shallow: `*`, `*\/N`, a number, a range, a list of those. It rejects a field
- *  that is plainly not a schedule — a word, an empty entry, a stray character — and passes
- *  everything that looks like one. Ranges are not checked against each field's own bounds,
- *  because the gateway is what actually parses these and a second, subtly different parser
- *  here would eventually disagree with it and be wrong in a way nobody could see. */
+/** Deliberately shallow: `*`, `*\/N`, a number, a range, a list of those — rejects what is
+ *  plainly not a schedule, passes everything that looks like one. Ranges aren't checked
+ *  against each field's own bounds: the gateway is the real parser, and a second one here
+ *  would eventually disagree with it. */
 function cronFieldLooksValid(field: string): boolean {
   return field.split(",").every((part) => /^(\*|\d+)(-\d+)?(\/\d+)?$/.test(part));
 }
@@ -54,13 +42,10 @@ export function cronProblem(expression: string): string | undefined {
   return bad.length === 0 ? undefined : `field(s) ${bad.map((field) => JSON.stringify(field)).join(", ")} are not schedule terms`;
 }
 
-/** Why `value` is not a valid desired-state declaration, or undefined when it is. A
- *  declaration is a list of { path, value } operations — the exact shape OpenClaw's own
- *  `config set --batch-file` consumes (config.ts's applyConfig) and the exact shape
- *  declaredState()/declaredConfig() below both assume. Exported so `set build`
- *  (collectManifest) can refuse the same malformed declaration at the earliest point,
- *  rather than only here or, worse, inside the container when `config set --batch-file`
- *  itself chokes on it during an actual apply. */
+/** Why `value` is not a valid desired-state declaration, or undefined when it is — a list
+ *  of { path, value } ops, the exact shape OpenClaw's `config set --batch-file` consumes.
+ *  Exported so `set build` can refuse the same malformed declaration early, rather than
+ *  only here or inside the container during an actual apply. */
 export function desiredStateShapeError(value: unknown): string | undefined {
   if (!Array.isArray(value)) {
     return "must be an array of { path, value } operations — got a single object instead of a list";
@@ -77,18 +62,13 @@ export function desiredStateShapeError(value: unknown): string | undefined {
   return undefined;
 }
 
-/** Reads the desired state as declared, for the secret references inside it.
- *
- *  A genuinely absent desired-state.json is a legitimate empty declaration: a set need not
- *  declare any configuration at all. Everything else is a finding — a truncated declaration
- *  must not validate as `valid: true, problems: []`. `set build` refusing to build from an
- *  unreadable declaration does not make this moot: `set validate --set <artifact>` reads
- *  bytes straight from an artifact, and checksum verification proves only that those bytes
- *  match what the manifest recorded, never that they parse. */
+/** Reads the desired state as declared, for the secret references inside it. A genuinely
+ *  absent desired-state.json is a legitimate empty declaration; everything else is a
+ *  finding — checksum verification only proves an artifact's bytes match the manifest,
+ *  never that they parse, so a truncated declaration must not read as valid. */
 async function declaredConfig(problems: Problem[]): Promise<unknown> {
-  // Resolved once, outside the try: desiredStateFile() throws when no deployment has been
-  // selected at all, and that is a wiring error in the caller, not a finding about a set —
-  // catching it here would report a missing useDeployment() as an invalid declaration.
+  // Resolved outside the try: desiredStateFile() throws when no deployment is selected at
+  // all — a wiring error in the caller, not a finding about a set.
   const path = desiredStateFile();
 
   let raw: string;
@@ -134,9 +114,8 @@ function checkImagePinned(manifest: SetManifest, problems: Problem[]): void {
   }
 }
 
-/** Checked against the working tree only when asked: a built artifact carries its files as
- *  checksums rather than paths on this machine, and looking for them here would report a
- *  valid artifact as broken on any machine that did not happen to build it. */
+/** Checked against the working tree only when asked: a built artifact carries files as
+ *  checksums, not paths on this machine — checking them here would flag a valid artifact. */
 async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, problems: Problem[]): Promise<void> {
   for (const [name, recipe] of Object.entries(manifest.recipes)) {
     const declaresAgent = recipe.agent !== undefined;
@@ -147,13 +126,9 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
         problems.push(problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" is declared but ${dir} does not exist`));
         continue;
       }
-      // server.ts is required only of a recipe that declares an agent, because that is what
-      // makes it an MCP recipe: provision-agent registers the gateway to spawn exactly that
-      // file. A recipe without an agent bundle is a plain service — its own compose stack,
-      // installed by `./clawforge recipe install`, described by recipe.json — and demanding a
-      // server.ts of it was a false positive found by running this against a real
-      // deployment. A validator that fires on a correct set is one people learn to skip,
-      // which costs more than the rule was ever worth.
+      // server.ts is required only of a recipe that declares an agent — that's what makes
+      // it an MCP recipe. A recipe without one is a plain service (its own compose stack,
+      // recipe.json); demanding server.ts of it was a false positive against a real deployment.
       if (declaresAgent && !(await exists(resolve(dir, "server.ts")))) {
         problems.push(problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" declares an agent but has no server.ts — that is the file the gateway is registered to spawn`));
       }
@@ -165,10 +140,8 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
       }
     }
 
-    // The mirror is what the recipe serves. A recipe that serves nothing is not a mistake
-    // this can prove — a plain service recipe is legitimate — so only an empty checksum map
-    // WITH an agent bundle is reported: an agent with nothing to read is one that was
-    // supposed to have content.
+    // A recipe serving nothing isn't provably a mistake (a plain service recipe is
+    // legitimate), so only an empty checksum map WITH an agent bundle is reported.
     if (declaresAgent && Object.keys(recipe.files).length === 0) {
       problems.push(
         problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" declares an agent but serves no content — the agent would have nothing to read`),
@@ -236,11 +209,9 @@ async function checkSecretsDeclared(manifest: SetManifest, problems: Problem[]):
   }
 }
 
-/** Every finding a set can produce without a gateway.
- *
- *  Takes the manifest rather than a directory: `set build` already collected the tree into
- *  one, and validating a built artifact must give exactly the same answers as validating the
- *  tree it came from. Two collectors would be two answers. */
+/** Every finding a set can produce without a gateway. Takes the manifest rather than a
+ *  directory: `set build` already collected the tree into one, and validating a built
+ *  artifact must answer exactly as validating the tree it came from. */
 export async function validateSet(manifest: SetManifest, options: { checkFiles?: boolean } = {}): Promise<Problem[]> {
   const problems: Problem[] = [];
   checkImagePinned(manifest, problems);

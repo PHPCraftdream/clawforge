@@ -21,18 +21,15 @@ import { parseDeclaredArgs } from "../../../core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../../interface/groups/shared-arguments.ts";
 import {
   cronLine as sharedCronLine,
-  crontabLines,
   cronSchedule,
   displayCommandLine,
   jobMarker,
   posixTargetInvocation,
   printSchedulingInstructions,
   printUnschedulingInstructions,
-  probeCrontab,
-  readCrontab,
   schedulingSupport,
   withoutMarkedLine as sharedWithoutMarkedLine,
-  writeCrontab,
+  updateCrontab,
   type ScheduledInvocation,
 } from "../schedule.ts";
 import { readWatchState, writeWatchState } from "./state.ts";
@@ -134,10 +131,7 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
 
   await requireBootstrapped(ctx);
   await guarded(ctx, "watch install --apply", args, async () => {
-    await probeCrontab(ctx);
-    const existing = await readCrontab(ctx);
-    const kept = withoutMarkedLine(existing, name);
-    await writeCrontab(ctx, [...kept, line]);
+    await updateCrontab(ctx, JOB, name, line);
     await recordInstalledInterval(interval);
     log("installed");
   });
@@ -161,14 +155,10 @@ export async function watchUninstall(ctx: Context, args: string[]): Promise<void
   }
 
   await guarded(ctx, "watch uninstall --apply", args, async () => {
-    await probeCrontab(ctx);
-    const existing = await readCrontab(ctx);
-    const kept = withoutMarkedLine(existing, name);
-    if (kept.length === crontabLines(existing).length) {
+    if (!await updateCrontab(ctx, JOB, name)) {
       info("no watch schedule was installed for this deployment — nothing to remove");
       return;
     }
-    await writeCrontab(ctx, kept);
     await recordInstalledInterval(undefined);
     log("removed");
   });

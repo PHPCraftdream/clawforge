@@ -6,6 +6,8 @@ import type { SetManifest } from "./model.ts";
 import type { VerifiedArtifact } from "./install.ts";
 import type { Context } from "#src/core/context.ts";
 import type { AcceptanceResult } from "#src/commands/orchestration/accept.ts";
+import type { SecurityAuditReport } from "#src/security/audit.ts";
+import { blockingProblems } from "#src/service/inspection.ts";
 
 export interface ObservedRuntime {
   readonly observations: ReceiptObservations;
@@ -53,6 +55,7 @@ export async function saveEvidence(input: {
   results: Record<string, readonly AcceptanceResult[]>;
   observed: ObservedRuntime;
   subjectVerified: boolean;
+  security?: SecurityAuditReport;
   failure?: string;
   root?: string;
 }): Promise<AcceptanceReceipt> {
@@ -74,11 +77,13 @@ export async function saveEvidence(input: {
   }
   const all = Object.keys(input.verified.manifest.acceptance).sort();
   const selected = [...input.selected].sort();
+  const blocking = input.security === undefined ? undefined : blockingProblems(input.security.problems);
   return writeReceipt({
     setId: input.verified.id,
     setName: input.verified.manifest.name,
     source: input.source,
     subjectVerified: input.subjectVerified,
+    ...(blocking === undefined ? {} : { security: { blocking: blocking.length, reasons: blocking.map((problem) => problem.code) } }),
     selection: { recipes: input.selected, withModel: input.withModel, allRecipes: JSON.stringify(all) === JSON.stringify(selected) },
     observations: input.observed.observations,
     startedAt: input.startedAt,

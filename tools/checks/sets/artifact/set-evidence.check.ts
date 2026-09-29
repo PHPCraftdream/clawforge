@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSet } from "#framework/commands/sets/set.ts";
 import { accept } from "#framework/commands/orchestration/accept.ts";
+import { setReceipts } from "#framework/commands/sets/set-receipts.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { listReceipts, readReceipt } from "#framework/set/artifacts/receipt.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -23,8 +24,10 @@ const image = `fixture@sha256:${"a".repeat(64)}`;
 let containerReplaced = false;
 let replaceContainer = false;
 let toolError = false;
+let publicBind = false;
+let criticalFinding = false;
 const ctx = {
-  settings: { dataDir: "/tmp/evidence-data", env: {}, image: "moving-tag" },
+  settings: { dataDir: "/tmp/evidence-data", env: {}, image: "moving-tag", bindAddress: "0.0.0.0", gatewayPort: "18789" },
   transport: {
     exists: async () => true,
     // A provider already configured, with an explicit (non-env-sourced) apiKey so this does
@@ -34,12 +37,13 @@ const ctx = {
     // an empty config would fail every gatherInspection here on a blocking finding unrelated
     // to what these checks exercise.
     readFile: async (path: string) => path.endsWith("openclaw.json") ? JSON.stringify({ models: { providers: { zai: { apiKey: "fixture-explicit-key" } } } }) : "",
-    exec: async () => ({ code: 0, stdout: "0", stderr: "" }),
+    exec: async (_command: string, args: string[]) => ({ code: 0, stdout: args.some((arg) => arg.includes("command -v")) ? "" : "0", stderr: "" }),
     listFiles: async () => [],
   },
   runtime: {
     isRunning: async () => true, health: async () => "healthy", probe: async () => 200,
     startedAt: async () => 1, imageReference: async () => "another-image@sha256:bbb",
+    runningConnectionFacts: async () => publicBind ? { bindAddress: "0.0.0.0", port: "18789" } : undefined,
     runningImageIdentity: async () => ({
       imageId: "actual-image-id", digests: [image], version: "fixture-version",
       containerId: containerReplaced ? "replacement" : "original",
@@ -68,6 +72,9 @@ const ctx = {
               : { code: 0, stdout: answer[1] };
           });
         return { code: 0, stdout: formatBatchStub(results), stderr: "" };
+      }
+      if (args[0] === "security" && args[1] === "audit") {
+        return { code: 0, stdout: JSON.stringify({ findings: criticalFinding ? [{ checkId: "fixture-critical", severity: "critical", detail: "synthetic-audit-detail" }] : [] }), stderr: "" };
       }
       return {code:0,stdout:args[0]==="agents"?"[]":args[0]==="cron"?'{"jobs":[]}':"{}",stderr:""};
     },
@@ -107,7 +114,44 @@ try {
   assert.equal(second.verdict,"verified");
   assert.equal(second.subjectVerified,true);
   assert.equal(second.counts.passed,2);
+  assert.deepEqual(second.security,{blocking:0,reasons:[]});
   assert.notEqual(second.receiptId,first.receiptId);
+
+  publicBind=true;
+  const blocked=await run(["--set",built.artifact,"--with-model","--json"]);
+  assert.match(blocked.error?.message ?? "",/blocking security finding/);
+  assert.equal(blocked.report.healthy,false);
+  const blockedReceipt=await readReceipt(built.id,blocked.report.receipt!.id);
+  assert.equal(blockedReceipt.verdict,"not-verified");
+  assert.equal(blockedReceipt.subjectVerified,true,"a gate denial must not erase stable runtime/declaration binding");
+  assert.equal(blockedReceipt.counts.passed,2);
+  assert.equal(blockedReceipt.coverage,"complete");
+  assert.deepEqual(blockedReceipt.security,{blocking:1,reasons:["GATEWAY_PUBLICLY_BOUND"]});
+  let storedJson="";
+  await withOutputSink(()=>{},()=>setReceipts(ctx,["--set-id",built.id,"--receipt",blockedReceipt.receiptId,"--json"]),chunk=>{storedJson+=chunk;});
+  assert.equal(JSON.parse(storedJson).verdict,"not-verified","set receipts must report the persisted gate refusal");
+  assert.deepEqual(JSON.parse(storedJson).security,blockedReceipt.security);
+
+  await writeFile(join(root,"config","security-suppressions.json"),JSON.stringify({acknowledgePublicBind:{reason:"fixture-owned public listener"}}));
+  const acknowledged=await run(["--set",built.artifact,"--with-model","--json"]);
+  assert.equal(acknowledged.error,undefined);
+  const acknowledgedReceipt=await readReceipt(built.id,acknowledged.report.receipt!.id);
+  assert.equal(acknowledgedReceipt.verdict,"verified");
+  assert.deepEqual(acknowledgedReceipt.security,{blocking:0,reasons:[]});
+
+  criticalFinding=true;
+  const critical=await run(["--set",built.artifact,"--with-model","--json"]);
+  assert.ok(critical.error);
+  const criticalReceipt=await readReceipt(built.id,critical.report.receipt!.id);
+  assert.deepEqual(criticalReceipt.security,{blocking:1,reasons:["SECURITY_AUDIT_CRITICAL"]});
+  assert.equal(JSON.stringify(criticalReceipt).includes("synthetic-audit-detail"),false,"only safe problem codes enter evidence");
+  await writeFile(join(root,"config","security-suppressions.json"),JSON.stringify({acknowledgePublicBind:{reason:"fixture-owned public listener"},suppressions:[{checkId:"fixture-critical",reason:"fixture-approved exception"}]}));
+  const suppressed=await run(["--set",built.artifact,"--with-model","--json"]);
+  assert.equal(suppressed.error,undefined);
+  const suppressedReceipt=await readReceipt(built.id,suppressed.report.receipt!.id);
+  assert.equal(suppressedReceipt.verdict,"verified");
+  assert.deepEqual(suppressedReceipt.security,{blocking:0,reasons:[]});
+  publicBind=false;criticalFinding=false;
 
   replaceContainer=true; containerReplaced=false;
   const changed=await run(["--set",built.artifact,"--with-model","--json"]);
@@ -121,7 +165,7 @@ try {
   const fourth=await readReceipt(built.id,unavailable.report.receipt!.id);
   assert.equal(fourth.counts.couldNotCheck,2);
   assert.equal(fourth.verdict,"not-verified");
-  assert.equal((await listReceipts()).length,4);
+  assert.equal((await listReceipts()).length,8);
   process.stderr.write("all set evidence integration checks passed\n");
 } finally {
   if(previous!==undefined)useDeployment(previous);

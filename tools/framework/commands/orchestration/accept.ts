@@ -475,6 +475,7 @@ async function attachAcceptanceReceipt(
   recipes: string[],
   report: Record<string, AcceptanceResult[]>,
   answer: AcceptanceReport,
+  security: SecurityAuditReport,
   jsonOnly: boolean,
 ): Promise<AcceptanceReport> {
   const after = await observeRuntime(ctx, verified.manifest);
@@ -483,6 +484,7 @@ async function attachAcceptanceReceipt(
   const receipt = await saveEvidence({
     verified, source: "accept", startedAt, withModel, selected: recipes, results: report,
     observed: after, subjectVerified: matchedBefore && matchedAfter && runtimeMatches(verified.manifest, before, after),
+    security,
   });
   if (!jsonOnly && !isCaptured()) info(`receipt: ${receipt.receiptId} (${receipt.verdict})`);
   return { ...answer, receipt: { id: receipt.receiptId, setId: receipt.setId, verdict: receipt.verdict } };
@@ -538,7 +540,7 @@ async function acceptFromSource(ctx: Context, args: string[], verified?: Verifie
   const totals = await runAcceptanceChecks(ctx, recipes, withModel);
   const { answer: baseAnswer, security, securityBlocking } = await buildAcceptanceReport(ctx, totals);
   const answer = verified !== undefined && before !== undefined
-    ? await attachAcceptanceReceipt(ctx, verified, before, matchedBefore, startedAt, withModel, recipes, totals.report, baseAnswer, jsonOnly)
+    ? await attachAcceptanceReceipt(ctx, verified, before, matchedBefore, startedAt, withModel, recipes, totals.report, baseAnswer, security, jsonOnly)
     : baseAnswer;
 
   if (jsonOnly || isCaptured()) {

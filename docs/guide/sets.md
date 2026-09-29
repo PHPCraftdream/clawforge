@@ -68,6 +68,10 @@ timestamps and observed runtime information. Runtime identity comes from the run
 container and its image metadata, never from a newly pulled image behind a configured tag.
 Unknown identity or a changed container prevents verified subject binding. `accept --set`
 also inspects declaration agreement before and after checking.
+Its receipt records the security gate's blocking count and portable problem codes. Blocking
+findings prevent certification without discarding runtime identity or passing recipe checks;
+acknowledged exposure and suppressed findings follow the gate's effective outcome. Audit
+messages and suppression reasons are never copied into the receipt.
 
 `coverage` is `complete`, `partial` or `none`; `verdict` is `verified`, `failed` or
 `not-verified`. Complete passing checks require verified subject binding to certify the set.
@@ -75,6 +79,13 @@ Omitted model checks, subset selection, unavailable checks and empty suites neve
 the whole set. Every run gets a new receipt; exclusive creation prevents overwrites and a
 content checksum detects later changes. This is local evidence with separately established
 author trust, not a signature service.
+
+`accept` evidence requires a recorded, non-blocking security gate to be `verified`. Legacy
+accept receipts without that field remain readable and checksum-validated, but their returned
+verdict is `not-verified`; `recordedVerdict` preserves the original historical verdict when
+downgraded. The checksum still describes the immutable stored evidence, which is never
+rewritten by a read. `set try` does not run the security gate: its `verified` verdict covers
+trial checks and runtime binding only and carries no security-gate certification.
 
 The command group is available through MCP using `action: "diff"` with `from`/`to`, or
 `action: "receipts"` with `set-id`/`receipt`. The group retains its conservative confirmation

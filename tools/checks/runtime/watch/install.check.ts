@@ -23,6 +23,7 @@ import { readWatchState } from "#framework/commands/operate/watch/state.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext } from "#checks/runtime/convergence/instance-lock/fixture.ts";
+import { stubCrontabTransaction } from "#checks/runtime/schedule/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -109,6 +110,13 @@ function crontabTransport(initial = "", listingFailure?: ExecResult): { transpor
     description: "ssh:user@host",
     async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
       calls.push({ command, args });
+      if (command === "sh" && args[2] === "clawforge-crontab-update") {
+        calls.push({ command: "crontab", args: ["-l"] });
+        const transaction = stubCrontabTransaction(args, current, listingFailure);
+        if (transaction.wrote) calls.push({ command: "crontab", args: ["-"] });
+        current = transaction.next;
+        return transaction.result;
+      }
       if (command === "sh" && args[0] === "-c" && args[1] === "command -v crontab") {
         return { code: 0, stdout: "/usr/bin/crontab\n", stderr: "" };
       }

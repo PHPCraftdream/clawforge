@@ -51,7 +51,8 @@ export async function importHookModule(path: string): Promise<Record<string, unk
   const cached = hookModules.get(path);
   if (cached?.checksum === checksum) return cached.loaded;
   if (!hookResolveHooksRegistered) {
-    register(new URL("./hook-loader.ts", import.meta.url).href, import.meta.url);
+    const loader = new URL(import.meta.url).pathname.endsWith(".ts") ? "./hook-loader.ts" : "./hook-loader.js";
+    register(new URL(loader, import.meta.url).href, import.meta.url);
     hookResolveHooksRegistered = true;
   }
   const versioned = new URL(pathToFileURL(path).href);

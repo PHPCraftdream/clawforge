@@ -22,6 +22,12 @@ export type ReceiptSource = "set-try" | "accept";
 export type ReceiptCoverage = "complete" | "partial" | "none";
 export type ReceiptVerdict = "verified" | "failed" | "not-verified";
 
+/** Gate outcome with portable problem codes, never audit text or secret values. */
+export interface ReceiptSecurity {
+  readonly blocking: number;
+  readonly reasons: readonly string[];
+}
+
 export interface ReceiptObservations {
   readonly frameworkVersion: string;
   readonly openclawVersion?: string;
@@ -64,6 +70,9 @@ export interface AcceptanceReceipt {
   readonly source: ReceiptSource;
   /** The caller checked artifact binding and the required runtime identity. */
   readonly subjectVerified: boolean;
+  readonly security?: ReceiptSecurity;
+  /** Original verdict of legacy evidence downgraded on read; not stored or hashed. */
+  readonly recordedVerdict?: ReceiptVerdict;
   readonly selection: ReceiptSelection;
   readonly observations: ReceiptObservations;
   readonly startedAt: string;
@@ -87,6 +96,7 @@ export interface WriteReceiptInput {
   readonly setName: string;
   readonly source: ReceiptSource;
   readonly subjectVerified: boolean;
+  readonly security?: ReceiptSecurity;
   readonly selection: ReceiptSelection;
   readonly observations: ReceiptObservations;
   readonly startedAt: string;
@@ -206,18 +216,30 @@ function countsOf(checks: Record<string, readonly ReceiptCheck[]>): ReceiptCount
   };
 }
 
-function outcome(selection: ReceiptSelection, counts: ReceiptCounts, subjectVerified: boolean): { coverage: ReceiptCoverage; verdict: ReceiptVerdict } {
+function normalizeSecurity(value: unknown): ReceiptSecurity | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("receipt security must be an object");
+  const raw = value as Record<string, unknown>;
+  if (!Number.isSafeInteger(raw.blocking) || (raw.blocking as number) < 0) throw new Error("receipt security.blocking must be a non-negative integer");
+  if (!Array.isArray(raw.reasons) || raw.reasons.some((reason) => typeof reason !== "string" || !/^[A-Z][A-Z0-9_]{0,127}$/.test(reason))) {
+    throw new Error("receipt security.reasons must contain only problem codes");
+  }
+  if (raw.reasons.length !== raw.blocking) throw new Error("receipt security reasons must match its blocking count");
+  return { blocking: raw.blocking as number, reasons: [...raw.reasons] as string[] };
+}
+
+function outcome(selection: ReceiptSelection, counts: ReceiptCounts, subjectVerified: boolean, securityVerified: boolean): { coverage: ReceiptCoverage; verdict: ReceiptVerdict } {
   if (counts.total === 0) return { coverage: "none", verdict: "not-verified" };
   const complete = selection.allRecipes && counts.notChecked === 0 && counts.couldNotCheck === 0;
   const coverage = complete ? "complete" : "partial";
   if (counts.failed > 0) return { coverage, verdict: "failed" };
-  if (!complete || counts.passed !== counts.total || !subjectVerified) return { coverage, verdict: "not-verified" };
+  if (!complete || counts.passed !== counts.total || !subjectVerified || !securityVerified) return { coverage, verdict: "not-verified" };
   return { coverage, verdict: "verified" };
 }
 
 function payloadOf(receipt: AcceptanceReceipt): Omit<AcceptanceReceipt, "contentId"> {
-  const { contentId: _contentId, ...payload } = receipt;
-  return payload;
+  const { contentId: _contentId, recordedVerdict, ...payload } = receipt;
+  return { ...payload, verdict: recordedVerdict ?? receipt.verdict };
 }
 
 function contentIdOf(receipt: AcceptanceReceipt): string {
@@ -255,8 +277,12 @@ function validateReceipt(value: unknown, expectedSetId?: string, expectedReceipt
   assertSelectionMatchesChecks(normalizedSelection, checks);
   const counts = countsOf(checks);
   if (canonicalJson(raw.counts) !== canonicalJson(counts)) throw new Error("receipt counts do not match its checks");
-  const expectedOutcome = outcome(normalizedSelection, counts, raw.subjectVerified);
-  if (raw.coverage !== expectedOutcome.coverage || raw.verdict !== expectedOutcome.verdict) throw new Error("receipt outcome does not match its checks and selection");
+  const security = normalizeSecurity(raw.security);
+  const securityVerified = security === undefined ? raw.source !== "accept" : security.blocking === 0;
+  const expectedOutcome = outcome(normalizedSelection, counts, raw.subjectVerified, securityVerified);
+  const legacyOutcome = outcome(normalizedSelection, counts, raw.subjectVerified, true);
+  const legacyVerified = raw.source === "accept" && security === undefined && raw.verdict === "verified" && legacyOutcome.verdict === "verified";
+  if (raw.coverage !== expectedOutcome.coverage || (raw.verdict !== expectedOutcome.verdict && !legacyVerified)) throw new Error("receipt outcome does not match its checks, selection and security gate");
   const receipt: AcceptanceReceipt = {
     version: RECEIPT_VERSION,
     receiptId,
@@ -265,6 +291,8 @@ function validateReceipt(value: unknown, expectedSetId?: string, expectedReceipt
     setName,
     source: raw.source,
     subjectVerified: raw.subjectVerified,
+    ...(security === undefined ? {} : { security }),
+    ...(legacyVerified ? { recordedVerdict: "verified" as const } : {}),
     selection: normalizedSelection,
     observations: normalizedObservations,
     startedAt,
@@ -300,7 +328,8 @@ export async function writeReceipt(input: WriteReceiptInput, root?: string): Pro
     ...(input.observations.imageId === undefined ? {} : { imageId: text(input.observations.imageId, "receipt observations.imageId") }),
     ...(input.observations.imageDigest === undefined ? {} : { imageDigest: text(input.observations.imageDigest, "receipt observations.imageDigest") }),
   };
-  const { coverage, verdict } = outcome(selection, counts, input.subjectVerified);
+  const security = normalizeSecurity(input.security);
+  const { coverage, verdict } = outcome(selection, counts, input.subjectVerified, security === undefined ? input.source !== "accept" : security.blocking === 0);
   const withoutContent: Omit<AcceptanceReceipt, "contentId"> = {
     version: RECEIPT_VERSION,
     receiptId,
@@ -308,6 +337,7 @@ export async function writeReceipt(input: WriteReceiptInput, root?: string): Pro
     setName: input.setName,
     source: input.source,
     subjectVerified: input.subjectVerified,
+    ...(security === undefined ? {} : { security }),
     selection,
     observations,
     startedAt,

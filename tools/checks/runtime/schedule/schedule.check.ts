@@ -18,6 +18,7 @@ import {
   printUnschedulingInstructions,
   printSchedulingInstructions,
   readCrontab,
+  updateCrontab,
   schedulingSupport,
   scheduledTaskName,
   schtasksCreateCommand,
@@ -192,7 +193,37 @@ check("schtasksDeleteCommand names the task and forces it", schtasksDeleteComman
   const denied = await listing(1, "", "permission denied");
   check("an unreadable crontab is surfaced instead of treated as empty", denied.error.includes("could not read crontab"), true);
   const transportFailure = await listing(255, "", "connection lost");
-  check("a transport failure is surfaced instead of treated as empty", transportFailure.error.includes("connection lost"), true);
+  check("a transport failure is surfaced instead of treated as empty", transportFailure.error.includes("exit 255"), true);
+  const privateListing = await listing(1, "SCHEDULER_PRIVATE_FIXTURE", "");
+  check("failed partial listings are never echoed", privateListing.error.includes("SCHEDULER_PRIVATE_FIXTURE"), false);
+  const partialEmpty = await listing(1, "SCHEDULER_PRIVATE_FIXTURE", "no crontab for user");
+  check("partial stdout prevents a contradictory empty-table result", partialEmpty.error.includes("could not read"), true);
+  check("contradictory empty-table diagnostics never echo private content", partialEmpty.error.includes("SCHEDULER_PRIVATE_FIXTURE"), false);
+}
+
+{
+  let calls = 0;
+  let answer = { code: 0, stdout: "updated\n", stderr: "" };
+  const ctx = {
+    transport: {
+      description: "ssh:user@host",
+      async exec() { calls += 1; return answer; },
+    },
+  } as unknown as Context;
+  const wrongJob = cronLine(5, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "myapp");
+  check("an install cannot insert another job's entry", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", wrongJob))).includes("must match"), true);
+  check("multiline input is refused before target execution", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", `${owned}\nforeign`))).includes("exactly one line"), true);
+  check("invalid entries never reach the target", calls, 0);
+  answer = { code: 26, stdout: "", stderr: "could not acquire scheduler account lock" };
+  check("account lock refusal reaches the operator", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned))).includes("could not acquire"), true);
+  for (const code of [28, 33, 255]) {
+    answer = { code, stdout: "SCHEDULER_PRIVATE_FIXTURE", stderr: "SCHEDULER_PRIVATE_FIXTURE" };
+    const error = await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned));
+    check("scheduler failure never echoes target stdout/stderr", error.includes("SCHEDULER_PRIVATE_FIXTURE"), false);
+    check("scheduler failure keeps its exit code", error.includes(`exit ${code}`), true);
+  }
+  answer = { code: 0, stdout: "unexpected output", stderr: "" };
+  check("success requires transaction confirmation", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned))).includes("could not confirm"), true);
 }
 
 {

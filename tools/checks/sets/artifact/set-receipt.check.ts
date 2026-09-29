@@ -19,6 +19,7 @@ const base: Omit<WriteReceiptInput, "checks" | "receiptId" | "selection" | "sour
   setId,
   setName: "demo",
   subjectVerified: true,
+  security: { blocking: 0, reasons: [] },
   observations: { frameworkVersion: "0.1.0", openclawVersion: "2026.9", imageDigest: "sha256:" + "b".repeat(64) },
   startedAt: "2026-09-10T10:00:00.000Z",
   finishedAt: "2026-09-10T10:00:02.000Z",
@@ -144,6 +145,56 @@ try {
   check("list returns all valid receipts", all.length, 8);
   check("list is deterministic when timestamps tie", all[0].receiptId, "receipt-complete");
   check("missing root lists as empty", await listReceipts("c".repeat(64), root), []);
+
+  const blocked = await writeReceipt({
+    ...base, receiptId: "receipt-blocked", source: "accept",
+    security: { blocking: 1, reasons: ["GATEWAY_PUBLICLY_BOUND"] },
+    selection: complete.selection, checks: { demo: [passed] },
+  }, root);
+  check("a blocking gate preserves passing checks and subject identity without certifying", [blocked.counts.passed, blocked.subjectVerified, blocked.coverage, blocked.verdict], [1, true, "complete", "not-verified"]);
+  check("gate outcome survives rereading", await readReceipt(setId, blocked.receiptId, root), blocked);
+  const blockedPath = join(root, "sets", "receipts", setId, `${blocked.receiptId}.json`);
+  const { contentId: _blockedId, ...blockedPayload } = blocked;
+  const forged = { ...blockedPayload, verdict: "verified" };
+  await writeFile(blockedPath, JSON.stringify({ ...forged, contentId: checksumOf(canonicalJson(forged)) }));
+  await rejects("even rehashed evidence cannot verify a blocked gate", () => readReceipt(setId, blocked.receiptId, root));
+  await writeFile(blockedPath, JSON.stringify(blocked));
+  const unchecked = await writeReceipt({
+    ...base, receiptId: "receipt-no-gate", source: "accept", security: undefined,
+    selection: complete.selection, checks: { demo: [passed] },
+  }, root);
+  check("new accept evidence without a gate never certifies", unchecked.verdict, "not-verified");
+  const trial = await writeReceipt({
+    ...base, receiptId: "receipt-trial", source: "set-try", security: undefined,
+    selection: complete.selection, checks: { demo: [passed] },
+  }, root);
+  check("trial evidence retains its checks/runtime contract without claiming a gate", [trial.verdict, trial.security], ["verified", undefined]);
+  const { security: _security, contentId: _contentId, ...legacyPayload } = complete;
+  const legacy = { ...legacyPayload, receiptId: "receipt-legacy" };
+  const legacyId = checksumOf(canonicalJson(legacy));
+  const legacyPath = join(root, "sets", "receipts", setId, "receipt-legacy.json");
+  const legacyText = JSON.stringify({ ...legacy, contentId: legacyId });
+  await writeFile(legacyPath, legacyText);
+  const old = await readReceipt(setId, "receipt-legacy", root);
+  check("legacy verification is not a gate certification", [old.verdict, old.recordedVerdict, old.contentId], ["not-verified", "verified", legacyId]);
+  check("legacy read leaves the hashed historical evidence untouched", await readFile(legacyPath, "utf8"), legacyText);
+  const { recordedVerdict, contentId: _oldContentId, ...readPayload } = old;
+  check("legacy checksum covers its recorded verdict", checksumOf(canonicalJson({ ...readPayload, verdict: recordedVerdict })), legacyId);
+  check("listing legacy evidence also downgrades its verdict", (await listReceipts(setId, root)).find((receipt) => receipt.receiptId === "receipt-legacy")?.verdict, "not-verified");
+  await writeFile(legacyPath, JSON.stringify({ ...legacy, subjectVerified: false, contentId: legacyId }));
+  await rejects("legacy subject tampering is rejected", () => readReceipt(setId, "receipt-legacy", root));
+  await rm(legacyPath);
+  const rejectedSecurity: unknown[] = [
+    null, { blocking: -1, reasons: [] }, { blocking: 0.5, reasons: [] },
+    { blocking: 0, reasons: ["GATEWAY_PUBLICLY_BOUND"] },
+    { blocking: 1, reasons: [] }, { blocking: 1, reasons: ["unsafe text /private/path"] },
+  ];
+  for (const security of rejectedSecurity) {
+    await rejects("malformed or non-portable gate evidence is rejected", () => writeReceipt({
+      ...base, receiptId: "receipt-invalid-gate", source: "accept", security: security as WriteReceiptInput["security"],
+      selection: complete.selection, checks: { demo: [passed] },
+    }, root));
+  }
 
   await mkdir(join(root, "sets", "receipts", "not-a-set"));
   await rejects("list validates set directory names before reading them", () => listReceipts(undefined, root));

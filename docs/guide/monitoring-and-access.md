@@ -172,6 +172,18 @@ An operator finds out the instance stopped doing its job without polling by hand
   implementations of the same idea. Cron installation refuses `%` in the working directory,
   command, arguments or marker before any scheduler change, including `\%`: cron interprets
   percent signs before shell quoting. Unsupported existing rows are preserved by uninstall.
+  Linux/SSH installs and uninstalls hold an account-wide target-side `flock` across the
+  entire crontab read, merge and write. Backup and watch share it across all deployments;
+  each command also keeps its instance lock. The target needs `flock` (util-linux) and a
+  root-owned sticky `/tmp` (mode `1777`). The account-owned lock directory
+  `/tmp/clawforge-crontab-<uid>` must have mode `0700`; symlinks and unsafe ownership or
+  permissions are refused. Contention waits up to 30 seconds, then reports a retryable
+  error. Kernel locks release when the target transaction process and its children exit,
+  including after a crash; the stable directory must not be deleted during updates.
+  An uncatchable crash can leave private transaction files there, but cannot leave a stale
+  kernel lock. Read/write failures report categories and exit codes without echoing table
+  contents or command output; an unreadable table is never overwritten as empty. External
+  editors such as `crontab -e` do not participate in this advisory lock.
   `--apply` also records `--interval` into this deployment's
   own watch state (cleared by `watch uninstall --apply`) — the only place this framework can
   observe the real schedule, since cron itself is never asked afterwards; `watch status`'s

@@ -19,17 +19,13 @@ import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import {
   cronLine,
-  crontabLines,
   jobMarker,
   parseIntervalToMinutes,
   posixTargetInvocation,
   printSchedulingInstructions,
   printUnschedulingInstructions,
-  probeCrontab,
-  readCrontab,
   schedulingSupport,
-  withoutMarkedLine,
-  writeCrontab,
+  updateCrontab,
 } from "#src/commands/operate/schedule.ts";
 import { BACKUP_APPLY_ARGUMENT } from "./prune-replaced.ts";
 
@@ -93,10 +89,7 @@ export async function backupInstall(ctx: Context, args: string[], scope?: Action
 
   await requireBootstrapped(ctx);
   await guarded(ctx, "backup install --apply", args, async () => {
-    await probeCrontab(ctx);
-    const existing = await readCrontab(ctx);
-    const kept = withoutMarkedLine(existing, JOB, name);
-    await writeCrontab(ctx, [...kept, line]);
+    await updateCrontab(ctx, JOB, name, line);
     log("installed");
   });
 }
@@ -118,14 +111,10 @@ export async function backupUninstall(ctx: Context, args: string[], scope?: Acti
   }
 
   await guarded(ctx, "backup uninstall --apply", args, async () => {
-    await probeCrontab(ctx);
-    const existing = await readCrontab(ctx);
-    const kept = withoutMarkedLine(existing, JOB, name);
-    if (kept.length === crontabLines(existing).length) {
+    if (!await updateCrontab(ctx, JOB, name)) {
       info("no backup schedule was installed for this deployment — nothing to remove");
       return;
     }
-    await writeCrontab(ctx, kept);
     log("removed");
   });
 }

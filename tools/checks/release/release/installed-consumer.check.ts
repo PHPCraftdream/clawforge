@@ -162,6 +162,24 @@ void summaryTypeGuard;
     check("and the deployment's own commands are what it lists", helped.output.includes("bootstrap"), true);
     if (helped.code !== 0) process.stderr.write(`    ${helped.output.trim().split("\n").slice(0, 5).join("\n    ")}\n`);
 
+    // Exercise the shipped loader with a consumer-owned TypeScript graph, not source files.
+    const hookDir = join(consumer, "recipes", "hook-check");
+    await mkdir(hookDir, { recursive: true });
+    await writeFile(join(hookDir, "helper.ts"), 'export const value: string = "first";\n', "utf8");
+    await writeFile(join(hookDir, "verify.ts"), 'import { value } from "./helper.ts";\nexport function verify(): string { return value; }\n', "utf8");
+    await writeFile(join(consumer, "hook-check.mjs"), `import { strict as assert } from "node:assert";
+import { writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { importHookModule } from "./node_modules/@clawforge/framework/dist/commands/management/recipe/hook-runtime.js";
+const hook = fileURLToPath(new URL("./recipes/hook-check/verify.ts", import.meta.url));
+assert.equal((await importHookModule(hook)).verify(), "first");
+await writeFile(new URL("./recipes/hook-check/helper.ts", import.meta.url), 'export const value: string = "second";\\n');
+assert.equal((await importHookModule(hook)).verify(), "second");
+`, "utf8");
+    const hookResult = await run(process.execPath, ["--experimental-strip-types", "hook-check.mjs"], consumer);
+    check("the installed loader executes a TypeScript hook and reloads its relative helper", hookResult.code, 0);
+    if (hookResult.code !== 0) process.stderr.write(`    ${hookResult.output.trim().split("\n").slice(0, 8).join("\n    ")}\n`);
+
     // What the npm-linked bin actually gets: a plain `#!/usr/bin/env node`, because busybox
     // `env` has no -S to carry a flag. With type stripping disabled, bin.js must notice and
     // re-execute itself with --experimental-strip-types before loading the consumer app.ts.

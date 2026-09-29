@@ -129,6 +129,13 @@ reports the data directory, the `<data>.replaced-<stamp>` pattern and the ordere
 steps. For archives inspected in the preview, a missing or structurally invalid archive
 is refused. `--force` has no effect on a preview, which never asks for confirmation.
 
+`restore --json` reports `restored: true` after data restoration and sets `started: true`
+only after gateway startup and its health wait succeed. A successful restore can leave the
+gateway stopped: `--no-start` returns `started: false, reason: "no-start"`; missing required
+secrets return `started: false, reason: "missing-secrets"`. Both include `nextAction`, while
+`ok: true` still records the successful restoration. Credential names and values are not
+included in these startup reasons.
+
 Rotation removes one archive per run, the oldest beyond `OC_BACKUP_KEEP`, rather than the
 whole backlog at once — the same rotation and naming for a native archive as for any other
 full backup. `OC_BACKUP_KEEP=0` disables rotation explicitly (logged, not silent); a value

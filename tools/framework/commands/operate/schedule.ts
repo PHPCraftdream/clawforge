@@ -1,6 +1,7 @@
 // Shared OS-scheduler machinery for any command that installs an unattended job on the
 // target — `watch install` and `backup install`. One place owns the crontab conventions
 // (marker, merge, print, apply) and the Windows fallback, so the two jobs cannot drift.
+// Target-side account flock protects the whole table across different instance locks.
 //
 // A job (e.g. "watch", "backup") owns its own marker — jobMarker(job, name) — so re-running
 // one job's install only ever replaces that job's own crontab line, never another job's.
@@ -98,22 +99,19 @@ export function crontabLines(text: string): string[] {
   return lines;
 }
 
-function ownedCronLine(line: string, job: string, name: string): boolean {
-  if (line.includes("%")) return false;
-  const match = /^((?:\S+\s+){4}\S+) cd ('(?:[^']|'\\'')*') && \.\/clawforge (.+) >\/dev\/null 2>&1 (# clawforge-[^\r\n]+)$/.exec(line);
-  if (match === null || match[4] !== jobMarker(job, name)) return false;
-  if (!VALID_INTERVAL_MINUTES.some((minutes) => cronSchedule(minutes) === match[1])) return false;
+/** Shared JS/POSIX ERE ownership predicate for local previews and locked target edits. */
+function ownedCronPattern(job: string, name: string): string {
   const jobArgs = job === "watch" ? ["watch", "check"] : job === "backup" ? ["backup"] : undefined;
-  if (jobArgs === undefined) return false;
+  if (jobArgs === undefined || /[%\r\n]/.test(name)) return "^$.";
+  const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const quoted = (args: string[]): string => args.map(SshTransport.quote).join(" ");
-  return match[3] === quoted(jobArgs) || match[3] === quoted(["--app", name, ...jobArgs]);
+  const schedules = VALID_INTERVAL_MINUTES.map((minutes) => literal(cronSchedule(minutes))).join("|");
+  const args = [quoted(jobArgs), quoted(["--app", name, ...jobArgs])].map(literal).join("|");
+  return `^(${schedules}) cd ('([^'%]|'\\\\'')*') && \\./clawforge (${args}) >/dev/null 2>&1 ${literal(jobMarker(job, name))}\r?$`;
 }
 
-export async function probeCrontab(ctx: Context): Promise<void> {
-  const found = await ctx.transport.exec("sh", ["-c", "command -v crontab"], { allowFailure: true });
-  if (found.code !== 0 || found.stdout.trim() === "") {
-    die(`crontab is not available on ${ctx.transport.description} — install a cron package there first (e.g. cronie, vixie-cron)`);
-  }
+function ownedCronLine(line: string, job: string, name: string): boolean {
+  return new RegExp(ownedCronPattern(job, name)).test(line);
 }
 
 /** Only a known no-crontab diagnostic means the table is empty; other failures must stop writes. */
@@ -121,16 +119,89 @@ export async function readCrontab(ctx: Context): Promise<string> {
   const listing = await ctx.transport.exec("crontab", ["-l"], { allowFailure: true, env: { LC_ALL: "C" } });
   if (listing.code === 0) return listing.stdout;
   const diagnostic = (listing.stderr || listing.stdout).trim();
-  if (listing.code === 1 && /^(?:crontab:\s*)?no crontab for .+$/i.test(diagnostic)) return "";
-  die(`could not read crontab on ${ctx.transport.description} (exit ${listing.code}): ${diagnostic || "no diagnostic"}`);
+  if (listing.code === 1 && /^(?:crontab:\s*)?no crontab for .+$/i.test(diagnostic) && (listing.stderr.trim() === "" || listing.stdout.trim() === "")) return "";
+  die(`could not read crontab on ${ctx.transport.description} (exit ${listing.code}); table unchanged`);
 }
 
-export async function writeCrontab(ctx: Context, lines: string[]): Promise<void> {
-  const content = lines.length === 0 ? "" : `${lines.join("\n")}\n`;
-  const result = await ctx.transport.exec("crontab", ["-"], { input: content, allowFailure: true });
+const CRONTAB_FAILURES: Readonly<Record<number, string>> = {
+  20: "crontab is not available",
+  21: "flock is required to serialize scheduler updates",
+  22: "could not identify scheduler account",
+  23: "unsafe scheduler lock parent /tmp (expected root-owned sticky directory, mode 1777, no symlink)",
+  24: "unsafe scheduler lock directory (expected account-owned directory, mode 700, no symlink)",
+  25: "could not open scheduler account lock",
+  26: "could not acquire scheduler account lock within 30 seconds; retry after the other update finishes",
+  27: "could not create private transaction files",
+  28: "could not read crontab; table unchanged",
+  29: "could not filter crontab; table unchanged",
+  30: "could not prepare crontab entry; table unchanged",
+  31: "invalid scheduler mutation",
+  32: "could not compare crontab; table unchanged",
+  33: "could not update crontab",
+};
+
+/** One target process holds the account lock from crontab read through replacement. */
+const CRONTAB_TRANSACTION = `
+set -u
+export LC_ALL=C
+umask 077
+fail() { code=$1; shift; printf 'crontab transaction: %s\\n' "$*" >&2; exit "$code"; }
+command -v crontab >/dev/null 2>&1 || fail 20 'crontab is not available'
+command -v flock >/dev/null 2>&1 || fail 21 'flock is required to serialize scheduler updates'
+uid=$(id -u) || fail 22 'could not identify scheduler account'
+case "$uid" in ''|*[!0-9]*) fail 22 'invalid scheduler account uid';; esac
+[ ! -L /tmp ] && [ "$(stat -c '%u:%a' /tmp)" = 0:1777 ] || fail 23 'lock parent /tmp must be a root-owned sticky directory (1777), not a symlink'
+lock_dir=/tmp/clawforge-crontab-$uid
+mkdir -m 700 -- "$lock_dir" 2>/dev/null || :
+[ ! -L "$lock_dir" ] && [ -d "$lock_dir" ] && [ "$(stat -c '%u:%a' -- "$lock_dir")" = "$uid:700" ] || fail 24 'unsafe scheduler lock directory (expected account-owned directory, mode 700, no symlink)'
+exec 9< "$lock_dir" || fail 25 'could not open scheduler account lock'
+flock -x -w 30 9 || fail 26 'could not acquire scheduler account lock within 30 seconds; retry after the other update finishes'
+work=$(mktemp -d "$lock_dir/transaction.XXXXXXXXXX") || fail 27 'could not create private transaction directory'
+trap 'rm -f -- "$work/current" "$work/next" "$work/error"; rmdir -- "$work"' EXIT
+trap 'exit 143' HUP INT TERM
+if crontab -l > "$work/current" 2> "$work/error"; then :; else
+  code=$?
+  diagnostic=$(cat -- "$work/error")
+  [ -n "$diagnostic" ] || diagnostic=$(cat -- "$work/current")
+  if [ "$code" = 1 ] && { [ ! -s "$work/error" ] || [ ! -s "$work/current" ]; } && [ "$(printf '%s\\n' "$diagnostic" | wc -l)" -eq 1 ] && printf '%s\\n' "$diagnostic" | grep -Eiq '^(crontab:[[:space:]]*)?no crontab for .+$'; then
+    : > "$work/current" || fail 27 'could not initialize empty table'
+  else
+    fail 28 "could not read crontab (exit $code); table unchanged"
+  fi
+fi
+grep -Ev -- "$1" "$work/current" > "$work/next"
+code=$?
+[ "$code" -le 1 ] || fail 29 'could not filter crontab; table unchanged'
+if [ "$3" = install ]; then
+  printf '%s\\n' "$2" >> "$work/next" || fail 30 'could not prepare crontab entry; table unchanged'
+elif [ "$3" != uninstall ]; then
+  fail 31 'invalid scheduler mutation'
+fi
+cmp -s -- "$work/current" "$work/next"
+code=$?
+if [ "$code" = 0 ]; then printf 'unchanged\\n'; exit 0; fi
+[ "$code" = 1 ] || fail 32 'could not compare crontab; table unchanged'
+if crontab - < "$work/next" > "$work/error" 2>&1; then :; else
+  code=$?
+  fail 33 "could not update crontab (exit $code)"
+fi
+printf 'updated\\n'
+`;
+
+/** Updates one owned job under a target-account flock, independent of instance data paths. */
+export async function updateCrontab(ctx: Context, job: string, name: string, line?: string): Promise<boolean> {
+  if (line !== undefined && /[\r\n]/.test(line)) die("a scheduled crontab entry must be exactly one line");
+  if (line !== undefined && !ownedCronLine(line, job, name)) die("a scheduled crontab entry must match its job and deployment");
+  const result = await ctx.transport.exec("sh", [
+    "-c", CRONTAB_TRANSACTION, "clawforge-crontab-update", ownedCronPattern(job, name), line ?? "", line === undefined ? "uninstall" : "install",
+  ], { allowFailure: true });
   if (result.code !== 0) {
-    die(`could not update crontab on ${ctx.transport.description} (exit ${result.code}): ${(result.stderr || result.stdout).trim()}`);
+    const reason = CRONTAB_FAILURES[result.code] ?? "target scheduler transaction failed";
+    die(`could not update crontab on ${ctx.transport.description} (exit ${result.code}): ${reason}`);
   }
+  if (result.stdout.trim() === "updated") return true;
+  if (result.stdout.trim() === "unchanged") return false;
+  die(`could not confirm crontab update on ${ctx.transport.description}: unexpected transaction response`);
 }
 
 export interface SchedulingSupport {

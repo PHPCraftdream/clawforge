@@ -53,7 +53,7 @@ export const RESTORE_ARGUMENTS: CommandArgument[] = [
   { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
   { name: "no-start", description: "Leave the service stopped afterwards", kind: "flag" },
   { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag" },
-  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "json", description: "Emit restored data and actual gateway startup outcome as JSON", kind: "flag" },
 ];
 
 /** Whether argv requests --dry-run (an option value is never mistaken for the flag) — same
@@ -75,6 +75,11 @@ export interface RestoreOptions {
    *  this. */
   internal?: boolean;
 }
+
+/** Data restoration and gateway startup are separate outcomes. */
+export type RestoreOutcome =
+  | { restored: true; started: true }
+  | { restored: true; started: false; reason: "no-start" | "missing-secrets"; nextAction: string };
 
 /** `backupArchiveName`'s stamp (`YYYYMMDD-HHMMSS`, always UTC — see backup/index.ts's
  *  timestamp()) as a readable date, for the pre-confirmation "which archive" line below. */
@@ -490,7 +495,7 @@ async function performRestore(ctx: Context, prepared: PreparedRestore, options: 
 /** Verify/report phase: warns about sidecars still bound to the previous data, then starts
  *  the gateway back up (or explains why it was left stopped). Runs only once performRestore
  *  has succeeded. */
-async function reportRestoreOutcome(ctx: Context, archive: string, aside: string | undefined, options: RestoreOptions): Promise<void> {
+async function reportRestoreOutcome(ctx: Context, archive: string, aside: string | undefined, options: RestoreOptions): Promise<RestoreOutcome> {
   // The gateway was stopped; recipe stacks are not and cannot be — they are separate
   // Compose projects, and re-resolving another project's bind mounts is not this
   // command's to do. A sidecar mounting a file or directory under the data directory
@@ -512,7 +517,7 @@ async function reportRestoreOutcome(ctx: Context, archive: string, aside: string
   if (options.noStart === true) {
     log(`restore complete from ${archive} (gateway not started)`);
     if (aside !== undefined) info(`previous data kept at ${aside}`);
-    return;
+    return { restored: true, started: false, reason: "no-start", nextAction: "./clawforge up" };
   }
 
   // The restored config can reference variables nothing on this instance has yet — push()
@@ -527,7 +532,12 @@ async function reportRestoreOutcome(ctx: Context, archive: string, aside: string
     info(`restore complete from ${archive} (gateway left stopped)`);
     info("supply the keys with: ./clawforge secrets --apply --store <name>, then ./clawforge up");
     if (aside !== undefined) info(`previous data kept at ${aside}`);
-    return;
+    return {
+      restored: true,
+      started: false,
+      reason: "missing-secrets",
+      nextAction: "./clawforge secrets --apply --store <name>, then ./clawforge up",
+    };
   }
 
   log("starting the gateway");
@@ -535,13 +545,14 @@ async function reportRestoreOutcome(ctx: Context, archive: string, aside: string
   await ctx.runtime.waitForHealth();
   log(`restore complete from ${archive}`);
   if (aside !== undefined) info(`previous data kept at ${aside}`);
+  return { restored: true, started: true };
 }
 
 export async function restoreArchive(
   ctx: Context,
   archive: string,
   options: RestoreOptions = {},
-): Promise<void> {
+): Promise<RestoreOutcome> {
   const prepared = await prepareRestore(ctx, archive, options);
   if (options.force !== true) {
     warn(`this will replace the contents of ${prepared.dataDir}`);
@@ -549,7 +560,7 @@ export async function restoreArchive(
     if (!(await confirm("Type 'yes' to continue: "))) die("aborted");
   }
   const aside = await performRestore(ctx, prepared, options);
-  await reportRestoreOutcome(ctx, prepared.archive, aside, options);
+  return reportRestoreOutcome(ctx, prepared.archive, aside, options);
 }
 
 /** `--dry-run`: report read-only checks and those deferred until execution. */
@@ -608,9 +619,10 @@ export async function restore(ctx: Context, args: string[]): Promise<void> {
 
   if (jsonOnly) {
     let caught: unknown;
+    let outcome: RestoreOutcome | undefined;
     await withOutputSink(() => {}, async () => {
       try {
-        await guarded(ctx, "restore", args, () => restoreArchive(ctx, archive!, options));
+        outcome = await guarded(ctx, "restore", args, () => restoreArchive(ctx, archive!, options));
       } catch (error) {
         caught = error;
       }
@@ -620,7 +632,7 @@ export async function restore(ctx: Context, args: string[]): Promise<void> {
       emit(`${JSON.stringify({ ok: false, changed: true, archive, problems: [message] }, null, 2)}\n`);
       throw caught;
     }
-    emit(`${JSON.stringify({ ok: true, changed: true, archive, freshIdentity: options.freshIdentity === true, started: options.noStart !== true }, null, 2)}\n`);
+    emit(`${JSON.stringify({ ok: true, changed: true, archive, freshIdentity: options.freshIdentity === true, ...outcome }, null, 2)}\n`);
     return;
   }
 

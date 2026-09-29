@@ -7,7 +7,7 @@
 // default shell, which expands literal `$()` and backticks in otherwise safe argv values.
 
 import { listFilesVia } from "../../security/transport-listing.ts";
-import type { ExecOptions, ExecResult, Transport } from "./exec.ts";
+import type { CommandFailure, ExecOptions, ExecResult, Transport } from "./exec.ts";
 import { spawnLocal, isWrapperFailureCode, composeExecFailure, TransportUnreachableError } from "./exec.ts";
 import { existsVia, privateWriteCommand, publishCommand, withEnvPrefix } from "./quoting.ts";
 
@@ -42,6 +42,16 @@ export class WslTransport implements Transport {
         `${this.description}: wsl.exe failed before reaching the target — ${(error as Error).message}`,
         "check that wsl.exe is installed and on PATH (`wsl.exe --status`)",
       );
+    }
+    // Our own deadline killing wsl.exe (SIGTERM → a signal-terminated -1) looks identical,
+    // code-wise, to wsl.exe failing to reach the distro — isWrapperFailureCode below cannot
+    // tell them apart. result.timedOut (set by spawnLocal) can, so it is checked first: a slow
+    // command must never be reported as TARGET_UNREACHABLE.
+    if (result.timedOut === true) {
+      if (options.allowFailure === true) return result;
+      const error = composeExecFailure("wsl.exe", wslArgs, result) as CommandFailure;
+      error.timedOut = true;
+      throw error;
     }
     if (isWrapperFailureCode(result.code)) {
       const detail = stripWslNuls(result.stderr).trim() || stripWslNuls(result.stdout).trim() || "no output";

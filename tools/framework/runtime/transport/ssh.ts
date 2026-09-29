@@ -7,7 +7,7 @@
 
 import { listFilesVia } from "../../security/transport-listing.ts";
 import { shellQuote } from "../../core/io/shell.ts";
-import type { ExecOptions, ExecResult, Transport } from "./exec.ts";
+import type { CommandFailure, ExecOptions, ExecResult, Transport } from "./exec.ts";
 import { spawnLocal, isWrapperFailureCode, composeExecFailure, TransportUnreachableError } from "./exec.ts";
 import { existsVia, privateWriteCommand, publishCommand, withEnvPrefix } from "./quoting.ts";
 
@@ -57,6 +57,16 @@ export class SshTransport implements Transport {
         `${this.description}: ssh failed before reaching the target — ${(error as Error).message}`,
         "check that ssh is installed and on PATH",
       );
+    }
+    // Our own deadline killing ssh (SIGTERM → a signal-terminated -1, or code 255) can look
+    // exactly like ssh's own connection failure — isSshOwnFailure below cannot tell them
+    // apart. result.timedOut (set by spawnLocal) can, so it is checked first: a slow command
+    // must never be reported as TARGET_UNREACHABLE.
+    if (result.timedOut === true) {
+      if (options.allowFailure === true) return result;
+      const error = composeExecFailure("ssh", sshArgs, result) as CommandFailure;
+      error.timedOut = true;
+      throw error;
     }
     if (isSshOwnFailure(result.code, result.stderr)) {
       const detail = result.stderr.trim() || result.stdout.trim() || "no output";

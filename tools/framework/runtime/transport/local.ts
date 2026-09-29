@@ -5,14 +5,27 @@ import { randomBytes } from "node:crypto";
 import { readFile, mkdir, rm, rmdir, access, readdir, stat, lstat, open, rename, type FileHandle } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import type { ExecOptions, ExecResult, Transport } from "./exec.ts";
-import { spawnLocal } from "./exec.ts";
+import { spawnLocal, composeExecFailure } from "./exec.ts";
 import { PUBLISH_STAGING_MARKER } from "./quoting.ts";
 
 export class LocalTransport implements Transport {
   readonly description = "local";
 
-  exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
-    return spawnLocal(command, args, options);
+  async exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
+    try {
+      return await spawnLocal(command, args, options);
+    } catch (error) {
+      // spawnLocal always rejects on ENOENT, even under allowFailure — right when `command`
+      // is wsl.exe/ssh and this process's own inability to launch *them* means the transport
+      // is unreachable, but here `command` IS the target command: a missing one is the
+      // target's ordinary "not found", exactly what a real shell reports as exit 127.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        const result: ExecResult = { code: 127, stdout: "", stderr: `${command}: command not found\n` };
+        if (options.allowFailure === true) return result;
+        throw composeExecFailure(command, args, result);
+      }
+      throw error;
+    }
   }
 
   readFile(path: string): Promise<string> {

@@ -82,7 +82,14 @@ target-reached sibling of `LOCAL_TARGET_UNSUPPORTED` above. It is checked only b
   transport/target matrix is exercised by injecting the host OS as a parameter rather than
   reading `process.platform` inline (`tools/checks/runtime/transport/local-target-unsupported.check.ts`
   covers every cell above), so the full matrix is checked regardless of which OS actually
-  ran the command.
+  ran the command. Against a *real* target, one shared suite
+  (`tools/checks/runtime/transport/scenarios/contract.ts`, `runTransportScenarios`) defines the
+  transport contract once — real exec, stdout/stderr separation, multibyte output, argument
+  quoting, file round trips, a timeout that actually ends the target process, unreachable-target
+  classification — and three capability-gated files run it against a real
+  `LocalTransport`/`WslTransport`/`SshTransport`: `local.check.ts` (needs `linux-host`),
+  `wsl.check.ts` (needs `wsl` + `windows-host`), `ssh.check.ts` (needs `ssh-loopback`). Each
+  skips with a `SKIP` line, not a failure, on a host that cannot satisfy it.
 * **`npm run check:linux`** — reproduces `ci.yml`'s Linux job inside the official `node:24`
   Docker image, on any host that has Docker: the closest thing to running the Linux-host row
   for real without a spare Linux machine.

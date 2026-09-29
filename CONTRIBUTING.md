@@ -82,9 +82,19 @@ or several, comma-separated: `// check:requires docker, wsl`. Recognized capabil
 `tools/checks/kit/capabilities/capabilities.ts`: `docker` (`docker info` succeeds), `wsl`
 (`wsl.exe -l -q` lists at least one distro), `posix-sh` (a `sh` that runs a trivial command —
 never via wsl.exe), `rsync` (a real rsync binary), `linux-host` (`process.platform ===
-"linux"`). Each is probed at most once per run, only when some selected file actually requires
-it, and a probe failure (missing tool, timeout, anything) reads as "absent" rather than
-crashing the run.
+"linux"`), `windows-host` (`process.platform === "win32"`), `ssh-loopback` (`ssh -o
+BatchMode=yes -o ConnectTimeout=5 ${OC_CHECK_SSH_HOST:-localhost} true` succeeds — key-based,
+non-interactive; BatchMode refuses instead of prompting, so a host with no key set up answers
+"absent" instead of hanging). Each is probed at most once per run, only when some selected file
+actually requires it, and a probe failure (missing tool, timeout, anything) reads as "absent"
+rather than crashing the run.
+
+`tools/checks/runtime/transport/scenarios/contract.ts` defines the transport contract once
+(`runTransportScenarios`) and three thin files — `local.check.ts` (`requires linux-host`),
+`wsl.check.ts` (`requires wsl, windows-host`), `ssh.check.ts` (`requires ssh-loopback`) — each
+run the same suite against a real `LocalTransport`/`WslTransport`/`SshTransport`. Its own
+commands are POSIX-sh only, so the ssh cell runs against any Linux/macOS sshd with a GNU
+userland, not only the CI-provisioned loopback one.
 
 The runner (`tools/checks/kit/run.ts`) never starts a file whose requirement is unmet: it
 prints `SKIP <label> — needs <cap>` and counts it separately from passed/failed files in the

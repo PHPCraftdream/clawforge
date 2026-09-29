@@ -30,11 +30,20 @@ export interface ExecResult {
   code: number;
   stdout: string;
   stderr: string;
+  /** The deadline (timeoutMs) killed the child — `code` is the signal-terminated remnant
+   *  (usually -1), not the command's own exit status. Absent otherwise, so a plain
+   *  `{ code, stdout, stderr }` object for a normal exit is unaffected. A transport built on
+   *  spawnLocal (wsl.exe, ssh) needs this to tell "my own deadline fired" apart from "the
+   *  wrapper failed for an unrelated reason" — both often collapse to the same negative code. */
+  timedOut?: true;
 }
 
 /** A rejected spawnLocal() call: `fullCommand` (masked) is the argv `message`'s headline was shortened from; read by entry/cli.ts under OC_DEBUG=1. */
 export interface CommandFailure extends Error {
   fullCommand?: string;
+  /** Set alongside `fullCommand` when the rejection was the timeoutMs deadline, not the
+   *  command's own non-zero exit — see ExecResult.timedOut. */
+  timedOut?: true;
 }
 
 /** wsl.exe or ssh itself failing to reach the target (as opposed to a command that ran there and
@@ -182,10 +191,12 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
 
     // SIGTERM first, SIGKILL after a grace period: a child that ignores SIGTERM would
     // otherwise outwait the very deadline this timer exists to enforce.
+    let timedOut = false;
     let escalate: ReturnType<typeof setTimeout> | undefined;
     const timer = options.timeoutMs === undefined
       ? undefined
       : setTimeout(() => {
+        timedOut = true;
         child.kill("SIGTERM");
         escalate = setTimeout(() => child.kill("SIGKILL"), 5000);
       }, options.timeoutMs);
@@ -204,13 +215,20 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
       if (escalate !== undefined) clearTimeout(escalate);
       forwardStdout?.flush();
       forwardStderr?.flush();
-      const result: ExecResult = { code: toSignedExitCode(code ?? -1), stdout, stderr };
+      const result: ExecResult = {
+        code: toSignedExitCode(code ?? -1),
+        stdout,
+        stderr,
+        ...(timedOut ? { timedOut: true as const } : {}),
+      };
       if (launchError !== undefined) {
         rejectPromise(launchError);
         return;
       }
       if (result.code !== 0 && options.allowFailure !== true) {
-        rejectPromise(composeExecFailure(command, args, result));
+        const error = composeExecFailure(command, args, result);
+        if (timedOut) (error as CommandFailure).timedOut = true;
+        rejectPromise(error);
         return;
       }
       if (inputError !== undefined && result.code === 0) {

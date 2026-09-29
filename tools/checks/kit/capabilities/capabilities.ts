@@ -8,7 +8,7 @@
 
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 
-export const CAPABILITIES = ["docker", "wsl", "posix-sh", "rsync", "linux-host"] as const;
+export const CAPABILITIES = ["docker", "wsl", "posix-sh", "rsync", "linux-host", "windows-host", "ssh-loopback"] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 export function isCapability(value: string): value is Capability {
@@ -59,6 +59,30 @@ export async function isLinuxHost(): Promise<boolean> {
   return process.platform === "linux";
 }
 
+/** This process's own host: some checks (the WSL cell of the transport matrix) need a
+ *  Windows host specifically, not merely "wsl.exe answers" — hasWsl() alone would also be
+ *  true from a Linux host reaching a WSL machine over ssh, which is not this cell. */
+// eslint-disable-next-line @typescript-eslint/require-await
+export async function isWindowsHost(): Promise<boolean> {
+  return process.platform === "win32";
+}
+
+const SSH_LOOPBACK_TIMEOUT_MS = 8_000;
+
+/** A real, reachable, key-based loopback ssh target at OC_CHECK_SSH_HOST (default localhost):
+ *  `ssh -o BatchMode=yes -o ConnectTimeout=5 <host> true` succeeds — the exact command the CI
+ *  job that provisions this sshd is contracted to make pass, and the exact one a check gated
+ *  on this capability relies on already working. BatchMode refuses rather than prompting, so a
+ *  host with no key set up answers "absent" instead of hanging. */
+export async function hasSshLoopback(): Promise<boolean> {
+  const host = process.env.OC_CHECK_SSH_HOST ?? "localhost";
+  return swallow(async () => (await spawnLocal(
+    "ssh",
+    ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "true"],
+    { allowFailure: true, timeoutMs: SSH_LOOPBACK_TIMEOUT_MS },
+  )).code === 0);
+}
+
 export type ProbeMap = Readonly<Record<Capability, () => Promise<boolean>>>;
 
 export const DEFAULT_PROBES: ProbeMap = {
@@ -67,6 +91,8 @@ export const DEFAULT_PROBES: ProbeMap = {
   "posix-sh": hasPosixSh,
   rsync: hasRsync,
   "linux-host": isLinuxHost,
+  "windows-host": isWindowsHost,
+  "ssh-loopback": hasSshLoopback,
 };
 
 /** Probes each capability at most once per instance, regardless of how many files ask —

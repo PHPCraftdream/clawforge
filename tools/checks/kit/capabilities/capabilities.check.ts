@@ -4,9 +4,13 @@
 // host, which is exactly what run.ts's own capability-gated tests (gate.check.ts) do not need.
 
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
-import { CapabilityProbe, CAPABILITIES, hasDocker, hasPosixSh, hasRsync, hasWsl, isCapability, isLinuxHost, type Capability, type ProbeMap } from "./capabilities.ts";
+import { CapabilityProbe, CAPABILITIES, hasDocker, hasPosixSh, hasRsync, hasSshLoopback, hasWsl, isCapability, isLinuxHost, isWindowsHost, type Capability, type ProbeMap } from "./capabilities.ts";
 
-check("the known capability list is exactly the documented five", [...CAPABILITIES].sort(), ["docker", "linux-host", "posix-sh", "rsync", "wsl"]);
+check(
+  "the known capability list is exactly the documented seven",
+  [...CAPABILITIES].sort(),
+  ["docker", "linux-host", "posix-sh", "rsync", "ssh-loopback", "windows-host", "wsl"],
+);
 check("isCapability accepts every known name", CAPABILITIES.every((capability) => isCapability(capability)), true);
 check("isCapability rejects an unknown name", isCapability("ssh"), false);
 check("isCapability rejects the empty string", isCapability(""), false);
@@ -68,10 +72,11 @@ function countingProbes(answers: Partial<Record<Capability, boolean>>): { probes
 
 // --- the real probes: never throw, always answer a plain boolean ------------------------------
 
-for (const [name, real] of Object.entries({ hasDocker, hasWsl, hasPosixSh, hasRsync, isLinuxHost })) {
+for (const [name, real] of Object.entries({ hasDocker, hasWsl, hasPosixSh, hasRsync, isLinuxHost, isWindowsHost, hasSshLoopback })) {
   const answer = await real();
   check(`${name}() answers a boolean`, typeof answer, "boolean");
 }
 check("isLinuxHost() agrees with process.platform", await isLinuxHost(), process.platform === "linux");
+check("isWindowsHost() agrees with process.platform", await isWindowsHost(), process.platform === "win32");
 
 finish("capabilities");

@@ -5,21 +5,19 @@
 // byte for byte, private paths included. --quick exists because of it.
 //
 // It and the two verifier checks (REJECTS_SECRETS_ENTRY, ACCEPTS_SHARE_ENTRY) each need an
-// archive taken with the gateway down. Run alone (as the tests do) each manages its own
-// stop/start; managing each independently in index.ts's runSmokeSuite() would cost three
-// outages, ~70s. Only taking an archive needs the window, so runArchiveChecks() pauses once, takes
-// both archives independently, restarts, then verifies and restore-diffs with the gateway
-// back up.
+// archive taken with the gateway down. Run alone, each manages its own stop/start; run
+// together via runSmokeSuite() that would cost three outages, so runArchiveChecks() pauses
+// once, takes both archives, restarts, then verifies and restore-diffs with the gateway back up.
 
 import { randomBytes } from "node:crypto";
 import { basename, dirname } from "node:path";
 import { log, UserError } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
-import { CouldNotCheck } from "../../check-outcome.ts";
-import { createBackup } from "../backup/index.ts";
-import { pull } from "../state.ts";
-import { restoreArchive } from "../restore/index.ts";
-import { verifySnapshotQuietly } from "../verify.ts";
+import { CouldNotCheck } from "#src/commands/check-outcome.ts";
+import { createBackup } from "#src/commands/lifecycle/backup/index.ts";
+import { pull } from "#src/commands/lifecycle/state.ts";
+import { restoreArchive } from "#src/commands/lifecycle/restore/index.ts";
+import { verifySnapshotQuietly } from "#src/commands/lifecycle/verify.ts";
 import { dataDirName, dataDirParent } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";

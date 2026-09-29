@@ -1,12 +1,11 @@
 // `./clawforge backup prune-replaced` — deletes `<dataDir>.replaced-*` copies restore leaves
 // next to the data directory once it has moved the previous data aside. Preview by default;
-// only --apply deletes, mirroring `watch install --apply`/`expose tailscale --apply`.
+// only --apply deletes.
 //
 // Archive pruning is already handled by backup's own rotation (rotate(), in index.ts) — this
-// never touches an archive, only replaced-data siblings, and refuses any path that is not
-// exactly one of those: strict name validation, symlinks refused, the data directory itself
-// refused, re-checked immediately before each deletion rather than trusted from the listing
-// that chose it.
+// never touches an archive, only replaced-data siblings, refusing any path that is not
+// exactly one of those (strict name validation, symlinks refused, the data directory itself
+// refused), re-checked immediately before each deletion rather than trusted from the listing.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
@@ -21,11 +20,9 @@ import {
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { JSON_ARGUMENT } from "./list.ts";
 
-/** Shared across every `backup` sub-action that previews by default — prune-replaced
- *  (delete) and install/uninstall (mutate the crontab) alike — so the merged `backup`
- *  command's single `--apply` never carries two different descriptions depending on which
- *  action declared it last. Declared once, here, and reused (not redeclared) by install.ts,
- *  same as list.ts's JSON_ARGUMENT below. */
+/** Shared across every `backup` sub-action that previews by default — prune-replaced and
+ *  install/uninstall alike — so the merged `backup` command's single `--apply` never carries
+ *  two different descriptions. Declared once, here, reused by install.ts. */
 export const BACKUP_APPLY_ARGUMENT: CommandArgument = {
   name: "apply",
   description: "Actually apply the action (delete, or install/uninstall the schedule) instead of only previewing/printing it",

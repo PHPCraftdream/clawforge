@@ -26,9 +26,9 @@ import {
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { SshTransport } from "#src/runtime/transport/transport.ts";
 import { openclawCli } from "#src/service/openclaw-cli.ts";
-import { NATIVE_MANIFEST_NAME } from "../backup/index.ts";
+import { NATIVE_MANIFEST_NAME } from "#src/commands/lifecycle/backup/index.ts";
 import { buildRestorePlan, printRestorePlan } from "./plan.ts";
-import { preflightSecrets, MissingSecretsError } from "../../management/secrets.ts";
+import { preflightSecrets, MissingSecretsError } from "#src/commands/management/secrets.ts";
 import {
   importRestoredPrivatePathsHistory,
   mutatePrivatePathsLedgerState,
@@ -39,7 +39,7 @@ import {
   removePrivatePathsLedger,
   type PrivatePathsLedgerState,
 } from "#src/security/privacy/private-paths-ledger.ts";
-import { runningRecipeStacks } from "../../management/recipe/index.ts";
+import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -85,15 +85,11 @@ function formatArchiveStamp(stamp: string): string {
 
 /** The newest FULL archive of this deployment, and what was skipped to find it.
  *
- *  "Newest archive in the backup directory" was the whole rule, and `pull` writes migrate and
- *  share archives into that same directory. Restoring one of those over a live instance is
- *  not a restore: a migrate archive has no config/.env, a share archive has neither identity
- *  nor devices, so the data directory is replaced by something that cannot start while the
- *  real data survives only as `<data>.replaced-<stamp>`. Named explicitly, any archive is
- *  still restorable — the operator asking for that one has said which one they mean.
- *
- *  Exported for testing: which archive `./clawforge restore` picks is the decision worth
- *  pinning, and it needs a listing rather than a data directory to exercise. */
+ *  `pull` writes migrate and share archives into the same backup directory; restoring one
+ *  of those over a live instance is not a restore (a migrate archive has no config/.env, a
+ *  share archive has neither identity nor devices) — so those are skipped by default. Named
+ *  explicitly, any archive is still restorable. Exported for testing: which archive
+ *  `./clawforge restore` picks is the decision worth pinning. */
 export async function newestArchive(
   ctx: Context,
   directory: string,
@@ -135,27 +131,18 @@ async function confirm(question: string): Promise<boolean> {
   }
 }
 
-/** Checks the restored tree physically, before anything acts through it.
+/** Checks the restored tree physically, before anything acts through it — inspectArchive
+ *  reasons about the archive's record, this reasons about what tar actually created.
  *
- *  inspectArchive reasons about what the archive records; this reasons about the
- *  filesystem tar actually created. The root must be an ordinary directory — an archive
- *  can ship its root as a link, and everything below would then be reached through it.
- *  Each mandatory layout path that exists must resolve inside the root: a link to
- *  elsewhere would carry the fresh-identity deletion and the standard-directory
- *  preparation (mkdir, chown, chmod 700 auth-secrets) out of the promised data
- *  directory. A path that is not there at all is fine — ensureDataDirs creates it
- *  inside the verified root — and a link resolving within the tree stays tolerated. A
- *  link whose target does not resolve is refused too: readlink cannot canonicalize it,
- *  and mkdir -p would follow it and create its target outside.
+ *  The root must be an ordinary directory, not a link (else everything below is reached
+ *  through it). Each mandatory layout path that exists must resolve inside the root — a link
+ *  elsewhere would carry fresh-identity deletion or directory prep (mkdir/chown/chmod 700)
+ *  outside the promised data directory. Absent is fine (ensureDataDirs creates it); a link
+ *  that fails to resolve is refused, since mkdir -p would follow it outside.
  *
- *  The probes run under the same privilege decision as the extraction and the actions they
- *  guard: extraction unpacks through sudoFor() and keeps the archive's numeric ownership,
- *  and ensureDataDirs/fresh-identity write with whatever escalation those need — a check
- *  that looks with fewer rights than the writes is how a write lands through a path the
- *  check never saw. "Absent" is only trusted when both probes answer a clean 1 AND those
- *  same privileges can search the path's parent: `test` reports an untraversable parent
- *  exactly like a missing path, so an answer that cannot be known is refused rather than
- *  skipped as absent. */
+ *  Probes run under the same privilege as the writes they guard — a check with fewer rights
+ *  than the write is how a write lands through a path the check never saw. "Absent" is only
+ *  trusted when the parent is also searchable with those privileges. */
 async function verifyRestoredLayout(ctx: Context, dataDir: string): Promise<void> {
   const prefix = await sudoFor(ctx, dataDir);
   if (await isLink(ctx, prefix, dataDir)) {
@@ -236,15 +223,12 @@ async function verifyDataDirAncestry(ctx: Context, dataDir: string): Promise<voi
 /** Brings the archive's privacy history back to the deployment-side ledger, before anything
  *  acts on the restored data.
  *
- *  The ledger describes the target but lives in the operator-side deployment directory, so
- *  restoring through a different one — a new folder, a lost one — needs its own copy of the
- *  history: otherwise the next migrate/share would build its exclusions from an empty
- *  record. A full backup therefore carries a copy inside the data root; when this
- *  archive has one, it is imported (union) here, inside the try whose catch puts the
- *  previous data back: a copy that exists but cannot be read or parsed fails the restore,
- *  never reading as "nothing to protect". An archive without one predates history
- *  travelling with backups; what that means is said, and it differs by what this
- *  deployment still records of its own. */
+ *  The ledger lives in the operator-side deployment directory, so restoring into a new/lost
+ *  one needs its own copy: otherwise the next migrate/share builds exclusions from an empty
+ *  record. A full backup carries a copy inside the data root; when present it is imported
+ *  (union) inside the try whose catch restores the previous data — a copy that exists but
+ *  cannot be read fails the restore, never reads as "nothing to protect". An archive without
+ *  one predates history travelling with backups. */
 async function importRestoredHistory(ctx: Context, name: string, entries: readonly string[], dataDir: string): Promise<void> {
   const historyEntry = `${name}/config/clawforge-private-paths.json`;
   if (entries.some((entry) => entry.replace(/^\.\//, "") === historyEntry)) {
@@ -344,9 +328,8 @@ export async function prepareRestore(ctx: Context, archive: string, options: Res
   // Every entry, not just the first: one absolute path or one .. among thousands is enough
   // to write outside the data directory, and this runs before anything is stopped.
   const problems = inspectArchive(entries, await listArchiveLinks(ctx, archive));
-  // OpenClaw's own links into the container image are expected on every real snapshot
-  // folded into one summary line instead of one warning per plugin-skill and
-  // codex-home tool shim; anything else, fatal or not, is still named exactly as before.
+  // Links into the container image are expected on every real snapshot, so they fold into
+  // one summary line instead of one warning per plugin-skill/codex-home tool shim.
   const { toReport, foldedImageLinks } = reportableProblems(problems);
   for (const problem of toReport.filter((entry) => !entry.fatal)) warn(problem.message);
   if (foldedImageLinks > 0) warn(`${foldedImageLinks} expected link(s) into the OpenClaw image`);
@@ -473,21 +456,16 @@ async function performRestore(ctx: Context, prepared: PreparedRestore, options: 
     restoreMayHaveWritten = true;
     await extractArchive(ctx, archive, parent);
 
-    // Between unpack and the first action through the restored tree. inspectArchive
-    // could only reason about what the archive records; what tar actually created is
-    // checked here, physically, because both steps below follow paths without looking:
-    // --fresh-identity deletes through config/, and ensureDataDirs creates the standard
-    // subdirectories and chmods auth-secrets wherever those paths resolve to.
+    // Between unpack and the first action through the restored tree — inspectArchive only
+    // reasons about the archive's record, this checks what tar actually created, since
+    // --fresh-identity and ensureDataDirs both follow paths without looking.
     log("verifying the restored layout");
     await verifyRestoredLayout(ctx, dataDir);
 
-    // The ledger state this restore's history import may change, taken right before
-    // that import runs: fresh-identity and ensureDataDirs run AFTER the import, so a
-    // failure there must undo the import along with the data tree, or the old instance
-    // keeps policy boundaries from an archive that was never actually accepted. Inside the
-    // try, so a snapshot read that itself fails
-    // (an unreadable existing ledger) is handled by the same data-tree rollback below —
-    // historyImported stays false, so no ledger write is attempted on the way out.
+    // Ledger state before this restore's history import may change it — fresh-identity and
+    // ensureDataDirs run AFTER the import, so a failure there undoes the import with the
+    // data tree. Inside the try: a snapshot read failure is handled by the same rollback,
+    // since historyImported stays false.
     ledgerBefore = await privatePathsLedgerState();
 
     // Before the fresh-identity deletion and ensureDataDirs' writes, and inside the try

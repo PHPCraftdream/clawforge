@@ -7,7 +7,7 @@ import { log, info, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { backupArchiveName, dataDirName, excludesFor, symlinkedDataRoot, type Profile } from "#src/service/archive/index.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { runningRecipeStacks } from "../../management/recipe/index.ts";
+import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
 import type { BackupOptions } from "./index.ts";
 
 export interface BackupPlan {

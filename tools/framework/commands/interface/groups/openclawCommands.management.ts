@@ -4,11 +4,11 @@
 
 import type { AppCommand } from "#src/core/app.ts";
 
-import { status, STATUS_ARGUMENTS } from "../status.ts";
-import { cli } from "../cli.ts";
-import { exec } from "../exec.ts";
-import { host } from "../host/index.ts";
-import { cliStart, cliStop } from "../cli-helper.ts";
+import { status, STATUS_ARGUMENTS } from "#src/commands/interface/status.ts";
+import { cli } from "#src/commands/interface/cli.ts";
+import { exec } from "#src/commands/interface/exec.ts";
+import { host } from "#src/commands/interface/host/index.ts";
+import { cliStart, cliStop } from "#src/commands/interface/cli-helper.ts";
 import { configureProvider, CONFIGURE_PROVIDER_ARGUMENTS } from "#src/commands/management/credentials/provider.ts";
 import { mcpServe, mcpSetup, mcpCreds, MCP_SETUP_ARGUMENTS, MCP_CREDS_ARGUMENTS } from "#src/commands/management/credentials/mcp.ts";
 import { deploy, DEPLOY_ARGUMENTS, isDeployDryRun } from "#src/commands/management/deploy/index.ts";

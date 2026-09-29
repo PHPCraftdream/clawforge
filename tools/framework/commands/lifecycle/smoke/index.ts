@@ -1,39 +1,27 @@
-// `./clawforge smoke` — acceptance run for an instance.
-//
-// which was the "behaviour does not change" boundary for the
-// TypeScript migration. It checks the properties that actually cost debugging time:
-//   - the gateway is healthy by BOTH criteria (HTTP probe and the runtime's own verdict),
-//     because their disagreement is what uncovered a broken healthcheck
+// `./clawforge smoke` — acceptance run for an instance. Checks the properties that actually
+// cost debugging time:
+//   - the gateway is healthy by BOTH criteria (HTTP probe and the runtime's own verdict)
 //   - the agent answers end to end, i.e. the provider key really resolved
 //   - the declaration in the repository wins over manual drift
-//   - a full backup restores byte-for-byte (into an isolated root, never over the live data)
+//   - a full backup restores byte-for-byte (into an isolated root, never over live data)
 //   - the verifier accepts a shareable archive AND rejects one with secrets
 //   - the MCP bridge speaks JSON-RPC on a clean stdout
+// The two negative checks matter most: a suite that only confirms success degrades silently.
 //
-// The two negative checks matter most: a suite that only confirms success degrades
-// silently.
-//
-// This file: the health-probe checks and the orchestration (runChecks/runSmokeSuite/report/
-// smoke). round-trip.ts: the backup/restore round-trip, the two archive/privacy checks and
-// runArchiveChecks()'s shared stop/start window. verdict.ts: the check vocabulary both use.
-//
-// Every check lands on the shared check-outcome vocabulary (commands/check-outcome.ts):
-// passed, failed, not-checked (this deployment makes the check inapplicable) or
-// could-not-check (the check could not obtain a verdict). The last never reads as passing
-// and fails the run exactly as a failed check does: a suite that could not ask its
-// question has not earned a green light.
+// This file: health-probe checks and orchestration. round-trip.ts: the backup/restore round
+// trip and archive/privacy checks. verdict.ts: the shared four-outcome vocabulary.
 
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
 import { log, info, warn } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import { CouldNotCheck, NotChecked } from "../../check-outcome.ts";
+import { CouldNotCheck, NotChecked } from "#src/commands/check-outcome.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
-import { applyConfig } from "../../orchestration/config.ts";
+import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { noProviderConfigured } from "#src/service/secrets.ts";
-import { valueAt } from "../../orchestration/inspect/helpers.ts";
+import { valueAt } from "#src/commands/orchestration/inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { reach, expect, describeError, evaluate, type Check, type SmokeResult } from "./verdict.ts";
@@ -192,8 +180,7 @@ function tally(counts: { passed: number; failed: number; notChecked: number; cou
 }
 
 /** Runs the checks, classifying every outcome into the shared vocabulary. Never throws:
- *  the counts are the answer. A throw a check did not classify itself stays a failure —
- *  the reading it has always had. */
+ *  the counts are the answer. A throw a check did not classify itself stays a failure. */
 export async function runChecks(ctx: Context, selected: Check[], onResult: (result: SmokeResult) => void = printResult): Promise<SmokeSummary> {
   const results: SmokeResult[] = [];
   const counts = { passed: 0, failed: 0, notChecked: 0, couldNotCheck: 0 };
@@ -211,9 +198,7 @@ export async function runChecks(ctx: Context, selected: Check[], onResult: (resu
 /** The whole selected run: ordinary checks one at a time, exactly as runChecks() does; the
  *  three archive-based checks, wherever they appear in `selected`, consolidated into one
  *  stop/start cycle via round-trip.ts's runArchiveChecks() — their results are emitted
- *  together at the position the first of them holds. This is what smoke() below runs;
- *  runChecks() stays as it always was for anything that runs a check (or a stand-in one) on
- *  its own. */
+ *  together at the position the first of them holds. This is what smoke() below runs. */
 export async function runSmokeSuite(ctx: Context, selected: Check[], onResult: (result: SmokeResult) => void = printResult): Promise<SmokeSummary> {
   const results: SmokeResult[] = [];
   const counts = { passed: 0, failed: 0, notChecked: 0, couldNotCheck: 0 };

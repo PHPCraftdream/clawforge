@@ -1,28 +1,15 @@
 // `./clawforge watch install` / `watch uninstall` — a scheduler entry that runs `watch check`
 // every N minutes.
 //
-// crontab, not a systemd --user timer: a timer only fires unattended once the user session
-// is allowed to linger (`loginctl enable-linger`) and systemd itself is PID 1 — neither is
-// guaranteed on a minimal Docker host, and setting up lingering is an extra privileged step
-// this command would otherwise have to take on the operator's behalf. Cron is the one
-// mechanism every POSIX target in scope already runs as a system service, logged-in or not.
+// crontab, not a systemd --user timer: a timer needs `loginctl enable-linger` and systemd as
+// PID 1, neither guaranteed on a minimal Docker host. Cron is the one mechanism every POSIX
+// target in scope already runs as a system service.
+// Schedule location depends on the TRANSPORT: ssh/local run a real crontab entry; wsl and
+// local-on-win32 have no POSIX scheduler, so ../schedule.ts prints (and with --apply, runs)
+// the equivalent `schtasks` entry instead.
 //
-// Where the schedule can actually live is a property of the TRANSPORT, not a flag:
-//   ssh    the remote host is a real, always-on machine, and `./clawforge deploy` already made
-//          it self-sufficient (framework mirrored whole, this deployment nested beneath it)
-//          — a crontab entry there runs the same `./clawforge --app <name> watch check` deploy's
-//          own bootstrap advice already prints.
-//   local  (POSIX only) tooling and target are the same machine; the crontab entry runs
-//          exactly what a human would type.
-//   wsl    the WSL distro is a Docker host, not a place this tooling is proven to also
-//          run — no crontab is installed there. On a Windows host, ../schedule.ts prints (and,
-//          with --apply, can run) the equivalent `schtasks` entry instead.
-//   local on win32   same absence of a POSIX scheduler as wsl, same Windows fallback.
-//
-// The crontab conventions themselves (marker, merge/print/apply) and the Windows fallback are
-// shared with `backup install` through ../schedule.ts — this file only supplies watch's own
-// job name, target invocation and (uniquely to watch) the recorded interval `watch status`
-// reads back for its staleness check.
+// Crontab conventions and the Windows fallback are shared with `backup install` via
+// ../schedule.ts — this file supplies only watch's job name, invocation and interval.
 
 import { die, info, log, warn } from "../../../core/io/log.ts";
 import { deploymentName } from "../../../runtime/deployment.ts";

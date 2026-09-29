@@ -1,28 +1,14 @@
-// `./clawforge expose tailscale` — tailnet-only access to the loopback-bound gateway through
-// `tailscale serve`. `tailscale funnel` (the public-internet sibling) is refused outright,
-// here and nowhere else in this command: the framework's whole security posture keeps the
-// gateway off public ports (.env.example: 0.0.0.0 only behind a reverse proxy with TLS and
-// auth; OpenClaw's own gateway guidance keeps it on loopback, reached over Tailscale or SSH).
+// `./clawforge expose tailscale` — tailnet-only access to the loopback-bound gateway via
+// `tailscale serve`. `tailscale funnel` (public internet) is refused outright.
 //
-// The probe below runs on the TARGET, through the transport, not on the operator's own
-// machine — a tailnet identity here says nothing about whether the target can serve anything.
+// The probe runs on the TARGET through the transport, not the operator's machine — a tailnet
+// identity locally says nothing about whether the target can serve anything.
 //
-// `tailscale serve` syntax verified against the official CLI reference (checked 2026-09-27):
-//   https://tailscale.com/docs/reference/tailscale-cli/serve — `tailscale serve [flags] <target>`;
-//   `--bg` backgrounds it so it survives this process exiting; a bare `http://127.0.0.1:<port>`
-//   target proxies HTTPS (the default mode, on the tailnet's own cert, default port 443) to
-//   that plain-HTTP backend. The older `tailscale serve https / http://...` mount-path form
-//   is legacy syntax the current CLI translates or rejects — not used here.
-//   https://tailscale.com/docs/reference/tailscale-cli/funnel confirms the split: `serve` stays
-//   inside the tailnet, `funnel` "shares a local service over the internet" — never run here.
-//
-// Turning ONE route off (tailscaleGatewayRoutes/tailscaleServeOffCommand, for incident's
-// contain phase): per the same CLI reference, "off" is the original serve invocation's own
-// flags repeated with `off` appended — `--https=<port> off` for the bare-target form this
-// module applies, `--set-path=<mount> off` added only for a mount other than "/". `serve
-// status --json` reports the ipn.ServeConfig shape (tailscale/tailscale, ipn/serve.go):
-// `Web["<host>:<port>"].Handlers["<mount>"].Proxy` names each route's backend, independent of
-// every other host:port entry — so turning one off never touches another service's mapping.
+// Per https://tailscale.com/docs/reference/tailscale-cli/serve: `--bg` backgrounds it so it
+// survives this process exiting; a bare `http://127.0.0.1:<port>` target proxies HTTPS (tailnet
+// cert, port 443) to that backend. Turning ONE route off repeats the original invocation's own
+// flags with `off` appended — `serve status --json` keys each route by host:port and mount, so
+// turning one off never touches another service's mapping.
 
 import { log, info, die } from "#src/core/io/log.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";

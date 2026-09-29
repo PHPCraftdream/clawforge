@@ -21,7 +21,7 @@ import { restoreArchive, prepareRestore } from "./restore/index.ts";
 import type { RestoreOptions } from "./restore/index.ts";
 import { buildRestorePlan, printRestorePlan } from "./restore/plan.ts";
 import { forbiddenViolations, verifySnapshot } from "./verify.ts";
-import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
+import { preflightSecrets, MissingSecretsError } from "#src/commands/management/secrets.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -192,17 +192,12 @@ export function selectSnapshotPaths(listing: string, deployment: string): string
 }
 
 /** Deletes snapshots beyond the configured retention count, each with its sidecar files
- *  (.template.env, and .secrets.env when a migrate pull produced one) — the same idea as
- *  backup.ts's rotate(), which snapshots never had: on a deployment pulled regularly
- *  (smoke, a cron), the snapshot directory grows without bound while backups do not.
+ *  (.template.env, and .secrets.env when a migrate pull produced one) — snapshot's own
+ *  version of backup.ts's rotate(), needed since a deployment pulled regularly (smoke, a
+ *  cron) grows the snapshot directory without bound.
  *
- *  Escalation is checked once for the directory, not once per file: every file in it
- *  shares the same ownership, and a large first-time backlog (months of unrotated
- *  snapshots) turning into one round trip per file per candidate would take minutes
- *  through a remote transport instead of two round trips total.
- *
- *  Exported so tools/checks/state.check.ts can drive it directly, rather than through the
- *  whole of pull() just to reach the one call site. */
+ *  Escalation is checked once for the directory, not per file, so a large unrotated backlog
+ *  costs two round trips total, not one per file. Exported for tools/checks/state.check.ts. */
 export async function rotateSnapshots(ctx: Context, snapshotDir: string): Promise<void> {
   const keep = parseRetention("OC_SNAPSHOT_KEEP", ctx.settings.env.OC_SNAPSHOT_KEEP, 10);
   if (keep <= 0) return;
@@ -283,17 +278,14 @@ async function writePrivate(ctx: Context, path: string, content: string): Promis
   await ctx.transport.exec("sh", ["-c", `umask 077; set -C; cat > ${shellQuote(path)}`], { input: content });
 }
 
-/** Installs provider keys on the target with mode 600 and owner 1000:1000 — OpenClaw runs
- *  as uid 1000 and refuses to read a root-owned env file.
+/** Installs provider keys on the target with mode 600, owner 1000:1000 — OpenClaw refuses
+ *  to read a root-owned env file.
  *
- *  The keys are staged beside their final path and published with one rename, never
- *  written in place: an in-place write exists at the process umask until the chmod lands,
- *  and one interrupted mid-flight leaves the half file as the only copy of the keys.
- *  Beside the final path means the same filesystem, so the rename is atomic and replaces
- *  the previous file wholesale — a failed update cannot touch it. The chown is forced
- *  because owning the staging file is not the right to hand it to a different uid, so the
- *  target owner is compared against the current identity first, exactly like datadir.ts's
- *  own chowns. */
+ *  Staged beside the final path and published with one rename, never written in place (an
+ *  in-place write sits at process umask until chmod, and an interrupted one leaves the half
+ *  file as the only copy). The chown is forced but only after comparing the target owner
+ *  against the current identity — owning the staging file is not the right to hand it to a
+ *  different uid. */
 export async function loadSecrets(ctx: Context, content: string): Promise<void> {
   if (content.trim() === "") die("refusing to install an empty secrets file");
   const path = secretsFileOnTarget(ctx);
@@ -339,7 +331,7 @@ export async function pull(ctx: Context, args: string[], transaction: PullTransa
 
   // --share, --with-secrets, --migrate (the same shorthand vocabulary `backup` accepts) and
   // --profile all set the same field, so whichever was typed LAST wins — scanned over the
-  // raw argv, in order, the same way the hand-written loop this replaces did.
+  // raw argv, in order, so the true typed order decides it.
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);

@@ -1,22 +1,16 @@
 // Shared OS-scheduler machinery for any command that installs an unattended job on the
-// target — today `watch install` (watch/install.ts) and `backup install`
-// (lifecycle/backup/install.ts). One place owns the crontab conventions (marker, merge,
-// print, apply) and the Windows fallback, so the two jobs cannot drift into two slightly
-// different implementations of the same idea.
+// target — `watch install` and `backup install`. One place owns the crontab conventions
+// (marker, merge, print, apply) and the Windows fallback, so the two jobs cannot drift.
 //
 // A job (e.g. "watch", "backup") owns its own marker — jobMarker(job, name) — so re-running
-// one job's install only ever replaces that job's own crontab line, never another job's,
-// even for the same deployment.
+// one job's install only ever replaces that job's own crontab line, never another job's.
 //
-// Windows has no crontab/systemd: schedulingSupport() below says so, and the caller falls
-// back to printSchedulingInstructions(), which prints the exact command an operator-side
-// scheduler needs — a real `schtasks /create …` line on a Windows host, since Task Scheduler
-// really can run one, and only the generic "wire it in yourself" text for anything else
-// (a WSL/Windows-shaped transport driven from a non-Windows host, which cannot happen from
-// the shipped entry points but is not ruled out structurally). `--apply` on a Windows host
-// can additionally run that line for real, through the same host-spawn helper (spawnLocal)
-// every other host-side action already uses — swappable (withScheduleRunner) so a check can
-// prove the wiring without ever touching a real scheduled task.
+// Windows has no crontab/systemd: schedulingSupport() says so, and the caller falls back to
+// printSchedulingInstructions(), which prints a real `schtasks /create …` line on a Windows
+// host, or generic "wire it in yourself" text otherwise. `--apply` on Windows can run that
+// line for real, through the same host-spawn helper (spawnLocal) every host-side action
+// uses — swappable (withScheduleRunner) so a check can prove the wiring without touching a
+// real scheduled task.
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -249,12 +243,9 @@ async function windowsScheduledAction(
 
 /** Prints — and, with `apply` on an actual Windows host, also runs through scheduleRunner —
  *  what an operator-side scheduler needs on a transport schedulingSupport() already said no
- *  to. ssh/local-POSIX never reach here at all.
- *
- *  On any other host (a wsl:/local transport somehow driven from a non-Windows machine,
- *  which cannot happen from the shipped entry points but is not ruled out structurally) this
- *  falls back to the old, purely manual message — there is no scheduler this code knows how
- *  to drive there either. */
+ *  to. ssh/local-POSIX never reach here. On any other host (a wsl:/local transport driven
+ *  from a non-Windows machine — not possible from shipped entry points, but not ruled out
+ *  structurally) this falls back to a purely manual message. */
 export async function printSchedulingInstructions(
   ctx: Context,
   job: string,

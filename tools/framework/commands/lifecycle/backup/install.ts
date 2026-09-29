@@ -1,20 +1,13 @@
 // `./clawforge backup install` / `backup uninstall` — a scheduler entry that runs
-// `./clawforge backup` on an interval, mirroring `watch install`/`watch uninstall`
-// (commands/operate/watch/install.ts) exactly: same crontab conventions, same Windows
-// fallback, both built on commands/operate/schedule.ts rather than a second copy of that
-// machinery.
+// `./clawforge backup` on an interval, mirroring `watch install`/`watch uninstall` exactly:
+// same crontab conventions, same Windows fallback, both built on schedule.ts.
 //
-// Why this exists: OC_BACKUP_KEEP (.env.example) presumes backups happen on a schedule the
-// same way OC_SNAPSHOT_KEEP presumes `pull` does — but until this command, nothing actually
-// scheduled one. `watch install` already solved the "how" (crontab where trusted, a printed/
-// applyable `schtasks` entry on Windows); this only supplies backup's own job name, target
-// invocation and interval shape.
+// OC_BACKUP_KEEP (.env.example) presumes backups happen on a schedule; this command supplies
+// backup's own job name, target invocation and interval shape onto schedule.ts's machinery.
 //
-// One difference from watch: `--interval` here is a duration string (30m/6h/1d, default 1d)
-// rather than a bare minute count — a backup schedule is naturally daily/hourly, not
-// every-few-minutes — parsed by schedule.ts's parseIntervalToMinutes into the same minutes
-// cronSchedule() already validates, so the two commands' intervals can never encode
-// differently for the same duration.
+// One difference from watch: `--interval` here is a duration string (30m/6h/1d, default 1d),
+// parsed by parseIntervalToMinutes into the same minutes cronSchedule() validates, so the two
+// commands' intervals can never encode differently for the same duration.
 
 import { die, info, log, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";

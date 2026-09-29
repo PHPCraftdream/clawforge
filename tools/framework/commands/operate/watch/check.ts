@@ -1,8 +1,6 @@
-// `./clawforge watch check` — one probe cycle: reuse `inspect`'s own gatherer (the same probes,
-// the same problem codes — a second gatherer would eventually answer the same question
-// differently, gather.ts's own header makes the same point), keep only the findings that
-// say whether the instance is doing its job, add watch's own channel/disk findings
-// (health.ts), and alert exactly on a change.
+// `./clawforge watch check` — one probe cycle: reuse `inspect`'s own gatherer (same probes,
+// same problem codes), keep only findings that say whether the instance is doing its job,
+// add watch's own channel/disk findings (health.ts), and alert exactly on a change.
 //
 // Also owns `watch test` (watchTest, below runWatchCycle): the same webhook/heartbeat
 // targets, sent a one-off test message instead of a real transition, so delivery can be
@@ -42,11 +40,9 @@ export const WATCH_CHECK_ARGUMENTS: CommandArgument[] = [
 
 /** The subset of `inspect`'s problem codes that say something about LIVENESS — the gateway
  *  answering, bootstrapped, reaching its own configured endpoints. Deliberately narrower
- *  than the full inspection: CONFIG_DRIFT, RECIPE_MIRROR_DRIFT, a stale lock and the rest
- *  are real findings `doctor` already owns, but none of them mean the instance stopped
- *  doing its job, and paging an operator for one would train them to ignore the page.
- *  PROVIDER_MISSING is left out: env-keyed, subscription and CLI-backend providers read as
- *  missing, which here would mean a permanent false "degraded". */
+ *  than full inspection: CONFIG_DRIFT etc. are real findings `doctor` owns, but none mean
+ *  the instance stopped doing its job. PROVIDER_MISSING is excluded: env-keyed/subscription
+ *  providers read as missing, which here would be a permanent false "degraded". */
 const LIVENESS_CODES: ReadonlySet<ProblemCode> = new Set([
   "NOT_BOOTSTRAPPED",
   "TARGET_UNREACHABLE",
@@ -92,14 +88,10 @@ function isTransition(previousLevel: WatchLevel | undefined, level: WatchLevel, 
 }
 
 /** watchLevel()'s verdict, or "down" when the inspection could not run at all (Docker daemon
- *  down, SSH refused, wsl.exe silent) — the outage this command exists to report. Also
- *  carries the inspection's own observed.channels through, unread by watchLevel() itself
- *  but exactly what withAdditionalFindings() below needs for channelFindings() — one
- *  gatherInspection() call (with its `channels` option set) rather than a second one just
- *  to get the channel data.
- *
- *  Defaults to gatherInspection with that option set; a test that passes its own `gather`
- *  decides for itself whether to include channels — resolveWatchOutcome does not second-guess it. */
+ *  down, SSH refused, wsl.exe silent). Also carries observed.channels through — unread here,
+ *  but what withAdditionalFindings() needs, from one gatherInspection() call rather than a
+ *  second just for channel data. A test passing its own `gather` decides for itself whether
+ *  to include channels. */
 export async function resolveWatchOutcome(
   ctx: Context,
   gather: (ctx: Context) => Promise<Inspection> = (target) => gatherInspection(target, { channels: true }),
@@ -112,15 +104,11 @@ export async function resolveWatchOutcome(
   }
 }
 
-/** Everything after "what is the level right now, and is the webhook/heartbeat usable":
- *  transition detection, the alert (only on change, never repeated for an unchanged state),
- *  the heartbeat ping (only while this cycle itself is ok), persistence (skipped when a
- *  required alert could not be delivered, so the next cycle retries it instead of accepting
- *  the change silently), reporting, and the exit-code contract. Split out of watchCheck() so
- *  it is testable against a synthetic level/reasons pair and stub webhook/heartbeat targets
- *  without also having to stand up gatherInspection's whole target-reaching machinery — the
- *  same reason gather.ts itself is split into gather/observe/helpers. Takes the
- *  already-parsed targets, not a Context: this needs nothing else from one. */
+/** Everything after "what is the level right now": transition detection, the alert (only on
+ *  change), the heartbeat ping (only while this cycle is ok), persistence (skipped when a
+ *  required alert could not deliver, so the next cycle retries), reporting, and the exit
+ *  code. Split out of watchCheck() so it is testable with a synthetic level/reasons pair and
+ *  stub targets, without gatherInspection's target-reaching machinery. */
 /** What changed since the last completed cycle. No previous state is not a transition:
  *  there is nothing to have changed FROM, and the first cycle after `watch install` (or
  *  after a corrupt/missing state file) should establish a baseline rather than page on it. */

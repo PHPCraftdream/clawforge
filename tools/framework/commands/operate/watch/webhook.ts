@@ -1,13 +1,11 @@
-// The alert webhook: a URL in the deployment's own `.env` (`OC_WATCH_WEBHOOK`), treated as
-// a secret from the moment it is read — registered with core/io/log.ts's masking (see
-// core/context.ts, beside OPENCLAW_GATEWAY_TOKEN) so any error message it ever ends up in
-// is scrubbed the same way a leaked gateway token is. Nothing in this file ever hands the
-// raw value to log()/info()/emit(): those are not masked (only reportError() is), so the
-// only safe rule is to never construct a string with it in the first place.
+// The alert webhook: a URL in `.env` (`OC_WATCH_WEBHOOK`), treated as a secret from the
+// moment it is read — registered with core/io/log.ts's masking so any error message it ends
+// up in is scrubbed the same way a leaked gateway token is. Nothing here ever hands the raw
+// value to log()/info()/emit() (only reportError() is masked), so the only safe rule is to
+// never construct a string with it.
 //
 // Also owns the heartbeat "dead-man's switch" (`OC_WATCH_HEARTBEAT_URL`): a GET on every
-// cycle that reads `ok`, so an external service (healthchecks.io, Uptime Kuma push, Better
-// Stack heartbeat — all three accept a plain GET, verified against each one's own docs)
+// cycle that reads `ok`, so an external service (healthchecks.io, Uptime Kuma, Better Stack)
 // alerts on its own the moment the whole instance — or this tooling's own scheduler — stops
 // running, something a webhook fired FROM here can never report.
 
@@ -43,12 +41,10 @@ function isLocalhostHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }
 
-/** https, or plain http only against localhost/127.0.0.1/::1 — a webhook or heartbeat URL is
- *  an outbound credential-bearing request, and this mirrors the framework's whole posture on
- *  the inbound side (OC_BIND_ADDRESS defaults to loopback; expose/tailscale.ts refuses a
- *  public port outright). The message never repeats the value — only that the variable is
- *  invalid — so a caller who mistypes the scheme does not have it echoed back at them
- *  anywhere logs might land. Shared by both URLs so they can never quietly diverge. */
+/** https, or plain http only against localhost/127.0.0.1/::1 — mirrors the framework's
+ *  inbound posture (loopback by default). The message never repeats the value, only that
+ *  the variable is invalid, so a mistyped scheme is never echoed back into logs. Shared by
+ *  both URLs so they can never quietly diverge. */
 function parseSecretUrl(envName: string, raw: string): URL {
   let url: URL;
   try {
@@ -256,10 +252,8 @@ async function deliverWebhook(target: WatchWebhookTarget, body: string): Promise
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
-    // fetch's own TypeError names the failure ("fetch failed") but not the URL, and the
-    // value is registered with core/io/log.ts regardless — belt and suspenders, since a
-    // future Node/undici version repeating the target in a rejection message must still
-    // come out masked wherever this error is eventually reported.
+    // The URL is registered with core/io/log.ts's masking regardless of fetch's own message
+    // shape, so a future Node/undici version repeating it here still comes out masked.
     throw new Error(`webhook request failed: ${(error as Error).message}`);
   }
   if (!response.ok) {

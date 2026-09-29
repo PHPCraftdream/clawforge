@@ -1,16 +1,13 @@
 // `./clawforge host <context> -- <command> [args...]` runs one ad hoc command against the
-// operator's own machine layers, not the deployment's containers — that is what exec/cli are
-// for. The three contexts: target (the deployment's own transport), engine (wherever the
-// container engine actually executes), local (this machine, unwrapped). Root is never
-// implicit. Where the context runs as the operator's own user, --root and --confirm-root
-// together are what elevate it, each alone doing nothing. Where the context itself has no
-// other user — Docker Desktop's engine distro runs everything as root — the same two flags
-// are the consent required before the command runs at all: the gate sits where the
-// privilege arrives, not where it is named. Arrival as root is not assumed from the backend's
-// reputation: docker-desktop declares it, and everywhere else the effective identity is probed
-// before the command runs — `id -u` over the transport for target and engine, this process's
-// own uid (Windows: the shell's integrity level) for local. A probe that cannot answer
-// refuses the command until explicit consent is given.
+// operator's own machine layers, not the deployment's containers (exec/cli are for that).
+// Three contexts: target (the deployment's transport), engine (where the container engine
+// executes), local (this machine, unwrapped). Root is never implicit — --root and
+// --confirm-root together elevate it where the context runs as the operator's own user, or
+// are the required consent where the context has no other user (Docker Desktop's engine
+// distro runs everything as root): the gate sits where the privilege arrives, not where it
+// is named. Arrival as root is probed, never assumed from reputation — `id -u` over the
+// transport for target/engine, this process's own uid (Windows: shell integrity level) for
+// local. A probe that cannot answer refuses the command until explicit consent is given.
 
 import { die, dieWithExitCode, info } from "#src/core/io/log.ts";
 import { emit, shouldFollow } from "#src/core/io/output.ts";

@@ -1,40 +1,15 @@
-// `./clawforge incident` — contain, preserve, rotate, audit, collect: OpenClaw's own incident
-// runbook, run by the framework because the five steps each need something only it can reach
-// (the expose module, the deployment's own .env, the security gate, a bounded log read).
+// `./clawforge incident` — contain, preserve, rotate, audit, collect: the incident runbook.
 //
-// contain: turns off, on the target, only the `tailscale serve` route(s) that proxy to THIS
-// gateway (tailscaleGatewayRoutes/tailscaleServeOffCommand in expose/tailscale.ts) — never
-// `tailscale serve reset`, which would also drop every other service's own route on that host.
-// When the route shape cannot be parsed reliably, nothing is turned off and the operator gets
-// the exact manual command instead of a guess. A gateway published on 0.0.0.0/:: refuses the
-// whole run first — before the lock, before any mutation — unless --keep-exposure says the
-// operator has already judged that acceptable. A contain failure (most commonly: this account
-// is not the tailscale operator on the target) is noted in the report, never thrown — rotate
-// runs regardless, because leaving a stale token in place is worse than leaving a stale route.
+// contain turns off only tailscale serve route(s) proxying to THIS gateway (never `serve
+// reset`, which drops other services' routes). A publicly-exposed gateway refuses the run
+// first, before the lock, unless --keep-exposure. Contain failures are noted, not thrown.
 //
-// preserve: before rotate recreates the container (and its json-file log with it), a log tail
-// and an env-redacted `docker inspect` of the running container go into the evidence directory.
+// rotate recreates the container after writing a new token — env vars are fixed at creation
+// time, a restart alone would not apply it. Paired clients need `./clawforge mcp-creds` after.
+// collect masks and archives logs, both audit outputs and a status summary unconditionally,
+// even on failure, into apps/<name>/incidents/<ts>/ (private, gitignored).
 //
-// rotate: a fresh OPENCLAW_GATEWAY_TOKEN, generated the same way bootstrap does, written to
-// .env and recreated into the running container so it actually takes effect — a repo-env
-// value like this one is fixed at container-creation time, restart alone would not apply it.
-// Every MCP client paired against the old token needs `./clawforge mcp-creds` again.
-//
-// audit: the security gate (security/audit.ts) plus `openclaw doctor --lint --json`,
-// both informational here — this command reports what they found, it does not gate on it.
-//
-// collect: a bounded log tail (of whatever is running by then), both audit outputs and a short
-// status summary, joined with preserve's own files into ONE manifest naming everything this run
-// wrote — into a private, owner-only directory under this deployment's own folder
-// (apps/<name>/incidents/<ts>/ — the whole apps/ tree is gitignored, so this is never part of
-// the repository's tracked history). Every file goes through maskSecrets() before it is
-// written: these are raw captures, not the log/info calls that already carry known secrets
-// registered for masking. Written unconditionally, even when rotate or audit failed: a failed
-// phase's own IncidentPhaseFailure carries the report so the operator still sees where the
-// evidence landed, and the original failure still reaches them afterwards as a non-zero exit.
-//
-// Mutating — guarded() takes the instance lock, and it is marked destructive. --dry-run prints
-// the plan and performs none of it, not even taking the lock, on upgrade's own precedent.
+// Mutating: guarded() holds the instance lock; --dry-run performs nothing, not even that.
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";

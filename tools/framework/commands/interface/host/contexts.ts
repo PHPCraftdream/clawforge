@@ -18,18 +18,15 @@ export interface HostExecution {
   readonly description: string;
   /** Set when this context is not actually a distinct machine here — printed by the command so the report is honest. */
   readonly note?: string;
-  /** Whether the command's children are spawned by this very process (true: the bare machine —
-   *  they inherit this process's own identity, so the identity question is answered here, not
-   *  over the wire), or reach another login context through a transport (false: `id -u` is the
-   *  honest probe). Drives which probe the consent gate uses. */
+  /** Whether the command's children are spawned by this process (true: the bare machine,
+   *  identity answered here) or reach another login context through a transport (false:
+   *  `id -u` is the honest probe). Drives which probe the consent gate uses. */
   readonly runsHere: boolean;
-  /** Set when every command this execution runs arrives as root (uid 0) whichever path is
-   *  used — not because it asked, but because the place it runs has no other user. Docker
-   *  Desktop's docker-desktop distro is the case: its default user is root, and /etc/passwd
-   *  offers only nologin service accounts besides. The command layer must demand the
-   *  --root --confirm-root consent BEFORE anything runs: gating the flags alone would check
-   *  what was requested, never what was obtained. This field is only the statically-known
-   *  arrival; every other context is probed at run time (probeHostIdentity). */
+  /** Set when every command in this execution arrives as root (uid 0) regardless of path —
+   *  not because it asked, but because the place it runs has no other user (Docker Desktop's
+   *  docker-desktop distro: default user root, no other login). The command layer demands
+   *  --root --confirm-root consent before anything runs. Only the statically-known arrival;
+   *  every other context is probed at run time (probeHostIdentity). */
   readonly arrivesAsRoot?: boolean;
   exec(command: string, args: string[], options: ExecOptions): Promise<ExecResult>;
   elevate(command: string, args: string[], options: ExecOptions): Promise<ExecResult>;
@@ -80,11 +77,10 @@ export const realHostEnvironment: HostEnvironment = {
   localIdentity: () => probeLocalIdentity(process.platform),
 };
 
-/** `--exec`, same as WslTransport's: the plain `--` form sends the command line through the
- *  distro's default shell, which re-parses argv; --exec hands it over verbatim. Without `-u`
- *  the distro's default user runs the command — for docker-desktop that is root (uid 0),
- *  which is why the consent gate lives in the command layer, not here: the argv chooses what
- *  to request, never what the default would have run as anyway. */
+/** `--exec`, same as WslTransport's: the plain `--` form re-parses argv through the distro's
+ *  default shell; --exec hands it over verbatim. Without `-u` the distro's default user runs
+ *  the command — root for docker-desktop — which is why the consent gate lives in the
+ *  command layer, not here. */
 export function wslEngineCommand(distro: string, command: string, args: string[], root: boolean): { command: string; args: string[] } {
   return {
     command: "wsl.exe",
@@ -139,12 +135,10 @@ function windowsWhoami(): string {
   return root === undefined ? "whoami" : `${root}\\System32\\whoami.exe`;
 }
 
-/** The bare machine's children inherit this process's own identity, so the question is
- *  answered here: the uid on every platform that has one; on Windows, the shell's
- *  integrity level — an elevated administrator token is root's equivalent there, and
- *  local children would inherit it. whoami's group names are localized, but the
- *  integrity SIDs are not, so the SID literals are what the answer is read from. Best
- *  effort by design: anything the platform will not answer comes back undefined. */
+/** The bare machine's children inherit this process's identity: uid on platforms that have
+ *  one, on Windows the shell's integrity level (an elevated administrator token is root's
+ *  equivalent). whoami's group names are localized, so the SID literals are read instead.
+ *  Best effort: anything the platform will not answer comes back undefined. */
 export async function probeLocalIdentity(platform: NodeJS.Platform): Promise<IdentityProbe> {
   if (platform === "win32") {
     try {

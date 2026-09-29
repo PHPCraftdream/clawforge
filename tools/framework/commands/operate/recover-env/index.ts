@@ -1,39 +1,15 @@
-// `./clawforge recover-env` — repairs the deployment .env's CONNECTION FACTS from the running
-// instance.
+// `./clawforge recover-env` — repairs .env's CONNECTION FACTS (OC_DATA_DIR,
+// OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT, OPENCLAW_IMAGE) from the running container,
+// which compose resolved from that same .env at creation time.
 //
-// Four of .env's values are plumbing, not secrets — OC_DATA_DIR, OPENCLAW_GATEWAY_PORT,
-// OC_COMPOSE_PROJECT, OPENCLAW_IMAGE — and compose resolved all four from that same .env at
-// container-creation time, so the running container still holds the answers (the same
-// introspection surface `secrets --dump` recovers the gateway token from).
+// Which side is authoritative when file and container disagree is undecidable here, so by
+// default only the unambiguous case is written — a name the file lacks entirely. Diverged
+// values are reported, never overwritten, unless --adopt-runtime takes the container as
+// authoritative. The opposite direction (file is right) needs `./clawforge up` to recreate.
+// A wholly absent .env cannot be repaired: reaching the target requires the .env that names it.
 //
-// Which side is authoritative when the two disagree is not decidable here: the file could
-// have rotted while the container kept the answers, or the operator could have just edited
-// it with the container not caught up yet — and writing the container's values over the
-// second reading silently discards a deliberate edit. So a plain
-// recover-env writes only the UNAMBIGUOUS case — a fact name the .env does not carry at
-// all — and reports facts both sides carry differently without writing over them. The
-// direction is chosen explicitly:
-//
-//   ./clawforge recover-env --adopt-runtime   the container is authoritative: its facts are
-//                                             merged into the file (already-correct values
-//                                             untouched)
-//   ./clawforge recover-env                   fill missing names; report diverged ones
-//
-// The opposite direction — the file is right and the CONTAINER must catch up — is not a
-// file repair at all: a container's environment is fixed once at creation, so adopting the
-// edited .env means recreating it, which `./clawforge up` does against the file as it reads
-// now.
-//
-// The inherent limit, stated plainly: this is for a stale or half-filled .env. A wholly
-// ABSENT .env cannot be repaired here, because reaching the target to inspect its container
-// already requires the .env that names the target and its transport — bootstrap creates it.
-//
-// Two entry points share the one merge. recoverEnv runs against a full Context — the
-// journal's recovery steps and MCP's dispatch go this way. recoverEnvBeforeContext is the
-// recovery-first dispatch (entry/cli.ts): with OC_DATA_DIR absent, the Context the normal
-// dispatch builds first cannot be constructed, and the command that exists to fill that
-// fact would die in the settings parser before it started. It builds only what the
-// container read genuinely needs — see ./bootstrap.ts.
+// recoverEnv needs a full Context; recoverEnvBeforeContext (entry/cli.ts) works before one can
+// be built, when OC_DATA_DIR itself is missing — see ./bootstrap.ts.
 
 import { access, readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";

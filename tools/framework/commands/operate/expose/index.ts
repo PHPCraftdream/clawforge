@@ -2,11 +2,9 @@
 // narrowest sensible scope: an SSH tunnel (ssh targets), `tailscale serve` (tailnet-only,
 // never `funnel`), or a status report of what is actually published right now.
 //
-// Lives in commands/operate/ with watch/, incident/ and recover-env/: things an operator runs
-// against an already-deployed instance, as opposed to commands/management/'s configuration and
-// commands/lifecycle/'s start/stop/backup. Wired into managementCommands
-// (interface/groups/openclawCommands.management.ts) exactly like every other command's `run` —
-// the help grouping there is by operator intent, independent of this file's own directory.
+// Lives in commands/operate/ with watch/, incident/, recover-env/: things an operator runs
+// against an already-deployed instance. Wired into managementCommands the same as every
+// other command — help grouping there is by operator intent, independent of this directory.
 
 import { die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";

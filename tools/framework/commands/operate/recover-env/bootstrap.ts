@@ -1,16 +1,13 @@
 // Recovery's own bootstrap: the running container's connection facts, read with nothing
 // but a transport and the project identity.
 //
-// The normal dispatch builds a full Context before any command runs, and a Context is
-// validated from .env — OC_DATA_DIR above all. Recovery exists to repair exactly that
-// file, so when a fact is missing the context the dispatcher demands cannot be built and
-// the one command that could fill it never runs. This path
-// needs none of what failed: the container is found by the compose labels Docker itself
-// wrote on it at creation — project and service — so there is no compose invocation, no
-// environment file written to the target, no path bridge and no data directory anywhere
-// in the read. The transport still comes from .env's location settings: reaching the
-// target at all requires them, which is the same limit the command already states for a
-// wholly absent .env.
+// The normal dispatch builds a full Context validated from .env, OC_DATA_DIR above all —
+// but recovery exists to repair exactly that file, so when a fact is missing, the Context
+// the dispatcher demands cannot be built. This path needs none of what failed: the container
+// is found by the compose labels Docker wrote on it at creation (project and service), with
+// no compose invocation, no env file written, no path bridge, no data directory in the read.
+// The transport still comes from .env's location settings — reaching the target at all
+// requires them.
 
 import type { Env } from "#src/core/env.ts";
 import { composeProjectName, useComposeProjectOverride } from "#src/runtime/deployment.ts";

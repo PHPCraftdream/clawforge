@@ -8,7 +8,7 @@ import { log, info, warn, die, regexEscape } from "#src/core/io/log.ts";
 import { shouldFollow, emit, withOutputSink } from "#src/core/io/output.ts";
 import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
-import { preflightSecrets } from "../management/secrets.ts";
+import { preflightSecrets } from "#src/commands/management/secrets.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { envFile, deploymentName, composeProjectName } from "#src/runtime/deployment.ts";
 import { OWNER, sudoFor, runMaybePrivileged, needsOwnerEscalation } from "#src/runtime/datadir.ts";
@@ -135,19 +135,13 @@ async function startInstance(ctx: Context): Promise<void> {
 
 /** Restarts the instance so it re-reads configuration loaded only at startup.
  *
- *  `up` cannot do this: it asks the runtime to converge on "running", and an instance that
- *  is already running and healthy is already converged — an edit to openclaw.json inside a
- *  bind mount changes nothing the runtime compares. That is why applying a desired state
- *  and then running `up` leaves the old settings live.
+ *  `up` cannot do this: it converges on "running", and an already-healthy instance is already
+ *  converged — a bind-mount edit changes nothing the runtime compares. Mirror image: restart
+ *  re-reads files but keeps the container's own environment, interpolated from .env at
+ *  creation — an edited .env needs Runtime.reconcile() (secrets --apply / `up`), not restart.
  *
- *  The mirror-image limit: a restart re-reads files inside the container but keeps the
- *  container itself, environment included — those were interpolated from .env when compose
- *  created it. What restart is to an edited bind mount, Runtime.reconcile() (secrets --apply
- *  performs it, `up` is its manual form) is to an edited .env.
- *
- *  Secrets are checked first, same as `up`: a config that now references a variable nothing
- *  supplies would otherwise turn a restart into a crash loop. The port is not checked —
- *  the container keeps the binding it already holds. */
+ *  Secrets are checked first, same as `up`, since an unresolvable variable would crash-loop
+ *  the restart. The port is not checked — the container keeps its existing binding. */
 export async function restart(ctx: Context, args: string[]): Promise<void> {
   parseDeclaredArgs(LOCK_ARGUMENTS, args);
   await requireBootstrapped(ctx);
@@ -310,18 +304,13 @@ export async function destroy(ctx: Context, args: string[]): Promise<void> {
   await guarded(ctx, "destroy", args, () => destroyLocked(ctx, targets));
 }
 
-/** One capability, two shapes. On a terminal this follows the log until interrupted, which
- *  is what someone watching a start-up wants. Anywhere else — an MCP tool call, a script, an
- *  agent's shell tool, a redirect — following would never return, so the same command reads
- *  a bounded tail instead and hands it back. See shouldFollow() for why that is not simply
- *  "not captured".
+/** One capability, two shapes. On a terminal this follows the log until interrupted; anywhere
+ *  else — an MCP call, a script, a redirect — following would never return, so it reads a
+ *  bounded tail instead. See shouldFollow() for why that is not simply "not captured".
  *
- *  The switch is on how the output is being consumed rather than on a separate command
- *  name: it is one capability, and the mirror is meant to expose it, not a second spelling
- *  of it. recipe.ts's logs action makes the same choice the same way.
- *
- *  Only the validated `--since` reaches the runtime; any other token is refused, never
- *  passed to compose as a service name. */
+ *  The switch is on how output is consumed, not a separate command — recipe.ts's logs action
+ *  makes the same choice. Only the validated `--since` reaches the runtime; any other token
+ *  is refused, never passed to compose as a service name. */
 export async function logs(ctx: Context, args: string[]): Promise<void> {
   await requireBootstrapped(ctx);
   const parsed = parseDeclaredArgs(LOGS_ARGUMENTS, args);
@@ -514,13 +503,10 @@ async function runDoctorLint(ctx: Context): Promise<{ ok: true } | { ok: false; 
 }
 
 /** Rewrites this deployment's own .env (repo-side, not the target) so a later recreate stays
- *  pinned to a digest rather than the moving tag that named it — never automatic for
- *  config/desired state (see docs/guide/operations.md on why apply never rewrites the lock); this is one of two
- *  exceptions, the same way secrets --apply rewrites .env for a rotated repo-env value.
- *  Shared by upgrade (the digest it just confirmed healthy) and bootstrap (the digest a fresh
- *  pull just resolved to) — the one place either command is allowed to rewrite .env
- *  on its own, and both for the identical reason: what actually ran was just proven, by a
- *  healthy upgrade or by the pull itself, and pinning it is recording a fact, not a decision. */
+ *  pinned to a digest rather than the moving tag — one of the few places allowed to rewrite
+ *  .env on its own (apply never rewrites the lock; see docs/guide/operations.md), used by
+ *  upgrade (the digest just proven healthy) and bootstrap (the digest a fresh pull resolved
+ *  to): pinning records a fact just proven, not a decision. */
 export async function pinImageReference(digestReference: string): Promise<void> {
   const path = envFile();
   const content = upsertEnvValue(await readFile(path, "utf8"), "OPENCLAW_IMAGE", digestReference);

@@ -1,20 +1,16 @@
 // The four .env values that are plumbing, not secrets, and which of them the running
-// container still carries. Shared by recover-env (which repairs a stale .env from it) and
-// inspect's ENV_STALE finding (which reports one), so there is one answer to "is the .env
-// stale", never two that can disagree.
+// container still carries. Shared by recover-env (repairs a stale .env) and inspect's
+// ENV_STALE finding (reports one), so there is one answer to "is the .env stale".
 //
 // Compose resolved all four from that same .env at container-creation time, so the running
-// container holds the answers (Runtime.runningConnectionFacts()); the file mixes them with
-// a real secret (OPENCLAW_GATEWAY_TOKEN), so everything these functions return is variable
-// NAMES — a value from the parsed file never crosses this module's boundary.
+// container holds the answers; the file mixes them with a real secret
+// (OPENCLAW_GATEWAY_TOKEN), so everything these functions return is variable NAMES — a value
+// from the parsed file never crosses this module's boundary.
 //
-// A disagreement between the two sides has two readings these functions deliberately keep
-// apart, because they demand opposite remedies: a name the .env does not carry at all is
-// unambiguous (the file is half-filled; filling it cannot overwrite any decision), while
-// different values for a name both sides carry is equally consistent with a rotted file and
-// with an edit the operator just made that the container has not caught up with. Collapsing
-// both into "stale" is how a deliberate port change got rewritten back to the container's
-// old value.
+// A disagreement between the two sides keeps two readings apart, since they demand opposite
+// remedies: a name the .env lacks entirely is unambiguous (filling it cannot overwrite a
+// decision); different values for a name both sides carry is equally consistent with a
+// rotted file or a deliberate edit the container has not caught up with yet.
 
 import { deploymentName } from "#src/runtime/deployment.ts";
 
@@ -43,14 +39,11 @@ export interface ConnectionFactDiff {
 }
 
 /** The .env value clawforge itself would use for one connection fact — not necessarily what
- *  is literally written in the file. OC_COMPOSE_PROJECT alone defaults an empty (or absent)
- *  value to the deployment directory's own name — deployment.ts's composeProjectName(), the
- *  same fallback useComposeProjectOverride() applies when a Context is built, and the name
- *  compose itself resolved into the running container's label. Comparing the raw empty
- *  string against that label reported a difference that was never there: a fresh
- *  deployment's own default read back as ENV_STALE. The other three facts have no such
- *  default — an empty OC_DATA_DIR/OPENCLAW_GATEWAY_PORT/OPENCLAW_IMAGE is not a legitimate
- *  value, so only this one name gets the substitution. */
+ *  is literally written. OC_COMPOSE_PROJECT alone defaults an empty/absent value to the
+ *  deployment directory's own name (composeProjectName()), the same fallback a Context
+ *  build applies and what compose resolves into the running label — otherwise an empty
+ *  string compares as diverged for every fresh deployment. The other three facts have no
+ *  such default: an empty value there is never legitimate. */
 function effectiveLocalValue(name: string, raw: string | undefined): string | undefined {
   if (name === "OC_COMPOSE_PROJECT" && (raw === undefined || raw === "")) return deploymentName();
   return raw;
@@ -87,17 +80,14 @@ export function unrecoverableConnectionFacts(facts: ConnectionFacts): { name: st
 }
 
 /** The connection facts one whole-object `docker inspect` document carries, and those it
- *  refuses to guess: the data dir only from the config bind mount whose Source ends in
- *  "/config", the port only from a published 18789/tcp with a host port, the project from
- *  Docker's own compose label, and the image from .Config.Image — never the top-level
- *  .Image, which is a resolved ID no .env ever wrote. Undefined when the container is not
- *  running.
+ *  refuses to guess: data dir only from the config bind mount whose Source ends in
+ *  "/config", port only from a published 18789/tcp with a host port, project from Docker's
+ *  compose label, image from .Config.Image — never top-level .Image, a resolved ID .env
+ *  never wrote. Undefined when the container is not running.
  *
- *  This is the recovery bootstrap's parser (bootstrap.ts, which reaches the container by
- *  Docker's own compose labels because the full Context may be exactly what cannot be
- *  built); the runtime's own runningConnectionFacts() reads the same four fields from the
- *  same document, reached through compose ps. One document, two ways in — the fields and
- *  their refusals-to-guess are pinned by checks on both sides. */
+ *  The recovery bootstrap's parser (bootstrap.ts, reaching the container by Docker's compose
+ *  labels since the full Context may be exactly what cannot be built); runningConnectionFacts()
+ *  reads the same four fields through compose ps — pinned by checks on both sides. */
 export function connectionFactsFromInspect(parsed: unknown): ConnectionFacts | undefined {
   if (parsed === null || typeof parsed !== "object") return undefined;
   const container = parsed as {

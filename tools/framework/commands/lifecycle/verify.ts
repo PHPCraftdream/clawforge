@@ -61,31 +61,14 @@ export interface VerifyFinding {
   readonly fatal: boolean;
 }
 
-/** The two kinds of rule a profile forbids archive entries by, kept apart on purpose:
- *
- *  `literals` are DECLARED paths — the recipes' privatePaths entries (installedRecipePrivatePaths,
- *  passed in from the same enumeration archive.ts excludes by, so this stays pure — an archive
- *  taken before that exclusion existed still carries them, and verify is what must refuse it),
- *  plus the profile's own secrets file and share's identity/state directories. An entry violates
- *  a literal when it IS the declared path or lives INSIDE it — compared on '/' boundaries, the
- *  same discipline verifyRestoredLayout() applies to restored roots. A bare string prefix here
- *  is a bare-prefix bug: the declaration `vault` forbade the public sibling `vault-public`, and the
- *  exact file `config/private.env` its `.example` neighbor — valid content the archiver's
- *  component-boundary tar --exclude correctly keeps, so pull deleted backups verify refused.
- *
- *  `prefixes` name one family of generated files by a shared stem, matched by string prefix
- *  DELIBERATELY: `config/.env.clawforge-` is the staging name loadSecrets() appends a random
- *  suffix to (state.ts) — credential material that is never instance state, and a family, not
- *  one path. No recipe-declared path belongs in this list; the split exists so the staging
- *  family keeps its prefix semantics without dragging declared paths into bare-prefix matching.
- *
- *  `fragments` name the tooling's own temp-sibling staging markers (transport.ts), matched as a
- *  substring because the marker sits MID-name: a crashed private write leaves
- *  `<declared-path>.clawforge-private-<hex>` (optionally nested with a further
- *  `.clawforge-publish-<hex>` from the transport fallback chain) beside the target, where no
- *  literal or prefix rule can see it — and under a public subtree like workspace/ the leftover
- *  passes the share allow-list entirely. Only the writers create these names, so a fragment
- *  match is always one of ours or a pre-fix archive that must be refused. */
+/** Three rule kinds an archive entry can violate:
+ *  `literals` — declared paths (recipe privatePaths, profile secrets/identity dirs), matched
+ *  by exact path or '/' boundary — never bare prefix (would wrongly catch `vault-public` for
+ *  `vault`).
+ *  `prefixes` — the staging family `config/.env.clawforge-` (state.ts appends a random suffix),
+ *  matched by prefix since it names a family, not one path.
+ *  `fragments` — temp-sibling staging markers (transport.ts) left by a crashed private write,
+ *  matched as a substring since the marker sits mid-name. */
 export interface ForbiddenRules {
   literals: readonly string[];
   prefixes: readonly string[];
@@ -119,12 +102,10 @@ function violatesLiteralPath(entry: string, declared: string): boolean {
   return entry === path || entry.startsWith(`${path}/`);
 }
 
-/** The declared rules these archive entries violate — literals by path boundary
- *  (violatesLiteralPath), staging prefixes by the string prefix that defines the family,
- *  staging markers by the substring that defines theirs. verifySnapshot and pull's migrate
- *  publish check must judge the same declaration the same way over the same listing, so this
- *  comparison lives here and nowhere else. Returns the violated rules as written, for the
- *  warnings to name. */
+/** The declared rules these archive entries violate — literals by path boundary, staging
+ *  prefixes by string prefix, staging markers by substring. verifySnapshot and pull's
+ *  migrate publish check must judge declarations the same way, so this comparison lives
+ *  here and nowhere else. */
 export function forbiddenViolations(
   profile: Profile,
   recipePrivatePaths: readonly string[],
@@ -184,19 +165,13 @@ async function collectSecrets(ctx: Context): Promise<{ critical: string[]; ident
   const token = ctx.settings.env.OPENCLAW_GATEWAY_TOKEN;
   if (token !== undefined && token.length >= 12) critical.push(token);
 
-  // A provider apiKey stored as a plain string, directly in openclaw.json rather than as a
-  // SecretRef, ships baked into the config itself — openclaw.json IS allowed content for
-  // 'share', so this is the one place a live credential can travel inside the archive
-  // without any other check here ever knowing to look for it. Flagged the same as any other
-  // provider key.
+  // openclaw.json IS allowed content for 'share', so a plain-string apiKey baked into it
+  // (instead of a SecretRef) is the one credential no other check here looks for.
   const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
   if (await ctx.transport.exists(configPath)) {
     try {
-      // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format
-      // (docs.openclaw.ai/gateway/configuration) — the same reason the archive-embedded scan
-      // below parses with JSON5. Plain JSON.parse would throw on a config using JSON5-only
-      // syntax (a comment, a trailing comma), and the catch below would then skip this scan
-      // on a live config it could not read rather than on one with nothing to find.
+      // JSON5: OpenClaw's gateway config format allows comments/trailing commas that
+      // JSON.parse rejects; a parse failure here just means nothing to scan.
       const config = JSON5.parse(await ctx.transport.readFile(configPath)) as {
         models?: { providers?: Record<string, unknown> };
         gateway?: { auth?: { token?: unknown } };
@@ -278,10 +253,8 @@ async function structuralCheck(
   const entries = await listArchive(ctx, archive);
 
   const structural = inspectArchive(entries, await listArchiveLinks(ctx, archive));
-  // OpenClaw's own links into the container image (a plugin's skill, a codex-home tool
-  // shim) are an ordinary artefact of installing inside it — real snapshots carry dozens,
-  // and naming each individually buried the warnings worth reading. Folded into one
-  // summary line instead; anything else, fatal or not, is still named exactly as before.
+  // Links into the container image are an ordinary artefact of installing inside it — real
+  // snapshots carry dozens, so they fold into one summary line instead of one warning each.
   const { toReport, foldedImageLinks } = reportableProblems(structural);
   for (const problem of toReport) {
     if (problem.fatal) warn(problem.message);
@@ -366,10 +339,8 @@ async function contentScan(
   const session = `/tmp/clawforge-verify-${randomBytes(6).toString("hex")}`;
   const workdir = `${session}/tree`;
   const patternFile = `${session}/patterns`;
-  // Resolved before the try so the cleanup below can use it too: tar preserves ownership and
-  // mode, so an archive extracted with sudo leaves root-owned directories (auth-secrets is
-  // 700) that an unprivileged `rm -rf` cannot descend into. Cleaning up with anything less
-  // than what unpacked it turns a verdict about the archive into an error about /tmp.
+  // Resolved before the try so cleanup uses the same privilege: tar preserves ownership, so
+  // a sudo-extracted tree (auth-secrets is 700) needs sudo to `rm -rf` it too.
   const prefix = await sudoFor(ctx, archive);
   let sessionCreated = false;
   try {
@@ -379,18 +350,11 @@ async function contentScan(
     const [head, ...rest] = [...prefix, "tar", "-xzf", archive, "-C", workdir];
     await ctx.transport.exec(head, rest);
 
-    // A plain-string provider apiKey embedded in the ARCHIVE'S OWN openclaw.json is a
-    // finding on its own, independent of whatever the live instance's current config holds.
-    // Deriving the pattern to search for from the live config (collectSecrets, above) misses
-    // a key that has since been rotated out of the live config but is still sitting,
-    // embedded, inside this particular archive — this is direct evidence, not something to
-    // grep for: the archive's own file already says what it contains.
-    //
-    // Parsed as JSON5, not JSON: OpenClaw's own gateway config format IS JSON5
-    // (docs.openclaw.ai/gateway/configuration — comments and trailing commas are valid), so
-    // a real archived openclaw.json can use syntax plain JSON.parse rejects outright. And a
-    // parse failure here must not be silence: a file this check cannot read is a file this
-    // check cannot clear, the same as any other unverifiable secret-bearing content.
+    // A plain-string provider apiKey embedded in the ARCHIVE'S OWN openclaw.json is direct
+    // evidence, checked independently of the live config: a key rotated out of the live
+    // config since the archive was taken would otherwise be missed.
+    // Parsed as JSON5 (OpenClaw's gateway config format) — a parse failure is a finding, not
+    // silence: a file this check cannot read is a file it cannot clear.
     const archivedConfigPath = `${workdir}/${root}/config/openclaw.json`;
     if (await ctx.transport.exists(archivedConfigPath)) {
       try {
@@ -507,12 +471,9 @@ export async function verifySnapshot(
   return true;
 }
 
-/** verifySnapshot() for a caller whose WANTED answer is "rejected" (a negative check
- *  confirming the verifier refuses an archive with secrets): its own explanatory warnings —
- *  what it found, why the profile refuses it — are then not a problem to report but the
- *  expected evidence, and must not print as an alarm in an otherwise-passing run. Captured via
- *  withOutputSink and only ever surfaced if the verifier answered the other way (accepted), so
- *  a reader still sees what it saw. */
+/** verifySnapshot() for a caller whose WANTED answer is "rejected" — its explanatory
+ *  warnings are then expected evidence, not an alarm, in an otherwise-passing run. Captured
+ *  via withOutputSink and surfaced only if the verifier answered the other way (accepted). */
 export async function verifySnapshotQuietly(ctx: Context, archive: string, profile: Profile): Promise<boolean> {
   let captured = "";
   const passed = await withOutputSink((chunk) => { captured += chunk; }, () => verifySnapshot(ctx, archive, profile));

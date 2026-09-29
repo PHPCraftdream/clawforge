@@ -1,16 +1,13 @@
-// `./clawforge bootstrap` — brings an instance up from nothing.
+// `./clawforge bootstrap` — brings an instance up from nothing. Idempotent: re-running it on
+// a live instance refreshes the image and restarts, leaving data untouched.
 //
-// Idempotent: re-running it on a live instance refreshes
-// the image and restarts, leaving data untouched.
-//
-// The order below is not arbitrary — it was paid for in debugging:
-//   1. .env and the gateway token, because compose interpolates them
+// Order matters:
+//   1. .env and the gateway token — compose interpolates them
 //   2. data directories owned by uid 1000, or the gateway cannot write
 //   3. the image, before anything tries to run it
 //   4. baseline config, or the gateway crash-loops on "Missing config"
-//   5. declarative settings from the repository — a new custom provider's baseUrl and
-//      models live here, and OpenClaw's schema requires them before it accepts an apiKey
-//      for a provider id it does not already know
+//   5. declarative settings — a custom provider's baseUrl/models must exist before OpenClaw
+//      accepts an apiKey for a provider id it does not already know
 //   6. the provider, from the key in config/.env
 //   7. only then start and wait for /healthz
 
@@ -20,10 +17,10 @@ import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
 import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
-import { ensureBaselineConfig, configureProvider } from "../../management/credentials/provider.ts";
-import { applyConfig } from "../../orchestration/config.ts";
-import { preflightSecrets } from "../../management/secrets.ts";
-import { preflightPort, pinImageReference } from "../lifecycle.ts";
+import { ensureBaselineConfig, configureProvider } from "#src/commands/management/credentials/provider.ts";
+import { applyConfig } from "#src/commands/orchestration/config.ts";
+import { preflightSecrets } from "#src/commands/management/secrets.ts";
+import { preflightPort, pinImageReference } from "#src/commands/lifecycle/lifecycle.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
 import { imageChannel } from "#src/runtime/docker/image-digest.ts";
@@ -41,21 +38,16 @@ export const BOOTSTRAP_ARGUMENTS: CommandArgument[] = [
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
-/** After a fresh pull, this deployment's OWN OPENCLAW_IMAGE is repointed from the moving tag
- *  to the exact digest that tag was just proven to hold — so a LATER pull of the same shared
- *  tag by some other deployment on this Docker daemon can no longer silently switch what THIS
- *  deployment recreates onto next (up, restart after compose changes, apply). An
- *  already-pinned deployment (`image` already carries "@sha256:") is left alone: only
- *  ./clawforge upgrade moves those, deliberately, never a bootstrap re-run.
+/** After a fresh pull, repoints this deployment's OWN OPENCLAW_IMAGE from the moving tag to
+ *  the exact digest just pulled — so a later pull of the same shared tag by another
+ *  deployment can no longer silently switch what THIS one recreates onto next. Already-pinned
+ *  deployments (`image` carries "@sha256:") are left alone: only ./clawforge upgrade moves
+ *  those.
  *
- *  Best effort: a runtime that cannot resolve the digest the tag now holds locally right after
- *  the pull (no RepoDigests to report) leaves it a tag rather than guessing — the same "never
- *  guess" rule image-digest.ts documents throughout. Returns the context later steps should
- *  keep using: refreshContext() re-derives one from the .env this just rewrote, the same way
- *  every other step that rewrites .env does (apply.ts's REDERIVES_CONTEXT); a context this
- *  process did not build through createContext() (a check's own stub, say) has nothing to
- *  refresh and is returned unchanged. RepoDigests carry no tag, so the pin rejoins `image`'s
- *  own channel with the digest, keeping the tag `upgrade` re-resolves later. */
+ *  Best effort: a runtime that cannot resolve the digest just pulled leaves it a tag rather
+ *  than guessing. Returns the context later steps should use: refreshContext() re-derives one
+ *  from the .env this just rewrote; a context not built through createContext() has nothing to
+ *  refresh and is returned unchanged. */
 async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
   if (image.includes("@sha256:")) return ctx;
   const pulled = await ctx.runtime.imageReference();
@@ -105,29 +97,17 @@ export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
-  // Structurally ahead of the lock, not inside it: the lock lives in a directory of its own
-  // (instance-lock.ts's lockHome), and on a fresh host that directory's PARENT is root:root
-  // — preparing it needs the same sudo escalation ensureDataDirs uses for everything else,
-  // but that escalation cannot happen while this process is already trying to take a lock
-  // that lives inside the very directory it is escalating to create. Without this, the
-  // first bootstrap ever run on such a host failed inside guarded()'s own unprivileged mkdir,
-  // reporting "the directory is not there... ./clawforge bootstrap prepares it" — the command
-  // that was supposed to prepare it, refusing before it got the chance to.
-  //
-  // Idempotent and side-effect-free beyond permissions (no instance data touched), so running
-  // it unlocked reintroduces none of the race the lock below exists to prevent: ensureDataDirs
-  // (which calls this again, harmlessly, once already prepared) and ensureSecretsFile's actual
-  // write still run only after the lock is held.
+  // Ahead of the lock, not inside it: the lock directory's PARENT is root:root on a fresh
+  // host, needing the same sudo escalation ensureDataDirs uses — which cannot run while this
+  // process is already trying to take a lock inside the very directory it is escalating to
+  // create. Idempotent and side-effect-free beyond permissions, so running it unlocked
+  // reintroduces none of the race the lock below exists to prevent.
   await ensureLockHome(ctx);
 
-  // One lock for the whole sequence, not one per sub-command: taking separate locks per
-  // sub-command (ensureDataDirs/ensureSecretsFile with none at all, applyConfig/
-  // configureProvider each their own) would let a run refused by another operation already
-  // holding the lock still WRITE config/.env (ensureSecretsFile) before the refusal ever
-  // surfaced, only failing later at applyConfig's own internal takeLock().
-  // guarded() is nesting-safe (instance-lock.ts), so the inner applyConfig()/
-  // configureProvider() calls below just run inside this one outer hold instead of each
-  // acquiring their own.
+  // One lock for the whole sequence: separate locks per sub-command would let a run refused
+  // by another operation already holding the lock still WRITE config/.env (ensureSecretsFile)
+  // before the refusal surfaced. guarded() is nesting-safe, so applyConfig()/configureProvider()
+  // below run inside this one outer hold instead of each acquiring their own.
   await guarded(ctx, "bootstrap", args, () => bootstrapLocked(ctx, noPull));
 }
 
@@ -175,14 +155,12 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
   }
 
   await ensureBaselineConfig(live);
-  // Declared settings before the provider key: a brand-new custom provider's baseUrl and
-  // model catalog come from here (config/desired-state.json), and OpenClaw's own schema
-  // requires baseUrl on any provider id it does not already know about. Writing just the
-  // apiKey first leaves that provider's entry incomplete and OpenClaw refuses the write,
-  // which stopped bootstrap before this step ever ran. Built-in providers (zai and the
-  // rest) are exempt from that requirement, so this order costs them nothing.
-  // restartAdvice: false — the gateway starts a few lines below, in this same run; the
-  // default "restart to pick it up" line would contradict that.
+  // Declared settings before the provider key: a custom provider's baseUrl/model catalog
+  // (config/desired-state.json) must exist first, since OpenClaw's schema requires baseUrl
+  // on any provider id it does not already know — writing just the apiKey first leaves that
+  // entry incomplete and OpenClaw refuses it. Built-in providers are exempt, so this order
+  // costs them nothing.
+  // restartAdvice: false — the gateway starts a few lines below, in this same run.
   await applyConfig(live, [], { restartAdvice: false });
   await configureProvider(live, []);
 
@@ -198,20 +176,15 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
 
   log("OpenClaw is up");
   info(`gateway: ${fresh.serviceUrl}`);
-  // The token is named, not printed. This output is not always read by a person at a
-  // terminal: control-mcp runs the same command for an agent and hands back everything it
-  // wrote, so a token printed here is a token in a transcript. It is already in the
-  // deployment's .env, and `./clawforge mcp-creds --token` prints it when it is actually
-  // wanted — which is the moment the operator chose, not every bootstrap.
+  // Named, not printed: control-mcp hands this output back to an agent, so a token printed
+  // here would land in a transcript. `./clawforge mcp-creds --token` prints it on request.
   info(`token:   ${token === "" ? "(not generated)" : "in .env — print it with ./clawforge mcp-creds --token"}`);
   info(`data:    ${fresh.dataDir}`);
 
-  // "up" and "healthy" are not the job: answering a prompt is, and with no provider key
-  // configureProvider() above had nothing to reference. Read the same way inspect does
-  // (collectConfiguredProviders against the live config), not guessed from which env vars
-  // happen to be set — doctor would otherwise say "nothing blocking" over an instance that
-  // cannot actually do its one job. Best effort: an unreadable or unparseable config
-  // here is doctor's finding to make, not a reason to fail a bootstrap that just succeeded.
+  // "up" and "healthy" are not the job: answering a prompt is. Read the same way inspect does
+  // (collectConfiguredProviders against the live config), not guessed from env vars, so a
+  // provider-less instance is reported as such. Best effort: an unreadable config here is
+  // doctor's finding to make, not a reason to fail a bootstrap that just succeeded.
   let providerConfigured = false;
   try {
     const liveConfig = JSON5.parse(await live.transport.readFile(`${fresh.dataDir}/config/openclaw.json`)) as unknown;

@@ -204,27 +204,16 @@ async function diskProbe(ctx: Context): Promise<PrereqResult> {
   return parseDiskSpace(nearest, result, MIN_FREE_DISK_MB);
 }
 
-// --- GNU userland capabilities ----------------------------------------------------------------
+// --- GNU userland capabilities ---------------------------------------------------------------
+// Target-side commands this framework runs (find -printf, stat -c, readlink -f, sha256sum,
+// tar --numeric-owner, /proc) are GNU/Linux-specific. A reachable WSL/ssh target can still run
+// BusyBox or BSD userland — passes `docker info`/`df` fine, then fails mid-mutation on the
+// first GNU-only flag. This probe catches that here, read-only (inspects only, never writes),
+// run over stdin (`sh -s`) so wsl.exe cannot re-parse it as a `-c` command line.
 //
-// The target-side commands this framework runs elsewhere (find -printf, stat -c, readlink -f,
-// sha256sum, tar --numeric-owner, /proc — the same list transport.ts's LOCAL_TARGET_UNSUPPORTED
-// refusal names) are GNU/Linux-specific. LOCAL_TARGET_UNSUPPORTED catches a `local` target on
-// the wrong HOST before anything runs there; it says nothing about a reachable WSL/ssh TARGET
-// whose own userland is BusyBox (Alpine without coreutils) or BSD (a macOS ssh target, a
-// minimal container) — that machine answers `docker info` and `df` just fine and then fails
-// mid-mutation on the first `find -printf`, with an opaque error nowhere near this preflight.
-//
-// One probe, read-only and harmless: every sub-check only inspects something that already
-// exists (/tmp, /, /proc) or pipes a byte through sha256sum — none of them create a file. Run
-// over stdin (`sh -s`, existsVia's own precedent in quoting.ts) rather than as a `-c` argument,
-// so the script is never re-parsed as a command line the way a `-c` string can be by wsl.exe.
-//
-// This finding mirrors service/inspection.ts's TARGET_NOT_GNU code, defined there as the same
-// kind of named vocabulary TARGET_UNREACHABLE is — but it is not threaded through
-// gatherInspection. doctor/plan/inspect all read that one pipeline, and a target's userland does
-// not change between one `bootstrap --check` and the next, so paying a target round trip for
-// this on every doctor/plan/inspect call would buy nothing. `bootstrap --check` already pays
-// for exactly one read-only round trip to answer this; it stays the one place it is asked.
+// Mirrors service/inspection.ts's TARGET_NOT_GNU code but is not threaded through
+// gatherInspection: a target's userland does not change between calls, so paying a round trip
+// on every doctor/plan/inspect would buy nothing — `bootstrap --check` is the one place it runs.
 export const GNU_USERLAND_PROBE_SCRIPT = `
 find /tmp -maxdepth 0 -printf '' >/dev/null 2>&1 && echo find-printf=ok || echo find-printf=missing
 stat -c %s / >/dev/null 2>&1 && echo stat-c=ok || echo stat-c=missing

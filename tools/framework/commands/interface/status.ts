@@ -31,12 +31,9 @@ export async function status(ctx: Context, args: string[]): Promise<void> {
   info(`target: ${ctx.transport.description} / runtime: ${ctx.runtime.description}`);
 
   // The exposure line and showStatus() both reach the target, so both sit inside this one
-  // try: an unreachable target (wrong OC_WSL_DISTRO/OC_SSH_HOST) can fail on either, and
-  // must be reported the same clean way either time rather than only from the second.
-  // NotBootstrapped is how the runtime says the target is reachable but nothing is there yet
-  // (no data directory to write compose's own private env file beside); caught here so
-  // status answers plainly instead of crashing, and every other runtime call below is
-  // skipped — there is nothing to report on any of them either.
+  // try: an unreachable target must be reported the same way either time. NotBootstrapped
+  // means the target is reachable but nothing is there yet — caught here so status answers
+  // plainly instead of crashing, skipping every other runtime call below.
   try {
     info(`exposure: ${exposureOneLiner(summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.()))} — details: ./clawforge expose status`);
 

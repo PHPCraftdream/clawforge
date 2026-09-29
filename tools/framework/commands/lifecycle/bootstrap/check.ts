@@ -4,9 +4,8 @@
 // directory that needs root, the port already taken, a nearly-full disk) is answered here
 // first, one line per prerequisite.
 //
-// The probes themselves (what is true on the target) live in prereqs.ts; this file only owns
-// the report's shape and its exit-code contract — a mirror of how gather.ts owns doctor's
-// shape while inspection.ts owns the vocabulary.
+// The probes live in prereqs.ts; this file only owns the report's shape and exit-code
+// contract.
 
 import { log, info } from "../../../core/io/log.ts";
 import { emit } from "../../../core/io/output.ts";
@@ -26,10 +25,8 @@ function renderLine(result: PrereqResult): void {
 
 /** `./clawforge bootstrap --check`'s own run: prints one `ok`/`WARN`/`FAIL` line per prerequisite
  *  and exits non-zero only when at least one FAILed. A transport that never reaches the
- *  target at all is reported through the same TARGET_UNREACHABLE finding every other command
- *  uses (service/inspection.ts) rather than propagating as a stack trace — nothing below this
- *  point can be trusted once the transport itself has failed, the same reasoning
- *  gatherInspection's own top-level catch already documents. */
+ *  target is reported through the same TARGET_UNREACHABLE finding every other command uses,
+ *  rather than propagating as a stack trace. */
 export async function bootstrapCheck(ctx: Context, jsonOnly = false): Promise<void> {
   if (!jsonOnly) log(`bootstrap --check: ${ctx.settings.dataDir}`);
 

@@ -1,17 +1,15 @@
 // `./clawforge backup` — a consistent snapshot of the data directory.
 //
-// The gateway is stopped for the duration by default:
-// OpenClaw keeps state in SQLite databases with multi-megabyte -wal files, and a copy
-// taken mid-write is not restorable. --hot skips the stop for those who accept that.
+// The gateway is stopped for the duration by default: OpenClaw keeps state in SQLite
+// databases with multi-megabyte -wal files, and a copy taken mid-write is not restorable.
+// --hot skips the stop for those who accept that.
 //
 // Split into four files: this one keeps the creation path (BACKUP_ARGUMENTS, createBackup
 // and the dispatcher below); list.ts is the read-only archive/replaced-copy inventory;
-// prune-replaced.ts is the explicit, --apply-gated cleanup of `<dataDir>.replaced-*`
-// copies restore leaves behind; install.ts wires `./clawforge backup` itself onto a schedule
-// (crontab, or a printed/applyable `schtasks` entry on Windows), mirroring watch install/
-// uninstall exactly. No action (`./clawforge backup`) still creates an archive exactly as
-// before — `list`/`prune-replaced`/`install`/`uninstall` are additional first positional
-// actions, not a replacement for it.
+// prune-replaced.ts is the explicit, --apply-gated cleanup of `<dataDir>.replaced-*` copies
+// restore leaves behind; install.ts wires `./clawforge backup` onto a schedule (crontab, or
+// a printed/applyable `schtasks` entry on Windows). `list`/`prune-replaced`/`install`/
+// `uninstall` are additional first positional actions; no action still creates an archive.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
@@ -106,11 +104,9 @@ export interface BackupOptions {
   hot?: boolean;
   profile?: Profile;
   /** Skip the restart this would otherwise do once the archive is published. For a caller
-   *  that is about to restore right back into the same data directory (smoke's round-trip
-   *  check): restarting here just to have restore's own `ctx.runtime.stop()` stop it again
-   *  a moment later opens exactly the window the gateway being paused is meant to close —
-   *  live writes landing between this backup and that restore, silently lost when the
-   *  restore replaces the tree. The caller owns starting it back up once its own
+   *  about to restore right back into the same data directory (smoke's round-trip check):
+   *  restarting here just to have restore's own stop() stop it again a moment later reopens
+   *  the write window pausing was meant to close. The caller restarts once its own
    *  transaction is done. */
   leaveStopped?: boolean;
   /** Consistent snapshot without stopping the gateway, via OpenClaw's own `backup create`
@@ -219,21 +215,6 @@ export async function rotate(ctx: Context, backupDir: string): Promise<void> {
   if (removed.code !== 0) throw new Error(`backup rotation could not remove stale archive (exit ${removed.code})`);
 }
 
-/** Runs `openclaw backup create --verify` inside the sidecar and reshapes its output into
- *  the classic archive layout (root = the data directory's own name) at `stagingArchive`, so
- *  rotate(), newestArchive() and restore's extraction need no native-specific case — the
- *  archive this publishes is, structurally, an ordinary full backup.
- *
- *  auth-secrets/ is not part of what OpenClaw's own backup covers (it lives outside
- *  $OPENCLAW_STATE_DIR, at a separate bind mount) — copied in directly from the live target,
- *  safe to do while the gateway keeps running since it is static key material, not a
- *  database. The pristine OpenClaw archive travels along too, embedded at
- *  NATIVE_MANIFEST_NAME, so restore can re-verify it with `openclaw backup verify` before
- *  trusting anything else in the archive.
- *
- *  Failures asking OpenClaw for the archive are reported as NativeBackupUnsupportedError, so
- *  createBackup (and ./clawforge upgrade) can fall back to the classic path; a failure in the
- *  reshape itself is a real bug/environment problem and propagates unchanged. */
 /** Live files the set difference must never re-add: SQLite sidecars (a hot -wal/-shm/-journal
  *  beside the native point-in-time database would be replayed onto it on restore and corrupt
  *  it), Chromium profile locks, and this run's own native archive, which sits in config/
@@ -261,18 +242,14 @@ async function missingRelativeFiles(ctx: Context, liveDir: string, assembledDir:
 }
 
 /** Copies whatever `openclaw backup create` left out of its own payload — in the pinned
- *  image (2026.6.34), verified against a real archive, that is every session transcript
- *  under `agents/<id>/sessions/` (the directory itself is listed, the `.jsonl`/`.log` files
- *  in it are not; upstream docs confirm `.log` there is excluded by design). Computed
- *  generically as the set difference between the live tree and what the native archive
- *  actually carries, never a hardcoded name, so a future image excluding something else is
- *  still covered and one that stops excluding sessions copies nothing extra.
+ *  image, every session transcript under `agents/<id>/sessions/` (dir listed, `.jsonl`/`.log`
+ *  files excluded by upstream design). Computed as the live/native set difference, never a
+ *  hardcoded name, so an image change in either direction stays covered.
  *
- *  These are live, append-only logs, copied while the gateway keeps writing them — a
- *  trailing partial line in the newest one is possible. That risk does not extend to the
- *  instance's SQLite state: that part of the archive came from OpenClaw's own point-in-time
- *  mechanism, not from this copy. Returns how many files were added, for the caller to
- *  report. */
+ *  These are live, append-only logs copied while the gateway keeps writing — a trailing
+ *  partial line in the newest one is possible. The instance's SQLite state is unaffected:
+ *  that part came from OpenClaw's own point-in-time mechanism, not this copy. Returns how
+ *  many files were added. */
 async function copyOmittedLiveFiles(ctx: Context, liveDir: string, assembledDir: string): Promise<number> {
   const missing = await missingRelativeFiles(ctx, liveDir, assembledDir);
   for (const relative of missing) {
@@ -284,6 +261,17 @@ async function copyOmittedLiveFiles(ctx: Context, liveDir: string, assembledDir:
   return missing.length;
 }
 
+/** Runs `openclaw backup create --verify` inside the sidecar and reshapes its output into
+ *  the classic archive layout (root = data directory name) at `stagingArchive`, so rotate(),
+ *  newestArchive() and restore need no native-specific case.
+ *
+ *  auth-secrets/ lives outside $OPENCLAW_STATE_DIR (a separate bind mount) so it is copied in
+ *  directly from the live target — safe while the gateway runs since it is static key
+ *  material. The pristine OpenClaw archive is embedded at NATIVE_MANIFEST_NAME so restore can
+ *  re-verify it with `openclaw backup verify` before trusting the rest.
+ *
+ *  Failures asking OpenClaw for the archive become NativeBackupUnsupportedError, so callers
+ *  fall back to the classic path; a failure in the reshape itself propagates unchanged. */
 async function createNativeArchive(
   ctx: Context,
   stagingDir: string,
@@ -406,9 +394,8 @@ async function validateBackupTarget(ctx: Context, options: BackupOptions, profil
   if (!(await ctx.transport.exists(dataDir))) die(`data directory ${dataDir} does not exist`);
 
   // tar is handed the data directory's name relative to its parent, so a symlinked root
-  // is archived as the link itself — one entry, no data, and a "successful" backup that
-  // cannot be restored anywhere. Refused before the
-  // gateway is stopped: there is no consistent snapshot of this layout to take.
+  // archives as the link itself — one entry, no data, a "successful" backup that restores
+  // nowhere. Refused before the gateway stops: there is no consistent snapshot to take.
   const linkTarget = await symlinkedDataRoot(ctx);
   if (linkTarget !== undefined) {
     die(
@@ -616,11 +603,9 @@ async function targetExists(ctx: Context, path: string): Promise<boolean> {
 export async function backup(ctx: Context, args: string[]): Promise<void> {
   const [first, ...rest] = args;
   // Positional and unambiguous: every creation flag is `--something`, so a bare `list`,
-  // `prune-replaced`, `install` or `uninstall` token can never collide with one. Anything
-  // else (including undefined) falls through to creation unchanged — its own parser below
-  // rejects a genuinely unknown bare token exactly as it always has.
-  // Lets each action's own parser name the RIGHT action when a flag belongs to a
-  // different one — `backup list --keep` names `prune-replaced`, not just "unknown".
+  // `prune-replaced`, `install` or `uninstall` token can never collide with one. `scopeFor`
+  // lets each action's own parser name the RIGHT action when a flag belongs to a different
+  // one — `backup list --keep` names `prune-replaced`, not just "unknown".
   const scopeFor = (action: string): ActionScope => ({ action, siblings: BACKUP_ALL_ARGUMENTS });
   if (first === "list") return backupList(ctx, rest, scopeFor("list"));
   if (first === "prune-replaced") return backupPruneReplaced(ctx, rest, scopeFor("prune-replaced"));
@@ -635,9 +620,8 @@ export async function backup(ctx: Context, args: string[]): Promise<void> {
 
   // --share, --with-secrets, --migrate (the same shorthand vocabulary `pull` accepts) and
   // --profile all set the same field, so whichever was typed LAST decides it — scanned over
-  // the raw argv, not the declaration-keyed `parsed` above, because that ordering is exactly
-  // what the hand-written loop this replaces gave: one pass, later flag wins regardless of
-  // which of the two forms it was.
+  // the raw argv, not the declaration-keyed `parsed` above, so one pass sees the true order
+  // regardless of which of the two forms was used.
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);

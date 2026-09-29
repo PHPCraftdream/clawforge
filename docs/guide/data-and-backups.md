@@ -145,7 +145,9 @@ otherwise it is rotating a backlog nothing keeps adding to:
 ```
 
 `backup install` / `backup uninstall` wire a plain `./clawforge backup` onto a schedule —
-`--interval` takes a duration (`30m`/`6h`/`1d`, default `1d`), not a bare minute count.
+`--interval` takes a duration (default `1d`), not a bare minute count: minutes must divide 60
+(e.g. `30m`), hours must divide a day (e.g. `6h`), or `1d` — anything else (e.g. `45m`, `7h`)
+has no faithful cron encoding and is refused, naming the nearest valid values.
 Mirrors `watch install`/`watch uninstall` (see
 [Health monitoring](monitoring-and-access.md#health-monitoring-watch)) exactly, down to the
 shared crontab-marker convention and the Windows fallback: crontab where an unattended cron

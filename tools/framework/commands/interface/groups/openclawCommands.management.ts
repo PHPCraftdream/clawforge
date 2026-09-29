@@ -516,9 +516,10 @@ export const managementCommands: Record<string, AppCommand> = {
       "A failed ping is a warning in this cycle's output and in `watch status` (last " +
       "heartbeat error), never a level change or a non-zero exit by itself.\n" +
       "install / uninstall — print (and, with --apply, install through the transport) a " +
-      "crontab entry that runs `watch check` every --interval minutes (default 5; 1-59 steps " +
-      "cron's own minute field, an exact multiple of 60 up to 1440 steps the hour field " +
-      "instead — anything else is refused rather than silently misfiring hourly),\n" +
+      "crontab entry that runs `watch check` every --interval minutes (default 5; must divide " +
+      "60 — 1,2,3,4,5,6,10,12,15,20,30 — or be a whole-hour step dividing a day — 60,120,180," +
+      "240,360,480,720,1440 — anything else is refused, naming the nearest valid values, " +
+      "rather than silently misfiring),\n" +
       "marked so a re-run replaces only its own line and uninstall removes only it.\n" +
       "Only where this framework can actually trust an unattended cron to find this " +
       "tooling's own node and checkout: a real SSH host (deploy already mirrored the " +

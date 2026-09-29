@@ -43,18 +43,30 @@ export function scheduledTaskName(job: string, name: string): string {
   return `clawforge-${name}-${job}`;
 }
 
-/** A step in cron's minute field only works up to 59; whole hours step the hour field.
- *  Anything else has no faithful encoding and is refused — reused by schtasksSchedule()
- *  below so the two schedulers never accept an interval the other would refuse. */
+/** Cron steps fire evenly only when they divide 60 (minutes) or 24 (hours); other steps are
+ *  refused. schtasksSchedule() reuses this, so both schedulers accept the same intervals. */
+const MINUTE_DIVISORS = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30];
+const HOUR_DIVISORS = [1, 2, 3, 4, 6, 8, 12, 24];
+const VALID_INTERVAL_MINUTES = [...MINUTE_DIVISORS, ...HOUR_DIVISORS.map((hours) => hours * 60)];
+
+function nearestValidIntervals(minutes: number): number[] {
+  const below = [...VALID_INTERVAL_MINUTES].reverse().find((value) => value <= minutes);
+  const above = VALID_INTERVAL_MINUTES.find((value) => value >= minutes);
+  return [...new Set([below, above].filter((value): value is number => value !== undefined))];
+}
+
 export function cronSchedule(minutes: number): string {
-  if (Number.isInteger(minutes) && minutes >= 1 && minutes <= 59) return `*/${minutes} * * * *`;
-  if (Number.isInteger(minutes) && minutes >= 60 && minutes <= 1440 && minutes % 60 === 0) {
+  if (Number.isInteger(minutes) && MINUTE_DIVISORS.includes(minutes)) return `*/${minutes} * * * *`;
+  if (Number.isInteger(minutes) && minutes % 60 === 0 && HOUR_DIVISORS.includes(minutes / 60)) {
     const hours = minutes / 60;
     if (hours === 24) return "0 0 * * *";
     if (hours === 1) return "0 * * * *";
     return `0 */${hours} * * *`;
   }
-  throw new Error("--interval must be 1-59 minutes, or an exact multiple of 60 up to 1440 (60, 120, …, 1440)");
+  const nearest = nearestValidIntervals(minutes).join(", ");
+  throw new Error(
+    `--interval has no faithful encoding: minutes must divide 60 (${MINUTE_DIVISORS.join(",")}), hours must divide a day (${HOUR_DIVISORS.join(",")}) — nearest valid: ${nearest}`,
+  );
 }
 
 /** "30m" / "6h" / "1d" → minutes, for a command whose own --interval takes a duration string
@@ -68,8 +80,8 @@ export function parseIntervalToMinutes(raw: string): number {
   const minutes = unit === "m" ? value : unit === "h" ? value * 60 : value * 1440;
   try {
     cronSchedule(minutes);
-  } catch {
-    die(`--interval ${raw} is out of range — minutes must be 1-59, hours an exact divisor of a day, or exactly 1d`);
+  } catch (error) {
+    die(`--interval ${raw}: ${(error as Error).message}`);
   }
   return minutes;
 }

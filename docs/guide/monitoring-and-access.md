@@ -139,10 +139,11 @@ An operator finds out the instance stopped doing its job without polling by hand
     while the gateway is merely down, since a full disk is a common reason for that.
 * `./clawforge watch install` / `watch uninstall` — print (and, with `--apply`, install through
   the transport) a crontab entry that runs `watch check` every `--interval` minutes (default
-  5): 1-59 steps cron's own minute field, an exact multiple of 60 up to 1440 steps the hour
-  field instead (`60` → hourly, `120` → every 2 hours, `1440` → daily at midnight) — any other
-  value is refused, naming the allowed ones, rather than silently degrading to once an hour
-  the way a raw `*/N` past 59 would. Marked so a re-run replaces only its own line and
+  5): must divide 60 (`1,2,3,4,5,6,10,12,15,20,30`) to step cron's own minute field evenly, or
+  be a whole-hour step dividing a day (`60,120,180,240,360,480,720,1440` → `60` hourly, `120`
+  every 2 hours, `1440` daily at midnight) — any other value (e.g. `45`, `90`) would fire
+  unevenly and is refused, naming the nearest valid values, rather than silently degrading to
+  an uneven `*/N`. Marked so a re-run replaces only its own line and
   `uninstall` removes only it. Only where an unattended cron can be trusted to find this
   tooling's own node and checkout: a real SSH host (`./clawforge deploy` already mirrored the
   checkout there) or a POSIX `local` target. A WSL target's Docker distro is not such a place,

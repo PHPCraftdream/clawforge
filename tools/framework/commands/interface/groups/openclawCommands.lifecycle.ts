@@ -140,9 +140,10 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "Archive pruning is already handled by this command's own rotation (OC_BACKUP_KEEP) " +
       "— prune-replaced never touches an archive.\n" +
       "install / uninstall — print (and, with --apply, install through the transport) a " +
-      "crontab entry that runs a plain `./clawforge backup` every --interval (default 1d; " +
-      "e.g. 30m/6h/1d) — the schedule OC_BACKUP_KEEP presumes but nothing installed before " +
-      "this,\n" +
+      "crontab entry that runs a plain `./clawforge backup` every --interval (default 1d) — " +
+      "minutes must divide 60 (e.g. 30m), hours must divide a day (e.g. 6h), or 1d; anything " +
+      "else is refused, naming the nearest valid values — the schedule OC_BACKUP_KEEP " +
+      "presumes but nothing installed before this,\n" +
       "mirroring `watch install`/`watch uninstall` exactly (same marker convention, " +
       "same POSIX-only trust boundary, same Windows fallback: a printed `schtasks` entry, " +
       "applied for real on --apply on an actual Windows host).",

@@ -54,19 +54,23 @@ check(
   ["0 3 * * * /usr/bin/other.sh", "*/5 * * * * ./clawforge watch check # clawforge-watch:myapp"],
 );
 
-// --- cronSchedule(): shared by both jobs, and by schtasksSchedule()'s own range check -------
+// --- cronSchedule(): only true divisors of 60 (minutes) or 24 (hours) fire evenly — shared
+// by both jobs, and by schtasksSchedule()'s own range check ---------------------------------
 
 for (const [minutes, expected] of [
-  [1, "*/1 * * * *"],
-  [59, "*/59 * * * *"],
+  [15, "*/15 * * * *"],
+  [30, "*/30 * * * *"],
   [60, "0 * * * *"],
   [120, "0 */2 * * *"],
+  [360, "0 */6 * * *"],
   [1440, "0 0 * * *"],
 ] as const) {
   check(`cronSchedule(${minutes})`, cronSchedule(minutes), expected);
 }
-for (const invalid of [0, 61, 90, 1441]) {
-  check(`cronSchedule(${invalid}) refuses`, await deathOf(() => cronSchedule(invalid)) !== "", true);
+// 45m/7h/5h would fire unevenly (*/45, */7) — refused despite passing the old "multiple of 60"
+// check; 25/90/300/420 are likewise non-divisors of 60 or 24.
+for (const invalid of [7, 25, 45, 59, 90, 300, 420]) {
+  check(`cronSchedule(${invalid}) refuses (no even-firing encoding)`, await deathOf(() => cronSchedule(invalid)) !== "", true);
 }
 
 check("cronLine carries the job's own marker, not another job's", cronLine(5, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "myapp").endsWith(jobMarker("backup", "myapp")), true);
@@ -76,9 +80,12 @@ check("cronLine carries the job's own marker, not another job's", cronLine(5, { 
 
 check("30m -> 30 minutes", parseIntervalToMinutes("30m"), 30);
 check("6h -> 360 minutes", parseIntervalToMinutes("6h"), 360);
+check("12h -> 720 minutes", parseIntervalToMinutes("12h"), 720);
 check("1d -> 1440 minutes", parseIntervalToMinutes("1d"), 1440);
 check("a bare number with no unit is refused, named", (await deathOf(() => parseIntervalToMinutes("30"))).includes("--interval must look like"), true);
-check("90m has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("90m"))).includes("out of range"), true);
+check("5h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("5h"))).includes("no faithful encoding"), true);
+check("7h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("7h"))).includes("no faithful encoding"), true);
+check("the refusal names the nearest valid values", (await deathOf(() => parseIntervalToMinutes("7h"))).includes("nearest valid: 360, 480"), true);
 
 // --- schedulingSupport(): a property of the transport, checked against THIS platform's own
 // POSIX-ness for the "local" branch so the assertion holds on every CI runner ----------------
@@ -97,7 +104,15 @@ check("local reflects whether THIS platform is POSIX", schedulingSupport(ctxWith
 check("a sub-hour interval steps schtasks' own MINUTE schedule", schtasksSchedule(30), { sc: "MINUTE", mo: "30" });
 check("an hour-multiple interval steps HOURLY", schtasksSchedule(360), { sc: "HOURLY", mo: "6" });
 check("exactly a day steps DAILY, with no /mo", schtasksSchedule(1440), { sc: "DAILY" });
-check("schtasksSchedule refuses whatever cronSchedule would", await deathOf(() => schtasksSchedule(90)) !== "", true);
+
+// schtasks parity: same accept/refuse verdict as cronSchedule for every value in the table
+// above, since schtasksSchedule() validates by calling cronSchedule() itself, not a copy.
+for (const minutes of [15, 30, 60, 120, 360, 1440]) {
+  check(`schtasksSchedule(${minutes}) accepts what cronSchedule accepts`, await deathOf(() => schtasksSchedule(minutes)), "");
+}
+for (const minutes of [7, 25, 45, 59, 90, 300, 420]) {
+  check(`schtasksSchedule(${minutes}) refuses whatever cronSchedule refuses`, await deathOf(() => schtasksSchedule(minutes)) !== "", true);
+}
 
 {
   const create = schtasksCreateCommand("clawforge-myapp-backup", 1440, { command: "node.exe", args: ["C:\\tools\\clawforge.ts", "--app", "myapp", "backup"] });

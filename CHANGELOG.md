@@ -104,6 +104,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 * The security gate tells a missing `ufw` from one that failed to answer, on every transport.
 * `watch` reports an unreachable target as down (`TARGET_UNREACHABLE`); `--interval` past 59
   minutes steps whole hours instead of silently running hourly, and other values are refused.
+* `watch install`/`backup install --interval`: a value like `45m` or `7h` encoded as `*/45`/
+  `*/7` and fired unevenly (`45m` at :00/:45, i.e. every 45 then every 15 minutes) despite the
+  code's own doc comment promising a refusal. Minutes are now accepted only if they divide 60
+  (1,2,3,4,5,6,10,12,15,20,30) and hours only if they divide a day (1,2,3,4,6,8,12,24; 24h/1d
+  is daily); anything else is refused, naming the nearest valid values. `schtasksSchedule()`
+  (the Windows counterpart) validates through the same rule.
 * `watch` failures were invisible between cycles (`watch install`'s crontab entry discards
   all output): a failed alert delivery or a configuration error is now recorded
   (`lastRunAt`/`lastError`/`alertPending`) and surfaced by `watch status`, which also warns

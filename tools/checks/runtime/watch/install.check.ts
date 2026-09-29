@@ -55,22 +55,22 @@ check(
   ["*/5 * * * * ./clawforge watch check # clawforge-watch:other"],
 );
 
-// --- cronSchedule(): 1-59 steps cron's own minute field; an exact multiple of 60 up to a
-// day steps the hour field instead — `*/N` for N>=60 would silently misfire ----------------
+// --- cronSchedule(): only minute steps dividing 60, or hour steps dividing a day, fire
+// evenly — `*/45`, `*/7` (hours) would silently misfire and are refused ---------------------
 
 for (const [minutes, expected] of [
   [1, "*/1 * * * *"],
   [5, "*/5 * * * *"],
-  [59, "*/59 * * * *"],
+  [30, "*/30 * * * *"],
   [60, "0 * * * *"],
   [120, "0 */2 * * *"],
   [180, "0 */3 * * *"],
-  [1380, "0 */23 * * *"],
+  [720, "0 */12 * * *"],
   [1440, "0 0 * * *"],
 ] as const) {
   check(`cronSchedule(${minutes})`, cronSchedule(minutes), expected);
 }
-for (const invalid of [0, 61, 90, 1441, 1.5, -5]) {
+for (const invalid of [0, 7, 25, 45, 59, 90, 300, 420, 1441, 1.5, -5]) {
   check(
     `cronSchedule(${invalid}) refuses — no faithful cron encoding`,
     await deathOf(() => cronSchedule(invalid)) !== "",
@@ -168,17 +168,21 @@ try {
     check("a 120-minute interval prints the hour-stepped schedule", written.join("").includes("0 */2 * * *"), true);
   }
 
-  // a non-schedulable interval (not 1-59, not an exact multiple of 60) is refused up front,
-  // before any crontab line is even built — never silently degrades to hourly.
+  // a non-schedulable interval (not a divisor of 60 minutes or a day in hours) is refused up
+  // front, before any crontab line is even built — never silently degrades to an uneven */N.
   {
     calls.length = 0;
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "90"])));
-    check("--interval 90 is refused", message.includes("--interval must be 1-59 minutes"), true);
+    check("--interval 90 is refused", message.includes("no faithful encoding"), true);
     check("and never touches the crontab", calls.some((call) => call.command === "crontab"), false);
   }
   {
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "1441"])));
-    check("--interval beyond a day is refused", message.includes("--interval must be 1-59 minutes"), true);
+    check("--interval beyond a day is refused", message.includes("no faithful encoding"), true);
+  }
+  {
+    const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "45"])));
+    check("--interval 45 (would fire unevenly, */45) is refused", message.includes("no faithful encoding"), true);
   }
 
   // uninstall --apply: removes only OUR marked line.

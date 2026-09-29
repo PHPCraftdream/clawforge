@@ -7,6 +7,7 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { emit } from "#src/core/io/output.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
@@ -23,6 +24,7 @@ export const APPLY_CONFIG_ARGUMENTS: CommandArgument[] = [
   { name: "force", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag" },
   { name: "break-lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
 
@@ -64,6 +66,7 @@ export async function applyConfig(
   const force = parsed.force === true;
   const breakLock = parsed["break-lock"] === true;
   const breakForeignLockHost = parseBreakForeignLockHost(args);
+  const jsonOnly = parsed.json === true;
 
   // Which flags mean anything is decided from the mode here, not left to branch order:
   // branch order alone would let --dry-run --dump --force reach the dump branch with the
@@ -84,17 +87,32 @@ export async function applyConfig(
     // declaration file itself, and nothing here mutates the instance, so there is nothing
     // for the lock to serialize. The same reading secrets --dump already established for
     // its own store write.
-    await dumpDesiredState(ctx, force);
+    await dumpDesiredState(ctx, force, jsonOnly);
     return;
   }
 
   // A dry run writes nothing, so it needs no lock — and taking one would make an inspection
   // of a busy instance fail for no reason.
-  if (dryRun) return writeDesiredState(ctx, true, options.restartAdvice);
-  return guarded(ctx, "apply-config", args, () => writeDesiredState(ctx, false, options.restartAdvice));
+  if (dryRun) return writeDesiredState(ctx, true, options.restartAdvice, jsonOnly);
+  if (jsonOnly) {
+    let caught: unknown;
+    try {
+      await guarded(ctx, "apply-config", args, () => writeDesiredState(ctx, false, options.restartAdvice, false));
+    } catch (error) {
+      caught = error;
+    }
+    if (caught !== undefined) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      emit(`${JSON.stringify({ ok: false, changed: false, source: desiredStateFile(), problems: [message] }, null, 2)}\n`);
+      throw caught;
+    }
+    emit(`${JSON.stringify({ ok: true, changed: true, source: desiredStateFile() }, null, 2)}\n`);
+    return;
+  }
+  return guarded(ctx, "apply-config", args, () => writeDesiredState(ctx, false, options.restartAdvice, false));
 }
 
-async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = true): Promise<void> {
+async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = true, jsonOnly = false): Promise<void> {
 
   let payload: string;
   try {
@@ -137,6 +155,10 @@ async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = 
     if (dryRun) await ctx.transport.remove(stagedOnTarget);
   }
 
+  if (jsonOnly) {
+    emit(`${JSON.stringify({ ok: true, changed: !dryRun, dryRun, source: desiredStateFile() }, null, 2)}\n`);
+    return;
+  }
   if (dryRun) {
     log("dry run only — nothing was written");
   } else {
@@ -173,7 +195,7 @@ const RECOVERABLE_PATHS = [
  *  recovered declaration, so a live config that genuinely exists but failed to read must
  *  abort the whole operation rather than silently produce an empty one — the same reasoning
  *  secrets --apply applies through this same helper. */
-async function dumpDesiredState(ctx: Context, force: boolean): Promise<void> {
+async function dumpDesiredState(ctx: Context, force: boolean, jsonOnly = false): Promise<void> {
   const path = desiredStateFile();
 
   const exists = await access(path).then(
@@ -199,6 +221,10 @@ async function dumpDesiredState(ctx: Context, force: boolean): Promise<void> {
 
   await writeFile(path, `${JSON.stringify(recovered, null, 2)}\n`, "utf8");
 
+  if (jsonOnly) {
+    emit(`${JSON.stringify({ ok: true, changed: true, path, recovered: recovered.map((entry) => entry.path), omitted }, null, 2)}\n`);
+    return;
+  }
   log(`recovered ${recovered.length} of ${RECOVERABLE_PATHS.length} known path(s) into ${path}`);
   for (const declaredPath of omitted) info(`${declaredPath} has no value in the live config — omitted, not guessed`);
   if (recovered.length === 0) warn("nothing was recoverable — the file was written as an empty declaration");

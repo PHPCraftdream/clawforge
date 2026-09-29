@@ -2,6 +2,7 @@
 
 import JSON5 from "json5";
 import { log, info, die } from "#src/core/io/log.ts";
+import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
@@ -19,6 +20,7 @@ export const CONFIGURE_PROVIDER_ARGUMENTS: CommandArgument[] = [
   { name: "force", description: "Replace an existing provider SecretRef", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
 /** Gateway flags used by headless onboarding. */
@@ -36,14 +38,14 @@ const SKIP_FLAGS = [
   "--skip-search", "--skip-hooks", "--skip-ui", "--suppress-gateway-token-output",
 ];
 
-function parseArgs(args: string[]): { force: boolean; provider?: string; env?: string } {
+function parseArgs(args: string[]): { force: boolean; provider?: string; env?: string; jsonOnly: boolean } {
   const parsed = parseDeclaredArgs(CONFIGURE_PROVIDER_ARGUMENTS, args);
   const force = parsed.force === true;
   const provider = parsed.provider === "" ? die("--provider needs an id, e.g. openai") : parsed.provider as string | undefined;
   const env = parsed.env === "" ? die("--env needs a variable name, e.g. OPENAI_API_KEY") : parsed.env as string | undefined;
   if (env !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env)) die(`invalid environment variable: ${env}`);
   if (provider !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(provider)) die(`invalid provider id: ${provider}`);
-  return { force, provider, env };
+  return { force, provider, env, jsonOnly: parsed.json === true };
 }
 
 /** Configure every selected provider using a target-side SecretRef. */
@@ -60,6 +62,10 @@ async function configureProviderLocked(ctx: Context, args: string[]): Promise<vo
   const options = parseArgs(args);
   const secretsPath = secretsFileOnTarget(ctx);
   if (!(await ctx.transport.exists(secretsPath))) {
+    if (options.jsonOnly) {
+      emit(`${JSON.stringify({ ok: true, changed: false, configured: [], skipped: [`no ${secretsPath} yet`] }, null, 2)}\n`);
+      return;
+    }
     info(`no ${secretsPath} yet — nothing to configure`);
     return;
   }
@@ -90,29 +96,37 @@ async function configureProviderLocked(ctx: Context, args: string[]): Promise<vo
     }
   }
 
-  let changed = false;
+  const configuredIds: string[] = [];
+  const skipped: string[] = [];
   for (const id of [...providers].sort()) {
     const env = options.env ?? providerSecretVariable(config, id) ?? providerEnvironmentVariable(id);
     if (env === undefined || secrets[env] === undefined || secrets[env] === "") continue;
     const current = providerSecretVariable(config, id);
     if (!options.force && current === env) {
-      info(`provider ${id} already references ${env}`);
+      if (!options.jsonOnly) info(`provider ${id} already references ${env}`);
+      skipped.push(`${id}: already references ${env}`);
       continue;
     }
     // providerSecretVariable only recognizes an env-sourced ref; a file/exec/store ref or a
     // plain string apiKey returns undefined from it, which must not be mistaken for "nothing
     // set" — it is an explicit, deliberate credential this command must not silently replace.
     if (!options.force && current === undefined && providerApiKeyExplicit(config, id)) {
-      info(`provider ${id} already has an explicit apiKey (not env-sourced) — use --force to replace it`);
+      if (!options.jsonOnly) info(`provider ${id} already has an explicit apiKey (not env-sourced) — use --force to replace it`);
+      skipped.push(`${id}: explicit apiKey, not env-sourced — needs --force`);
       continue;
     }
-    log(`configuring provider ${id} with ${env} (key stays in ${secretsPath})`);
+    if (!options.jsonOnly) log(`configuring provider ${id} with ${env} (key stays in ${secretsPath})`);
     await ctx.runtime.runOneOff(
       "gateway",
       ["dist/index.js", "config", "set", `models.providers.${id}.apiKey`, JSON.stringify({ source: "env", id: env }), "--strict-json"],
       { noDeps: true, entrypoint: "node" },
     );
-    changed = true;
+    configuredIds.push(id);
+  }
+  const changed = configuredIds.length > 0;
+  if (options.jsonOnly) {
+    emit(`${JSON.stringify({ ok: true, changed, configured: configuredIds, skipped }, null, 2)}\n`);
+    return;
   }
   if (changed) log("provider configuration updated — restart to apply: ./clawforge restart");
   else info("no provider changes");

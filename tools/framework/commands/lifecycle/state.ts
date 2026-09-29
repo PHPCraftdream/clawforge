@@ -6,6 +6,7 @@
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { shellQuote } from "#src/core/io/shell.ts";
+import { emit, withOutputSink } from "#src/core/io/output.ts";
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv, parseRetention } from "#src/core/env.ts";
@@ -16,7 +17,9 @@ import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { requirements, template } from "#src/service/secrets.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { createBackup } from "./backup/index.ts";
-import { restoreArchive } from "./restore/index.ts";
+import { restoreArchive, prepareRestore } from "./restore/index.ts";
+import type { RestoreOptions } from "./restore/index.ts";
+import { buildRestorePlan, printRestorePlan } from "./restore/plan.ts";
 import { forbiddenViolations, verifySnapshot } from "./verify.ts";
 import { preflightSecrets, MissingSecretsError } from "../management/secrets.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
@@ -34,6 +37,7 @@ export const PULL_ARGUMENTS: CommandArgument[] = [
   { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
 /** Drives both push's own parser and its openclawCommands declaration. */
@@ -43,7 +47,14 @@ export const PUSH_ARGUMENTS: CommandArgument[] = [
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
+  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag" },
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
+
+/** Whether argv requests --dry-run — same shape as restore's own isRestoreDryRun. */
+export function isPushDryRun(args: readonly string[]): boolean {
+  return parseDeclaredArgs(PUSH_ARGUMENTS, args)["dry-run"] === true;
+}
 
 async function ensureSnapshotDir(ctx: Context): Promise<string> {
   const directory = ctx.settings.snapshotDir;
@@ -322,7 +333,7 @@ export interface PullTransactionOptions {
 }
 
 export async function pull(ctx: Context, args: string[], transaction: PullTransactionOptions = {}): Promise<void> {
-  parseDeclaredArgs(PULL_ARGUMENTS, args);
+  const jsonOnly = parseDeclaredArgs(PULL_ARGUMENTS, args).json === true;
   let profile: Profile = "migrate";
   let hot = false;
 
@@ -343,8 +354,29 @@ export async function pull(ctx: Context, args: string[], transaction: PullTransa
   }
 
   // Validate argv before creating the lock or touching the target.
-  return guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot, transaction.leaveStopped === true, transaction.purpose ?? "pull"));
+  if (jsonOnly) {
+    let result: PullPaths | undefined;
+    let caught: unknown;
+    await withOutputSink(() => {}, async () => {
+      try {
+        result = await guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot, transaction.leaveStopped === true, transaction.purpose ?? "pull"));
+      } catch (error) {
+        caught = error;
+      }
+    });
+    if (caught !== undefined) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      emit(`${JSON.stringify({ ok: false, changed: true, profile, problems: [message] }, null, 2)}\n`);
+      throw caught;
+    }
+    const paths = result!;
+    emit(`${JSON.stringify({ ok: true, changed: true, profile, snapshot: paths.snapshot, template: paths.snapshotTemplate }, null, 2)}\n`);
+    return;
+  }
+  await guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot, transaction.leaveStopped === true, transaction.purpose ?? "pull"));
 }
+
+
 
 /** The full set of paths one pull writes — the staging copies and their final destinations. */
 interface PullPaths {
@@ -492,8 +524,9 @@ function reportPulledSnapshot(paths: PullPaths, profile: Profile, entries: strin
   if (profile === "share") info(`shareable profile: ${SHARE_ALLOWED.join(", ")}`);
 }
 
-/** Captures the archive and sidecars under one instance lock. */
-async function pullLocked(ctx: Context, profile: Profile, hot: boolean, leaveStopped: boolean, purpose: BackupPurpose): Promise<void> {
+/** Captures the archive and sidecars under one instance lock. Returns the published paths,
+ *  for pull()'s own --json summary. */
+async function pullLocked(ctx: Context, profile: Profile, hot: boolean, leaveStopped: boolean, purpose: BackupPurpose): Promise<PullPaths> {
   const snapshotDir = await ensureSnapshotDir(ctx);
   const archive = await createBackup(ctx, { profile, hot, leaveStopped, purpose });
   const paths = computePullPaths(snapshotDir);
@@ -529,6 +562,7 @@ async function pullLocked(ctx: Context, profile: Profile, hot: boolean, leaveSto
 
     reportPulledSnapshot(paths, profile, entries, size, state);
     await rotateSnapshots(ctx, snapshotDir);
+    return paths;
   } catch (error) {
     // A failure before archive publication must not leave a discoverable partial snapshot.
     if (!state.publishedArchive && !state.archivePublicationUncertain) {
@@ -542,34 +576,83 @@ async function pullLocked(ctx: Context, profile: Profile, hot: boolean, leaveSto
 
 // --- push ---------------------------------------------------------------------
 
+/** The snapshot a bare `push` (no `<archive>`) would pick: newest first, resolved the same
+ *  way whether the run is real or --dry-run. Read-only — no lock needed to compute this. */
+async function resolvePushArchive(ctx: Context, archiveArg: string | undefined): Promise<string> {
+  const snapshotDir = ctx.settings.snapshotDir;
+  let archive = archiveArg;
+  if (archive !== undefined && !archive.startsWith("/")) archive = `${snapshotDir}/${archive}`;
+  if (archive !== undefined) return archive;
+
+  const prefix = await sudoFor(ctx, snapshotDir);
+  const [head, ...rest] = [...prefix, "sh", "-c", `ls -1t ${snapshotGlob(snapshotDir)} 2>/dev/null`];
+  const listing = await ctx.transport.exec(head, rest, { allowFailure: true });
+  const found = selectSnapshotPaths(listing.stdout, deploymentName())[0];
+  if (found === undefined) die(`no snapshots in ${snapshotDir} — run ./clawforge pull first`);
+  return found;
+}
+
+/** `--dry-run`: mirrors restore's own (buildRestorePlan, over the same prepareRestore this
+ *  push would run), plus what push adds on top — the secrets sidecar it would install.
+ *  Nothing here stops, moves, writes or extracts anything; no lock is taken. */
+async function pushDryRun(ctx: Context, archive: string, options: RestoreOptions, jsonOnly: boolean): Promise<void> {
+  const prepared = await prepareRestore(ctx, archive, options);
+  const plan = await buildRestorePlan(ctx, prepared, options);
+  const secretsPath = `${archive}${SECRETS_SUFFIX}`;
+  const hasSecrets = await ctx.transport.exists(secretsPath);
+
+  if (jsonOnly) {
+    emit(`${JSON.stringify({ ok: true, changed: false, dryRun: true, ...plan, secretsToInstall: hasSecrets ? secretsPath : null }, null, 2)}\n`);
+    return;
+  }
+  log(`push --dry-run: would restore ${plan.dataDir} from ${plan.archiveName}, then install keys and start`);
+  printRestorePlan(plan);
+  info(hasSecrets ? `would install provider keys from ${secretsPath}` : `no ${SECRETS_SUFFIX} beside the archive — provider keys would not be installed`);
+  info("does not cover: whether the restored config's required secrets are actually satisfied — a real push checks that before starting");
+}
+
 export async function push(ctx: Context, args: string[]): Promise<void> {
   // Dies before the lock is ever taken, same as up/restart/down: guarded() reads
   // --break-(foreign-)lock straight from argv, ahead of restoreFromSnapshot's own parse — a
   // bogus flag must be refused before a takeover, not after one already happened.
-  parseDeclaredArgs(PUSH_ARGUMENTS, args);
-  return guarded(ctx, "push", args, () => restoreFromSnapshot(ctx, args));
+  const parsed = parseDeclaredArgs(PUSH_ARGUMENTS, args);
+  const jsonOnly = parsed.json === true;
+
+  if (parsed["dry-run"] === true) {
+    const archive = await resolvePushArchive(ctx, parsed.archive as string | undefined);
+    const options: RestoreOptions = { force: parsed.force === true, freshIdentity: parsed["fresh-identity"] === true, noStart: true };
+    return pushDryRun(ctx, archive, options, jsonOnly);
+  }
+
+  if (jsonOnly) {
+    let outcome: { archive: string; secretsInstalled: boolean; started: boolean } | undefined;
+    let caught: unknown;
+    await withOutputSink(() => {}, async () => {
+      try {
+        outcome = await guarded(ctx, "push", args, () => restoreFromSnapshot(ctx, args));
+      } catch (error) {
+        caught = error;
+      }
+    });
+    if (caught !== undefined) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      emit(`${JSON.stringify({ ok: false, changed: true, problems: [message] }, null, 2)}\n`);
+      throw caught;
+    }
+    emit(`${JSON.stringify({ ok: true, changed: true, ...outcome }, null, 2)}\n`);
+    return;
+  }
+
+  await guarded(ctx, "push", args, () => restoreFromSnapshot(ctx, args));
 }
 
-async function restoreFromSnapshot(ctx: Context, args: string[]): Promise<void> {
+async function restoreFromSnapshot(ctx: Context, args: string[]): Promise<{ archive: string; secretsInstalled: boolean; started: boolean }> {
   const parsed = parseDeclaredArgs(PUSH_ARGUMENTS, args);
-  let archive = parsed.archive as string | undefined;
   const force = parsed.force === true;
   const freshIdentity = parsed["fresh-identity"] === true;
 
-  const snapshotDir = ctx.settings.snapshotDir;
-
-  if (archive !== undefined && !archive.startsWith("/")) {
-    archive = `${snapshotDir}/${archive}`;
-  }
-
-  if (archive === undefined) {
-    const prefix = await sudoFor(ctx, snapshotDir);
-    const [head, ...rest] = [...prefix, "sh", "-c", `ls -1t ${snapshotGlob(snapshotDir)} 2>/dev/null`];
-    const listing = await ctx.transport.exec(head, rest, { allowFailure: true });
-    archive = selectSnapshotPaths(listing.stdout, deploymentName())[0];
-    if (archive === undefined) die(`no snapshots in ${snapshotDir} — run ./clawforge pull first`);
-    log(`using the newest snapshot: ${archive}`);
-  }
+  const archive = await resolvePushArchive(ctx, parsed.archive as string | undefined);
+  if (parsed.archive === undefined) log(`using the newest snapshot: ${archive}`);
 
   const secretsPath = `${archive}${SECRETS_SUFFIX}`;
   const hasSecrets = await ctx.transport.exists(secretsPath);
@@ -594,7 +677,7 @@ async function restoreFromSnapshot(ctx: Context, args: string[]): Promise<void> 
     warn(error.message);
     info("the instance is restored but left stopped");
     info("supply the keys with: ./clawforge secrets --apply --store <name>, then ./clawforge up");
-    return;
+    return { archive, secretsInstalled: hasSecrets, started: false };
   }
 
   log("starting the gateway");
@@ -603,4 +686,5 @@ async function restoreFromSnapshot(ctx: Context, args: string[]): Promise<void> 
   log("gateway is healthy");
 
   log("state pushed");
+  return { archive, secretsInstalled: hasSecrets, started: true };
 }

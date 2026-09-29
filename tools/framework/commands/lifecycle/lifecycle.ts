@@ -25,6 +25,7 @@ import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/
 export const UPGRADE_ARGUMENTS: CommandArgument[] = [
   { name: "image", description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE", kind: "option", valueName: "ref" },
   { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
@@ -417,11 +418,11 @@ function digestHash(reference: string): string {
   return reference.split("@").at(-1) ?? reference;
 }
 
-function parseUpgradeArgs(args: string[]): { image?: string; dryRun: boolean } {
+function parseUpgradeArgs(args: string[]): { image?: string; dryRun: boolean; jsonOnly: boolean } {
   const parsed = parseDeclaredArgs(UPGRADE_ARGUMENTS, args);
   const image = parsed.image as string | undefined;
   if (image === "" || image?.startsWith("-") === true) die("--image needs an image reference");
-  return { image, dryRun: parsed["dry-run"] === true };
+  return { image, dryRun: parsed["dry-run"] === true, jsonOnly: parsed.json === true };
 }
 
 /** `channel` is the repo[:tag] the digest was resolved from; absent for an explicit digest. */
@@ -616,6 +617,16 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
   const upToDate = digestHash(target.targetDigest) === digestHash(previousDigest);
 
   if (options.dryRun === true) {
+    if (options.jsonOnly) {
+      emit(
+        `${JSON.stringify(
+          { ok: true, changed: false, current: previousDigest, channel: target.channel ?? null, target: target.targetDigest, upToDate },
+          null,
+          2,
+        )}\n`,
+      );
+      return;
+    }
     log(`current    ${previousDigest}`);
     if (target.channel !== undefined) log(`channel    ${target.channel}`);
     log(`registry   ${target.targetDigest}`);
@@ -634,7 +645,29 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
   }
 
   if (upToDate) {
+    if (options.jsonOnly) {
+      emit(`${JSON.stringify({ ok: true, changed: false, current: previousDigest, target: target.targetDigest, upToDate: true }, null, 2)}\n`);
+      return;
+    }
     log(target.channel === undefined ? `already running ${previousDigest} — nothing to upgrade` : `already on the latest ${target.channel} (${previousDigest}) — nothing to upgrade`);
+    return;
+  }
+
+  if (options.jsonOnly) {
+    let caught: unknown;
+    await withOutputSink(() => {}, async () => {
+      try {
+        await guarded(ctx, "upgrade", args, () => upgradeLocked(ctx, previousDigest, target.targetDigest, recreateWithImage));
+      } catch (error) {
+        caught = error;
+      }
+    });
+    if (caught !== undefined) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      emit(`${JSON.stringify({ ok: false, changed: true, from: previousDigest, to: target.targetDigest, problems: [message] }, null, 2)}\n`);
+      throw caught;
+    }
+    emit(`${JSON.stringify({ ok: true, changed: true, from: previousDigest, to: target.targetDigest, pinnedImage: target.targetDigest }, null, 2)}\n`);
     return;
   }
 

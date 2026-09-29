@@ -70,7 +70,9 @@ const pushSchema = inputSchema(openclawCommands.push) as {
   required: string[];
 };
 check("a flag is a boolean in the schema", pushSchema.properties.force.type, "boolean");
-check("destructive commands require confirm", pushSchema.required.includes("confirm"), true);
+// push declares readOnlyWhen (its own --dry-run) now, so confirm is conditional rather than
+// unconditionally required in the static schema — same shape restore/apply/rollback already have.
+check("destructive commands with readOnlyWhen make confirm conditional, not statically required", pushSchema.required.includes("confirm"), false);
 
 // --- argv --------------------------------------------------------------------
 
@@ -166,7 +168,7 @@ check("a missing required variadic is reported", validate(openclawCommands.cli, 
 check(
   "deploy declares --adopt alongside --path and --no-bootstrap",
   (openclawCommands.deploy.arguments ?? []).map((argument) => argument.name).sort(),
-  ["adopt", "no-bootstrap", "path", "target"],
+  ["adopt", "dry-run", "json", "no-bootstrap", "path", "target"],
 );
 check(
   "--adopt reaches deploy's argv as a bare flag",

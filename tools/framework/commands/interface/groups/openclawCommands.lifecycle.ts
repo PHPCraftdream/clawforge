@@ -8,7 +8,7 @@ import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstra
 import { backup, BACKUP_ALL_ARGUMENTS, backupActionIsReadOnly } from "#src/commands/lifecycle/backup/index.ts";
 import { restore, RESTORE_ARGUMENTS, isRestoreDryRun } from "#src/commands/lifecycle/restore/index.ts";
 import { verify, VERIFY_ARGUMENTS } from "#src/commands/lifecycle/verify.ts";
-import { pull, push, PULL_ARGUMENTS, PUSH_ARGUMENTS } from "#src/commands/lifecycle/state.ts";
+import { pull, push, PULL_ARGUMENTS, PUSH_ARGUMENTS, isPushDryRun } from "#src/commands/lifecycle/state.ts";
 import { smoke, SMOKE_ARGUMENTS } from "#src/commands/lifecycle/smoke/index.ts";
 
 export const lifecycleCommands: Record<string, AppCommand> = {
@@ -234,13 +234,18 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     run: push,
     destructive: true,
     forceOnConfirmation: true,
+    readOnlyWhen: isPushDryRun,
     details:
       "Restores the newest snapshot in the deployment's snapshot directory (or a given " +
       "path), installs whatever provider keys travelled beside it (<archive>.secrets.env, " +
       "produced by a migrate pull),\n" +
       "then checks every required secret is actually present before starting — a share " +
       "snapshot carries no keys at all, so this leaves the instance restored but stopped " +
-      "with instructions instead of crash-looping.",
+      "with instructions instead of crash-looping.\n" +
+      "--dry-run mirrors restore's own (same planner: commands/lifecycle/restore/plan.ts): " +
+      "what would be replaced, what the archive holds (identity, structure), and whether a " +
+      "secrets sidecar would be installed — nothing is stopped, moved, written or extracted, " +
+      "and no lock is taken.",
     arguments: PUSH_ARGUMENTS,
   },
   verify: {

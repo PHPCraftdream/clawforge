@@ -7,6 +7,7 @@
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe } from "#src/runtime/datadir.ts";
@@ -52,6 +53,7 @@ export const RESTORE_ARGUMENTS: CommandArgument[] = [
   { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
   { name: "no-start", description: "Leave the service stopped afterwards", kind: "flag" },
   { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag" },
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
 /** Whether argv requests --dry-run (an option value is never mistaken for the flag) — same
@@ -316,7 +318,7 @@ export interface PreparedRestore {
  *  unpack (structure, root name, embedded native manifest). Nothing is stopped or moved yet,
  *  and no operator confirmation is asked here — a die() leaves the instance untouched, and
  *  --dry-run stops right after this returns. */
-async function prepareRestore(ctx: Context, archive: string, options: RestoreOptions): Promise<PreparedRestore> {
+export async function prepareRestore(ctx: Context, archive: string, options: RestoreOptions): Promise<PreparedRestore> {
   // Before anything else — nothing is validated, stopped or moved yet. A hook can decrypt
   // or fetch the real archive and hand back the path to use instead; a failure here means
   // the restore never started, so there is nothing to compensate.
@@ -582,9 +584,14 @@ export async function restoreArchive(
 /** `--dry-run`: the same selection and validation a real restore runs (prepareRestore),
  *  reported instead of acted on — performRestore() is never reached, so nothing here stops,
  *  moves, writes or extracts anything on the target. */
-export async function restoreDryRun(ctx: Context, archive: string, options: RestoreOptions = {}): Promise<void> {
+export async function restoreDryRun(ctx: Context, archive: string, options: RestoreOptions = {}, jsonOnly = false): Promise<void> {
   const prepared = await prepareRestore(ctx, archive, options);
-  printRestorePlan(await buildRestorePlan(ctx, prepared, options));
+  const plan = await buildRestorePlan(ctx, prepared, options);
+  if (jsonOnly) {
+    emit(`${JSON.stringify({ ok: true, changed: false, dryRun: true, ...plan }, null, 2)}\n`);
+    return;
+  }
+  printRestorePlan(plan);
 }
 
 export async function restore(ctx: Context, args: string[]): Promise<void> {
@@ -594,6 +601,7 @@ export async function restore(ctx: Context, args: string[]): Promise<void> {
   if (parsed["fresh-identity"] === true) options.freshIdentity = true;
   if (parsed["no-start"] === true) options.noStart = true;
   const dryRun = parsed["dry-run"] === true;
+  const jsonOnly = parsed.json === true;
   let archive = parsed.archive as string | undefined;
 
   if (archive === undefined) {
@@ -609,21 +617,41 @@ export async function restore(ctx: Context, args: string[]): Promise<void> {
       die(`no archives found in ${ctx.settings.backupDir} — pass one explicitly`);
     }
     archive = newest;
-    // Said rather than done quietly: the operator who just ran `pull --share` and then
-    // `restore` is entitled to know why the newest file in that directory was not used.
-    for (const entry of skipped) info(`skipping ${entry} — not a full backup`);
-    // Before any confirmation prompt (below, inside restoreArchive) or anything else runs:
-    // an operator asking "which one" must not have to read it out of a log a restore is
-    // already mid-way through.
-    const pickedName = archive.slice(archive.lastIndexOf("/") + 1);
-    const pickedStamp = parseBackupArchive(pickedName, deploymentName())?.stamp;
-    log(`using the newest archive: ${pickedName}${pickedStamp === undefined ? "" : ` (${formatArchiveStamp(pickedStamp)})`}`);
+    if (!jsonOnly) {
+      // Said rather than done quietly: the operator who just ran `pull --share` and then
+      // `restore` is entitled to know why the newest file in that directory was not used.
+      for (const entry of skipped) info(`skipping ${entry} — not a full backup`);
+      // Before any confirmation prompt (below, inside restoreArchive) or anything else runs:
+      // an operator asking "which one" must not have to read it out of a log a restore is
+      // already mid-way through.
+      const pickedName = archive.slice(archive.lastIndexOf("/") + 1);
+      const pickedStamp = parseBackupArchive(pickedName, deploymentName())?.stamp;
+      log(`using the newest archive: ${pickedName}${pickedStamp === undefined ? "" : ` (${formatArchiveStamp(pickedStamp)})`}`);
+    }
   }
 
   if (dryRun) {
     // Read-only, same convention as apply --dry-run/plan: no instance lock taken, so this
     // never blocks a concurrent apply/restore/push longer than the validation itself takes.
-    await restoreDryRun(ctx, archive, options);
+    await restoreDryRun(ctx, archive, options, jsonOnly);
+    return;
+  }
+
+  if (jsonOnly) {
+    let caught: unknown;
+    await withOutputSink(() => {}, async () => {
+      try {
+        await guarded(ctx, "restore", args, () => restoreArchive(ctx, archive!, options));
+      } catch (error) {
+        caught = error;
+      }
+    });
+    if (caught !== undefined) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      emit(`${JSON.stringify({ ok: false, changed: true, archive, problems: [message] }, null, 2)}\n`);
+      throw caught;
+    }
+    emit(`${JSON.stringify({ ok: true, changed: true, archive, freshIdentity: options.freshIdentity === true, started: options.noStart !== true }, null, 2)}\n`);
     return;
   }
 

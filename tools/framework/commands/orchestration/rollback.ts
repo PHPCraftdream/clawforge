@@ -14,7 +14,7 @@
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, die } from "#src/core/io/log.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentName, deploymentDir } from "#src/runtime/deployment.ts";
 import { Journal, readOperation, latestRollbackable, newOperationId } from "#src/service/operations.ts";
@@ -42,7 +42,13 @@ export const ROLLBACK_ARGUMENTS: CommandArgument[] = [
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
+  { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag" },
 ];
+
+/** Whether argv requests --dry-run — same shape as restore's own isRestoreDryRun. */
+export function isRollbackDryRun(args: readonly string[]): boolean {
+  return parseDeclaredArgs(ROLLBACK_ARGUMENTS, args)["dry-run"] === true;
+}
 
 /** The operation to undo, and why that one. Exported for the checks: choosing the wrong
  *  operation is the failure that matters here, and it is worth asserting without a target. */
@@ -73,6 +79,7 @@ export async function operationToRollback(ctx: Context, wanted?: string): Promis
 interface RollbackOptions {
   readonly previousSet: boolean;
   readonly jsonOnly: boolean;
+  readonly dryRun: boolean;
   readonly breakLock: boolean;
   readonly breakForeignLockHost?: string;
   readonly restartAfter: boolean;
@@ -89,6 +96,7 @@ export function parseRollbackArgs(args: string[]): RollbackOptions {
   const parsed = parseDeclaredArgs(ROLLBACK_ARGUMENTS, args);
   const previousSet = parsed["previous-set"] === true;
   const jsonOnly = parsed.json === true;
+  const dryRun = parsed["dry-run"] === true;
   const breakLock = parsed["break-lock"] === true;
   const breakForeignLockHost = parseBreakForeignLockHost(args);
   const restartAfter = parsed["no-restart"] !== true;
@@ -106,7 +114,70 @@ export function parseRollbackArgs(args: string[]): RollbackOptions {
   if (jsonOnly) applyArgs.push("--json");
   if (breakLock) applyArgs.push("--break-lock");
   if (breakForeignLockHost !== undefined) applyArgs.push("--break-foreign-lock", breakForeignLockHost);
-  return { previousSet, jsonOnly, breakLock, breakForeignLockHost, restartAfter, operation, applyArgs };
+  return { previousSet, jsonOnly, dryRun, breakLock, breakForeignLockHost, restartAfter, operation, applyArgs };
+}
+
+/** `--dry-run`: names the operation/snapshot (or, with --previous-set, the previous set's
+ *  artifact) a real rollback would use and whether it is actually usable, plus whether a
+ *  restart would follow — nothing is read from the target beyond an existence check, nothing
+ *  is written, and no lock is taken. Does not cover the step-by-step plan --previous-set
+ *  would run through ./clawforge apply — see ./clawforge plan --set <artifact> for that. */
+async function rollbackDryRun(ctx: Context, options: RollbackOptions): Promise<void> {
+  if (options.previousSet) {
+    const { installed, previous, artifact } = await resolvePreviousSetArtifact(ctx);
+    let problem: string | undefined;
+    try {
+      await withUnpackedArtifact(artifact, async (_staging, verified) => {
+        if (verified.id !== previous.id) { problem = "the rollback artifact does not match the recorded previous set"; return; }
+        await refuseRuntimeMismatch(ctx, verified);
+      });
+    } catch (error) {
+      problem = error instanceof Error ? error.message : String(error);
+    }
+    const report = {
+      ok: problem === undefined,
+      changed: false,
+      dryRun: true,
+      mode: "previous-set" as const,
+      from: `${installed.name} (${installed.id})`,
+      to: `${previous.name} (${previous.id})`,
+      artifact,
+      wouldRestart: true,
+      problems: problem === undefined ? [] : [problem],
+    };
+    if (options.jsonOnly || isCaptured()) {
+      emit(`${JSON.stringify(report, null, 2)}\n`);
+      return;
+    }
+    log(`rollback --dry-run: would reinstall "${previous.name}" (${previous.id}) over "${installed.name}" (${installed.id})`);
+    info(`artifact: ${artifact}`);
+    info("reversed together: prompts, MCP server registrations, schedules, gateway settings");
+    if (problem !== undefined) warn(problem);
+    info("does not cover: the step-by-step plan ./clawforge apply would run for it — see ./clawforge plan --set <artifact>");
+    return;
+  }
+
+  const target = await operationToRollback(ctx, options.operation);
+  const snapshot = target.configSnapshot!;
+  const exists = await ctx.transport.exists(snapshot);
+  const report = {
+    ok: exists,
+    changed: false,
+    dryRun: true,
+    mode: "config-snapshot" as const,
+    operation: target.id,
+    snapshot,
+    wouldRestart: options.restartAfter,
+    problems: exists ? [] : [`the snapshot for operation "${target.id}" is gone (${snapshot})`],
+  };
+  if (options.jsonOnly || isCaptured()) {
+    emit(`${JSON.stringify(report, null, 2)}\n`);
+    return;
+  }
+  log(`rollback --dry-run: would put back the configuration from before ${target.id}`);
+  info(`snapshot: ${snapshot}${exists ? "" : " (missing!)"}`);
+  info(`restart afterwards: ${options.restartAfter}`);
+  if (!exists) warn(`a real rollback of ${target.id} would refuse — the snapshot is gone`);
 }
 
 /** The recorded previous set and the artifact that installs it, or a refusal when either is
@@ -270,6 +341,7 @@ async function restoreConfigBeforeCurrentSet(ctx: Context, installed: InstalledS
 
 export async function rollback(ctx: Context, args: string[]): Promise<void> {
   const options = parseRollbackArgs(args);
+  if (options.dryRun) return rollbackDryRun(ctx, options);
   if (options.previousSet) return rollbackSet(ctx, options);
 
   const target = await operationToRollback(ctx, options.operation);

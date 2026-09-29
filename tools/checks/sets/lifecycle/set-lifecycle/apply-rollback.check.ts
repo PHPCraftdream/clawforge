@@ -48,14 +48,25 @@ try {
   assert.equal(second.error, undefined, second.error?.message);
   assert.equal((await readInstalledSet(ctx))?.previous?.id, built.id);
 
-  // Rollback must reject its complete argv before reading or changing the instance. In
-  // particular, --dry-run is not a rollback option, and a flag after --operation is not an
-  // operation id. The live config, installed marker, journals and lock must all stay put.
+  // --previous-set --dry-run is now a real, supported preview (rollback's own --dry-run):
+  // it must report on the previous-set artifact and touch nothing, same discipline as the
+  // refusals right below it.
+  {
+    const beforeFiles = JSON.stringify([...files]);
+    const beforeInstalled = JSON.stringify(await readInstalledSet(ctx));
+    const preview = await fixture.captured(() => rollback(ctx, ["--previous-set", "--dry-run", "--json"]));
+    assert.equal(preview.error, undefined, preview.error?.message);
+    assert.equal(JSON.stringify([...files]), beforeFiles, "rollback --previous-set --dry-run must not write files");
+    assert.equal(JSON.stringify(await readInstalledSet(ctx)), beforeInstalled, "rollback --previous-set --dry-run must preserve the installed marker");
+  }
+
+  // Rollback must reject the rest of its invalid argv before reading or changing the
+  // instance: a flag after --operation is not an operation id, and an unknown flag is
+  // refused outright. The live config, installed marker, journals and lock must all stay put.
   {
     const beforeFiles = JSON.stringify([...files]);
     const beforeInstalled = JSON.stringify(await readInstalledSet(ctx));
     const refused = [
-      ["--previous-set", "--dry-run", "--json"],
       ["--previous-set", "--operation", "--no-restart"],
       ["--previous-set", "--json", "--unknown"],
     ];

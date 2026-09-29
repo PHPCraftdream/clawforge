@@ -107,6 +107,19 @@ All notable changes to `@clawforge/framework` will be documented here.
   tool(s) missing and how to fix it (`TARGET_NOT_GNU`, `service/inspection.ts`). One
   `ok`/`WARN`/`FAIL` line per prerequisite, exit 0 only when nothing failed; no lock is taken
   and nothing is created either way.
+* `--json` on `smoke`, `upgrade`, `restore`, `deploy`, `bootstrap`, `apply-config`, `push`,
+  `pull`, `configure-provider`, `provision-agent` and `recover-env` — the same emit-on-stdout
+  mechanism `status`/`lock`/`verify`/`rollback` already use, a minimal `{ok, changed, ...}`
+  outcome per command, documented on each command's own `--json`/`--help`. `--dry-run` on
+  `push` (reuses restore's own planner: what would be replaced, what the archive holds,
+  whether a secrets sidecar would be installed), `rollback` (which snapshot/operation or
+  previous-set artifact, whether a restart would follow), `deploy` (the same read-only
+  reachability check a real deploy runs first, then what would sync and whether it would
+  bootstrap — never prepares/marks the remote root, since that is itself a write),
+  `recipe install`/`remove` (refusals, ports and stack state) and `backup` (the archive name,
+  excludes, and whether the gateway/recipe stacks would stop). A new
+  `tools/checks/completeness/flags-matrix.check.ts` pins every command's `--json`/`--dry-run`
+  position (yes, or no with a one-line reason) against its live declaration.
 
 ### Changed
 

@@ -9,6 +9,7 @@
 // shape while inspection.ts owns the vocabulary.
 
 import { log, info } from "../../../core/io/log.ts";
+import { emit } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
 import { TransportUnreachableError } from "../../../runtime/transport/transport.ts";
 import { unreachableProblem } from "../../../service/inspection.ts";
@@ -29,8 +30,8 @@ function renderLine(result: PrereqResult): void {
  *  uses (service/inspection.ts) rather than propagating as a stack trace — nothing below this
  *  point can be trusted once the transport itself has failed, the same reasoning
  *  gatherInspection's own top-level catch already documents. */
-export async function bootstrapCheck(ctx: Context): Promise<void> {
-  log(`bootstrap --check: ${ctx.settings.dataDir}`);
+export async function bootstrapCheck(ctx: Context, jsonOnly = false): Promise<void> {
+  if (!jsonOnly) log(`bootstrap --check: ${ctx.settings.dataDir}`);
 
   let results: PrereqResult[];
   try {
@@ -38,13 +39,23 @@ export async function bootstrapCheck(ctx: Context): Promise<void> {
   } catch (error) {
     if (!(error instanceof TransportUnreachableError)) throw error;
     const found = unreachableProblem(error);
-    renderLine({ status: "fail", what: found.detail, next: found.nextAction });
+    if (jsonOnly) {
+      emit(`${JSON.stringify({ ok: false, changed: false, results: [{ status: "fail", what: found.detail, next: found.nextAction }] }, null, 2)}\n`);
+    } else {
+      renderLine({ status: "fail", what: found.detail, next: found.nextAction });
+    }
     throw new Error(`${found.code}: could not reach the target to check prerequisites`);
+  }
+
+  const failed = results.filter((result) => result.status === "fail");
+  if (jsonOnly) {
+    emit(`${JSON.stringify({ ok: failed.length === 0, changed: false, results }, null, 2)}\n`);
+    if (failed.length > 0) throw new Error(`${failed.length} prerequisite(s) failed: ${failed.map((result) => result.what).join("; ")}`);
+    return;
   }
 
   for (const result of results) renderLine(result);
 
-  const failed = results.filter((result) => result.status === "fail");
   if (failed.length === 0) {
     log("no blocking prerequisites — ./clawforge bootstrap should proceed without a sudo password prompt");
     return;

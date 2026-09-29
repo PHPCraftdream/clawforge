@@ -243,7 +243,7 @@ try {
     };
     check("the generated tool schema exposes adopt-runtime", schema.properties["adopt-runtime"]?.type, "boolean");
     check("the generated tool schema still exposes dry-run", schema.properties["dry-run"]?.type, "boolean");
-    check("the tool schema exposes nothing else", Object.keys(schema.properties).sort(), ["adopt-runtime", "dry-run"]);
+    check("the tool schema exposes nothing else", Object.keys(schema.properties).sort(), ["adopt-runtime", "dry-run", "json"]);
     check("the schema carries the flag's meaning to the client", (schema.properties["adopt-runtime"]?.description ?? "").includes("authoritative"), true);
     check("validate accepts adopt-runtime", validate(recoverDeclaration, { "adopt-runtime": true }), []);
     check("validate accepts both flags together", validate(recoverDeclaration, { "dry-run": true, "adopt-runtime": true }), []);

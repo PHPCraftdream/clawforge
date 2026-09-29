@@ -37,6 +37,7 @@
 
 import { access, readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { emit } from "#src/core/io/output.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { envFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
@@ -57,6 +58,7 @@ export const RECOVER_ENV_ARGUMENTS: CommandArgument[] = [
     description: "Take the running container as authoritative: merge its facts over the file's existing values too, not just fill the names it is missing",
     kind: "flag",
   },
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
 /** Reports the facts Docker's own answer did not carry — left as they are, never guessed.
@@ -84,9 +86,9 @@ function reportDirectionChoice(diverged: ConnectionFactDiff[]): void {
 /** The one argument grammar, parsed once for both entry points: a dry run names what would
  *  change and writes nothing; --adopt-runtime takes the container as the authoritative
  *  side; anything else is refused rather than guessed at. */
-function parseRecoveryArgs(args: string[]): { dryRun: boolean; adoptRuntime: boolean } {
+function parseRecoveryArgs(args: string[]): { dryRun: boolean; adoptRuntime: boolean; jsonOnly: boolean } {
   const parsed = parseDeclaredArgs(RECOVER_ENV_ARGUMENTS, args);
-  return { dryRun: parsed["dry-run"] === true, adoptRuntime: parsed["adopt-runtime"] === true };
+  return { dryRun: parsed["dry-run"] === true, adoptRuntime: parsed["adopt-runtime"] === true, jsonOnly: parsed.json === true };
 }
 
 /** A wholly absent .env is the command's one stated limit: reaching the target to inspect
@@ -118,6 +120,7 @@ async function mergeRecoveredFacts(
   raw: string,
   dryRun: boolean,
   adoptRuntime: boolean,
+  jsonOnly = false,
 ): Promise<void> {
   const current = parseEnv(raw);
 
@@ -130,12 +133,34 @@ async function mergeRecoveredFacts(
   const unrecoverable = unrecoverableConnectionFacts(facts);
 
   if (diffs.length === 0) {
+    if (jsonOnly) {
+      emit(`${JSON.stringify({ ok: true, changed: false, path, written: [], diverged: [], unrecoverable: unrecoverable.map((fact) => fact.name) }, null, 2)}\n`);
+      return;
+    }
     log(`nothing to recover — every connection fact that could be recovered already matches the running instance`);
     reportUnrecoverable(unrecoverable);
     return;
   }
 
   if (dryRun) {
+    if (jsonOnly) {
+      emit(
+        `${JSON.stringify(
+          {
+            ok: true,
+            changed: false,
+            dryRun: true,
+            path,
+            wouldWrite: writable.map((fact) => ({ name: fact.name, value: fact.value })),
+            diverged: diverged.map((fact) => fact.name),
+            unrecoverable: unrecoverable.map((fact) => fact.name),
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return;
+    }
     log(`dry run — ${writable.length} of ${CONNECTION_FACTS.length} connection fact(s) would be written to ${path}`);
     for (const fact of writable) info(`${fact.name}=${fact.value}`);
     if (!adoptRuntime) reportDirectionChoice(diverged);
@@ -152,14 +177,33 @@ async function mergeRecoveredFacts(
     // untouched and are never read beyond that.
     await replacePrivateFile(path, content);
 
-    log(`recovered ${writable.length} of ${CONNECTION_FACTS.length} connection fact(s) into ${path}`);
-    for (const fact of writable) info(`${fact.name}=${fact.value}`);
-    // The facts just written were read FROM the running container, so it already operates
-    // them — and a restart keeps the container with its once-interpolated environment, so
-    // it could not deliver them even if it had to. What reads this file fresh is the next
-    // recreation (compose interpolates .env at container creation) and this tooling's own
-    // context, which re-derives from it.
-    info("the running container already operates these facts — nothing needs restarting");
+    if (!jsonOnly) {
+      log(`recovered ${writable.length} of ${CONNECTION_FACTS.length} connection fact(s) into ${path}`);
+      for (const fact of writable) info(`${fact.name}=${fact.value}`);
+      // The facts just written were read FROM the running container, so it already operates
+      // them — and a restart keeps the container with its once-interpolated environment, so
+      // it could not deliver them even if it had to. What reads this file fresh is the next
+      // recreation (compose interpolates .env at container creation) and this tooling's own
+      // context, which re-derives from it.
+      info("the running container already operates these facts — nothing needs restarting");
+    }
+  }
+  if (jsonOnly) {
+    emit(
+      `${JSON.stringify(
+        {
+          ok: true,
+          changed: writable.length > 0,
+          path,
+          written: writable.map((fact) => fact.name),
+          diverged: diverged.map((fact) => fact.name),
+          unrecoverable: unrecoverable.map((fact) => fact.name),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return;
   }
   if (!adoptRuntime) reportDirectionChoice(diverged);
   reportUnrecoverable(unrecoverable);
@@ -169,7 +213,7 @@ async function mergeRecoveredFacts(
  *  established ones — a runtime that cannot introspect, and a container that is not
  *  running. */
 export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
-  const { dryRun, adoptRuntime } = parseRecoveryArgs(args);
+  const { dryRun, adoptRuntime, jsonOnly } = parseRecoveryArgs(args);
 
   const path = envFile();
   const raw = await readEnvFile(path);
@@ -187,7 +231,7 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
     );
   }
 
-  await mergeRecoveredFacts(facts, path, raw, dryRun, adoptRuntime);
+  await mergeRecoveredFacts(facts, path, raw, dryRun, adoptRuntime, jsonOnly);
 }
 
 export interface RecoveryBootstrapOptions {
@@ -206,7 +250,7 @@ export interface RecoveryBootstrapOptions {
  *  file is read here rather than inherited from a Context, so the run merges against the
  *  file as it is on disk, and the facts land in it before any later context is built. */
 export async function recoverEnvBeforeContext(args: string[], options: RecoveryBootstrapOptions = {}): Promise<void> {
-  const { dryRun, adoptRuntime } = parseRecoveryArgs(args);
+  const { dryRun, adoptRuntime, jsonOnly } = parseRecoveryArgs(args);
 
   const path = envFile();
   const raw = await readEnvFile(path);
@@ -226,5 +270,5 @@ export async function recoverEnvBeforeContext(args: string[], options: RecoveryB
     );
   }
 
-  await mergeRecoveredFacts(facts, path, raw, dryRun, adoptRuntime);
+  await mergeRecoveredFacts(facts, path, raw, dryRun, adoptRuntime, jsonOnly);
 }

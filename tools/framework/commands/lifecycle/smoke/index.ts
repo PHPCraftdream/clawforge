@@ -26,6 +26,7 @@
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
 import { log, info, warn } from "#src/core/io/log.ts";
+import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { CouldNotCheck, NotChecked } from "../../check-outcome.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
@@ -44,6 +45,7 @@ export type { Check, SmokeResult } from "./verdict.ts";
 /** Drives both smoke's own parser and its openclawCommands declaration. */
 export const SMOKE_ARGUMENTS: CommandArgument[] = [
   { name: "quick", description: "Skip the slow round-trip check", kind: "flag" },
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
 // Hard ceiling on smoke's agent round-trip, enforced inside the container.
@@ -253,8 +255,39 @@ export function report(summary: SmokeSummary, quick: boolean): void {
 
 export async function smoke(ctx: Context, args: string[]): Promise<void> {
   await requireBootstrapped(ctx);
-  const quick = parseDeclaredArgs(SMOKE_ARGUMENTS, args).quick === true;
+  const parsed = parseDeclaredArgs(SMOKE_ARGUMENTS, args);
+  const quick = parsed.quick === true;
+  const jsonOnly = parsed.json === true;
   const selected = quick ? checks.filter((check) => check.name !== ROUND_TRIP_CHECK) : checks;
+
+  if (jsonOnly) {
+    let summary: SmokeSummary | undefined;
+    await withOutputSink(() => {}, async () => {
+      summary = await runSmokeSuite(ctx, selected, () => {});
+    });
+    const found = summary!;
+    const ok = found.failed === 0 && found.couldNotCheck === 0;
+    emit(
+      `${JSON.stringify(
+        {
+          ok,
+          changed: false,
+          quick,
+          passed: found.passed,
+          failed: found.failed,
+          notChecked: found.notChecked,
+          couldNotCheck: found.couldNotCheck,
+          results: found.results,
+          problems: found.results.filter((result) => result.status === "failed" || result.status === "could-not-check")
+            .map((result) => `${result.name}: ${result.detail ?? ""}`),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    if (!ok) throw new Error(`${found.failed} smoke check(s) failed, ${found.couldNotCheck} could not be checked`);
+    return;
+  }
 
   log(`smoke run against ${ctx.settings.serviceUrl}`);
 

@@ -363,6 +363,70 @@ async function runDiagnoseAction(ctx: Context, name: string, rest: string[]): Pr
   info(logs);
 }
 
+/** `--dry-run`: the same refusals a real install checks (disabled without --force-disabled,
+ *  missing declared variables) plus whether the stack is already running — nothing is built,
+ *  started or written. Does not cover: build output, compose's own readiness probing, or the
+ *  prepare/afterStart hooks' side effects — those only run for a real install. */
+async function runInstallDryRun(ctx: Context, name: string, rest: string[]): Promise<void> {
+  const { recipe: spec, stack } = await stackFor(ctx, name);
+  const refusals: string[] = [];
+
+  if (!spec.enabled && !rest.includes("--force-disabled")) {
+    refusals.push(`recipe is disabled${spec.disabledReason === undefined ? "" : `: ${spec.disabledReason}`} — needs --force-disabled`);
+  }
+  const declared = Object.keys(spec.variables ?? {});
+  const absent = declared.filter((variable) => (ctx.settings.env[variable] ?? "") === "");
+  for (const variable of absent) refusals.push(`missing variable ${variable} — ${spec.variables?.[variable] ?? "required by the recipe"}`);
+
+  const running = await stack.isRunning();
+  const report = {
+    ok: refusals.length === 0,
+    changed: false,
+    dryRun: true,
+    recipe: spec.name,
+    alreadyRunning: running,
+    wouldBuild: true,
+    ports: spec.ports ?? [],
+    readiness: spec.readiness ?? null,
+    refusals,
+  };
+
+  if (isCaptured()) {
+    emit(`${JSON.stringify(report)}\n`);
+    return;
+  }
+  log(`recipe install --dry-run: ${spec.name}`);
+  info(`already running: ${running}`);
+  info(spec.readiness === undefined
+    ? "would build from source and start (implicit readiness check)"
+    : `would build from source, start, and wait up to ${spec.readiness.timeoutMs ?? DEFAULT_DECLARED_READINESS_TIMEOUT_MS}ms for readiness`);
+  for (const port of spec.ports ?? []) info(`port ${port.host} -> ${port.container}${port.description ? ` (${port.description})` : ""}`);
+  if (refusals.length > 0) {
+    for (const refusal of refusals) warn(refusal);
+    die(`recipe install --dry-run found ${refusals.length} refusal(s) a real install would stop on`);
+  }
+  info("does not cover: build output, compose's own readiness probing, or the prepare/afterStart hooks' side effects");
+}
+
+/** `--dry-run`: whether the stack is running and what --volumes would additionally remove —
+ *  nothing is stopped or removed. Does not cover whether the recipe's own containers hold
+ *  state outside its declared compose volumes. */
+async function runRemoveDryRun(ctx: Context, name: string, rest: string[]): Promise<void> {
+  const { stack } = await stackFor(ctx, name);
+  const removeVolumes = rest.includes("--volumes");
+  const running = await stack.isRunning();
+  const report = { ok: true, changed: false, dryRun: true, recipe: name, running, wouldRemoveVolumes: removeVolumes };
+
+  if (isCaptured()) {
+    emit(`${JSON.stringify(report)}\n`);
+    return;
+  }
+  log(`recipe remove --dry-run: ${name}`);
+  info(`running: ${running}`);
+  info(removeVolumes ? "would remove the stack and its volumes" : "would remove the stack (volumes kept — pass --volumes to include them)");
+  info("does not cover: state the recipe's containers hold outside its declared compose volumes");
+}
+
 async function runInstallAction(ctx: Context, name: string, rest: string[]): Promise<void> {
   const { recipe: spec, stack } = await stackFor(ctx, name);
 
@@ -461,8 +525,8 @@ export async function runRecipeAction(ctx: Context, action: string, name: string
     case "verify": return runVerifyAction(ctx, name);
     case "onboard": return runOnboardAction(ctx, name);
     case "diagnose": return runDiagnoseAction(ctx, name, rest);
-    case "install": return runInstallAction(ctx, name, rest);
-    case "remove": return runRemoveAction(ctx, name, rest);
+    case "install": return rest.includes("--dry-run") ? runInstallDryRun(ctx, name, rest) : runInstallAction(ctx, name, rest);
+    case "remove": return rest.includes("--dry-run") ? runRemoveDryRun(ctx, name, rest) : runRemoveAction(ctx, name, rest);
     case "status": return runStatusAction(ctx, name);
     case "logs": return runLogsAction(ctx, name, rest);
     default:

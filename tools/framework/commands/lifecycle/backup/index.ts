@@ -14,6 +14,7 @@
 // actions, not a replacement for it.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { parseRetention } from "#src/core/env.ts";
 import { randomUUID } from "node:crypto";
@@ -36,6 +37,7 @@ import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-argument
 import { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
 import { backupPruneReplaced, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
 import { backupInstall, backupUninstall, BACKUP_INSTALL_ARGUMENTS } from "./install.ts";
+import { buildBackupPlan, printBackupPlan } from "./plan.ts";
 
 export { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
 export { backupPruneReplaced, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
@@ -53,6 +55,8 @@ export function backupActionIsReadOnly(argv: string[]): boolean {
   const action = argv[0];
   if (action === "list") return true;
   if (action === "prune-replaced" || action === "install" || action === "uninstall") return !argv.includes("--apply");
+  // A bare create with --dry-run touches nothing either — same reasoning as restore's own.
+  if (action === undefined || !BACKUP_ACTIONS.includes(action as (typeof BACKUP_ACTIONS)[number])) return argv.includes("--dry-run");
   return false;
 }
 
@@ -67,6 +71,7 @@ export const BACKUP_ARGUMENTS: CommandArgument[] = [
   { name: "share", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
   { name: "migrate", description: "Migrate profile: no provider keys (same as --profile migrate)", kind: "flag" },
   { name: "with-secrets", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
+  { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag" },
 ];
 
 /** Keeps the first declaration of each argument name — `--apply`/`--break-lock`/
@@ -644,6 +649,16 @@ export async function backup(ctx: Context, args: string[]): Promise<void> {
       options.profile = value;
       index += 1;
     }
+  }
+
+  if (parsed["dry-run"] === true) {
+    const plan = await buildBackupPlan(ctx, options);
+    if (isCaptured()) {
+      emit(`${JSON.stringify({ ok: plan.refusals.length === 0, changed: false, dryRun: true, ...plan }, null, 2)}\n`);
+      return;
+    }
+    printBackupPlan(plan);
+    return;
   }
 
   // Not repeated here: createBackup() already announced the path in "backup done: <path>".

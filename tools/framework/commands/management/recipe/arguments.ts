@@ -19,6 +19,7 @@ export const RECIPE_FLAG_ARGUMENTS: CommandArgument[] = [
   { name: "tail", description: "With logs/diagnose: lines to return per service", kind: "option", valueName: "n" },
   { name: "force-disabled", description: "With install: build a recipe marked disabled", kind: "flag" },
   { name: "with-hooks", description: "With new: add commented prepare.ts/verify.ts stubs", kind: "flag" },
+  { name: "dry-run", description: "With install/remove: show what would happen", kind: "flag", actions: ["install", "remove"] },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
@@ -38,8 +39,8 @@ const RECIPE_ACTION_GRAMMAR: Record<string, { positionals: number; flags: readon
   verify: { positionals: 1, flags: ["break-lock", "break-foreign-lock"] },
   onboard: { positionals: 1, flags: ["break-lock", "break-foreign-lock"] },
   diagnose: { positionals: 1, flags: ["tail", "break-lock", "break-foreign-lock"] },
-  install: { positionals: 1, flags: ["force-disabled", "break-lock", "break-foreign-lock"] },
-  remove: { positionals: 1, flags: ["volumes", "break-lock", "break-foreign-lock"] },
+  install: { positionals: 1, flags: ["force-disabled", "dry-run", "break-lock", "break-foreign-lock"] },
+  remove: { positionals: 1, flags: ["volumes", "dry-run", "break-lock", "break-foreign-lock"] },
   status: { positionals: 1, flags: [] },
   logs: { positionals: 1, flags: ["tail"] },
 };

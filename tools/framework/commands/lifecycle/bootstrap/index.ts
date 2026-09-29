@@ -16,6 +16,7 @@
 
 import JSON5 from "json5";
 import { log, info, warn } from "#src/core/io/log.ts";
+import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
 import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/datadir.ts";
@@ -37,6 +38,7 @@ export const BOOTSTRAP_ARGUMENTS: CommandArgument[] = [
   { name: "check", description: "Read-only prerequisite report — no lock, no mutation", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
 /** After a fresh pull, this deployment's OWN OPENCLAW_IMAGE is repointed from the moving tag
@@ -70,17 +72,38 @@ async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
 
 export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
   const parsed = parseDeclaredArgs(BOOTSTRAP_ARGUMENTS, args);
+  const jsonOnly = parsed.json === true;
 
   // Read-only, and returned before anything below touches a lock or the target: --check
   // answers "would this bootstrap need something I have not prepared yet" without ever
   // creating ensureLockHome's own directory, let alone taking the instance lock guarded()
   // below does. See bootstrap/check.ts.
   if (parsed.check === true) {
-    await bootstrapCheck(ctx);
+    await bootstrapCheck(ctx, jsonOnly);
     return;
   }
 
   const noPull = parsed["no-pull"] === true;
+
+  if (jsonOnly) {
+    let outcome: BootstrapOutcome | undefined;
+    let caught: unknown;
+    await withOutputSink(() => {}, async () => {
+      try {
+        await ensureLockHome(ctx);
+        outcome = await guarded(ctx, "bootstrap", args, () => bootstrapLocked(ctx, noPull));
+      } catch (error) {
+        caught = error;
+      }
+    });
+    if (caught !== undefined) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      emit(`${JSON.stringify({ ok: false, changed: true, problems: [message] }, null, 2)}\n`);
+      throw caught;
+    }
+    emit(`${JSON.stringify({ ok: true, changed: true, ...outcome }, null, 2)}\n`);
+    return;
+  }
 
   // Structurally ahead of the lock, not inside it: the lock lives in a directory of its own
   // (instance-lock.ts's lockHome), and on a fresh host that directory's PARENT is root:root
@@ -105,10 +128,19 @@ export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
   // guarded() is nesting-safe (instance-lock.ts), so the inner applyConfig()/
   // configureProvider() calls below just run inside this one outer hold instead of each
   // acquiring their own.
-  return guarded(ctx, "bootstrap", args, () => bootstrapLocked(ctx, noPull));
+  await guarded(ctx, "bootstrap", args, () => bootstrapLocked(ctx, noPull));
 }
 
-async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
+/** What bootstrap's own --json emits — assembled from the same facts the narration path
+ *  prints, not a second read of anything. */
+interface BootstrapOutcome {
+  serviceUrl: string;
+  dataDir: string;
+  image?: string;
+  providerConfigured: boolean;
+}
+
+async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<BootstrapOutcome> {
   // .env and the token exist before this runs: the CLI prepares them for commands that
   // declare preparesEnvironment, so ctx already carries the finished settings.
   const fresh = ctx.settings;
@@ -180,12 +212,16 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<void> {
   // happen to be set — doctor would otherwise say "nothing blocking" over an instance that
   // cannot actually do its one job. Best effort: an unreadable or unparseable config
   // here is doctor's finding to make, not a reason to fail a bootstrap that just succeeded.
+  let providerConfigured = false;
   try {
     const liveConfig = JSON5.parse(await live.transport.readFile(`${fresh.dataDir}/config/openclaw.json`)) as unknown;
-    if (collectConfiguredProviders(liveConfig).length === 0) {
+    providerConfigured = collectConfiguredProviders(liveConfig).length > 0;
+    if (!providerConfigured) {
       info("provider: none configured yet — an agent cannot answer until one is: ./clawforge configure-provider");
     }
   } catch {
     // Doctor's own read of the same file reports a broken config; this is only a bonus hint.
   }
+
+  return { serviceUrl: fresh.serviceUrl, dataDir: fresh.dataDir, image: digest, providerConfigured };
 }

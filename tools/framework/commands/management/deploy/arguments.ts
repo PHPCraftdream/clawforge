@@ -22,7 +22,14 @@ export const DEPLOY_ARGUMENTS: CommandArgument[] = [
       "replace there before marking it as this deployment's",
     kind: "flag",
   },
+  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag" },
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
+
+/** Whether argv requests --dry-run — same shape as restore's own isRestoreDryRun. */
+export function isDeployDryRun(args: readonly string[]): boolean {
+  return parseDeclaredArgs(DEPLOY_ARGUMENTS, args)["dry-run"] === true;
+}
 
 /** The tree this command mirrors, refusing rather than guessing when there is none.
  *
@@ -82,6 +89,8 @@ export interface DeployPlan {
   remotePathNote: string | undefined;
   runBootstrap: boolean;
   adopt: boolean;
+  dryRun: boolean;
+  jsonOnly: boolean;
   name: string;
   remoteApp: string;
   remoteRecipes: string;
@@ -96,6 +105,8 @@ export function resolveDeployArguments(ctx: Context, args: string[]): DeployPlan
   let remotePath = requestedPath === undefined ? ctx.settings.remotePath : requestedPath;
   const runBootstrap = parsed["no-bootstrap"] !== true;
   const adopt = parsed.adopt === true;
+  const dryRun = parsed["dry-run"] === true;
+  const jsonOnly = parsed.json === true;
 
   if (target === undefined) die("usage: ./clawforge deploy user@host [--path <dir>] [--adopt] [--no-bootstrap]");
 
@@ -117,5 +128,5 @@ export function resolveDeployArguments(ctx: Context, args: string[]): DeployPlan
   // path on another host without risking an unrelated remote tree.
   const remoteRecipes = remoteRecipesPath(remoteApp);
 
-  return { target, remotePath, remotePathNote, runBootstrap, adopt, name, remoteApp, remoteRecipes };
+  return { target, remotePath, remotePathNote, runBootstrap, adopt, dryRun, jsonOnly, name, remoteApp, remoteRecipes };
 }

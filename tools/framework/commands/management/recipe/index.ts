@@ -45,8 +45,14 @@ export const RECIPE_DEFAULT_ACTION = "list";
  *  MCP gate and the lock cannot disagree about a future action. */
 const RECIPE_READ_ONLY_ACTIONS: readonly string[] = [RECIPE_DEFAULT_ACTION, "status", "logs"];
 
+/** install/remove --dry-run touches nothing on the target either, so it reads as read-only
+ *  the same way restore/rollback/deploy's own --dry-run does. */
+const RECIPE_DRY_RUNNABLE_ACTIONS: readonly string[] = ["install", "remove"];
+
 export function recipeActionIsReadOnly(argv: string[]): boolean {
-  return RECIPE_READ_ONLY_ACTIONS.includes(argv[0] ?? RECIPE_DEFAULT_ACTION);
+  const action = argv[0] ?? RECIPE_DEFAULT_ACTION;
+  if (RECIPE_READ_ONLY_ACTIONS.includes(action)) return true;
+  return RECIPE_DRY_RUNNABLE_ACTIONS.includes(action) && argv.includes("--dry-run");
 }
 
 function describe(recipe: Recipe): void {
@@ -184,7 +190,7 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
   // tree is the interleaving the lock exists to prevent. A caller that already holds the
   // lock (an orchestration step running this as its own) rides it instead of refusing —
   // guarded() is the nesting-safe shape every other mutating command uses (instance-lock.ts).
-  if (action !== "import" && action !== "new" && !recipeActionIsReadOnly([action])) {
+  if (action !== "import" && action !== "new" && !recipeActionIsReadOnly(args)) {
     return guarded(ctx, `recipe ${action} ${name}`, args, () => runRecipeAction(ctx, action, name, rest));
   }
   return runRecipeAction(ctx, action, name, rest);

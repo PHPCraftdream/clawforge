@@ -84,10 +84,11 @@ for (const [name, command] of Object.entries(openclawCommands)) {
 }
 // Spot-check the two concrete cases the task calls out: an unconditionally destructive
 // command still reads "(destructive)" plainly, a conditionally destructive one does not.
-check("push (unconditionally destructive) reads plain (destructive)", destructiveMarker(openclawCommands.push!), " (destructive)");
+check("cli (unconditionally destructive) reads plain (destructive)", destructiveMarker(openclawCommands.cli!), " (destructive)");
 check("secrets (destructive only with --apply/--init-store/--dump) is not flatly destructive", destructiveMarker(openclawCommands.secrets!), " (destructive for some actions)");
-// restore --dry-run touches nothing: readOnlyWhen makes it conditionally destructive too,
-// same as apply's own --dry-run.
+// restore/push --dry-run touch nothing: readOnlyWhen makes each conditionally destructive
+// too, same as apply's own --dry-run.
 check("restore (destructive except --dry-run) is not flatly destructive either", destructiveMarker(openclawCommands.restore!), " (destructive for some actions)");
+check("push (destructive except --dry-run) is not flatly destructive either", destructiveMarker(openclawCommands.push!), " (destructive for some actions)");
 
 finish("help-groups");

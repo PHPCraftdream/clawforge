@@ -9,7 +9,7 @@ import { inspect, doctor } from "#src/commands/orchestration/inspect/gather.ts";
 import { plan, PLAN_ARGUMENTS } from "#src/commands/orchestration/plan.ts";
 import { apply, isApplyDryRun, APPLY_ARGUMENTS } from "#src/commands/orchestration/apply.ts";
 import { operations, OPERATIONS_ARGUMENTS } from "#src/commands/orchestration/operations.ts";
-import { rollback, ROLLBACK_ARGUMENTS } from "#src/commands/orchestration/rollback.ts";
+import { rollback, ROLLBACK_ARGUMENTS, isRollbackDryRun } from "#src/commands/orchestration/rollback.ts";
 import { accept, ACCEPT_ARGUMENTS } from "#src/commands/orchestration/accept.ts";
 
 export const orchestrationCommands: Record<string, AppCommand> = {
@@ -179,6 +179,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
     run: rollback,
     destructive: true,
     structured: true,
+    readOnlyWhen: isRollbackDryRun,
     details:
       "`./clawforge apply` copies the live configuration aside before its first mutating step. " +
       "This puts that copy back and restarts, because a configuration the instance has not " +

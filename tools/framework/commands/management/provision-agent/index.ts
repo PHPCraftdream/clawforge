@@ -35,6 +35,7 @@
 // "../management/provision-agent/index.ts" (or the equivalent relative depth).
 
 import { log, info, die } from "#src/core/io/log.ts";
+import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
@@ -68,12 +69,14 @@ export const PROVISION_AGENT_ARGUMENTS: CommandArgument[] = [
   { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true },
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
+  { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
 ];
 
 export async function provisionAgent(ctx: Context, args: string[]): Promise<void> {
   const parsed = parseDeclaredArgs(PROVISION_AGENT_ARGUMENTS, args);
   const breakLock = parsed["break-lock"] === true;
   const breakForeignLockHost = parseBreakForeignLockHost(args);
+  const jsonOnly = parsed.json === true;
   const rawName = parsed.recipe as string | undefined;
   if (rawName === undefined) die("usage: ./clawforge provision-agent <recipe>");
   const recipeName = safeName("recipe", rawName);
@@ -123,7 +126,7 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
     if (cronState === "created") {
       await recordOwned(ctx, { kind: "cron-job", name: bundle.config.cronJobName!, recipe: recipeName, setId });
     }
-    reportProvisioned(ctx, bundle, recipeName, mirror, agentCreated, mcpState, cronState);
+    reportProvisioned(ctx, bundle, recipeName, mirror, agentCreated, mcpState, cronState, jsonOnly);
   });
 }
 
@@ -135,7 +138,28 @@ function reportProvisioned(
   agentCreated: boolean,
   mcpState: "created" | "replaced" | "unchanged",
   cronState: "created" | "updated" | "unchanged" | undefined,
+  jsonOnly: boolean,
 ): void {
+  if (jsonOnly) {
+    emit(
+      `${JSON.stringify(
+        {
+          ok: true,
+          changed: true,
+          agentId: bundle.config.agentId,
+          agentCreated,
+          mcpServer: bundle.config.mcpServerName,
+          mcpState,
+          cronJob: bundle.config.cronJobName ?? null,
+          cronState: cronState ?? null,
+          recipeFiles: { written: mirror.written, removed: mirror.removed },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
   log(`agent "${bundle.config.agentId}" provisioned from recipe "${recipeName}"`);
   info(`  agent  ${bundle.config.agentId}          ${agentCreated ? "created" : "already present"}`);
   info(`  mcp    ${bundle.config.mcpServerName}  ${mcpState}`);

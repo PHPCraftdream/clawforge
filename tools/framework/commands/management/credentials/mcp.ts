@@ -10,7 +10,7 @@ import { log, info, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
-import { HelperNotRunning } from "#src/runtime/runtime.ts";
+import { HelperNotRunning, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "../../interface/cli-helper.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
 import type { McpClient } from "#src/integration/mcp/project.ts";
@@ -101,6 +101,12 @@ export async function mcpCreds(ctx: Context, args: string[]): Promise<void> {
   const parsed = parseDeclaredArgs(MCP_CREDS_ARGUMENTS, args);
   const jsonOnly = parsed.json === true;
   const tokenOnly = parsed.token === true;
+
+  // Checked before anything below prints a single byte: this command's whole job is handing
+  // over a live token, and a not-yet-bootstrapped deployment must fail on that fact alone,
+  // never after the token line (which would then hold nothing generated) already went out.
+  await requireBootstrapped(ctx);
+
   const token = ctx.settings.env.OPENCLAW_GATEWAY_TOKEN ?? "";
 
   if (tokenOnly) {

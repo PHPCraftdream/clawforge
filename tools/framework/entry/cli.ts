@@ -4,7 +4,7 @@
 // declares its commands. Adding a command to an application must not require touching any
 // file in framework/ — that is the property this module exists to guarantee.
 
-import { reportError, UserError, log, info } from "../core/io/log.ts";
+import { reportError, UserError, CommandFailedError, log, info } from "../core/io/log.ts";
 import { UnknownArgumentError, preparesEnvironmentFor } from "../core/arguments.ts";
 import { createContext } from "../core/context.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../commands/operate/recover-env/index.ts";
@@ -29,6 +29,15 @@ const DEFAULT_GATE_HELP = [
   "  --app <name>      pick another deployment, before the command (default: the OC_APP one)",
   "  new-app <name>    create a deployment under apps/",
 ];
+
+/** Whether argv asks for this command's own `--help`, scanning only tokens before the first
+ *  bare `--` — the same boundary `host`'s own parser draws (parseHostArgs). A command whose
+ *  whole job is passing argv through to something else (`cli`, `exec`) reaches THAT tool's
+ *  own `--help` by putting it after `--`; anywhere before it, `--help` is ours. */
+export function requestsHelp(args: string[]): boolean {
+  const sep = args.indexOf("--");
+  return (sep === -1 ? args : args.slice(0, sep)).includes("--help");
+}
 
 /** `--opt=value` for a declared option becomes `--opt value`, so every reader of argv — the
  *  declared parser and the few that scan it directly — sees one form. Commands that pass
@@ -99,7 +108,7 @@ export async function runApp(
     return 1;
   }
 
-  if (command.passesThroughHelp !== true && args.includes("--help")) {
+  if (requestsHelp(args)) {
     renderFullCommandHelp(name, command);
     return 0;
   }
@@ -191,6 +200,8 @@ export async function main(
       const fullCommand = (error as { fullCommand?: unknown }).fullCommand;
       if (typeof fullCommand === "string") console.error(`full command: ${fullCommand}`);
     }
-    process.exitCode = 1;
+    // A wrapped command's own exit status (host/exec/cli), already clamped to 1..255; every
+    // other failure keeps the generic 1.
+    process.exitCode = error instanceof CommandFailedError ? error.exitCode : 1;
   }
 }

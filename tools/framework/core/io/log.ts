@@ -99,6 +99,25 @@ export function die(message: string): never {
   throw new UserError(message);
 }
 
+/** A UserError carrying the wrapped command's own exit status, for a caller (host, exec,
+ *  cli) whose whole job is running someone else's process and reporting its outcome as its
+ *  own — clamped to 1..255, the range a real exit code occupies, so a signal-derived negative
+ *  or an out-of-range value never becomes 0 (success) or something node/the shell would not
+ *  reproduce. entry/cli.ts reads exitCode off this instead of the generic UserError 1. */
+export class CommandFailedError extends UserError {
+  readonly exitCode: number;
+  constructor(message: string, exitCode: number) {
+    super(message);
+    this.name = "CommandFailedError";
+    this.exitCode = Math.min(255, Math.max(1, Math.trunc(exitCode) || 1));
+  }
+}
+
+/** die, but the process exits with the wrapped command's own status instead of the generic 1. */
+export function dieWithExitCode(message: string, exitCode: number): never {
+  throw new CommandFailedError(message, exitCode);
+}
+
 export function reportError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   write(`${C.red}error:${C.off} ${maskSecrets(message)}\n`);

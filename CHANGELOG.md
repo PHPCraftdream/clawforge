@@ -350,6 +350,21 @@ All notable changes to `@clawforge/framework` will be documented here.
   command's own argument can say which action(s) it belongs to; the refusal now reads
   `--keep applies to \`prune-replaced\`, not \`list\``, and `backup --help`/its MCP
   description group `--keep`/`--interval`/`--apply` by the action(s) they apply to.
+* `host`/`cli`/`exec`: a non-zero exit from the wrapped command always became the generic
+  process exit 1 ("failed (exit N)" was only the text, never the actual status), so a script
+  branching on `$?` could not tell `false` from `exit 7`. The CLI process now exits with that
+  command's own code (`CommandFailedError`, clamped to 1..255 — a signal-derived negative or
+  an out-of-range value can no longer read as success); the text is unchanged, and over MCP it
+  still carries the exit code in the `isError` result's text.
+* `./clawforge cli --help` went to the container instead of printing this framework's own help
+  (`passesThroughHelp`), which meant a fresh, never-bootstrapped deployment answered "never
+  been bootstrapped" instead of a help screen — `exec --help` and `help cli` were unaffected.
+  `cli --help` now behaves like every other command; put `--help` after a bare `--`
+  (`./clawforge cli -- --help`) to reach OpenClaw's own instead — the same before-the-first-`--`
+  boundary `host`'s own parser already drew (`requestsHelp`, `entry/cli.ts`).
+* `mcp-creds` printed the gateway URL and token, then failed with "never been bootstrapped" —
+  the secret was already on the screen by the time the command gave up. It now runs the same
+  bootstrap check every other guarded command does before printing anything.
 
 ## 0.1.0
 

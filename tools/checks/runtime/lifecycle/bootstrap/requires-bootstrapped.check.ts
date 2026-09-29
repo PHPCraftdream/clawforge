@@ -1,7 +1,10 @@
 // requireBootstrapped() (runtime/runtime.ts) and every mutating command that now calls it
 // BEFORE takeLock()/any target write: backup, incident, configure-provider, smoke,
 // apply-config (incl. --dry-run), up, restart, down, logs, upgrade, secrets --apply,
-// provision-agent, expose tailscale --apply, watch install --apply, backup install --apply.
+// provision-agent, expose tailscale --apply, watch install --apply, backup install --apply —
+// plus mcp-creds, read-only but guarded for a stricter reason: its whole job is printing a
+// live gateway token, and it must fail on "never bootstrapped" before that token line, not
+// after (U7, docs/internal/review-2026-09-29-round-13.md).
 //
 // Before this guard, a never-bootstrapped deployment hit each of these deep inside — a raw
 // `mkdir …/operation.lock: No such file or directory` from the lock claim (the lock's own
@@ -20,6 +23,7 @@ import { smoke } from "#framework/commands/lifecycle/smoke/index.ts";
 import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
 import { provisionAgent } from "#framework/commands/management/provision-agent/index.ts";
 import { secrets } from "#framework/commands/management/secrets.ts";
+import { mcpCreds } from "#framework/commands/management/credentials/mcp.ts";
 import { applyConfig } from "#framework/commands/orchestration/config.ts";
 import { incident } from "#framework/commands/operate/incident/index.ts";
 import { exposeTailscale } from "#framework/commands/operate/expose/tailscale.ts";
@@ -131,6 +135,7 @@ for (const kase of [
   { name: "logs", run: (ctx: Context) => logs(ctx, []) },
   { name: "upgrade", run: (ctx: Context) => upgrade(ctx, []) },
   { name: "secrets --apply", run: (ctx: Context) => secrets(ctx, ["--apply"]) },
+  { name: "mcp-creds", run: (ctx: Context) => mcpCreds(ctx, []) },
   { name: "provision-agent", run: (ctx: Context) => provisionAgent(ctx, ["vault"]) },
   {
     name: "expose tailscale --apply",
@@ -151,6 +156,21 @@ for (const kase of [
   },
 ] satisfies GuardCase[]) {
   await expectGuardRefusal(kase);
+}
+
+// --- mcp-creds specifically: nothing reaches the terminal before the guard's own error -------
+//
+// expectGuardRefusal above discards output (withOutputSink(() => {}, …)); this checks the
+// captured text itself is empty, not merely that the eventual error message is right — the
+// bug this guards against was exactly "the token line already printed by the time it failed".
+
+for (const args of [[], ["--token"], ["--json"]]) {
+  const { ctx } = stubContext(undefined, "local");
+  let output = "";
+  await withOutputSink((chunk) => { output += chunk; }, async () => {
+    try { await mcpCreds(ctx, args); } catch { /* expected: NotBootstrapped */ }
+  });
+  check(`mcp-creds ${args.join(" ") || "(default)"}: prints nothing before the guard fires`, output, "");
 }
 
 // --- commands that CREATE the instance must never gain this guard ----------------------------

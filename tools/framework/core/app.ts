@@ -114,12 +114,6 @@ export interface AppCommand {
    *  creates it, and the gateway token, before building the context. Without this a first
    *  run fails in the settings parser before the command that would fix it ever starts. */
   readonly preparesEnvironment?: boolean;
-  /** `--help`/`-h` anywhere in the arguments normally shows this command's own help
-   *  instead of running it — the one exception is a command whose whole job is passing
-   *  argv through to something else (`cli`), where `--help` is meant for the underlying
-   *  tool, not for us. `./clawforge help <command>` still explains the command itself either way;
-   *  this only changes what a bare `<command> --help` does. */
-  readonly passesThroughHelp?: boolean;
   /** Every successful tool call returns the same structured envelope, declared to clients
    *  as the tool's outputSchema: the command's own captured output carried whole in
    *  `result` — its JSON document when it emits one, its text otherwise — plus the fields

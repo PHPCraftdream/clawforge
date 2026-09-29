@@ -592,7 +592,11 @@ function conforms(
 {
   const secret = "zt0k_4f8e2d6c9b1a";
   const redactionRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-redaction-"));
-  await writeFile(join(redactionRoot, ".env"), `OC_DATA_DIR=${join(redactionRoot, "data")}\nOC_TARGET_LOCATION=local\nOPENCLAW_GATEWAY_TOKEN=${secret}\n`, "utf8");
+  // mcp-creds now runs requireBootstrapped() (U7) before printing anything, which reaches a
+  // real `docker compose ps` — mkdtemp's own suffix can carry uppercase letters, invalid as a
+  // Compose project name, so one is pinned explicitly here the same way other real-docker
+  // fixtures already do (deployment-names.check.ts, env.check.ts, apply.check.ts, …).
+  await writeFile(join(redactionRoot, ".env"), `OC_DATA_DIR=${join(redactionRoot, "data")}\nOC_TARGET_LOCATION=local\nOC_COMPOSE_PROJECT=clawforge-mcp-redaction\nOPENCLAW_GATEWAY_TOKEN=${secret}\n`, "utf8");
   const moduleUrl = (name: string): string => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
   const script = `
     const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
@@ -606,6 +610,10 @@ function conforms(
     const gateFail = { name: "gate-fail", summary: "prints the token and fails", run: async () => { emit("gate refused " + leaked + "\\n"); return 7; } };
     await serveMcp({
       name: "redaction",
+      // Matches docker-compose.yml's real service name — mcp-creds (below) now runs
+      // requireBootstrapped() before it prints, which reaches a real \`docker compose ps\`;
+      // the default "app" is not a service that compose file declares.
+      service: { name: "gateway" },
       commands: {
         "mcp-creds": openclawCommands["mcp-creds"],
         recipe: { ...openclawCommands.recipe, run: async (_ctx, args) => {

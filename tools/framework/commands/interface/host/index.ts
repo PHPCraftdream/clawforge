@@ -12,7 +12,7 @@
 // own uid (Windows: the shell's integrity level) for local. A probe that cannot answer
 // refuses the command until explicit consent is given.
 
-import { die, info } from "#src/core/io/log.ts";
+import { die, dieWithExitCode, info } from "#src/core/io/log.ts";
 import { emit, shouldFollow } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecOptions } from "#src/runtime/transport/transport.ts";
@@ -108,8 +108,10 @@ export async function host(ctx: Context, args: string[], environment: HostEnviro
   // One capability, two shapes, chosen the way lifecycle.ts's and recipe.ts's logs choose it
   // (shouldFollow): a real terminal streams the child's output live; under a sink or a plain
   // pipe the output is captured and handed back, because a tool call owes its caller one result.
+  // allowFailure either way: a non-zero exit is reported below with the command's own code
+  // (dieWithExitCode), never surfaced as the transport's own generic rejection.
   const follow = shouldFollow();
-  const options: ExecOptions = follow ? { stream: true } : { input: "", allowFailure: true };
+  const options: ExecOptions = follow ? { stream: true, allowFailure: true } : { input: "", allowFailure: true };
 
   // Consent where the command is already root wraps nothing: sudo -n or -u root around a
   // command that runs as root anyway adds a failure mode, not a privilege, and the local
@@ -120,9 +122,9 @@ export async function host(ctx: Context, args: string[], environment: HostEnviro
 
   if (!follow) {
     emit(result.stdout);
-    if (result.code !== 0) {
-      emit(result.stderr);
-      die(`host ${parsed.context} ${parsed.command.join(" ")} failed (exit ${result.code})`);
-    }
+    if (result.code !== 0) emit(result.stderr);
+  }
+  if (result.code !== 0) {
+    dieWithExitCode(`host ${parsed.context} ${parsed.command.join(" ")} failed (exit ${result.code})`, result.code);
   }
 }

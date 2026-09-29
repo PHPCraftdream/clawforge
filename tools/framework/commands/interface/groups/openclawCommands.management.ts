@@ -76,15 +76,14 @@ export const managementCommands: Record<string, AppCommand> = {
       "namespace, paying for its create/destroy on every call.\n" +
       "Run `./clawforge cli-start` once and this execs into that container instead, skipping that " +
       "cost — noticeably faster, though both paths go through the WSL2/Docker Desktop " +
-      "boundary either way and neither is instant.",
+      "boundary either way and neither is instant.\n" +
+      "`./clawforge cli --help` prints this text, same as `./clawforge help cli`; to reach OpenClaw's " +
+      "own --help instead, put it after a bare --: `./clawforge cli -- --help`.",
     // Declared destructive not because it destroys anything itself, but because it can run
     // anything OpenClaw's CLI can — including that CLI's own destructive subcommands. Over
     // MCP that earns the same confirmation push/restore/deploy need, rather than a second
     // mechanism invented for this one command.
     destructive: true,
-    // So `./clawforge cli --help` reaches OpenClaw's own --help instead of ours. `./clawforge help cli`
-    // still explains this command.
-    passesThroughHelp: true,
     arguments: [
       {
         name: "args",

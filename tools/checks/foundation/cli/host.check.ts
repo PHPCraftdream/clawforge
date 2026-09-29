@@ -28,6 +28,7 @@ import { ENGINE_DISTRO, parseWslDistroListing, probeUidAnswer, realHostEnvironme
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { CommandFailedError } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -368,7 +369,7 @@ try {
   {
     const stub = recordingTransport();
     await host(ctxWith(stub.transport), ["target", "--", "cat", "/etc/resolv.conf"]);
-    check("on a terminal the child streams instead of being captured", stub.calls.at(-1)?.options, { stream: true });
+    check("on a terminal the child streams instead of being captured", stub.calls.at(-1)?.options, { stream: true, allowFailure: true });
   }
 
   {
@@ -429,6 +430,38 @@ try {
     check("a failing command reports its exit code", message?.includes("exit 3"), true);
     check("its stdout is still handed back", written.join("").includes("partial answer"), true);
     check("and its stderr, which on a failure is the reason", written.join("").includes("the real reason"), true);
+  }
+
+  // U7: the wrapped command's own exit status reaches process.exitCode (via CommandFailedError,
+  // read by entry/cli.ts's main()) instead of the generic 1 every other UserError gets.
+  {
+    const stub = recordingTransport(7, "", "");
+    let error: unknown;
+    await withOutputSink(() => {}, async () => {
+      try { await host(ctxWith(stub.transport), ["target", "--", "sh", "-c", "exit 7"]); } catch (err) { error = err; }
+    });
+    check("the wrapped command's exit code is carried on the thrown error", error instanceof CommandFailedError && error.exitCode, 7);
+  }
+
+  {
+    // Clamped to 1..255: an out-of-range code must never surface as 0 (success) or as
+    // something no real process exit status could be.
+    const stub = recordingTransport(300, "", "");
+    let error: unknown;
+    await withOutputSink(() => {}, async () => {
+      try { await host(ctxWith(stub.transport), ["target", "--", "cat", "x"]); } catch (err) { error = err; }
+    });
+    check("an out-of-range exit code is clamped to 255", error instanceof CommandFailedError && error.exitCode, 255);
+  }
+
+  {
+    // 127 (command not found) is already inside 1..255 and passes through unclamped.
+    const stub = recordingTransport(127, "", "not found\n");
+    let error: unknown;
+    await withOutputSink(() => {}, async () => {
+      try { await host(ctxWith(stub.transport), ["target", "--", "nope"]); } catch (err) { error = err; }
+    });
+    check("exit 127 (not found) stays 127", error instanceof CommandFailedError && error.exitCode, 127);
   }
 } finally {
   Object.defineProperty(process.stdout, "isTTY", { value: originalIsTTY, configurable: true });

@@ -2,7 +2,7 @@
 // network namespace and data mounts.
 //
 
-import { die } from "#src/core/io/log.ts";
+import { die, dieWithExitCode } from "#src/core/io/log.ts";
 import { isCaptured, emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
@@ -10,11 +10,13 @@ import { HelperNotRunning } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "./cli-helper.ts";
 
 export async function cli(ctx: Context, args: string[]): Promise<void> {
-  // Passed through untouched, deliberately: the MCP confirmation is a tool argument checked
-  // by the server (see mcp-server.ts) and never reaches argv, so nothing here needs
-  // filtering — and filtering would break OpenClaw's own flags, which include --force on
-  // several of its subcommands.
-  const passed = args;
+  // A leading bare -- is our own boundary (entry/cli.ts's requestsHelp uses the same one, so
+  // `./clawforge cli -- --help` reaches OpenClaw's real --help instead of ours) and is stripped
+  // before forwarding; everything else is passed through untouched — the MCP confirmation is
+  // a tool argument checked by the server (see mcp-server.ts) and never reaches argv, so
+  // nothing here needs filtering, and filtering would break OpenClaw's own flags, which
+  // include --force on several of its subcommands.
+  const passed = args[0] === "--" ? args.slice(1) : args;
 
   if (passed.length === 0) {
     die("usage: ./clawforge cli <openclaw arguments>, e.g. ./clawforge cli agent --agent main -m 'hi'");
@@ -24,20 +26,20 @@ export async function cli(ctx: Context, args: string[]): Promise<void> {
   // it is captured and re-emitted through the same sink as everything else. On a terminal
   // it streams, which is what someone watching a long command wants.
   const captured = isCaptured();
-  // allowFailure only when captured: with nothing capturing it, a failure should surface the
-  // way every other streamed command's does, through the transport's own error.
-  const options = captured ? { input: "", allowFailure: true } : {};
+  // allowFailure always: a non-zero exit is reported below with openclaw's own exit code
+  // (dieWithExitCode), never surfaced as the transport's own generic rejection.
+  const options = captured ? { input: "", allowFailure: true } : { allowFailure: true };
 
-  /** What the caller gets back when the output was captured. stderr is added only on a
-   *  failure: on the way through `docker compose` it carries progress lines ("Container …
-   *  Running") that are noise beside an answer, but the whole reason a command failed. */
+  /** What the caller gets back. stderr is added only on a failure and only when captured: on
+   *  the way through `docker compose` it carries progress lines ("Container … Running") that
+   *  are noise beside an answer, but the whole reason a command failed; streamed output has
+   *  already reached the terminal by the time this runs. */
   const report = (result: ExecResult): void => {
-    if (!captured) return;
-    emit(result.stdout);
-    if (result.code !== 0) {
-      emit(result.stderr);
-      die(`openclaw ${passed.join(" ")} failed (exit ${result.code})`);
+    if (captured) {
+      emit(result.stdout);
+      if (result.code !== 0) emit(result.stderr);
     }
+    if (result.code !== 0) dieWithExitCode(`openclaw ${passed.join(" ")} failed (exit ${result.code})`, result.code);
   };
 
   // Tried first, before the isRunning() preflight below: a helper that execs successfully

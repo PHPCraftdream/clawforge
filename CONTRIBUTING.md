@@ -40,7 +40,7 @@ Import the shared harness rather than writing another local `check()`/`failed` c
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 check("a plain KEY=VALUE line is captured", parseEnv("KEY=value"), { KEY: "value" });
-checkTrue("cli is marked passesThroughHelp", openclawCommands.cli.passesThroughHelp);
+checkTrue("recipe is destructive", openclawCommands.recipe.destructive);
 finish("env"); // prints "all env checks passed" or "N failed", sets process.exitCode
 ```
 

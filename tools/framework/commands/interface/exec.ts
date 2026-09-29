@@ -4,7 +4,7 @@
 // a file bundled in the image, a curl probe against something only reachable from inside that
 // network namespace (a recipe's sidecar port, for instance).
 
-import { die } from "#src/core/io/log.ts";
+import { die, dieWithExitCode } from "#src/core/io/log.ts";
 import { isCaptured, emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
@@ -19,15 +19,14 @@ export async function exec(ctx: Context, args: string[]): Promise<void> {
 
   // Same capture/streaming and failure-reporting shape as `cli` — see its own comments for why.
   const captured = isCaptured();
-  const options = captured ? { input: "", allowFailure: true } : {};
+  const options = captured ? { input: "", allowFailure: true } : { allowFailure: true };
 
   const report = (result: ExecResult): void => {
-    if (!captured) return;
-    emit(result.stdout);
-    if (result.code !== 0) {
-      emit(result.stderr);
-      die(`exec ${args.join(" ")} failed (exit ${result.code})`);
+    if (captured) {
+      emit(result.stdout);
+      if (result.code !== 0) emit(result.stderr);
     }
+    if (result.code !== 0) dieWithExitCode(`exec ${args.join(" ")} failed (exit ${result.code})`, result.code);
   };
 
   if (ctx.runtime.execCommand === undefined) {

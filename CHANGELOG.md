@@ -6,6 +6,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Added
 
+* `doctor`/`inspect`: `BACKUP_MISSING` (no full backup archive in `OC_BACKUP_DIR`) and
+  `BACKUP_STALE` (the newest one older than `OC_BACKUP_MAX_AGE`, default 2d) so a silently
+  stopped backup schedule is a warning, not a surprise at restore time; `DISK_LOW` (free
+  space at the data or backup directory below `OC_DISK_MIN_FREE_MB`, default 1024 MB) — a
+  separate, warning-only sibling of `watch`'s own `DISK_LOW`, not wired into it. All three are
+  warnings and never fail `doctor`'s exit code.
 * `upgrade`: digest-pinned image updates, with a pre-upgrade backup and automatic rollback
   on failure (restoring that backup too when the container exited during migrations).
 * `backup --native`: a consistent snapshot via OpenClaw's own `backup create --verify`,

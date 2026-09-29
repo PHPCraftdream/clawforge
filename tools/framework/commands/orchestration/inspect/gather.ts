@@ -23,9 +23,10 @@
 // pieces), declared.ts (declaredState/recipeExpectations, what this repository declares),
 // drift.ts (observeConfig/observeConnectionFacts/observeSecretStore, the declared-vs-target
 // comparisons), live.ts (observeLive, what the target reports with no declared counterpart),
-// and this one, gather.ts (gatherInspection, the CLI surface). Every export here keeps its
-// name and signature — apply.ts, plan.ts and the checks all import from "./inspect/gather.ts"
-// (or the barrel-free direct path, since there is no index.ts here).
+// upkeep.ts (observeBackupHealth/observeDiskSpace, whether this deployment could be
+// recovered), and this one, gather.ts (gatherInspection, the CLI surface). Every export here
+// keeps its name and signature — apply.ts, plan.ts and the checks all import from
+// "./inspect/gather.ts" (or the barrel-free direct path, since there is no index.ts here).
 
 import { log, info, warn, reportBlocking } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
@@ -50,6 +51,7 @@ import { prospectiveConfig, readLiveConfigForProspective, frameworkVersion } fro
 import { declaredState, observeDeclarationFile } from "./declared.ts";
 import { observeConfig, observeConnectionFacts, observeSecretStore } from "./drift.ts";
 import { observeLive } from "./live.ts";
+import { observeBackupHealth, observeDiskSpace } from "./upkeep.ts";
 import { runSecurityAudit } from "#src/security/audit.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
@@ -184,6 +186,15 @@ async function gatherPreflight(
   // does not exist yet, and NOT_BOOTSTRAPPED above already names the one remedy that applies.
   if (notBootstrapped === undefined && collectConfiguredProviders(prospective).length === 0) {
     problems.push(problem("PROVIDER_MISSING", "models.providers declares no provider, and no auth.profiles entry names one either"));
+  }
+
+  // BACKUP_MISSING/BACKUP_STALE/DISK_LOW: whether this deployment could be recovered, not
+  // whether it is serving — same pre-bootstrap skip as IMAGE_UNPINNED/PROVIDER_MISSING above,
+  // there is nothing to have backed up or run low on disk yet. See upkeep.ts's own header for
+  // why these never join watch's liveness codes.
+  if (notBootstrapped === undefined) {
+    await observeBackupHealth(ctx, problems);
+    await observeDiskSpace(ctx, problems);
   }
 
   // The operator side reads while the instance is down, and matters most then: the store

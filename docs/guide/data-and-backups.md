@@ -157,6 +157,17 @@ command. Its own marker (`clawforge-backup:<deployment>`) is distinct from `watc
 (`clawforge-watch:<deployment>`), so installing one never disturbs the other, even for the
 same deployment.
 
+`./clawforge doctor`/`inspect` now notice when that schedule silently stopped: `BACKUP_MISSING`
+(no full archive in `OC_BACKUP_DIR` at all — a `migrate`/`share`-only directory counts as
+missing too, since neither is what a bare `restore` recovers from) and `BACKUP_STALE` (the
+newest full archive is older than `OC_BACKUP_MAX_AGE` allows, default `2d`). Both are
+warnings, never blocking — the instance itself is fine, what is at risk is recovering it.
+`OC_BACKUP_MAX_AGE` takes a duration (`30m`/`36h`/`2d`); `0` or `off` disables the check, and
+a value that does not parse is a warning falling back to the default, the same as
+`OC_BACKUP_KEEP` above. See also `DISK_LOW` in
+[Health monitoring](monitoring-and-access.md#health-monitoring-watch), which watches the same
+`OC_BACKUP_DIR` for free space.
+
 ### Listing archives and cleaning up after a restore
 
 ```bash

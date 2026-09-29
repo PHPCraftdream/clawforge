@@ -195,6 +195,45 @@ export function parseRetention(name: string, raw: string | undefined, fallback: 
   return value;
 }
 
+const DURATION_PATTERN = /^(\d+)(m|h|d)$/;
+const DURATION_UNIT_MS: Readonly<Record<string, number>> = { m: 60_000, h: 3_600_000, d: 86_400_000 };
+
+/** Parses a duration threshold (OC_BACKUP_MAX_AGE): unset -> fallbackMs; "0" or "off"
+ *  (case-insensitive) -> 0, "this finding is disabled" reported; anything but Nm/Nh/Nd ->
+ *  warning and fallbackMs. Mirrors parseRetention's shape for a duration instead of a count. */
+export function parseDurationThreshold(name: string, raw: string | undefined, fallbackMs: number, fallbackLabel: string): number {
+  if (raw === undefined) return fallbackMs;
+  const trimmed = raw.trim();
+  if (trimmed === "0" || trimmed.toLowerCase() === "off") {
+    log(`${name}=${trimmed} — disabled, this finding will never be reported`);
+    return 0;
+  }
+  const match = DURATION_PATTERN.exec(trimmed);
+  if (match === null) {
+    warn(`${name}=${JSON.stringify(raw)} is not a duration like 2d or 36h, nor 0/off — using the default of ${fallbackLabel}`);
+    return fallbackMs;
+  }
+  return Number(match[1]) * DURATION_UNIT_MS[match[2]];
+}
+
+/** Parses a free-space floor in MB (OC_DISK_MIN_FREE_MB): unset -> fallback; 0 -> disabled,
+ *  reported; anything but a non-negative integer -> warning and fallback. Same shape as
+ *  parseRetention, with wording of its own: 0 here means "never check", not "never rotate". */
+export function parseDiskMinFreeMb(name: string, raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    warn(`${name}=${JSON.stringify(raw)} is not a non-negative integer — using the default of ${fallback}`);
+    return fallback;
+  }
+  const value = Number.parseInt(trimmed, 10);
+  if (value === 0) {
+    log(`${name}=0 — disabled, this finding will never be reported`);
+    return 0;
+  }
+  return value;
+}
+
 /** Selects a deployment port candidate outside the usual ephemeral range. */
 export function projectPort(taken: ReadonlySet<number> = new Set(), start = randomInt(12768)): number {
   const portCount = 12768;
@@ -242,6 +281,8 @@ export const ENV_FILE_ONLY_VARS = [
   "OC_WATCH_DISK_MIN_MB",
   "OC_BACKUP_KEEP",
   "OC_SNAPSHOT_KEEP",
+  "OC_BACKUP_MAX_AGE",
+  "OC_DISK_MIN_FREE_MB",
 ] as const;
 
 /** Names (never values — some are secrets) of exported variables that `fileEnv` lacks or

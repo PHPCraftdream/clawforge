@@ -42,9 +42,14 @@ check(
   codes.sort(),
   [
     "AGENT_MISSING",
+    // Upkeep findings: whether this deployment could be recovered, not whether it serves.
+    "BACKUP_MISSING",
+    "BACKUP_STALE",
     "CONFIG_DRIFT",
     "CRON_DRIFT",
     "DECLARATION_MISSING",
+    // watch has its own, differently-scoped DISK_LOW (health.ts) — this one is inspection.ts's.
+    "DISK_LOW",
     "EGRESS_UNREACHABLE",
     // A pure fact about .env itself, no instance needed — sits with the declared-state codes.
     "ENV_LINE_INVALID",

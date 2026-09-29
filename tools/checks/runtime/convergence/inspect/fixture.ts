@@ -16,14 +16,16 @@ import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
 import { currentComposition, lockFile } from "#framework/commands/management/lock.ts";
 import type { PluginListEntry, SkillListEntry } from "#framework/commands/management/extensions.ts";
-import { useDeployment } from "#framework/runtime/deployment.ts";
+import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
+import { backupArchiveName } from "#framework/service/archive/index.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 
 export const DATA = "/srv/clawforge/data";
 export const CONFIG_FILE = `${DATA}/config/openclaw.json`;
 export const MIRROR = `${DATA}/workspace/mcp-demo`;
+export const BACKUP_DIR = "/srv/clawforge/backups";
 
 /** The instance as the stub presents it. Every field has a working default, so each case
  *  below states only the one thing it is about. */
@@ -126,6 +128,7 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
         // image provokes neither IMAGE_UNPINNED nor IMAGE_TAG_MOVED. folder.check.ts's own
         // image-pinning section overrides this to exercise both.
         image: spec.image ?? "ghcr.io/openclaw/openclaw@sha256:abc",
+        backupDir: BACKUP_DIR,
         env: { OPENCLAW_GATEWAY_TOKEN: "a-token-value" },
       },
       transport: {
@@ -163,6 +166,20 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
             const wanted = args[3] === mirrorDir ? spec.mirrorChecksums : (spec.workspaceChecksums ?? goodPrompts);
             const lines = Object.entries(wanted ?? {}).map(([rel, sum]) => `${sum}  ./${rel}`);
             return { code: 0, stdout: `${lines.join("\n")}\n`, stderr: "" };
+          }
+          // upkeep.ts's own reads (observeBackupHealth/observeDiskSpace) — every case here is
+          // about something else, so both answer as "nothing to report": one fresh full
+          // archive (never BACKUP_MISSING/BACKUP_STALE) and ample free space (never DISK_LOW).
+          if (command === "find" && args.some((arg) => arg.endsWith(".tar.gz"))) {
+            const name = backupArchiveName(deploymentName(), "20260101-000000", "full");
+            const nowSeconds = Math.floor(Date.now() / 1000);
+            return { code: 0, stdout: `1024\t${nowSeconds}\t${BACKUP_DIR}/${name}\n`, stderr: "" };
+          }
+          if (command === "df") {
+            const paths = args.slice(1);
+            const header = "Filesystem     1024-blocks      Used Available Capacity Mounted on";
+            const rows = paths.map((path) => `stub               100000000       500 99999500       1% ${path}`);
+            return { code: 0, stdout: `${[header, ...rows].join("\n")}\n`, stderr: "" };
           }
           return { code: 0, stdout: "", stderr: "" };
         },

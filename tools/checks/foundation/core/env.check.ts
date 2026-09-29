@@ -8,6 +8,8 @@
 import {
   ENV_FILE_ONLY_VARS,
   locksDir,
+  parseDiskMinFreeMb,
+  parseDurationThreshold,
   parseEnv,
   readEnvValue,
   serializeEnvLine,
@@ -17,6 +19,7 @@ import {
   toSettings,
   upsertEnvLine,
 } from "#framework/core/env.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- parseEnv ------------------------------------------------------------------
@@ -460,6 +463,8 @@ check(
     "OC_WATCH_WEBHOOK",
     "OC_WATCH_WEBHOOK_FORMAT",
     "OC_WSL_DISTRO",
+    "OC_BACKUP_MAX_AGE",
+    "OC_DISK_MIN_FREE_MB",
   ].sort(),
 );
 
@@ -491,5 +496,49 @@ check(
   "warning: OC_WSL_DISTRO, OC_SSH_HOST are set in the shell but ignored — " +
     "this tool reads .env only (/deploy/.env); set them there",
 );
+
+// --- parseDurationThreshold (OC_BACKUP_MAX_AGE) --------------------------------------------
+
+check("unset falls back to the default", parseDurationThreshold("OC_BACKUP_MAX_AGE", undefined, 172_800_000, "2d"), 172_800_000);
+check("Nd parses to days in ms", parseDurationThreshold("OC_BACKUP_MAX_AGE", "3d", 172_800_000, "2d"), 3 * 86_400_000);
+check("Nh parses to hours in ms", parseDurationThreshold("OC_BACKUP_MAX_AGE", "36h", 172_800_000, "2d"), 36 * 3_600_000);
+check("Nm parses to minutes in ms", parseDurationThreshold("OC_BACKUP_MAX_AGE", "90m", 172_800_000, "2d"), 90 * 60_000);
+check("0 disables, no unit needed", parseDurationThreshold("OC_BACKUP_MAX_AGE", "0", 172_800_000, "2d"), 0);
+check("off (any case) disables", parseDurationThreshold("OC_BACKUP_MAX_AGE", "OFF", 172_800_000, "2d"), 0);
+
+{
+  let output = "";
+  const result = await withOutputSink(
+    (line) => { output += line; },
+    () => Promise.resolve(parseDurationThreshold("OC_BACKUP_MAX_AGE", "banana", 172_800_000, "2d")),
+  );
+  check("garbage value falls back to the default", result, 172_800_000);
+  check("garbage value warns naming the variable and value", output.includes("OC_BACKUP_MAX_AGE") && output.includes("banana"), true);
+}
+
+{
+  let output = "";
+  await withOutputSink(
+    (line) => { output += line; },
+    () => Promise.resolve(parseDurationThreshold("OC_BACKUP_MAX_AGE", "0", 172_800_000, "2d")),
+  );
+  check("0 is reported, not silent", output.includes("OC_BACKUP_MAX_AGE=0") && output.includes("disabled"), true);
+}
+
+// --- parseDiskMinFreeMb (OC_DISK_MIN_FREE_MB) ----------------------------------------------
+
+check("unset falls back to the default", parseDiskMinFreeMb("OC_DISK_MIN_FREE_MB", undefined, 1024), 1024);
+check("a plain integer is used as-is", parseDiskMinFreeMb("OC_DISK_MIN_FREE_MB", "2048", 1024), 2048);
+check("0 disables", parseDiskMinFreeMb("OC_DISK_MIN_FREE_MB", "0", 1024), 0);
+
+{
+  let output = "";
+  const result = await withOutputSink(
+    (line) => { output += line; },
+    () => Promise.resolve(parseDiskMinFreeMb("OC_DISK_MIN_FREE_MB", "-5", 1024)),
+  );
+  check("a negative value falls back to the default", result, 1024);
+  check("a negative value warns naming the variable and value", output.includes("OC_DISK_MIN_FREE_MB") && output.includes("-5"), true);
+}
 
 finish("env");

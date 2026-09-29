@@ -115,7 +115,7 @@ An operator finds out the instance stopped doing its job without polling by hand
   never printed on any path.
 
   Two findings of watch's own, layered on top of `inspect`'s (neither is a declared-state
-  comparison, so neither is a `doctor`-visible `ProblemCode`):
+  comparison, so neither is a liveness `ProblemCode` `watch check` itself reuses):
   * `CHANNEL_UNHEALTHY` (`degraded`) — a channel account this deployment configured and left
     enabled, but `openclaw channels status --json` reports not running, carrying a captured
     error, or not connected. Skipped while the gateway itself is down (nothing to exec a CLI
@@ -137,6 +137,15 @@ An operator finds out the instance stopped doing its job without polling by hand
     the target may be fine). Skipped, like the channel check, whenever there is no live
     target worth asking (`TARGET_UNREACHABLE`, `NOT_BOOTSTRAPPED`) — but unlike it, still read
     while the gateway is merely down, since a full disk is a common reason for that.
+
+    `./clawforge doctor`/`inspect` also report a `DISK_LOW` — same code string, a different
+    mechanism: a warning-only `ProblemCode` (never `down`, never blocking `doctor`'s exit
+    code), checked against `OC_DISK_MIN_FREE_MB` (default 1024 MB, `0` disables it) at the
+    data directory **and** the backup directory, on demand rather than on watch's schedule.
+    The two never disagree by design — different thresholds, different directories, and this
+    one is not wired into watch's own liveness codes above. See
+    [Data, backups and state](data-and-backups.md#backup-and-restore) for `BACKUP_MISSING`/
+    `BACKUP_STALE`, doctor's other new upkeep findings.
 * `./clawforge watch install` / `watch uninstall` — print (and, with `--apply`, install through
   the transport) a crontab entry that runs `watch check` every `--interval` minutes (default
   5): must divide 60 (`1,2,3,4,5,6,10,12,15,20,30`) to step cron's own minute field evenly, or

@@ -62,7 +62,10 @@ export type ProblemCode =
   | "GATEWAY_PUBLICLY_BOUND"
   | "GATEWAY_EXPOSURE_ACKNOWLEDGED"
   | "UFW_DOCKER_BYPASS"
-  | "PRIVATE_FILE_INSECURE";
+  | "PRIVATE_FILE_INSECURE"
+  | "BACKUP_MISSING"
+  | "BACKUP_STALE"
+  | "DISK_LOW";
 
 interface CodeMeaning {
   readonly severity: Severity;
@@ -368,6 +371,34 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     severity: "warning",
     summary: "a deployment secret file (.env, secrets/*) is not owner-only protected",
     nextAction: "./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)",
+  },
+
+  // Upkeep findings: whether this deployment could actually be recovered, not whether it is
+  // currently serving — a healthy, fully-drifted-free instance can still have no way back
+  // from a lost disk. Always warnings: none of them are true today about the RUNNING
+  // instance, only about tomorrow's recovery from it.
+  BACKUP_MISSING: {
+    severity: "warning",
+    summary: "this deployment has never produced a full backup archive",
+    nextAction: "./clawforge backup",
+  },
+  BACKUP_STALE: {
+    severity: "warning",
+    // The scheduled job silently stopping — crontab rebuilt, a disabled Task Scheduler
+    // entry — is the ordinary way this fires, so the remedy re-installs the schedule
+    // rather than merely running one backup that would go stale again the same way.
+    summary: "the newest full backup archive is older than OC_BACKUP_MAX_AGE allows",
+    nextAction: "./clawforge backup install --apply",
+  },
+  DISK_LOW: {
+    severity: "warning",
+    // Distinct from watch's own DISK_LOW (health.ts): that one is a liveness signal
+    // (degraded/down, data directory only, OC_WATCH_DISK_MIN_MB) polled on a schedule; this
+    // one is a doctor/inspect finding (warning only, data OR backup directory,
+    // OC_DISK_MIN_FREE_MB) read on demand. Two mechanisms, deliberately not merged — see
+    // upkeep.ts's own header.
+    summary: "free space at the data directory or the backup directory is below OC_DISK_MIN_FREE_MB",
+    nextAction: "./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)",
   },
 };
 

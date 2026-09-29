@@ -67,7 +67,11 @@ function recordingContext(
     transport: {
       ...base.transport,
       async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
-        const checksumCall = command === "sh" && args[0] === "-c" &&
+        // Matched by the script's own content, not merely its shape (`sh -c <script> sh <dir>`):
+        // upkeep.ts's readPrefix() (service/archive/inventory.ts, now reached through
+        // gatherInspection too) runs its own readability probe in that exact shape, which a
+        // shape-only match here would misfile as a checksum call and shift every index below.
+        const checksumCall = command === "sh" && args[0] === "-c" && typeof args[1] === "string" && args[1].includes("CHECKSUMCDFAILED") &&
           (args.length === 2 || (args.length === 4 && args[2] === "sh"));
         if (!checksumCall) return stubExec(command, args, options);
         const call: RecordedCall = { command, args };

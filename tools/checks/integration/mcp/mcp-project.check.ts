@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rename, rm } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { CLAWFORGE_CONTROL_MCP_NAME, mergeClaudeConfig, mergeCodexConfig, projectMcpEntries, setupProjectMcp } from "#framework/integration/mcp/project.ts";
+import { CLAWFORGE_CONTROL_MCP_NAME, MCP_LAUNCHER_FILENAME, mcpLauncherContent, mergeClaudeConfig, mergeCodexConfig, projectMcpEntries, setupProjectMcp } from "#framework/integration/mcp/project.ts";
 import { initApp } from "#framework/integration/deployment/init.ts";
 import { createApp, appsDir, deploymentEnv } from "#framework/integration/deployment/scaffold.ts";
 import { projectPort } from "#framework/core/env.ts";
@@ -41,8 +41,23 @@ try {
   assert.ok(claude.mcpServers.clawforge && claude.mcpServers[CLAWFORGE_CONTROL_MCP_NAME]);
   assert.ok(codexText.includes(`[mcp_servers."${CLAWFORGE_CONTROL_MCP_NAME}"]`));
   assert.ok(!claudeText.includes(app) && !codexText.includes(app), "no absolute host paths in generated configuration");
-  assert.ok((await readFile(join(app,".gitignore"),"utf8")).includes("/.codex/config.toml"));
+  const gitignoreLines = (await readFile(join(app,".gitignore"),"utf8")).split(/\r?\n/);
+  assert.ok(gitignoreLines.includes("/.codex/config.toml"));
+  assert.ok(!gitignoreLines.includes(MCP_LAUNCHER_FILENAME) && !gitignoreLines.includes(`/${MCP_LAUNCHER_FILENAME}`), "the committed launcher is not gitignored");
+  assert.equal(await readFile(join(app, MCP_LAUNCHER_FILENAME), "utf8"), mcpLauncherContent("installed"), "init writes the installed-mode launcher");
   assert.deepEqual(await setupProjectMcp(app,"installed"), [], "init already configures both clients");
+
+  // A locally edited launcher is left as is unless mcp-setup is asked explicitly to
+  // overwrite it — never a silent clobber.
+  await writeFile(join(app, MCP_LAUNCHER_FILENAME), "// edited by hand\n", "utf8");
+  assert.deepEqual(await setupProjectMcp(app,"installed"), [], "an edited launcher is kept without an explicit ask");
+  assert.equal(await readFile(join(app, MCP_LAUNCHER_FILENAME), "utf8"), "// edited by hand\n");
+  assert.deepEqual(
+    await setupProjectMcp(app,"installed",undefined,{ rewriteLauncher: true }),
+    [join(app, MCP_LAUNCHER_FILENAME)],
+    "an explicit ask rewrites it",
+  );
+  assert.equal(await readFile(join(app, MCP_LAUNCHER_FILENAME), "utf8"), mcpLauncherContent("installed"));
 
   // A conflicting TOML layout must not partially rewrite the Claude file first.
   await writeFile(join(app,".codex/config.toml"),'mcp_servers = { application = {} }\n');
@@ -59,11 +74,21 @@ try {
   await writeFile(join(pkg,"dist/entry/bin.js"),'process.stdout.write(JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2)})+"\\n");\n');
   const moved = join(root,"renamed-application"); await rename(app,moved);
   const nested = join(moved,"nested"); await mkdir(nested);
-  for (const client of ["claude","codex"] as const) {
-    const entry = projectMcpEntries(app,"installed",client)[CLAWFORGE_CONTROL_MCP_NAME];
+  // The entries are identical for every client and mode now: a shared bootstrap locates the
+  // committed launcher (which moved with the directory, and still knows it is "installed"),
+  // whether the client sets CLAUDE_PROJECT_DIR (Claude Code) or leaves it unset (falling back
+  // to its own cwd) — either way, spawning from a subdirectory below the deployment works.
+  const entry = projectMcpEntries()[CLAWFORGE_CONTROL_MCP_NAME];
+  // The "no env var" case unsets CLAUDE_PROJECT_DIR — it strips a real one this very check
+  // might itself be running under, so the fallback path is actually exercised, not skipped.
+  const cases: { env: Record<string, string>; unsetEnv: string[] }[] = [
+    { env: { CLAUDE_PROJECT_DIR: moved }, unsetEnv: [] },
+    { env: {}, unsetEnv: ["CLAUDE_PROJECT_DIR"] },
+  ];
+  for (const { env, unsetEnv } of cases) {
     const cwd = process.cwd(); process.chdir(nested);
     let pending;
-    try { pending = spawnLocal(entry.command,entry.args,{env:client==="claude"?{CLAUDE_PROJECT_DIR:moved}:{CLAUDE_PROJECT_DIR:root},timeoutMs:5000}); }
+    try { pending = spawnLocal(entry.command,entry.args,{env,unsetEnv,timeoutMs:5000}); }
     finally { process.chdir(cwd); }
     const result = JSON.parse((await pending).stdout);
     assert.equal(result.cwd,moved);
@@ -81,6 +106,11 @@ try {
   assert.ok(!desiredState.some((entry) => entry.path.startsWith("telemetry")), "new-app declares no telemetry key the published image rejects");
   const appGitignore = await readFile(resolve(monorepoApp, ".gitignore"), "utf8");
   assert.ok(!/setupProjectMcp|below/.test(appGitignore), "the .gitignore comment reads for an operator, not the source");
+  assert.equal(
+    await readFile(resolve(monorepoApp, MCP_LAUNCHER_FILENAME), "utf8"),
+    mcpLauncherContent("monorepo"),
+    "new-app writes the monorepo-mode launcher",
+  );
   const candidateName = `mcp-auto-check-${randomBytes(5).toString("hex")}`;
   claimedSibling = resolve(appsDir, `claim-check-${randomBytes(5).toString("hex")}`);
   await mkdir(claimedSibling, { recursive: true });
@@ -91,9 +121,9 @@ try {
   assert.notEqual(assigned, candidate, "new-app avoids a port recorded in a sibling deployment");
   await readFile(join(monorepoApp,".codex/config.toml"),"utf8");
   const native = JSON.parse(await readFile(join(monorepoApp,".mcp.json"),"utf8"));
-  const entry = native.mcpServers[CLAWFORGE_CONTROL_MCP_NAME];
+  const monorepoEntry = native.mcpServers[CLAWFORGE_CONTROL_MCP_NAME];
   const input = JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/list"})+"\n";
-  const child = await spawnLocal(entry.command,entry.args,{env:{CLAUDE_PROJECT_DIR:monorepoApp},input,timeoutMs:5000});
+  const child = await spawnLocal(monorepoEntry.command,monorepoEntry.args,{env:{CLAUDE_PROJECT_DIR:monorepoApp},input,timeoutMs:5000});
   const reply = JSON.parse(child.stdout);
   assert.ok(reply.result.tools.some((tool: {name:string})=>tool.name==="mcp-setup"));
   process.stderr.write("all project MCP setup checks passed\n");

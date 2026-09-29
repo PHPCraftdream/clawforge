@@ -115,6 +115,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   `rollback`'s `rollbackSet`, `accept`'s `acceptFromSource`/`runCheck`, `watch check`'s
   `runWatchCycle` and `set validate`'s `validateSet` are each split into smaller, named
   private helpers.
+* `new-app`/`init`/`mcp-setup` now write a small, readable `mcp-launch.mjs` launcher next to
+  `app.ts` instead of embedding the same ~800-character `node -e` script twice in each of
+  `.mcp.json` and `.codex/config.toml`. The launcher has no secrets or machine paths, so it is
+  committed (unlike `.mcp.json`/`.codex/`, still gitignored); `mcp-setup` never overwrites a
+  locally edited launcher silently — `--rewrite-launcher` is the explicit ask required.
 
 ### Fixed
 

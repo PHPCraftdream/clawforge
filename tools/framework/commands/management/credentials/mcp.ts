@@ -12,7 +12,7 @@ import { deploymentDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { HelperNotRunning, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "../../interface/cli-helper.ts";
-import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
+import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, MCP_LAUNCHER_FILENAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
 import type { McpClient } from "#src/integration/mcp/project.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
@@ -21,6 +21,7 @@ import { parseDeclaredArgs } from "#src/core/arguments.ts";
 export const MCP_SETUP_ARGUMENTS: CommandArgument[] = [
   { name: "client", kind: "option", valueName: "client", choices: ["claude", "codex", "both"], description: "Client configuration to update (default both)" },
   { name: "json", kind: "flag", description: "Report changed files as JSON" },
+  { name: "rewrite-launcher", kind: "flag", description: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME} (refused by default)` },
 ];
 
 /** Drives both mcp-creds' own parser and its openclawCommands declaration. */
@@ -64,10 +65,12 @@ interface McpServerEntry {
   readonly args: string[];
 }
 
-/** Both framework servers, launched locally so the tooling retains its target transport. */
+/** Both framework servers, launched locally so the tooling retains its target transport. The
+ *  entries no longer vary by mode or client — a shared bootstrap locates the committed
+ *  launcher (mcp-launch.mjs) at runtime, which is what actually differs between an installed
+ *  package and this monorepo checkout. */
 export async function mcpServerEntries(_ctx: Context): Promise<Record<string, McpServerEntry>> {
-  const installedMode = await access(resolve(deploymentDir(), "clawforge")).then(() => true, () => false);
-  return projectMcpEntries(deploymentDir(), installedMode ? "installed" : "monorepo", "claude");
+  return projectMcpEntries();
 }
 
 async function mcpConfig(ctx: Context): Promise<string> {
@@ -88,7 +91,8 @@ export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {
     client = parsed.client;
   }
   const installed = await access(resolve(deploymentDir(), "clawforge")).then(() => true, () => false);
-  const changedFiles = await setupProjectMcp(deploymentDir(), installed ? "installed" : "monorepo", client);
+  const rewriteLauncher = parsed["rewrite-launcher"] === true;
+  const changedFiles = await setupProjectMcp(deploymentDir(), installed ? "installed" : "monorepo", client, { rewriteLauncher });
   if (json || isCaptured()) { emit(`${JSON.stringify({ client, changed: changedFiles.length > 0, files: changedFiles }, null, 2)}\n`); return; }
   log(`project MCP configured for ${client === "both" ? "Claude Code and Codex" : client}`);
   for (const file of changedFiles) info(`updated ${file}`);

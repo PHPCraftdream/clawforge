@@ -308,14 +308,20 @@ The project-local server names are `clawforge` (OpenClaw's channel bridge) and
 
 `mcp-setup` refreshes these settings for an existing application. `--client claude` or
 `--client codex` selects one client; the default is `both`. `--json` reports changed files.
+`--rewrite-launcher` overwrites a `mcp-launch.mjs` that was edited locally — refused by default.
 Other server entries and TOML settings are preserved, including comments, nested tables
 and multiline values. Invalid JSON, ambiguous inline MCP tables or HTTP name collisions
 are refused before replacing configuration. Repeating setup is idempotent.
 
-Launch commands use Node with a portable project locator. Installed applications resolve
-the package through their own dependencies; monorepo applications invoke the source gate
-with their own name. No absolute host paths or credentials enter the generated entries.
-Local client config paths are added to the application's `.gitignore`.
+Launch commands run a small, portable bootstrap that locates `mcp-launch.mjs` — a launcher
+committed next to `app.ts` — from wherever the client actually started it (Claude Code sets
+`CLAUDE_PROJECT_DIR`; other clients fall back to their own working directory, searched
+upward). The launcher does the mode-specific part: an installed application resolves the
+package through its own dependencies, a monorepo application invokes the source gate with
+its own name. No absolute host paths or credentials enter the generated entries or the
+launcher. `.mcp.json` and `.codex/config.toml` are added to the application's `.gitignore`;
+`mcp-launch.mjs` is not — it carries no secrets or machine paths, so it is meant to be
+committed. `mcp-setup` never overwrites a locally edited launcher without `--rewrite-launcher`.
 
 Reconnect servers after setup. Codex loads project configuration only for trusted projects;
 Claude Code may ask to approve project MCP servers. The channel bridge needs a running

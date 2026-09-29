@@ -157,6 +157,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* Egress diagnostics redact inline URL credentials in endpoint and probe detail across
+  text/JSON `inspect`, `doctor`, `plan` and MCP while preserving original probe input.
+* Instance-lock heartbeats share the acquisition/release mutation guard; release drains
+  in-flight refreshes before removal so an old heartbeat cannot overwrite the next holder.
 * ssh target: a command that hit its `timeoutMs` left the remote process running (killing the
   local `ssh` sends the remote command no signal without a pty). The deadline is now also
   enforced on the target — by `timeout`, or by a plain-sh watchdog where it is missing (macOS) — and

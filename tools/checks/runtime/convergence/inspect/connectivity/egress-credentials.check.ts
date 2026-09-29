@@ -63,7 +63,8 @@ try {
       runtime: {
         ...base.runtime,
         async execCommand(_service: string, _command: string, _args: string[], options: ExecOptions = {}) {
-          const urls = JSON.parse(options.input ?? "[]") as string[];
+          const input = options.input ?? "[]";
+          const urls = JSON.parse(typeof input === "string" ? input : Buffer.from(input).toString("utf8")) as string[];
           inputs.push(urls);
           return {
             code: 0,

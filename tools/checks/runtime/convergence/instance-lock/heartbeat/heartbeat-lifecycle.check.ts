@@ -2,7 +2,7 @@ import { takeLock, readLockHolder, lockPath } from "#framework/runtime/lock/inst
 import { heartbeatScheduler } from "#framework/runtime/lock/heartbeat.ts";
 import { withMutationGuard } from "#framework/security/instance-mutation-guard.ts";
 import { check, finish } from "#checks/kit/harness.ts";
-import { stubContext, refused } from "./fixture.ts";
+import { stubContext, refused } from "../fixture.ts";
 
 /** A manually released transport boundary. */
 function barrier() {

@@ -17,7 +17,7 @@ import {
 } from "#framework/runtime/lock/instance-lock.ts";
 import { heartbeatScheduler, refreshHeartbeat, startHeartbeat } from "#framework/runtime/lock/heartbeat.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { stubContext } from "./fixture.ts";
+import { stubContext } from "../fixture.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- staleness reads the heartbeat once one exists, never just takenAt -------------------------

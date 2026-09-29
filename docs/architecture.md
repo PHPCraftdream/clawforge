@@ -303,7 +303,7 @@ deadlock a refresh waiting to acquire it. A refresh cancelled while awaiting the
 reading the holder does not publish; a write already started finishes before release removes
 the lock. Thus an old heartbeat cannot replace the next holder's record or prevent that
 holder from releasing its own lock. Controlled transport barriers in
-`runtime/convergence/instance-lock/heartbeat-lifecycle.check.ts` cover delayed reads/writes,
+`runtime/convergence/instance-lock/heartbeat/heartbeat-lifecycle.check.ts` cover delayed reads/writes,
 queued guard acquisition, takeover, and refresh/guard-publication failures without real delays.
 
 The lock is a **directory**, and that choice is the mechanism rather than an implementation

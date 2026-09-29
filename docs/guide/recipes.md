@@ -184,13 +184,27 @@ therefore keeps install/list/status as human progress while verify/onboard can r
 machine-readable result beside the text.
 
 `recipe import <source> [new-name]` copies an app-owned recipe into a deployment and refuses
-to overwrite an existing recipe. The copy leaves out credential-shaped files: the framework's
-generic set — `.env*`, `secrets/`, `*.token`, `*.secrets.env`, its own conventions — plus
-whatever the source's own `recipe.json` declares under `privateFiles` (recipe-tree-relative
-literal paths), because the application, not the framework, knows its own files. This is a
-filter over file names, not a guarantee: a credential under a name nobody declared is copied.
-The enforced promise about a recipe's private files is the target-side `privatePaths` policy —
-snapshots exclude them and verify refuses archives that carry them — not import's copy filter.
+to overwrite an existing recipe. It copies through the same walk set build and the
+provision-agent mirror use (`collectPortableRecipeFiles`), so symlink resolution and
+containment agree across every carrier of recipe bytes: a link resolving outside `<source>` is
+refused rather than copied. The copy leaves out credential-shaped files: the framework's
+generic set — `.env*` (templates such as `.env.example` included — a filled template must not travel),
+`secrets/`, `*.token`, `*.secrets.env`, its own conventions — plus whatever the source's own
+`recipe.json` declares under `privateFiles` (recipe-tree-relative literal paths), because the
+application, not the framework, knows its own files. This is a filter over file names, not a
+guarantee: a credential under a name nobody declared is copied. The enforced promise about a
+recipe's private files is the target-side `privatePaths` policy — snapshots exclude them and
+verify refuses archives that carry them — not import's copy filter. Anything left out is named
+on import: `skipped: N file(s) — <path> (<reason>), …`.
+
+**Trust boundary: hooks run with the operator's rights.** `prepare.ts`, `verify.ts` and
+`onboard.ts` are plain TypeScript, executed on this machine — not sandboxed, not reviewed by
+the framework — with whatever rights the operator's own account has, whenever `bootstrap`,
+`up` or `recipe verify` runs them. Importing a recipe is importing code that will run here on a
+later command, not just data; `recipe import` names any hook it finds so that fact is visible
+before the first run, but reading the hook itself is the only real check. Treat an unfamiliar
+recipe's hooks the way you would treat a shell script from the same source, before running any
+command that reaches them.
 
 Keep recipe code easy to maintain: use small typed modules with one responsibility, named
 constants for paths and protocol values, pure renderers for generated files, and thin lifecycle

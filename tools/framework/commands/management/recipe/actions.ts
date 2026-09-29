@@ -2,8 +2,8 @@
 // recipe() picks the action, gates it through the instance lock, then calls runRecipeAction
 // here to dispatch to one of these.
 
-import { cp, access } from "node:fs/promises";
-import { basename, relative, resolve } from "node:path";
+import { access, copyFile, mkdir } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { dieUnknownAction } from "#src/core/arguments.ts";
 import type { Context } from "#src/core/context.ts";
@@ -14,7 +14,7 @@ import {
   type Recipe,
   type RecipeReadiness,
 } from "#src/service/recipe.ts";
-import { SENSITIVE_RECIPE_NAME, declaredPortablePrivateFiles, excludesPortablePath } from "#src/security/privacy/recipe-portable-content.ts";
+import { collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
 import { safeName } from "#src/core/names.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
@@ -200,6 +200,13 @@ async function waitForRecipeReadiness(stack: Stack, readiness: RecipeReadiness |
   }
 }
 
+/** How many skipped entries the summary line names before falling back to "and N more" —
+ *  enough to be useful, never so many the line drowns the rest of the output. */
+const SKIPPED_SUMMARY_LIMIT = 8;
+
+/** Hooks whose presence earns the operator-rights warning below. */
+const RECIPE_HOOK_FILES = ["prepare.ts", "verify.ts", "onboard.ts"];
+
 async function runImportAction(name: string, rest: string[]): Promise<void> {
   const source = resolve(name);
   const importedName = rest[0] ?? basename(source);
@@ -213,34 +220,32 @@ async function runImportAction(name: string, rest: string[]): Promise<void> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  // Two exclusion sources, neither trusted to know the other's files. The regex is a
-  // name-shape heuristic over the framework's own credential conventions and nothing
-  // more; the files of a particular application are excluded because the source's own
-  // recipe.json declares them under privateFiles — the application naming its files the
-  // way only it can. Neither is a guarantee: a credential under any other name is copied
-  // unless declared, and the enforced promise about a recipe's private files is the
-  // target-side privatePaths policy, never a filter over file names here. The
-  // declaration is read strictly — a manifest that exists but cannot be read stops the
-  // import rather than reading as "nothing declared": a quiet-empty failure would walk
-  // a private file into a share archive. Application-specific names live in
-  // declarations, not hardcoded in the dispatcher. The regex and the boundary matcher
-  // live in the shared portable-content policy (security/recipe-portable-content.ts) — the single
-  // implementation that set build, the provision-agent mirror and
-  // deploy read too, so no carrier of recipe bytes can drift from this answer.
-  const declared = await declaredPortablePrivateFiles(source).catch((error: unknown) =>
+  // The single walk every carrier of recipe bytes shares (security/recipe-portable-content.ts):
+  // same symlink resolution and containment as set build and the provision-agent mirror, so
+  // import cannot drift into copying a link the other two would refuse. A link escaping the
+  // recipe directory throws here exactly as it does for them.
+  const { files, excluded } = await collectPortableRecipeFiles(source).catch((error: unknown) =>
     die(error instanceof Error ? error.message : String(error)),
   );
-  const excluded = (path: string): boolean =>
-    SENSITIVE_RECIPE_NAME.test(path) || excludesPortablePath(path, declared);
-  await cp(source, destination, {
-    recursive: true,
-    errorOnExist: true,
-    force: false,
-    filter: (entry) => !excluded(relative(source, entry).replaceAll("\\", "/")),
-  });
+  for (const rel of files) {
+    const target = resolve(destination, ...rel.split("/"));
+    await mkdir(dirname(target), { recursive: true });
+    await copyFile(resolve(source, ...rel.split("/")), target);
+  }
   log(`imported recipe "${importedName}"`);
   info(`source: ${source}`);
   info(`destination: ${destination}`);
+  if (excluded.length > 0) {
+    const shown = excluded.slice(0, SKIPPED_SUMMARY_LIMIT).map((entry) => `${entry.path} (${entry.reason})`);
+    const more = excluded.length > SKIPPED_SUMMARY_LIMIT ? `, and ${excluded.length - SKIPPED_SUMMARY_LIMIT} more` : "";
+    info(`skipped: ${excluded.length} file(s) — ${shown.join(", ")}${more}`);
+  }
+  const hooks = RECIPE_HOOK_FILES.filter((hook) => files.includes(hook));
+  if (hooks.length > 0) {
+    warn(
+      `${hooks.join(", ")} run on this machine with the operator's rights during bootstrap/up/recipe verify — read them before running.`,
+    );
+  }
 }
 
 async function runVerifyAction(ctx: Context, name: string): Promise<void> {

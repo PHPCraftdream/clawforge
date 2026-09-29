@@ -308,9 +308,13 @@ export const managementCommands: Record<string, AppCommand> = {
       "new-name, defaulting to the source directory's own name, and refuses to overwrite; " +
       "the framework does not interpret domain-specific fields.\n" +
       "import leaves out credential-shaped names: the framework's generic set (.env*, " +
-      "secrets/, *.token, *.secrets.env) plus whatever the source's own recipe.json declares " +
-      "under privateFiles — a filter over file names, not a guarantee: a credential under " +
-      "any other name is copied unless the source declares it.\n" +
+      "secrets/, *.token, *.secrets.env) plus " +
+      "whatever the source's own recipe.json declares under privateFiles — a filter over file " +
+      "names, not a guarantee: a credential under any other name is copied unless the source " +
+      "declares it.\n" +
+      "Anything left out is named: skipped: N file(s) — <path> (<reason>), ...; prepare.ts, " +
+      "verify.ts and onboard.ts run on this machine with the operator's rights during " +
+      "bootstrap/up/recipe verify — read an imported recipe's hooks before running them.\n" +
       "Where the running recipe may keep generated credentials is a separate declaration in " +
       "the same file: privatePaths — literal, data-relative paths.\n" +
       "migrate and share snapshots exclude them, full keeps them, and the private-config " +

@@ -299,6 +299,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   the next command silently ran on a different token than the one already handed out.
   `incident rotate` had the same blind spot. `core/env.ts` gained `readEnvValue`/
   `upsertEnvLine`, used now by `ensureToken`, `incident rotate` and `upsertEnvValue`.
+* `recipe import` dropped credential-shaped names (`.env.example` included) without saying so.
+  It now copies through the same walk
+  (`collectPortableRecipeFiles`) set build and the provision-agent mirror use, so symlink
+  resolution and containment agree across every carrier, and import refuses a source whose
+  link escapes it the same way they do. Import now prints `skipped: N file(s) — <path>
+  (<reason>), …` when anything is excluded, and warns that `prepare.ts`/`verify.ts`/
+  `onboard.ts` run on this machine with the operator's rights during `bootstrap`/`up`/`recipe
+  verify`.
 
 ## 0.1.0
 

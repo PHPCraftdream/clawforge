@@ -1,6 +1,7 @@
-import { readFile, writeFile, mkdir, rename, rm, lstat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm, lstat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
+import { renameOverPrivateFile } from "../../security/privacy/private-file.ts";
 
 export type McpClient = "claude" | "codex" | "both";
 export type DeploymentMode = "installed" | "monorepo";
@@ -183,7 +184,7 @@ async function existingFile(path: string): Promise<string | undefined> {
 async function replaceFile(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.clawforge-${randomBytes(6).toString("hex")}.tmp`;
-  try { await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await rename(temporary, path); }
+  try { await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await renameOverPrivateFile(temporary, path); }
   finally { await rm(temporary, { force: true }); }
 }
 

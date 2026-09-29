@@ -530,7 +530,7 @@ function delay(ms: number): Promise<void> {
  *  the temp sibling just written) and MoveFileEx then fails EPERM/EBUSY for a hold that is
  *  usually gone a moment later. A short retry absorbs that; a failure past it says what
  *  Windows itself does not. */
-async function renameOverPrivateFile(temporary: string, file: string): Promise<void> {
+export async function renameOverPrivateFile(temporary: string, file: string): Promise<void> {
   const attempts = privateFileHost.platform === "win32" ? RENAME_RETRY_ATTEMPTS : 1;
   for (let attempt = 1; ; attempt += 1) {
     try {

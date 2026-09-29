@@ -56,11 +56,12 @@
 // second full backup against the copy the first one had just written.
 
 import { randomBytes } from "node:crypto";
-import { access, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { Context } from "../../core/context.ts";
 import { sudoFor } from "../../runtime/datadir.ts";
 import { deploymentDir } from "../../runtime/deployment.ts";
+import { renameOverPrivateFile } from "./private-file.ts";
 
 /** The ledger file: <deployment>/config/private-paths.json. */
 export function privatePathsLedgerFile(): string {
@@ -154,7 +155,7 @@ async function writeLedgerState(file: string, paths: readonly string[], forgotte
   const temporary = `${file}.${randomBytes(4).toString("hex")}.tmp`;
   try {
     await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-    await rename(temporary, file);
+    await renameOverPrivateFile(temporary, file);
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => {});
     throw new Error(`could not write ${file}: ${(error as Error).message}`);

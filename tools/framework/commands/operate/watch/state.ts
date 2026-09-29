@@ -7,10 +7,11 @@
 // desired-state.json) — deploymentDir() is always local to whoever runs this tooling,
 // whatever transport reaches the target (core/env.ts's own header makes the same point).
 
-import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, unlink } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { deploymentDir } from "../../../runtime/deployment.ts";
+import { renameOverPrivateFile } from "../../../security/privacy/private-file.ts";
 
 export type WatchLevel = "ok" | "degraded" | "down";
 
@@ -203,7 +204,7 @@ export async function writeWatchState(state: WatchState): Promise<void> {
     await handle?.close();
   }
   try {
-    await rename(temporary, file);
+    await renameOverPrivateFile(temporary, file);
   } catch (error) {
     await unlink(temporary).catch(() => {});
     throw error;

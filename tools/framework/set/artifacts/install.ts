@@ -11,7 +11,7 @@
 // installed here" has no answer, and every later question — has it drifted, what would
 // rolling back mean — has nowhere to start.
 
-import { copyFile, lstat, mkdir, mkdtemp, rm, readFile, rename } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -30,6 +30,7 @@ import type { Problem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { DESIRED_STATE_PATH, SET_MANIFEST_VERSION, setManifestId, canonicalJson } from "./model.ts";
 import type { SetManifest } from "./model.ts";
+import { renameOverPrivateFile } from "../../security/privacy/private-file.ts";
 
 /** What was installed immediately before the current set — one level, not a stack, the same
  *  depth `./clawforge rollback`'s own single-file path already works at. */
@@ -378,7 +379,7 @@ export async function storeArtifactForRollback(artifact: string, verified: Verif
     await withUnpackedArtifact(temporary, async (_staging, copied) => {
       if (copied.id !== verified.id) throw new Error("artifact changed before it could be stored for rollback");
     });
-    await rename(temporary, destination);
+    await renameOverPrivateFile(temporary, destination);
   } finally {
     await rm(temporary, { force: true });
   }

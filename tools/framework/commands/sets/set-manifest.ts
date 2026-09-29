@@ -15,7 +15,7 @@
 // ctx.settings (the deployment's declared image) is read.
 
 import { randomBytes } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { die } from "#src/core/io/log.ts";
@@ -36,6 +36,7 @@ import type { AcceptanceCheck } from "../orchestration/accept.ts";
 import { DESIRED_STATE_PATH, buildSetManifest, setManifestId } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import { assertNoSecretValues, localSecretValues, MIN_VALUE_LENGTH } from "./set-secrets-guard.ts";
+import { renameOverPrivateFile } from "../../security/privacy/private-file.ts";
 
 /** What one build produced. The id is setManifestId(manifest); the artifact carries it in
  *  its file name, so two builds of unchanged content land on the same path. */
@@ -338,7 +339,7 @@ async function writeArtifact(
         await rm(temporary, { force: true });
         await tarRunner("tar", ["-czf", temporary, "-C", staging, "."]);
       }
-      await rename(temporary, artifact);
+      await renameOverPrivateFile(temporary, artifact);
     } finally {
       await rm(temporary, { force: true });
     }

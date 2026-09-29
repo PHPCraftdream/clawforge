@@ -28,7 +28,7 @@ import {
 import type { PluginListEntry, SkillListEntry } from "#src/commands/management/extensions.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { EGRESS_EXEC_TIMEOUT_MS, EGRESS_PROBE_SCRIPT } from "./egress-probe.ts";
-import { cronDifferences, egressEndpoints, redactEndpoint } from "./helpers.ts";
+import { cronDifferences, egressEndpoints, redactEndpoint, redactEndpointText } from "./helpers.ts";
 import { recipeExpectations } from "./declared.ts";
 import type { RecipeExpectation } from "./declared.ts";
 import type { Context } from "#src/core/context.ts";
@@ -133,7 +133,7 @@ async function observeEgress(
       return undefined;
     }
     const display = redactEndpoint(endpoint.url);
-    const detail = typeof answer.detail === "string" ? answer.detail : undefined;
+    const detail = typeof answer.detail === "string" ? redactEndpointText(answer.detail, endpoint.url) : undefined;
     const unreachable = state === "dns"
       ? `${display} (${endpoint.path}) does not resolve from inside the "${GATEWAY_SERVICE}" container`
       : state === "invalid"

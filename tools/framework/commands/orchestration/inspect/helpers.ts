@@ -303,12 +303,32 @@ export function egressEndpoints(liveConfig: unknown): EgressEndpoint[] {
   return found;
 }
 
-/** The endpoint as it may be printed or reported: credentials embedded in it never survive. */
+const SECRET_CONFIG_KEY = /(?:password|passwd|secret|token|credential|authorization|(?:api|private|client|access|auth|encryption|signing)[_-]?key|^auth$|^key$|^signature$|^sig$)/i;
+
+/** Removes URL credentials while preserving diagnostic host/path and ordinary query values.
+ *  Parse query names with URLSearchParams (including percent escapes), but keep the rest
+ *  verbatim: even an invalid URL must be safe to report when the probe rejects it. */
 export function redactEndpoint(url: string): string {
-  return url.replace(/\/\/[^@/\s]*@/g, "//***@");
+  const withoutUserinfo = url.replace(/\/\/[^/\s?#]*@/g, "//***@");
+  const fragment = withoutUserinfo.indexOf("#");
+  const base = fragment < 0 ? withoutUserinfo : withoutUserinfo.slice(0, fragment);
+  const query = base.indexOf("?");
+  const redacted = query < 0 ? base : `${base.slice(0, query + 1)}${base.slice(query + 1).split("&").map((parameter) => {
+    const key = new URLSearchParams(parameter).keys().next().value ?? "";
+    return SECRET_CONFIG_KEY.test(key) ? `${parameter.split("=", 1)[0]}=***` : parameter;
+  }).join("&")}`;
+  // Fragments can carry either named credentials or opaque bearer values.
+  return fragment < 0 ? redacted : `${redacted}#***`;
 }
 
-const SECRET_CONFIG_KEY = /(?:password|passwd|secret|token|credential|authorization|api[_-]?key|private[_-]?key|client[_-]?key|access[_-]?key)/i;
+/** Uses the same URL policy inside probe diagnostics. */
+export function redactEndpointText(text: string, endpoint?: string): string {
+  const known = endpoint === undefined || endpoint === "" ? text : text.split(endpoint).join(redactEndpoint(endpoint));
+  return known.replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s<>"]+/gi, (url) => {
+    const suffix = /[),.;]+$/.exec(url)?.[0] ?? "";
+    return `${redactEndpoint(url.slice(0, url.length - suffix.length))}${suffix}`;
+  });
+}
 
 /** Keep config comparisons private while making their reported values safe to inspect. */
 export function publicConfigValue(path: string, value: unknown): unknown {
@@ -322,13 +342,12 @@ export function publicConfigValue(path: string, value: unknown): unknown {
 
 function redactConfigValue(value: unknown): unknown {
   if (typeof value === "string") {
-    if (/\b[a-z][a-z\d+.-]*:\/\/[^\s/]+@/i.test(value)) return "[redacted]";
+    if (redactEndpointText(value) !== value) return "[redacted]";
     try {
+      // Config values can also be standalone URLs without an authority (no "://").
       const url = new URL(value);
-      if (url.username !== "" || url.password !== "" || [...url.searchParams.keys()].some((key) => SECRET_CONFIG_KEY.test(key))) {
-        return "[redacted]";
-      }
-    } catch { /* Ordinary config strings are not URLs. */ }
+      if (redactEndpoint(url.href) !== url.href) return "[redacted]";
+    } catch { /* Ordinary strings are not URLs. */ }
     return value;
   }
   if (Array.isArray(value)) return value.map(redactConfigValue);

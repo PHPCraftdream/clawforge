@@ -28,7 +28,7 @@ import type { Problem, Inspection, SecretStoreObservation } from "#src/service/i
 import type { SecretStatus } from "#src/service/secrets.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
-import { prospectiveConfig, publicConfigValue, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
+import { prospectiveConfig, publicConfigValue, readLiveConfigForProspective, frameworkVersion, redactEndpoint, redactEndpointText } from "./helpers.ts";
 import { declaredState, observeDeclarationFile } from "./declared.ts";
 import { observeConfig, observeConnectionFacts, observeSecretStore } from "./drift.ts";
 import { observeLive } from "./live.ts";
@@ -81,10 +81,18 @@ function publicInspection(inspection: Inspection): Inspection {
     },
     observed: {
       ...inspection.observed,
+      egress: inspection.observed.egress?.map((entry) => ({
+        ...entry,
+        endpoint: redactEndpoint(entry.endpoint),
+        ...(entry.detail === undefined ? {} : { detail: redactEndpointText(entry.detail) }),
+      })),
       config: Object.fromEntries(Object.entries(inspection.observed.config).map(([path, value]) => [
         path, publicConfigValue(path, value),
       ])),
     },
+    problems: inspection.problems.map((entry) => entry.code === "EGRESS_UNREACHABLE"
+      ? { ...entry, detail: redactEndpointText(entry.detail) }
+      : entry),
   };
 }
 

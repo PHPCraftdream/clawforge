@@ -38,6 +38,14 @@ internet at large — and only of a running gateway, through a runtime that can 
 one; when the probe cannot run, `observed.egress` is absent, which is a gap and not a
 claim that everything is reachable.
 
+The probe receives the original live URL, including credentials, but its public endpoint
+and diagnostic detail use one URL-redaction policy: userinfo and credential query values
+(including repeated or percent-encoded parameter names) are masked, and fragments are
+masked because they can hold opaque tokens. Host, port, path and ordinary query values
+remain useful. This applies to successful observations as well as `EGRESS_UNREACHABLE`,
+in text/JSON `inspect`, `doctor`, `plan` and captured MCP output; inline credentials do not
+need to have been registered in the secret store to be protected.
+
 The deployment folder itself — the operator side — is part of the same comparison. Three
 findings cover it, each naming the command that reads that part back from the instance: a
 connection fact in `.env` that no longer matches the running container (`ENV_STALE`, naming the

@@ -11,6 +11,7 @@
 import { randomBytes } from "node:crypto";
 import { readFile, access } from "node:fs/promises";
 import { log, registerSecret } from "../core/io/log.ts";
+import { readEnvValue, upsertEnvLine } from "../core/env.ts";
 import { envFile, deploymentName } from "../runtime/deployment.ts";
 import { deploymentEnv } from "./deployment/scaffold.ts";
 import { createPrivateFile, protectPrivateFile, replacePrivateFile } from "../security/privacy/private-file.ts";
@@ -45,16 +46,12 @@ async function ensureEnvFile(): Promise<void> {
  *  that already stored it. */
 async function ensureToken(): Promise<string> {
   const content = await readFile(envFile(), "utf8");
-  const current = /^OPENCLAW_GATEWAY_TOKEN=(.*)$/m.exec(content);
-  if (current !== null && current[1].trim() !== "") return current[1].trim();
+  const current = readEnvValue(content, "OPENCLAW_GATEWAY_TOKEN");
+  if (current !== undefined && current.trim() !== "") return current.trim();
 
   log("generating a gateway token");
   const token = generateGatewayToken();
-  const updated =
-    current === null
-      ? `${content.trimEnd()}\nOPENCLAW_GATEWAY_TOKEN=${token}\n`
-      : content.replace(/^OPENCLAW_GATEWAY_TOKEN=.*$/m, `OPENCLAW_GATEWAY_TOKEN=${token}`);
-  await replacePrivateFile(envFile(), updated);
+  await replacePrivateFile(envFile(), upsertEnvLine(content, "OPENCLAW_GATEWAY_TOKEN", token));
   return token;
 }
 

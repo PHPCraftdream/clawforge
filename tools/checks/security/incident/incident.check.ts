@@ -18,6 +18,7 @@ import { unprotectedPrivateFile } from "#framework/security/privacy/private-file
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { redactInspectEnv } from "#framework/runtime/docker/incident-snapshot.ts";
+import { readEnvValue } from "#framework/core/env.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
@@ -273,6 +274,23 @@ await withDeployment(async () => {
   const ctx = stubContext({ running: false });
   const phase = await rotateToken(ctx, { dryRun: false, keepExposure: false, tail: "500" });
   checkTrue("a stopped instance is told the next start carries the new token", phase.notes.some((line) => line.includes("./clawforge up")));
+});
+
+// U2: an `export ... # comment` token line — invisible to the old ad-hoc regex, which
+// appended a second bare line and silently changed the effective token (parseEnv's own
+// last-line-wins) instead of rotating the real one.
+await withDeployment(async (dir) => {
+  await writeFile(resolve(dir, ".env"), "export OPENCLAW_GATEWAY_TOKEN=old-token-value-0123456789 # gateway token\n", "utf8");
+  const ctx = stubContext({ running: false });
+  const phase = await rotateToken(ctx, { dryRun: false, keepExposure: false, tail: "500" });
+  const rewritten = await readFile(resolve(dir, ".env"), "utf8");
+  const newToken = readEnvValue(rewritten, "OPENCLAW_GATEWAY_TOKEN");
+  checkTrue(
+    "an exported, commented token line is recognized and actually rotated",
+    newToken !== undefined && newToken !== "" && newToken !== "old-token-value-0123456789",
+  );
+  check("no second token line is appended", (rewritten.match(/OPENCLAW_GATEWAY_TOKEN/g) ?? []).length, 1);
+  checkTrue("rotate still reports it ran (not 'nothing to rotate')", phase.actions.some((line) => line.includes("rotated OPENCLAW_GATEWAY_TOKEN")));
 });
 
 await withDeployment(async () => {

@@ -9,11 +9,13 @@ import {
   ENV_FILE_ONLY_VARS,
   locksDir,
   parseEnv,
+  readEnvValue,
   serializeEnvLine,
   shellOnlyEnvNames,
   shellOnlyEnvWarning,
   suspiciousEnvLines,
   toSettings,
+  upsertEnvLine,
 } from "#framework/core/env.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -170,6 +172,37 @@ check(
 );
 
 check("a line with no = is not a key to judge", suspiciousEnvLines("STRAY LINE\nA=1\n"), []);
+
+// --- readEnvValue: parseEnv, narrowed to one name (U2) -----------------------------
+
+check("readEnvValue finds a plain key", readEnvValue("A=1\nB=2\n", "B"), "2");
+check("readEnvValue returns undefined for an absent key", readEnvValue("A=1\n", "MISSING"), undefined);
+check("readEnvValue strips a leading export", readEnvValue("export TOKEN=abc\n", "TOKEN"), "abc");
+check("readEnvValue unquotes a single-quoted value", readEnvValue("TOKEN='abc'\n", "TOKEN"), "abc");
+check("readEnvValue unquotes a double-quoted value", readEnvValue('TOKEN="abc"\n', "TOKEN"), "abc");
+check("readEnvValue drops an inline comment on an unquoted value", readEnvValue("TOKEN=abc # comment\n", "TOKEN"), "abc");
+check("readEnvValue: export and an inline comment together", readEnvValue("export TOKEN=abc # comment\n", "TOKEN"), "abc");
+check("readEnvValue reads the same value across CRLF as across LF", readEnvValue("A=1\r\nexport TOKEN=abc\r\n", "TOKEN"), "abc");
+check("readEnvValue: the last of a duplicate key wins, same as parseEnv", readEnvValue("TOKEN=first\nexport TOKEN=second\n", "TOKEN"), "second");
+
+// --- upsertEnvLine: replaces NAME's line in place, export/spacing-aware (U2) -------
+
+check("upsertEnvLine replaces a bare NAME= line", upsertEnvLine("A=1\nB=2\n", "B", "updated"), "A=1\nB=updated\n");
+check("upsertEnvLine appends when the name is absent", upsertEnvLine("A=1\n", "B", "added"), "A=1\nB=added\n");
+check("upsertEnvLine replaces an `export NAME=` line", upsertEnvLine("export A=1\nB=2\n", "A", "updated"), "A=updated\nB=2\n");
+check("upsertEnvLine replaces a spaced `NAME =` line", upsertEnvLine("A =1\nB=2\n", "A", "updated"), "A=updated\nB=2\n");
+check(
+  "upsertEnvLine rewrites every duplicate of NAME, never leaves one to shadow it",
+  upsertEnvLine("A=1\nexport A=2\n", "A", "updated"),
+  "A=updated\nA=updated\n",
+);
+check("upsertEnvLine leaves unrelated and comment lines alone", upsertEnvLine("# c\nA=1\nB=2\n", "B", "x"), "# c\nA=1\nB=x\n");
+check("upsertEnvLine collapses CRLF input to LF output", upsertEnvLine("A=1\r\nB=2\r\n", "B", "x"), "A=1\nB=x\n");
+check(
+  "a value upsertEnvLine writes reads back byte-identical through readEnvValue, edge case included",
+  readEnvValue(upsertEnvLine("export A=1\n", "A", "18789  # my port"), "A"),
+  "18789  # my port",
+);
 
 // --- serializeEnvLine: the write side is parseEnv's exact inverse -----------------
 //

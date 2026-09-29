@@ -286,6 +286,19 @@ All notable changes to `@clawforge/framework` will be documented here.
   before their own "created … next:" block, burying the useful part under it. It now prints
   after, as one line pointing at a new subsection in docs/guide/requirements.md with the full
   explanation; every other caller (`bootstrap` included) is unchanged.
+* `bootstrap --check` and an invalid `bootstrap <flag>` created `.env` and a gateway token —
+  the framework prepared the environment for every `preparesEnvironment` command before its
+  own argv was parsed, so neither the `--check` branch nor an "unknown argument" refusal
+  could stop it. `preparesEnvironmentFor()` now gates preparation on the same predicate that
+  already marks a call read-only (`readOnlyWhen`) and on the argv the command's own parser
+  would accept, checked before `ensureEnvironment()` runs, on both the console and MCP paths.
+* The gateway token was read and written with regexes that did not understand `export` or
+  spacing round `=` — the same dotenv basics `parseEnv` learned earlier. An
+  `export OPENCLAW_GATEWAY_TOKEN=…` line was invisible to `bootstrap`'s `ensureToken`, which
+  then appended a second, bare line; since `parseEnv` reads the last line for a duplicate key,
+  the next command silently ran on a different token than the one already handed out.
+  `incident rotate` had the same blind spot. `core/env.ts` gained `readEnvValue`/
+  `upsertEnvLine`, used now by `ensureToken`, `incident rotate` and `upsertEnvValue`.
 
 ## 0.1.0
 

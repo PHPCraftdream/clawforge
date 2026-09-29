@@ -568,6 +568,13 @@ that is `bootstrap`) get their preparation earlier: the framework creates `.env`
 template with this deployment's paths and port, generates a token if there is none, and
 only then builds the context. The MCP server uses the same path.
 
+Preparation only runs for a call that will actually mutate: `core/arguments.ts`'s
+`preparesEnvironmentFor(command, args)` is false for a read-only call (the same
+`readOnlyWhen` predicate MCP's own change-reporting uses, e.g. `bootstrap --check`) and
+false for argv the command's own parser would refuse — an invalid flag creates nothing
+before the command's own run reports why. Both dispatchers check this before calling
+`ensureEnvironment()`.
+
 `bootstrap` also fixes an ordering that matters for configuration: the deployment's
 `desired-state.json` is applied first, and `configure-provider` runs after it. A brand-new
 custom provider's `baseUrl` and model catalog come from the declaration, and OpenClaw's

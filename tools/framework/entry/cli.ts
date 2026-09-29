@@ -5,7 +5,7 @@
 // file in framework/ — that is the property this module exists to guarantee.
 
 import { reportError, UserError, log, info } from "../core/io/log.ts";
-import { UnknownArgumentError } from "../core/arguments.ts";
+import { UnknownArgumentError, preparesEnvironmentFor } from "../core/arguments.ts";
 import { createContext } from "../core/context.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../commands/operate/recover-env/index.ts";
 import { clearRecipesDir } from "../service/recipe.ts";
@@ -121,9 +121,20 @@ export async function runApp(
     return 0;
   }
 
+  const runArgs = splitInlineOptions(command, args);
+
   // Before the context: it parses .env and builds the runtime around it, so a command that
-  // is supposed to create that file cannot be the one to run afterwards.
-  if (command.preparesEnvironment === true) await ensureEnvironment();
+  // is supposed to create that file cannot be the one to run afterwards. Only a call about to
+  // mutate prepares it: read-only (--check) and refused argv create nothing.
+  try {
+    if (preparesEnvironmentFor(command, runArgs)) await ensureEnvironment();
+  } catch (error) {
+    if (error instanceof UnknownArgumentError) {
+      reportUnknownArgument(name, error);
+      return 1;
+    }
+    throw error;
+  }
 
   // Built here, not by the command: an application never constructs a transport itself.
   const ctx = await createContext({
@@ -136,7 +147,7 @@ export async function runApp(
   });
 
   try {
-    await command.run(ctx, splitInlineOptions(command, args));
+    await command.run(ctx, runArgs);
   } catch (error) {
     if (error instanceof UnknownArgumentError) {
       reportUnknownArgument(name, error);

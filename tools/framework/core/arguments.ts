@@ -4,7 +4,7 @@
 // CLI parser does not (or the reverse) stops being possible to write by hand.
 
 import { die, UserError } from "#src/core/io/log.ts";
-import type { CommandArgument } from "#src/core/app.ts";
+import type { AppCommand, CommandArgument } from "#src/core/app.ts";
 
 /** Damerau-Levenshtein edit distance: a transposition of two adjacent characters (the most
  *  common way to mistype a name — "statsu" for "status") costs one edit, not the two a
@@ -169,4 +169,15 @@ export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: re
   }
 
   return result;
+}
+
+/** Whether a `preparesEnvironment` command's preparation (writing .env, generating the token)
+ *  should run for `args`: false for a read-only call (readOnlyWhen, e.g. `bootstrap --check`).
+ *  Argv the command's parser refuses throws here, before anything is written, so an invalid
+ *  flag is reported as such and creates nothing. */
+export function preparesEnvironmentFor(command: AppCommand, args: readonly string[]): boolean {
+  if (command.preparesEnvironment !== true) return false;
+  if (command.readOnlyWhen?.([...args]) === true) return false;
+  parseDeclaredArgs(command.arguments ?? [], args);
+  return true;
 }

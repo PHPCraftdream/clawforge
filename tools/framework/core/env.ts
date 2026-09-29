@@ -85,6 +85,19 @@ function lastSeparator(path: string): number {
 
 const EXPORT_PREFIX = /^export\s+/;
 
+/** The key and raw (unparsed) value half of one line — a leading `export` and spacing round
+ *  `=` are already resolved here, so every reader that needs "which variable does this line
+ *  assign" (parseEnv, upsertEnvLine) agrees on the same line exactly once. undefined for a
+ *  blank line, a comment, or one with no `=`. */
+function splitEnvLine(rawLine: string): { key: string; valueRaw: string } | undefined {
+  const line = rawLine.trim();
+  if (line === "" || line.startsWith("#")) return undefined;
+  const stripped = line.replace(EXPORT_PREFIX, "");
+  const eq = stripped.indexOf("=");
+  if (eq <= 0) return undefined;
+  return { key: stripped.slice(0, eq).trim(), valueRaw: stripped.slice(eq + 1) };
+}
+
 /** Parses dotenv basics, the level compose reads the same file at: a leading `export ` is
  *  stripped, `#` starts a comment for a whole line or (after whitespace) partway through an
  *  UNQUOTED value, one outer quote pair is stripped literally (`#` inside stays data). No
@@ -92,15 +105,38 @@ const EXPORT_PREFIX = /^export\s+/;
 export function parseEnv(text: string): Env {
   const env: Env = {};
   for (const rawLine of text.split("\n")) {
-    const line = rawLine.trim();
-    if (line === "" || line.startsWith("#")) continue;
-    const stripped = line.replace(EXPORT_PREFIX, "");
-    const eq = stripped.indexOf("=");
-    if (eq <= 0) continue;
-    const key = stripped.slice(0, eq).trim();
-    env[key] = parseEnvValue(stripped.slice(eq + 1));
+    const split = splitEnvLine(rawLine);
+    if (split === undefined) continue;
+    env[split.key] = parseEnvValue(split.valueRaw);
   }
   return env;
+}
+
+/** NAME's value the way parseEnv would hand it to loadEnv's caller: export-aware,
+ *  quote-aware, last line wins on a duplicate key. undefined when NAME is not assigned. */
+export function readEnvValue(text: string, name: string): string | undefined {
+  return parseEnv(text)[name];
+}
+
+/** Replaces NAME's assignment in place, recognizing `export NAME=` and spacing round `=` the
+ *  same way parseEnv reads them — not just the bare `NAME=` prefix a plain startsWith would
+ *  need. Every line already assigning NAME is rewritten to the same value: parseEnv's own
+ *  last-line-wins already treats duplicates as one variable, so leaving an earlier one
+ *  unrewritten would keep it there as a shadow a later read could still pick up. Appends one
+ *  only when no line assigns NAME yet. Line endings collapse to `\n`, the same normalization
+ *  parseEnv's own `\r?\n` split already tolerates on read. */
+export function upsertEnvLine(text: string, name: string, value: string): string {
+  const line = serializeEnvLine(name, value);
+  const lines = text.split(/\r?\n/);
+  while (lines.at(-1) === "") lines.pop();
+  let replaced = false;
+  const next = lines.map((existing) => {
+    if (splitEnvLine(existing)?.key !== name) return existing;
+    replaced = true;
+    return line;
+  });
+  if (!replaced) next.push(line);
+  return `${next.join("\n")}\n`;
 }
 
 /** The value half of a line, taken UNTRIMMED so `KEY= # c` reads as empty with a comment.

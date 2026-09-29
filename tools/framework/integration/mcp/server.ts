@@ -26,6 +26,7 @@ import { createContext } from "../../core/context.ts";
 import { clearRecipesDir } from "../../service/recipe.ts";
 import { useApplicationRecipesDir } from "../../runtime/deployment.ts";
 import { ensureEnvironment } from "../provision.ts";
+import { preparesEnvironmentFor } from "../../core/arguments.ts";
 import { maskSecrets, UserError } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
 import { maskStructuredOutput, maskStructuredResult, toolEnvelope, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
@@ -88,10 +89,12 @@ async function captureRun(
     async () => {
       try {
         // Same order as the console path: the environment is completed before the context is
-        // built from it, and the deployment's own recipes are the ones in scope.
+        // built from it, and the deployment's own recipes are the ones in scope. Gated by
+        // preparesEnvironmentFor the same way cli.ts's console path is — a read-only call
+        // (bootstrap check: true) creates nothing.
         useApplicationRecipesDir(app.recipesDir);
         clearRecipesDir();
-        if (command.preparesEnvironment === true) await ensureEnvironment();
+        if (preparesEnvironmentFor(command, argv)) await ensureEnvironment();
 
         // recover-env repairs OC_DATA_DIR itself, so its MCP path must not build the
         // Context that would reject that missing value before the command can run.

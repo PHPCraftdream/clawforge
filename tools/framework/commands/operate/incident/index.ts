@@ -45,6 +45,7 @@ import { guarded } from "../../../runtime/lock/instance-lock.ts";
 import { generateGatewayToken } from "../../../integration/provision.ts";
 import { envFile, deploymentDir, deploymentName } from "../../../runtime/deployment.ts";
 import { upsertEnvValue } from "../../../security/privacy/private-config.ts";
+import { readEnvValue } from "../../../core/env.ts";
 import { replacePrivateFile, createPrivateFile, protectPrivateDirectory } from "../../../security/privacy/private-file.ts";
 import { probeTailscale, tailscaleGatewayRoutes, tailscaleServeOffCommand } from "../expose/tailscale.ts";
 import { summarizeExposure, exposureOneLiner } from "../expose/status.ts";
@@ -183,14 +184,12 @@ export async function containExposure(ctx: Context, options: IncidentOptions): P
   return { phase: "contain", actions, notes };
 }
 
-const TOKEN_LINE = /^OPENCLAW_GATEWAY_TOKEN=(.*)$/m;
-
 export async function rotateToken(ctx: Context, options: IncidentOptions): Promise<IncidentPhase> {
   const actions: string[] = [];
   const notes: string[] = [];
   const path = envFile();
   const content = await readFile(path, "utf8");
-  const current = TOKEN_LINE.exec(content)?.[1]?.trim();
+  const current = readEnvValue(content, "OPENCLAW_GATEWAY_TOKEN")?.trim();
 
   if (current === undefined || current === "") {
     actions.push("no OPENCLAW_GATEWAY_TOKEN configured — nothing to rotate");

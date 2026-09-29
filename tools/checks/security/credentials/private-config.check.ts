@@ -27,6 +27,12 @@ assert.throws(() => upsertEnvValue("", "GOOD", "line\nbreak"), /contains a newli
 assert.equal(upsertEnvValue("A=1\nPADDED=x\n", "PADDED", " padded "), "A=1\nPADDED=' padded '\n");
 assert.deepEqual(parseEnv(upsertEnvValue("A=1\nPADDED=x\n", "PADDED", " padded ")), { A: "1", PADDED: " padded " });
 assert.equal(upsertEnvValue("A=1\n", "QUOTED", `a"b`), `A=1\nQUOTED='a"b'\n`);
+// U2: recognizes `export NAME=` and spacing around `=` the same way parseEnv reads them —
+// not just the bare `NAME=` prefix a plain startsWith once needed. core/env.ts's
+// upsertEnvLine owns the grammar now; these pin the delegation stays intact.
+assert.equal(upsertEnvValue("export B=1\n", "B", "updated"), "B=updated\n");
+assert.equal(upsertEnvValue("B =1\n", "B", "updated"), "B=updated\n");
+assert.equal(upsertEnvValue("B=1\nexport B=2\n", "B", "updated"), "B=updated\nB=updated\n");
 assert.equal(generatePrivateSecret(16).length > 0, true);
 registerPrivateSecret("synthetic-private-secret");
 assert.throws(() => generatePrivateSecret(8), /at least 16/);

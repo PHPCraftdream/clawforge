@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { checksumOf } from "../../service/checksums.ts";
 import { installedRecipePrivatePaths } from "../../service/recipe.ts";
 import { recordPrivateWrite } from "./private-paths-ledger.ts";
-import { locksDir, serializeEnvLine } from "../../core/env.ts";
+import { locksDir, upsertEnvLine } from "../../core/env.ts";
 import type { Context } from "../../core/context.ts";
 import { registerSecret } from "../../core/io/log.ts";
 import { shellQuote } from "../../core/io/shell.ts";
@@ -266,23 +266,10 @@ export async function execWithSecrets(
   return result;
 }
 
-/** Replaces one KEY=VALUE entry while preserving unrelated target-env lines.
- *
- *  The written line comes from serializeEnvLine — the lossless inverse of parseEnv — so a
- *  value with edge whitespace or embedded quotes survives the next read byte-identically
- *  instead of being rewritten bare and trimmed. Name and value are validated by
- *  that call before any line is touched; the refusal messages are the same ones this
- *  function has always thrown. */
+/** Replaces one KEY=VALUE entry while preserving unrelated target-env lines — core/env.ts's
+ *  upsertEnvLine, which recognizes `export NAME=` and spacing round `=` the way parseEnv
+ *  reads them, not just the bare `NAME=` prefix. Kept here under its established name: every
+ *  caller already reads target-env content, not the repository's own .env. */
 export function upsertEnvValue(content: string, name: string, value: string): string {
-  const line = serializeEnvLine(name, value);
-  const lines = content.split(/\r?\n/);
-  while (lines.at(-1) === "") lines.pop();
-  let replaced = false;
-  const next = lines.map((existing) => {
-    if (!existing.startsWith(`${name}=`)) return existing;
-    replaced = true;
-    return line;
-  });
-  if (!replaced) next.push(line);
-  return `${next.join("\n")}\n`;
+  return upsertEnvLine(content, name, value);
 }

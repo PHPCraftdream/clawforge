@@ -1,8 +1,7 @@
 // Reconciliation for `./clawforge provision-agent`: mirroring a recipe's files onto the
 // target, and creating/replacing/removing the agent, MCP server and cron job it declares.
-// Split out of provision-agent.ts; see provision-agent-declaration.ts for the argv/
-// comparison functions these call, and provision-agent.ts for the top-level command and
-// its own barrel re-export (every external importer of this module imports from there).
+// declaration.ts has the argv/comparison functions these call; index.ts is the top-level
+// command and its barrel re-export.
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -33,18 +32,13 @@ import { assertTargetContained } from "./target-boundary.ts";
 /** Mirrors the recipe's runtime files onto the target, deletions included.
  *
  *  Copying without deleting would not be a mirror: a page removed from the recipe stays on
- *  the target forever, the recipe's MCP server keeps serving it, and the agent keeps
- *  answering from instructions that were withdrawn — the failure is silent and reads like
- *  the agent inventing things.
+ *  the target forever, and the agent keeps answering from withdrawn instructions.
  *
- *  Only this directory is mirrored. The agent's workspace is deliberately not: its prompt
- *  files are declared state, but the agent's own memory/ sits beside them, and "delete what
- *  the recipe does not declare" applied there would erase exactly what the agent is meant to
- *  accumulate. Emptied subdirectories are left in place — they hold nothing, and removing a
- *  directory is a much sharper tool than removing a file it once contained.
+ *  Only this directory is mirrored. The agent's workspace is not: its own memory/ sits
+ *  beside prompt files, and "delete what the recipe doesn't declare" there would erase
+ *  what the agent is meant to accumulate. Emptied subdirectories are left in place.
  *
- *  Returns what changed so the command can report it: a silent deletion is not much better
- *  than no deletion. */
+ *  Returns what changed so the command can report it. */
 export async function syncRecipeFiles(
   ctx: Context,
   recipeName: string,
@@ -59,9 +53,8 @@ export async function syncRecipeFiles(
 
   const declared = new Set(relPaths);
   const stale = alreadyThere.filter((rel) => !declared.has(rel));
-  // The target workspace (see docs/internal/review-2026-09-23-xxa-round-6.md) is reachable by the
-  // instance, so every path this sync will touch — creations, stale deletions, shape
-  // changes — must physically resolve inside the data directory before anything is mutated.
+  // The target workspace is reachable by the instance, so every path this sync will touch
+  // must physically resolve inside the data directory before anything is mutated.
   await assertTargetContained(ctx.transport, ctx.settings.dataDir, [
     targetDir,
     ...relPaths.map((rel) => `${targetDir}/${rel}`),
@@ -159,9 +152,8 @@ export async function ensureAgent(ctx: Context, config: AgentConfig): Promise<bo
   return true;
 }
 
-/** Reconciled the same way ensureCronJob() already is: a registration present under a
- *  command that no longer matches the recipe (hand-edited, or left over from a renamed
- *  server.ts) is replaced rather than left broken and silently reported as fine. */
+/** Reconciled the same way ensureCronJob() is: a registration under a command that no
+ *  longer matches the recipe is replaced rather than left broken and reported as fine. */
 export async function ensureMcpServer(ctx: Context, config: AgentConfig, recipeName: string): Promise<"created" | "replaced" | "unchanged"> {
   const servers = await openclawCliJson<Record<string, { command?: unknown; args?: unknown }>>(ctx, ["mcp", "list", "--json"]);
   const existing = servers[config.mcpServerName];
@@ -177,10 +169,9 @@ export async function ensureMcpServer(ctx: Context, config: AgentConfig, recipeN
 }
 
 /** Reconciled rather than merely created: a job whose schedule, message, timeout or
- *  delivery no longer matches the recipe is removed and added again. Editing a recipe and
- *  re-running would otherwise leave the old job in place, which is the opposite of what
- *  every other declared-state command here does. Replacement is opt-in because a job with no
- *  ledger entry is foreign; the top-level provision path passes ownership explicitly. */
+ *  delivery no longer matches the recipe is removed and added again. Replacement is opt-in
+ *  since a job with no ledger entry is foreign; the top-level provision path passes
+ *  ownership explicitly. */
 export async function ensureCronJob(
   ctx: Context,
   config: AgentConfig,
@@ -212,10 +203,9 @@ export async function ensureCronJob(
 }
 
 /** Refuse a name collision before mirroring files or writing prompts. An OpenClaw object
- * without a ledger entry is foreign, even if it happens to have the same shape as this
- * recipe: silently adopting it would make a later rename/delete destructive. An entry for
- * another recipe is a collision too. The lock makes this check and the following writes one
- * operation, so a second provision cannot change the answer between them. */
+ * without a ledger entry is foreign, even with the same shape as this recipe: silently
+ * adopting it would make a later rename/delete destructive. The lock makes this check and
+ * the following writes one operation. */
 export async function assertObjectNamesAvailable(
   ctx: Context,
   recipeName: string,
@@ -258,10 +248,10 @@ export async function assertObjectNamesAvailable(
   }
 }
 
-/** During `apply --set`, the artifact source is active before provisioning runs but the
- * target's installed-set marker is written only after the whole apply succeeds. Read the
- * active artifact id here so objects created mid-run are attributed to the set that actually
- * created them, rather than to the previous set. Working-tree runs keep the installed marker. */
+/** During `apply --set`, the artifact source is active before provisioning runs, but the
+ * target's installed-set marker is written only after the whole apply succeeds. Reads the
+ * active artifact id so objects created mid-run attribute to the set actually creating
+ * them, not the previous set. Working-tree runs keep the installed marker. */
 export async function activeSetId(ctx: Context): Promise<string | undefined> {
   const source = setSourceDir();
   if (source !== undefined) {
@@ -278,13 +268,11 @@ export async function activeSetId(ctx: Context): Promise<string | undefined> {
 
 /** Removes an object this framework created and stops tracking it — the inverse of
  *  `ensureAgent`/`ensureMcpServer`/`ensureCronJob`. Called for an object the ledger says is
- *  ours but whose recipe no longer declares it (dropped, or renamed): never for an object
- *  the ledger does not know about, which is the boundary `orphanedBy` already draws before
- *  this is reached.
+ *  ours but whose recipe no longer declares it; never for one the ledger doesn't know about
+ *  (orphanedBy's boundary).
  *
- *  A cron job is looked up by its declared name first: the ledger and a recipe's config.json
- *  both name a job by that, but OpenClaw's own `cron rm` takes the id `cron list` assigns,
- *  the same indirection `ensureCronJob` already goes through to reconcile one. */
+ *  A cron job is looked up by its declared name first, then OpenClaw's `cron rm` takes the
+ *  id `cron list` assigns — same indirection `ensureCronJob` goes through. */
 export async function removeOwnedObject(ctx: Context, kind: OwnedKind, name: string): Promise<void> {
   const ledger = await readLedger(ctx);
   if (ownerOf(ledger, kind, name) === undefined) {

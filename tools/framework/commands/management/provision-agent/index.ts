@@ -1,38 +1,20 @@
 // `./clawforge provision-agent <recipe>` — wires a recipe's MCP server to a dedicated OpenClaw
-// agent: an isolated agent with its own workspace prompt files, the recipe's stdio MCP
-// server registered against it, and (optionally) a cron job that sends the agent a
-// recurring message.
+// agent: isolated agent, own workspace prompt files, the recipe's stdio MCP server, and
+// (optionally) a cron job that sends the agent a recurring message.
 //
-// Convention a recipe opts into by adding an `agent/` subdirectory next to its existing
-// files:
-//   recipes/<name>/agent/config.json    identifiers + optional cron schedule (see below)
-//   recipes/<name>/agent/*.md           copied verbatim as the new agent's workspace files
+// Recipe opts in via an `agent/` subdirectory:
+//   recipes/<name>/agent/config.json        agentId, mcpServerName, optional cron fields
+//   recipes/<name>/agent/*.md               copied verbatim as workspace files
 //   recipes/<name>/agent/cron-message.txt   optional — enables the cron job if present
-//   recipes/<name>/server.ts            the recipe's own stdio MCP server (unchanged)
 // Everything under recipes/<name>/ except agent/ is mirrored into the agent's data mount
-// so the container can spawn recipes/<name>/server.ts; agent/ itself stays host-side, read
-// once to build the workspace files and cron job below.
+// (container spawns recipes/<name>/server.ts from there); agent/ stays host-side.
 //
-// config.json shape:
-//   {
-//     "agentId": string,            // OpenClaw agent id to create
-//     "mcpServerName": string,      // name the MCP server is registered under
-//     "cronJobName"?: string,       // required only if cron-message.txt exists
-//     "cronSchedule"?: string,      // 5-field cron expression, default: daily off-peak
-//     "cronTimeoutSeconds"?: number // default: 900
-//   }
+// Re-runnable: workspace prompt files and mirrored recipe data are declared state,
+// rewritten every run. The agent's own files under workspace/memory/ are never touched.
 //
-// Re-runnable by design, same spirit as apply-config: workspace prompt files and the
-// mirrored recipe data are declared state and get rewritten every run; the agent's own
-// accumulated files under its workspace's memory/ are never touched here.
-//
-// Split into three files under this directory, purely organisational: declaration.ts (the
-// config.json shape, path builders, argv/comparison functions) and reconcile.ts (mirroring
-// files, creating/replacing/removing the agent/MCP server/cron job). This file, index.ts,
-// keeps only the top-level command and re-exports everything from the other two under its
-// own name — this is the most fanned-out module in the codebase for selective imports
-// (install.ts, set.ts, inspect/, several checks), all of which import from
-// "../management/provision-agent/index.ts" (or the equivalent relative depth).
+// Split for organisation only: declaration.ts (config shape, paths, argv), reconcile.ts
+// (mirroring, agent/MCP server/cron job create-replace-remove), this file (command +
+// re-exports — the single import point other modules use).
 
 import { log, info, die } from "#src/core/io/log.ts";
 import { emit } from "#src/core/io/output.ts";
@@ -90,13 +72,8 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
   // second acquire would refuse the run its own caller started. Taken only when this is the
   // command someone invoked directly.
   await withLockUnlessHeld(ctx, `provision-agent ${recipeName}`, newOperationId("provision-agent"), { breakLock, breakForeignLockHost }, async () => {
-    // Strict control-ledger preflight, before the first live mutation: a corrupt ownership
-    // ledger must refuse the whole run while nothing has been mirrored, written or created
-    // yet. The tolerant read this replaces sailed past the corruption and let the mirror,
-    // prompt writes and agent creation happen, only for recordOwned()'s own strict read to
-    // fail afterwards — leaving new live state no ledger could ever claim. Inside the locked
-    // scope, so the check and the writes it guards are one operation, and a refusal still
-    // releases the lock on the way out.
+    // Strict ledger read before any mutation: a corrupt ledger must refuse the whole run,
+    // not fail partway through after files/agent/MCP server are already created.
     const ledger = await readLedgerStrict(ctx);
     const setId = await activeSetId(ctx);
     await assertObjectNamesAvailable(ctx, recipeName, bundle, ledger);

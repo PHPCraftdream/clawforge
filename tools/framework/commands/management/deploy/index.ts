@@ -1,21 +1,17 @@
 // `./clawforge deploy user@host` — puts this repository on a server and brings the instance up.
 //
-// Two deliveries, not one: the framework (code, mirrored with deletions) and the deployment
-// (configuration, only its non-secret parts). rsync and ssh run on the target side (inside
-// WSL when the tooling is on Windows), because that is where the SSH keys and the tools live.
+// Two deliveries: the framework (code, mirrored with deletions) and the deployment
+// (configuration, only its non-secret parts). rsync and ssh run on the target side.
 //
 // Phases, in order: resolve arguments (arguments.ts) → refuse if any tree carries private
 // bytes (refusals.ts) → prove the target is reachable and equipped (server.ts) → prove the
 // remote root is safe for --delete (server.ts) → mirror both trees (sync.ts) → bootstrap or
 // report (sync.ts). Each phase mutates nothing the phase before it didn't already allow.
 //
-// npm distribution: this command is monorepo-specific — it mirrors the whole checkout
-// (tools/ included) over rsync, which only makes sense when there is a whole checkout to
-// mirror. It deliberately keeps using `monorepoRoot` (env.ts), not `frameworkRoot`: deploying
-// an npm-distributed app to a server is a different, not-yet-built command. See
-// frameworkSourceRoot below — installed as a package, monorepoRoot would resolve to whatever
-// directory happens to sit two levels above the package, and mirroring that with --delete
-// would put an unrelated tree on the server.
+// npm distribution: this command is monorepo-specific, mirroring the whole checkout over
+// rsync — it deliberately uses `monorepoRoot`, not `frameworkRoot` (see
+// frameworkSourceRoot below): installed as a package, monorepoRoot would resolve to an
+// unrelated directory and mirroring it with --delete would be dangerous.
 
 import { log, info } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
@@ -36,12 +32,10 @@ export {
   markerVerifyScript,
 } from "#src/security/privacy/deploy-boundary.ts";
 
-/** `--dry-run`: the local refusal check (assertDeployable) plus the same reachability/tool
- *  check a real deploy runs BEFORE its first mutation (checkServerReady) — nothing past that
- *  point runs, since preparing the remote root is itself a write (mkdir, and a marker file
- *  for a first-time root). Does not cover: whether the remote root is safe for --delete
- *  (only prepareRemoteRoot proves that, by writing its marker) or the exact file-level diff
- *  rsync would produce there. */
+/** `--dry-run`: the local refusal check plus the same reachability/tool check a real deploy
+ *  runs BEFORE its first mutation — nothing past that runs, since preparing the remote root
+ *  is itself a write. Doesn't cover whether the root is safe for --delete or the exact
+ *  file-level diff rsync would produce. */
 async function deployDryRun(ctx: Context, sourceRoot: string, plan: DeployPlan): Promise<void> {
   await checkServerReady(ctx, plan.target);
 
@@ -80,8 +74,7 @@ async function deployDryRun(ctx: Context, sourceRoot: string, plan: DeployPlan):
 }
 
 export async function deploy(ctx: Context, args: string[]): Promise<void> {
-  // Before the arguments: no set of them makes this command work in the wrong mode, and a
-  // usage error would send the reader off to fix the wrong thing.
+  // Before the arguments: no set of them makes this command work in the wrong mode.
   const sourceRoot = await frameworkSourceRoot();
 
   const plan = resolveDeployArguments(ctx, args);

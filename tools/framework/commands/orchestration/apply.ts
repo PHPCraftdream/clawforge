@@ -1,27 +1,23 @@
 // `./clawforge apply` — run the plan, then check the result.
 //
-// "Applied" and "working" are different claims, and the weaker one is the easy one to make:
-// every step returned successfully, so the command reports success, and the instance is
-// still broken for a reason none of the steps was looking at. This command makes the
-// stronger claim — it inspects again afterwards and reports what it found, so the answer a
-// coder gets is about the instance rather than about the steps.
+// "Applied" and "working" are different claims. Every step returning successfully doesn't
+// mean the instance is healthy, so this command inspects again afterwards and reports what
+// it found — the answer is about the instance, not about the steps.
 //
-// It refuses a plan whose declaration changed while it was being read. That is the cheap
-// half of concurrency safety: it does not stop two people applying at once, but it does
-// stop the far more ordinary case of applying steps that were chosen for a different
-// version of the repository.
+// Refuses a plan whose declaration changed while it was being read: doesn't stop two people
+// applying at once, but stops applying steps chosen for a different repository version.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { computePlan, printPlanActions } from "./plan.ts";
 import { gatherInspection } from "./inspect/gather.ts";
-import { currentComposition, declarationChecksum, frameworkVersion } from "../management/lock.ts";
+import { currentComposition, declarationChecksum, frameworkVersion } from "#src/commands/management/lock.ts";
 import { isHealthy, nextActions, PROBLEM_CODES } from "#src/service/inspection.ts";
 import { applyConfig } from "./config.ts";
-import { secrets } from "../management/secrets.ts";
-import { up, restart } from "../lifecycle/lifecycle.ts";
-import { provisionAgent, removeOwnedObject } from "../management/provision-agent/index.ts";
-import { recoverEnv } from "../operate/recover-env/index.ts";
+import { secrets } from "#src/commands/management/secrets.ts";
+import { up, restart } from "#src/commands/lifecycle/lifecycle.ts";
+import { provisionAgent, removeOwnedObject } from "#src/commands/management/provision-agent/index.ts";
+import { recoverEnv } from "#src/commands/operate/recover-env/index.ts";
 import { readLedgerStrict } from "#src/set/ownership/ledger.ts";
 import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
@@ -49,78 +45,61 @@ export const APPLY_ARGUMENTS: CommandArgument[] = [
 ];
 
 /** Whether the container is running but its image could not be resolved to any digest at
- *  all — a container built or tagged in a way docker cannot report RepoDigests for, say.
- *  requirementProblems() treats an undefined imageDigest as "nothing to compare, no
- *  problem", which is right for inspect's informational reporting (unknown legitimately
- *  means "cannot say") but wrong for deciding whether to RECORD a set as installed: that
- *  decision needs proof of a match, not merely the absence of a proven mismatch. */
+ *  all. requirementProblems() treats an undefined imageDigest as "nothing to compare, no
+ *  problem" (right for inspect's informational reporting) but wrong for deciding whether
+ *  to RECORD a set as installed: that needs proof of a match, not absence of a mismatch. */
 export async function runningImageUnconfirmed(ctx: Context): Promise<boolean> {
   const running = await ctx.runtime.runningImageIdentity?.();
-  // Either shape of "cannot determine anything about the running image" refuses recording —
-  // an identity object with no digests, AND no identity at all (no container found, or a
-  // runtime backend that does not implement this). Only checking the former let a fully
-  // unknown image identity sail through as if it were confirmed.
+  // Both shapes of "cannot determine anything" refuse recording: no identity at all, and
+  // an identity with no digests — checking only the latter let an unknown image pass as confirmed.
   return running === undefined || running.digests.length === 0;
 }
 
-/** Strict control-marker preflight for `--set`, taken under the instance lock before the
- *  first live mutation: a corrupt installed-set marker or ownership ledger refuses the whole
- *  install while the target is still untouched. The strict reads inside
- *  recordInstalledSet()/recordOwned() already protect the bytes — but by the time they run,
- *  the rollback artifact is stored, the apply steps have executed and any provisioning has
- *  created objects, so a late failure leaves live state the markers can never describe.
- *  Refusing first keeps "the marker is corrupt" from also becoming "the instance drifted". */
+/** Strict control-marker preflight for `--set`, under the instance lock before the first
+ *  live mutation: a corrupt installed-set marker or ownership ledger refuses the whole
+ *  install while the target is still untouched, rather than failing after the rollback
+ *  artifact is stored and steps/provisioning have already run. */
 export async function preflightControlMarkers(ctx: Context): Promise<void> {
   await readInstalledSetStrict(ctx);
   await readLedgerStrict(ctx);
 }
 
-/** How each executable step is actually performed. Commands are called directly rather than
- *  by shelling out to `./clawforge`: the step already knows which function it means, and going back
+/** How each executable step is actually performed. Called directly rather than shelling
+ *  out to `./clawforge`: the step already knows which function it means, and going back
  *  out through the dispatcher would lose the Context, the output sink and the error. */
 const RUNNERS: Record<string, (ctx: Context, action: PlanAction) => Promise<void>> = {
-  // The recovery steps write only the operator side — .env, the local store, the
-  // declaration — nothing the instance lock serializes, so their runners call the commands'
-  // lockless modes directly. `apply` still holds its run-level lock, because the other steps
-  // in the same plan mutate the instance; these ride along under it harmlessly.
-  // Bare recover-env is the safe form: it fills the connection facts .env is missing
-  // entirely and never writes over a value both sides carry — which side is authoritative
-  // for those is the operator's call, so no planned run picks it.
+  // Recovery steps write only the operator side (.env, local store, declaration) — nothing
+  // the instance lock serializes — so their runners call lockless modes directly, riding
+  // along under apply's own run-level lock. Bare recover-env is the safe form: it fills
+  // missing connection facts and never overwrites a value both sides carry.
   "recover-env": (ctx) => recoverEnv(ctx, []),
   secrets: (ctx) => secrets(ctx, ["--apply"]),
-  // restartAdvice: false — planActions() only ever schedules this step alongside "up" or
-  // "restart" in the SAME plan (plan.ts: CONFIG_DRIFT unconditionally implies one of them),
-  // so the default "restart to pick it up" line would always be immediately contradicted by
-  // this same run's next step.
+  // restartAdvice: false — planActions() always schedules this alongside "up"/"restart" in
+  // the same plan, so the default "restart to pick it up" advice would be self-contradicting.
   "apply-config": (ctx) => applyConfig(ctx, [], { restartAdvice: false }),
   // Planned advisory (see planActions), with a runner anyway: if a future plan ever emits it
-  // as executable, it must fail loudly at exactly the --force refusal — never overwrite the
-  // store, and never fall out of this table as "no runner for this step".
+  // as executable it must fail loudly at the --force refusal, never fall out as "no runner".
   "secrets-dump": (ctx) => secrets(ctx, ["--dump"]),
   "apply-config-dump": (ctx) => applyConfig(ctx, ["--dump"]),
   up: (ctx) => up(ctx, []),
   restart: (ctx) => restart(ctx, []),
 };
 
-/** The steps whose whole point is rewriting the deployment's .env — the file every other
- *  step's Context was built from. `recover-env` fills into it the connection facts the file
- *  is missing; `secrets --apply` writes rotated repo-env values into it. After either
- *  succeeds, the rest of the run re-derives its Context from disk — or stops, when the
- *  facts that moved are the target's own coordinates: the plan and the instance lock were
- *  taken for the previous target, and continuing under them would address a deployment
- *  nobody planned for. */
+/** Steps that rewrite the deployment's .env, the file every other step's Context was built
+ *  from. After either succeeds, the rest of the run re-derives its Context from disk — or
+ *  stops if the target's own coordinates moved, since the lock was taken for the old target. */
 const REDERIVES_CONTEXT = new Set(["recover-env", "secrets"]);
 
-/** Exported so the checks can assert every executable step a plan can emit has one — the
- *  gap surfaced as a failed run in production otherwise, not as a failing check. */
+/** Exported so checks can assert every executable step a plan can emit has one — the gap
+ *  would otherwise surface as a failed run in production, not a failing check. */
 export function runnerFor(action: PlanAction): ((ctx: Context, action: PlanAction) => Promise<void>) | undefined {
   if (action.id.startsWith("provision-agent:")) {
     const recipe = action.id.slice("provision-agent:".length);
     return (ctx) => provisionAgent(ctx, [recipe]);
   }
   if (action.id.startsWith("remove-owned:")) {
-    // "remove-owned:<kind>:<name>" — the agent case never reaches here: planActions marks it
-    // advisory, and runSteps skips advisory actions before asking for a runner at all.
+    // "remove-owned:<kind>:<name>" — the agent case never reaches here: planActions marks
+    // it advisory, and runSteps skips advisory actions before asking for a runner.
     const rest = action.id.slice("remove-owned:".length);
     const separator = rest.indexOf(":");
     const kind = rest.slice(0, separator) as OwnedKind;
@@ -149,10 +128,9 @@ export interface ApplyOutcome {
 }
 
 /** Thrown by runSteps when a step moved the deployment target itself (dataDir, port, ...):
- *  the remaining steps were planned for the previous target, and the run-level lock covers
- *  the old coordinates only. The run stops safely — recorded outcomes stay in the journal —
- *  and a fresh `./clawforge apply` re-plans against the refreshed .env and takes the lock
- *  for the new target. */
+ *  the remaining steps were planned for the previous target and the lock covers only the old
+ *  coordinates. The run stops safely (outcomes stay in the journal); a fresh apply re-plans
+ *  against the refreshed .env. */
 export class TargetChangedError extends Error {
   readonly stepId: string;
   readonly changes: readonly string[];
@@ -175,14 +153,9 @@ export function isApplyDryRun(args: readonly string[]): boolean {
   return parseDeclaredArgs(APPLY_ARGUMENTS, args)["dry-run"] === true;
 }
 
-/** Runs the executable steps in order, stopping at the first failure.
- *
- *  Stopping is the point. The steps depend on each other — a restart after a configuration
- *  that failed to apply would put the instance back on exactly what it was already running,
- *  and reporting the later steps as successful would describe an instance nobody has. What
- *  did not run is reported rather than omitted, with its own status — advisory when it was
- *  never this command's job, blocked when an earlier step failed first — so the answer says
- *  where it got to. */
+/** Runs the executable steps in order, stopping at the first failure — steps depend on each
+ *  other, so reporting later ones successful after an earlier failure would describe an
+ *  instance nobody has. What didn't run is still reported, as advisory or blocked. */
 export async function runSteps(
   ctx: Context,
   actions: readonly PlanAction[],
@@ -194,9 +167,8 @@ export async function runSteps(
 
   const record = async (outcome: StepOutcome): Promise<void> => {
     outcomes.push(outcome);
-    // Written as each step finishes, not once at the end: a run that is killed mid-way is
-    // exactly the case the journal exists for, and a record assembled afterwards would be
-    // lost with it.
+    // Written as each step finishes, not once at the end: a run killed mid-way is exactly
+    // the case the journal exists for.
     await journal?.step(outcome.id, outcome.status, outcome.detail);
   };
 
@@ -212,10 +184,8 @@ export async function runSteps(
 
     const runner = runnerFor(action);
     if (runner === undefined) {
-      // A plan naming an action with no runner is a plan and its runner table drifting
-      // apart — an implementation gap, not an outcome anyone chose. Reported as the failure
-      // it is, and treated like one: the steps after it were ordered around a step that
-      // cannot run, so continuing would guess at an ordering nobody wrote.
+      // Plan and runner table drifting apart, an implementation gap. Treated as a failure:
+      // steps after it were ordered around one that can't run.
       stopped = true;
       await record({ id: action.id, status: "failed", detail: "no runner for this step" });
       continue;
@@ -229,10 +199,9 @@ export async function runSteps(
         const refresh = await refreshContext(scope.current);
         if (refresh !== undefined) {
           if (refresh.targetChanges.length > 0) {
-            // The target itself moved. Everything still queued was planned for the
-            // previous target, and the run-level lock covers the old coordinates — so
-            // nothing after this step runs. Each remaining step is recorded with why,
-            // and the run fails: applyFromSource turns this into a journal-closed,
+            // Target moved. Everything queued was planned for the previous target and the
+            // lock covers the old coordinates, so nothing after this step runs; each
+            // remaining step is recorded with why, and applyFromSource turns this into a
             // reported failure pointing at a fresh apply.
             for (const later of actions.slice(index + 1)) {
               if (later.advisory === true) {
@@ -248,18 +217,16 @@ export async function runSteps(
             throw new TargetChangedError(action.id, refresh.targetChanges, outcomes);
           }
           if (refresh.changed.length > 0) {
-            // Same target, new values (e.g. a repo-env secret just installed): the steps
-            // after this one — up/restart included — must interpolate what is on disk
-            // now, not the snapshot this run started from.
+            // Same target, new values: later steps (up/restart included) must interpolate
+            // what is on disk now, not the snapshot this run started from.
             scope.current = refresh.context;
             info(`.env changed during this run (${refresh.changed.join(", ")}) — the remaining steps continue against the refreshed context`);
           }
         }
       }
     } catch (error) {
-      // Not a step failure: this step succeeded and the later ones are already recorded —
-      // the error must reach applyFromSource as-is, or the run would close its journal as
-      // an ordinary failed step instead of pointing at a fresh apply.
+      // Not a step failure: must reach applyFromSource as-is, or the run would close its
+      // journal as an ordinary failed step instead of pointing at a fresh apply.
       if (error instanceof TargetChangedError) throw error;
       const detail = error instanceof Error ? error.message : String(error);
       await record({ id: action.id, status: "failed", detail });
@@ -274,10 +241,9 @@ export async function apply(ctx: Context, args: string[]): Promise<void> {
   return applyWithSource(ctx, args);
 }
 
-/** With --set, the declaration and the recipe files come from the artifact for the whole run:
- *  planning AND every step. Unpacking only for the plan would compute steps from the artifact
- *  and then execute them against the working tree — an install that reports the set's id while
- *  having mirrored somebody's uncommitted edits. */
+/** With --set, the declaration and recipe files come from the artifact for the whole run —
+ *  planning AND every step — so an install never reports the set's id while having
+ *  mirrored uncommitted working-tree edits. */
 async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
   const index = args.indexOf("--set");
   if (index === -1) {
@@ -298,22 +264,16 @@ async function applySetArtifact(ctx: Context, args: string[], artifact: string, 
     return;
   }
 
-  // Refused before anything is touched, the same way the declaration-changed check
-  // below refuses before any step runs. up/restart (the only steps that touch the
-  // running container) start whatever this deployment's OWN .env already names —
-  // applying this artifact never pulls or switches to the image it requires. Recording
-  // this set as installed while the runtime keeps running a different image would not be
-  // optimistic, it would be false: not "may still work", but provably does not match,
-  // right now. requirementProblems is the same check inspect's own SET_REQUIREMENT_UNMET
-  // finding already uses — reused here so this run reports the mismatch itself, instead
-  // of leaving it to a LATER inspect that reads the record this apply is about to write.
+  // Refused before anything is touched: up/restart start whatever this deployment's OWN
+  // .env already names, since applying this artifact never pulls or switches images.
+  // Recording the set as installed while the runtime runs a different image would be
+  // false, not merely optimistic — same check as inspect's SET_REQUIREMENT_UNMET.
   const framework = await frameworkVersion();
   await refuseUnmetRequirements(ctx, verified, framework);
 
   const operationId = newOperationId("apply");
-  // Nesting-safe, the same way provisionAgent()'s own lock-taking already is: a caller
-  // (rollback --previous-set) that already holds the instance lock for the whole operation must
-  // not have this acquire refuse itself as "another operation changing this instance".
+  // Nesting-safe: a caller (rollback --previous-set) already holding the lock must not have
+  // this acquire refuse itself as "another operation changing this instance".
   await withLockUnlessHeld(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock"), breakForeignLockHost: parseBreakForeignLockHost(args) }, () =>
     installSetUnderLock(ctx, args, artifact, verified, framework, operationId),
   );
@@ -343,34 +303,19 @@ async function installSetUnderLock(
   framework: string | undefined,
   operationId: string,
 ): Promise<void> {
-  // First thing under the lock, before storeArtifactForRollback — the first bytes this
-  // run writes anywhere. A corrupt control marker must stop the run here, not after
-  // the steps have changed the instance.
+  // First thing under the lock, before storeArtifactForRollback: a corrupt control marker
+  // must stop the run here, not after the instance has already changed.
   await preflightControlMarkers(ctx);
   await storeArtifactForRollback(artifact, verified);
   const ranSteps = await applyFromSource(ctx, args, operationId);
 
-  // applyFromSource's own "nothing to apply" fast path (0 executable actions — the
-  // live config already matched what this set declares) returns WITHOUT ever opening
-  // a Journal or taking a config snapshot for operationId: there is nothing to run, so
-  // there was nothing it thought worth recording. But recordInstalledSet() below is
-  // about to write installed.operationId = operationId regardless — and rollback --previous-set
-  // later reads exactly that field to find the one snapshot it needs to restore. A set
-  // transition (this set's id differs from whatever was installed before, e.g. the same
-  // set reinstalled under a new name) that happens to change nothing about the live
-  // config still needs a recorded operation for rollback --previous-set to point at, or undoing
-  // it later finds nothing and refuses even though nothing here actually
-  // needs restoring — the live config already IS what a rollback would reach. Recorded
-  // after applyFromSource rather than before: this branch only runs when nothing was
-  // executed, so the config here is exactly the config before this call too.
-  //
-  // Decided from applyFromSource()'s OWN report of whether it ran anything, not from
-  // probing readOperation(ctx, operationId) afterward: a readOperation() failure means
-  // "could not read this record", which is also true for a REAL run whose Journal (with
-  // its correct, pre-change snapshot) exists but hit one transient read error right
-  // after — probing there would re-open a fresh Journal and take a NEW snapshot NOW,
-  // i.e. of the config AFTER the real steps already changed it, silently clobbering
-  // the correct pre-change snapshot rollback --previous-set needs.
+  // applyFromSource's "nothing to apply" fast path never opens a Journal or takes a
+  // snapshot for operationId. But recordInstalledSet() below writes
+  // installed.operationId = operationId regardless, and rollback --previous-set reads that
+  // field to find its snapshot — so a no-op set transition still needs a recorded
+  // operation to point at. Decided from applyFromSource()'s own report of whether it ran
+  // anything, not by probing readOperation() afterward, which would re-open a fresh
+  // Journal and take a snapshot of the config AFTER the real steps changed it.
   if (!ranSteps) {
     const noopJournal = await Journal.open(ctx, "apply", deploymentName(), operationId);
     const snapshot = await snapshotConfig(ctx, operationId);
@@ -378,12 +323,9 @@ async function installSetUnderLock(
     await noopJournal.close("succeeded", "no executable steps — the live configuration already matched this set");
   }
 
-  // Checked again now that up/restart have run: the pre-check only proves the
-  // instance was NOT already wrong before this apply touched it, not that whatever
-  // apply actually did brought it into line — up/restart may not have recreated the
-  // container at all (nothing in the plan called for it), or compose may not have
-  // picked up the change for a reason of its own. The set is not recorded as installed
-  // over a running instance this apply cannot show actually matches it.
+  // Checked again now that up/restart have run: the pre-check only proves the instance
+  // was NOT already wrong, not that this apply brought it into line. Not recorded as
+  // installed over an instance this apply can't show actually matches it.
   await refuseUnconfirmedResult(ctx, verified, framework);
 
   await recordInstalledSet(ctx, verified.manifest, verified.id, operationId);
@@ -396,10 +338,9 @@ async function refuseUnconfirmedResult(ctx: Context, verified: VerifiedArtifact,
     framework,
     imageDigest: await runningImageDigest(ctx, verified.manifest),
   });
-  // An undefined imageDigest here means requirementProblems() found nothing to compare
-  // against — which, for THIS decision, is not good enough: recording a set as
-  // installed is a claim of proof, and a container running with no resolvable digest
-  // at all is exactly as unproven as one with the wrong digest.
+  // An undefined imageDigest means nothing to compare against, which isn't good enough
+  // here: recording installed is a claim of proof, and an unresolvable digest is as
+  // unproven as a wrong one.
   const unconfirmed = await runningImageUnconfirmed(ctx);
   if (afterIssues.length > 0 || unconfirmed) {
     die(
@@ -413,15 +354,13 @@ async function refuseUnconfirmedResult(ctx: Context, verified: VerifiedArtifact,
   }
 }
 
-/** Returns whether it actually ran executable steps (opened a Journal, took a config
- *  snapshot, executed the plan) as opposed to a dry run or the "nothing to apply" fast
- *  path — the one fact applyWithSource's --set branch needs to decide whether a no-op
- *  transition still needs a snapshot taken on its behalf. */
+/** Returns whether it actually ran executable steps, as opposed to a dry run or the
+ *  "nothing to apply" fast path — what applyWithSource's --set branch needs to decide
+ *  whether a no-op transition still needs a snapshot taken on its behalf. */
 async function applyFromSource(ctx: Context, args: string[], heldOperationId?: string): Promise<boolean> {
   const jsonOnly = args.includes("--json");
-  // Recognizes --set too (already consumed by applyWithSource above, its value read here
-  // only so the generic parser does not mistake it for an unknown flag) — its own value is
-  // not needed a second time.
+  // Recognizes --set too (already consumed above; read here only so the generic parser
+  // doesn't mistake it for an unknown flag).
   const parsed = parseDeclaredArgs(APPLY_ARGUMENTS, args);
   const dryRun = parsed["dry-run"] === true;
   const expected = parsed.expect === "" ? die("--expect needs a declaration checksum") : parsed.expect as string | undefined;
@@ -461,13 +400,9 @@ function refuseStaleDeclaration(expected: string | undefined, plan: Plan): void 
   }
 }
 
-/** Nothing to record: an operation that changes nothing does not need a journal entry,
- *  and writing one for every no-op apply would bury the runs that did something.
- *
- *  But it still ends the same way as a run that did work: failOnRemainder below still
- *  runs the blocking check, because the command's own help promises success means a
- *  healthy gateway — an unhealthy one with nothing for the plan to do must not report
- *  success and exit zero. */
+/** Nothing to record: writing a journal entry for every no-op apply would bury the runs
+ *  that did something. Still ends like a run that did work, though — failOnRemainder still
+ *  runs, since success must mean a healthy gateway. */
 async function reportNoExecutableActions(ctx: Context, jsonOnly: boolean, plan: Plan): Promise<void> {
   const outcome = await confirm(
     ctx,
@@ -486,14 +421,11 @@ async function runPlan(ctx: Context, args: string[], jsonOnly: boolean, plan: Pl
   const breakLock = args.includes("--break-lock");
   const breakForeignLockHost = parseBreakForeignLockHost(args);
 
-  // The lock first, and the journal only once it is held. A run refused here never started,
-  // so it must not leave a record that reads as one: an entry with no outcome means "began
-  // and we do not know how it ended", which is the state worth noticing, and filling the
-  // journal with refusals would drown it.
+  // Lock first, journal only once held: a run refused here never started, and a journal
+  // entry with no outcome should mean "began and we don't know how it ended", not "refused".
   //
-  // Held for the whole run rather than per step: what this prevents happens between the
-  // steps — one run restarting the instance while another is halfway through provisioning
-  // against it.
+  // Held for the whole run, not per step: what this prevents happens between steps — one
+  // run restarting the instance while another is halfway through provisioning against it.
   const operationId = heldOperationId ?? newOperationId("apply");
   const held = heldOperationId === undefined ? await takeLock(ctx, "apply", operationId, { breakLock, breakForeignLockHost }) : undefined;
 
@@ -527,13 +459,12 @@ async function executePlan(ctx: Context, plan: Plan, operationId: string): Promi
     die("the declaration changed while preparing this apply — compute a new plan");
   }
   const journal = await Journal.open(ctx, "apply", plan.deployment, operationId);
-  // Before the first mutating step, not after one fails: a copy taken afterwards would be
-  // a copy of the damage.
+  // Before the first mutating step: a copy taken afterwards would be a copy of the damage.
   const snapshot = await snapshotConfig(ctx, journal.id);
   if (snapshot !== undefined) await journal.noteSnapshot(snapshot);
 
-  // One holder for the whole run: steps that rewrite .env re-derive the context and
-  // every later step — and the confirming inspection below — sees what is on disk now.
+  // One holder for the whole run: steps that rewrite .env re-derive the context, and every
+  // later step (and the confirming inspection) sees what is on disk now.
   const scope: { current: Context } = { current: ctx };
   let steps: StepOutcome[];
   let targetChange: TargetChangedError | undefined;
@@ -547,11 +478,9 @@ async function executePlan(ctx: Context, plan: Plan, operationId: string): Promi
   const failedStep = steps.find((step) => step.status === "failed");
   const outcome = await confirm(scope.current, plan, steps, steps.some((step) => step.status === "done"), journal.id);
 
-  // Every step succeeding is not the claim this command makes. What it promises is that
-  // the instance is now what the repository declares — so the confirming inspection has
-  // the last word, and a run that ends with something blocking is a failed run whatever
-  // its steps returned. Recorded that way too: a journal entry reading "succeeded" beside
-  // an instance running an unapplied declaration is worse than no entry.
+  // Every step succeeding isn't the claim this command makes: the confirming inspection
+  // has the last word, so a run ending with something blocking is a failed run regardless
+  // of what its steps returned.
   const remaining = blockingRemainder(outcome.problems);
 
   await journal.close(
@@ -568,9 +497,8 @@ async function executePlan(ctx: Context, plan: Plan, operationId: string): Promi
   return { journal, outcome, failedStep, targetChange, snapshot, remaining };
 }
 
-/** The two ways a completed run still throws — a moved target or a failed step — checked in
- *  that order because a target change makes the remaining steps' "blocked" status the point,
- *  not a step failure. */
+/** The two ways a completed run still throws — moved target or failed step — checked in
+ *  that order: a target change makes the remaining "blocked" statuses the point. */
 function throwOnRunFailure(run: PlanRun): void {
   if (run.targetChange !== undefined) {
     throw new Error(
@@ -592,8 +520,7 @@ function throwOnRunFailure(run: PlanRun): void {
 }
 
 /** The one place both paths end. A run that leaves the instance not doing its job is a
- *  failed run, whether it executed ten steps or none — which is the difference between
- *  "applied" and "working", and the only reason this command inspects afterwards at all. */
+ *  failed run whether it executed ten steps or none — "applied" vs "working". */
 function failOnRemainder(
   remaining: readonly { readonly code: string; readonly detail: string }[],
   outcome: ApplyOutcome,
@@ -606,8 +533,7 @@ function failOnRemainder(
   );
 }
 
-/** Which codes mean "not doing its job". Derived from the one table rather than listed here
- *  again, so a code added there is covered without anyone remembering to come back. */
+/** Which codes mean "not doing its job", derived from PROBLEM_CODES rather than duplicated. */
 const BLOCKING = new Set(
   Object.entries(PROBLEM_CODES)
     .filter(([, meaning]) => meaning.severity === "blocking")
@@ -615,11 +541,8 @@ const BLOCKING = new Set(
 );
 
 /** What the confirming inspection found that still means the instance is not what the
- *  repository declares.
- *
- *  Exported so the rule can be checked on its own: reaching it through apply() would need a
- *  planner, an inspector and a target, and the rule — "the inspection afterwards has the
- *  last word, not the steps" — is the entire fix. */
+ *  repository declares. Exported so the rule can be checked on its own, without needing a
+ *  planner, an inspector and a target to reach it through apply(). */
 export function blockingRemainder(
   problems: readonly { readonly code: string; readonly detail: string }[],
 ): readonly { readonly code: string; readonly detail: string }[] {

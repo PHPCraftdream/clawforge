@@ -1,26 +1,20 @@
-// `./clawforge plan` — what the declaration implies, as an ordered list of actions, without doing
-// any of it.
+// `./clawforge plan` — what the declaration implies, as an ordered list of actions, without
+// doing any of it.
 //
-// This is the command that stops a coder having to remember the framework's internals. The
-// dependencies were always real — configuration is read at startup so it has to be applied
-// before a restart; provisioning talks to the gateway so the gateway has to be up first;
-// a missing secret stops the instance from starting at all, so it comes before either — but
-// they lived in whoever had learned them. Here they live in one function, with the finding
-// that motivates each step attached to it.
+// The dependencies are real (config is read at startup so it precedes a restart;
+// provisioning needs the gateway up; a missing secret blocks the instance from starting at
+// all) — collected here in one function, each step carrying the finding that motivates it.
 //
-// Read-only, like inspect: a plan you have to trust because running it is the only way to
-// see it is not a plan.
-//
-// Two kinds of action. Most name a command this framework can run, and `./clawforge apply`
-// executes exactly those. A few are advisory — nothing on this side can perform them
-// (an MCP client owns its own processes) or performing them automatically would defeat
-// their purpose (rewriting the lock file would silently re-pin whatever just drifted;
-// overwriting the secret store would discard whatever recovery cannot reach).
+// Read-only, like inspect. Two kinds of action: most name a command `apply` can run; a few
+// are advisory — nothing here can perform them (an MCP client owns its own processes), or
+// performing them automatically would defeat their purpose (re-pinning the lock would
+// silently accept whatever drifted; overwriting the secret store would discard whatever
+// recovery cannot reach).
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { gatherInspection } from "./inspect/gather.ts";
-import { currentComposition, declarationChecksum } from "../management/lock.ts";
+import { currentComposition, declarationChecksum } from "#src/commands/management/lock.ts";
 import { isHealthy } from "#src/service/inspection.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
@@ -68,17 +62,16 @@ function found(problems: readonly Problem[], ...codes: ProblemCode[]): ProblemCo
   return [...new Set(problems.filter((entry) => codes.includes(entry.code)).map((entry) => entry.code))];
 }
 
-/** Which recipes have findings of their own, and which. Recipe work is per recipe rather
- *  than one blanket step: re-provisioning a recipe that is already correct is wasted time
- *  on a live instance, and a report that says which recipe needed what is the useful one. */
+/** Which recipes have findings of their own. Per recipe rather than one blanket step:
+ *  re-provisioning a correct recipe wastes time on a live instance. */
 function recipeWork(inspection: Inspection): Map<string, ProblemCode[]> {
   const perRecipe = new Map<string, ProblemCode[]>();
   const recipeCodes: ProblemCode[] = ["RECIPE_MIRROR_DRIFT", "AGENT_MISSING", "MCP_SERVER_MISSING", "CRON_DRIFT"];
 
   for (const entry of inspection.problems) {
     if (!recipeCodes.includes(entry.code)) continue;
-    // The remedy a recipe finding carries is "./clawforge provision-agent <recipe>" — the recipe
-    // name is taken from there rather than re-parsed out of the human sentence.
+    // The remedy carries "./clawforge provision-agent <recipe>" — the name is taken from
+    // there rather than re-parsed out of the human sentence.
     const recipe = entry.nextAction.startsWith("./clawforge provision-agent ")
       ? entry.nextAction.slice("./clawforge provision-agent ".length).trim()
       : undefined;
@@ -90,16 +83,13 @@ function recipeWork(inspection: Inspection): Map<string, ProblemCode[]> {
   return perRecipe;
 }
 
-/** SET_OBJECT_ORPHANED problems carry their remedy as "./clawforge set forget --kind <kind> --name
- *  <name>" — the same convention recipeWork uses for provision-agent, and for the same
- *  reason: the kind and name are taken from there rather than re-parsed out of the human
- *  sentence. */
+/** SET_OBJECT_ORPHANED's remedy is "./clawforge set forget --kind <kind> --name <name>" —
+ *  same convention as recipeWork's, kind/name taken from there. */
 const FORGET_PATTERN = /^\.\/clawforge set forget --kind (\S+) --name (.+)$/;
 
-/** Orphaned objects, turned into steps. An agent is always advisory — deleting one prunes
- *  its workspace and memory, and that is a decision for whoever reads the plan, not something
- *  `./clawforge apply` performs on its own. An MCP server or cron job carries no memory of its own,
- *  so removing one is an ordinary executable step, same as provisioning it was. */
+/** Orphaned objects, turned into steps. An agent is always advisory since deleting one
+ *  prunes its workspace and memory — a decision for the reader. An MCP server or cron job
+ *  carries no memory, so removing one is an ordinary executable step. */
 function orphanActions(inspection: Inspection): PlanAction[] {
   const actions: PlanAction[] = [];
   for (const entry of inspection.problems) {
@@ -166,24 +156,14 @@ function pushNotBootstrappedAction(problems: readonly Problem[], actions: PlanAc
   }
 }
 
-// 0. Operator-side recovery, before anything repairs the instance. The group reads back
-//    what only the target still holds, and the step that follows it in a combined plan
-//    writes to the target: `secrets --apply` REPLACES the target's config/.env with the
-//    names the local store supplies, so applied before the dump it would destroy exactly
-//    the values the dump exists to recover.
+// 0. Operator-side recovery, before anything repairs the instance: `secrets --apply`
+//    REPLACES the target's config/.env with the local store's names, so it must run after
+//    the dump step or it would destroy exactly the values the dump exists to recover.
 function pushOperatorRecoveryActions(problems: readonly Problem[], actions: PlanAction[]): void {
   if (has(problems, "ENV_STALE")) {
-    // Advisory, and only ever planned for an .env that exists: ENV_STALE compares facts the
-    // file must already carry, and a wholly absent .env cannot be recovered at all —
-    // reaching the target to inspect anything already requires it.
-    //
-    // Advisory since the direction problem: a divergence between .env and
-    // the running container has two readings this code cannot tell apart — the file rotted
-    // while the container kept the answers, or the operator just edited it and the container
-    // has not caught up. Planning the repair as an executable step picked a side, and
-    // picking wrong rewrote a deliberate edit back to the values it was meant to replace.
-    // Both directions are named instead; picking one is the reader's, who knows which edit
-    // they just made.
+    // Advisory: a divergence between .env and the running container has two readings this
+    // code can't tell apart (file rotted, or operator edited and container hasn't caught
+    // up), so both directions are named and picking one is the reader's call.
     actions.push({
       id: "recover-env",
       summary:
@@ -196,10 +176,8 @@ function pushOperatorRecoveryActions(problems: readonly Problem[], actions: Plan
   }
 
   if (has(problems, "STORE_INCOMPLETE")) {
-    // Advisory, though a runner exists (see apply.ts): the finding only fires when a store
-    // file EXISTS, and `secrets --dump` refuses to overwrite one without --force. That
-    // refusal is the safeguard — the rewrite keeps only what recovery can reach — so
-    // whether the store's current contents matter is the reader's decision, not a step.
+    // Advisory, though a runner exists (apply.ts): `secrets --dump` refuses to overwrite
+    // an existing store without --force, so whether its contents matter is the reader's call.
     actions.push({
       id: "secrets-dump",
       summary:
@@ -210,11 +188,9 @@ function pushOperatorRecoveryActions(problems: readonly Problem[], actions: Plan
   }
 
   if (has(problems, "DECLARATION_MISSING")) {
-    // Executable without --force, for the reason the finding exists: the declaration is
-    // ABSENT, so the dump's own refusal — which protects an existing declaration from being
-    // replaced by one carrying only the three paths dump knows — has nothing to protect.
-    // If a declaration appears between planning and applying, the step fails with that
-    // refusal rather than quietly acquiring the flag.
+    // Executable without --force: the declaration is ABSENT, so dump's refusal (protecting
+    // an existing one) has nothing to protect. If one appears before applying, the step
+    // fails with that refusal instead of quietly acquiring the flag.
     actions.push({
       id: "apply-config-dump",
       summary: "reconstruct config/desired-state.json from the live config",
@@ -312,13 +288,10 @@ function pushLockAction(problems: readonly Problem[], actions: PlanAction[]): vo
   }
 }
 
-// Plugins/skills: always advisory, never one `apply` runs unattended. Third-party code is
-// a supply-chain surface, and — unlike every other step above — this framework does not
-// even have proof its own reinstall command names the right package: the pinned image's own
-// `plugins list --json` already shows an npm-origin plugin's id differing from its
-// manifest name (commands/management/extensions.ts), so a spec built from either could install something
-// else. Each finding carries its own best-effort command (compareExtensions); this only
-// turns it into a step the reader sees.
+// Plugins/skills: always advisory, never run unattended — a supply-chain surface where this
+// framework doesn't even have proof its reinstall command names the right package (an
+// npm-origin plugin's id can differ from its manifest name). Each finding carries its own
+// best-effort command (compareExtensions); this only turns it into a step the reader sees.
 function pushExtensionDriftActions(problems: readonly Problem[], actions: PlanAction[]): void {
   for (const entry of problems.filter((candidate) => candidate.code === "PLUGIN_DRIFT" || candidate.code === "SKILL_DRIFT")) {
     actions.push({
@@ -330,9 +303,8 @@ function pushExtensionDriftActions(problems: readonly Problem[], actions: PlanAc
   }
 }
 
-/** The ordered steps. Exported so `apply` executes exactly this list and the checks can
- *  assert the order without a live instance. One function per rule below, called in the
- *  order their numbering documents — that order is user-visible and the checks assert it. */
+/** The ordered steps. Exported so `apply` executes exactly this list and checks can assert
+ *  the order without a live instance — the order the numbering documents is user-visible. */
 export function planActions(inspection: Inspection): PlanAction[] {
   const { problems } = inspection;
   const actions: PlanAction[] = [];
@@ -344,10 +316,8 @@ export function planActions(inspection: Inspection): PlanAction[] {
   pushLifecycleAction(inspection, problems, actions);
   pushRecipeActions(inspection, actions);
 
-  // 4b. Objects this framework created for a recipe the set no longer declares this way —
-  //     dropped entirely, or renamed. After provisioning, not before: a rename shows up as
-  //     one recipe's work adding the new name and this removing the old one, and the new one
-  //     should exist before the old one goes.
+  // 4b. Objects created for a recipe the set no longer declares this way (dropped or
+  //     renamed). After provisioning: a rename adds the new name first, removes the old after.
   actions.push(...orphanActions(inspection));
 
   pushReconnectMcpAction(inspection, actions);
@@ -361,9 +331,8 @@ export function planActions(inspection: Inspection): PlanAction[] {
   return actions;
 }
 
-/** Exported so `apply` can compute a plan itself rather than being handed one — a plan
- *  passed between processes would be a file format, and there is nothing yet that needs
- *  one. */
+/** Exported so `apply` can compute a plan itself rather than being handed one — passing a
+ *  plan between processes would need a file format, and nothing yet needs one. */
 export async function computePlan(ctx: Context): Promise<Plan> {
   const inspection = await gatherInspection(ctx);
   let checksum: string;
@@ -372,9 +341,8 @@ export async function computePlan(ctx: Context): Promise<Plan> {
   } catch (error) {
     if (!(error instanceof TransportUnreachableError)) throw error;
     // currentComposition() reaches the target for its image digest even though the checksum
-    // itself only ever hashes desiredState/recipes (both local) — an unreachable target
-    // already carries its own TARGET_UNREACHABLE problem in inspection.problems above, and a
-    // second, less useful exception here must not crash a read-only command.
+    // only hashes local desiredState/recipes — TARGET_UNREACHABLE is already in
+    // inspection.problems above, so this must not crash a read-only command too.
     checksum = "";
   }
   return {
@@ -438,10 +406,9 @@ export function planIsClean(computed: Pick<Plan, "healthy" | "problems">): boole
   return computed.healthy && computed.problems.length === 0;
 }
 
-/** What to tell the reader once the numbered steps are printed: apply runs the executable
- *  ones, so advising it when there are none would send them to a command that does nothing —
- *  This exact case used to slip through (a plan of entirely advisory steps still said "apply
- *  it"). Exported so the checks can pin the wording without a live instance. */
+/** What to tell the reader once the numbered steps are printed: apply runs only the
+ *  executable ones, so advising it when there are none would point at a no-op command.
+ *  Exported so checks can pin the wording without a live instance. */
 export function planNextStepLine(actions: readonly PlanAction[]): string {
   const executable = actions.filter((action) => action.advisory !== true);
   return executable.length > 0

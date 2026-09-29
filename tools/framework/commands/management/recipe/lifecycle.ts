@@ -1,22 +1,17 @@
-// Recipe lifecycle participation: the hook-calling
-// contract by which a recipe takes part in the framework's data-tree operations.
+// Recipe lifecycle participation: the hook-calling contract by which a recipe takes part
+// in the framework's data-tree operations.
 //
-// A recipe participates by shipping app-owned hook files in its own recipe directory,
-// declared the same way prepare.ts/verify.ts/onboard.ts are — the file's presence is the
-// declaration, no recipe.json field:
+// A recipe participates by shipping app-owned hook files, declared the same way
+// prepare.ts/verify.ts/onboard.ts are — the file's presence is the declaration:
 //
 //   quiesce.ts   export function quiesce(ctx, recipe) — bring this recipe's own writes to
-//                a stop before the operation's data work (backup's tar now; restore's tree
-//                swap is the next caller of this contract).
+//                a stop before the operation's data work.
 //   resume.ts    export function resume(ctx, recipe) — undo the quiesce once the
-//                operation's data work is done and the framework's own service is back.
+//                operation's data work is done.
 //
-// The division of knowledge is the point: the framework owns WHEN the hooks run (for
-// backup, exactly the window the gateway itself is paused for), the deadline each call
-// gets, and what a failure means; the hook owns HOW this particular application stops and
-// starts. A hook receives the same (ctx, recipe) prepare.ts gets — it drives its own
-// compose project through ctx.runtime, the transport, whatever the app needs. Nothing
-// here knows any recipe's business.
+// The framework owns WHEN the hooks run, the deadline, and what a failure means; the hook
+// owns HOW this particular application stops and starts, via the same (ctx, recipe)
+// prepare.ts gets.
 //
 // Backups fail closed when a running recipe cannot quiesce. Quiesce hooks must pair with a
 // resume hook so every attempted stop has an explicit compensation path.
@@ -33,19 +28,17 @@ type RecipeLifecyclePhase = "quiesce" | "resume";
 
 const DEFAULT_HOOK_TIMEOUT_MS = 30_000;
 
-/** The deadline is a backstop against a hook that never settles: the operation holds the
- *  instance lock and must not hang on one sidecar's stopped-forever loop. The environment
- *  override exists so a check can exercise the timeout path in seconds instead of half a
- *  minute (the hookImportTimeoutMs pattern in ./index.ts). */
+/** Backstop against a hook that never settles: the operation holds the instance lock and
+ *  must not hang on one sidecar's stopped-forever loop. Override lets a check exercise the
+ *  timeout path in seconds instead of half a minute. */
 function hookTimeoutMs(): number {
   const override = Number(process.env.CLAWFORGE_RECIPE_HOOK_TIMEOUT_MS);
   return Number.isFinite(override) && override > 0 ? override : DEFAULT_HOOK_TIMEOUT_MS;
 }
 
-/** Bounds one awaited hook call. The losing promise keeps running — there is no way to
- *  cancel inside someone else's module — but this caller stops waiting on it, and the
- *  .then subscription below means its eventual rejection is handled even after the
- *  deadline has won, so a late failure cannot surface as an unhandled rejection. */
+/** Bounds one awaited hook call. The losing promise keeps running (no way to cancel inside
+ *  someone else's module), but this caller stops waiting, and the .then subscription below
+ *  handles its eventual rejection so a late failure can't surface unhandled. */
 function withDeadline<T>(operation: Promise<T>, budgetMs: number, label: string): Promise<T> {
   return new Promise<T>((settle, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out after ${budgetMs}ms`)), budgetMs);

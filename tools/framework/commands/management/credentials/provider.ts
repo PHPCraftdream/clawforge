@@ -51,10 +51,7 @@ function parseArgs(args: string[]): { force: boolean; provider?: string; env?: s
 /** Configure every selected provider using a target-side SecretRef. */
 export async function configureProvider(ctx: Context, args: string[]): Promise<void> {
   await requireBootstrapped(ctx);
-  // `recipe install` can hold this same instance lock for a whole build; configure-provider
-  // used to be the only lock-taking command with no way out of a genuinely stuck one, and its
-  // own refusal pointed at a different command to break it. Same shape as restore/apply now:
-  // real argv threaded through, breakLockSupported defaulting to true.
+  // Same shape as restore/apply: real argv threaded through, breakLockSupported defaults true.
   return guarded(ctx, "configure-provider", args, () => configureProviderLocked(ctx, args));
 }
 
@@ -72,21 +69,17 @@ async function configureProviderLocked(ctx: Context, args: string[]): Promise<vo
 
   const secrets = parseEnv(await ctx.transport.readFile(secretsPath));
   const configPath = `${ctx.settings.dataDir}/config/openclaw.json`;
-  // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format (docs.openclaw.ai/
-  // gateway/configuration), and this read is unwrapped — a comment or trailing comma would
-  // otherwise abort configure-provider outright instead of reading the config it is meant to edit.
+  // JSON5, not JSON: the live config is OpenClaw's JSON5 gateway format, where a comment or
+  // trailing comma is legitimate.
   const config = (await ctx.transport.exists(configPath))
     ? JSON5.parse(await ctx.transport.readFile(configPath)) as unknown
     : {};
   const configured = options.provider === undefined ? collectConfiguredProviders(config) : [options.provider];
   const providers = new Set<string>(configured);
-  // Auto-discovery only when no provider was named: with --provider given, this must touch
-  // exactly that one provider, never anything else found in the secrets file. And only for
-  // a secret no already-configured provider already claims: converting an env var name back
-  // to an id is lossy (CUSTOM_PROXY_API_KEY -> "custom_proxy", underscored) and can mint a
-  // second, distinct id for a provider already configured under a differently-punctuated one
-  // (e.g. "custom-proxy") — a new, apiKey-only provider object with none of its declared
-  // settings, which can then fail bootstrap.
+  // Auto-discovery only when no provider was named, and only for a secret no
+  // already-configured provider already claims: converting an env var name back to an id
+  // is lossy and can mint a second, distinct id for a differently-punctuated provider
+  // already configured (a new, apiKey-only object missing its declared settings).
   if (options.provider === undefined) {
     for (const name of Object.keys(secrets)) {
       if (!name.endsWith("_API_KEY") || secrets[name] === "") continue;
@@ -107,9 +100,9 @@ async function configureProviderLocked(ctx: Context, args: string[]): Promise<vo
       skipped.push(`${id}: already references ${env}`);
       continue;
     }
-    // providerSecretVariable only recognizes an env-sourced ref; a file/exec/store ref or a
-    // plain string apiKey returns undefined from it, which must not be mistaken for "nothing
-    // set" — it is an explicit, deliberate credential this command must not silently replace.
+    // providerSecretVariable only recognizes an env-sourced ref; undefined must not be
+    // mistaken for "nothing set" — a file/exec/store ref or plain apiKey is a deliberate
+    // credential this command must not silently replace.
     if (!options.force && current === undefined && providerApiKeyExplicit(config, id)) {
       if (!options.jsonOnly) info(`provider ${id} already has an explicit apiKey (not env-sourced) — use --force to replace it`);
       skipped.push(`${id}: explicit apiKey, not env-sourced — needs --force`);

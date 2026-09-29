@@ -1,23 +1,16 @@
 // BACKUP_MISSING/BACKUP_STALE/DISK_LOW: whether this deployment could actually be
-// recovered, not whether it is serving right now — a healthy instance with no restorable
-// backup, or a data/backup directory one write away from full, still has a real problem
-// `doctor`/`inspect` said nothing about before this file.
+// recovered, not whether it is serving right now.
 //
-// Deliberately NOT wired into watch's own liveness machinery (LIVENESS_CODES, check.ts):
-// none of these mean the instance stopped doing its job, the same reasoning that already
-// keeps CONFIG_DRIFT and RECIPE_MIRROR_DRIFT out of that set. watch already has its own,
-// differently-shaped DISK_LOW (health.ts: OC_WATCH_DISK_MIN_MB, data directory only,
-// degraded/down) — a liveness poll on a schedule. This file's DISK_LOW is unrelated: a
-// warning-only doctor/inspect finding, OC_DISK_MIN_FREE_MB, checked against the data
-// directory AND the backup directory. Two mechanisms sharing a code string on purpose (same
-// meaning, "low on disk"), never merged — merging them would fold a "down" liveness signal
-// into a severity table that is warning-only by design (inspection.ts's own PROBLEM_CODES
-// header).
+// Deliberately NOT wired into watch's liveness machinery (LIVENESS_CODES, check.ts): none
+// of these mean the instance stopped doing its job (same reasoning keeps CONFIG_DRIFT and
+// RECIPE_MIRROR_DRIFT out too). watch has its own differently-shaped DISK_LOW
+// (health.ts: OC_WATCH_DISK_MIN_MB, data directory only, a liveness poll); this file's
+// DISK_LOW (OC_DISK_MIN_FREE_MB, data + backup directory) is a separate warning-only
+// finding that happens to share the code string — never merged, since that would fold a
+// "down" liveness signal into a severity table that is warning-only by design.
 //
-// Reuses readers that already exist elsewhere rather than inventing new ones:
-// listBackupArchives/defaultRestoreArchive are exactly what `backup list` reads, and the
-// disk probe is one `df -Pk` call (never a container exec) — at most one new transport call
-// beyond that reused listing, and neither runs pre-bootstrap (gather.ts's own guard).
+// Reuses readers instead of inventing new ones: listBackupArchives/defaultRestoreArchive
+// are what `backup list` reads; the disk probe is one `df -Pk` call, never a container exec.
 
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
@@ -26,11 +19,9 @@ import { listBackupArchives, defaultRestoreArchive } from "#src/service/archive/
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 
-/** Both findings below are best-effort extras, never load-bearing the way CONFIG_DRIFT or
- *  SECRET_MISSING are: an unexpected answer from the backup listing or the disk probe must
- *  read as "nothing to report" here, not take the whole inspection down over a secondary
- *  finding. TransportUnreachableError is the one exception — a target genuinely unreachable
- *  is gatherInspection's own TARGET_UNREACHABLE to report, not a gap to swallow. */
+/** Both findings below are best-effort, never load-bearing: an unexpected answer reads as
+ *  "nothing to report", not a reason to take the inspection down. TransportUnreachableError
+ *  is the exception — that's gatherInspection's own TARGET_UNREACHABLE to report. */
 async function bestEffort(body: () => Promise<void>): Promise<void> {
   try {
     await body();
@@ -47,11 +38,9 @@ const DEFAULT_BACKUP_MAX_AGE_LABEL = "2d";
 export const DISK_MIN_FREE_MB_ENV = "OC_DISK_MIN_FREE_MB";
 const DEFAULT_DISK_MIN_FREE_MB = 1024;
 
-/** BACKUP_MISSING/BACKUP_STALE: the same archive listing `backup list` reads
- *  (listBackupArchives) and the same "which one restore would pick" rule
- *  (defaultRestoreArchive, the newest FULL archive — migrate/share are not what a bare
- *  `restore` recovers from). A directory with only migrate/share archives reads as missing,
- *  the same as an empty one: neither is restorable on its own. */
+/** BACKUP_MISSING/BACKUP_STALE: same listing `backup list` reads, same "which one restore
+ *  would pick" rule (newest FULL archive). Migrate/share-only reads as missing, same as
+ *  empty: neither is restorable on its own. */
 export async function observeBackupHealth(ctx: Context, problems: Problem[]): Promise<void> {
   await bestEffort(async () => {
     const { backupDir } = ctx.settings;
@@ -75,9 +64,8 @@ export async function observeBackupHealth(ctx: Context, problems: Problem[]): Pr
   });
 }
 
-/** `df -Pk`'s Available column (4th field), one row per surviving path — an argument df
- *  could not stat is simply absent from stdout (df reports it on stderr and keeps going),
- *  never a thrown error. */
+/** `df -Pk`'s Available column (4th field). An unstattable path is simply absent from
+ *  stdout (df reports it on stderr and keeps going), never a thrown error. */
 function parseAvailableKbRows(stdout: string): number[] {
   return stdout
     .split(/\r?\n/)
@@ -87,12 +75,9 @@ function parseAvailableKbRows(stdout: string): number[] {
     .filter((value) => Number.isFinite(value) && value >= 0);
 }
 
-/** DISK_LOW: one `df -Pk` naming both the data directory and the backup directory (only one
- *  path when they coincide) — a single exec answers for both instead of two. The data
- *  directory always exists once bootstrapped and is listed first, so when df's own output
- *  has fewer rows than paths given, the missing row(s) can only be the backup directory's
- *  (nothing has ever been backed up yet, so it was never created) — a gap, read as "nothing
- *  to check there", never guessed at by position beyond that one guarantee. */
+/** DISK_LOW: one `df -Pk` naming both data and backup directory (deduped when they
+ *  coincide). Data dir always exists once bootstrapped and is listed first, so a missing
+ *  row can only be the backup directory's (never created yet) — read as a gap, not guessed. */
 export async function observeDiskSpace(ctx: Context, problems: Problem[]): Promise<void> {
   await bestEffort(async () => {
     const thresholdMb = parseDiskMinFreeMb(DISK_MIN_FREE_MB_ENV, ctx.settings.env[DISK_MIN_FREE_MB_ENV], DEFAULT_DISK_MIN_FREE_MB);

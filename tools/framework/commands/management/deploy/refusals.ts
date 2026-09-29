@@ -1,9 +1,7 @@
-// The gate before either delivery: every tree about to travel — the checkout root, the
-// recipes and the deployment's own config/ — is walked by the same portable-content policy
-// the other carriers of recipe bytes use (collectPortableRecipeFiles: `recipe import`, set
-// build and the provision-agent mirror), so a name gets one answer from all four. A file that
-// policy holds private refuses the whole deploy rather than being excluded and left for rsync
-// globs to guess at.
+// The gate before either delivery: every tree about to travel is walked by the same
+// portable-content policy the other carriers of recipe bytes use, so a name gets one
+// answer from all four. A file that policy holds private refuses the whole deploy rather
+// than being excluded and left for rsync globs to guess at.
 
 import { die } from "#src/core/io/log.ts";
 import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";

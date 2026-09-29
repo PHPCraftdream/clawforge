@@ -63,12 +63,9 @@ export async function syncTrees(
   await runRemote(ctx, target, `mkdir -p ${quoted(`${remoteApp}/config`)} ${quoted(remoteRecipes)}`);
   await ctx.transport.exec("rsync", ["-az", `${local}/app.ts`, `${target}:${remoteApp}/`]);
 
-  // Same exclusions as the framework sync: a recipe's own compose project can pick up a
-  // .env from its own directory (docker compose reads one from its project directory
-  // automatically), and nothing stops someone from dropping a real secret store under
-  // config/ by mistake. Without these, --delete would also erase anything on the server
-  // that happens to be excluded, since it only mirrors what it was actually sent — with
-  // them, the exclusion is symmetric between what is sent and what --delete may touch.
+  // Same exclusions as the framework sync, so what --delete may touch stays symmetric with
+  // what was actually sent — a recipe's own .env or a stray secret store under config/ must
+  // not be erased just because it wasn't mirrored.
   const deploymentExcludes = EXCLUDES.flatMap((pattern) => ["--exclude", pattern]);
   const localRecipes = await ctx.paths.toTarget(recipesDir());
   await ctx.transport.exec("rsync", [

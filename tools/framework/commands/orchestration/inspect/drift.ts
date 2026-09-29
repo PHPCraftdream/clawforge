@@ -43,19 +43,15 @@ function parseStatTimestamp(raw: string): number | undefined {
   const milliseconds = fraction.slice(0, 3).padEnd(3, "0");
   const parsed = Date.parse(`${yearText}-${monthText}-${dayText}T${hourText}:${minuteText}:${secondText}.${milliseconds}${zone}`);
   if (Number.isNaN(parsed)) return undefined;
-  // Runtime.startedAt() is exposed in milliseconds and Date.parse truncates finer Docker
-  // precision too. Keep both sides at that same resolution to avoid false restarts.
+  // Runtime.startedAt() is in milliseconds; keep both sides at that resolution.
   return parsed;
 }
 
 /** The declared settings against their live values, and when the file was last written.
  *
- *  Deliberately outside the "is it running" branch. openclaw.json is a file on the target,
- *  readable whether or not anything is serving — and skipping the comparison because the
- *  gateway is down produced a plan of just [up], which then started the instance on a
- *  configuration nobody had applied. The command reported success, the journal said
- *  succeeded, and the declaration was not in force. A comparison that works without the
- *  gateway must not be gated on the gateway. */
+ *  Deliberately outside the "is it running" branch: openclaw.json is readable whether or
+ *  not anything is serving, and gating this on the gateway let `plan` emit just [up] and
+ *  apply a config that was never actually compared. */
 export async function observeConfig(
   ctx: Context,
   declared: DeclaredState,
@@ -66,9 +62,8 @@ export async function observeConfig(
   let mtimeMs: number | undefined;
 
   try {
-    // JSON5, not JSON: the live config is OpenClaw's own JSON5 gateway format (docs.openclaw.ai/
-    // gateway/configuration) — a comment or trailing comma is legitimate there, and plain
-    // JSON.parse rejecting it produced a false CONFIG_DRIFT on every run against such a config.
+    // JSON5, not JSON: the live config is OpenClaw's JSON5 gateway format, where a comment
+    // or trailing comma is legitimate.
     const parsed = JSON5.parse(await ctx.transport.readFile(configFile)) as unknown;
     for (const entry of declared.config) config[entry.path] = valueAt(parsed, entry.path);
     const target = prospectiveConfig(parsed, declared.config);
@@ -86,14 +81,9 @@ export async function observeConfig(
       mtimeMs = parseStatTimestamp(stamp.stdout);
     }
   } catch {
-    // A deployment that has never been bootstrapped has no configuration at all, which is
-    // not drift — there is nothing to have drifted from. Only a file that exists and cannot
-    // be understood is a finding.
-    //
-    // exists() itself now throws when the CHECK could not run (an unreachable target, rather
-    // than an answer) — caught here rather than allowed to escape: inspect answers whatever
-    // it can see, and a target it cannot reach at all is a finding of its own, not a reason
-    // to abandon every other observation already gathered.
+    // A never-bootstrapped deployment has no config at all — not drift. Only a file that
+    // exists and cannot be understood is a finding. exists() throwing (unreachable target)
+    // is caught rather than left to abandon every other observation already gathered.
     let present: boolean;
     try {
       present = await ctx.transport.exists(configFile);
@@ -110,33 +100,29 @@ export async function observeConfig(
 }
 
 /** The deployment .env's connection facts against the running container — the same
- *  comparison recover-env reports on and --adopt-runtime resolves (staleConnectionFacts), surfaced instead of waiting
- *  to be asked. Below the not-running early return in gatherInspection: the facts come
- *  from a running container, and without one there is nothing to compare against.
+ *  comparison recover-env reports on and --adopt-runtime resolves (staleConnectionFacts).
  *
- *  The finding names WHICH variable drifted and never a value, not even a non-secret one:
- *  .env mixes a real secret (OPENCLAW_GATEWAY_TOKEN) with these plumbing facts, so nothing
- *  parsed from that file is printable beyond the four names. */
+ *  Findings name WHICH variable drifted, never a value: .env mixes a real secret
+ *  (OPENCLAW_GATEWAY_TOKEN) with these facts, so nothing from that file is printable. */
 export async function observeConnectionFacts(
   ctx: Context,
   problems: Problem[],
 ): Promise<ConnectionFactObservation[] | undefined> {
-  // Optional on the runtime contract, the way execCommand is: a runtime that cannot
-  // introspect its container is not asked, and skipping is its honest answer.
+  // Optional on the runtime contract: a runtime that cannot introspect its container
+  // skips this rather than being asked.
   if (typeof ctx.runtime.runningConnectionFacts !== "function") return undefined;
   const facts: ConnectionFacts | undefined = await ctx.runtime.runningConnectionFacts();
-  // Not running, or the container could not be inspected: a gap, not a verdict.
+  // Not running, or uninspectable: a gap, not a verdict.
   if (facts === undefined) return undefined;
   let raw: string;
   try {
     raw = await readFile(envFile(), "utf8");
   } catch {
-    // No .env — nothing to compare against; the fresh-clone shape, not a finding.
+    // No .env — fresh-clone shape, not a finding.
     return undefined;
   }
   const current = parseEnv(raw);
-  // The comparison itself comes from facts.ts — recover-env acts on exactly it, so
-  // inspect and recover-env cannot disagree about what counts as stale.
+  // From facts.ts, so inspect and recover-env can't disagree about what counts as stale.
   const stale = new Set(staleConnectionFacts(facts, current).map((entry) => entry.name));
   const unrecovered = new Set(unrecoverableConnectionFacts(facts).map((entry) => entry.name));
   const observations: ConnectionFactObservation[] = CONNECTION_FACTS.map((fact) => ({
@@ -149,15 +135,10 @@ export async function observeConnectionFacts(
   return observations;
 }
 
-/** The deployment's default local store against the values the target holds. Watched only
- *  when a store file exists, and only the default one (inspect takes no store name):
- *  bootstrap puts values on the target without ever creating a store, so an absent store
- *  is how every healthy deployment starts out, not evidence of loss — and there is no way
- *  to tell it from a lost one. A store that EXISTS missing a required name is unambiguous:
- *  the workflow is in use, and that value has no local copy. Names checked are the same
- *  required set SECRET_MISSING reports, and only names the target still holds — the
- *  target-absent ones are SECRET_MISSING's business, and `secrets --dump` recovers from
- *  the target, not from nowhere. */
+/** The deployment's default local store against the values the target holds. Only checked
+ *  when a store file exists — an absent store is how every healthy deployment starts, not
+ *  evidence of loss. A store that exists missing a required name is unambiguous, so that's
+ *  the finding; names the target itself lacks are SECRET_MISSING's business instead. */
 export async function observeSecretStore(
   ctx: Context,
   secrets: readonly SecretStatus[],

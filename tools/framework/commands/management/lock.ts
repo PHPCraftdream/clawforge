@@ -1,19 +1,15 @@
-// `./clawforge lock` — pin what this instance is made of, so the same composition can be brought
-// up again and the difference noticed when it is not.
+// `./clawforge lock` — pin what this instance is made of, so the same composition can be
+// brought up again and the difference noticed when it is not.
 //
-// config/desired-state.json already reproduces the *settings*. What it does not say is
-// which framework wrote them, which image actually ran (a tag moves; a digest does not),
-// or which version of a recipe's content the agent was answering from. Two instances can
-// satisfy the same declaration and still not be the same instance.
+// config/desired-state.json reproduces the *settings*, not which framework wrote them,
+// which image ran (a tag moves, a digest doesn't), or which recipe content version the
+// agent answered from. Two instances can satisfy the same declaration and not be the same
+// instance.
 //
-// The file is meant to be committed, so it holds no secret values — only the names of the
-// variables the instance requires, which is a fact about the deployment rather than about
-// anyone's credentials.
+// Meant to be committed, so it holds no secret values — only variable names.
 //
-// The boundary, stated because it is easy to over-promise: this pins the composition, not
-// the behaviour. The same lock, brought up twice, is the same code, the same image and the
-// same wiki — and the model can still answer differently the second time. Reproducing an
-// answer is a different problem and this file does not claim to solve it.
+// Boundary: this pins the composition, not the behaviour. The same lock brought up twice
+// is the same code/image/wiki, and the model can still answer differently.
 
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -49,14 +45,9 @@ export const LOCK_ARGUMENTS: CommandArgument[] = [
   { name: "json", description: "Emit the lock, or the differences, as JSON", kind: "flag" },
 ];
 
-/** Printed once the lock is written. Its own constant so it can be checked against
- *  scaffold.ts's own git-init note for staying consistent: `apps/` is entirely
- *  gitignored at the monorepo root (root .gitignore, docs/architecture.md), and
- *  setupProjectMcp already writes a NESTED .gitignore into every deployment directory — the
- *  two only make sense together if the deployment directory is meant to become a git
- *  repository of its own. A bare "commit it" read as if this repository's own history was the
- *  target, which apps/'s own ignore rule makes impossible in monorepo mode; installed mode's
- *  deployment directory usually already is its own repository, which this still holds for. */
+/** Printed once the lock is written. Its own constant so it stays consistent with
+ *  scaffold.ts's git-init note: the deployment directory is meant to become its own git
+ *  repository (distinct from the framework's, since `apps/` is gitignored at monorepo root). */
 export const COMMIT_ADVICE =
   "commit it in this deployment's own git repository (not the framework's, if the two differ) " +
   "— that is what makes the deployment reproducible rather than merely configured";
@@ -70,10 +61,9 @@ export interface DeploymentLock {
   /** Checksum of config/desired-state.json as a whole: the settings are compared path by
    *  path elsewhere, so what the lock adds is "was this the same declaration at all". */
   readonly desiredState?: string;
-  /** Per recipe: one checksum standing for its whole served content, plus the individual
-   *  files so a difference can be pointed at rather than merely announced — and separately
-   *  the agent bundle, because a prompt edit changes what the agent does without touching a
-   *  byte of what it serves. */
+  /** Per recipe: one checksum for its whole served content, plus individual files so a
+   *  difference can be pointed at; separately the agent bundle, since a prompt edit changes
+   *  behavior without touching served content. */
   readonly recipes: Record<
     string,
     {
@@ -86,14 +76,10 @@ export interface DeploymentLock {
   /** Names only. A lock file that carried values would be a credential store that looks
    *  like a manifest, and it is meant to be committed. */
   readonly secrets: readonly string[];
-  /** OpenClaw plugins, read from `openclaw plugins list --json` — bundled ones left out
-   *  (commands/management/extensions.ts's header: the image digest above already covers them). Optional so
-   *  a lock written before this framework knew to pin them parses as "not yet covered"
-   *  (compareLock) rather than "none installed". */
+  /** OpenClaw plugins, from `plugins list --json`; bundled ones excluded (image digest
+   *  already covers them). Optional so a pre-pinning lock reads as "not yet covered". */
   readonly plugins?: readonly LockPlugin[];
-  /** OpenClaw skills, read from `openclaw skills list --json` — same bundled exclusion, same
-   *  optionality, and no version (commands/management/extensions.ts's header: this CLI does not report
-   *  one). */
+  /** OpenClaw skills, same bundled exclusion and optionality; no version (CLI doesn't report one). */
   readonly skills?: readonly LockSkill[];
 }
 
@@ -121,16 +107,12 @@ async function recipeNames(): Promise<string[]> {
 }
 
 /** What the lock would say if written now. Exported so `plan` and the checks can ask for it
- *  without writing anything — computing it is read-only by nature.
+ *  without writing anything.
  *
- *  `includeExtensions` defaults to false: `plan`/`apply` call this only for
- *  declarationChecksum() below, which never reads plugins/skills (they are observed facts
- *  about the instance, not part of the declaration a plan is computed from — the same
- *  reasoning that already keeps the image digest out of it) — asking for a plugin/skill
- *  inventory on their behalf would spend a container on an answer nobody looks at. `lock`
- *  itself (both the write and the --check path) always asks for it; `inspect`/`doctor`
- *  never call this for it either, reusing observeLive's own batched read instead
- *  (gather.ts) rather than paying for a second container. */
+ *  `includeExtensions` defaults to false: `plan`/`apply` only need declarationChecksum(),
+ *  which never reads plugins/skills (observed instance facts, not part of the declaration),
+ *  so asking for that inventory would spend a container nobody looks at. `lock` always
+ *  asks for it; `inspect`/`doctor` reuse observeLive's own batched read instead. */
 export async function currentComposition(
   ctx: Context,
   options?: { readonly includeExtensions?: boolean },
@@ -157,9 +139,8 @@ export async function currentComposition(
   let plugins: LockPlugin[] | undefined;
   let skills: LockSkill[] | undefined;
   if (options?.includeExtensions === true) {
-    // One container for both reads, the same batching openclawCliBatch exists for — a
-    // pre-bootstrap or otherwise unreachable target answers every slot with a failed result,
-    // which parsePluginsList/parseSkillsList already read as "none" rather than throwing.
+    // One container for both reads. An unreachable target answers every slot with a failed
+    // result, which parsePluginsList/parseSkillsList read as "none" rather than throwing.
     const [pluginsResult, skillsResult] = await openclawCliBatch(ctx, [[...PLUGINS_LIST_ARGS], [...SKILLS_LIST_ARGS]]);
     plugins = pluginsForLock(parsePluginsList(pluginsResult));
     skills = skillsForLock(parseSkillsList(skillsResult));
@@ -179,13 +160,9 @@ export async function currentComposition(
   };
 }
 
-/** One checksum for everything a plan is computed from — the declaration and the recipe
- *  content, and nothing else.
- *
- *  Deliberately not the whole lock: `generatedAt` changes every time it is taken and the
- *  image digest changes when someone pulls, neither of which invalidates a plan. What
- *  invalidates a plan is the declaration having been edited between planning and applying,
- *  which is exactly what this covers. */
+/** One checksum for everything a plan is computed from — declaration and recipe content
+ *  only. Not the whole lock: `generatedAt` and the image digest change without invalidating
+ *  a plan; only an edited declaration does. */
 export function declarationChecksum(composition: DeploymentLock): string {
   return checksumOf(
     JSON.stringify({
@@ -193,9 +170,7 @@ export function declarationChecksum(composition: DeploymentLock): string {
       recipes: Object.fromEntries(
         Object.keys(composition.recipes)
           .sort()
-          // Both halves: a plan computed before someone edited an agent's prompt is as stale
-          // as one computed before they edited the wiki, and covering only the served content
-          // let a prompt change slip past the staleness check entirely.
+          // Both halves: an edited agent prompt is as stale as an edited wiki page.
           .map((name) => [name, `${composition.recipes[name].checksum}:${composition.recipes[name].agentChecksum ?? ""}`]),
       ),
     }),
@@ -212,10 +187,8 @@ export async function readLock(): Promise<DeploymentLock | undefined> {
 
 /** Everything the lock pins that no longer holds.
  *
- *  Warnings, not blocking problems, and deliberately: an instance that drifted from its
- *  lock is still working, and the reader is the one who decides whether the difference was
- *  intended. Reporting it as a failure would train people to ignore it — which is how a
- *  reproducibility claim quietly becomes decorative.
+ *  Warnings, not blocking problems: an instance that drifted from its lock is still
+ *  working, and the reader decides whether the difference was intended.
  *
  *  `generatedAt` is not compared: it says when the lock was taken, not what it pins. */
 export function compareLock(lock: DeploymentLock | undefined, current: DeploymentLock): Problem[] {
@@ -231,8 +204,7 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
   if (lock.framework !== undefined && current.framework !== undefined && lock.framework !== current.framework) {
     problems.push(problem("LOCK_DRIFT", `framework is ${current.framework}, locked at ${lock.framework}`));
   }
-  // The digest, not the tag: `extended-stable` is the same string before and after it moves
-  // to a different image, which is exactly the change a lock exists to notice.
+  // The digest, not the tag: a tag stays the same string even after it moves to a different image.
   if (lock.image.digest !== undefined && current.image.digest !== undefined && lock.image.digest !== current.image.digest) {
     problems.push(problem("LOCK_DRIFT", `image digest is ${current.image.digest}, locked at ${lock.image.digest}`));
   }
@@ -246,8 +218,7 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
       problems.push(problem("LOCK_DRIFT", `recipe "${name}" is locked but no longer present`));
       continue;
     }
-    // Named rather than counted: "the recipe changed" sends the reader to look for it
-    // themselves, which is the work this command was supposed to do.
+    // Named rather than counted: "the recipe changed" leaves the reader to find it themselves.
     if (now.checksum !== locked.checksum) {
       const changed = Object.keys({ ...locked.files, ...now.files })
         .filter((rel) => locked.files[rel] !== now.files[rel])
@@ -260,12 +231,8 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
       );
     }
 
-    // A lock written before the bundle was recorded pins less than this framework knows how
-    // to pin, and the gap hides itself: comparing only when the locked side has a value
-    // means an absent one reads as agreement, so nothing is ever reported and the
-    // reproducibility claim quietly covers less than it says. Named as its own finding, and
-    // left for the reader to re-pin deliberately — rewriting it here would be the rubber
-    // stamp this file refuses to be.
+    // A lock written before the bundle was recorded pins less than this framework can, and
+    // an absent value would otherwise silently read as agreement — named as its own finding.
     if (locked.agentChecksum === undefined && now.agentChecksum !== undefined) {
       problems.push(
         problem(
@@ -275,9 +242,7 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
       );
     }
 
-    // The agent bundle separately: a prompt edit changes what the agent does without
-    // touching a byte of what the recipe serves, so a single checksum reported it as no
-    // change at all.
+    // Separately: a prompt edit changes agent behavior without touching served content.
     if (locked.agentChecksum !== undefined && now.agentChecksum !== locked.agentChecksum) {
       const changed = Object.keys({ ...locked.agentFiles, ...now.agentFiles })
         .filter((rel) => (locked.agentFiles ?? {})[rel] !== (now.agentFiles ?? {})[rel])
@@ -302,11 +267,8 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
     problems.push(problem("LOCK_DRIFT", `the instance now requires ${newSecrets.join(", ")}, which the lock does not list`));
   }
 
-  // Plugins/skills, only when the caller actually fetched them: lock's own --check path
-  // always does (includeExtensions), and inspect/doctor supply them from observeLive's own
-  // batched read (gather.ts) — but a bare currentComposition(ctx), which is all plan/apply
-  // ever ask for (declarationChecksum never reads either field), leaves current.plugins/
-  // skills undefined, and an absent answer must not read as "nothing installed".
+  // Plugins/skills, only when the caller actually fetched them: a bare currentComposition
+  // (what plan/apply ask for) leaves these undefined, and absent must not read as "none".
   if (current.plugins !== undefined && lock.plugins === undefined && current.plugins.length > 0) {
     problems.push(problem("LOCK_DRIFT", "the lock predates plugin pinning and does not record it — re-pin to cover installed plugins"));
   }

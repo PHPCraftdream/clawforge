@@ -24,15 +24,13 @@ import { randomUUID } from "node:crypto";
 /** Runs a script on the target through ssh.
  *
  *  ssh does not preserve argument boundaries: everything after the destination is joined
- *  with a single space and sent to the remote login shell as one line. A script handed over
- *  as several raw tokens — `[target, "sh", "-c", "for t in …; do …; done"]` — arrives with
- *  its own `;`, `>`, `||` unquoted, so the *outer* login shell parses them instead of the
- *  intended `sh -c` invocation ever seeing a single argument. Quoting the whole script as
- *  one value here is what makes it survive that join intact.
+ *  with a single space and sent as one line to the remote login shell, so a script handed
+ *  over as raw tokens arrives with its own `;`/`>`/`||` unquoted and gets parsed by the
+ *  *outer* shell instead of `sh -c`. Quoting the whole script as one value is what makes
+ *  it survive that join intact.
  *
  *  Exported so tools/checks/ssh-quoting.check.ts can prove the round trip against a real
- *  shell, standing in for sshd's own remote invocation, rather than trusting a
- *  reimplementation of POSIX quoting in the test itself. */
+ *  shell rather than trusting a reimplementation of POSIX quoting in the test itself. */
 export function runRemote(
   ctx: Context,
   target: string,
@@ -68,9 +66,8 @@ export async function checkServerReady(ctx: Context, target: string): Promise<vo
   // Node runs the tooling there, rsync carries the files; what the service itself needs is
   // the runtime's business, not this application's.
   //
-  // The loop's own last command is always `command -v` or `echo`, so the script exits 0
-  // whether or not tools are missing — missing ones are reported through stdout, not the
-  // exit code. A non-zero code here means the script itself failed to run at all.
+  // The loop always exits 0 whether or not tools are missing — missing ones are reported
+  // through stdout, not the exit code. A non-zero code means the script itself failed to run.
   const needed = ["node", "rsync", ...ctx.runtime.requiredTools].join(" ");
   const missing = await runRemote(
     ctx,
@@ -127,8 +124,7 @@ export async function prepareRemoteRoot(
     allowFailure: true,
   });
   if (probed.code !== 0) {
-    // A probe that cannot run answers nothing, and "nothing" is never authorization for
-    // --delete in a directory nobody could look at.
+    // A probe that can't run answers nothing, never authorization for --delete.
     die(
       `could not inspect ${remotePath} on ${target} (exit ${probed.code}): ${probed.stderr.trim()}`,
     );
@@ -147,9 +143,8 @@ export async function prepareRemoteRoot(
     );
   }
   if (probe.canonical !== remotePath) {
-    // Every component must be a real directory: --delete on the target follows links, so a
-    // symlinked component turns "delete what the mirror carries" into "delete whatever the
-    // link points at" — including the deploy root of something else that shares it.
+    // Every component must be a real directory: --delete follows links, so a symlinked
+    // component turns "delete what the mirror carries" into "delete whatever the link points at".
     die(
       `${remotePath} on ${target} is reached through a symlink: its canonical path is ` +
         `${probe.canonical}. Every component of a deploy root must be a real directory so ` +
@@ -169,9 +164,8 @@ export async function prepareRemoteRoot(
 
   let createdMarkerLine: string | undefined;
   if (probe.marker === "absent") {
-    // No marker: either deploy created this root (proven by the probe's emptiness), or an
-    // operator says --adopt — and --adopt puts the affected inventory on screen first, so
-    // taking the root over can never be a surprise to whoever runs it.
+    // No marker: either deploy created this root (proven empty), or --adopt was given, which
+    // puts the affected inventory on screen first so taking it over is never a surprise.
     if (probe.empty !== "yes" && !adopt) {
       die(
         `${remotePath} on ${target} already holds files and is not marked as a deploy ` +
@@ -202,8 +196,7 @@ export async function prepareRemoteRoot(
     );
     if (written.code !== 0) {
       // An unmarkable root is not a root this deploy may mirror into: the next run would
-      // find it non-empty and unmarked and rightly refuse — unless this run erased
-      // something first, which is exactly the order the marker exists to prevent.
+      // rightly refuse it as non-empty and unmarked, unless this run erased something first.
       die(
         `could not mark ${remotePath} on ${target} (exit ${written.code}): ${written.stderr.trim()}`,
       );

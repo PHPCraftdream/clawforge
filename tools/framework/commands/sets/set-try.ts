@@ -1,13 +1,10 @@
-// `./clawforge set try --set <artifact>` — install a set into a throwaway instance, run whatever
-// acceptance it declares, and tear the instance down. One operation instead of several: a
-// coder can hand over a set and the answer to "does it actually work" comes back without
-// them ever touching their own real deployment to get it.
+// `./clawforge set try --set <artifact>` — install a set into a throwaway instance, run its
+// acceptance checks, tear it down: "does it actually work" without touching the real
+// deployment.
 //
-// Reuses the pieces that already exist rather than a second bring-up path: bootstrap's own
-// order of operations, --set's own source override, provision-agent's own reconciliation,
-// runCheck's own check kinds. What is new here is the throwaway home they run against — a
-// deployment directory, a data path and a port nothing else is using — so teardown can only
-// ever remove what this operation itself created, never the real instance beside it.
+// Reuses bootstrap's order of operations, --set's source override, provision-agent's
+// reconciliation, runCheck's check kinds. New here is the throwaway home (deployment
+// directory, data path, port) so teardown removes only what this operation created.
 
 import { mkdir, writeFile, rm, readFile, cp } from "node:fs/promises";
 import { join, dirname, resolve, extname } from "node:path";
@@ -25,16 +22,16 @@ import { recordInstalledSet } from "#src/set/artifacts/install.ts";
 import { validateSet } from "#src/set/ownership/validate.ts";
 import { localSecretValues } from "./set.ts";
 import { ensureDataDirs, ensureSecretsFile, secretsFileOnTarget, runMaybePrivileged } from "#src/runtime/datadir.ts";
-import { ensureBaselineConfig, configureProvider } from "../management/credentials/provider.ts";
-import { applyConfig } from "../orchestration/config.ts";
-import { preflightSecrets } from "../management/secrets.ts";
-import { down } from "../lifecycle/lifecycle.ts";
-import { loadSecrets } from "../lifecycle/state.ts";
+import { ensureBaselineConfig, configureProvider } from "#src/commands/management/credentials/provider.ts";
+import { applyConfig } from "#src/commands/orchestration/config.ts";
+import { preflightSecrets } from "#src/commands/management/secrets.ts";
+import { down } from "#src/commands/lifecycle/lifecycle.ts";
+import { loadSecrets } from "#src/commands/lifecycle/state.ts";
 import { createPrivateFile, protectPrivateDirectory } from "#src/security/privacy/private-file.ts";
-import { provisionAgent } from "../management/provision-agent/index.ts";
-import { runCheck, requiresModel, summarize, acceptanceSpecError } from "../orchestration/accept.ts";
+import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";
+import { runCheck, requiresModel, summarize, acceptanceSpecError } from "#src/commands/orchestration/accept.ts";
 import { withModelApproval } from "#src/service/openclaw-cli.ts";
-import type { AcceptanceResult } from "../orchestration/accept.ts";
+import type { AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { unpackForTry, findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
@@ -103,9 +100,8 @@ export function parseSetTryArgs(args: string[]): SetTryOptions {
   return { artifact, withModel: parsed["with-model"] === true, keep: parsed.keep === true, jsonOnly: parsed.json === true };
 }
 
-/** Stops and removes only the resources owned by a try. The callbacks are injectable so the
- * lifecycle contract can be tested without Docker, and so teardown remains best-effort when
- * bootstrap or acceptance has already failed. */
+/** Stops and removes only the resources owned by a try. Callbacks are injectable so the
+ * lifecycle contract can be tested without Docker. */
 export async function teardownTry(
   ctx: Context,
   dataRoot: string,
@@ -119,20 +115,20 @@ export async function teardownTry(
   try {
     running = await ctx.runtime.isRunning();
   } catch {
-    // An unanswerable runtime is not called running, and is not called torn down either.
+    // Unanswerable: not called running, not called torn down either.
   }
   if (keep) return { torndown: false, running };
 
   let error: unknown;
-  // `down` is deliberately unconditional. A failed bootstrap can leave a stopped container
-  // or network behind, while isRunning() only tells us about the process, not the project.
+  // Unconditional: a failed bootstrap can leave a stopped container/network behind, while
+  // isRunning() only reports the process, not the project.
   try {
     await (operations.down ?? ((target) => down(target, [])))(ctx);
   } catch (failure) {
     error = failure;
   }
-  // If compose teardown failed, leave the data in place: deleting a bind mount while an
-  // orphaned container still uses it is worse than reporting a recoverable leftover.
+  // If compose teardown failed, leave the data in place: deleting a bind mount an orphaned
+  // container still uses is worse than reporting a recoverable leftover.
   if (error === undefined) {
     try {
       await (operations.remove ?? ((target, root) => runMaybePrivileged(target, root, "rm", ["-rf", root])))(ctx, dataRoot);
@@ -162,18 +158,13 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   const startedAt = new Date().toISOString();
   const { artifact, withModel, keep, jsonOnly } = options;
 
-  // Gathered from the real deployment before anything below points useDeployment() at the
-  // throwaway one: the values already on this machine are what the throwaway needs too — a
-  // set only ever carries their NAMES, never their values. Two sources, and the live one
-  // wins when both have an answer: a host-side secret store can be stale, but the value a
-  // running instance is actually configured with cannot be.
+  // Gathered from the real deployment before useDeployment() points at the throwaway one —
+  // a set carries secret NAMES only, never values. Two sources; live wins when both answer,
+  // since a host-side secret store can be stale but a running instance's value cannot be.
   const realDir = deploymentDir();
   const previousSource = setSourceDir();
-  // The throwaway's own createContext() call resets this the same way it resets the set
-  // source above — its .env has no OC_COMPOSE_PROJECT of its own, so building its Context
-  // clears whatever the real deployment's .env had set. Restored in the same finally block,
-  // for the same reason: a composite command that keeps using the original Context after
-  // set try returns must still address Docker under the name it started with.
+  // The throwaway's createContext() clears this too (its .env has no OC_COMPOSE_PROJECT),
+  // so it's restored in the same finally block a caller reusing the original Context needs.
   const previousComposeProject = composeProjectOverride();
   const realEnv = parseEnv(await readFile(envFile(), "utf8").catch(() => ""));
   const targetLocation = (realEnv.OC_TARGET_LOCATION ?? "auto").toLowerCase();
@@ -185,19 +176,17 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   try {
     Object.assign(secretValues, parseEnv(await ctx.transport.readFile(secretsFileOnTarget(ctx))));
   } catch {
-    // The real instance is down, or has never been bootstrapped — nothing live to read.
+    // Real instance down, or never bootstrapped — nothing live to read.
   }
 
-  // The deployment directory's own basename becomes the compose project name
-  // (deploymentName() derives it unconditionally, same as any other deployment) — so it has
-  // to be built from tryName itself, lowercase and hyphens only, rather than from whatever
-  // random suffix mkdtemp would otherwise pick (which can and does contain uppercase
-  // letters, and compose refuses those in a project name).
+  // deploymentName() derives the compose project name from the directory basename, so
+  // tryName must already be lowercase-and-hyphens (unlike mkdtemp's random suffix, which
+  // can contain uppercase and compose rejects).
   const unpacked = await unpackForTry(artifact);
   const staging = unpacked.staging;
   const tryName = tryDeploymentName();
-  // Keep the throwaway deployment under the checkout. A WSL or SSH path bridge can express
-  // this location on the target; a random host temp directory cannot be mapped by SSH.
+  // Under the checkout: a WSL/SSH path bridge can express this location on the target,
+  // a random host temp directory cannot be mapped by SSH.
   const tempDir = join(realDir, "sets", ".tries", tryName);
   let tempDirCreated = false;
   const dataRoot = targetSiblingRoot(realEnv.OC_DATA_DIR ?? "/tmp/openclaw/data", tryName);
@@ -253,13 +242,9 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
 
     await mkdir(join(tempDir, "config"), { recursive: true });
     const extension = extname(fileURLToPath(import.meta.url));
-    // An absolute file:// URL, never a relative specifier: tempDir is os.tmpdir(), almost
-    // always the system drive, while frameworkRoot can be checked out to any other drive —
-    // node:path's relative() across two Windows drive letters has no traversal that reaches
-    // one from the other and returns the absolute target unchanged. Handed straight to a
-    // relative import specifier, that reads as relative to tempDir itself (a bare "D:/..."
-    // path), producing a nonsense concatenated path. pathToFileURL is drive-agnostic and
-    // correct on POSIX too.
+    // Absolute file:// URL, never a relative specifier: tempDir and frameworkRoot can sit on
+    // different Windows drives, where a relative path can't cross between them.
+    // pathToFileURL is drive-agnostic and correct on POSIX too.
     await writeFile(join(tempDir, "app.ts"),
       `import { defineApp } from ${JSON.stringify(setTryModuleUrl("app", extension))};\n` +
       `import { mountPoints } from ${JSON.stringify(setTryModuleUrl("mounts", extension))};\n` +
@@ -284,21 +269,19 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
 
     try {
       log(`bringing up a throwaway instance "${tryName}" on port ${port}`);
-      // Verify both the coordinate bridge and the target-side port before creating any data
-      // directories. A local port probe cannot see an SSH/WSL target's listeners.
+      // Verify the path bridge and target-side port before creating data directories — a
+      // local port probe can't see an SSH/WSL target's listeners.
       await tryCtx.paths.toTarget(tempDir);
       const conflict = await tryCtx.runtime.portConflict(String(port));
       if (conflict !== undefined) die(`throwaway port ${port} is already used on the target by ${conflict}`);
       await runMaybePrivileged(tryCtx, dataRoot, "mkdir", [dataRoot]);
       ownsTarget = true;
-      // trustExisting: dataRoot is the mkdir this call just ran, not a directory found
-      // pre-existing from outside this operation.
+      // trustExisting: dataRoot is the mkdir this call just ran, not pre-existing.
       await ensureDataDirs(tryCtx, { trustExisting: true });
       await ensureSecretsFile(tryCtx);
 
-      // Values only, and never the gateway token: this instance generated its own above,
-      // the same as any other bootstrap. Anything the set needs but this machine does not
-      // know is left absent — preflightSecrets says so plainly rather than this guessing.
+      // Values only, never the gateway token (this instance generated its own). Anything
+      // the set needs but this machine doesn't know is left absent for preflightSecrets to report.
       const targetLines = manifest.secrets
         .filter((name) => name !== "OPENCLAW_GATEWAY_TOKEN" && secretValues[name] !== undefined)
         .map((name) => `${name}=${secretValues[name]}`);
@@ -308,11 +291,8 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
 
       await tryCtx.runtime.pullImage();
       await ensureBaselineConfig(tryCtx);
-      // Same order as bootstrap, same reason: a new custom provider's baseUrl and models
-      // come from the set's own desired-state.json, and OpenClaw's schema requires them
-      // before it accepts an apiKey for a provider id it does not already know.
-      // Same reason as bootstrap's own call: this throwaway instance starts a few lines
-      // below, so the default "restart to pick it up" advice would contradict that.
+      // Same order as bootstrap: a new provider's baseUrl/models must exist before OpenClaw
+      // accepts an apiKey for it. restartAdvice: false since this instance starts below anyway.
       await applyConfig(tryCtx, [], { restartAdvice: false });
       await configureProvider(tryCtx, []);
       await preflightSecrets(tryCtx);
@@ -321,10 +301,8 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
       await tryCtx.runtime.waitForHealth();
       log(`throwaway instance healthy: ${tryCtx.settings.serviceUrl}`);
 
-      // Per recipe, not all-or-nothing: one recipe whose provisioning fails must not stop
-      // the report from saying anything about the others, and it must not abort before any
-      // acceptance check has had a chance to run at all — a coder trying a set wants to
-      // know what worked as much as what did not.
+      // Per recipe, not all-or-nothing: one failed provision must not stop the report on
+      // the others or abort before acceptance checks run.
       const provisionError = new Map<string, string>();
       for (const [recipe, recipeEntry] of Object.entries(manifest.recipes)) {
         if (recipeEntry.agent === undefined) continue;
@@ -368,9 +346,8 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
         }
         results[recipe] = recipeResults;
       }
-      // A recipe can fail to provision without declaring any acceptance check at all — its
-      // failure would otherwise vanish from the report entirely rather than merely not add
-      // to the counts above.
+      // A recipe with no acceptance checks would otherwise vanish from the report entirely
+      // instead of just not adding to the counts above.
       for (const [recipe, failure] of provisionError) {
         if ((results[recipe]?.length ?? 0) > 0) continue;
         results[recipe] = [{ name: "provision", kind: "provision", status: "could-not-check", detail: failure }];
@@ -396,9 +373,8 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
       };
       observedAfter = await observeRuntime(tryCtx, manifest);
     } catch (error) {
-      // Keep the lifecycle result machine-readable even when bootstrap, health or recording
-      // fails. A thrown error without a report makes a failed try indistinguishable from a
-      // command that never attempted the set.
+      // Keep the lifecycle result machine-readable: a thrown error without a report makes
+      // a failed try indistinguishable from one never attempted.
       operationError = error;
       report = {
         name: tryName,
@@ -492,8 +468,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
     if (operationError === undefined) throw new Error(`throwaway instance cleanup failed: ${teardownError instanceof Error ? teardownError.message : String(teardownError)}`);
   }
 
-  // Preserve the original lifecycle failure after emitting the honest report and restoring
-  // the caller's deployment/source context.
+  // Preserve the original failure after emitting the report and restoring the caller's context.
   if (typeof operationError !== "undefined") throw operationError;
 
   if (report.acceptance.failed > 0 || report.acceptance.couldNotCheck > 0) {

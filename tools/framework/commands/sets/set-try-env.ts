@@ -1,13 +1,7 @@
 // Pure, self-contained environment helpers for `./clawforge set try` — no target I/O, no
 // lifecycle: a free port, a throwaway deployment name, its data-directory sibling path, the
 // .env content it starts with, and whether this run's target location even supports it.
-// Split out of set-try.ts, which keeps TryReport/TryTeardownResult/teardownTry/setTry — the
-// actual throwaway-instance lifecycle these are inputs to.
-//
-// Deliberately NOT split further: setTry() itself is one long orchestration sequence
-// (bootstrap → accept → teardown) with its own error-handling and cleanup guarantees, and
-// breaking up its body is a materially riskier refactor than relocating these helpers —
-// left as a separate, later task if wanted.
+// set-try.ts keeps TryReport/TryTeardownResult/teardownTry/setTry, the actual lifecycle.
 
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";

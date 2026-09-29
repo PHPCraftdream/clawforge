@@ -230,15 +230,11 @@ export interface PackageImportResolution {
 
 /** Resolves a `#specifier` against the nearest package.json `imports` map, reading the
  *  manifest fresh off disk every call. Exported so hook-loader.ts's resolve hook can reuse
- *  the exact same, already-validated resolution at actual import time instead of handing the
- *  specifier to Node's own resolver: Node caches a package.json's parsed content per real
- *  path for the life of the process (an internal cache this framework does not control), so
- *  after an edit to the import map, `nextResolve` keeps answering with the map's first-read
- *  target — the same staleness this whole loader exists to prevent, one level up from the
- *  module cache. A target is accepted only when it is a package-relative path (`./…`) that
- *  resolves — even through a symlink — inside the recipe directory; bare package targets,
- *  absolute paths, and any escape via `..` are rejected explicitly rather than silently
- *  followed. */
+ *  the exact same validated resolution instead of Node's own resolver, which caches a
+ *  package.json's parsed content per process for its lifetime — the same staleness this
+ *  whole loader exists to prevent. A target is accepted only when it's a package-relative
+ *  path resolving (even through a symlink) inside the recipe directory; bare specifiers,
+ *  absolute paths, and `..` escapes are rejected explicitly. */
 export async function resolvePackageImport(specifier: string, fromFile: string, recipeDirectory: string): Promise<PackageImportResolution> {
   const key = specifier.split("?")[0] as string;
   const packageJsonPath = await packageScopeFileWithin(fromFile, recipeDirectory);
@@ -291,8 +287,7 @@ export async function resolvePackageImport(specifier: string, fromFile: string, 
 /** Hash a hook and its local import graph — relative imports and package-internal
  *  `#specifier` imports alike; missing files are left for Node to report. */
 export async function dependencyGraphChecksum(entryPath: string): Promise<string> {
-  // prepare.ts/verify.ts/onboard.ts/quiesce.ts/resume.ts all resolve as
-  // resolve(recipe.directory, "<phase>.ts") (service/recipe.ts, lifecycle.ts), so the
+  // Every hook phase file resolves as resolve(recipe.directory, "<phase>.ts"), so the
   // entry's own directory is always the recipe directory — the boundary every
   // `#specifier` resolution below must stay inside.
   const recipeDirectory = dirname(entryPath);

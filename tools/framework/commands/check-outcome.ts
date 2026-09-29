@@ -1,23 +1,18 @@
-// One vocabulary for check outcomes, owned once for everything that runs checks against a
-// deployment and reports what it found — `accept`'s declared checks, `smoke`'s suite. The
-// idea it owns: was a verdict obtained, and if not, why not — a check that could not reach
-// the instance can only pretend to pass or pretend to be inapplicable otherwise.
+// One vocabulary for check outcomes, shared by everything that runs checks against a
+// deployment and reports what it found (`accept`, `smoke`). Was a verdict obtained, and if
+// not, why not.
 //
 // Four outcomes, not three-collapsed-into-one: "skipped" can mean both "nobody asked for
-// this" and "we tried and got nowhere" — a reader needs a different reaction to each, and
-// one label for both is how a report stops being trusted.
+// this" and "we tried and got nowhere", and one label for both is how a report stops being
+// trusted.
 //
 //   passed           a verdict was obtained, and it is good
 //   failed           a verdict was obtained, and it is bad
-//   not-checked      deliberately not run — a decision made before the attempt: a
-//                    model-calling check without --with-model, or a check this deployment
-//                    makes inapplicable
+//   not-checked      deliberately not run — decided before the attempt
 //   could-not-check  attempted, no verdict obtainable — the detail says why
 //
-// This is not the vocabulary of plan steps. `StepStatus` (service/operations.ts) records
-// what a mutating run DID — done, failed, advisory, blocked — and is persisted in operation
-// journals that outlive this process; a step is an action to record, not a question to
-// answer, so the two sets of four words stay deliberately separate.
+// Distinct from `StepStatus` (service/operations.ts), which records what a mutating run
+// DID, not a question answered.
 
 /** The outcome of one check, spelled the same way in every report, JSON surface and
  *  receipt that carries one. */

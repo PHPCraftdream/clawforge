@@ -1,7 +1,6 @@
 // Proves a set carries no secret VALUE before it is written — the manifest's shape has no
 // field for one, but a value could still arrive smuggled inside free text (an acceptance
-// check, an agent id, a file path). Split out of set.ts; see set-manifest.ts for where this
-// is called from (collectManifest, writeArtifact).
+// check, an agent id, a file path). Called from set-manifest.ts (collectManifest, writeArtifact).
 
 import { readFile, readdir } from "node:fs/promises";
 import type { Dirent } from "node:fs";
@@ -33,14 +32,11 @@ const PUBLIC_ENV_SETTINGS = new Set([
 
 /** Refuses to let a secret VALUE through into a manifest.
  *
- *  buildSetManifest cannot carry a value — the shape has no field for one — but a value
- *  could still arrive smuggled inside free text that enters the manifest verbatim: an
- *  acceptance check, an agent id, a file path. The manifest is meant to be committed and
- *  handed to another machine, so the build proves the negative before writing anything
- *  instead of trusting the shape: every value the deployment keeps locally (.env, the
- *  secrets/ stores) is searched for in the manifest. Exported so the check can feed it a
- *  doctored manifest and prove the scan fires — a guard that has never fired is a rubber
- *  stamp. */
+ *  buildSetManifest's shape has no field for a value, but one could still arrive smuggled
+ *  in free text (acceptance check, agent id, file path). So the build proves the negative
+ *  before writing anything: every value kept locally (.env, secrets/ stores) is searched
+ *  for in the manifest. Exported so a check can feed it a doctored manifest and prove the
+ *  scan actually fires. */
 export function assertNoSecretValues(manifest: SetManifest, values: { name: string; value: string }[]): void {
   const canonical = canonicalJson(manifest);
   const strings = stringsOf(manifest);
@@ -55,9 +51,8 @@ export function assertNoSecretValues(manifest: SetManifest, values: { name: stri
   }
 }
 
-/** The values the scan searches for — and the ONLY thing .env and the secret stores are
- *  read for. They are input to a refusal check, never to the manifest: this result reaches
- *  assertNoSecretValues and nothing else. */
+/** The values the scan searches for, and the only thing .env/secret stores are read for —
+ *  input to a refusal check, never to the manifest. */
 export async function localSecretValues(): Promise<{ name: string; value: string }[]> {
   const found: { name: string; value: string }[] = [];
   const collect = (source: string, env: Record<string, string>): void => {
@@ -96,11 +91,8 @@ export async function localSecretValues(): Promise<{ name: string; value: string
   return found;
 }
 
-/** Reads one secret source for the scan. Only a missing file is tolerable — a deployment
- *  before its first bootstrap has no .env and no stores yet. Any other read error would
- *  silently shrink the scan, and a store this call could not read is exactly where a value
- *  destined for the manifest would sit, so it stops instead — naming the source, never a
- *  value. */
+/** Reads one secret source for the scan. Only a missing file is tolerable (pre-bootstrap
+ *  has none yet); any other read error would silently shrink the scan, so it stops instead. */
 async function readSecretSource(source: string): Promise<Record<string, string> | undefined> {
   try {
     return parseEnv(await readFile(source, "utf8"));

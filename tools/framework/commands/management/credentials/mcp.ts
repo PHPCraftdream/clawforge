@@ -11,7 +11,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { HelperNotRunning, requireBootstrapped } from "#src/runtime/runtime.ts";
-import { CLI_HELPER_SERVICE } from "../../interface/cli-helper.ts";
+import { CLI_HELPER_SERVICE } from "#src/commands/interface/cli-helper.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, MCP_LAUNCHER_FILENAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
 import type { McpClient } from "#src/integration/mcp/project.ts";
 import type { CommandArgument } from "#src/core/app.ts";
@@ -37,12 +37,9 @@ export async function mcpConfigFilePath(_ctx: Context): Promise<string> {
 
 /** stdio bridge to the gateway's channel conversations. */
 export async function mcpServe(ctx: Context, args: string[]): Promise<void> {
-  // stream: stdin, stdout and stderr are inherited, so the client's JSON-RPC flows
-  // straight through. The gateway token reaches the CLI via the compose environment, so
-  // no --token flag is needed.
-  //
-  // Tried first, before the isRunning() preflight below: a helper that execs successfully
-  // already proves the gateway is reachable.
+  // stdin/stdout/stderr inherited, so the client's JSON-RPC flows straight through; the
+  // gateway token reaches the CLI via the compose environment. Tried first, before the
+  // isRunning() preflight below: a successful exec already proves the gateway is reachable.
   try {
     await ctx.runtime.execInHelper(CLI_HELPER_SERVICE, ["mcp", "serve", ...args]);
     return;
@@ -53,9 +50,8 @@ export async function mcpServe(ctx: Context, args: string[]): Promise<void> {
   if (!(await ctx.runtime.isRunning())) {
     die("the gateway is not running. Start it with ./clawforge up");
   }
-  // The container can be running while the gateway is still warming up. Wait before handing
-  // over stdio so the first JSON-RPC request cannot race the service startup. This bounded
-  // wait never starts or stops anything and keeps the input stream untouched.
+  // The container can be running while the gateway is still warming up; wait before handing
+  // over stdio so the first JSON-RPC request can't race the service startup.
   await ctx.runtime.waitForHealth(30);
   await ctx.runtime.runOneOff("cli", ["mcp", "serve", ...args], { profile: "cli" });
 }
@@ -65,10 +61,9 @@ interface McpServerEntry {
   readonly args: string[];
 }
 
-/** Both framework servers, launched locally so the tooling retains its target transport. The
- *  entries no longer vary by mode or client — a shared bootstrap locates the committed
- *  launcher (mcp-launch.mjs) at runtime, which is what actually differs between an installed
- *  package and this monorepo checkout. */
+/** Both framework servers, launched locally so the tooling retains its target transport. A
+ *  shared bootstrap locates the committed launcher (mcp-launch.mjs) at runtime, so entries
+ *  don't vary by mode or client. */
 export async function mcpServerEntries(_ctx: Context): Promise<Record<string, McpServerEntry>> {
   return projectMcpEntries();
 }
@@ -79,9 +74,7 @@ async function mcpConfig(ctx: Context): Promise<string> {
 
 /** Refresh project-local client settings without replacing other servers or global config. */
 export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {
-  // Repetition is checked on the raw argv, ahead of the generic parser: that only keeps
-  // the last of several same-named options, and a second --client here is a mistake worth
-  // naming rather than silently resolving.
+  // Checked on the raw argv, ahead of the generic parser, which only keeps the last value.
   if (args.filter((arg) => arg === "--client").length > 1) die("--client may only be given once");
   const parsed = parseDeclaredArgs(MCP_SETUP_ARGUMENTS, args);
   const json = parsed.json === true;
@@ -106,9 +99,8 @@ export async function mcpCreds(ctx: Context, args: string[]): Promise<void> {
   const jsonOnly = parsed.json === true;
   const tokenOnly = parsed.token === true;
 
-  // Checked before anything below prints a single byte: this command's whole job is handing
-  // over a live token, and a not-yet-bootstrapped deployment must fail on that fact alone,
-  // never after the token line (which would then hold nothing generated) already went out.
+  // Checked before anything prints: a not-yet-bootstrapped deployment must fail on that
+  // fact alone, never after a token line holding nothing generated already went out.
   await requireBootstrapped(ctx);
 
   const token = ctx.settings.env.OPENCLAW_GATEWAY_TOKEN ?? "";

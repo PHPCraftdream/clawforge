@@ -12,13 +12,13 @@ import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/
 import type { Context } from "#src/core/context.ts";
 import { missing, requirements, requirementsForConfig, status, template } from "#src/service/secrets.ts";
 import type { SecretLocation, SecretRequirement } from "#src/service/secrets.ts";
-import { loadSecrets, dumpSecrets } from "../lifecycle/state.ts";
+import { loadSecrets, dumpSecrets } from "#src/commands/lifecycle/state.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replacePrivateFile, unprotectedPrivateFile } from "#src/security/privacy/private-file.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { guarded, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
-import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "../orchestration/inspect/helpers.ts";
+import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "#src/commands/orchestration/inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -60,32 +60,22 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
     );
   }
 
-  // Reported, not refused, and not rewritten behind the operator's back: reading a store
-  // neither causes nor deepens an exposure, and this repository's contract for what it
-  // cannot guarantee is to say so and go on — the same decision private-file.ts makes at
-  // the Windows/WSL boundary. Refusing would leave the keys uninstallable through the
-  // tool, while the fix (tightening the file) stays a manual step either way.
+  // Reported, not refused: reading a store neither causes nor deepens an exposure, and
+  // refusing would leave the keys uninstallable while the fix stays a manual step anyway.
   const exposure = await unprotectedPrivateFile(path);
   if (exposure !== undefined) {
     warn(`${path} is not owner-only (${exposure}) — anyone this machine's ACLs allow can read the keys in it`);
   }
 
   const values = parseEnv(raw);
-  // Asked of the PROSPECTIVE configuration (live + declared overlay), not the live one
-  // alone: a secret a not-yet-applied config/desired-state.json is about to need is a real
-  // requirement here too — gatherInspection already asks the same question the
-  // same way. Without this, installing a key for a provider the declaration just added (but
-  // apply hasn't run yet) computed `needed` from the live config only, which did not know
-  // about it yet — an empty or short `needed` list then made loadSecrets() refuse with
-  // "refusing to install an empty secrets file" even though the value was sitting right
-  // there in the store file.
+  // Asked of the PROSPECTIVE config (live + declared overlay), not live alone: a secret a
+  // not-yet-applied desired-state.json is about to need is a real requirement here too —
+  // otherwise a newly declared provider key computed an empty `needed` and loadSecrets()
+  // refused with "empty secrets file" despite the value sitting in the store.
   //
-  // readLiveConfigOrThrow(), not readLiveConfigForProspective(): this is about to WRITE
-  // config/.env from whatever `needed` comes out to, so a live config that genuinely exists
-  // but merely failed to read (a transient error) must abort the whole operation rather than
-  // silently degrade to an empty base — degrading here would compute an INCOMPLETE `needed`
-  // list and loadSecrets() would then overwrite config/.env down to just that list, deleting
-  // every secret the missed requirement was for while reporting success.
+  // readLiveConfigOrThrow(), not readLiveConfigForProspective(): about to WRITE config/.env
+  // from `needed`, so a transient read failure must abort rather than silently degrade to
+  // an empty base, which would compute an incomplete list and delete secrets on write.
   const prospective = prospectiveConfig(await readLiveConfigOrThrow(ctx), await readDeclaredConfig());
   const needed = await requirementsForConfig(ctx, prospective);
 
@@ -110,12 +100,9 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
     return;
   }
 
-  // config/.env is REPLACED by what follows, not merged into: the required list is the whole
-  // file afterwards. Anything an operator put there by hand — a variable OpenClaw reads that
-  // no provider reference names, something a recipe expects — disappears. That is the
-  // design (the file is derived from the requirements), so removed names are warned about
-  // below: a variable that vanishes silently is one nobody thinks to put back. Names only:
-  // the values are the secrets themselves.
+  // config/.env is REPLACED, not merged: the required list becomes the whole file. Anything
+  // put there by hand and not part of the requirements disappears, so removed names are
+  // warned about below — a variable that vanishes silently is one nobody puts back.
   const current = targetSupplied.length > 0 ? await dumpSecrets(ctx) : undefined;
   if (current !== undefined) {
     const keep = new Set(targetSupplied.map((entry) => entry.name));
@@ -131,10 +118,9 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
     const content = targetSupplied.map((entry) => serializeEnvLine(entry.name, values[entry.name] ?? "")).join("\n");
     await loadSecrets(ctx, `${content}\n`);
     log(`applied ${targetSupplied.length} target value(s) from ${path}`);
-    // Target values are on disk but nothing running has READ them: config/.env is a file
-    // inside a bind mount, not an env_file declaration, so `up` converges on the healthy
-    // container that is already running and leaves the old process environment live — the
-    // contract config.ts and provider.ts already state for their own writes.
+    // Written to disk but not READ yet: config/.env is a bind-mounted file, not an
+    // env_file declaration, so `up` converges on the already-running container instead of
+    // picking it up.
     const target = secretsFileOnTarget(ctx);
     if (await ctx.runtime.isRunning()) {
       info(`${target} holds the new values, but the running instance has not read them — restart to pick them up: ./clawforge restart`);
@@ -154,19 +140,11 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   }
 }
 
-// The target branch above may point at restart because config/.env is a file inside a bind
-// mount that the gateway process re-reads at startup — restarting leaves the container and
-// the interpolated service definition untouched, so `up` converges on the healthy container
-// and does nothing. Repo-env values are different in kind: compose interpolated them into
-// the service definition and fixed them in the container's environment at creation, and
-// `restart` keeps that container, so the old value stays in force while reporting success.
-// The honest verb is the recreate `up` performs — an operation compose only offers because
-// the interpolated service configuration genuinely changed, unlike the bind-mount edit,
-// which leaves it identical — and the cost is real: the container is replaced, not merely
-// signalled, so connections drop and the service starts fresh. The recreate must go through
-// reconcile(): settings.env is the process-start snapshot of the .env file, and applyStore
-// rewrote that file in this same process — an `up` composed from the snapshot would recreate
-// the container with the OLD values.
+// Repo-env values differ from target values: compose interpolates them into the service
+// definition and fixes them in the container's environment at creation, so `restart` keeps
+// the old value while reporting success. The honest verb is the recreate `up` performs —
+// real cost, container replaced, connections drop. Must go through reconcile(): settings.env
+// is the process-start .env snapshot, and applyStore just rewrote that file in this process.
 
 /** Puts rotated repo-env values in force, and says what was done either way. */
 async function deliverRepositoryValues(ctx: Context, entries: SecretRequirement[], values: Record<string, string | undefined>): Promise<void> {
@@ -174,8 +152,7 @@ async function deliverRepositoryValues(ctx: Context, entries: SecretRequirement[
     info(`${envFile()} holds the new values, and the instance is stopped — the next start creates the container with them: ./clawforge up`);
     return;
   }
-  // A runtime that cannot recreate gets the corrected instruction, not the old lie: restart
-  // would leave the previous value in force while reporting success.
+  // A runtime that cannot recreate gets the correct instruction, not the old lie.
   if (typeof ctx.runtime.reconcile !== "function") {
     info(`${envFile()} holds the new values, but the running container keeps the environment it was created with — a restart does not apply them`);
     info("recreate the container so compose interpolates the new values: ./clawforge up");
@@ -211,10 +188,9 @@ async function confirmRepositoryValues(ctx: Context, entries: SecretRequirement[
     : `confirmed: the running container holds the new values for all ${entries.length} repo-env variables`);
 }
 
-/** Renders a store file with recovered values filled in where known — the same section/
- *  comment shape template() writes, so a store this produces reads like one a human filled
- *  in by hand, and a name recovery could not reach is left blank exactly like an unfilled
- *  template entry rather than looking any different from one. */
+/** Renders a store file with recovered values filled in where known, in the same
+ *  section/comment shape template() writes — an unrecovered name looks like an unfilled
+ *  template entry, not different from one. */
 function renderRecoveredStore(entries: SecretRequirement[], values: Record<string, string | undefined>): string {
   const lines = [
     "# Secrets recovered from the running instance.",
@@ -234,16 +210,12 @@ function renderRecoveredStore(entries: SecretRequirement[], values: Record<strin
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-/** The reverse of --apply: recovers what a reachable, already-running instance actually
- *  holds into a local store, for when the operator side's own copy was lost while the
- *  instance kept running. target-env values are read straight from the target's own
- *  config/.env (the same file dumpSecrets() already knows how to read); repo-env values (the
- *  gateway token) are NOT stored on the target's filesystem at all — they only ever existed
- *  as the process environment compose gave the container at creation time — so they are read
- *  back from the running container's own environment instead, which is the one place they
- *  still exist once the operator's .env is gone. A name recovery cannot reach is left blank
- *  and named in the report; this never refuses on partial recovery, since a partial store is
- *  still strictly more than none. */
+/** The reverse of --apply: recovers what a reachable, running instance holds into a local
+ *  store, for when the operator side's own copy was lost. target-env values are read from
+ *  the target's config/.env; repo-env values (the gateway token) aren't stored on the
+ *  target's filesystem at all, so they're read from the running container's own environment
+ *  instead. Unrecoverable names are left blank and named in the report; never refuses on
+ *  partial recovery, since a partial store beats none. */
 async function dumpToStore(ctx: Context, storeName: string, force: boolean): Promise<void> {
   const path = secretStoreFile(storeName);
 
@@ -284,8 +256,7 @@ async function dumpToStore(ctx: Context, storeName: string, force: boolean): Pro
     try {
       await createPrivateFile(path, content);
     } catch (error) {
-      // Lost a creation race with a concurrent --dump/--init-store: protect what appeared,
-      // the same answer provision.ts's ensureEnvFile gives the same race about .env.
+      // Lost a creation race with a concurrent --dump/--init-store: protect what appeared.
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       await protectPrivateFile(path);
     }
@@ -303,18 +274,15 @@ async function dumpToStore(ctx: Context, storeName: string, force: boolean): Pro
   }
 }
 
-/** --dump: read-only against the target and the running container, and the store file it
- *  writes locally is the same one --init-store writes without taking the instance lock
- *  either — nothing here mutates the instance, so there is nothing for the lock to
- *  serialize. */
+/** --dump: read-only against the target and the running container, no instance lock —
+ *  nothing here mutates the instance, so there is nothing for the lock to serialize. */
 async function runDumpAction(ctx: Context, store: string, force: boolean): Promise<void> {
   await dumpToStore(ctx, store, force);
 }
 
-/** --apply: writes config/.env on the target — the same class of mutation apply/restore/
- *  rollback guard against each other for, so it takes the same lock. No --break-lock
- *  support (its own parser above never declares it): breakLockSupported: false keeps a
- *  refusal from offering a flag it cannot accept. Only --break-foreign-lock is forwarded. */
+/** --apply: writes config/.env on the target, same class of mutation apply/restore/rollback
+ *  guard against, so it takes the same lock. No --break-lock support: breakLockSupported:
+ *  false keeps a refusal from offering a flag it can't accept. */
 async function runApplyAction(ctx: Context, store: string, breakForeignLockHost: string | undefined): Promise<void> {
   await requireBootstrapped(ctx);
   const guardArgs = breakForeignLockHost === undefined ? [] : ["--break-foreign-lock", breakForeignLockHost];
@@ -339,9 +307,7 @@ async function runStatusReport(ctx: Context, jsonOnly: boolean): Promise<void> {
   if (emitJson) {
     // Names/state/where-found only — SecretStatus never carries a value.
     const absent = missing(entries);
-    // Only asked when it decides something (the same condition the text path's own restart-
-    // vs-up hint is gated on below) — a fact, not the sentence built from it, so a caller
-    // does not have to string-match "then ./clawforge restart" to act on it.
+    // A fact, not the sentence built from it, so a caller doesn't string-match "then restart".
     const running = absent.length > 0 ? await ctx.runtime.isRunning() : null;
     emit(
       `${JSON.stringify(
@@ -410,8 +376,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   if (initStore) {
     const path = secretStoreFile(store);
 
-    // An existing store holds filled-in keys; rewriting it with an empty template would
-    // destroy them silently, and the values are not recoverable from anywhere else.
+    // An existing store holds filled-in keys, unrecoverable elsewhere if overwritten silently.
     const exists = await access(path).then(
       () => true,
       () => false,
@@ -420,25 +385,18 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
       die(`${path} already exists — pass --force to replace it with an empty template`);
     }
 
-    // secrets/ is part of the same contract, not a mere container: an editor that saves
-    // through atomic replacement creates its temporary file in this directory and renames
-    // it over the store, and that temporary takes the DIRECTORY's inheritable access. A
-    // sealed directory has none to give — on Windows such a file falls back to the
-    // creator's own default DACL, which is narrow — so the wide inherited entry this
-    // guards against cannot reach the replacement.
+    // secrets/ needs protecting too: an atomic-save editor's temp file in this directory
+    // inherits the DIRECTORY's access before renaming over the store.
     await protectPrivateDirectory(secretsDir());
     const needed = await requirements(ctx);
     if (exists) {
-      // Atomic replacement, not an in-place write: the old store stays whole and
-      // owner-only until the rename, so a failure anywhere before it leaves the previous
-      // keys exactly as they were, and the replacement is owner-only from its first byte.
+      // Atomic replacement: the old store stays whole and owner-only until the rename.
       await replacePrivateFile(path, template(needed));
     } else {
       try {
         await createPrivateFile(path, template(needed));
       } catch (error) {
-        // Lost a creation race with a concurrent --init-store: protect what appeared,
-        // the same answer provision.ts's ensureEnvFile gives the same race about .env.
+        // Lost a creation race with a concurrent --init-store: protect what appeared.
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         await protectPrivateFile(path);
       }
@@ -474,10 +432,8 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
 }
 
 /** Thrown by preflightSecrets specifically for missing secrets — the one case callers like
- *  restore/push mean to handle gracefully (leave the gateway stopped, point at ./clawforge
- *  secrets --apply). A distinct type so that handling does not also swallow a genuine
- *  failure underneath it — a corrupted config, a read error — which must reach the caller
- *  instead of being reported as a successful restore. */
+ *  restore/push handle gracefully. A distinct type so that handling doesn't also swallow a
+ *  genuine failure (corrupted config, read error) underneath it. */
 export class MissingSecretsError extends Error {
   constructor(count: number) {
     super(`cannot start: ${count} required secret(s) missing — run ./clawforge secrets for details`);

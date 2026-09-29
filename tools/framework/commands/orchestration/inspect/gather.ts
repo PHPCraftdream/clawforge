@@ -1,32 +1,13 @@
-// `./clawforge inspect [--json]` — what this deployment declares, what the instance actually is,
-// and where the two disagree. `./clawforge doctor` lives here too: it is the same inspection read
-// for its problems rather than its inventory, and a second gatherer would eventually give a
-// second answer to one question.
+// `./clawforge inspect [--json]` — what this deployment declares, what the instance actually
+// is, and where the two disagree. `./clawforge doctor` lives here too: same inspection, read
+// for its problems rather than its inventory, so there is only ever one gatherer.
 //
-// The information already existed, spread across `status` (containers and probes),
-// `secrets` (what is missing), `provision-agent` (what a recipe expects) and a few CLI
-// calls nobody should have to remember. Spread out, it is only useful to someone who
-// already knows which question to ask. Gathered, it answers the one question a coder
-// actually has — is this instance what the repository says it is — in a form an agent can
-// branch on rather than read.
+// Read-only: nothing here writes, starts, restarts or registers anything, so it is safe to
+// call before deciding to act. `plan` turns findings into actions; `apply` executes them.
 //
-// Read-only, deliberately and completely: nothing here writes, starts, restarts or
-// registers anything. That is what makes it safe to call before deciding to act, which is
-// the whole point of having it. `plan` turns its findings into actions; `apply` executes
-// them.
-//
-// Cost: the live agent/MCP/cron lists come from OpenClaw's own CLI, which is a container
-// per call. `./clawforge cli-start` makes those execs instead, and the difference is several
-// seconds per inspect.
-//
-// Split into several files under this directory, purely organisational: helpers.ts (pure
-// pieces), declared.ts (declaredState/recipeExpectations, what this repository declares),
-// drift.ts (observeConfig/observeConnectionFacts/observeSecretStore, the declared-vs-target
-// comparisons), live.ts (observeLive, what the target reports with no declared counterpart),
-// upkeep.ts (observeBackupHealth/observeDiskSpace, whether this deployment could be
-// recovered), and this one, gather.ts (gatherInspection, the CLI surface). Every export here
-// keeps its name and signature — apply.ts, plan.ts and the checks all import from
-// "./inspect/gather.ts" (or the barrel-free direct path, since there is no index.ts here).
+// Split for organisation only: helpers.ts (pure pieces), declared.ts (what this repository
+// declares), drift.ts (declared-vs-target comparisons), live.ts (what the target reports
+// with no declared counterpart), upkeep.ts (recoverability), this file (CLI surface).
 
 import { log, info, warn, reportBlocking } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
@@ -61,24 +42,18 @@ export const JSON_ONLY_ARGUMENTS: CommandArgument[] = [
   { name: "json", description: "Emit the whole inspection as JSON", kind: "flag" },
 ];
 
-/** gatherInspection's own opt-in extras — additions no default caller needs, so a caller
- *  that never passes this second argument gets exactly the inspection it always did. */
+/** gatherInspection's opt-in extras; a caller that omits this gets the inspection it always did. */
 export interface GatherInspectionOptions {
-  /** Also gather `channels status --json`, in the same batched CLI call observeLive already
-   *  makes for agents/mcp/cron/plugins/skills, and expose the parsed answer as
-   *  observed.channels. `./clawforge watch check` is the only caller that sets this — its own
-   *  channel findings used to cost a one-off CLI container every cron cycle; inspect, doctor,
-   *  plan and apply never set it, so their own output is unchanged. */
+  /** Also gather `channels status --json` in observeLive's batched CLI call, exposed as
+   *  observed.channels. Only `./clawforge watch check` sets this. */
   readonly channels?: boolean;
 }
 
 /** The whole picture. Exported because doctor, plan and apply all read it rather than
- *  gathering their own — three gatherers would be three answers to one question.
+ *  gathering their own.
  *
- *  declaredState() runs outside the try below on purpose: it never touches the target
- *  (declared.ts's own header), so it is available even when the target is not — the
- *  TARGET_UNREACHABLE inspection still names what this repository declares, the same as
- *  the NOT_BOOTSTRAPPED one a few lines down does. */
+ *  declaredState() runs outside the try below on purpose: it never touches the target, so
+ *  it is available even when the target is not (TARGET_UNREACHABLE, NOT_BOOTSTRAPPED). */
 export async function gatherInspection(ctx: Context, options?: GatherInspectionOptions): Promise<Inspection> {
   const problems: Problem[] = [];
   const declared = await declaredState(ctx, problems);
@@ -117,13 +92,10 @@ async function gatherPreflight(
   secretStore: SecretStoreObservation | undefined;
   configState: ConfigState;
 }> {
-  // isRunning() shells out to compose, which needs somewhere to write its own private env
-  // file beside the data directory — and on a deployment nobody has bootstrapped yet, that
-  // data directory does not exist, so creating a place beside it is exactly the mkdir a
-  // still-root-owned parent refuses. NotBootstrapped is DockerRuntime's own way of saying so
-  // (runtime-docker.ts's #withEnvFile) instead of a raw transport error; caught here
-  // rather than left to crash a read-only command, and reported as its own finding rather
-  // than folded into GATEWAY_DOWN — "./clawforge up" is not a working remedy pre-bootstrap.
+  // isRunning() needs the data directory to write compose's env file; pre-bootstrap it
+  // doesn't exist yet, so DockerRuntime throws NotBootstrapped instead of a transport error.
+  // Caught here and reported as its own finding, not folded into GATEWAY_DOWN — "up" is not
+  // a working remedy pre-bootstrap.
   let running: boolean;
   let notBootstrapped: NotBootstrapped | undefined;
   try {
@@ -134,37 +106,27 @@ async function gatherPreflight(
     notBootstrapped = error;
   }
 
-  // A pure fact about this deployment's OWN .env — no runtime call needed, so it costs
-  // nothing to check even here. Skipped pre-bootstrap the same way PROVIDER_MISSING is below:
-  // a deployment with nothing on the target yet has NOT_BOOTSTRAPPED naming the one remedy
-  // that applies, and ./clawforge upgrade (this finding's own remedy) needs a running instance
-  // to roll back to. A digest never moves; a tag can, and is shared with every other
-  // deployment on this Docker daemon that names it.
+  // Pure fact about this deployment's own .env, no runtime call needed. Skipped
+  // pre-bootstrap like PROVIDER_MISSING below: NOT_BOOTSTRAPPED already names the remedy,
+  // and `upgrade` (this finding's remedy) needs a running instance to roll back to.
   if (notBootstrapped === undefined && !declared.image.includes("@sha256:")) {
     problems.push(problem("IMAGE_UNPINNED", `OPENCLAW_IMAGE is "${declared.image}", a tag rather than a digest`));
   }
 
-  // Asked of the PROSPECTIVE configuration (live + declared overlay), not the live one
-  // alone: a SecretRef the declaration is about to add is a real requirement before
-  // CONFIG_DRIFT ever gets applied, and plan.ts's "secrets" step is gated on exactly the
-  // SECRET_MISSING findings this loop produces.
+  // Asked of the PROSPECTIVE config (live + declared overlay): a SecretRef the declaration
+  // is about to add is a real requirement before CONFIG_DRIFT is ever applied.
   //
-  // prospectiveConfig() throws on a declared path through "__proto__"/"constructor"/
-  // "prototype" (setAt's own guard against polluting the shared Object.prototype) — caught
-  // here, not left to crash inspect entirely: a malicious or corrupted desired-state.json is
-  // exactly the kind of thing this read-only command exists to report, not to be brought
-  // down by, and the live config alone is still a safe answer to fall back to.
+  // prospectiveConfig() throws on a declared path through __proto__/constructor/prototype
+  // (setAt's guard against prototype pollution) — caught, not left to crash a read-only
+  // command; live config alone is still a safe fallback.
   let prospective: unknown;
   let liveConfig: unknown;
   try {
-    // One read serves both the prospective merge and the egress endpoints observeLive probes:
-    // two reads of the same file per inspection asked the target twice for one answer, and
-    // two separate reads could disagree about what is configured.
+    // One read serves both the prospective merge and the egress endpoints observeLive probes.
     liveConfig = await readLiveConfigForProspective(ctx);
     prospective = prospectiveConfig(liveConfig, declared.config);
   } catch (error) {
-    // A transport failure here is TARGET_UNREACHABLE, not a bad declared path — rethrown so
-    // the outer catch in gatherInspection() reports it as what it actually is.
+    // A transport failure here is TARGET_UNREACHABLE, not a bad declared path.
     if (error instanceof TransportUnreachableError) throw error;
     problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} declares an unsafe configuration path: ${(error as Error).message}`));
     prospective = liveConfig;
@@ -176,22 +138,16 @@ async function gatherPreflight(
     }
   }
 
-  // The same config secrets --apply and provision-agent already read providers from
-  // (collectConfiguredProviders), not a guess from environment variable names: a bootstrap
-  // with no provider key ends "OpenClaw is up" and doctor "nothing blocking" while every
-  // agent turn fails at the first model call — a gap this loop's own SECRET_MISSING
-  // above never reports, because a provider's apiKey is inferred from the configured id, and
-  // with no id configured at all there is no requirement yet to be missing. Skipped pre-
-  // bootstrap (notBootstrapped): configure-provider needs config/.env on the target, which
-  // does not exist yet, and NOT_BOOTSTRAPPED above already names the one remedy that applies.
+  // A provider apiKey is inferred from the configured id, so with no id configured there is
+  // no requirement for SECRET_MISSING above to catch — without this, a bootstrap with no
+  // provider key reports healthy while every agent turn fails at the first model call.
+  // Skipped pre-bootstrap: NOT_BOOTSTRAPPED above already names the remedy.
   if (notBootstrapped === undefined && collectConfiguredProviders(prospective).length === 0) {
     problems.push(problem("PROVIDER_MISSING", "models.providers declares no provider, and no auth.profiles entry names one either"));
   }
 
-  // BACKUP_MISSING/BACKUP_STALE/DISK_LOW: whether this deployment could be recovered, not
-  // whether it is serving — same pre-bootstrap skip as IMAGE_UNPINNED/PROVIDER_MISSING above,
-  // there is nothing to have backed up or run low on disk yet. See upkeep.ts's own header for
-  // why these never join watch's liveness codes.
+  // BACKUP_MISSING/BACKUP_STALE/DISK_LOW: recoverability, not liveness — same pre-bootstrap
+  // skip as above, nothing backed up or disk-limited yet.
   if (notBootstrapped === undefined) {
     await observeBackupHealth(ctx, problems);
     await observeDiskSpace(ctx, problems);
@@ -209,11 +165,9 @@ async function gatherPreflight(
   return { running, notBootstrapped, liveConfig, secrets, secretStore, configState };
 }
 
-/** Everything that needs an actually-running instance to answer: declaration/connection
- *  facts, the live observation (agents/mcp/cron/plugins/skills/health), the image-digest
- *  comparison, the installed-set requirement check and the lock comparison — assembled into
- *  the final Inspection. Split out of gatherReachedInspection so that function stays a short
- *  dispatch between "not running" and this. */
+/** Everything needing an actually-running instance: declaration/connection facts, the live
+ *  observation, image-digest comparison, installed-set check, lock comparison — assembled
+ *  into the final Inspection. Split out so gatherReachedInspection stays a short dispatch. */
 async function gatherRunningInspection(
   ctx: Context,
   declared: Inspection["declared"],
@@ -224,25 +178,20 @@ async function gatherRunningInspection(
   secretStore: SecretStoreObservation | undefined,
   options: GatherInspectionOptions | undefined,
 ): Promise<Inspection> {
-  // These two need an instance. DECLARATION_MISSING is a fact about the folder, but it is
-  // only a finding while something is running to be re-declared — the whole point of its
-  // name — and the facts ENV_STALE compares against exist only in a running container.
+  // Both need a running instance: DECLARATION_MISSING is only a finding while something is
+  // running to be re-declared, and ENV_STALE compares against a running container's facts.
   await observeDeclarationFile(problems);
   const connectionFacts = await observeConnectionFacts(ctx, problems);
 
   const live = await observeLive(ctx, declared, problems, configState.mtimeMs, liveConfig, options?.channels === true);
 
-  // One read of the runtime's own identity, shared below by the set-requirement match and
-  // the displayed digest: two separate live queries for one inspection asked the runtime
-  // (a container inspect, not a free read) about the same fact twice.
+  // Shared below by the set-requirement match and the displayed digest, one container
+  // inspect instead of two.
   const runningDigestList = await runningDigests(ctx);
 
-  // The mirror image of the requirement match's own caution just above: THERE, resolving the
-  // tag locally would wrongly answer for a container never recreated onto what it now points
-  // to. HERE, that is exactly the fact worth surfacing — asked only for a tag
-  // still in force (a digest is content-addressed and cannot move) and only while running
-  // (nothing to compare a stopped container's digest against), so a pinned deployment pays for
-  // this extra `docker image inspect` never at all.
+  // Only for a tag still in force (a digest can't move) and only while running (nothing to
+  // compare a stopped container against) — a pinned deployment never pays for this extra
+  // `docker image inspect`.
   if (!declared.image.includes("@sha256:") && runningDigestList.length > 0) {
     const localTagDigest = await ctx.runtime.imageReference();
     if (
@@ -259,8 +208,8 @@ async function gatherRunningInspection(
     }
   }
 
-  // Which set is installed here, and whether this machine matches what it required. Read
-  // before the lock comparison because it is the more specific answer: a lock says what the
+  // Which set is installed, and whether this machine matches what it required. Read before
+  // the lock comparison because it's the more specific answer: a lock says what the
   // composition was pinned to, a set id says what was actually installed.
   const installed = await readInstalledSet(ctx);
   if (installed !== undefined) {
@@ -268,25 +217,16 @@ async function gatherRunningInspection(
     problems.push(
       ...requirementProblems(
         installedManifest,
-        // matchRequiredDigest() against the already-fetched running digests, not
-        // ctx.runtime.imageReference(): the latter resolves whatever the configured image
-        // REFERENCE (typically a tag) currently points to locally, which a later `docker
-        // pull` moves even when the running container was never recreated and is still on
-        // the old digest — apply --set's own pre/post-checks (apply.ts) already learned this
-        // the hard way; this check never did.
+        // Against the already-fetched running digests, not ctx.runtime.imageReference():
+        // the latter follows a `docker pull`'s tag move even when the container wasn't
+        // recreated and is still on the old digest.
         { framework: await frameworkVersion(), imageDigest: matchRequiredDigest(runningDigestList, installedManifest) },
       ),
     );
   }
 
-  // Last, and only when the instance is up: the lock pins the image digest, which cannot be
-  // read from a stopped instance, and a lock comparison against half an observation would
-  // report differences that are only missing information.
-  //
-  // Plugins/skills are folded in here rather than fetched by currentComposition() itself:
-  // `live` already carries them from observeLive's own batched read (openclawCliBatch, above)
-  // and a second fetch would spend a second container on the same question — exactly what
-  // that batching exists to avoid (openclaw-cli.ts, commands/management/extensions.ts).
+  // Last, and only while running: the lock pins the image digest, unreadable from a stopped
+  // instance. Plugins/skills come from `live`'s already-batched read, not a second fetch.
   const composition = await currentComposition(ctx);
   problems.push(
     ...compareLock(await readLock(), {
@@ -303,14 +243,8 @@ async function gatherRunningInspection(
       secrets,
       secretStore: secretStore,
       image: ctx.settings.image,
-      // The actually-running container's own digest (the same fetch as above, no manifest
-      // to prefer against here), not ctx.runtime.imageReference() (whatever the configured
-      // image REFERENCE currently resolves to locally) — the SET_REQUIREMENT_UNMET check
-      // above learned this the hard way: a `docker pull` moves the local tag's
-      // digest even when the running container was never recreated, and reporting THAT here
-      // contradicted the very warning this same inspection had just produced a few lines
-      // above it. Deliberately no fallback to imageReference() when nothing was found: an
-      // absent answer is more honest than one already known to sometimes be wrong.
+      // The actually-running container's digest, not ctx.runtime.imageReference() — see
+      // matchRequiredDigest comment above. No fallback: an absent answer beats a wrong one.
       imageDigest: runningDigestList[0],
       frameworkVersion: await frameworkVersion(),
       probes: live.probes ?? {},

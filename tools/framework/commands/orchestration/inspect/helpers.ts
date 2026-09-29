@@ -217,12 +217,9 @@ export function prospectiveConfig(live: unknown, declared: DeclaredState["config
   return base;
 }
 
-/** The live openclaw.json, parsed as JSON5 — or undefined for any reason at all (absent,
- *  unreadable, unparseable). Failure here is not this function's finding to report:
- *  observeConfig() (inspect/drift.ts) already owns reporting a broken live config as
- *  CONFIG_DRIFT; this is a second, independent read purely to build the prospective merge
- *  above, and a config that cannot be read here simply means the prospective view falls
- *  back to the declaration alone. */
+/** The live openclaw.json, parsed as JSON5, or undefined for any reason at all (absent,
+ *  unreadable, unparseable) — observeConfig() (drift.ts) owns reporting CONFIG_DRIFT; a
+ *  failed read here just falls the prospective view back to the declaration alone. */
 export async function readLiveConfigForProspective(ctx: Context): Promise<unknown> {
   try {
     return JSON5.parse(await ctx.transport.readFile(`${ctx.settings.dataDir}/config/openclaw.json`)) as unknown;
@@ -231,15 +228,11 @@ export async function readLiveConfigForProspective(ctx: Context): Promise<unknow
   }
 }
 
-/** The same read, for a caller that is about to WRITE based on the result — secrets --apply's
- *  own prospective requirement list, not inspect's read-only report. readLiveConfigForProspective()
- *  above degrading a transient read or parse error to "no config" is correct for gatherInspection
- *  (it must always answer, and observeConfig() reports the break separately) but wrong here: a
- *  config that genuinely exists and briefly failed to read still has real secrets in it, and
- *  silently treating that the same as "never bootstrapped" produces an INCOMPLETE requirement
- *  list that then overwrites config/.env down to just that incomplete list — deleting whatever
- *  secret the missed requirement was for. Only a genuinely absent file (never bootstrapped) is
- *  a legitimate empty base; anything else must abort before applyStore() writes a single byte. */
+/** The same read, for a caller about to WRITE based on the result (secrets --apply). Unlike
+ *  readLiveConfigForProspective(), a read/parse error must not degrade to "no config": that
+ *  would produce an incomplete requirement list which then overwrites config/.env, deleting
+ *  secrets the missed requirement was for. Only a genuinely absent file is a legitimate
+ *  empty base; anything else aborts before applyStore() writes a byte. */
 export async function readLiveConfigOrThrow(ctx: Context): Promise<unknown> {
   const path = `${ctx.settings.dataDir}/config/openclaw.json`;
   if (!(await ctx.transport.exists(path))) return undefined;
@@ -258,10 +251,8 @@ export async function readLiveConfigOrThrow(ctx: Context): Promise<unknown> {
 }
 
 /** The raw {path,value} declarations from config/desired-state.json, with no problem
- *  reporting and none of declaredState()'s (declared.ts) recipe/image extras — a caller that
- *  only wants prospectiveConfig's own input (secrets --apply's own prospective requirements,
- *  which have no use for an inspection Problem list) reads this directly instead of pulling
- *  in declared.ts's much heavier declaredState(). Absence is a legitimate empty declaration;
+ *  reporting and none of declaredState()'s (declared.ts) recipe/image extras — for a caller
+ *  that only needs prospectiveConfig's input. Absence is a legitimate empty declaration;
  *  any other read or shape failure aborts the write. */
 export async function readDeclaredConfig(): Promise<DeclaredState["config"]> {
   const path = desiredStateFile();
@@ -289,12 +280,10 @@ export interface EgressEndpoint {
   readonly url: string;
 }
 
-/** The outbound endpoints a live configuration actually names — each model provider's
- *  baseUrl and each channel's proxy, and nothing else; this is not a general "is the
- *  internet up" check. Read from the LIVE config rather than the declaration: configure-
- *  provider writes a provider the declaration never mentions, and the live config is what
- *  the running instance is using (it reads its configuration at startup, so the prospective
- *  overlay would also name endpoints that are not yet in force). */
+/** Outbound endpoints a live configuration actually names: each provider's baseUrl and each
+ *  channel's proxy, nothing else. From the LIVE config, not the declaration: the running
+ *  instance reads config at startup, so the prospective overlay could name endpoints not
+ *  yet in force. */
 export function egressEndpoints(liveConfig: unknown): EgressEndpoint[] {
   const found: EgressEndpoint[] = [];
   const gather = (node: unknown, prefix: string, leaf: string): void => {

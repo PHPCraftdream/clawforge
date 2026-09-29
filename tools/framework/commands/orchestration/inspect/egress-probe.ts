@@ -1,44 +1,30 @@
-// The egress probe: the `node -e` script observeEgress (live.ts, this same directory)
-// execs into the gateway container, and the budgets that bound it. Own file because the
-// script is shipped text the deadline checks time, and live.ts has plenty of
-// its own to hold.
-
-// Outbound reachability is asked of the CONTAINER, not of this machine: the inbound probes
-// above curl from the operator side, and a name that resolves there and not inside the
-// container is exactly how 2026-09-20 happened — the gateway unable to reach its model
-// provider for a day while every probe stayed green. One `node -e` exec carries the whole
-// probe: the image has node (that is how the outage was diagnosed) and curl cannot be
-// assumed. Endpoints travel on stdin, never argv — a configured proxy URL can carry
-// credentials, and command lines end up in logs; stdin does not.
+// The egress probe: the `node -e` script observeEgress (live.ts) execs into the gateway
+// container, and the budgets bounding it. Own file because the script is shipped text
+// checks time against a shorter deadline.
 //
-// The script answers BOTH failure questions separately, because they fail differently:
-// dns.promises.lookup goes through the container's own resolver (getaddrinfo: /etc/hosts
-// and /etc/resolv.conf); a fetch that returns at all — any status, 401 included — proves
-// the path is open. Non-HTTP schemes (the tor socks5 proxy) cannot go through fetch, so
-// they get a plain TCP connect: something listening is the reachability fact, and a
-// fetch-based check would report every healthy tor setup as unreachable.
+// Outbound reachability is asked of the CONTAINER, not this machine: a name that resolves
+// on the operator side and not inside the container is a real outage the inbound probes
+// stay green through. `node -e` (not curl, which isn't guaranteed present). Endpoints
+// travel on stdin, never argv, since a proxy URL can carry credentials and argv ends up in
+// logs.
 //
-// One deadline governs each endpoint end to end: armed BEFORE dns.lookup, so a slow or hung
-// resolver spends the same budget a slow server would; kept armed across the fetch so a
-// body that never ends cannot outlive it — fetch settling on the headers, the body is
-// expressly cancelled underneath the still-running timer. The answer on expiry is the
-// normal "timeout" observation, never an exception and never silence.
+// dns.lookup and fetch are checked separately since they fail differently; non-HTTP
+// schemes (tor socks5) get a plain TCP connect instead of fetch. One deadline per endpoint,
+// armed before dns.lookup and kept armed through the fetch body, so expiry always answers
+// "timeout" rather than throwing or hanging.
 
-// Each endpoint's whole-probe budget — DNS, connection, headers and body alike. All
-// endpoints probe concurrently, so this is also the script's own wall-clock ceiling once
-// node is up.
+// Whole-probe budget per endpoint (DNS, connect, headers, body). Endpoints probe
+// concurrently, so this is also the script's wall-clock ceiling once node is up.
 export const EGRESS_PROBE_TIMEOUT_MS = 5000;
 
-// The exec that carries the script is bounded in turn, with slack for node boot and the
-// docker/WSL client around it. A deadline the child process can ignore is not a deadline:
-// without this, one wedged exec stalls inspect — and, MCP dispatch being sequential, every
-// request queued behind it.
+// Bounds the exec carrying the script, with slack for node boot + docker/WSL — a deadline
+// the child can ignore isn't a deadline; MCP dispatch is sequential, so one wedged exec
+// stalls every queued request.
 export const EGRESS_EXEC_TIMEOUT_MS = EGRESS_PROBE_TIMEOUT_MS + 5000;
 
 /** The script observeEgress execs into the gateway container, parameterized by the
- *  per-endpoint budget so checks can run it against deliberately unresponsive servers in
- *  seconds rather than the production five. Exported for those checks — the shipped script
- *  must be the exact text they time. */
+ *  per-endpoint budget so checks can use a shorter deadline than production. Exported so
+ *  checks time the exact shipped text. */
 export function egressProbeScript(timeoutMs: number): string {
   return `const dns = require("dns").promises;
 const net = require("net");

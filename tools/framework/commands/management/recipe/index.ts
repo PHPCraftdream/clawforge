@@ -32,21 +32,16 @@ export { importHookModule } from "./hook-runtime.ts";
 export const RECIPE_DEFAULT_ACTION = "list";
 
 /** Actions that only report. One definition for the dispatcher below and the MCP gate's
- *  readOnlyWhen — which is asked from built argv, where an omitted action is not visibly
- *  the default — so the two cannot disagree about bare `recipe`: divergence here would let
- *  the gate demand a confirmation the console would never ask for.
+ *  readOnlyWhen, so the two cannot disagree about bare `recipe`.
  *
- *  verify is deliberately absent, though the action is usually a probe: it runs the recipe's
- *  own verify.ts with the same Context prepare.ts gets, and prepare may mutate the target,
- *  so the framework has no way to know a given hook is read-only. Listing it here would let
- *  an unconfirmed verify reach the target AND be reported as changed:false on the strength of
- *  its name alone. It gates like onboard, and its envelope only says changed:false when the
- *  hook's own JSON says so. The instance-lock gate in recipe() reads this same set, so the
- *  MCP gate and the lock cannot disagree about a future action. */
+ *  verify is deliberately absent, though usually a probe: it runs with the same Context
+ *  prepare.ts gets, which may mutate the target, so the framework can't know a given hook
+ *  is read-only. It gates like onboard; its envelope only says changed:false when the
+ *  hook's own JSON says so. */
 const RECIPE_READ_ONLY_ACTIONS: readonly string[] = [RECIPE_DEFAULT_ACTION, "status", "logs"];
 
-/** install/remove --dry-run touches nothing on the target either, so it reads as read-only
- *  the same way restore/rollback/deploy's own --dry-run does. */
+/** install/remove --dry-run touches nothing on the target, reading as read-only the same
+ *  way restore/rollback/deploy's own --dry-run does. */
 const RECIPE_DRY_RUNNABLE_ACTIONS: readonly string[] = ["install", "remove"];
 
 export function recipeActionIsReadOnly(argv: string[]): boolean {
@@ -69,9 +64,8 @@ function describe(recipe: Recipe): void {
 }
 
 /** Installed recipes whose Compose stacks are currently running. A failed runtime probe
- *  propagates because backup and restore cannot claim consistency without its answer. A
- *  broken manifest is tolerated only when its directory's stack is proven stopped; a live
- *  stack must not disappear from the quiesce decision. */
+ *  propagates, since backup/restore can't claim consistency without its answer. A broken
+ *  manifest is tolerated only when its stack is proven stopped. */
 export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
   const running: Recipe[] = [];
   const entries = (await listRecipeDirectories(recipesDirectory())).filter((candidate) => candidate.isDirectory());
@@ -89,8 +83,8 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
     try {
       recipe = await loadRecipe(entry.name);
     } catch (error) {
-      // A broken declaration cannot supply hooks, but its directory still names the compose
-      // project. If that project is live, fail closed before backup can archive it unsafely.
+      // A broken declaration can't supply hooks, but its directory still names the compose
+      // project — fail closed before backup archives it unsafely if that project is live.
       const stack = ctx.runtime.stack(
         projectName(deploymentName(), entry.name),
         resolve(directory, "compose.yml"),
@@ -112,8 +106,7 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
   const [action, name, ...rest] = args;
 
   // Checked before anything else runs: an unknown action is a typo, not a lock failure or a
-  // missing name, and a token the resolved action does not use (an undeclared flag, an
-  // extra positional) dies here too instead of being silently ignored — see arguments.ts.
+  // missing name, and an unused token dies here too instead of being silently ignored.
   if (action !== undefined && action !== RECIPE_DEFAULT_ACTION && !RECIPE_ACTIONS.includes(action)) {
     dieUnknownAction(action, `unknown action: ${action} (expected ${RECIPE_ACTIONS.join(", ")})`, RECIPE_ACTIONS);
   }
@@ -122,13 +115,10 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
   if (action === undefined || action === RECIPE_DEFAULT_ACTION) {
     const recipes = await listRecipes();
     // A recipe directory can also be an agent/MCP bundle — no recipe.json, so listRecipes
-    // drops it and inspect reports it. Answering "no recipes yet" over one sent an operator
-    // reading code to explain a discrepancy their own deployment showed.
+    // drops it; shown here so "no recipes yet" doesn't contradict what inspect reports.
     const bundles = await listAgentBundleRecipes();
-    // A recipe.json that exists but fails to load (bad shape, invalid ports/variables).
-    // listRecipes() drops these so one broken manifest cannot take the working
-    // recipes down with it; this is the other half — the same manifest still gets a named,
-    // visible entry in the catalog instead of quietly not existing.
+    // A recipe.json that exists but fails to load. listRecipes() drops these so one broken
+    // manifest can't take the working recipes down; this gives it a visible catalog entry.
     const broken = await listBrokenRecipes();
 
     // validateRecipeArgs above already refused anything but --json here.
@@ -181,15 +171,12 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
 
   if (name === undefined) die(`usage: ./clawforge recipe ${action} <name>`);
 
-  // One classification for MCP's confirmation gate and for the instance lock, so a future
-  // action cannot be mutating for one and read-only for the other. The exceptions are
-  // `import` and `new`: both write only the repository's recipes/ directory, never touch
-  // the target, and taking a lock would make either the one recipe action that cannot run
-  // before bootstrap has prepared the lock home. install holds the lock across the whole
-  // from-source build — minutes, on purpose: a build finishing while restore is moving the
-  // tree is the interleaving the lock exists to prevent. A caller that already holds the
-  // lock (an orchestration step running this as its own) rides it instead of refusing —
-  // guarded() is the nesting-safe shape every other mutating command uses (instance-lock.ts).
+  // One classification for MCP's confirmation gate and the instance lock, so an action
+  // can't be mutating for one and read-only for the other. Exceptions: `import`/`new` only
+  // write the repository's recipes/ directory, never touch the target, so a lock would
+  // make either the one action runnable before bootstrap has prepared the lock home.
+  // install holds the lock across the whole from-source build, minutes, on purpose. guarded()
+  // is the nesting-safe shape every mutating command uses.
   if (action !== "import" && action !== "new" && !recipeActionIsReadOnly(args)) {
     return guarded(ctx, `recipe ${action} ${name}`, args, () => runRecipeAction(ctx, action, name, rest));
   }

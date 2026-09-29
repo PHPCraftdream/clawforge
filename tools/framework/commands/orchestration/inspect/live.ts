@@ -1,10 +1,7 @@
-// What the target itself reports, with no declared counterpart to compare against: the
-// gateway's HTTP probes and runtime health, outbound egress from inside the container, and
-// everything OpenClaw's own CLI says it has registered (agents/MCP servers/cron jobs/
-// plugins/skills/channels), reconciled against the recipe set's declared ownership and the
-// mirrored recipe/agent files' checksums. Split out of observe.ts; see helpers.ts (this same
-// directory) for the pure pieces these use, declared.ts for recipeExpectations, and drift.ts
-// for the per-facet declared-vs-target comparisons this has no declared side to run.
+// What the target itself reports, with no declared counterpart to compare against: gateway
+// HTTP probes and runtime health, outbound egress, and everything OpenClaw's own CLI says
+// it has registered (agents/MCP servers/cron jobs/plugins/skills/channels), reconciled
+// against the recipe set's declared ownership and the mirrored recipe/agent checksums.
 
 import { resolve } from "node:path";
 import { recipesDir } from "#src/runtime/deployment.ts";
@@ -38,18 +35,14 @@ import type { Context } from "#src/core/context.ts";
 
 const PROBE_ENDPOINTS = ["healthz", "startupz", "readyz"];
 
-// The compose service inspect observes, named literally the way config.ts, provider.ts,
-// accept.ts and smoke.ts already name it for their own execs into the same container.
+// The compose service inspect observes.
 const GATEWAY_SERVICE = "gateway";
 
-// The target directory travels as a positional parameter and is never pasted into this
-// text: JSON.stringify's double quotes do not make a path safe — inside them a POSIX shell
-// still runs $(…), backticks and $VAR, which let a hostile directory name execute as the
-// transport user during this read-only call, and the failed cd then checksummed whatever
-// tree the shell landed in. The path is data at every shell — same shape as PROBE_SCRIPT in
-// security/private-file.ts. Without its argument the script fails instead of checksumming a
-// guessed directory. Git for Windows needs drive paths converted for its shell; cygpath -w
-// receives only the positional value, whether its separators are slash or backslash.
+// The target directory travels as a positional parameter, never pasted into this script
+// text — a POSIX shell still runs $(…)/backticks/$VAR inside double quotes, so a hostile
+// directory name could execute as the transport user. Without its argument the script
+// fails rather than checksumming a guessed directory. Git for Windows needs drive paths
+// converted; cygpath -w receives only the positional value.
 const CHECKSUM_SCRIPT =
   'if [ "${1+set}" != set ] || [ -z "$1" ]; then echo NOCHECKSUMDIR >&2; exit 64; fi; ' +
   'dir=$1; case "$dir" in [A-Za-z]:*) if command -v cygpath >/dev/null 2>&1; then dir=$(cygpath -w -- "$dir") || { echo CHECKSUMPATHFAILED >&2; exit 69; }; fi ;; esac; ' +
@@ -98,9 +91,8 @@ async function observeEgress(
   problems: Problem[],
 ): Promise<EgressObservation[] | undefined> {
   const endpoints = egressEndpoints(liveConfig);
-  // execCommand is optional on the runtime contract, the way runningConnectionFacts is: a
-  // runtime that cannot exec into the container cannot be asked from inside, and skipping
-  // is its honest answer.
+  // execCommand is optional on the runtime contract: a runtime that can't exec into the
+  // container skips this rather than being asked.
   if (endpoints.length === 0 || ctx.runtime.execCommand === undefined) return undefined;
 
   let result: ExecResult;
@@ -112,15 +104,13 @@ async function observeEgress(
       {
         input: JSON.stringify(endpoints.map((endpoint) => endpoint.url)),
         allowFailure: true,
-        // The script bounds each endpoint, but a deadline the child can ignore — a hung
-        // resolver holding a getaddrinfo thread, a wedged docker/WSL client before node
-        // even starts — needs a bound of its own: the whole exec, killed by the transport.
+        // Bounds the whole exec (killed by the transport), not just each endpoint — a hung
+        // resolver or wedged docker/WSL client before node even starts needs this too.
         timeoutMs: EGRESS_EXEC_TIMEOUT_MS,
       },
     );
   } catch {
-    // HelperNotRunning and every other exec failure included: the container's state is the
-    // other findings' business (health, probes), and this one must not take inspect down.
+    // Container state is health/probes' business; this must not take inspect down.
     return undefined;
   }
   if (result.code !== 0) return undefined;
@@ -131,8 +121,7 @@ async function observeEgress(
   } catch {
     return undefined;
   }
-  // One answer per asked endpoint, in order, or the probe is broken — and a broken probe
-  // must not be read as a verdict about any endpoint.
+  // One answer per endpoint, in order, or the probe is broken and must not be read as a verdict.
   if (!Array.isArray(parsed) || parsed.length !== endpoints.length) return undefined;
 
   const observations: EgressObservation[] = [];
@@ -161,9 +150,8 @@ async function observeEgress(
   return observations;
 }
 
-/** Probes plus the runtime's own health verdict, and the RESTART_REQUIRED check that follows
- *  from the same startedAt() read — the three facts observeLive needs before it ever touches
- *  what OpenClaw itself has registered. */
+/** Probes, the runtime's health verdict, and RESTART_REQUIRED (from the same startedAt()
+ *  read) — the three facts observeLive needs before touching what OpenClaw has registered. */
 async function observeHealth(
   ctx: Context,
   problems: Problem[],
@@ -179,18 +167,11 @@ async function observeHealth(
   }
   const failedProbes = Object.entries(probes).filter(([, code]) => code !== 200);
 
-  // Both criteria are read, because they can disagree, and that disagreement can itself
-  // reveal a broken healthcheck. They are not equal, though:
-  //
-  //   "unhealthy"/"missing"  the runtime has decided. A finding whatever the probes say.
-  //   "starting"             the healthcheck's grace period — genuinely not known yet, and
-  //                          the state every container passes through on the way up.
-  //                          Reporting it as a fault right after a restart would be a false
-  //                          alarm on a working instance, and a report that cries wolf
-  //                          stops being read. The probes decide instead: answering means
-  //                          it is serving, whatever the runtime has got around to
-  //                          concluding.
-  //   "healthy"/"none"       trusted, but still only as far as the probes agree.
+  // Both criteria are read; disagreement can itself reveal a broken healthcheck.
+  //   "unhealthy"/"missing"  runtime has decided — a finding whatever the probes say.
+  //   "starting"             grace period, genuinely unknown yet; probes decide instead so
+  //                          a restart doesn't read as a false alarm.
+  //   "healthy"/"none"       trusted, but only as far as the probes agree.
   const health = await ctx.runtime.health();
   const probeDetail = failedProbes.map(([name, code]) => `${name} answered ${code}`).join(", ");
 
@@ -225,12 +206,9 @@ async function observeHealth(
   return { probes, health };
 }
 
-/** What OpenClaw itself has registered: one batched container for all six reads (four lists
- *  plus --version) instead of one each — every `docker compose run --rm` pays Compose's
- *  create/destroy cost again (~5-7s, docker-compose.yml's own note on cli-helper), and
- *  paying that four times over for one inspection was the dominant cost doctor/plan
- *  measured. Plugins/skills ride along in the same container for the same reason
- *  (commands/management/extensions.ts). */
+/** What OpenClaw itself has registered: one batched container for all six reads instead of
+ *  one each — each `docker compose run --rm` pays Compose's create/destroy cost again
+ *  (~5-7s), which was the dominant cost doctor/plan measured before batching. */
 async function observeRegistrations(ctx: Context, includeChannels: boolean) {
   const batchCommands: string[][] = [
     ["agents", "list", "--json"],
@@ -240,24 +218,20 @@ async function observeRegistrations(ctx: Context, includeChannels: boolean) {
     [...PLUGINS_LIST_ARGS],
     [...SKILLS_LIST_ARGS],
   ];
-  // Appended, never inserted: every index above is read positionally just below, and an
-  // insertion would shift them all.
+  // Appended, never inserted: indices above are read positionally below.
   const channelsIndex = includeChannels ? batchCommands.push(["channels", "status", "--json"]) - 1 : undefined;
   const batchResults = await openclawCliBatch(ctx, batchCommands);
   const [agentsResult, mcpResult, cronResult, versionResult, pluginsResult, skillsResult] = batchResults;
   const channels = channelsIndex === undefined ? undefined : parseChannelsStatus(batchResults[channelsIndex]);
   const agents = parseJsonOrEmpty(agentsResult, (parsed) =>
     (parsed as Array<{ id?: string }>).map((entry) => entry.id ?? "").filter((id) => id !== ""));
-  // The full entries, not just names: a server present under the wrong command (or
-  // disabled) is registered but broken, and the per-recipe check below needs to tell that
-  // apart from genuinely missing — mcpServerMatches() is the same comparison
-  // provision-agent's own reconciliation already uses.
+  // Full entries, not just names: a server registered under the wrong command (or disabled)
+  // is broken, not missing — mcpServerMatches() is provision-agent's own comparison.
   const mcpServerEntries = parseJsonOrEmpty(mcpResult, (parsed) =>
     Object.entries(parsed as Record<string, { command?: unknown; args?: unknown; enabled?: unknown }>));
   const mcpServers = mcpServerEntries.map(([name]) => name);
-  // Whole jobs, not flattened names: the declared contract is the message, the timeout, the
-  // session target and the delivery mode as well as the schedule, and a job compared on two
-  // of those can differ in every other one while reporting no drift at all.
+  // Whole jobs, not flattened names: message/timeout/target/delivery-mode drift can differ
+  // while the schedule alone matches.
   const liveJobs = parseJsonOrEmpty(cronResult, (parsed) =>
     ((parsed as { jobs?: CronJob[] }).jobs ?? []));
   const cronJobs = liveJobs
@@ -267,9 +241,7 @@ async function observeRegistrations(ctx: Context, includeChannels: boolean) {
   const openclawVersionLine = versionResult.code === 0 ? versionResult.stdout.trim().split("\n")[0] : "";
   const openclawVersion = openclawVersionLine === "" ? undefined : openclawVersionLine;
 
-  // Raw (unfiltered, un-normalised) — gather.ts turns these into the same shape the lock
-  // records (pluginsForLock/skillsForLock) before comparing, so this function stays a plain
-  // read of what OpenClaw itself reports.
+  // Raw here; gather.ts normalises via pluginsForLock/skillsForLock before comparing.
   const plugins = parsePluginsList(pluginsResult);
   const skills = parseSkillsList(skillsResult);
 
@@ -315,10 +287,9 @@ async function observeOwnership(
   return { ledger, foreignObjects };
 }
 
-/** One recipe's expectations against the instance: the agent/MCP-server/cron-job
- *  registration checks, the mirrored recipe files by content, and the agent's own prompt
- *  files (which the mirror does not carry — provision-agent writes them straight into the
- *  agent's workspace instead). */
+/** One recipe's expectations against the instance: agent/MCP-server/cron-job registration,
+ *  mirrored recipe files by content, and agent prompt files (which the mirror doesn't
+ *  carry — provision-agent writes those straight into the agent's workspace). */
 async function checkRecipeExpectation(
   ctx: Context,
   problems: Problem[],
@@ -356,28 +327,22 @@ async function checkRecipeExpectation(
         problem("CRON_DRIFT", `recipe "${expectation.recipe}" declares cron job "${config.cronJobName}", which does not exist`, `./clawforge provision-agent ${expectation.recipe}`),
       );
     } else if (!cronJobMatches(live, config, cronMessage)) {
-      // The same comparison provision-agent reconciles with, so the inspection cannot
-      // report agreement about a job that command would immediately replace. Named field
-      // by field: "the job differs" leaves the reader to diff it themselves.
+      // Named field by field: "the job differs" leaves the reader to diff it themselves.
       problems.push(
         problem("CRON_DRIFT", `cron job "${config.cronJobName}" differs from the recipe: ${cronDifferences(live, config, cronMessage).join("; ")}`, `./clawforge provision-agent ${expectation.recipe}`),
       );
     }
   }
 
-  // The mirrored recipe files, by content: a page edited in the repository and not yet
-  // mirrored is the most ordinary drift there is, and a file-name comparison would miss
-  // every instance of it.
+  // By content, not filename: an edited-but-not-mirrored page is the most ordinary drift.
   const recipeDir = resolve(recipesDir(), expectation.recipe);
   const localSums = await recipeFileChecksums(recipeDir);
   const targetSums = await targetFileChecksums(ctx, recipeMirrorTargetDir(ctx.settings.dataDir, expectation.recipe));
   const differing = Object.keys(localSums).filter((rel) => localSums[rel] !== targetSums[rel]);
   const extra = Object.keys(targetSums).filter((rel) => localSums[rel] === undefined);
 
-  // The agent's own prompt files, which the mirror does not carry: provision-agent writes
-  // them into the agent's workspace instead. Comparing only the mirror meant an edited
-  // AGENTS.md changed the agent's behaviour and nothing reported it, so plan scheduled
-  // nothing and the old prompt stayed in force.
+  // Prompt files aren't in the mirror (provision-agent writes them into the workspace
+  // directly), so an edited AGENTS.md needs its own check here.
   {
     const bundle = await agentBundleChecksums(recipeDir);
     const workspace = await targetFileChecksums(ctx, agentWorkspaceTargetDir(ctx.settings.dataDir, agentId));
@@ -420,15 +385,13 @@ export async function observeLive(
   problems: Problem[],
   configMtimeMs: number | undefined,
   liveConfig: unknown,
-  // watch check's own opt-in (gatherInspection's `channels` option): adds `channels status
-  // --json` to the same batch below instead of a second one-off container. inspect/doctor/
-  // plan/apply never pass true, so their own batch — and everything derived from it — is
-  // unchanged.
+  // watch check's opt-in: adds `channels status --json` to the batch below instead of a
+  // second container. inspect/doctor/plan/apply never pass true.
   includeChannels = false,
 ): Promise<Partial<ObservedState> & { plugins: PluginListEntry[]; skills: SkillListEntry[] }> {
   const { probes, health } = await observeHealth(ctx, problems, configMtimeMs);
 
-  // The outbound counterpart of the probes above, from the one vantage they lack.
+  // Outbound counterpart of the probes above, from the one vantage they lack.
   const egress = await observeEgress(ctx, liveConfig, problems);
 
   // --- what OpenClaw itself has registered ----------------------------------------------
@@ -445,9 +408,8 @@ export async function observeLive(
   return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion, plugins, skills, channels };
 }
 
-/** One batched call's `--json` list, or an empty one when that command failed. A failing
- *  list must not take the whole inspection down: the finding a coder needs is usually
- *  elsewhere, and an inspection that refuses to answer is worse than one with a gap in it. */
+/** One batched call's `--json` list, or empty on failure — a failing list must not take
+ *  the whole inspection down. */
 function parseJsonOrEmpty<T>(result: BatchedCliResult, extract: (parsed: unknown) => T[]): T[] {
   if (result.code !== 0) return [];
   try {
@@ -457,9 +419,8 @@ function parseJsonOrEmpty<T>(result: BatchedCliResult, extract: (parsed: unknown
   }
 }
 
-/** `channels status --json`'s own batched read, only ever attempted when includeChannels
- *  opted in above. Absent, not an empty shape, on any failure — the same gap-not-verdict
- *  reading watch/health.ts's channelFindings() already relies on for a failed CLI call. */
+/** `channels status --json`'s batched read, only attempted when includeChannels opted in.
+ *  Absent, not an empty shape, on failure — gap, not verdict. */
 function parseChannelsStatus(result: BatchedCliResult): ChannelsStatusResponse | undefined {
   if (result.code !== 0) return undefined;
   try {

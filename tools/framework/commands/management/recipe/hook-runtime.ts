@@ -7,39 +7,21 @@ import { pathToFileURL } from "node:url";
 import { dependencyGraphChecksum } from "./hook-graph.ts";
 
 /** App-owned hook modules, cached against the checksum of the hook's whole local import
- *  graph.
+ *  graph (not just the entry file), so `import()`'s URL-keyed module map doesn't keep
+ *  serving a stale hook after a dependency changes on disk.
  *
- *  `import()` answers from the process-wide module map keyed by URL, so in a long-lived
- *  process — every MCP session — re-importing the same hook file returned the first load
- *  forever: a hook edited on disk kept running its previous code on the next tool call,
- *  while a freshly started CLI process picked the new one up. A relative import graph made
- *  that worse — editing a helper without touching prepare.ts/verify.ts left a session
- *  running the helper's old code —
- *  so the gate that decides whether a reload is due hashes the whole local import graph,
- *  not just the entry file: dependencyGraphChecksum below.
+ *  The checksum decides *whether* a reload is due; a versioned URL decides *what gets
+ *  re-executed*: importHookModule stamps it as `?g=<checksum>` on the hook's real file
+ *  URL, and ./hook-loader.ts's resolve hook re-stamps the same version onto every
+ *  specifier reached through relative resolution. A change anywhere in the graph thus
+ *  changes every versioned URL at once, so Node re-executes the whole graph; unchanged,
+ *  this map answers without importing.
  *
- *  The graph checksum decides *whether* a reload is due; a versioned URL decides *what
- *  gets re-executed*. importHookModule imports the hook's real file URL with that
- *  checksum as a `?g=` query parameter (`file://…/prepare.ts?g=<checksum>`), and the
- *  resolve hook in ./hook-loader.ts re-stamps the same version onto every
- *  specifier the graph reaches through relative resolution. Because the checksum is
- *  computed before the import, the version is known up front — every module in the
- *  graph, cycles included, carries it, so a change anywhere changes every versioned URL
- *  at once and Node re-executes the whole graph, while an unchanged graph answers from
- *  this map without importing at all.
- *
- *  Hooks execute from their real location, so bare imports (`@clawforge/framework/private-config`,
- *  the recipe app's own dependencies) resolve against the recipe's package scope. Local
- *  `#imports` resolve through the recipe's own package.json `imports` map — a string or
- *  node/import/default target that stays inside the recipe directory (hook-graph.ts folds
- *  both the package.json and the resolved target into the checksum); anything the graph
- *  cannot safely track (a bare package target, an absolute path, an escape via `..` or a
- *  symlink, an unsupported condition) is refused before the hook ever executes.
- *  `import.meta.url` points at the real file, and sibling assets sit where relative
- *  reads expect them. Nothing is copied to temp storage, so there is no shared cache
- *  directory to win a race against, no pre-existing file to silently adopt, and no
- *  bytes of framework-controlled temp state at all (the copy machinery this replaces also
- *  deadlocked on genuine A→B→A cycles, which ESM now handles natively). */
+ *  Hooks execute from their real location (no copy to temp): bare imports resolve
+ *  against the recipe's package scope, `#imports` resolve through the recipe's own
+ *  package.json imports map (hook-graph.ts folds package.json + resolved target into
+ *  the checksum; anything it can't safely track — bare package target, absolute path,
+ *  `..` escape, symlink, unsupported condition — is refused before the hook executes). */
 const hookModules = new Map<string, { checksum: string; loaded: Record<string, unknown> }>();
 
 /** Query parameter carrying the hook graph's checksum on every versioned hook URL. */

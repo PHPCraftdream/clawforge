@@ -1,24 +1,16 @@
 // Resolve hook for app-owned recipe hooks (imported by register() from
-// ./recipe.ts's importHookModule): hooks load from their real path under a
-// `?g=<graph checksum>` URL so Node's module map — keyed by URL, never invalidated —
-// re-executes a hook graph whose files changed on disk (see the hookModules comment in
-// recipe.ts). Relative resolution from a versioned referrer drops the query —
-// `new URL("./x.ts", "file:///p/a.ts?g=1")` is `file:///p/x.ts` — so without this hook
-// every helper past the entry would load once and keep serving its first content
-// forever, which is exactly the staleness the graph checksum exists to fix. The hook
-// re-stamps the version (and the recipe directory, `?r=`, carried alongside it) onto every
-// relative resolution.
+// ./hook-runtime.ts's importHookModule): hooks load from their real path under a
+// `?g=<graph checksum>` URL so Node's module map re-executes a hook graph whose files
+// changed on disk. Relative resolution from a versioned referrer drops the query, so
+// without this hook every helper past the entry would keep serving its first content
+// forever. This re-stamps the version (and recipe directory, `?r=`) onto every relative
+// resolution.
 //
-// Package-internal `#specifier` imports (a supported string or node/import/default target
-// inside the recipe directory; hook-graph.ts's checksum refuses anything else before this
-// hook ever runs) are NOT handed to `nextResolve`: Node caches a package.json's parsed
-// content per real path for the life of the process, an internal cache this framework does
-// not control, so delegating would keep answering an edited import map with its first-read
-// target — the same staleness the query-versioned URL exists to prevent, one level up from
-// the module cache. Instead this hook recomputes the target itself, fresh off disk, with
-// hook-graph.ts's resolvePackageImport — the identical resolution the checksum already
-// proved safe — and short-circuits straight to its versioned URL. Bare installed packages
-// remain ordinary stable dependencies, resolved by `nextResolve` as always.
+// Package-internal `#specifier` imports are NOT handed to `nextResolve`: Node caches a
+// package.json's parsed content per real path for the process lifetime, so delegating
+// would keep answering an edited import map with its first-read target. Instead this hook
+// recomputes the target fresh off disk via hook-graph.ts's resolvePackageImport and
+// short-circuits to its versioned URL. Bare installed packages resolve normally.
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolvePackageImport } from "./hook-graph.ts";
 

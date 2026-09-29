@@ -1,10 +1,9 @@
 // recipe's own argument grammar.
 //
 // recipe's dispatcher (index.ts) parses action/name/new-name positionally and reads flags
-// out of whatever follows with rest.includes()/indexOf() — order-dependent, and not
-// rewritten onto parseDeclaredArgs here, which assumes a position-independent grammar this
-// one does not have. What this module adds is the missing refusal for a flag or a bare
-// positional an action does not use, so it is rejected rather than silently ignored.
+// with rest.includes()/indexOf(), order-dependent and not rewritten onto
+// parseDeclaredArgs's position-independent grammar. This module adds the missing refusal
+// for a flag or bare positional an action doesn't use, instead of silently ignoring it.
 
 import { die } from "#src/core/io/log.ts";
 import type { CommandArgument } from "#src/core/app.ts";
@@ -28,10 +27,8 @@ const RECIPE_OPTION_FLAG_NAMES = new Set(
   RECIPE_FLAG_ARGUMENTS.filter((argument) => argument.kind === "option").map((argument) => argument.name),
 );
 
-/** How many bare positionals beyond the action word each action takes (list: none; import:
- *  a source plus an optional new-name; every other action: the recipe name only), and which
- *  of RECIPE_FLAG_ARGUMENTS' names it actually reads. validateRecipeArgs checks every token
- *  in argv against this. */
+/** How many bare positionals beyond the action word each action takes, and which of
+ *  RECIPE_FLAG_ARGUMENTS' names it reads. validateRecipeArgs checks every argv token against this. */
 const RECIPE_ACTION_GRAMMAR: Record<string, { positionals: number; flags: readonly string[] }> = {
   list: { positionals: 0, flags: ["json"] },
   import: { positionals: 2, flags: [] },
@@ -45,12 +42,9 @@ const RECIPE_ACTION_GRAMMAR: Record<string, { positionals: number; flags: readon
   logs: { positionals: 1, flags: ["tail"] },
 };
 
-/** Rejects a token the given action does not use: an undeclared flag (named against what
- *  the action does accept), "=value" on a flag that carries none, or a bare token beyond
- *  the positionals the action takes (list's own "no name at all" included) — over the same
- *  action, then name/new-name, then flags-anywhere-after shape index.ts's dispatch already
- *  assumes; `afterAction` is everything in argv past the action word itself. An
- *  unrecognized action is left alone — index.ts's own check names that, once this returns. */
+/** Rejects a token the given action does not use: an undeclared flag, "=value" on a flag
+ *  that carries none, or a bare token beyond the positionals the action takes. An
+ *  unrecognized action is left alone — index.ts's own check names that. */
 export function validateRecipeArgs(action: string, afterAction: readonly string[]): void {
   const grammar = RECIPE_ACTION_GRAMMAR[action];
   if (grammar === undefined) return;

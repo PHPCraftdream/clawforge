@@ -32,25 +32,22 @@ export const APPLY_CONFIG_ARGUMENTS: CommandArgument[] = [
 /** Name of the copy staged inside the data directory. The CLI runs in the container and
  *  only sees the mounted data directory, so the payload has to travel there.
  *
- *  A real run stages under this shared name, and only ever while holding the instance lock.
- *  A dry run gets a name of its own: it deliberately takes no lock — locking would make
- *  inspecting a busy instance fail for no reason — and writing the shared file without one
- *  meant a dry run could replace the payload a concurrent real apply was about to read. */
+ *  A real run stages under this shared name, only while holding the instance lock. A dry
+ *  run gets its own name: it deliberately takes no lock, and the shared file without one
+ *  could replace the payload a concurrent real apply was about to read. */
 const stagedName = "clawforge-desired.json";
 
 export function stagedFileName(dryRun: boolean): string {
   return dryRun ? `clawforge-desired.dry-${randomBytes(4).toString("hex")}.json` : stagedName;
 }
 
-/** The headline for a real (non-dry) apply. Exported so the checks can pin the wording
- *  without a live instance — see bootstrap.ts's/set-try.ts's/apply.ts's own calls, all of
- *  which pass `restartAdvice: false` because each starts or restarts the gateway itself a
- *  few lines later: printing "restart to pick it up" right before doing exactly that read as
- *  the command contradicting itself. */
+/** The headline for a real (non-dry) apply. Exported so checks can pin the wording without
+ *  a live instance. bootstrap.ts/set-try.ts/apply.ts pass `restartAdvice: false` since each
+ *  starts or restarts the gateway itself moments later. */
 export function appliedHeadline(restartAdvice: boolean): string {
   return restartAdvice
-    // Deliberately not ./clawforge up: a healthy container is already what `up` converges
-    // on, so it would report success and leave the old settings live.
+    // Not ./clawforge up: a healthy container already converges on `up`, reporting success
+    // while leaving the old settings live.
     ? "desired state applied — restart to pick it up: ./clawforge restart"
     : "desired state applied";
 }
@@ -68,11 +65,9 @@ export async function applyConfig(
   const breakForeignLockHost = parseBreakForeignLockHost(args);
   const jsonOnly = parsed.json === true;
 
-  // Which flags mean anything is decided from the mode here, not left to branch order:
-  // branch order alone would let --dry-run --dump --force reach the dump branch with the
-  // dry run never consulted — and the recovered file, which holds only RECOVERABLE_PATHS,
-  // would replace a declaration that names settings no dump ever attempts. A preview must
-  // not be able to destroy what it previews.
+  // Which flags mean anything is decided from the mode here, not branch order: order alone
+  // would let --dry-run --dump --force reach the dump branch with the dry run never
+  // consulted, replacing a declaration with the recovered file's RECOVERABLE_PATHS subset.
   if (dump && dryRun) die("--dry-run cannot be combined with --dump — a dump has no dry-run form: it writes the recovered declaration or it does nothing");
   if (dump && breakLock) die("--break-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
   if (dump && breakForeignLockHost !== undefined) die("--break-foreign-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
@@ -84,9 +79,7 @@ export async function applyConfig(
 
   if (dump) {
     // Read-only against the target and the running container — the only write is the local
-    // declaration file itself, and nothing here mutates the instance, so there is nothing
-    // for the lock to serialize. The same reading secrets --dump already established for
-    // its own store write.
+    // declaration file, so there is nothing for the instance lock to serialize.
     await dumpDesiredState(ctx, force, jsonOnly);
     return;
   }
@@ -147,11 +140,8 @@ async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = 
       entrypoint: "node",
     });
   } finally {
-    // Its own file, so its own clean-up — and in a finally, because the run that leaves one
-    // behind is the one that failed. Cleaning up only on success meant every rejected
-    // payload left an clawforge-desired.dry-<hex>.json in the config directory, which then
-    // travelled into an archive and got the snapshot refused by the share allow-list: the
-    // same failure the operation journal caused, arriving by a different route.
+    // In a finally: the run that leaves this file behind is the one that failed. Cleaning
+    // up only on success meant a rejected dry-run payload leaked into a later archive.
     if (dryRun) await ctx.transport.remove(stagedOnTarget);
   }
 
@@ -167,12 +157,11 @@ async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = 
   }
 }
 
-/** The paths a dump attempts to recover: the fixed, small set this framework itself treats
- *  as commonly declared. The live config cannot say which of its values were once declared
- *  and which are OpenClaw's own defaults — that distinction lived in the file being
- *  recovered — so anything outside this list is not attempted rather than guessed. The
- *  first two are what a fresh deployment's own scaffold seeds (integration/init.ts); the
- *  third is the model default a real declaration usually carries. */
+/** The paths a dump attempts to recover: a fixed, small set this framework treats as
+ *  commonly declared. The live config can't say which values were declared vs. OpenClaw's
+ *  own defaults, so anything outside this list is not attempted. First two are what a
+ *  fresh deployment's scaffold seeds; the third is the model default a declaration usually
+ *  carries. */
 const RECOVERABLE_PATHS = [
   "gateway.mode",
   "gateway.bind",
@@ -180,21 +169,17 @@ const RECOVERABLE_PATHS = [
 ];
 
 /** The reverse of the real apply: reconstructs config/desired-state.json from a live
- *  instance's own openclaw.json, for when the operator's copy of the declaration was lost
- *  while the instance kept running.
+ *  instance's own openclaw.json, for when the operator's copy was lost while the instance
+ *  kept running.
  *
- *  Explicit limit, reported rather than hidden: the live config shows the OUTCOME of
- *  applying the declaration, not the declaration itself — a value OpenClaw defaults to is
- *  indistinguishable from one the operator declared once the declaration is gone. So only
- *  RECOVERABLE_PATHS is attempted, a path the live config never set is omitted rather than
- *  emitted with a guessed value, and recipes are not attempted at all: desired-state.json
- *  is a `config set --batch-file` payload of {path, value} operations, so it has no way to
- *  declare a recipe list to recover into.
+ *  Explicit limit, reported not hidden: the live config shows the OUTCOME of applying the
+ *  declaration, not the declaration itself, so only RECOVERABLE_PATHS is attempted; a path
+ *  the live config never set is omitted rather than guessed, and recipes aren't attempted
+ *  since desired-state.json has no way to declare a recipe list.
  *
  *  readLiveConfigOrThrow(), not a degrade-to-undefined read: this is about to WRITE the
- *  recovered declaration, so a live config that genuinely exists but failed to read must
- *  abort the whole operation rather than silently produce an empty one — the same reasoning
- *  secrets --apply applies through this same helper. */
+ *  recovered declaration, so a failed-but-existing live config must abort rather than
+ *  silently produce an empty one — same reasoning secrets --apply uses through this helper. */
 async function dumpDesiredState(ctx: Context, force: boolean, jsonOnly = false): Promise<void> {
   const path = desiredStateFile();
 

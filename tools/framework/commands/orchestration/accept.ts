@@ -1,21 +1,15 @@
 // `./clawforge accept [<recipe>]` — does this deployment's own work actually work.
 //
-// `./clawforge smoke` proves the instance is healthy: it answers, it restores, its MCP bridge
-// speaks JSON-RPC. It cannot say whether the wiki a recipe serves is reachable, whether the
-// agent built from that recipe has the tools it was given, or whether the cron job matches
-// what the recipe declares. Those are properties of this deployment, and the framework has
-// no business knowing them.
+// `./clawforge smoke` proves the instance is healthy, but not whether a recipe's wiki is
+// reachable, its agent has the tools it was given, or its cron job matches the recipe —
+// properties of this deployment, not the framework's business to know.
 //
-// So the recipe declares them and the framework runs them. A recipe states what "working"
-// means for it in acceptance.json, using check kinds the framework implements — no code
-// travels from a deployment into the framework, which is the same boundary provision-agent
-// draws.
+// So the recipe declares them, in acceptance.json using check kinds the framework
+// implements — no code travels from a deployment into the framework, same boundary as
+// provision-agent draws.
 //
-// Checks that call the model are declared separately and never run unless asked. They cost
-// money, they take a turn, and an agent turn has side effects — it writes to its own
-// workspace. A suite that quietly did that on every run would be a suite people stop
-// running. The count of what was skipped is always reported: a suite that silently omits
-// what it did not run is how coverage disappears.
+// Checks that call the model are declared separately and never run unless asked (cost,
+// agent-turn side effects). What was skipped is always reported, or coverage disappears.
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -24,8 +18,8 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { recipesDir, deploymentName } from "#src/runtime/deployment.ts";
 import { listRecipeDirectories } from "#src/service/recipe.ts";
 import { openclawCliJson, withModelApproval } from "#src/service/openclaw-cli.ts";
-import { recipeServerContainerPath, mcpServerMatches } from "../management/provision-agent/index.ts";
-import type { CheckOutcome } from "../check-outcome.ts";
+import { recipeServerContainerPath, mcpServerMatches } from "#src/commands/management/provision-agent/index.ts";
+import type { CheckOutcome } from "#src/commands/check-outcome.ts";
 import type { Context } from "#src/core/context.ts";
 import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
@@ -167,12 +161,11 @@ async function recipesWithAcceptance(): Promise<string[]> {
   return found;
 }
 
-/** Speaks JSON-RPC to a recipe's MCP server the way a client would: inside the container, so
- *  it is the same process the gateway would spawn, reading the same mirrored files.
+/** Speaks JSON-RPC to a recipe's MCP server the way a client would: inside the container,
+ *  same process the gateway would spawn, same mirrored files.
  *
- *  One exchange per call rather than a session kept open: these checks are few, and a
- *  short-lived process is what proves the server can be started at all, which is half of
- *  what "the MCP server answers" means. */
+ *  One exchange per call, not a kept-open session: a short-lived process also proves the
+ *  server can be started at all, half of what "the MCP server answers" means. */
 async function askRecipeServer(
   ctx: Context,
   recipe: string,
@@ -207,13 +200,10 @@ function textOf(response: Record<string, unknown> | undefined): string {
   return content?.map((entry) => entry.text ?? "").join("\n") ?? "";
 }
 
-/** Whether the call itself worked, before anything is asked about what it said.
- *
- *  Three ways a call fails and only one of them was being read. A JSON-RPC `error` was
- *  checked; `result.isError` — a tool reporting its own failure, which is how "no such page"
- *  comes back — was not, so a check passed whenever its expected text happened to appear in
- *  the failure message. Neither was the exit code of the process that served it. A check that
- *  cannot fail is worse than no check: it reports success on a broken deployment. */
+/** Whether the call itself worked, before anything is asked about what it said. Checks all
+ *  three failure paths: JSON-RPC `error`, `result.isError` (a tool reporting its own
+ *  failure, e.g. "no such page"), and the process exit code — a check missing any of these
+ *  can pass on a broken deployment whenever expected text appears in the failure message. */
 function callFailure(
   answer: Record<string, unknown> | undefined,
   exitCode: number,
@@ -267,9 +257,8 @@ async function runMcpToolCheck(ctx: Context, recipe: string, check: AcceptanceCh
   const initialized = responses.find((response) => response.id === 1);
   const answer = responses.find((response) => response.id === 2);
 
-  // Did the call succeed, and only then: does the answer say what was declared. In the
-  // other order, a tool answering isError with "no such page" passes whenever the
-  // expected text happens to appear in that message.
+  // Call success checked before the answer's content, or isError "no such page" passes
+  // whenever the expected text happens to appear in that message.
   const broken = callFailure(initialized, exitCode, stderr) ?? callFailure(answer, exitCode, stderr);
   if (broken !== undefined) return verdicts.unclear(broken);
 
@@ -341,11 +330,9 @@ async function runAgentAnswersCheck(ctx: Context, check: AcceptanceCheck, verdic
 
 /** Runs one declared check. Exported so each kind can be exercised on its own.
  *
- *  Never throws: a call that cannot even reach the instance is exactly what "could not
- *  check" means, not a reason for the whole suite to stop reporting on everything else. The
- *  distinction each branch below makes is the same one throughout — did this get far enough
- *  to obtain an actual answer, whatever that answer turned out to be, or not. Only the first
- *  is a verdict; the second is "could-not-check" regardless of how it happened to fail. */
+ *  Never throws: a call that can't even reach the instance is exactly what "could not
+ *  check" means, not a reason to stop the whole suite. Every branch makes the same
+ *  distinction — did this obtain an actual answer, or not — only the former is a verdict. */
 export async function runCheck(ctx: Context, recipe: string, check: AcceptanceCheck): Promise<AcceptanceResult> {
   const name = check.name ?? check.kind;
   const verdicts: CheckVerdicts = {

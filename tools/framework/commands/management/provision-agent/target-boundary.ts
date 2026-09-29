@@ -1,23 +1,16 @@
-// Target-side containment for provisioning writes
-// (see docs/internal/review-2026-09-23-xxa-round-6.md).
+// Target-side containment for provisioning writes.
 //
-// syncRecipeFiles/writeWorkspacePromptFiles validated the SOURCE inventory but handed the
-// target path straight to mkdirp/writeFile. A process running inside the instance can leave
-// symlinks in its own workspace before the operator provisions: a link named like a wanted
-// file redirected the write OUTSIDE the data mount (Node writeFile and the WSL/ssh tee both
-// follow the final symlink), and a link in the target's ancestry moved the whole write site.
-// The framework would overwrite the victim with the operator's privileges.
+// A process inside the instance can leave symlinks in its own workspace before the
+// operator provisions: a link named like a wanted file redirects the write OUTSIDE the
+// data mount (writeFile follows the final symlink), or a link in the target's ancestry
+// moves the whole write site — overwriting the victim with the operator's privileges.
 //
-// The contract, checked BEFORE any target mutation: every path the caller is about to touch
-// must physically resolve inside the intended root. The deepest EXISTING ancestor of each
-// path is resolved through every symlink it crosses; if that lands outside the root, the
-// write is refused. Absent components pass — they are created below the verified ancestor,
-// where nothing planted can redirect them. A final symlink whose target does not exist
-// (dangling) also passes the probe, and is handled at publish time: transport.writeFile
-// renames a temp sibling over the name, which replaces the link instead of writing through
-// it. Both halves are point-in-time checks — closing the gap against a hostile CONCURRENT
-// writer would need descriptor-relative, no-follow syscalls, which this transport
-// abstraction cannot express; this is the practical contract for it.
+// The contract, checked BEFORE any target mutation: every path must physically resolve
+// inside the intended root. The deepest EXISTING ancestor is resolved through every
+// symlink it crosses; landing outside the root refuses the write. A dangling final
+// symlink passes the probe and is handled at publish time (writeFile renames a temp
+// sibling over the name, replacing the link). Both halves are point-in-time checks — a
+// hostile CONCURRENT writer would need no-follow syscalls this transport can't express.
 
 import { realpath } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
@@ -27,8 +20,7 @@ import { type ExecOptions, type ExecResult, type Transport } from "#src/runtime/
  *  stays inside root. Throws, naming the escape, otherwise.
  *
  *  A "local" transport's target shares this filesystem, so node:fs is the honest channel
- *  for it (and the only one Windows has). Every other transport targets POSIX: the probe
- *  script runs through the transport's own exec, wherever that ends up running. */
+ *  for it. Every other transport targets POSIX, where the probe script runs via exec. */
 export async function assertTargetContained(transport: Transport, root: string, paths: readonly string[]): Promise<void> {
   if (paths.length === 0) return;
   if (transport.description === "local") return verifyContainedLocally(paths, root);
@@ -53,9 +45,8 @@ export async function verifyContainedLocally(paths: readonly string[], root: str
     if (full !== base && !full.startsWith(base + sep)) {
       throw new Error(`refusing to write: ${path} is not inside the target root ${root}`);
     }
-    // Ascend from the wanted path to its deepest existing ancestor, then demand that the
-    // ancestor's fully resolved location stays inside the root. ENOTDIR ascends too: an
-    // existing non-directory ancestor simply makes the later write fail on its own.
+    // Ascend to the deepest existing ancestor, then demand its resolved location stays
+    // inside the root. ENOTDIR ascends too: a non-directory ancestor fails the write anyway.
     let probe = full;
     for (;;) {
       let real: string;
@@ -79,11 +70,9 @@ export async function verifyContainedLocally(paths: readonly string[], root: str
 }
 
 /** Answers containment on a POSIX target with one shell invocation for the whole batch:
- *  the script arrives on stdin (`sh -s`) and the paths as arguments, so neither is ever
- *  re-parsed as command-line syntax — the same channel transport.ts's PRESENCE_PROBE uses,
- *  for the same reason (wsl.exe re-parses arguments; stdin is data on a pipe). Kept to
- *  POSIX sh + coreutils realpath/dirname so it runs on whatever WSL distribution or ssh
- *  host is configured. */
+ *  the script arrives on stdin (`sh -s`), paths as arguments, so neither is re-parsed as
+ *  command-line syntax (same reason as transport.ts's PRESENCE_PROBE). POSIX sh +
+ *  coreutils only, so it runs on whatever WSL distribution or ssh host is configured. */
 export async function containmentVia(
   exec: (command: string, args: string[], options: ExecOptions) => Promise<ExecResult>,
   root: string,
@@ -102,9 +91,9 @@ export async function containmentVia(
   throw new Error(`refusing to write: ${root} is not a usable target root (${detail})`);
 }
 
-// For each path: it must sit under the root as written, then its deepest existing ancestor
-// is canonicalized — through every symlink — and must land inside the canonical root. A
-// dangling final link ascends to its parent, and is replaced no-follow at publish time.
+// Each path must sit under the root as written, then its deepest existing ancestor is
+// canonicalized and must land inside the canonical root. A dangling final link ascends to
+// its parent, and is replaced no-follow at publish time.
 const CONTAINMENT_PROBE = `
 root=$1
 shift

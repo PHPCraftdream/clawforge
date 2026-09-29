@@ -14,12 +14,9 @@ export const SET_RECEIPTS_ARGUMENTS: CommandArgument[] = [
   { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
 ];
 
-/** Repetition and value-shape checks the generic parser deliberately leaves to the caller
- *  (see parse-args.ts) — kept here so a second --set-id/--receipt, or one with nothing
- *  usable after it, still refuses by name rather than silently keeping the last one.
- *  Recognizes `--flag value` and `--flag=value` — the generic parser above already accepts
- *  both forms for a declared option, so this must too or `--flag=value` would silently
- *  validate as known yet never reach this extraction. */
+/** Repetition and value-shape checks the generic parser leaves to the caller, so a repeated
+ *  flag or a missing value refuses by name. Recognizes both `--flag value` and `--flag=value`
+ *  since the generic parser accepts both for a declared option. */
 function value(args: string[], flag: string): string | undefined {
   const prefix = `${flag}=`;
   const plainCount = args.filter((arg) => arg === flag).length;

@@ -1,10 +1,7 @@
 // Pure declaration pieces for `./clawforge provision-agent`: the agent/config.json shape,
 // path builders, and the argv/comparison functions used both to REGISTER an agent/MCP
-// server/cron job and to check whether one already matches. Split out of
-// provision-agent.ts, which is the most fanned-out file in the codebase for selective
-// imports (install.ts, set.ts, inspect/, several checks) — every export here keeps its
-// name, so provision-agent.ts's own barrel re-export means none of those import sites
-// need to change.
+// server/cron job and to check whether one already matches. index.ts's barrel re-export
+// keeps every import site unchanged.
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -41,9 +38,8 @@ export function parseAgentConfig(raw: unknown): AgentConfig {
   if (obj.cronJobName !== undefined && (typeof obj.cronJobName !== "string" || obj.cronJobName === "")) {
     die("agent/config.json: \"cronJobName\" must be a non-empty string when present");
   }
-  // These values become path segments, OpenClaw identifiers and plan arguments. Keep the
-  // same portable name contract as recipes/deployments so a declaration cannot escape the
-  // workspace or produce an ambiguous copy-paste removal command.
+  // These values become path segments, OpenClaw identifiers and plan arguments — same
+  // portable name contract as recipes/deployments.
   safeName("agent", obj.agentId);
   safeName("MCP server", obj.mcpServerName);
   if (obj.cronJobName !== undefined) safeName("cron job", obj.cronJobName);
@@ -65,35 +61,25 @@ export function parseAgentConfig(raw: unknown): AgentConfig {
 
 /** Every regular file under `dir`, recursively, as POSIX-style relative paths — except
  *  anything under a top-level directory named `excludeDir`. A thin delegate to the shared
- *  portable-content policy (security/recipe-portable-content.ts):
- *  declared privateFiles and sensitive-name matches are held back, and the walker holds
- *  nothing back silently — it warns — while a symlink resolving outside the recipe
- *  directory stops the walk instead of being read through. Every caller of this function
- *  (the provision-agent mirror, the checks) gets the policy by not doing anything at all.
- *  Pure and local-filesystem-only: recipe content lives beside the tooling, never on the
- *  deployment's target, same boundary tools/framework/service/recipe.ts already draws for
- *  recipe.json. */
+ *  portable-content policy (security/recipe-portable-content.ts): declared privateFiles
+ *  and sensitive-name matches are held back (with a warning, never silently), and a
+ *  symlink resolving outside the recipe directory stops the walk instead of being read
+ *  through. Pure and local-filesystem-only. */
 export async function collectRecipeFiles(dir: string, excludeDir: string): Promise<string[]> {
   return (await collectPortableRecipeFiles(dir, { excludeTop: excludeDir === "" ? undefined : excludeDir })).files;
 }
 
 /** Exported so `inspect` compares the SAME declaration provisioning acts on: two readers of
- *  one config.json, each with its own defaults, is how an inspection comes to disagree with
- *  the command it is supposed to be checking.
+ *  one config.json, each with its own defaults, is how an inspection disagrees with the
+ *  command it's supposed to check.
  *
- *  Reads through the SAME canonical walker as the set manifest and agentBundleChecksums:
- *  a raw `readdir`+`readFile` here would bypass the portable-content policy entirely, so
- *  `privateFiles: ["agent/private.md"]` could keep the file out of the manifest and the
- *  checksum map while direct provisioning copies it into the agent's workspace anyway, and
- *  a public-named symlink would be read straight through with no containment check. The
- *  walk runs once, before any file is read, so containment and
- *  exclusion are both settled before a single byte moves. The walk root itself is vetted
- *  the same way: an `agent/` that is itself a link out of the recipe — or
- *  one that does not resolve — refuses provisioning exactly as an escaping child link
- *  does, while a plainly absent agent/ stays the honest "no bundle" case. config.json and — when the recipe
- *  declares a cron job — cron-message.txt are treated as mandatory: if the policy holds
- *  either back, provisioning refuses instead of silently reading it anyway or silently
- *  dropping the cron job the recipe declared. */
+ *  Reads through the SAME canonical walker as the set manifest and agentBundleChecksums —
+ *  a raw readdir+readFile here would bypass the portable-content policy, letting a declared
+ *  `privateFiles` entry stay out of the manifest while provisioning copies it anyway. The
+ *  walk root is vetted the same way: an `agent/` that's itself an escaping link refuses
+ *  provisioning; a plainly absent agent/ stays the honest "no bundle" case. config.json and
+ *  (when cron is declared) cron-message.txt are mandatory — the policy holding either back
+ *  refuses rather than silently reading or dropping it. */
 export async function loadRecipeAgentBundle(recipeName: string): Promise<RecipeAgentBundle> {
   const recipeDir = resolve(recipesDir(), recipeName);
   const agentDir = resolve(recipeDir, "agent");
@@ -103,11 +89,8 @@ export async function loadRecipeAgentBundle(recipeName: string): Promise<RecipeA
     die(`recipe "${recipeName}" has no agent bundle — expected recipes/${recipeName}/agent/config.json`);
   }
   const { files, excluded } = walked;
-  // `files` is walk-root-relative (bare "config.json"); `excluded` is recipe-relative
-  // ("agent/config.json") — collectPortableRecipeFiles applies the policy against the
-  // recipe-relative path even when walkRoot is the agent/ subdirectory. Look up with the
-  // same prefix `excluded` actually carries, or a declared-private mandatory file (config.json,
-  // cron-message.txt) never matches and the refusal below never fires.
+  // `files` is walk-root-relative ("config.json"); `excluded` is recipe-relative
+  // ("agent/config.json") — look up with the same prefix or the refusal below never fires.
   const reasonFor = (name: string): string | undefined => excluded.find((entry) => entry.path === `agent/${name}`)?.reason;
 
   const configExcluded = reasonFor("config.json");
@@ -131,9 +114,8 @@ export async function loadRecipeAgentBundle(recipeName: string): Promise<RecipeA
   }
   const config = parseAgentConfig(parsed);
 
-  // Top-level *.md only, exactly as the previous non-recursive readdir did — a file the
-  // walker already excluded (declared private or sensitive-named) never reaches `files`, so
-  // it never reaches promptFiles or the workspace it gets written to.
+  // Top-level *.md only — a file the walker already excluded never reaches `files`, so it
+  // never reaches promptFiles or the workspace it gets written to.
   const promptFiles: Record<string, string> = {};
   for (const rel of files) {
     if (rel.includes("/") || !rel.endsWith(".md")) continue;
@@ -195,18 +177,14 @@ export function mcpAddArgv(config: AgentConfig, recipeName: string): string[] {
   ];
 }
 
-/** Whether a live "mcp list --json" entry still launches the recipe's own server. Per
- *  OpenClaw's own registry (docs.openclaw.ai/cli/mcp/registry), a stdio entry carries its
- *  launch command under "command" and "args" — exactly what mcpAddArgv() sends via
- *  --command/--arg. A name being registered at all says nothing about whether it still
- *  points at a working command; this is what lets ensureMcpServer() tell "present and
- *  correct" apart from "present and broken". */
+/** Whether a live "mcp list --json" entry still launches the recipe's own server, against
+ *  the exact command/args mcpAddArgv() sends — a name being registered says nothing about
+ *  whether it points at a working command, and this is what lets ensureMcpServer() tell
+ *  "present and correct" apart from "present and broken". */
 export function mcpServerMatches(entry: { command?: unknown; args?: unknown; enabled?: unknown } | undefined, recipeName: string): boolean {
   if (entry === undefined) return false;
-  // OpenClaw excludes a disabled entry from tool discovery entirely (docs.openclaw.ai/cli/
-  // mcp/registry) — a correctly-commanded but disabled registration is exactly as broken,
-  // from an agent's point of view, as one that was never registered at all. Only an explicit
-  // false counts as disabled; absent or true stays enabled, the conservative default.
+  // A disabled entry is excluded from tool discovery entirely, as broken as unregistered.
+  // Only an explicit false counts as disabled; absent or true stays enabled.
   if (entry.enabled === false) return false;
   const spec = mcpServerSpec(recipeName);
   if (entry.command !== spec.command) return false;
@@ -223,9 +201,8 @@ export function cronAddArgv(config: AgentConfig, cronMessage: string): string[] 
     ...(config.cronTimezone === undefined ? [] : ["--tz", config.cronTimezone]),
     "--session", "isolated",
     "--expect-final",
-    // The job's product is whatever it writes in its own workspace, not a chat reply. Left
-    // on the default (announce -> "last" channel) it fail-closes on every run of a
-    // deployment with no messaging channel configured.
+    // The job's product is whatever it writes in its own workspace, not a chat reply — the
+    // default (announce to "last" channel) fail-closes with no messaging channel configured.
     "--no-deliver",
     "--timeout-seconds", String(config.cronTimeoutSeconds),
     "--message", cronMessage,
@@ -257,14 +234,11 @@ export interface CronJob {
   delivery?: { mode?: string };
 }
 
-/** Whether a live job still matches what the recipe declares. Only the declared fields are
- *  compared: everything else in a job (its id, run history, next run time) is state the
- *  gateway owns, and comparing it would make every run look like drift.
+/** Whether a live job still matches what the recipe declares. Only declared fields are
+ *  compared: id, run history, next run time are gateway-owned state, not drift.
  *
- *  A disabled job is not a match even when every other field agrees — --all (see
- *  ensureCronJob's own comment, provision-agent-reconcile.ts) is what makes it visible here
- *  at all, not what makes it count as working. Only an explicit false counts as disabled,
- *  the same conservative default mcpServerMatches already uses for its own "enabled" field. */
+ *  A disabled job is not a match even when every other field agrees — only an explicit
+ *  false counts as disabled, same conservative default as mcpServerMatches. */
 export function cronJobMatches(job: CronJob, config: AgentConfig, cronMessage: string): boolean {
   return job.enabled !== false
     && job.agentId === config.agentId

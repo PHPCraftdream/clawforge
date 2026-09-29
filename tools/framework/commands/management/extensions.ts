@@ -1,27 +1,17 @@
 // OpenClaw plugins and skills: third-party code this framework does not vendor, discovered
-// through OpenClaw's own CLI rather than read from disk — a supply-chain surface `lock`
-// does not pin today. `lock` records what is installed, `inspect`/`doctor` report when the
-// live set no longer matches, `plan` never installs or removes one on its own: an id and a
-// version are not proof of what a reinstall would actually run (see compareExtensions
-// below), so the reader always decides.
+// through OpenClaw's own CLI rather than read from disk. `lock` records what is installed,
+// `inspect`/`doctor` report drift, `plan` never installs or removes one on its own — an id
+// and a version aren't proof of what a reinstall would run (see compareExtensions), so the
+// reader always decides.
 //
-// Bundled entries — shipped inside the pinned image itself (plugins: origin "bundled";
-// skills: source "openclaw-bundled" or "openclaw-extra", the latter a plugin's own companion
-// skill materialised into the workspace at startup, still the image's content) — are already
-// covered by the lock's own image digest: they change only when the image does, never on
-// their own. Recording them here too would repeat the image digest 66 times over and call
-// it drift the moment someone upgrades OpenClaw. They are filtered out before this framework
-// ever writes or compares them.
+// Bundled entries (shipped inside the pinned image itself) are already covered by the
+// lock's own image digest, so they're filtered out before this framework writes or
+// compares them — recording them too would call it drift on every OpenClaw upgrade.
 //
-// Probed directly against the pinned image (ghcr.io/openclaw/openclaw:extended-stable,
-// OpenClaw 2026.6.34) rather than trusted from docs, which describe newer versions:
-// `plugins list --json` reports {id, name, version, origin, enabled, ...} and no
-// integrity/hash of any kind; `skills list --json` reports {name, source, bundled, ...} and
-// no version at all, for a bundled skill or otherwise. A skill's version, when ClawHub or
-// git installed it, lives only in `skills info <name> --json`'s own per-skill `install`
-// array — a call per skill, which is not part of the batched read this module shares with
-// doctor (openclaw-cli.ts's openclawCliBatch, called from inspect/live.ts's observeLive) — so
-// skill drift here is add/remove only, never version.
+// `plugins list --json` reports {id, name, version, origin, enabled, ...}, no integrity
+// hash; `skills list --json` reports {name, source, bundled, ...}, no version at all. A
+// skill's install version lives only in a per-skill call not part of the batched read this
+// module shares with doctor, so skill drift here is add/remove only, never version.
 
 import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
 import { problem } from "#src/service/inspection.ts";
@@ -32,10 +22,9 @@ import type { Problem } from "#src/service/inspection.ts";
 export const PLUGINS_LIST_ARGS = ["plugins", "list", "--json"] as const;
 export const SKILLS_LIST_ARGS = ["skills", "list", "--json"] as const;
 
-/** One entry from `openclaw plugins list --json`. `origin` is OpenClaw's own provenance tag
- *  ("bundled", "npm", "git", "clawhub", or a handful of local-install variants — see
- *  normalizePluginOrigin) kept raw here rather than re-typed, so a future origin this
- *  framework has never seen still travels instead of being coerced into the wrong bucket. */
+/** One entry from `openclaw plugins list --json`. `origin` is OpenClaw's provenance tag
+ *  (see normalizePluginOrigin), kept raw here so a future unseen origin still travels
+ *  instead of being coerced into the wrong bucket. */
 export interface PluginListEntry {
   readonly id: string;
   readonly name?: string;
@@ -55,9 +44,7 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 /** Parses one `openclawCliBatch` slot's stdout as the plugins list. A failed or malformed
- *  read answers with an empty list — the same "gap, not a verdict" every other batched read
- *  in inspect/live.ts gives: an inventory nobody could read is not evidence that nothing is
- *  installed. */
+ *  read answers with an empty list — gap, not verdict: unreadable is not evidence of "none". */
 export function parsePluginsList(result: BatchedCliResult): PluginListEntry[] {
   if (result.code !== 0) return [];
   try {
@@ -94,11 +81,8 @@ export function parseSkillsList(result: BatchedCliResult): SkillListEntry[] {
 }
 
 /** OpenClaw's own provenance tag, normalised to the category this framework's lock records.
- *  Every value below (besides "bundled", filtered out before this runs) was read out of the
- *  pinned image's own install code, not guessed: "git" and "npm" map onto themselves,
- *  "clawhub" likewise, and "local-path"/"managed"/"upload"/"workspace" (all install-target
- *  kinds distinct from a registry fetch) fold to "local". An origin this framework has not
- *  seen yet is kept verbatim rather than mis-filed under "local". */
+ *  "git"/"npm"/"clawhub" map onto themselves; "local-path"/"managed"/"upload"/"workspace"
+ *  fold to "local". An unseen origin is kept verbatim rather than mis-filed under "local". */
 export function normalizePluginOrigin(origin: string): string {
   if (origin === "clawhub" || origin === "npm" || origin === "git" || origin === "bundled") return origin;
   if (origin === "local-path" || origin === "managed" || origin === "upload" || origin === "workspace") return "local";
@@ -143,12 +127,10 @@ export function skillsForLock(entries: readonly SkillListEntry[]): LockSkill[] {
 }
 
 /** The exact command a reader can run to put a plugin back at the version the lock pinned.
- *  Built from the `name` OpenClaw reports (falling back to `id`) — the closest approximation
- *  this framework has to the original install spec, and not proven to be it: the pinned
- *  image's own `plugins list --json` already shows an npm-origin plugin's `id` ("alibaba")
- *  differing from its manifest `name` ("@openclaw/alibaba-provider"), so a reinstall built
- *  from either field can name the wrong package. That is exactly why this is only ever
- *  offered as an advisory step (plan.ts) and never one `apply` runs unattended. */
+ *  Built from `name` (falling back to `id`) — the closest approximation to the original
+ *  install spec, not proven to be it: an npm-origin plugin's id can differ from its
+ *  manifest name, so a reinstall built from either can name the wrong package. Why this is
+ *  only ever offered as an advisory step (plan.ts), never run unattended. */
 function pluginReinstallCommand(label: string, version: string | undefined): string {
   return `./clawforge cli plugins install ${label}${version === undefined ? "" : `@${version}`} --force`;
 }
@@ -157,15 +139,12 @@ function skillReinstallCommand(name: string): string {
   return `./clawforge cli skills install ${name} --force`;
 }
 
-/** PLUGIN_DRIFT / SKILL_DRIFT: the live third-party set against what the lock pinned. Named
- *  per item, the same way compareLock (lock.ts) names which recipe file changed — "3 plugins
- *  drifted" sends the reader to find them itself, which is the work this exists to do
- *  instead.
+/** PLUGIN_DRIFT / SKILL_DRIFT: the live third-party set against what the lock pinned, named
+ *  per item the way compareLock (lock.ts) names which recipe file changed.
  *
- *  Three shapes per item: locked but no longer installed ("removed" — restorable), installed
- *  but not locked ("added" — never proposed for removal, only for a deliberate ./clawforge
- *  lock or an equally deliberate uninstall), and installed at a different version than
- *  locked (skills have no version to compare — see this file's header). */
+ *  Three shapes per item: locked but no longer installed (restorable), installed but not
+ *  locked (never proposed for removal, only a deliberate lock or uninstall), and installed
+ *  at a different version than locked (skills have no version — see this file's header). */
 export function compareExtensions(
   lockPlugins: readonly LockPlugin[] | undefined,
   currentPlugins: readonly LockPlugin[],

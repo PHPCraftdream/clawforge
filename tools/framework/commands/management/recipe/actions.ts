@@ -19,7 +19,7 @@ import { safeName } from "#src/core/names.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit } from "#src/core/io/output.ts";
-import { takeTail } from "../../lifecycle/lifecycle.ts";
+import { takeTail } from "#src/commands/lifecycle/lifecycle.ts";
 import { importHookModule } from "./hook-runtime.ts";
 
 /** Every action the dispatcher knows, in the order the usage message names them. Checked
@@ -49,9 +49,8 @@ async function prepareRecipe(ctx: Context, spec: Recipe): Promise<Record<string,
 }
 
 /** Loads and runs one of the recipe's own hooks, returning its JSON payload rather than
- *  printing it — the part runRecipeHook and diagnose's verify probe both need, without
- *  diagnose inheriting runRecipeHook's die()-on-failure (a broken verify.ts is itself
- *  diagnostic information, not a reason to refuse the rest of the report). */
+ *  printing it — what runRecipeHook and diagnose's verify probe both need, without
+ *  diagnose inheriting runRecipeHook's die()-on-failure. */
 async function loadHookResult(ctx: Context, spec: Recipe, kind: "verify" | "onboard"): Promise<unknown> {
   const path = kind === "verify" ? spec.verifyPath : spec.onboardPath;
   if (path === undefined) throw new Error(`recipe "${spec.name}" has no ${kind}.ts hook`);
@@ -74,12 +73,10 @@ async function runRecipeHook(ctx: Context, spec: Recipe, kind: "verify" | "onboa
 }
 
 /** Grace period for the implicit readiness check on a recipe with no `readiness` declared —
- *  long enough to catch a container that starts and exits moments later (the gap the old
- *  immediate-after-`up` check missed entirely), short enough that a plain recipe's install
- *  never waits on a service it never described. The same window is also the minimum a stack
- *  must HOLD a ready verdict before install believes it, declared readiness or not: the
- *  first ready answer says nothing about the next moment, and a container that reports
- *  running for one poll and crashes before the next must fail. */
+ *  long enough to catch a container that starts and exits moments later, short enough that
+ *  a plain recipe never waits on a service it never described. Also the minimum a stack
+ *  must HOLD a ready verdict before install believes it: one ready poll says nothing about
+ *  the next moment. */
 const DEFAULT_READINESS_GRACE_MS = 5000;
 
 /** Default timeout for a recipe that declares readiness but not its own timeoutMs — long
@@ -119,9 +116,8 @@ function readinessProblemDetail(problems: { missing: string[]; notRunning: strin
 }
 
 /** Bounds one awaited operation to `budgetMs`: a hung service-state probe must not outwait
- *  the readiness deadline that is supposed to bound the whole loop. The underlying
- *  operation keeps running past the timeout — there is no way to
- *  cancel it — but this caller stops waiting on it. */
+ *  the readiness deadline bounding the whole loop. The operation keeps running past the
+ *  timeout (no way to cancel it), but this caller stops waiting on it. */
 function bounded<T>(operation: Promise<T>, budgetMs: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const wait = Math.max(1, budgetMs);
@@ -133,23 +129,14 @@ function bounded<T>(operation: Promise<T>, budgetMs: number, label: string): Pro
   });
 }
 
-/** Polls the stack's own per-service state until every service that must be up — the
- *  recipe's declared `readiness.services`, or every service compose currently reports for
- *  the project when nothing is declared — is running and (where it declares a healthcheck)
- *  healthy, KEEPS that verdict for the full grace period, or `timeoutMs` runs out. The
- *  first ready answer only starts the observation window: during it the required set stays
- *  frozen at the one that first answered ready, so a default-derived set cannot quietly
- *  lose a member whose container disappears, and any service that leaves the ready state
- *  inside the window fails readiness by name. Each state probe is bounded by its phase's
- *  remaining budget, so a hung probe cannot defeat the deadline. Replaces the old
- *  immediate `isRunning()` probe, which read as ready the instant `up --detach` returned,
- *  before a container had any chance to crash, and which one live sidecar satisfied even
- *  with the recipe's main service down. */
+/** Polls per-service state until every required service (declared `readiness.services`,
+ *  or everything compose reports when nothing is declared) is running and healthy, KEEPS
+ *  that verdict for the full grace period, or `timeoutMs` runs out. The required set
+ *  freezes at the first ready answer, so a member leaving mid-window fails readiness by
+ *  name instead of silently shrinking the set. */
 async function waitForRecipeReadiness(stack: Stack, readiness: RecipeReadiness | undefined, timeoutMs: number): Promise<RecipeReadinessResult> {
   const deadline = Date.now() + timeoutMs;
-  // Set when the first fully-ready answer lands; the grace floor keeps the window wide
-  // enough for at least two confirming polls even if the constants are tuned closer
-  // together than they are today.
+  // The grace floor keeps the window wide enough for at least two confirming polls.
   const graceMs = Math.max(DEFAULT_READINESS_GRACE_MS, READINESS_POLL_INTERVAL_MS * 2);
   let graceEndsAt: number | undefined;
   let required: string[] | undefined;
@@ -168,10 +155,8 @@ async function waitForRecipeReadiness(stack: Stack, readiness: RecipeReadiness |
       return { status: "unknown", detail: `could not read service state: ${error instanceof Error ? error.message : String(error)}`, services: lastServices };
     }
     lastServices = services;
-    // Default derivation reads the COMPLETE listing (serviceStates reports stopped
-    // containers too), so a failed service joins the required set instead of shrinking
-    // it. Frozen once ready, so a replica that crashes out of the listing mid-grace is
-    // reported by name rather than silently dropping out of the requirement set.
+    // Default derivation reads the COMPLETE listing (stopped containers too), so a failed
+    // service joins the required set instead of shrinking it.
     const names = required ?? readiness?.services ?? Object.keys(services);
     if (names.length === 0) {
       if (Date.now() >= phaseEnd) {
@@ -220,10 +205,8 @@ async function runImportAction(name: string, rest: string[]): Promise<void> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  // The single walk every carrier of recipe bytes shares (security/recipe-portable-content.ts):
-  // same symlink resolution and containment as set build and the provision-agent mirror, so
-  // import cannot drift into copying a link the other two would refuse. A link escaping the
-  // recipe directory throws here exactly as it does for them.
+  // Same symlink resolution and containment as set build and the provision-agent mirror
+  // (security/recipe-portable-content.ts), so import can't copy a link the other two refuse.
   const { files, excluded } = await collectPortableRecipeFiles(source).catch((error: unknown) =>
     die(error instanceof Error ? error.message : String(error)),
   );
@@ -331,10 +314,8 @@ async function runOnboardAction(ctx: Context, name: string): Promise<void> {
 async function runDiagnoseAction(ctx: Context, name: string, rest: string[]): Promise<void> {
   const { recipe: spec, stack } = await stackFor(ctx, name);
   const running = await stack.isRunning();
-  // Every service in the recipe's own compose project, not just one — a multi-container
-  // recipe (a sidecar in front of another sidecar, say) needs all of them in one place to
-  // correlate a failure that spans the two, the way cross-referencing separate `docker
-  // logs` calls by hand does today.
+  // Every service in the recipe's compose project, not just one — a multi-container recipe
+  // needs all of them in one place to correlate a failure that spans two.
   const logs = await stack.readLogs(takeTail(rest).tail ?? "50");
 
   let verify: unknown;
@@ -438,9 +419,8 @@ async function runInstallAction(ctx: Context, name: string, rest: string[]): Pro
     die(`install it anyway with: ./clawforge recipe install ${spec.name} --force-disabled`);
   }
 
-  // Variables the recipe declares must exist before the service starts, for the same
-  // reason the gateway checks its own: a container that starts and then fails to
-  // configure itself is harder to diagnose than a refusal.
+  // Declared variables must exist before the service starts: a container that starts and
+  // then fails to configure itself is harder to diagnose than a refusal.
   const declared = Object.keys(spec.variables ?? {});
   const absent = declared.filter((variable) => (ctx.settings.env[variable] ?? "") === "");
   if (absent.length > 0) {
@@ -458,17 +438,14 @@ async function runInstallAction(ctx: Context, name: string, rest: string[]): Pro
   const readinessTimeoutMs = spec.readiness === undefined
     ? DEFAULT_READINESS_GRACE_MS
     : spec.readiness.timeoutMs ?? DEFAULT_DECLARED_READINESS_TIMEOUT_MS;
-  // --wait is only requested when the recipe itself declared readiness: without a bound
-  // from the recipe, a healthcheck that never turns healthy would otherwise hang install
-  // on compose's own unbounded wait.
+  // --wait only when the recipe itself declared readiness: without a bound, a healthcheck
+  // that never turns healthy would hang install on compose's own unbounded wait.
   await stack.up(
     spec.readiness !== undefined ? { wait: true, timeoutSeconds: Math.ceil(readinessTimeoutMs / 1000) } : undefined,
   );
 
-  // Checked before afterStart, not the instant `up --detach` returns: checking only at
-  // that instant would report "running" regardless of a container that starts and
-  // crashes moments later, or a multi-service recipe whose main service never comes up
-  // while a sidecar does.
+  // Checked before afterStart, not the instant `up --detach` returns, which would report
+  // "running" regardless of a container that crashes moments later.
   const readiness = await waitForRecipeReadiness(stack, spec.readiness, readinessTimeoutMs);
   const report = { recipe: spec.name, status: readiness.status, detail: readiness.detail, services: readiness.services };
 
@@ -507,10 +484,8 @@ async function runStatusAction(ctx: Context, name: string): Promise<void> {
 
 async function runLogsAction(ctx: Context, name: string, rest: string[]): Promise<void> {
   const { stack } = await stackFor(ctx, name);
-  // Following runs until interrupted, which nothing but an attended terminal can do:
-  // an MCP tool call owes its client one result, and a script or agent shell tool has
-  // nothing to interrupt it either. See output.ts's shouldFollow() and lifecycle.ts's
-  // logs, which makes the same choice.
+  // Following runs until interrupted, which only an attended terminal can do. Same choice
+  // as lifecycle.ts's logs.
   if (!shouldFollow()) {
     emit(await stack.readLogs(takeTail(rest).tail ?? "100"));
     return;

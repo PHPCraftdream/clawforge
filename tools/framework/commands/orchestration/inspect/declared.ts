@@ -54,31 +54,24 @@ export async function declaredState(ctx: Context, problems: Problem[]): Promise<
     raw = await readFile(desiredStateFile(), "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      // A directory sitting where the file should be, a permissions error, or anything else
-      // that is not "there is genuinely no file" must not be silently treated the same way
-      // as a legitimate empty declaration — that is how a broken (or blocked) declaration
-      // produced healthy: true with nothing ever saying it could not even be read.
+      // Not "no file at all" (a directory, permissions error, …) must not be silently
+      // treated as an empty declaration — that would report healthy: true unread.
       problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} could not be read: ${(error as Error).message}`));
     }
-    // ENOENT: no file at all. A deployment with no desired state declares nothing about the
-    // config — reported as an empty declaration rather than as a failure: inspect must still
-    // work.
+    // ENOENT: no desired state declares nothing — an empty declaration, not a failure.
   }
   if (raw !== undefined) {
     try {
       const parsed = JSON.parse(raw) as { path: string; value?: unknown }[];
       config = parsed.map((entry) => ({ path: entry.path, value: entry.value }));
     } catch (error) {
-      // The file EXISTS and was meant to declare something — silently treating that the same
-      // way as "no file at all" is how a broken declaration produced healthy: true and
-      // changed: false, with nothing wrong ever reported. Same code and remedy
-      // observeConfig() (drift.ts) already uses for its own equivalent case, the LIVE config
-      // failing to parse.
+      // Exists but unparseable must be reported, not treated like "no file". Same code
+      // observeConfig() (drift.ts) uses for the equivalent LIVE-config failure.
       problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} exists but is not valid JSON: ${(error as Error).message}`));
     }
   }
 
-  // Re-read: ctx.settings dropped the raw text. ENOENT means a race with the file, not a normal case.
+  // Re-read: ctx.settings dropped the raw text. ENOENT is a race, not a normal case.
   try {
     for (const finding of suspiciousEnvLines(await readFile(envFile(), "utf8"))) {
       problems.push(problem("ENV_LINE_INVALID", `${envFile()}: ${finding}`));
@@ -95,15 +88,13 @@ export async function declaredState(ctx: Context, problems: Problem[]): Promise<
   };
 }
 
-/** The declaration's own existence. A fact about the folder, and only a finding while an
- *  instance is running to be re-declared — the caller gates it below the not-running
- *  early return, which is what the code's name claims ("missing" for WHOM). */
+/** The declaration's own existence — only a finding while an instance is running to be
+ *  re-declared, so the caller gates it below the not-running early return. */
 export async function observeDeclarationFile(problems: Problem[]): Promise<void> {
   const absent = await access(desiredStateFile()).then(
     () => false,
     (error: NodeJS.ErrnoException) => {
-      // Unreadable for any other reason: declaredState()'s own read already reports it,
-      // and a second finding for the same file would read as two problems.
+      // Unreadable otherwise: declaredState()'s own read already reports it.
       if (error.code === "ENOENT") return true;
       return false;
     },

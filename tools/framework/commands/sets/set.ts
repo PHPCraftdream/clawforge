@@ -1,14 +1,9 @@
 // `./clawforge set` — the group dispatcher: build, validate, diff, receipts, try, forget.
 //
-// Split into three files, purely organisational: set-secrets-guard.ts (the value scan a
-// build must pass before writing anything) and set-manifest.ts (collectManifest/
-// writeArtifact/buildSet — the gatherer that turns a working tree into a manifest). This
-// file keeps validateAction/forgetAction/the set() dispatcher and re-exports everything
-// from the other two under its own name, so every external importer (checks, the
-// interface command group) keeps importing from "./set.ts" unchanged.
-//
-// The group owns the set lifecycle commands; it fails explicitly on anything else
-// rather than pretending it is there.
+// Split for organisation only: set-secrets-guard.ts (value scan before a build writes
+// anything), set-manifest.ts (collectManifest/writeArtifact/buildSet). This file keeps
+// validateAction/forgetAction/the dispatcher and re-exports the other two, so every
+// external importer keeps using "./set.ts".
 
 import { die, log, info, warn } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
@@ -16,7 +11,7 @@ import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { validateSet } from "#src/set/ownership/validate.ts";
-import { removeOwnedObject } from "../management/provision-agent/index.ts";
+import { removeOwnedObject } from "#src/commands/management/provision-agent/index.ts";
 import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -49,10 +44,8 @@ export * from "./set-manifest.ts";
 
 /** The manifest inside an artifact, without unpacking the rest of it.
  *
- *  `--force-local` on Windows for the same reason writeArtifact needs it, and it is worth
- *  saying twice: GNU tar reads the `D:` in an absolute path as a remote host and tries to
- *  connect. Writing already handled that; reading is a separate call and would have failed
- *  the same way — which is exactly how a platform quirk gets fixed on one side only. */
+ *  `--force-local` on Windows, same reason as writeArtifact: GNU tar reads the drive
+ *  letter in an absolute path as a remote host spec. */
 export async function readManifestFromArtifact(artifact: string): Promise<SetManifest> {
   const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
   let result = await spawnLocal("tar", [...forceLocal, "-xzOf", artifact, "./set.json"], { allowFailure: true });
@@ -70,13 +63,12 @@ export async function readManifestFromArtifact(artifact: string): Promise<SetMan
   }
 }
 
-/** `./clawforge set validate` — the same manifest `build` would produce, or one read back out of an
- *  artifact, put through every check that needs no gateway.
+/** `./clawforge set validate` — the same manifest `build` would produce, or one read back
+ *  from an artifact, put through every check that needs no gateway.
  *
- *  Validating the working tree also checks the files are there; validating an artifact does
- *  not, and must not: an artifact carries its content as checksums, and looking for those
- *  paths on whichever machine happens to be reading it would report a perfectly good set as
- *  broken everywhere except where it was built. */
+ *  Validating the working tree also checks the files are there; validating an artifact must
+ *  not — its content is checksums, and looking for those paths on the reading machine would
+ *  report a good set as broken everywhere except where it was built. */
 async function validateAction(
   ctx: Context,
   options: { name?: string; artifact?: string; jsonOnly: boolean },
@@ -129,11 +121,10 @@ async function validateAction(
   }
 }
 
-/** `./clawforge set forget --kind <kind> --name <name>` — removes an object this framework created
- *  and stops tracking it. The same operation `./clawforge apply` runs on its own for an orphaned MCP
- *  server or cron job; exposed by hand for the case `apply` never performs on its own — an
- *  orphaned agent, whose removal prunes a workspace and its memory, which stays a decision
- *  for whoever runs this rather than something a plan carries out automatically. */
+/** `./clawforge set forget --kind <kind> --name <name>` — removes an object this framework
+ *  created and stops tracking it. `apply` does this on its own for an orphaned MCP server
+ *  or cron job; exposed by hand for an orphaned agent, whose removal prunes a workspace and
+ *  memory — a decision for whoever runs this, not something a plan does automatically. */
 async function forgetAction(
   ctx: Context,
   kindRaw: string | undefined,

@@ -33,9 +33,8 @@ export function isDeployDryRun(args: readonly string[]): boolean {
 
 /** The tree this command mirrors, refusing rather than guessing when there is none.
  *
- *  Exported with the root as a parameter so both answers can be checked against real
- *  directories: the refusal is the whole point of the function, and a test that could only
- *  reach the branch this checkout happens to be in would prove exactly half of it. */
+ *  Exported with the root as a parameter so both branches can be checked against real
+ *  directories, not just the one this checkout happens to be in. */
 export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<string> {
   if (!(await isMonorepoCheckout(root))) {
     die(
@@ -100,8 +99,8 @@ export function resolveDeployArguments(ctx: Context, args: string[]): DeployPlan
   const parsed = parseDeclaredArgs(DEPLOY_ARGUMENTS, args);
   const target = parsed.target as string | undefined;
   const requestedPath = parsed.path as string | undefined;
-  // An empty --path is caught below by validatedRemoteRoot() ("must be an absolute POSIX
-  // path"), which already names the value and the reason — no separate check needed here.
+  // An empty --path is caught below by validatedRemoteRoot(), which already names the
+  // value and reason — no separate check needed here.
   let remotePath = requestedPath === undefined ? ctx.settings.remotePath : requestedPath;
   const runBootstrap = parsed["no-bootstrap"] !== true;
   const adopt = parsed.adopt === true;
@@ -123,9 +122,7 @@ export function resolveDeployArguments(ctx: Context, args: string[]): DeployPlan
 
   const name = deploymentName();
   const remoteApp = `${remotePath}/apps/${name}`;
-  // Resolve this before checking tools, connecting, or writing anything remotely. An
-  // absolute declaration names a path on this machine and cannot be copied to the same
-  // path on another host without risking an unrelated remote tree.
+  // Resolved before checking tools, connecting, or writing anything remotely.
   const remoteRecipes = remoteRecipesPath(remoteApp);
 
   return { target, remotePath, remotePathNote, runBootstrap, adopt, dryRun, jsonOnly, name, remoteApp, remoteRecipes };

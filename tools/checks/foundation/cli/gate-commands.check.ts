@@ -11,6 +11,8 @@ import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { normalizeVersionAlias, versionGateCommand } from "#framework/integration/version.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
+import { buildCompletionModel, renderCompletion, makeCompletionGateCommand, COMPLETION_SHELLS } from "#framework/integration/completion.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 function sample(overrides: Partial<GateCommand> = {}): GateCommand {
@@ -157,6 +159,79 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
     runGateCommand([versionGateCommand], ["version", "extra-arg"]));
   check("version extra-arg is refused", code, 1);
   check("with the standard unknown-argument message", written.join("").includes("unknown argument: extra-arg"), true);
+}
+
+// --- completion: generated shell completion, no deployment needed -------------------------
+
+{
+  const gateCommands = [versionGateCommand];
+  const model = buildCompletionModel(gateCommands);
+  const modelNames = model.map((spec) => spec.name);
+  const expectedNames = [...Object.keys(openclawCommands), "help", "control-mcp", "version"].sort();
+  check("every live command name is in the model, gate and deployment commands alike", [...modelNames].sort(), expectedNames);
+
+  const backup = model.find((spec) => spec.name === "backup");
+  check("backup carries its own action positional", backup?.action !== undefined, true);
+  check("--interval sits only under install", backup?.action?.flags.install?.includes("--interval"), true);
+  check("--interval is absent from list", backup?.action?.flags.list?.includes("--interval"), false);
+  check("--interval is absent from prune-replaced", backup?.action?.flags["prune-replaced"]?.includes("--interval"), false);
+  check("--interval is absent from uninstall", backup?.action?.flags.uninstall?.includes("--interval"), false);
+  check("--keep sits only under prune-replaced", backup?.action?.flags["prune-replaced"]?.includes("--keep"), true);
+  check("--keep is absent from install", backup?.action?.flags.install?.includes("--keep"), false);
+  check("--apply sits under prune-replaced, install and uninstall", [
+    backup?.action?.flags["prune-replaced"]?.includes("--apply"),
+    backup?.action?.flags.install?.includes("--apply"),
+    backup?.action?.flags.uninstall?.includes("--apply"),
+  ], [true, true, true]);
+  check("--apply is absent from list (read-only)", backup?.action?.flags.list?.includes("--apply"), false);
+
+  for (const shell of COMPLETION_SHELLS) {
+    const first = renderCompletion(shell, model, true);
+    const missing = modelNames.filter((name) => !first.includes(name));
+    check(`${shell}: every command name from the live declarations appears`, missing, []);
+    check(`${shell}: no timestamp or other per-run value — rendering twice is byte-identical`, renderCompletion(shell, model, true), first);
+  }
+
+  // The output text itself, not just the model: --interval lands on the same line as
+  // "install", never on list's/prune-replaced's/uninstall's own line.
+  const bash = renderCompletion("bash", model, true);
+  const installLine = bash.split("\n").find((line) => line.trim().startsWith("install) "));
+  const listLine = bash.split("\n").find((line) => line.trim().startsWith("list) "));
+  check("bash: the install arm carries --interval", installLine?.includes("--interval"), true);
+  check("bash: the list arm does not carry --interval", listLine?.includes("--interval"), false);
+
+  const pwsh = renderCompletion("pwsh", model, true);
+  const pwshInstallLine = pwsh.split("\n").find((line) => line.trim().startsWith('"install" = @('));
+  const pwshListLine = pwsh.split("\n").find((line) => line.trim().startsWith('"list" = @('));
+  check("pwsh: the install action table carries --interval", pwshInstallLine?.includes("--interval"), true);
+  check("pwsh: the list action table does not carry --interval", pwshListLine?.includes("--interval"), false);
+}
+
+{
+  const written: string[] = [];
+  const command = makeCompletionGateCommand([versionGateCommand], true);
+  const code = await withOutputSink((chunk) => written.push(chunk), async () =>
+    runGateCommand([command], ["completion", "bash"]));
+  check("completion bash exits 0", code, 0);
+  check("completion bash prints a bash function", written.join("").includes("_clawforge_complete()"), true);
+}
+
+{
+  const written: string[] = [];
+  const code = await withOutputSink((chunk) => written.push(chunk), async () =>
+    runGateCommand([makeCompletionGateCommand([versionGateCommand], true)], ["completion", "ruby"]));
+  check("an unsupported shell is refused", code, 1);
+  check("naming the accepted ones", written.join("").includes("bash|zsh|pwsh"), true);
+}
+
+{
+  // appFlag: false (the installed single-deployment gate, entry/bin.ts) never offers --app.
+  const model = buildCompletionModel([versionGateCommand]);
+  const bash = renderCompletion("bash", model, false);
+  // Word-boundary, not a bare substring match: "--apply" (a real backup/expose/etc. flag)
+  // must not be mistaken for "--app".
+  check("with no --app, the script never mentions it", /--app\b/.test(bash), false);
+  check("and never calls `list --json` to complete its value", bash.includes("list --json"), false);
 }
 
 finish("gate-command");

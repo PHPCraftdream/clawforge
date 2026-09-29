@@ -8,6 +8,7 @@ comes in two flavours, and a recipe may be either or both.
 ```bash
 ./clawforge recipe list
 ./clawforge recipe import <source> [new-name]
+./clawforge recipe new <name> [--with-hooks]
 ./clawforge recipe install <name>
 ./clawforge recipe status <name>
 ./clawforge recipe verify <name>
@@ -28,8 +29,17 @@ target, and `verify`, `onboard` and `diagnose` run the recipe's own hooks with a
 so the framework cannot know what they touch; `install` holds the lock across the whole
 build, and until it is done other mutating operations are refused with `recipe install
 <name>` named as the holder. `list`, `status` and `logs` take no lock, and neither does
-`import` — a repository-side copy that never touches the instance. An operation that already
-holds the lock runs recipe actions as its own steps instead of refusing itself.
+`import` or `new` — both write only the repository's recipes/ directory and never touch the
+instance. An operation that already holds the lock runs recipe actions as its own steps
+instead of refusing itself.
+
+`recipe new <name>` scaffolds `recipes/<name>/` with the smallest valid manifest — a
+`recipe.json` carrying only `description`, and a `compose.yml` skeleton (one placeholder
+service, `restart: unless-stopped` already set) — no hooks by default. Refuses an existing
+directory, the same way `import` does, and validates `<name>` with the same rules every
+other recipe name follows. `--with-hooks` also writes commented `prepare.ts`/`verify.ts`
+stubs using the `@clawforge/framework/private-config` helpers shown below, ready to
+uncomment, with a one-line reminder that hooks run with the operator's own rights.
 
 A recipe can sit in the repository switched off — `"enabled": false` in `recipe.json`.
 `install` then refuses and points at `--force-disabled`.

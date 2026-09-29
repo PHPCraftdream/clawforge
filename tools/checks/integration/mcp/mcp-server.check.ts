@@ -215,9 +215,9 @@ try {
   const recipeProperties = inputSchema(openclawCommands.recipe!).properties as Record<string, { enum?: string[] }> | undefined;
   const recipeActionSchema = recipeProperties?.action;
   check(
-    "recipe MCP schema documents import/verify/onboard/diagnose actions",
+    "recipe MCP schema documents import/new/verify/onboard/diagnose actions",
     recipeActionSchema?.enum,
-    ["list", "import", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
+    ["list", "import", "new", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
   );
   check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes("call help with command=recipe"), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);
@@ -496,7 +496,7 @@ function conforms(
 {
   const recipeCommand = openclawCommands.recipe!;
   const actionChoices = ((inputSchema(recipeCommand).properties as Record<string, { enum?: string[] } | undefined>)?.action?.enum ?? []) as string[];
-  check("the declaration enumerates the actions to sweep", actionChoices.length, 9);
+  check("the declaration enumerates the actions to sweep", actionChoices.length, 10);
 
   const moduleUrl = (name: string): string => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
   const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
@@ -510,6 +510,7 @@ function conforms(
     const outputs = {
       list: () => { log("available recipes"); info("sidecar          a probe service"); },
       import: () => { log('imported recipe "sidecar"'); info("destination: recipes/sidecar"); },
+      new: () => { log('created recipe "sidecar"'); info("directory: recipes/sidecar"); },
       install: () => { log("building sidecar (this compiles from source and can take minutes)"); log("sidecar is running"); },
       remove: () => { log("sidecar removed"); },
       status: () => { info("running"); },
@@ -570,7 +571,7 @@ function conforms(
     check("verify: the hook's JSON rides in the envelope whole", envelopeResult("verify"), { ok: true, problems: [] });
     check("onboard: the same for its own document", envelopeResult("onboard"), { ok: true, steps: ["dashboard ready"] });
     check("diagnose: the same for its report", envelopeResult("diagnose"), { recipe: "sidecar", enabled: true, running: true, verify: { ok: true }, logs: "ready" });
-    for (const action of ["list", "import", "install", "remove", "status", "logs"]) {
+    for (const action of ["list", "import", "new", "install", "remove", "status", "logs"]) {
       check(`${action}: a text action carries its text as the result`, typeof envelopeResult(action) === "string" && String(envelopeResult(action)).length > 0, true);
     }
 

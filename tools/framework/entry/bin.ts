@@ -24,6 +24,7 @@ import { reportError } from "../core/io/log.ts";
 import { useDeployment } from "../runtime/deployment.ts";
 import { initApp } from "../integration/deployment/init.ts";
 import { normalizeVersionAlias, versionGateCommand } from "../integration/version.ts";
+import { makeCompletionGateCommand } from "../integration/completion.ts";
 import type { AppDefinition } from "../core/app.ts";
 
 const argv = normalizeVersionAlias(process.argv.slice(2));
@@ -52,6 +53,9 @@ const gateCommands: GateCommand[] = [
   },
   versionGateCommand,
 ];
+// Pushed after the literal above so the closure sees the finished array, itself included —
+// see completion.ts. No --app here: an installed deployment is always the current directory.
+gateCommands.push(makeCompletionGateCommand(gateCommands, false));
 
 const gateExit = await runGateCommand(gateCommands, argv);
 if (gateExit !== undefined) process.exit(gateExit);

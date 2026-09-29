@@ -12,6 +12,13 @@ All notable changes to `@clawforge/framework` will be documented here.
   space at the data or backup directory below `OC_DISK_MIN_FREE_MB`, default 1024 MB) — a
   separate, warning-only sibling of `watch`'s own `DISK_LOW`, not wired into it. All three are
   warnings and never fail `doctor`'s exit code.
+* `recipe new <name> [--with-hooks]`: scaffolds `recipes/<name>/` with a minimal valid
+  `recipe.json` and a `compose.yml` skeleton, no hooks by default; `--with-hooks` adds
+  commented `prepare.ts`/`verify.ts` stubs. Repository-side, like `import`: no target, no
+  instance lock, refuses an existing directory.
+* `completion <bash|zsh|pwsh>`: prints a shell-completion script, generated from the live
+  command declarations — command names, per-command flags, and a multi-action command's own
+  flags placed under the right action.
 * `upgrade`: digest-pinned image updates, with a pre-upgrade backup and automatic rollback
   on failure (restoring that backup too when the container exited during migrations).
 * `backup --native`: a consistent snapshot via OpenClaw's own `backup create --verify`,

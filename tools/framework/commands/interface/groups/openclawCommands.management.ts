@@ -261,7 +261,7 @@ export const managementCommands: Record<string, AppCommand> = {
     readOnlyWhen: (args) => args.includes("--dry-run"),
   },
   recipe: {
-    summary: "Deploy services next to the instance (list, import, install, remove, status, logs, verify, onboard, diagnose)",
+    summary: "Deploy services next to the instance (list, import, new, install, remove, status, logs, verify, onboard, diagnose)",
     group: "change",
     run: recipe,
     // Only lifecycle changes need confirmation; the read-only set is defined once, beside
@@ -286,8 +286,9 @@ export const managementCommands: Record<string, AppCommand> = {
       "install across its build, so minutes — during which other mutating operations are refused " +
       "with the holder named, and a caller that already holds the lock runs them as its own steps " +
       "instead of refusing itself;\n" +
-      "list, status and logs take no lock, and neither does import: it writes the repository's " +
-      "recipes/ directory, not the instance, so it works before bootstrap has prepared the lock home.\n" +
+      "list, status and logs take no lock, and neither does import or new: both write only the " +
+      "repository's recipes/ directory, not the instance, so either works before bootstrap has " +
+      "prepared the lock home.\n" +
       "An optional recipes/<name>/prepare.ts " +
       "hook belongs to the application and may generate private target config before build or " +
       "reconcile the running service afterwards;\n" +
@@ -324,13 +325,17 @@ export const managementCommands: Record<string, AppCommand> = {
       "recipe's stack is running, a bounded tail of every service in it (not just one), " +
       "and the verify.ts hook's own result if it has one — gated like verify itself, since " +
       "it runs that same hook and the framework cannot know it is read-only.\n" +
-      "list --json emits {recipes, bundles, broken} instead of the text catalog.",
+      "list --json emits {recipes, bundles, broken} instead of the text catalog.\n" +
+      "new scaffolds recipes/<name>/ — a minimal recipe.json and compose.yml skeleton, no " +
+      "hooks by default — refuses an existing directory the same way import does; --with-hooks " +
+      "also adds commented prepare.ts/verify.ts stubs. Repository-side only, like import: no " +
+      "target, no lock.",
     arguments: [
       {
         name: "action",
         description: "What to do with the recipe",
         kind: "positional",
-        choices: ["list", "import", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
+        choices: ["list", "import", "new", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
       },
       { name: "name", description: "Recipe name; with import, the source directory to copy from", kind: "positional" },
       { name: "new-name", description: "With import: import under this name instead of the source directory's own name", kind: "positional" },

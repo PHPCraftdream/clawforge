@@ -2,7 +2,7 @@
 // recipe() picks the action, gates it through the instance lock, then calls runRecipeAction
 // here to dispatch to one of these.
 
-import { access, copyFile, mkdir } from "node:fs/promises";
+import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { dieUnknownAction } from "#src/core/arguments.ts";
@@ -25,7 +25,7 @@ import { importHookModule } from "./hook-runtime.ts";
 /** Every action the dispatcher knows, in the order the usage message names them. Checked
  *  by index.ts's recipe() before the lock gate so an unknown action dies as a typo, not as
  *  a lock failure. */
-export const RECIPE_ACTIONS: readonly string[] = ["list", "import", "verify", "onboard", "diagnose", "install", "remove", "status", "logs"];
+export const RECIPE_ACTIONS: readonly string[] = ["list", "import", "new", "verify", "onboard", "diagnose", "install", "remove", "status", "logs"];
 
 async function stackFor(ctx: Context, name: string) {
   const recipe = await loadRecipe(name);
@@ -248,6 +248,76 @@ async function runImportAction(name: string, rest: string[]): Promise<void> {
   }
 }
 
+/** compose.yml skeleton `recipe new` writes: one placeholder service, restart policy already
+ *  right (docs/guide/recipes.md) — the operator fills in the real image/build. */
+const NEW_RECIPE_COMPOSE = `# One compose project per recipe (docs/guide/recipes.md) — replace the placeholder
+# image with a real service before \`recipe install\`.
+services:
+  app:
+    image: replace-me
+    restart: unless-stopped
+`;
+
+/** Note carried into both stub hooks — same wording as the warning \`recipe import\` prints
+ *  when it finds a hook file, so the two say the same thing in the same words. */
+const NEW_RECIPE_HOOK_NOTE = "Hooks run on this machine with the operator's rights during bootstrap/up/recipe verify.";
+
+function newRecipePrepareStub(): string {
+  return `// Runs before build and after start (afterStart). ${NEW_RECIPE_HOOK_NOTE}
+//
+// Uncomment to write private target files — see recipe.json's privatePaths and
+// docs/guide/recipes.md ("Private files: privatePaths and privateFiles").
+//
+// import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "@clawforge/framework/private-config";
+//
+// export async function prepare(ctx, recipe) {
+//   const dir = \`\${ctx.settings.dataDir}/\${recipe.name}-credentials\`;
+//   await ensurePrivateTargetDirectory(ctx, dir);
+//   await replacePrivateTargetFile(ctx, \`\${dir}/secret.env\`, \`SECRET=\${generatePrivateSecret()}\\n\`);
+// }
+
+export async function prepare(): Promise<void> {}
+`;
+}
+
+function newRecipeVerifyStub(): string {
+  return `// Runs on \`recipe verify\`/\`diagnose\`, gated like every mutation (confirm and the
+// instance lock) — the framework cannot know what an app-owned hook touches.
+// ${NEW_RECIPE_HOOK_NOTE}
+//
+// export async function verify(ctx, recipe) {
+//   return { ok: true };
+// }
+
+export async function verify(): Promise<{ ok: boolean }> {
+  return { ok: true };
+}
+`;
+}
+
+async function runNewAction(name: string, rest: string[]): Promise<void> {
+  safeName("recipe", name);
+  const withHooks = rest.includes("--with-hooks");
+  const destination = resolve(recipesDirectory(), name);
+  try {
+    await access(destination);
+    die(`recipe "${name}" already exists at ${destination}`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  await mkdir(destination, { recursive: true });
+  await writeFile(resolve(destination, "recipe.json"), `${JSON.stringify({ description: `TODO: describe what ${name} deploys` }, null, 2)}\n`, "utf8");
+  await writeFile(resolve(destination, "compose.yml"), NEW_RECIPE_COMPOSE, "utf8");
+  if (withHooks) {
+    await writeFile(resolve(destination, "prepare.ts"), newRecipePrepareStub(), "utf8");
+    await writeFile(resolve(destination, "verify.ts"), newRecipeVerifyStub(), "utf8");
+  }
+  log(`created recipe "${name}"`);
+  info(`directory: ${destination}`);
+  info("edit recipe.json and compose.yml, then: ./clawforge recipe install " + name);
+  if (withHooks) info("prepare.ts and verify.ts are commented stubs — uncomment and edit before they run");
+}
+
 async function runVerifyAction(ctx: Context, name: string): Promise<void> {
   const { recipe: spec } = await stackFor(ctx, name);
   await runRecipeHook(ctx, spec, "verify");
@@ -387,6 +457,7 @@ async function runLogsAction(ctx: Context, name: string, rest: string[]): Promis
 export async function runRecipeAction(ctx: Context, action: string, name: string, rest: string[]): Promise<void> {
   switch (action) {
     case "import": return runImportAction(name, rest);
+    case "new": return runNewAction(name, rest);
     case "verify": return runVerifyAction(ctx, name);
     case "onboard": return runOnboardAction(ctx, name);
     case "diagnose": return runDiagnoseAction(ctx, name, rest);
@@ -395,6 +466,6 @@ export async function runRecipeAction(ctx: Context, action: string, name: string
     case "status": return runStatusAction(ctx, name);
     case "logs": return runLogsAction(ctx, name, rest);
     default:
-      dieUnknownAction(action, `unknown action: ${action} (expected list, import, verify, onboard, diagnose, install, remove, status or logs)`, RECIPE_ACTIONS);
+      dieUnknownAction(action, `unknown action: ${action} (expected list, import, new, verify, onboard, diagnose, install, remove, status or logs)`, RECIPE_ACTIONS);
   }
 }

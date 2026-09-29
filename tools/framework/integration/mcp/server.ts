@@ -51,6 +51,7 @@ export const MCP_EXEMPTIONS: Record<string, string> = {
   "control-mcp": "it is this server — a tool that starts the server it runs inside answers nothing",
   "--app": "it selects which deployment this server serves, which is settled when the client launches it (mcp-setup writes the flag into .mcp.json); switching mid-session would change what every other tool in the list refers to",
   "version": "answers a human filing a bug report; a tool would only spend the tools/list byte budget",
+  "completion": "prints a shell script for a human's own shell profile; a tool call has no shell to register it in, and the byte budget is better spent on tools an agent actually calls",
 };
 
 /** The `help` tool: not a command, answered through renderHelp like `./clawforge help`. */

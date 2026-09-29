@@ -18,6 +18,7 @@ export const RECIPE_FLAG_ARGUMENTS: CommandArgument[] = [
   { name: "volumes", description: "With remove: delete its volumes too", kind: "flag" },
   { name: "tail", description: "With logs/diagnose: lines to return per service", kind: "option", valueName: "n" },
   { name: "force-disabled", description: "With install: build a recipe marked disabled", kind: "flag" },
+  { name: "with-hooks", description: "With new: add commented prepare.ts/verify.ts stubs", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
@@ -33,6 +34,7 @@ const RECIPE_OPTION_FLAG_NAMES = new Set(
 const RECIPE_ACTION_GRAMMAR: Record<string, { positionals: number; flags: readonly string[] }> = {
   list: { positionals: 0, flags: ["json"] },
   import: { positionals: 2, flags: [] },
+  new: { positionals: 1, flags: ["with-hooks"] },
   verify: { positionals: 1, flags: ["break-lock", "break-foreign-lock"] },
   onboard: { positionals: 1, flags: ["break-lock", "break-foreign-lock"] },
   diagnose: { positionals: 1, flags: ["tail", "break-lock", "break-foreign-lock"] },

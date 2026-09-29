@@ -37,6 +37,7 @@ import { safeName } from "./framework/core/names.ts";
 import { parseDeclaredArgs } from "./framework/core/arguments.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
 import { normalizeVersionAlias, versionGateCommand } from "./framework/integration/version.ts";
+import { makeCompletionGateCommand } from "./framework/integration/completion.ts";
 import type { AppDefinition, CommandArgument } from "./framework/core/app.ts";
 
 const argv = normalizeVersionAlias(process.argv.slice(2));
@@ -169,6 +170,9 @@ const gateCommands: GateCommand[] = [
   },
   versionGateCommand,
 ];
+// Pushed after the literal above, not inside it: the closure needs the finished array
+// (itself included), which is only true once this line has run — see completion.ts.
+gateCommands.push(makeCompletionGateCommand(gateCommands, true));
 
 // --app after the command is refused, except where the command reads argv verbatim.
 const verbatimCommands = [

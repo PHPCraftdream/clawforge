@@ -60,7 +60,7 @@ flags (`--keep`, `--interval`) are refused by name when given to the wrong actio
 | `pull` | `[--profile ...] [--share] [--with-secrets] [--migrate] [--hot] [--break-lock] [--break-foreign-lock <hostId>]` | Snapshot the state; the `share` profile is verified and deleted whole when verification fails |
 | `push` | `[<snapshot>] [--force] [--fresh-identity] [--break-lock] [--break-foreign-lock <hostId>]` | Push a snapshot back: restore → install keys if any travelled with it → check → start |
 | `verify` | `<archive> [--profile ...] [--json]` | Check an archive for credentials before sharing it — what `pull --share` does on its own. `--json` emits `{archive, profile, passed, findings}`: each finding is a kind and a location (a path, a rule or a provider id), never a credential value |
-| `recipe` | `<list\|import\|install\|remove\|status\|logs\|verify\|onboard\|diagnose> <name> [new-name] [--volumes] [--tail <n>] [--force-disabled] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | App-owned services beside the instance, each its own compose project and optional lifecycle hooks. install, remove and the hook-running actions take the instance lock for their whole run — install across its build; list/status/logs and import (a repository-side copy) take none. With import, `<name>` is the source directory and `[new-name]` the name to import under — the source's own name by default; the copy leaves out the generic credential-shaped names (`.env*`, `secrets/`, `*.token`, `*.secrets.env`) plus what the source's own `recipe.json` declares under `privateFiles` — a filter over file names, not a guarantee; `privatePaths` in the same file declares where the running recipe keeps generated credentials (data-relative), which migrate/share snapshots exclude and full keeps. `list --json` emits `{recipes, bundles, broken}` instead of the text catalog |
+| `recipe` | `<list\|import\|new\|install\|remove\|status\|logs\|verify\|onboard\|diagnose> <name> [new-name] [--volumes] [--tail <n>] [--force-disabled] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | App-owned services beside the instance, each its own compose project and optional lifecycle hooks. install, remove and the hook-running actions take the instance lock for their whole run — install across its build; list/status/logs and import/new (both repository-side only) take none. With import, `<name>` is the source directory and `[new-name]` the name to import under — the source's own name by default; the copy leaves out the generic credential-shaped names (`.env*`, `secrets/`, `*.token`, `*.secrets.env`) plus what the source's own `recipe.json` declares under `privateFiles` — a filter over file names, not a guarantee; `privatePaths` in the same file declares where the running recipe keeps generated credentials (data-relative), which migrate/share snapshots exclude and full keeps. `new <name>` scaffolds `recipes/<name>/` with a minimal `recipe.json`/`compose.yml`, no hooks by default; `--with-hooks` adds commented `prepare.ts`/`verify.ts` stubs; refuses an existing directory. `list --json` emits `{recipes, bundles, broken}` instead of the text catalog |
 | `provision-agent` | `<recipe> [--break-lock] [--break-foreign-lock <hostId>]` | Wire a recipe's MCP server to a dedicated agent: agent, workspace prompt files, MCP registration and an optional cron job |
 | `set` | `<build\|validate\|diff\|receipts\|try\|forget> [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--name <name>] [--set <artifact>] [--kind agent\|mcp-server\|cron-job] [--with-model] [--keep] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Build or validate the set: every recipe, `config/desired-state.json`, the framework version, image digest and secret NAMES, collected into `sets/<name>-<id>.tar.gz`; the id is over the manifest, not the archive bytes, so an unchanged tree always produces the same one. `validate` checks a whole set with no running instance. `diff <A> <B>` (or `--from`/`--to` over MCP) compares two verified artifacts semantically. `receipts` lists saved acceptance evidence, filtered by `--set-id`/`--receipt`. `try --set <artifact>` installs it into a disposable instance, runs its declared acceptance, and tears the instance down unless `--keep`. `forget --kind <k> --name <n>` removes an object this framework created (an orphaned agent, MCP server, or cron job) and stops tracking it |
 | `host` | `<target\|engine\|local> [--root --confirm-root] -- <command>` | Run one command on the operator's own machine layers — the deployment's transport, the container engine's VM, or the bare host. Privilege is stated where it arrives: target and local run as the operator's own user until both root flags elevate them; Docker Desktop's `docker-desktop` engine distro has no login user but root, so both flags are the consent every engine command needs before it runs at all — without them it is refused, not downgraded |
@@ -74,9 +74,32 @@ flags (`--keep`, `--interval`) are refused by name when given to the wrong actio
 | `control-mcp` | — | Offer this same command set as MCP tools (framework-level, not part of `openclawCommands`) |
 | `smoke` | `[--quick]` | Acceptance suite of 8 checks against a live instance; every check lands as `passed`, `failed`, `not-checked` or `could-not-check`, and the run fails unless every applicable check passed |
 | `check` | `[<filter…>] [--list]` | Framework checks with no instance — paths, archives, arguments, what a server delivery contains. With no filter, every check runs; one or more substrings narrow that to checks whose relative path contains at least one of them (`./clawforge check gate`). `--list` prints the matching paths instead of running them; a filter matching nothing is refused |
+| `completion` | `<bash\|zsh\|pwsh>` | Print a shell completion script to stdout (framework-level, available before `--app` is resolved) — generated from the live command declarations, never hand-maintained. See [Shell completion](#shell-completion) below |
 | `new-app <name>` | — | Create a deployment directory (framework-level, available before `--app` is resolved) |
 | `list` | `[--json] [--no-status]` | One line per `apps/<name>`: target, gateway port, image (pinned when it carries `@sha256:`), and whether the gateway is running (framework-level, monorepo checkouts only — an installed, single-deployment checkout has nothing to list beside itself). A deployment this cannot fully read — no `.env` yet, a broken `app.ts`, an unreachable target — gets its own line naming why, instead of failing the whole listing. `--no-status` skips querying any target, for a fast configuration-only read; `--json` prints the same rows as an array of objects |
 | `init` | — | Scaffold the current directory as the single deployment (framework-level, installed mode only — see [Installing in a separate repository](deploy-and-mcp.md#installing-in-a-separate-repository-npm)) |
+
+## Shell completion
+
+`./clawforge completion <bash|zsh|pwsh>` prints a completion script to stdout, generated from
+the same command declarations `--help` and the MCP schema come from — command names,
+per-command flags, and (for `backup`/`recipe`/`watch`/`expose`/`set`) which flags apply
+under which action. It never embeds a machine path: only the invoked name, `clawforge` or
+`./clawforge`, both registered so either spelling completes.
+
+```bash
+source <(./clawforge completion bash)                       # current shell
+./clawforge completion zsh > "${fpath[1]}/_clawforge"       # new zsh shell (or: source <(...) now)
+./clawforge completion pwsh | Out-String | Invoke-Expression # current PowerShell session
+```
+
+In a monorepo checkout, `--app <name>`'s own value is completed too — lazily, by calling
+`./clawforge list --json` from inside the shell function only once something actually asks
+for it, never baked into the generated script. An installed, single-deployment checkout
+(`entry/bin.ts`) has no `--app` at all, and its own completion script never mentions it.
+
+Not exposed over MCP, the same way `version` is not: it prints a script for a human's own
+shell profile, which a tool call has no shell to install into.
 
 ## The machine itself: `host`
 

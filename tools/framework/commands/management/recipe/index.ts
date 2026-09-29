@@ -176,15 +176,15 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
   if (name === undefined) die(`usage: ./clawforge recipe ${action} <name>`);
 
   // One classification for MCP's confirmation gate and for the instance lock, so a future
-  // action cannot be mutating for one and read-only for the other. The single exception is
-  // `import`: it copies into the repository's recipes/ directory, never touches the target,
-  // and taking a lock would make it the one recipe action that cannot run before bootstrap
-  // has prepared the lock home. install holds the lock across the whole from-source build —
-  // minutes, on purpose: a build finishing while restore is moving the tree is the
-  // interleaving the lock exists to prevent. A caller that already holds the lock (an
-  // orchestration step running this as its own) rides it instead of refusing — guarded() is
-  // the nesting-safe shape every other mutating command uses (instance-lock.ts).
-  if (action !== "import" && !recipeActionIsReadOnly([action])) {
+  // action cannot be mutating for one and read-only for the other. The exceptions are
+  // `import` and `new`: both write only the repository's recipes/ directory, never touch
+  // the target, and taking a lock would make either the one recipe action that cannot run
+  // before bootstrap has prepared the lock home. install holds the lock across the whole
+  // from-source build — minutes, on purpose: a build finishing while restore is moving the
+  // tree is the interleaving the lock exists to prevent. A caller that already holds the
+  // lock (an orchestration step running this as its own) rides it instead of refusing —
+  // guarded() is the nesting-safe shape every other mutating command uses (instance-lock.ts).
+  if (action !== "import" && action !== "new" && !recipeActionIsReadOnly([action])) {
     return guarded(ctx, `recipe ${action} ${name}`, args, () => runRecipeAction(ctx, action, name, rest));
   }
   return runRecipeAction(ctx, action, name, rest);

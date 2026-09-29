@@ -91,6 +91,14 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* Internal refactor, no behavior change: `instance-mutation-guard.ts`'s `claim()` and
+  `instance-lock.ts`'s `takeLockClaim()` — each ~150 lines with the same marker-cleanup line
+  repeated on nearly every failure branch — are now split into small named steps (fresh vs.
+  contested guard/lock, live/dead/foreign owner, stale-claim retirement, publish-with-
+  rollback), with marker cleanup going through one shared helper instead of being copied at
+  each throw site. The claim/lock primitives moved to a new `runtime/lock/lock-claim.ts` to
+  keep `instance-lock.ts` under its line budget; `instance-lock.ts` re-exports everything it
+  used to export directly.
 * Internal refactor, no behavior change: the security audit, private-paths ledger and recipe
   privacy readers test `selectedDeployment()` instead of catching "no deployment selected",
   so an unrelated error from a path getter now propagates instead of reading as "nothing to

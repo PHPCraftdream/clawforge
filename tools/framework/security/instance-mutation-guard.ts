@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { locksDir } from "../core/env.ts";
 import type { Context } from "../core/context.ts";
+import type { ExecResult } from "../runtime/transport/transport.ts";
 import { machineName, removeEmptyDirectory } from "../runtime/lock/process-identity.ts";
 
 interface MutationOwner {
@@ -112,130 +113,157 @@ function busy(path: string, owner?: MutationOwner): Error {
   return new Error(`another instance-lock change is in progress at ${path} (${identity}); ${advice}`);
 }
 
-async function claim(ctx: Context, breakLock: boolean, breakForeignLockHost?: string): Promise<MutationOwner | undefined> {
-  const homePath = locksDir(ctx.settings.dataDir);
-  const home = await ctx.transport.exec("mkdir", ["-p", homePath], { allowFailure: true });
-  if (home.code !== 0) {
-    const homeExists = await ctx.transport.exec("test", ["-d", homePath], { allowFailure: true });
-    if (homeExists.code !== 0) return undefined;
-  }
+/** Failure exit from anywhere marker exists: drop it (best effort), then raise `error` —
+ *  the one mechanism every failure branch below routes its marker cleanup through, replacing
+ *  what used to be an identical `await ctx.transport.remove(marker).catch(() => {})` repeated
+ *  at each throw site. Never resolves — always throws — so callers can `await` it mid-branch. */
+async function abortClaim(ctx: Context, marker: string, error: unknown): Promise<never> {
+  await ctx.transport.remove(marker).catch(() => {});
+  throw error;
+}
 
-  const guard = guardPath(ctx);
-  const generation = randomBytes(12).toString("hex");
-  const candidate: MutationOwner = { generation, pid: process.pid, machine: machineName(), takenAt: new Date().toISOString() };
-  const content = `${JSON.stringify(candidate)}\n`;
-  const acquired = await ctx.transport.exec("mkdir", [guard], { allowFailure: true });
-
-  if (acquired.code === 0) {
-    const marker = claimPath(ctx, generation);
-    try {
-      if (await writeExclusive(ctx, marker, content) && await ctx.transport.exec("ln", [marker, ownerPath(ctx)], { allowFailure: true }).then((r) => r.code === 0)) {
-        await ctx.transport.remove(marker).catch(() => {});
-        return candidate;
-      }
-    } catch (error) {
-      await removeEmptyDirectory(ctx, guard);
-      throw error;
+/** The uncontested path: nobody held `guard` a moment ago, so this `mkdir` alone is the win.
+ *  Publishes the marker as owner and drops it; any failure — thrown or a failed write/link —
+ *  gives the guard directory back rather than leaving an empty one behind. */
+async function claimFreshGuard(
+  ctx: Context,
+  guard: string,
+  marker: string,
+  content: string,
+  candidate: MutationOwner,
+): Promise<MutationOwner> {
+  try {
+    const written = await writeExclusive(ctx, marker, content);
+    const linked = written && (await ctx.transport.exec("ln", [marker, ownerPath(ctx)], { allowFailure: true })).code === 0;
+    if (linked) {
+      await ctx.transport.remove(marker).catch(() => {});
+      return candidate;
     }
-    await ctx.transport.remove(marker).catch(() => {});
+  } catch (error) {
     await removeEmptyDirectory(ctx, guard);
-    throw busy(guard, await readOwner(ctx, ownerPath(ctx)));
+    throw error;
   }
+  await ctx.transport.remove(marker).catch(() => {});
+  await removeEmptyDirectory(ctx, guard);
+  throw busy(guard, await readOwner(ctx, ownerPath(ctx)));
+}
 
-  const exists = await ctx.transport.exec("test", ["-d", guard], { allowFailure: true });
-  if (exists.code !== 0) throw new Error(`could not serialize instance-lock changes at ${guard}: ${(acquired.stderr || acquired.stdout).trim()}`);
-
-  const ownerFile = ownerPath(ctx);
-  const current = await readOwner(ctx, ownerFile);
-  let confirmedForeignTakeover = false;
-  if (current !== undefined) {
-    const alive = processIsAlive(current);
-    if (alive === true) throw busy(guard, current);
-    if (alive === undefined) {
-      // processIsAlive returns undefined for two different reasons: a genuinely foreign
-      // machine, or a probe error on THIS machine that proves nothing either way (EIO, a
-      // permission the signal itself needs). Only the first is what --break-foreign-lock is
-      // for — a probe error on an owner already recorded as this machine is never treated as
-      // foreign, confirmed host or not, since there is nothing "foreign" to confirm.
-      if (current.machine === machineName() || breakForeignLockHost === undefined) throw busy(guard, current);
-      if (breakForeignLockHost !== current.machine) {
-        throw new Error(
-          `refusing to take over the instance-lock guard at ${guard}: its recorded owner is on ` +
-            `"${current.machine}", not "${breakForeignLockHost}" — pass the exact host to confirm, or leave it alone`,
-        );
-      }
-      // Confirmed: an explicit, host-matched operator override, never automatic. Recorded
-      // once the takeover actually publishes below, alongside who did it and when.
-      confirmedForeignTakeover = true;
+/** Whether an existing guard can be taken over, before any marker is written: a live owner
+ *  always refuses; a dead one is free; a foreign one needs `breakForeignLockHost` to match its
+ *  recorded machine exactly. Returns whether this is a confirmed foreign takeover, to record
+ *  once publishClaim actually succeeds. */
+function resolveGuardOwner(
+  guard: string,
+  current: MutationOwner | undefined,
+  breakLock: boolean,
+  breakForeignLockHost: string | undefined,
+): boolean {
+  if (current === undefined) {
+    if (!breakLock) throw busy(guard);
+    return false;
+  }
+  const alive = processIsAlive(current);
+  if (alive === true) throw busy(guard, current);
+  if (alive === undefined) {
+    // processIsAlive returns undefined for two different reasons: a genuinely foreign
+    // machine, or a probe error on THIS machine that proves nothing either way (EIO, a
+    // permission the signal itself needs). Only the first is what --break-foreign-lock is
+    // for — a probe error on an owner already recorded as this machine is never treated as
+    // foreign, confirmed host or not, since there is nothing "foreign" to confirm.
+    if (current.machine === machineName() || breakForeignLockHost === undefined) throw busy(guard, current);
+    if (breakForeignLockHost !== current.machine) {
+      throw new Error(
+        `refusing to take over the instance-lock guard at ${guard}: its recorded owner is on ` +
+          `"${current.machine}", not "${breakForeignLockHost}" — pass the exact host to confirm, or leave it alone`,
+      );
     }
-    // alive === false: proven dead on this machine, recoverable regardless of any flag (the
-    // guard's own short critical section, unlike the outer instance lock, has always allowed
-    // this — see instance-lock.ts's REPORTED-never-silently-taken note for why the outer one
-    // still requires --break-lock even then).
-  } else if (!breakLock) {
-    throw busy(guard);
+    // Confirmed: an explicit, host-matched operator override, never automatic. Recorded
+    // once the takeover actually publishes below, alongside who did it and when.
+    return true;
   }
+  // alive === false: proven dead on this machine, recoverable regardless of any flag (the
+  // guard's own short critical section, unlike the outer instance lock, has always allowed
+  // this — see instance-lock.ts's REPORTED-never-silently-taken note for why the outer one
+  // still requires --break-lock even then).
+  return false;
+}
 
-  const marker = claimPath(ctx, generation);
-  if (!(await writeExclusive(ctx, marker, content))) throw busy(guard, current);
-
-  let otherClaims: string[];
+/** Removes every other live claim this run can see before it can safely proceed: a live or
+ *  unverifiable competitor refuses outright, a provably dead one is dropped in place. */
+async function retireDeadCompetitors(
+  ctx: Context,
+  guard: string,
+  marker: string,
+  current: MutationOwner | undefined,
+): Promise<void> {
+  let otherClaims: string[] = [];
   try {
     otherClaims = (await claims(ctx)).filter((path) => path !== marker);
   } catch (error) {
-    await ctx.transport.remove(marker).catch(() => {});
-    throw error;
+    await abortClaim(ctx, marker, error);
   }
   for (const other of otherClaims) {
     const otherOwner = await readOwner(ctx, other);
     const alive = otherOwner === undefined ? undefined : processIsAlive(otherOwner);
-    if (alive === true || alive === undefined) {
-      await ctx.transport.remove(marker).catch(() => {});
-      throw busy(guard, otherOwner ?? current);
-    }
+    if (alive === true || alive === undefined) await abortClaim(ctx, marker, busy(guard, otherOwner ?? current));
     await ctx.transport.remove(other).catch(() => {});
   }
+}
 
-  if (current !== undefined) {
-    const latest = await readOwner(ctx, ownerFile);
-    if (latest?.generation !== current.generation) {
-      await ctx.transport.remove(marker).catch(() => {});
-      throw busy(guard, latest);
-    }
-    const parked = `${guard}/.stale-owner-${current.generation}`;
-    const moved = await ctx.transport.exec("mv", [ownerFile, parked], { allowFailure: true });
-    if (moved.code !== 0) {
-      await ctx.transport.remove(marker).catch(() => {});
-      throw busy(guard, await readOwner(ctx, ownerFile));
-    }
-  } else {
-    let staleClaims: string[];
-    try {
-      staleClaims = (await claims(ctx)).filter((path) => path !== marker);
-    } catch (error) {
-      await ctx.transport.remove(marker).catch(() => {});
-      throw error;
-    }
-    if (staleClaims.length > 0) {
-      let claimed = false;
-      for (const staleClaim of staleClaims) {
-        const staleOwner = await readOwner(ctx, staleClaim);
-        if (staleOwner !== undefined && processIsAlive(staleOwner) !== false) continue;
-        const retired = `${guard}/.retired-claim-${randomBytes(6).toString("hex")}`;
-        const moved = await ctx.transport.exec("mv", [staleClaim, retired], { allowFailure: true });
-        if (moved.code === 0) {
-          await ctx.transport.remove(retired).catch(() => {});
-          claimed = true;
-          break;
-        }
-      }
-      if (!claimed) {
-        await ctx.transport.remove(marker).catch(() => {});
-        throw busy(guard);
-      }
+/** Parks the guard's current owner.json aside so publishClaim can replace it — refuses if the
+ *  owner moved since it was read (another run got there first) or if parking itself fails. */
+async function parkCurrentOwner(
+  ctx: Context,
+  guard: string,
+  marker: string,
+  current: MutationOwner,
+  ownerFile: string,
+): Promise<void> {
+  const latest = await readOwner(ctx, ownerFile);
+  if (latest?.generation !== current.generation) await abortClaim(ctx, marker, busy(guard, latest));
+  const parked = `${guard}/.stale-owner-${current.generation}`;
+  const moved = await ctx.transport.exec("mv", [ownerFile, parked], { allowFailure: true });
+  if (moved.code !== 0) await abortClaim(ctx, marker, busy(guard, await readOwner(ctx, ownerFile)));
+}
+
+/** No current owner, but other claim markers were left behind — an ownerless guard is only
+ *  free once every one of them is proven dead; one retired claim is enough to proceed. */
+async function retireStaleUnclaimedMarkers(ctx: Context, guard: string, marker: string): Promise<void> {
+  let staleClaims: string[] = [];
+  try {
+    staleClaims = (await claims(ctx)).filter((path) => path !== marker);
+  } catch (error) {
+    await abortClaim(ctx, marker, error);
+  }
+  if (staleClaims.length === 0) return;
+  let claimed = false;
+  for (const staleClaim of staleClaims) {
+    const staleOwner = await readOwner(ctx, staleClaim);
+    if (staleOwner !== undefined && processIsAlive(staleOwner) !== false) continue;
+    const retired = `${guard}/.retired-claim-${randomBytes(6).toString("hex")}`;
+    const moved = await ctx.transport.exec("mv", [staleClaim, retired], { allowFailure: true });
+    if (moved.code === 0) {
+      await ctx.transport.remove(retired).catch(() => {});
+      claimed = true;
+      break;
     }
   }
+  if (!claimed) await abortClaim(ctx, marker, busy(guard));
+}
 
+/** Publishes the marker as owner.json via `ln`, rolling the parked stale owner back if that
+ *  fails — the only branch where marker cleanup stays conditional on the ln itself, since a
+ *  failed publish must leave *something* readable as owner when the rollback also fails. */
+async function publishClaim(
+  ctx: Context,
+  guard: string,
+  marker: string,
+  ownerFile: string,
+  current: MutationOwner | undefined,
+  confirmedForeignTakeover: boolean,
+  breakForeignLockHost: string | undefined,
+  candidate: MutationOwner,
+): Promise<MutationOwner> {
   const published = await ctx.transport.exec("ln", [marker, ownerFile], { allowFailure: true });
   if (published.code !== 0) {
     if (current !== undefined) {
@@ -252,6 +280,59 @@ async function claim(ctx: Context, breakLock: boolean, breakForeignLockHost?: st
     await recordForeignTakeover(ctx, breakForeignLockHost, current);
   }
   return candidate;
+}
+
+/** The contested path: `guard` already exists, so winning it means proving its current owner
+ *  is takeable, staking a claim marker, clearing every other claim, and publishing over
+ *  whatever was there — each step its own function above, in the order a claim actually has
+ *  to happen in. */
+async function claimExistingGuard(
+  ctx: Context,
+  guard: string,
+  acquired: ExecResult,
+  generation: string,
+  content: string,
+  candidate: MutationOwner,
+  breakLock: boolean,
+  breakForeignLockHost: string | undefined,
+): Promise<MutationOwner> {
+  const exists = await ctx.transport.exec("test", ["-d", guard], { allowFailure: true });
+  if (exists.code !== 0) throw new Error(`could not serialize instance-lock changes at ${guard}: ${(acquired.stderr || acquired.stdout).trim()}`);
+
+  const ownerFile = ownerPath(ctx);
+  const current = await readOwner(ctx, ownerFile);
+  const confirmedForeignTakeover = resolveGuardOwner(guard, current, breakLock, breakForeignLockHost);
+
+  const marker = claimPath(ctx, generation);
+  if (!(await writeExclusive(ctx, marker, content))) throw busy(guard, current);
+
+  await retireDeadCompetitors(ctx, guard, marker, current);
+  if (current !== undefined) {
+    await parkCurrentOwner(ctx, guard, marker, current, ownerFile);
+  } else {
+    await retireStaleUnclaimedMarkers(ctx, guard, marker);
+  }
+
+  return publishClaim(ctx, guard, marker, ownerFile, current, confirmedForeignTakeover, breakForeignLockHost, candidate);
+}
+
+async function claim(ctx: Context, breakLock: boolean, breakForeignLockHost?: string): Promise<MutationOwner | undefined> {
+  const homePath = locksDir(ctx.settings.dataDir);
+  const home = await ctx.transport.exec("mkdir", ["-p", homePath], { allowFailure: true });
+  if (home.code !== 0) {
+    const homeExists = await ctx.transport.exec("test", ["-d", homePath], { allowFailure: true });
+    if (homeExists.code !== 0) return undefined;
+  }
+
+  const guard = guardPath(ctx);
+  const generation = randomBytes(12).toString("hex");
+  const candidate: MutationOwner = { generation, pid: process.pid, machine: machineName(), takenAt: new Date().toISOString() };
+  const content = `${JSON.stringify(candidate)}\n`;
+  const acquired = await ctx.transport.exec("mkdir", [guard], { allowFailure: true });
+
+  if (acquired.code === 0) return claimFreshGuard(ctx, guard, claimPath(ctx, generation), content, candidate);
+
+  return claimExistingGuard(ctx, guard, acquired, generation, content, candidate, breakLock, breakForeignLockHost);
 }
 
 async function release(ctx: Context, owner: MutationOwner): Promise<void> {

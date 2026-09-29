@@ -43,6 +43,9 @@ npm install                    # json5, plus the dev tooling the checks use
 ./clawforge smoke              # acceptance run
 ```
 
+On a fresh host `/srv` is usually root-owned: `bootstrap --check` reports `FAIL` and prints the
+exact `sudo install -d …` line each missing directory needs — run it once, then `bootstrap`.
+
 The first step is needed once per machine: a deployment is not kept in the repository — it
 is the configuration of one host, with its paths and its keys. `apps/` is entirely in
 `.gitignore`.
@@ -50,7 +53,9 @@ is the configuration of one host, with its paths and its keys. `apps/` is entire
 Works both from WSL and from Windows (Git Bash, PowerShell): Windows Node reaches the
 target through `wsl.exe`, so there is no need to install Node inside WSL.
 
-Web interface: `http://127.0.0.1:18789`, token in `.env` (`OPENCLAW_GATEWAY_TOKEN`).
+Web interface: `http://127.0.0.1:<OPENCLAW_GATEWAY_PORT>` — `new-app` picks the port (20000–32767)
+and writes it to `.env`; `./clawforge status` or `./clawforge mcp-creds` print the actual URL.
+Token in `.env` (`OPENCLAW_GATEWAY_TOKEN`).
 Running `./clawforge bootstrap` again is safe: it refreshes the image and restarts, and never
 touches data already on disk. The first time it pulls a shared tag, it pins `OPENCLAW_IMAGE` in
 `.env` to `repo:tag@sha256:…` — the exact digest that pull just proved, alongside the tag it

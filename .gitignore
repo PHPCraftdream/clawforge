@@ -4,8 +4,10 @@
 
 # Deployments. An application is host-specific configuration — data directory, port,
 # keys, snapshots, recipes — so it stays out of the repository entirely. Create one with
-# ./clawforge new-app <name>; the framework supplies all the logic.
-apps/
+# ./clawforge new-app <name>; the framework supplies all the logic. Anchored to the repo
+# root (leading /) — unanchored, this also matched tools/checks/integration/apps/, silently
+# hiding any new file added there from `git add`.
+/apps/
 
 # Generated MCP client config (contains host paths).
 .mcp.json

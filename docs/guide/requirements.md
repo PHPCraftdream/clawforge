@@ -57,6 +57,31 @@ only a `local` target is Linux-only.
 * **macOS host, `local`** (explicit or via `auto`) — refused: macOS is not a supported local
   target, unlike Linux.
 
+## Windows ACL and the WSL boundary
+
+`new-app`/`init` write `.env` (and any other credential file) with a Windows ACL narrowed to
+the owner, SYSTEM and Administrators — proven by reading the DACL back, not merely set and
+trusted. On a Windows host with WSL installed, that ACL is only half the story: every drive is
+automounted into every installed distribution as DrvFs, and DrvFs does not map a Windows ACL
+onto Linux users at all — inside a distribution the file opens for whichever Linux user asks,
+regardless of which Windows account owns it. Where the deployment sits is the operator's
+decision, not a defect in file creation, so this is reported rather than silently assumed away:
+`new-app`/`init` name the file and point back here, after their own "next:" steps; every other
+command that (re)writes a credential (`bootstrap` included) prints the full finding on the spot.
+
+Two ways to close the gap, either one sufficient:
+
+* move the deployment into a distribution's own filesystem (and run the framework from there,
+  not from `/mnt/<drive>`) — the file then lives on ext4, where POSIX permissions apply and no
+  automount is involved;
+* give the drive restrictive permissions for that one distribution, in its own
+  `/etc/wsl.conf` (an `[automount]` `options` line, e.g. `metadata,umask=077`) — narrows what
+  DrvFs exposes without moving anything.
+
+Every installed distribution is probed; one that could not be reached, or a distribution
+listing that failed outright, is reported by name too — an unanswered probe is never read as
+"not exposed".
+
 ## Target userland
 
 The GNU/Linux-specific commands above assume a *GNU* userland specifically — being Linux is

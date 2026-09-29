@@ -17,7 +17,7 @@ import { log, info, die } from "../../core/io/log.ts";
 import { safeName } from "../../core/names.ts";
 import { parseEnv } from "../../core/env.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
-import { createPrivateFile } from "../../security/privacy/private-file.ts";
+import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
 import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";
 
 const DECLARATION = `// This deployment.
@@ -259,15 +259,20 @@ export async function initApp(root: string): Promise<void> {
   await writeFile(appFile, DECLARATION, "utf8");
   await writeFile(resolve(root, "config", "desired-state.json"), DESIRED_STATE, "utf8");
   const env = await deploymentEnv(root, base);
-  await createPrivateFile(resolve(root, ".env"), env);
+  // boundary: false — the WSL-boundary note (if any) is printed after "next:" below, not
+  // before it; see wslBoundaryNote's own call at the end of this function.
+  await createPrivateFile(envFile, env, { boundary: false });
   await updateInitGitignore(root);
   await writeShim(root);
   await setupProjectMcp(root, "installed");
 
   log(`initialised ${root} as an OpenClaw deployment`);
   info("next:");
-  for (const line of nextStepsLines(resolve(root, ".env"), parseEnv(env).OC_DATA_DIR ?? "", "./clawforge bootstrap")) info(line);
+  for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", "./clawforge bootstrap")) info(line);
   info("Claude Code and Codex project MCP settings are ready; trust the project and reconnect the clients.");
   info("secrets and snapshots stay inside this directory; ./clawforge is the only framework-adjacent");
   info("file meant to be committed — commit it, .gitignore already excludes the rest");
+
+  const boundaryNote = await wslBoundaryNote(envFile);
+  if (boundaryNote !== undefined) info(boundaryNote);
 }

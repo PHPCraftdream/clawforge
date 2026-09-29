@@ -294,6 +294,9 @@ export function resetWslBoundaryDedupe(): void {
   reportedBoundaryDirs.clear();
 }
 
+/** What the boundary probe below found, before either caller turns it into text. */
+type WslBoundaryFindings = { exposed: { distro: string; targetPath: string }[]; unverified: string[] };
+
 /** The Windows half is only half the protection when WSL is installed: every drive is
  *  automounted into every distribution, and across that boundary a Windows ACL carries no
  *  weight between Linux users. Where the deployment sits is the operator's decision, not a
@@ -303,14 +306,15 @@ export function resetWslBoundaryDedupe(): void {
  *  out loud instead of silently claimed as owner-only. At most once per process per directory
  *  (see reportedBoundaryDirs above), and never for a temporary file (protectPrivateFile's
  *  `boundary: false` skips the call before it reaches here) — a value nobody will ever read
- *  under that name is not a boundary worth reporting. */
-async function reportWslBoundary(file: string): Promise<void> {
+ *  under that name is not a boundary worth reporting. `undefined` means nothing to say at all
+ *  (no WSL, or this directory was already probed this process). */
+async function findWslBoundary(file: string): Promise<WslBoundaryFindings | undefined> {
   const directory = dirname(resolve(file));
-  if (reportedBoundaryDirs.has(directory)) return;
+  if (reportedBoundaryDirs.has(directory)) return undefined;
   reportedBoundaryDirs.add(directory);
 
   const listing = await installedWslDistros();
-  if (listing.state === "absent") return;
+  if (listing.state === "absent") return undefined;
   const unverified: string[] = [];
   const exposed: { distro: string; targetPath: string }[] = [];
   if (listing.state === "unlisted") {
@@ -330,6 +334,14 @@ async function reportWslBoundary(file: string): Promise<void> {
     }
     unverified.push(`"${distro}" at ${targetPath}: ${verdict}`);
   }
+  return { exposed, unverified };
+}
+
+/** The full, two-part warning every protectPrivateFile caller gets by default. */
+async function reportWslBoundary(file: string): Promise<void> {
+  const findings = await findWslBoundary(file);
+  if (findings === undefined) return;
+  const { exposed, unverified } = findings;
   // One line naming every exposed distribution, not one line each, to avoid flooding the
   // output before anything else printed. Running from Windows stays the supported setup
   // either way — this is a hardening option, not a verdict that the setup is wrong.
@@ -351,6 +363,22 @@ async function reportWslBoundary(file: string): Promise<void> {
         "a file this opens is readable by every Linux user of this machine",
     );
   }
+}
+
+/** The condensed form: one line plus a pointer to the full explanation, instead of the two
+ *  warning/info pairs above. For new-app/init, which suppress reportWslBoundary at file-creation
+ *  time (`boundary: false`) and call this themselves once their own "next:" block is already on
+ *  screen — the finding is real, but it should not be the first thing an operator sees. */
+export async function wslBoundaryNote(file: string): Promise<string | undefined> {
+  const findings = await findWslBoundary(file);
+  if (findings === undefined) return undefined;
+  if (findings.exposed.length > 0) {
+    return `${file} is reachable by another Linux user under WSL — a Windows ACL does not stop that; see docs/guide/requirements.md#windows-acl-and-the-wsl-boundary`;
+  }
+  if (findings.unverified.length > 0) {
+    return `${file}'s exposure across the WSL boundary could not be fully verified; see docs/guide/requirements.md#windows-acl-and-the-wsl-boundary`;
+  }
+  return undefined;
 }
 
 /** Ensures a credential-bearing file is owner-only, and can prove it: POSIX modes where they
@@ -459,9 +487,11 @@ export async function unprotectedPrivateFile(file: string): Promise<string | und
 /** Creates a private file without exposing its first byte under the process umask.
  *  `temp: true` (replacePrivateFile's own call for its temporary file) skips the WSL
  *  boundary report on both of protectPrivateFile's calls below — never for a name nothing
- *  will read a credential under. */
-async function createPrivateFileContent(file: string, content: string | Uint8Array, options: { temp?: boolean } = {}): Promise<void> {
-  const boundary = options.temp !== true;
+ *  will read a credential under. `boundary: false` skips it too, explicitly — for a caller
+ *  (scaffold.ts's new-app, init.ts's init) that wants to print its own condensed note
+ *  (wslBoundaryNote) later instead of the report firing here, mid-creation. */
+async function createPrivateFileContent(file: string, content: string | Uint8Array, options: { temp?: boolean; boundary?: boolean } = {}): Promise<void> {
+  const boundary = options.boundary ?? options.temp !== true;
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   let created = false;
   try {
@@ -489,7 +519,7 @@ async function createPrivateFileContent(file: string, content: string | Uint8Arr
   }
 }
 
-export function createPrivateFile(file: string, content: string, options?: { temp?: boolean }): Promise<void> {
+export function createPrivateFile(file: string, content: string, options?: { temp?: boolean; boundary?: boolean }): Promise<void> {
   return createPrivateFileContent(file, content, options);
 }
 

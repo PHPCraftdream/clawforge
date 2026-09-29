@@ -277,6 +277,15 @@ All notable changes to `@clawforge/framework` will be documented here.
   from 38 KB to 32 KB (just above the ~31 KB now reached) and gained checks that every
   structured tool still declares the documented generic envelope and that its field meanings
   are still reachable through `help`.
+* README's Quick start named a fixed `http://127.0.0.1:18789` web interface; `new-app` writes
+  `OPENCLAW_GATEWAY_PORT` from 20000-32767, so following it opened the wrong address on
+  anything but the default. It now points at `./clawforge status`/`mcp-creds` for the real
+  port, and gains a note that `bootstrap --check` names the exact `sudo install -d` line on a
+  fresh, root-owned `/srv`.
+* `new-app`/`init` printed the Windows-ACL/WSL-boundary warning — two ~700-character lines —
+  before their own "created … next:" block, burying the useful part under it. It now prints
+  after, as one line pointing at a new subsection in docs/guide/requirements.md with the full
+  explanation; every other caller (`bootstrap` included) is unchanged.
 
 ## 0.1.0
 

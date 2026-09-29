@@ -20,7 +20,7 @@ import { log, info, die } from "../../core/io/log.ts";
 import { monorepoRoot, parseEnv } from "../../core/env.ts";
 import { safeName } from "../../core/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
-import { createPrivateFile } from "../../security/privacy/private-file.ts";
+import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
 import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";
 
 export const appsDir = resolve(monorepoRoot, "apps");
@@ -112,13 +112,16 @@ export async function createApp(name: string): Promise<void> {
   await writeFile(resolve(directory, "app.ts"), declarationFor(name), "utf8");
   await writeFile(resolve(directory, "config", "desired-state.json"), DESIRED_STATE, "utf8");
   const env = await deploymentEnv(name);
-  await createPrivateFile(resolve(directory, ".env"), env);
+  const envFile = resolve(directory, ".env");
+  // boundary: false — the WSL-boundary note (if any) is printed after "next:" below, not
+  // before it; see wslBoundaryNote's own call at the end of this function.
+  await createPrivateFile(envFile, env, { boundary: false });
   await writeGitignore(directory);
   await setupProjectMcp(directory, "monorepo");
 
   log(`created ${directory}`);
   info("next:");
-  for (const line of nextStepsLines(resolve(directory, ".env"), parseEnv(env).OC_DATA_DIR ?? "", `./clawforge --app ${name} bootstrap`)) info(line);
+  for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", `./clawforge --app ${name} bootstrap`)) info(line);
   info(
     `if ${name} is the only deployment under apps/, later commands pick it automatically; ` +
       `alongside others, select it with --app ${name} or export OC_APP=${name}`,
@@ -126,4 +129,7 @@ export async function createApp(name: string): Promise<void> {
   info("open the deployment directory in Claude Code or Codex; project MCP settings are already prepared");
   info("secrets and snapshots stay inside this directory, so deployments never share them");
   info(gitInitAdvice(name));
+
+  const boundaryNote = await wslBoundaryNote(envFile);
+  if (boundaryNote !== undefined) info(boundaryNote);
 }

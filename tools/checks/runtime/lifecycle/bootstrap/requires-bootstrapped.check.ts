@@ -1,6 +1,6 @@
 // requireBootstrapped() (runtime/runtime.ts) and every mutating command that now calls it
 // BEFORE takeLock()/any target write: backup, incident, configure-provider, smoke,
-// apply-config (incl. --dry-run), up, restart, down, logs, upgrade, secrets --apply,
+// apply-config (incl. --dry-run), up, restart, down, destroy, logs, upgrade, secrets --apply,
 // provision-agent, expose tailscale --apply, watch install --apply, backup install --apply —
 // plus mcp-creds, read-only but guarded for a stricter reason: its whole job is printing a
 // live gateway token, and it must fail on "never bootstrapped" before that token line, not
@@ -18,7 +18,7 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { requireBootstrapped, NotBootstrapped } from "#framework/runtime/runtime.ts";
 import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
-import { up, restart, down, logs, upgrade } from "#framework/commands/lifecycle/lifecycle.ts";
+import { up, restart, down, destroy, logs, upgrade } from "#framework/commands/lifecycle/lifecycle.ts";
 import { smoke } from "#framework/commands/lifecycle/smoke/index.ts";
 import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
 import { provisionAgent } from "#framework/commands/management/provision-agent/index.ts";
@@ -132,6 +132,9 @@ for (const kase of [
   { name: "up", run: (ctx: Context) => up(ctx, []) },
   { name: "restart", run: (ctx: Context) => restart(ctx, []) },
   { name: "down", run: (ctx: Context) => down(ctx, []) },
+  // No --data/--backups/--snapshots: destroy's own path-shape/symlink/confirm-name guards
+  // never run (nothing to check), so this hits the bootstrap guard the same as down does.
+  { name: "destroy", run: (ctx: Context) => destroy(ctx, []) },
   { name: "logs", run: (ctx: Context) => logs(ctx, []) },
   { name: "upgrade", run: (ctx: Context) => upgrade(ctx, []) },
   { name: "secrets --apply", run: (ctx: Context) => secrets(ctx, ["--apply"]) },

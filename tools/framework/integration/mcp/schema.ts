@@ -193,9 +193,17 @@ function shortenDescription(description: string): string {
   return (lastSpace > SHORT_DESCRIPTION_LIMIT * 0.4 ? cut.slice(0, lastSpace) : cut).trim();
 }
 
+/** Arguments repeated on many tools: one terse schema line each (`help` keeps the full text). */
+const SHARED_SCHEMA_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  "break-lock": "Take over a held instance lock",
+  "break-foreign-lock": "Take over an orphaned lock owned by this host id",
+};
+
 /** The argument description in the MCP schema; `--help` and `help` keep it whole. */
 export function schemaArgumentDescription(argument: CommandArgument): string | undefined {
   if (isTrivialDescription(argument.name, argument.description)) return undefined;
+  const shared = SHARED_SCHEMA_DESCRIPTIONS[argument.name];
+  if (shared !== undefined) return shared;
   const short = shortenDescription(argument.description);
   // Which action(s) of a multi-action command this argument belongs to (backup's own
   // --keep) — same wording help-render.ts prints, so an agent reading tools/list and one
@@ -229,8 +237,8 @@ export function inputSchema(command: Declared): Record<string, unknown> {
     properties.confirm = {
       type: "boolean",
       description: command.readOnlyWhen === undefined
-        ? "Must be true: this command replaces or destroys state"
-        : "Must be true when the selected action replaces or destroys state",
+        ? "Must be true: destroys state"
+        : "Must be true for a destructive action",
     };
     if (command.readOnlyWhen === undefined && command.requiresConfirmationWhen === undefined) required.push("confirm");
   }

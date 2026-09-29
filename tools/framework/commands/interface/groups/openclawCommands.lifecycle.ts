@@ -3,7 +3,7 @@
 
 import type { AppCommand } from "#src/core/app.ts";
 
-import { up, down, logs, restart, upgrade, UPGRADE_ARGUMENTS, LOCK_ARGUMENTS, LOGS_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
+import { up, down, destroy, logs, restart, upgrade, UPGRADE_ARGUMENTS, LOCK_ARGUMENTS, LOGS_ARGUMENTS, DESTROY_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
 import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap/index.ts";
 import { backup, BACKUP_ALL_ARGUMENTS, backupActionIsReadOnly } from "#src/commands/lifecycle/backup/index.ts";
 import { restore, RESTORE_ARGUMENTS, isRestoreDryRun } from "#src/commands/lifecycle/restore/index.ts";
@@ -68,6 +68,34 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     run: down,
     details: "Data lives in host bind mounts, not in runtime-managed volumes, so this never touches it.",
     arguments: LOCK_ARGUMENTS,
+  },
+  destroy: {
+    summary: "Remove what bootstrap created",
+    group: "start-stop",
+    run: destroy,
+    destructive: true,
+    readOnlyWhen: (args) => !args.includes("--yes"),
+    changedWhen: (args) => args.includes("--yes"),
+    details:
+      "The inverse of bootstrap. Always stops and removes the compose project's containers, " +
+      "network and volumes (down, plus volumes) — nothing else goes without its own flag:\n" +
+      "--data removes the data directory (OC_DATA_DIR), --backups the backup directory " +
+      "(OC_BACKUP_DIR), --snapshots the snapshot directory (OC_SNAPSHOT_DIR).\n" +
+      "Never touches the deployment directory itself (.env, config/, recipes/, secrets/) — " +
+      "remove that with ./clawforge remove-app once this instance is gone.\n" +
+      "Default is a dry run: prints exactly what would be removed (container/network/volume " +
+      "names, and each requested directory's path and size via du -sk) and exits 0 — nothing " +
+      "is touched, no lock is taken.\n" +
+      "A real run needs BOTH --yes and --confirm-name <name> matching this deployment's own " +
+      "name, so a typo cannot remove the wrong instance; it then takes the instance lock " +
+      "like every other mutating command (--break-lock/--break-foreign-lock).\n" +
+      "Each requested path is refused outright rather than removed when it is not an " +
+      "absolute path, is a top-level or home-directory-shaped path, or is itself a symlink — " +
+      "these are the deployment's own declared directories, never a path typed on the " +
+      "command line, so this is a sanity check on the deployment's .env, not on user input.\n" +
+      "Removal escalates through sudo on the target the same way bootstrap's own " +
+      "ensureDataDirs does, never through this machine's own privileges.",
+    arguments: DESTROY_ARGUMENTS,
   },
   logs: {
     summary: "Follow the service log, or read a bounded tail of it",

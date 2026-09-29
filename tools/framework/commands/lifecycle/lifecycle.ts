@@ -10,7 +10,8 @@ import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "../management/secrets.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
-import { envFile } from "#src/runtime/deployment.ts";
+import { envFile, deploymentName, composeProjectName } from "#src/runtime/deployment.ts";
+import { OWNER, sudoFor, runMaybePrivileged, needsOwnerEscalation } from "#src/runtime/datadir.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "./backup/index.ts";
@@ -174,6 +175,138 @@ export async function down(ctx: Context, args: string[]): Promise<void> {
     await ctx.runtime.stop();
     log(`stopped; data kept in ${ctx.settings.dataDir}`);
   });
+}
+
+/** Drives both destroy's own parser and its openclawCommands declaration. --data/--backups/
+ *  --snapshots name one of the three directories this deployment declares — never a
+ *  free-form path — so "only remove what the deployment itself declared" is structural,
+ *  not a check against user input. */
+export const DESTROY_ARGUMENTS: CommandArgument[] = [
+  { name: "data", description: "Remove the data directory (OC_DATA_DIR)", kind: "flag" },
+  { name: "backups", description: "Remove the backup directory (OC_BACKUP_DIR)", kind: "flag" },
+  { name: "snapshots", description: "Remove the snapshot directory (OC_SNAPSHOT_DIR)", kind: "flag" },
+  { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag" },
+  { name: "confirm-name", description: "Confirms the deployment's own name", kind: "option", valueName: "name" },
+  BREAK_LOCK_ARGUMENT,
+  BREAK_FOREIGN_LOCK_ARGUMENT,
+];
+
+interface DestroyTarget {
+  readonly flag: "data" | "backups" | "snapshots";
+  readonly envName: string;
+  readonly path: string;
+}
+
+/** Fixed order (data, backups, snapshots) regardless of flag order on the command line —
+ *  what a check can assert against and what the plan prints in. */
+function destroyTargets(ctx: Context, parsed: Record<string, unknown>): DestroyTarget[] {
+  const targets: DestroyTarget[] = [];
+  if (parsed.data === true) targets.push({ flag: "data", envName: "OC_DATA_DIR", path: ctx.settings.dataDir });
+  if (parsed.backups === true) targets.push({ flag: "backups", envName: "OC_BACKUP_DIR", path: ctx.settings.backupDir });
+  if (parsed.snapshots === true) targets.push({ flag: "snapshots", envName: "OC_SNAPSHOT_DIR", path: ctx.settings.snapshotDir });
+  return targets;
+}
+
+// A depth-2-or-more path can still BE a home directory (/home/alice), which core/env.ts's
+// own OC_DATA_DIR floor lets through on purpose (see assertSafeDataDir) — destroy is more
+// destructive than a chown, so it refuses this shape explicitly instead of relying on depth
+// alone.
+const HOME_SHAPED = /^(\/home\/[^/]+|\/root|\/Users\/[^/]+|[A-Za-z]:[\\/]Users[\\/][^\\/]+)\/?$/i;
+
+/** String-level safety for a path about to be `rm -rf`'d: the same depth floor
+ *  core/env.ts's assertSafeDataDir applies to OC_DATA_DIR alone, extended here to
+ *  OC_BACKUP_DIR/OC_SNAPSHOT_DIR (toSettings never validates either) and to the
+ *  home-directory shape a depth floor alone does not catch. */
+function assertSafeRemovalShape(target: DestroyTarget): void {
+  const { path, envName } = target;
+  const isPosixRoot = path.startsWith("/");
+  const isWindowsRoot = /^[A-Za-z]:[\\/]/.test(path);
+  if (!isPosixRoot && !isWindowsRoot) die(`${envName} "${path}" is not an absolute path — refusing to remove it`);
+  const segments = path.split(/[\\/]+/).slice(1).filter((segment) => segment !== "");
+  if (segments.length < 2) die(`${envName} "${path}" is a top-level directory — refusing to remove it`);
+  if (HOME_SHAPED.test(path)) die(`${envName} "${path}" looks like a home directory — refusing to remove it`);
+}
+
+/** Refuses a target that is itself a symlink: `rm -rf` on it removes the link (harmless),
+ *  but the ownership escalation destroyLocked runs first would act through whatever it
+ *  actually points at — reachable in dry run too, since the plan should not promise to
+ *  remove a path it will then refuse for real. */
+async function assertNotSymlink(ctx: Context, target: DestroyTarget): Promise<void> {
+  const link = await ctx.transport.exec("test", ["-L", target.path], { allowFailure: true });
+  if (link.code !== 0) return;
+  const resolved = await ctx.transport.exec("readlink", ["-f", target.path], { allowFailure: true });
+  die(
+    `${target.envName} "${target.path}" is a symlink${resolved.code === 0 && resolved.stdout.trim() !== "" ? ` to ${resolved.stdout.trim()}` : ""} — ` +
+      "refusing to remove it; point it at the real directory instead",
+  );
+}
+
+async function sizeReport(ctx: Context, path: string): Promise<string> {
+  if (!(await ctx.transport.exists(path))) return "absent";
+  const prefix = await sudoFor(ctx, path);
+  const [head, ...rest] = [...prefix, "du", "-sk", path];
+  const result = await ctx.transport.exec(head, rest, { allowFailure: true });
+  const kb = Number(result.stdout.trim().split(/\s+/)[0]);
+  return result.code === 0 && Number.isFinite(kb) ? `${kb} KiB` : "unknown size";
+}
+
+async function printDestroyPlan(ctx: Context, targets: DestroyTarget[]): Promise<void> {
+  log(`containers, network and volumes of ${composeProjectName()} — would stop and remove:`);
+  await ctx.runtime.showStatus();
+  for (const target of targets) {
+    info(`would remove ${target.path} (${target.envName}, ${await sizeReport(ctx, target.path)})`);
+  }
+  if (targets.length === 0) {
+    info("no --data/--backups/--snapshots given — only the containers/network/volumes above would go");
+  }
+  info("dry run — nothing removed. Pass --yes and --confirm-name <deployment name> for a real run");
+}
+
+/** containers/network/volumes first, always; the declared directories after, in
+ *  destroyTargets' fixed order. */
+async function destroyLocked(ctx: Context, targets: DestroyTarget[]): Promise<void> {
+  log(`stopping and removing containers, network and volumes of ${composeProjectName()}`);
+  await ctx.runtime.stop(["-v"]);
+  const escalate = await needsOwnerEscalation(ctx, OWNER);
+  for (const target of targets) {
+    log(`removing ${target.path}`);
+    await runMaybePrivileged(ctx, target.path, "rm", ["-rf", "--", target.path], { force: escalate });
+  }
+}
+
+/** Removes what `bootstrap` created. Default is a dry run: prints the plan and exits 0,
+ *  nothing touched. A real run needs `--yes` AND `--confirm-name <deployment name>` — two
+ *  independent typo-proofs, since this is the one command that can take an instance's data
+ *  with it. Never touches the deployment directory itself (.env, config/, recipes/,
+ *  secrets/) — that is `remove-app`'s job, one layer up, repository-side.
+ *
+ *  No operation record: Journal writes into `${dataDir}/clawforge-operations`, which
+ *  `--data` is about to remove along with everything else in the tree — recording a
+ *  destruction inside the thing being destroyed answers nothing a later reader could use. */
+export async function destroy(ctx: Context, args: string[]): Promise<void> {
+  const parsed = parseDeclaredArgs(DESTROY_ARGUMENTS, args);
+  const targets = destroyTargets(ctx, parsed);
+  for (const target of targets) assertSafeRemovalShape(target);
+
+  await requireBootstrapped(ctx);
+
+  if (parsed.yes !== true) {
+    for (const target of targets) await assertNotSymlink(ctx, target);
+    await printDestroyPlan(ctx, targets);
+    return;
+  }
+
+  const confirmName = parsed["confirm-name"] as string | undefined;
+  if (confirmName !== deploymentName()) {
+    die(
+      confirmName === undefined
+        ? "--yes needs --confirm-name <deployment name> too — this refuses a typo removing the wrong instance"
+        : `--confirm-name "${confirmName}" does not match this deployment's name "${deploymentName()}"`,
+    );
+  }
+  for (const target of targets) await assertNotSymlink(ctx, target);
+
+  await guarded(ctx, "destroy", args, () => destroyLocked(ctx, targets));
 }
 
 /** One capability, two shapes. On a terminal this follows the log until interrupted, which

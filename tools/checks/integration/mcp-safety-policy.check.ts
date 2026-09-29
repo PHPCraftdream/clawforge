@@ -50,6 +50,13 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     check(`${name} leaves force absent without confirmation`, toArgv(command, {}).includes("--force"), false);
   }
 
+  const destroyCmd = openclawCommands.destroy!;
+  check("destroy is destructive", destroyCmd.destructive, true);
+  check("its dry run (no --yes) is read-only", destroyCmd.readOnlyWhen?.([]), true);
+  check("a real run (--yes) is not read-only", destroyCmd.readOnlyWhen?.(["--yes"]), false);
+  check("confirm stays conditional in the schema (readOnlyWhen decides, not a bare required)", (inputSchema(destroyCmd).required as string[]).includes("confirm"), false);
+  check("destroy keeps --yes and --confirm-name apart from --force", [destroyCmd.arguments?.some((a) => a.name === "force"), destroyCmd.arguments?.some((a) => a.name === "yes"), destroyCmd.arguments?.some((a) => a.name === "confirm-name")], [false, true, true]);
+
   const set = setsCommands.set!;
   check("set build is mutable but needs no confirmation", [set.readOnlyWhen?.(["build"]), set.requiresConfirmationWhen?.(["build"])], [false, false]);
   check("set build reports its artifact write", toolEnvelope(set, "built", undefined, "set-build", ["build"]).changed, true);
@@ -75,6 +82,7 @@ function runServer(script: string, input: string): Promise<{ code: number | null
       secrets: { ...managementCommands.secrets, run: spy },
       restore: { ...lifecycleCommands.restore, run: spy },
       push: { ...lifecycleCommands.push, run: spy },
+      destroy: { ...lifecycleCommands.destroy, run: spy },
       set: { ...setsCommands.set, run: spy },
     }});
   `;
@@ -86,6 +94,9 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     { id: 5, name: "restore", arguments: { confirm: true } },
     { id: 6, name: "push", arguments: { confirm: true } },
     { id: 7, name: "set", arguments: { action: "build" } },
+    { id: 8, name: "destroy", arguments: {} },
+    { id: 9, name: "destroy", arguments: { yes: true } },
+    { id: 10, name: "destroy", arguments: { yes: true, "confirm-name": "policy", confirm: true } },
   ].map(({ id, name, arguments: args }) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }));
   try {
     const run = await runServer(script, requests.map((request) => JSON.stringify(request)).join("\n"));
@@ -101,6 +112,9 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     check("confirmed restore reaches the command with force", replies.get(5)?.content?.[0]?.text?.includes("--force"), true);
     check("confirmed push reaches the command with force", replies.get(6)?.content?.[0]?.text?.includes("--force"), true);
     check("set build runs without confirmation and reports changed", [replies.get(7)?.isError, replies.get(7)?.structuredContent?.changed], [undefined, true]);
+    check("destroy's dry run needs no confirmation", replies.get(8)?.isError, undefined);
+    check("destroy --yes with no confirm is rejected", replies.get(9)?.isError, true);
+    check("destroy --yes with confirm:true reaches the command", replies.get(10)?.content?.[0]?.text?.includes("--yes") && replies.get(10)?.content?.[0]?.text?.includes("--confirm-name policy"), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -87,6 +87,7 @@ left alone by `bootstrap`, and `./clawforge upgrade` is the way to move it from 
 | See every deployment in this checkout | `./clawforge list` | monorepo checkouts only; one line each, naming why a deployment can't be read when it can't |
 | Read the service log | `./clawforge logs` | `--tail <n>`, `--since <duration\|timestamp>`, `--grep <pattern>` |
 | Get shell tab-completion | `source <(./clawforge completion bash)` | also `zsh`/`pwsh`; generated from the live commands, so it never drifts from `--help` — see [docs/guide/commands.md](docs/guide/commands.md#shell-completion) |
+| Undo a deployment | `./clawforge destroy` then `./clawforge remove-app <name>` | dry run by default; `destroy` removes the instance (containers always, data/backups/snapshots each behind its own flag), `remove-app` deletes `apps/<name>/` itself — see [Removing a deployment](docs/guide/operations.md#removing-a-deployment) |
 
 ## Commands
 
@@ -105,6 +106,7 @@ Start & stop:
   up                   Start the service and wait until it serves
   restart              Restart the instance so it re-reads its configuration
   down                 Stop and remove the containers (data is kept)
+  destroy              Remove what bootstrap created
   logs                 Follow the service log, or read a bounded tail of it
   status               Show containers, image, health probes and data usage
 
@@ -154,9 +156,10 @@ Low-level:
   cli-start            Start the persistent CLI helper (removes cli/mcp-serve container overhead)
   cli-stop             Stop the persistent CLI helper
 
-  check    Run the framework's own checks (no instance needed)
-  new-app  Create a deployment under apps/
-  list     Overview of every deployment under apps/
+  check       Run the framework's own checks (no instance needed)
+  new-app     Create a deployment under apps/
+  remove-app  Delete apps/<name>
+  list        Overview of every deployment under apps/
 ```
 
 ## Documentation

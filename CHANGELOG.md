@@ -19,6 +19,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `completion <bash|zsh|pwsh>`: prints a shell-completion script, generated from the live
   command declarations — command names, per-command flags, and a multi-action command's own
   flags placed under the right action.
+* `destroy` / `remove-app`: the inverse of `bootstrap`/`new-app`. `destroy` always stops and
+  removes the compose project's containers, network and volumes; `--data`/`--backups`/
+  `--snapshots` each remove their own declared directory, never the deployment directory
+  itself. `remove-app <name>` deletes `apps/<name>/` and refuses while the instance is still
+  bootstrapped. Both default to a dry run; a real run needs explicit confirmation
+  (`--yes` for `remove-app`, `--yes --confirm-name <name>` for `destroy`).
 * `upgrade`: digest-pinned image updates, with a pre-upgrade backup and automatic rollback
   on failure (restoring that backup too when the container exited during migrations).
 * `backup --native`: a consistent snapshot via OpenClaw's own `backup create --verify`,

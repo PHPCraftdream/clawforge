@@ -218,6 +218,60 @@ scope, ClawForge never starts a model turn implicitly. `accept --with-model` and
 agent; without the flag the check is reported as `could-not-check` and the request can be
 approved manually.
 
+## Removing a deployment
+
+`new-app` has an inverse. Two commands, because a deployment is two things — an instance
+somewhere, and a directory of configuration describing it — and undoing them is not one
+action:
+
+```bash
+./clawforge --app <name> destroy                          # dry run: what would go
+./clawforge --app <name> destroy --yes --confirm-name <name>   # actually remove it
+./clawforge remove-app <name>                              # dry run: apps/<name>/ itself
+./clawforge remove-app <name> --yes                        # actually delete it
+```
+
+`destroy` is the inverse of `bootstrap`. It always stops and removes the compose project's
+containers, network and volumes — `down` plus `-v`, reusing `down`'s own runtime call rather
+than a second implementation. Nothing else goes without its own flag: `--data` removes the
+data directory (`OC_DATA_DIR`), `--backups` the backup directory (`OC_BACKUP_DIR`),
+`--snapshots` the snapshot directory (`OC_SNAPSHOT_DIR`). It never touches the deployment
+directory itself (`.env`, `config/`, `recipes/`, `secrets/`) — that is `remove-app`'s job.
+
+The default is a dry run: it prints exactly what would be removed — the containers/network/
+volumes plan, and each requested directory's path and size (`du -sk`) — and exits 0, nothing
+touched, no lock taken. A real run needs both `--yes` and `--confirm-name <name>` matching
+this deployment's own name; a typo in the name, not the flag, is what a wrong `--confirm-name`
+refuses. It then takes the instance lock exactly like `up`/`restart`/`down`
+(`--break-lock`/`--break-foreign-lock`), and escalates through sudo on the target the same
+way `bootstrap`'s own `ensureDataDirs` does.
+
+Each requested directory is checked before anything is removed, not just accepted from
+`.env`: an absolute-path check, a depth floor (refusing `/` and single-segment paths, the
+same floor `OC_DATA_DIR` itself is held to — extended here to `OC_BACKUP_DIR`/
+`OC_SNAPSHOT_DIR`, which `toSettings` never validates), a refusal of anything shaped like a
+home directory, and a refusal of a path that is itself a symlink. These are the deployment's
+own declared directories, never a path typed on the command line — the check is a sanity
+check on the deployment's `.env`, not on user input.
+
+`remove-app` is the inverse of `new-app`: it deletes `apps/<name>/` — the repository-side
+directory (`.env`, `config/`, `recipes/`, `secrets/`, `app.ts`, client MCP configs). It is a
+gate command, so it needs no deployment resolved to run, and exists only in the monorepo
+gate — an installed, single-deployment checkout has nothing under `apps/` to remove.
+The default is again a dry run: the directory's top-level entries and total size, plus a
+warning when it carries its own `.git` history (`apps/` is gitignored at the monorepo root,
+but nothing stops an operator from `git init`-ing one deployment directory on its own, per
+`new-app`'s own advice — that history is not otherwise visible from outside it). It refuses
+while the deployment still has a bootstrapped instance — `running` or
+`stopped`-but-bootstrapped, read the exact same way `./clawforge list` reads it — naming
+`destroy` as the next step. It refuses a name that is not a plain deployment name (the same
+alphabet `new-app` enforces) and a directory that is itself a symlink.
+
+Neither command touches an operation record: `destroy --data` would remove
+`clawforge-operations/` along with everything else in the tree it lives in, so a record
+written moments before answers nothing a later reader could use; `remove-app` never reaches
+the target at all.
+
 ## Instance settings as code
 
 Everything we decide about an instance — the model, the reasoning level, the gateway

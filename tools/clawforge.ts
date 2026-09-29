@@ -32,6 +32,7 @@ import { emit } from "./framework/core/io/output.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
 import { createApp } from "./framework/integration/deployment/scaffold.ts";
+import { removeApp } from "./framework/integration/deployment/remove.ts";
 import { listDeployments, printDeploymentList } from "./framework/integration/list.ts";
 import { safeName } from "./framework/core/names.ts";
 import { parseDeclaredArgs } from "./framework/core/arguments.ts";
@@ -58,6 +59,12 @@ argv.splice(0, argv.length, ...appFlag.rest);
 // Drives both new-app's parser and its declaration.
 const NEW_APP_ARGUMENTS: CommandArgument[] = [
   { name: "name", description: "Deployment name", kind: "positional", required: true },
+];
+
+// Drives both remove-app's parser and its declaration.
+const REMOVE_APP_ARGUMENTS: CommandArgument[] = [
+  { name: "name", description: "Deployment name", kind: "positional", required: true },
+  { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag" },
 ];
 
 // Both of these run before a deployment is resolved — the checks describe the framework
@@ -138,6 +145,33 @@ const gateCommands: GateCommand[] = [
       }
       await createApp(target);
       return 0;
+    },
+  },
+  {
+    name: "remove-app",
+    summary: "Delete apps/<name>",
+    details:
+      "Deletes apps/<name>/ — the repository-side deployment directory (.env, config/, " +
+      "secrets/, recipes/, app.ts, client MCP configs). Never touches the target: an " +
+      "instance this deployment bootstrapped is untouched by this command.\n" +
+      "Default is a dry run: lists the top-level entries and total size, and warns when the " +
+      "directory carries its own `.git` history (apps/<name> is not tracked by this " +
+      "repository's own git — see new-app's gitInitAdvice), then exits 0 without removing " +
+      "anything. --yes performs the removal.\n" +
+      "Refuses while the deployment still has a bootstrapped instance (running or " +
+      "stopped-but-bootstrapped, read the same way ./clawforge list reads it) — " +
+      "./clawforge --app <name> destroy first (and --data if the data should go too).\n" +
+      "Refuses a name that is not a plain deployment name (the same rule new-app enforces), " +
+      "and refuses when the directory is itself a symlink.",
+    arguments: REMOVE_APP_ARGUMENTS,
+    run: async (args) => {
+      const parsed = parseDeclaredArgs(REMOVE_APP_ARGUMENTS, args);
+      const target = parsed.name as string | undefined;
+      if (target === undefined) {
+        reportError("usage: ./clawforge remove-app <name> [--yes]");
+        return 1;
+      }
+      return removeApp(target, parsed.yes === true ? ["--yes"] : []);
     },
   },
   {

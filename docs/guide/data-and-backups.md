@@ -209,14 +209,30 @@ command — `pull`, `push`, `upgrade`'s pre-upgrade backup and its rollback all 
 same two functions).
 
 ```ts
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+
 export default defineApp({
   // ...
   async afterBackup({ ctx, archive, profile, purpose }) {
     // archive already exists on the target, published and rotated. Reach it with
     // ctx.transport — here, copying it to the operator's own machine:
     if (purpose === "internal") return; // smoke's own throwaway archives never reach here
-    const bytes = await ctx.transport.readFile(archive); // or shell out to scp/rsync
-    await writeFile(`./offsite-backups/${basename(archive)}`, bytes);
+    const source = await ctx.transport.exec("sh", [
+      "-c", 'sha256sum < "$1"', "afterBackup", archive,
+    ]);
+    const encoded = await ctx.transport.exec("sh", [
+      "-c", 'base64 < "$1"', "afterBackup", archive,
+    ]);
+    const bytes = Buffer.from(encoded.stdout, "base64"); // ASCII across local/WSL/SSH
+    const destination = join("./offsite-backups", basename(archive));
+    await mkdir("./offsite-backups", { recursive: true });
+    await writeFile(destination, bytes); // node:fs writes on the operator, not the target
+    const destinationHash = createHash("sha256").update(await readFile(destination)).digest("hex");
+    if (destinationHash !== source.stdout.trim().split(/\s+/)[0]) {
+      throw new Error(`offsite SHA-256 mismatch: ${destination}`);
+    }
     // Encryption is not the framework's job either — shell out to an external tool if you
     // want the copy encrypted, e.g. `age -r <recipient> -o ${archive}.age ${archive}`.
   },
@@ -230,6 +246,19 @@ export default defineApp({
   },
 });
 ```
+
+Add the Node imports above to your deployment's `app.ts`. This example requires `sh`,
+`base64` and `sha256sum` on the target and verifies the written operator-side copy against
+the target archive's SHA-256. A transfer, write or checksum failure throws instead of
+reporting a verified copy. `ctx.transport.readFile()` is **UTF-8 text-only**: never use it
+for `.tar.gz`, encrypted archives or other binary files; decoding already loses bytes,
+and `Buffer.from()` afterwards cannot recover them. `exec()` also captures UTF-8 text,
+so encode binary output on the target **before** it crosses the transport.
+
+The example buffers the base64 output and decoded archive in memory. For large backups,
+use a binary-safe `scp`/`rsync` transfer instead, still comparing target and destination
+SHA-256. With a local target the operator-side directory must be on separate storage
+to provide an offsite copy; with SSH it is on the operator's machine, not the remote host.
 
 `afterBackup(info)` runs once the archive is fully published and rotated — never before, so
 it never sees a path that could still turn out to be staging. `info.purpose` says why the

@@ -84,6 +84,8 @@ export interface Transport {
   /** Human-readable name for diagnostics: "local", "wsl:Ubuntu-24.04", "ssh:user@host". */
   readonly description: string;
   exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
+  /** Reads UTF-8 text only; decoding binary files is lossy. For archives, use exec with
+   *  target-side base64 and decode on the operator, or a binary-safe scp/rsync transfer. */
   readFile(path: string): Promise<string>;
   /** Writes text as UTF-8 or byte content without a decoding round trip. */
   writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void>;

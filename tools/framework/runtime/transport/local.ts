@@ -1,5 +1,4 @@
-// Target and tooling share a filesystem: the fast path. Split out of transport.ts to keep
-// that file a thin facade over the per-transport implementations.
+// Target and tooling share a filesystem: the fast path.
 
 import { randomBytes } from "node:crypto";
 import { readFile, mkdir, rm, rmdir, access, readdir, stat, lstat, open, rename, type FileHandle } from "node:fs/promises";
@@ -15,10 +14,8 @@ export class LocalTransport implements Transport {
     try {
       return await spawnLocal(command, args, options);
     } catch (error) {
-      // spawnLocal always rejects on ENOENT, even under allowFailure — right when `command`
-      // is wsl.exe/ssh and this process's own inability to launch *them* means the transport
-      // is unreachable, but here `command` IS the target command: a missing one is the
-      // target's ordinary "not found", exactly what a real shell reports as exit 127.
+      // spawnLocal always rejects on ENOENT, even under allowFailure. Here `command` IS the
+      // target command, so a missing one is the target's ordinary "not found" (exit 127).
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         const result: ExecResult = { code: 127, stdout: "", stderr: `${command}: command not found\n` };
         if (options.allowFailure === true) return result;
@@ -34,9 +31,7 @@ export class LocalTransport implements Transport {
 
   async writeFile(path: string, content: string | Uint8Array, mode?: string): Promise<void> {
     // Same publish contract as publishCommand() on the remote transports: a temp sibling
-    // renamed over the name. rename(2) replaces a symlink at path instead of following it,
-    // and the exclusive temp create refuses to sneak through a link that appears between
-    // the caller's containment check and this write.
+    // renamed over the name. rename(2) replaces a symlink at path instead of following it.
     const temporary = `${path}${PUBLISH_STAGING_MARKER}${randomBytes(8).toString("hex")}`;
     let handle: FileHandle | undefined;
     try {
@@ -68,9 +63,8 @@ export class LocalTransport implements Transport {
     }
   }
 
-  /** Same distinction existsVia() makes for the exec-based transports: ENOENT (and ENOTDIR,
-   *  which also means the path genuinely is not there) is an answer; any other errno —
-   *  EACCES on a parent, an I/O error — is the check failing, not "absent". */
+  /** Same distinction existsVia() makes: ENOENT/ENOTDIR is an answer; any other errno (EACCES,
+   *  an I/O error) is the check failing, not "absent". */
   async exists(path: string): Promise<boolean> {
     try {
       await access(path);

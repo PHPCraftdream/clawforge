@@ -9,20 +9,18 @@ import { log, info, die } from "../core/io/log.ts";
 import type { Context } from "../core/context.ts";
 import { lockHome } from "./lock/instance-lock.ts";
 
-/** The fixed uid:gid the image runs as. Exported for callers outside this module that need
- *  to force escalation against it directly — a destructive cleanup over a tree that may
- *  contain paths this owner already holds, for instance, where a writable-probe on the tree's
- *  own root says nothing about a restrictively-owned child underneath. */
+/** The fixed uid:gid the image runs as. Exported for callers that need to force escalation
+ *  against it directly — a writable-probe on a tree's root says nothing about a
+ *  restrictively-owned child underneath. */
 export const OWNER = "1000:1000";
 /** The standard layout of a data directory: what restore promises, and ensureDataDirs
- *  creates. Exported because restore must check these paths are physically inside the
- *  restored tree before creating, chmod-ing or deleting anything through them. */
+ *  creates. Exported so restore can check these paths are physically inside the restored
+ *  tree before creating, chmod-ing or deleting through them. */
 export const DATA_SUBDIRS = ["config", "workspace", "auth-secrets"] as const;
 
-/** Provenance marker written by ensureDataDirs into a data root it created or adopted:
- *  its presence tells the next run "this tree was set up by clawforge", which is
- *  what licenses the narrow drift re-owning — and whose absence makes ensureDataDirs refuse
- *  to re-own anything. Exported for the check fixtures that provision realistic trees. */
+/** Provenance marker written by ensureDataDirs into a data root it created or adopted: its
+ *  presence licenses narrow drift re-owning on later runs; its absence makes ensureDataDirs
+ *  refuse to re-own anything. Exported for the check fixtures. */
 export const DATA_DIR_MARKER = ".clawforge-data-dir";
 
 const DATA_DIR_MARKER_CONTENT =
@@ -30,15 +28,10 @@ const DATA_DIR_MARKER_CONTENT =
   "Written by ensureDataDirs; its presence is what keeps ownership maintenance narrow:\n" +
   "a tree without it was not set up by this framework and is never re-owned automatically.\n";
 
-/** "sudo" when the path is not writable by the current user, "" otherwise.
- *
- *  `force: true` skips the writability shortcut: a directory being writable never implies
- *  a chown to some OTHER owner will succeed — POSIX lets an unprivileged owner keep or drop
- *  their own file, never hand it to a different uid — so a caller that already knows the
- *  target owner differs from the current identity forces the sudo-availability path instead
- *  of trusting `test -w` (a CI runner whose own uid is not 1000 owns its own /tmp
- *  fixtures outright, so the writability probe answered "no escalation needed" right
- *  before an unprivileged `chown -R 1000:1000` failed on every file). */
+/** "sudo" when the path is not writable by the current user, "" otherwise. `force: true`
+ *  skips the writability shortcut: writable never implies a chown to some OTHER owner will
+ *  succeed, so a caller that knows the target owner differs forces the sudo-availability
+ *  path instead of trusting `test -w`. */
 export async function sudoFor(ctx: Context, path: string, options: { force?: boolean } = {}): Promise<string[]> {
   let probe = path;
   while (probe !== "/" && probe !== "") {
@@ -46,11 +39,8 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
     try {
       present = await ctx.transport.exists(probe);
     } catch {
-      // The transport refuses to answer — almost always a parent this user may not enter.
-      // That is not a reason to abort here: the question this function asks is "can I write
-      // there without escalating", and a directory we cannot even look into answers it. The
-      // `test -w` below says no for the same reason, so the sudo path is chosen from the
-      // deepest path we tried rather than from an ancestor that says nothing about it.
+      // The transport refuses to answer — almost always a parent this user may not enter,
+      // which already answers "can I write there without escalating": no.
       break;
     }
     if (present) break;
@@ -66,9 +56,8 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
   const hasSudo = await answeredProbe(ctx, "sh", ["-c", "command -v sudo"], [0, 1, 127]);
   if (hasSudo.code !== 0) die(`${probe} is not writable and sudo is not available on the target`);
 
-  // -n always: commands reach the target through pipes (and often through wsl.exe or ssh),
-  // so a password prompt has nowhere to appear and the run hangs forever instead of
-  // failing. Better to say plainly what to do.
+  // -n always: a password prompt has nowhere to appear over wsl.exe/ssh pipes and would hang
+  // forever instead of failing. Better to say plainly what to do.
   const passwordless = await answeredProbe(ctx, "sudo", ["-n", "true"], [0, 1]);
   if (passwordless.code !== 0) {
     const advice = await prepareFamilyAdvice(ctx);
@@ -95,21 +84,17 @@ export async function runMaybePrivileged(
   await ctx.transport.exec(head, rest);
 }
 
-/** Splits an immediate parent from a path, on whichever separator it uses — mirrors
- *  core/env.ts's own pathSeparator/lastSeparator pair, kept local since this module has no
- *  other reason to import env.ts. */
+/** Splits an immediate parent from a path, on whichever separator it uses — kept local since
+ *  this module has no other reason to import env.ts. */
 function parentOf(path: string): string {
   const separator = path.includes("\\") ? "\\" : "/";
   const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return cut < 0 ? "" : path.slice(0, cut) || separator;
 }
 
-/** One "sudo install -d" line for a group of paths that all need the same owner. Collapsed
- *  to their shared parent when there is more than one and they all sit directly under the
- *  same one — the default layout (data, backups, snapshots as siblings under OC_DATA_DIR's
- *  own parent, the lock home named as a sibling too) — rather than naming each path by hand.
- *  A single path is named as itself: re-chowning a shared parent to an owner the OTHER group
- *  needs it to keep would undo that group's own preparation. */
+/** One "sudo install -d" line for a group of paths needing the same owner. Collapsed to
+ *  their shared parent when more than one sits directly under it. A single path is named as
+ *  itself — re-chowning a shared parent another group needs would undo its preparation. */
 function prepareCommand(owner: string, paths: string[]): string {
   const [uid, gid] = owner.split(":");
   const parents = new Set(paths.map(parentOf));
@@ -117,11 +102,9 @@ function prepareCommand(owner: string, paths: string[]): string {
   return `sudo install -d -o ${uid} -g ${gid} ${target}`;
 }
 
-/** Every directory this deployment eventually needs prepared with elevated privileges,
- *  grouped by the owner each family needs: the container's fixed uid (data, backups,
- *  snapshots — OWNER) and whoever runs the tooling (the lock home, instance-lock.ts). Read
- *  from ctx.settings so the advice always matches the ctx that hit the refusal — set-try's
- *  throwaway instance included, which has its own isolated paths. */
+/** Every directory this deployment needs prepared with elevated privileges, grouped by owner:
+ *  the container's fixed uid (data/backups/snapshots) and whoever runs the tooling (lock
+ *  home). Read from ctx.settings so the advice always matches the ctx that hit the refusal. */
 async function dataFamily(ctx: Context): Promise<Map<string, string[]>> {
   const groups = new Map<string, string[]>();
   const add = (owner: string, path: string | undefined): void => {
@@ -136,11 +119,8 @@ async function dataFamily(ctx: Context): Promise<Map<string, string[]>> {
   try {
     current = await targetOwner(ctx);
   } catch {
-    // Best effort: this is an advisory message about to accompany a refusal that is already
-    // happening, not a reason to fail differently than the caller already is. Falling back
-    // to OWNER merges the lock home into the same group, which is still a correct command in
-    // the common case (a WSL default user already at uid 1000) and a harmless suggestion
-    // otherwise — the operator still sees a plain "sudo install -d" line for it.
+    // Best effort advisory message; falling back to OWNER merges the lock home into the same
+    // group, correct in the common case (WSL default user at uid 1000) and harmless otherwise.
     current = undefined;
   }
   add(current ?? OWNER, lockHome(ctx));
@@ -148,11 +128,8 @@ async function dataFamily(ctx: Context): Promise<Map<string, string[]>> {
 }
 
 /** The commands to hand the operator so one pass covers every directory this deployment
- *  will need, not just the one path that happened to fail first — otherwise bootstrap would
- *  refuse on the lock home alone, then again on the data directory, then again on backups
- *  and snapshots the first time each was touched. Whenever whoever runs the tooling already IS
- *  uid 1000 (a WSL distribution's default user typically is), every group collapses into
- *  the exact same owner and this returns a single line for the whole family. */
+ *  will need, not just the path that happened to fail first. When whoever runs the tooling
+ *  already IS uid 1000, every group collapses into one line for the whole family. */
 async function prepareFamilyAdvice(ctx: Context): Promise<string[]> {
   const groups = await dataFamily(ctx);
   return [...groups.entries()].map(([owner, paths]) => prepareCommand(owner, paths));
@@ -163,9 +140,8 @@ async function ownerOf(ctx: Context, path: string): Promise<string> {
   return result.code === 0 ? result.stdout.trim() : "";
 }
 
-/** Whether handing a path to `fixedOwner` needs root: true for anyone except root itself
- *  and the owner already being asked for — the two identities POSIX lets chown that owner
- *  without CAP_CHOWN. Read before the chown, never assumed from directory permissions. */
+/** Whether handing a path to `fixedOwner` needs root: true except for root or the owner
+ *  itself, the two identities POSIX lets chown without CAP_CHOWN. */
 export async function needsOwnerEscalation(ctx: Context, fixedOwner: string): Promise<boolean> {
   const uid = await answeredProbe(ctx, "id", ["-u"], [0]);
   if (uid.stdout.trim() === "0") return false;
@@ -173,11 +149,9 @@ export async function needsOwnerEscalation(ctx: Context, fixedOwner: string): Pr
   return `${uid.stdout.trim()}:${gid.stdout.trim()}` !== fixedOwner;
 }
 
-/** A probe whose exit code IS the answer: `answers` are the codes the tool itself gives
- *  (test: 0/1). Anything else means the probe never ran — wsl.exe/ssh failing under load —
- *  and read as "no" it turned a transport hiccup into "needs root" plus a sudo refusal
- *  (the intermittent private-history-restore failure, seen only with parallel suites).
- *  Retried, then reported as what it is. */
+/** A probe whose exit code IS the answer: `answers` are the codes the tool itself gives. Any
+ *  other code means the probe never ran, and reading that as "no" turns a transport hiccup
+ *  into a sudo refusal. Retried, then reported as what it is. */
 export async function answeredProbe(ctx: Context, command: string, args: string[], answers: readonly number[]): Promise<{ code: number; stdout: string }> {
   let last = { code: -1, stdout: "", stderr: "" };
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -187,9 +161,8 @@ export async function answeredProbe(ctx: Context, command: string, args: string[
   throw new Error(`could not run \`${command} ${args.join(" ")}\` on the target (exit ${last.code}${last.stderr.trim() ? `: ${last.stderr.trim()}` : ""}) — the transport failed, not the check`);
 }
 
-/** Resolves `path` through every symlink on the target; dies when the target cannot answer
- *  or the path does not resolve. "Cannot verify" must never read as "verified": every caller
- *  here is about to act through the path it names. */
+/** Resolves `path` through every symlink on the target; dies when it can't. "Cannot verify"
+ *  must never read as "verified" — every caller is about to act through this path. */
 async function physicalPath(ctx: Context, path: string): Promise<string> {
   const resolved = await ctx.transport.exec("readlink", ["-f", path], { allowFailure: true });
   const canonical = resolved.stdout.trim();
@@ -199,16 +172,11 @@ async function physicalPath(ctx: Context, path: string): Promise<string> {
   return canonical;
 }
 
-/** The canonical destructive root, verified before anything is created or re-owned.
- *
- *  `test -L dataDir` sees only the final component: a symlink one level UP
- *  (`/srv/openclaw -> /elsewhere`) redirects every later mkdir/chown/chmod into a different
- *  tree while the configured path still looks deep and harmless. So the ancestry is
- *  resolved: walk up to the deepest ancestor that exists — the missing tail is created by
- *  this run's own mkdir -p, which makes real directories — resolve THAT, and demand the
- *  canonical path equal the configured one. A redirect is refused with both names. The
- *  string-level depth floor in core/env.ts stays as the backstop; this is the primary
- *  check. */
+/** The canonical destructive root, verified before anything is created or re-owned. `test -L
+ *  dataDir` sees only the final component: a symlink one level UP redirects every later
+ *  mkdir/chown/chmod while the configured path still looks harmless. So the ancestry is
+ *  walked up to the deepest existing ancestor, resolved, and required to equal the
+ *  configured one. */
 async function assertCanonicalAncestry(ctx: Context, dataDir: string): Promise<void> {
   let probe = dataDir;
   for (;;) {
@@ -233,10 +201,8 @@ async function assertCanonicalAncestry(ctx: Context, dataDir: string): Promise<v
   }
 }
 
-/** A standard path that already exists must resolve inside the verified root before this
- *  run acts through it — the bootstrap-time counterpart of restore's verifyRestoredLayout,
- *  with the same boundary: a link resolving WITHIN the tree stays tolerated, unreachable is
- *  refused, never skipped. */
+/** A pre-existing standard path must resolve inside the verified root before this run acts
+ *  through it: a link resolving WITHIN the tree is tolerated, outside is refused. */
 async function assertResolvesInsideRoot(ctx: Context, path: string, root: string): Promise<void> {
   const physical = await physicalPath(ctx, path);
   if (physical !== root && !physical.startsWith(`${root}/`)) {
@@ -244,9 +210,8 @@ async function assertResolvesInsideRoot(ctx: Context, path: string, root: string
   }
 }
 
-/** Hands exactly `paths` to the fixed owner — one chown invocation naming only these paths,
- *  never `-R`: ownership changes follow creation and provenance, not whatever a
- *  directory happens to contain. */
+/** Hands exactly `paths` to the fixed owner, never `-R`: ownership follows creation and
+ *  provenance, not whatever a directory happens to contain. */
 async function chownToOwner(ctx: Context, paths: string[], why: string): Promise<void> {
   const wrong: string[] = [];
   for (const path of paths) {
@@ -259,17 +224,11 @@ async function chownToOwner(ctx: Context, paths: string[], why: string): Promise
   });
 }
 
-/** Whether `dataDir` itself is a symlink, and where it points — undefined when it is a real
- *  directory (or does not exist yet, which `test -L` also answers false for).
- *
- *  `chown -R` dereferences a symlink named directly on its command line before recursing, so
- *  a data directory that is actually a link would hand the recursive chown below to whatever
- *  the link resolves to — the exact hazard toSettings' path validation (core/env.ts) closes
- *  for the string in .env, reopened at the filesystem level if an operator (or a previous,
- *  now-replaced deployment) leaves a symlink where a directory is expected. Checked before
- *  any mkdir/chown touches `dataDir`, not folded into ownerOf/sudoFor: those answer "who owns
- *  this path", not "is this path what it claims to be", and conflating the two would let a
- *  link with the right owner slip through unnoticed. */
+/** Whether `dataDir` itself is a symlink, and where it points — undefined for a real
+ *  directory. `chown -R` dereferences a symlink named directly on its command line before
+ *  recursing, so a data directory that's actually a link would chown whatever it resolves
+ *  to. Checked separately from ownerOf/sudoFor, which answer "who owns this path", not "is
+ *  this path what it claims to be". */
 async function dataDirSymlinkTarget(ctx: Context, dataDir: string): Promise<string | undefined> {
   const check = await ctx.transport.exec("test", ["-L", dataDir], { allowFailure: true });
   if (check.code === 1) return undefined;
@@ -281,18 +240,10 @@ async function dataDirSymlinkTarget(ctx: Context, dataDir: string): Promise<stri
   return resolved.code === 0 && target !== "" ? target : dataDir;
 }
 
-/** Creates config/, workspace/ and auth-secrets/ and makes sure uid 1000 owns them.
- *
- *  Ordered so that every verification precedes every mutation: the root is resolved
- *  through its ancestors and each pre-existing standard path through itself BEFORE the first
- *  mkdir, and ownership is changed only for paths this run can account for — the ones it
- *  created itself, plus, on a tree carrying this framework's provenance marker, the standard
- *  paths whose owner drifted. There is no `chown -R` here any more: recursion is what turned
- *  a mistyped OC_DATA_DIR into a whole-tree re-owning, and the standard layout is four paths
- *  deep at most. A pre-existing tree without the marker is never re-owned at all — that case
- *  dies with the one command that adopts it explicitly, so a directory that merely looks
- *  like a data directory (/var/lib passes the string-level depth check on purpose) cannot
- *  be handed to the container's uid by a bootstrap that stumbled onto it. */
+/** Creates config/, workspace/ and auth-secrets/ and makes sure uid 1000 owns them. Ordered
+ *  so every verification precedes every mutation, and ownership is changed only for paths
+ *  this run can account for. No `chown -R`: recursion is what turned a mistyped OC_DATA_DIR
+ *  into a whole-tree re-owning. A pre-existing tree without the marker is never re-owned. */
 export async function ensureDataDirs(
   ctx: Context,
   options: { trustExisting?: boolean } = {},
@@ -310,18 +261,13 @@ export async function ensureDataDirs(
   }
   await assertCanonicalAncestry(ctx, dataDir);
 
-  // What is already on the target, probed before anything is created — the
-  // created/pre-existing split below is the whole ownership policy, so it is read, not
+  // The created/pre-existing split below is the whole ownership policy, so it's read, not
   // assumed.
   const rootExisted = await ctx.transport.exists(dataDir);
   const markerExists = rootExisted && (await ctx.transport.exists(marker));
-  // trustExisting is for a caller that itself just created or extracted the tree earlier in
-  // the SAME operation — restore right after a verified extraction, set-try right after its
-  // own throwaway mkdir — where "pre-existing" only means "this call didn't create it", not
-  // "some unrelated directory predates this deployment". Without it, a freshly restored tree
-  // (owned by whatever uid ran tar, not 1000) reads exactly like an untrusted adoption and
-  // restore refuses its own trusted output. Bootstrap passes nothing, so the provenance gate
-  // below still applies at full strength to a directory it merely found.
+  // trustExisting is for a caller that created/extracted the tree earlier in the SAME
+  // operation, where "pre-existing" only means "this call didn't create it" — without it a
+  // freshly restored tree reads as an untrusted adoption.
   const ours = markerExists || options.trustExisting === true;
   const existed = new Map<string, boolean>();
   for (const sub of DATA_SUBDIRS) {
@@ -333,15 +279,12 @@ export async function ensureDataDirs(
     if (existed.get(sub) === true) preExisting.push(`${dataDir}/${sub}`);
   }
 
-  // A pre-existing standard directory must resolve inside the (already canonical) root
-  // before this run chowns or chmods through it. A link planted at a standard name would
-  // otherwise carry both out of the data directory.
+  // Must resolve inside the (already canonical) root before this run chowns/chmods through it.
   for (const path of preExisting) {
     if (path !== dataDir) await assertResolvesInsideRoot(ctx, path, dataDir);
   }
 
-  // Provenance gate, still before any mutation: without the marker nothing proves clawforge
-  // set this tree up, so a wrong owner here is refused, never corrected.
+  // Provenance gate: without the marker a wrong owner is refused, never corrected.
   if (!ours) {
     for (const path of preExisting) {
       const owner = await ownerOf(ctx, path);
@@ -358,7 +301,6 @@ export async function ensureDataDirs(
     }
   }
 
-  // Creation, tracked: everything pushed here is made by the execs right below it.
   const created: string[] = [];
   if (!rootExisted) {
     log(`creating ${dataDir}`);
@@ -375,23 +317,17 @@ export async function ensureDataDirs(
     created.push(dir);
   }
 
-  // Written BEFORE either chown below: both can re-own dataDir itself (created covers it on
-  // a fresh tree, preExisting on a proven or trusted one), and this run's own identity — not
-  // necessarily the fixed owner — is what has to still be able to write into it to leave this
-  // record. Writing it after either chown regularly died EACCES the moment ownership actually
-  // differed from this identity, invisible wherever the two already matched.
+  // Written BEFORE either chown: writing it after can die EACCES once ownership differs.
   if (!markerExists) {
     await ctx.transport.writeFile(marker, DATA_DIR_MARKER_CONTENT, "644");
     log(`recorded provenance in ${marker}`);
   }
   await chownToOwner(ctx, created, "created by this run");
   if (ours) {
-    // Ownership drift on a proven (or, via trustExisting, this-same-operation) tree: the
-    // standard paths may be re-owned — naming exactly these paths, never recursing.
     await chownToOwner(ctx, preExisting, "ownership drift on a proven clawforge data directory");
   }
 
-  // auth-secrets holds encryption keys; keep it owner-only.
+  // auth-secrets holds encryption keys.
   const secretsDir = `${dataDir}/auth-secrets`;
   const mode = await ctx.transport.exec("stat", ["-c", "%a", secretsDir], { allowFailure: true });
   if (mode.stdout.trim() !== "700") {
@@ -401,16 +337,10 @@ export async function ensureDataDirs(
   await ensureLockHome(ctx);
 }
 
-/** Somewhere the instance lock can actually be created.
- *
- *  The lock has to live outside the data directory, because `restore` replaces that whole
- *  tree and a lock inside it leaves with the old one. But "outside" lands in the parent,
- *  which this tooling has never owned: bootstrap chowns the data directory and stops there,
- *  so on a host where the parent is root:root nothing beside it can be created — and the
- *  failure arrived looking like a lock that was already held.
- *
- *  Owned by whoever runs the tooling rather than uid 1000: the container never sees this
- *  directory, and the process that takes and releases the lock is the one on this side. */
+/** Somewhere the instance lock can actually be created. Has to live outside the data
+ *  directory, because `restore` replaces that whole tree — but "outside" lands in a parent
+ *  bootstrap never chowned, which can stay root:root. Owned by whoever runs the tooling
+ *  rather than uid 1000: the container never sees this directory. */
 export async function ensureLockHome(ctx: Context): Promise<void> {
   const home = lockHome(ctx);
 
@@ -418,8 +348,8 @@ export async function ensureLockHome(ctx: Context): Promise<void> {
     log(`creating ${home}`);
     const created = await ctx.transport.exec("mkdir", ["-p", home], { allowFailure: true });
     if (created.code !== 0) {
-      // The parent needs root. Create it there and hand it over in the same step, so every
-      // later run takes the lock without escalating at all.
+      // The parent needs root. Create and hand it over in one step, so later runs never
+      // escalate for it again.
       await runMaybePrivileged(ctx, home, "mkdir", ["-p", home]);
       await runMaybePrivileged(ctx, home, "chown", [await targetOwner(ctx), home]);
     }
@@ -430,9 +360,8 @@ export async function ensureLockHome(ctx: Context): Promise<void> {
   log(`making ${home} writable`);
   await runMaybePrivileged(ctx, home, "chown", [await targetOwner(ctx), home]);
 
-  // Checked rather than assumed: an ownership change that did not take leaves a directory
-  // the lock cannot be created in, and that resurfaces later as a failed claim on an
-  // unrelated command. Said here, where the reason is still in view.
+  // Checked rather than assumed: an ownership change that didn't take resurfaces later as an
+  // unrelated failed claim.
   if (!(await isWritable(ctx, home))) {
     const advice = await prepareFamilyAdvice(ctx);
     die(
@@ -450,17 +379,9 @@ async function isWritable(ctx: Context, path: string): Promise<boolean> {
 }
 
 /** The uid and gid of whoever runs the tooling ON THE TARGET, read before any escalation.
- *
- *  `sudo -n sh -c 'chown "$(id -u):$(id -g)" …'` reads as "hand it to the current user" and
- *  does the opposite: the command substitution is evaluated by the shell sudo started, which
- *  is root's, so it resolves to 0:0 and the directory stays root-owned — the exact state this
- *  preparation exists to prevent. The numbers are resolved here, unprivileged, and passed to
- *  chown as plain arguments.
- *
- *  deploy.ts writes the same-looking `$(id -u)` and is correct, because there it sits inside
- *  a script the login shell expands before sudo is ever invoked. The shape decides, not the
- *  text — which is why this one is a function with a name rather than a string repeated in
- *  two places. */
+ *  `sudo -n sh -c 'chown "$(id -u):$(id -g)" …'` looks like "hand it to the current user" but
+ *  resolves to 0:0, since the substitution is evaluated by the shell sudo started. The
+ *  numbers are resolved here, unprivileged, and passed to chown as plain arguments. */
 async function targetOwner(ctx: Context): Promise<string> {
   const uid = await ctx.transport.exec("id", ["-u"], { allowFailure: true });
   const gid = await ctx.transport.exec("id", ["-g"], { allowFailure: true });

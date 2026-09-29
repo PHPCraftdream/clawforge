@@ -18,15 +18,10 @@ export class HelperNotRunning extends Error {
   }
 }
 
-/** Thrown by a read-only runtime query (isRunning, health, …) when the deployment's data
- *  directory does not exist on the target at all — a fresh deployment nobody has bootstrapped
- *  yet, distinguished from every other reason the same query can fail. Every runtime call
- *  that shells out to compose needs somewhere to write its own private files (the docker
- *  runtime's per-call env file, beside the data directory), and creating that somewhere is
- *  exactly the mkdir a still-root-owned parent refuses pre-bootstrap — surfacing as a raw
- *  transport error instead of a clear "run bootstrap first". Callers that know how to
- *  answer plainly (status, doctor, inspect) catch this specifically; anything else propagates
- *  as before. */
+/** Thrown by a read-only runtime query when the deployment's data directory doesn't exist on
+ *  the target — a never-bootstrapped deployment. Every runtime call needs somewhere to write
+ *  private files beside the data directory, and a still-root-owned parent refuses that mkdir
+ *  pre-bootstrap. Callers that answer plainly (status, doctor, inspect) catch this. */
 export class NotBootstrapped extends Error {
   constructor(dataDir: string) {
     super(`${dataDir} does not exist on the target — this deployment has never been bootstrapped`);
@@ -35,14 +30,8 @@ export class NotBootstrapped extends Error {
 }
 
 /** The shared preflight for a command that mutates an EXISTING instance: refuses with
- *  NotBootstrapped's own message plus the same next step doctor/plan/status/mcp-creds already
- *  give, before takeLock() or any other mutation runs. Without this, the same fact surfaced as
- *  a raw `mkdir …/operation.lock` failure (the lock's home is prepared alongside the data
- *  directory, by bootstrap alone) or, worse, a target exec's whole script pasted into the
- *  error. Commands that CREATE the instance (bootstrap, restore into an empty target, push,
- *  deploy) must never call this — it would refuse the very thing they do. isRunning() is the
- *  cheapest call every Runtime already answers NotBootstrapped from; its actual true/false
- *  result is not needed here, only whether it throws. */
+ *  NotBootstrapped's message before takeLock() runs. Commands that CREATE the instance
+ *  (bootstrap, restore into an empty target, push, deploy) must never call this. */
 export async function requireBootstrapped(ctx: Context): Promise<void> {
   try {
     await ctx.runtime.isRunning();
@@ -62,9 +51,8 @@ export interface RunOneOffOptions {
   /** Feed stdin instead of inheriting it; also switches output to captured mode. */
   input?: string;
   /** Return a non-zero exit as a normal ExecResult instead of throwing. Needed by callers
-   *  that must inspect the *full* stdout/stderr of a failure — the thrown-error path
-   *  truncates the detail to a few lines, which is fine for a human-readable message but
-   *  loses content a caller might need to pattern-match on. */
+   *  that must inspect the *full* stdout/stderr — the thrown-error path truncates detail to
+   *  a few lines. */
   allowFailure?: boolean;
 }
 
@@ -82,45 +70,33 @@ export interface Runtime {
   /** Stops without removing — used to quiesce before a snapshot. */
   pause(): Promise<void>;
   /** Restarts the running instance in place, so it re-reads configuration it only loads at
-   *  startup. Not the same as start(): starting an already-healthy instance is a no-op,
-   *  because nothing the runtime compares (image, ports, environment) has changed when the
-   *  edit was to a file inside a bind mount. */
+   *  startup. Not start(): starting an already-healthy instance is a no-op for a bind-mount
+   *  edit, since nothing the runtime compares (image, ports, environment) changed. */
   restart(): Promise<void>;
-  /** Brings the running instance back in step with the deployment's current configuration
-   *  by asking compose to recreate it — the counterpart of restart(), which keeps the
-   *  container exactly as created. A container's environment is fixed once at creation
-   *  from whatever the deployment's .env said that day, so restart() re-reads only what
-   *  lives in bind-mounted files; a changed .env value reaches the running service only
-   *  through a recreate, and this is the one method that performs it. Reads the
-   *  deployment's .env at call time, not the snapshot this process was started with:
-   *  the caller may have rewritten that file moments ago. Optional because it replaces
-   *  the container — a runtime that cannot pay that cost leaves the decision to the
-   *  operator, and the caller must say so instead of pretending. */
+  /** Brings the instance in step with current configuration via compose recreate — restart()'s
+   *  counterpart, which keeps the container as created. Environment is fixed at creation, so
+   *  a changed .env value reaches the service only through this. Reads .env at call time, not
+   *  the process's start-time snapshot. Optional: replaces the container, so a runtime that
+   *  can't pay that cost leaves the decision to the operator. */
   reconcile?(): Promise<void>;
   /** Follows the log until interrupted. */
   followLogs(extraArgs?: string[]): Promise<void>;
-  /** Reads the last `tail` lines and returns them. The bounded counterpart of followLogs:
-   *  a caller that cannot be interrupted — a tool call, which owes its client exactly one
-   *  result — needs an end to the output, not a stream. Omitting `tail` uses the same
-   *  default the application declared for followLogs. */
+  /** Reads the last `tail` lines. Bounded counterpart of followLogs, for a caller that
+   *  cannot be interrupted. Omitting `tail` uses followLogs's default. */
   readLogs(tail?: string, extraArgs?: string[]): Promise<string>;
   /** Shows what is running. */
   showStatus(): Promise<void>;
   /** Fetches the image without starting anything. */
   pullImage(): Promise<void>;
-  /** The digest a reference resolves to on its registry, read without pulling any layer and
-   *  without moving any local tag — a shared tag another deployment on the same Docker also
-   *  uses must not start pointing at different content just because this deployment checked
-   *  it. Undefined when the registry cannot be asked (offline, unknown reference, no tool to
-   *  ask with) — never guessed. */
+  /** The digest a reference resolves to, read without pulling any layer or moving any local
+   *  tag — a shared tag another deployment uses must not start pointing at different content
+   *  just because this deployment checked it. Undefined when the registry can't be asked. */
   resolveImageDigest?(reference: string): Promise<string | undefined>;
-  /** Recreates the service pinned to `reference` (normally a digest) for this one call only —
-   *  the deployment's own .env is read but never rewritten, so a rollback to the previous
-   *  reference needs no undo of this step. */
+  /** Recreates the service pinned to `reference` for this one call only — .env is read but
+   *  never rewritten, so a rollback needs no undo of this step. */
   recreateWithImage?(reference: string): Promise<void>;
-  /** The running (or last) container's own exit code, or undefined when it cannot be read —
-   *  a migration that exits during startup (upstream docs: code 78) is otherwise
-   *  indistinguishable from one still starting. */
+  /** The running (or last) container's own exit code, or undefined when unreadable — a
+   *  migration exiting during startup is otherwise indistinguishable from one still starting. */
   lastExitCode?(): Promise<number | undefined>;
 
   /** True when the instance's main process is up. */
@@ -132,48 +108,31 @@ export interface Runtime {
   imageReference(): Promise<string | undefined>;
   /** The running container's image, independent of the configured tag. */
   runningImageIdentity?(): Promise<{ imageId: string; digests: string[]; version?: string; containerId: string } | undefined>;
-  /** The running container's own environment — what it actually started with, not what this
-   *  machine's .env currently says. A repo-env value (the gateway token) is injected once at
-   *  container-creation time and lives on inside the container from then on; if the operator
-   *  side's own copy is later lost, this is the one place it still exists. Undefined when the
-   *  instance is not running or this runtime cannot introspect it. */
+  /** The running container's own environment — what it started with, not what this machine's
+   *  .env currently says. A repo-env value injected once at creation lives on inside the
+   *  container even if the operator's copy is later lost. Undefined when not introspectable. */
   runningEnvironment?(): Promise<Record<string, string> | undefined>;
-  /** The running container's connection facts — the plumbing values (data dir, gateway port,
-   *  bind address, compose project, image reference) that tell this deployment how to reach
-   *  its own instance, read back from Docker the same way runningEnvironment() reads the
-   *  environment. They live in the deployment's .env, so a stale or half-filled copy is
-   *  repairable from the instance still running. Deliberately NOT a secret — that is
-   *  runningEnvironment()'s job (the gateway token); these fields are all safe to print.
-   *  Undefined when the instance is not running or this runtime cannot introspect it, while
-   *  an individual field absent inside a successful result means Docker's own answer did not
-   *  carry that fact, which is reported, never guessed. bindAddress is read from the same
-   *  published-port entry port already is (`./clawforge expose status` needs both to say
-   *  whether the gateway is actually loopback-only right now, not just what .env claims). */
+  /** The running container's connection facts — plumbing values read back from Docker, so a
+   *  stale .env is repairable from the instance still running. NOT a secret — safe to print.
+   *  Undefined when not introspectable; an absent field means Docker's answer didn't carry it. */
   runningConnectionFacts?(): Promise<
     { dataDir?: string; port?: string; bindAddress?: string; composeProject?: string; image?: string } | undefined
   >;
-  /** A log tail plus an env-redacted `docker inspect` dump of the container this deployment is running
-   *  right NOW — for incident evidence, captured before a caller mutates it (rotateToken's
-   *  reconcile recreates the container, and the old one's json-file log goes with it once
-   *  compose removes it). Undefined when there is nothing running to snapshot or this runtime
-   *  cannot introspect it. */
+  /** A log tail plus an env-redacted `docker inspect` dump of the container running right
+   *  NOW — for incident evidence, captured before a caller mutates it. Undefined when
+   *  there's nothing to snapshot. */
   captureIncidentSnapshot?(tail: string): Promise<{ logs: string; inspect: string } | undefined>;
 
-  /** When the running instance started, as epoch milliseconds, or undefined when it is not
-   *  running.
-   *
-   *  The instance reads its configuration at startup and never again, so "the file on disk
-   *  is correct" and "the instance is running that configuration" are different claims, and
-   *  nothing visible from outside distinguishes them. Comparing this against the
-   *  configuration file's own timestamp is what makes the difference observable. */
+  /** When the running instance started, as epoch milliseconds, or undefined when not running.
+   *  The instance reads its configuration only at startup, so comparing this against the
+   *  config file's timestamp is what makes a stale-but-running instance observable. */
   startedAt(): Promise<number | undefined>;
 
   /** Runs a throwaway container for `service`. */
   runOneOff(service: string, args: string[], options?: RunOneOffOptions): Promise<ExecResult>;
 
-  /** Starts a long-lived helper container for `service` under `profile`, so `execInHelper`
-   *  can exec into an already-running container instead of paying `runOneOff`'s per-call
-   *  create/destroy cost — measured directly: ~5-7s one-off vs ~1-3s exec once warm. */
+  /** Starts a long-lived helper container so `execInHelper` can exec into it instead of
+   *  paying `runOneOff`'s per-call create/destroy cost (~5-7s one-off vs ~1-3s exec warm). */
   startHelper(service: string, profile: string): Promise<void>;
   /** Stops and removes the helper container started by `startHelper`. */
   stopHelper(service: string, profile: string): Promise<void>;
@@ -186,14 +145,8 @@ export interface Runtime {
     options?: { input?: string; allowFailure?: boolean; timeoutMs?: number },
   ): Promise<ExecResult>;
   /** The general form of execInHelper: any command, not just the app's own CLI entrypoint —
-   *  for ad hoc diagnostics execInHelper cannot reach (reading a file bundled in the image, a
-   *  curl probe against something only reachable from inside the container's own network
-   *  namespace). Same container, same failure mode: throws HelperNotRunning when it is not
-   *  up, so callers can fall back the same way execInHelper's callers already do.
-   *
-   *  `options.timeoutMs` bounds the WHOLE call in milliseconds: the transport kills the child
-   *  when it runs out, so a wedged container, resolver or client cannot stall the caller
-   *  past its own budget. */
+   *  for ad hoc diagnostics. Throws HelperNotRunning when not up. `options.timeoutMs` bounds
+   *  the WHOLE call, so a wedged container/resolver/client can't stall past its budget. */
   execCommand?(
     service: string,
     command: string,
@@ -210,9 +163,8 @@ export interface Runtime {
   /** Polls until the service serves or the timeout expires. */
   waitForHealth(timeoutSeconds?: number): Promise<void>;
 
-  /** Operates a side stack — a service deployed next to the instance but isolated from it,
-   *  with its own project name. Used for recipes, so a third-party service can never take
-   *  the gateway down or leak into its state snapshots. */
+  /** Operates a side stack — deployed next to the instance but isolated, with its own
+   *  project name. Used for recipes, so a third-party service can't take the gateway down. */
   stack(project: string, definitionPath: string): Stack;
 }
 
@@ -222,19 +174,16 @@ export interface StackServiceState {
    *  missing entirely. */
   readonly running: boolean;
   /** Compose's own healthcheck verdict ("healthy", "unhealthy", "starting"), or undefined
-   *  when the service declares no healthcheck at all — compose then has no health opinion,
-   *  distinct from a healthcheck that has not settled yet. */
+   *  when the service declares no healthcheck at all, distinct from one not settled yet. */
   readonly health?: string;
 }
 
 export interface Stack {
   /** Builds images defined by the stack. */
   build(): Promise<void>;
-  /** Starts it in the background. `wait` asks compose itself to block until every service is
-   *  running (and healthy, where a healthcheck is declared) or `timeoutSeconds` elapses —
-   *  only requested by a caller that already has a bounded readiness declaration for this
-   *  stack, so a recipe with no such declaration and a healthcheck that never turns healthy
-   *  cannot hang install indefinitely. */
+  /** Starts it in the background. `wait` asks compose to block until every service is
+   *  running (and healthy, where declared) or `timeoutSeconds` elapses — only when a caller
+   *  has a bounded readiness declaration, so a stuck healthcheck can't hang install forever. */
   up(options?: { wait?: boolean; timeoutSeconds?: number }): Promise<void>;
   /** Stops and removes it; --volumes only when explicitly asked. */
   down(removeVolumes?: boolean): Promise<void>;
@@ -242,22 +191,17 @@ export interface Stack {
   followLogs(): Promise<void>;
   /** Same bound as Runtime.readLogs, for a recipe's own stack. */
   readLogs(tail: string): Promise<string>;
-  /** True when ANY container from this project is up — the historical, coarse probe that
-   *  `recipe status` and the backup/restore warnings (runningRecipeStacks) still read: a
-   *  single live sidecar satisfies it even while the recipe's main service is down. Kept as
-   *  is for those readers; install's own readiness check uses serviceStates() instead, which
-   *  does not have that blind spot. */
+  /** True when ANY container from this project is up — a single live sidecar satisfies it
+   *  even while the main service is down. install's readiness check uses serviceStates()
+   *  instead, which doesn't have that blind spot. */
   isRunning(): Promise<boolean>;
-  /** Per-service state, keyed by compose service name, for every service compose currently
-   *  reports for this project — the readiness primitive isRunning() cannot be: a caller can
-   *  require ALL of a multi-service recipe's declared services instead of being satisfied by
-   *  one live container. */
+  /** Per-service state, keyed by compose service name — lets a caller require ALL of a
+   *  multi-service recipe's declared services instead of one live container. */
   serviceStates(): Promise<Record<string, StackServiceState>>;
 }
 
 /** Delays without blocking the event loop — the one polling primitive every wait loop that
- *  watches a runtime transition (restart, readiness) shares, rather than each spelling out
- *  its own setTimeout promise. */
+ *  watches a runtime transition shares. */
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

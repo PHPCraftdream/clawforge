@@ -43,10 +43,9 @@ export class WslTransport implements Transport {
         "check that wsl.exe is installed and on PATH (`wsl.exe --status`)",
       );
     }
-    // Our own deadline killing wsl.exe (SIGTERM → a signal-terminated -1) looks identical,
-    // code-wise, to wsl.exe failing to reach the distro — isWrapperFailureCode below cannot
-    // tell them apart. result.timedOut (set by spawnLocal) can, so it is checked first: a slow
-    // command must never be reported as TARGET_UNREACHABLE.
+    // Our own deadline killing wsl.exe looks identical, code-wise, to wsl.exe failing to
+    // reach the distro — isWrapperFailureCode can't tell them apart. result.timedOut can, so
+    // it's checked first: a slow command must never be reported as TARGET_UNREACHABLE.
     if (result.timedOut === true) {
       if (options.allowFailure === true) return result;
       const error = composeExecFailure("wsl.exe", wslArgs, result) as CommandFailure;

@@ -38,10 +38,9 @@ function filesystemAdvice(file: string): string {
     : "check the filesystem and its ownership before retrying";
 }
 
-/** What it takes to run one local support tool and hand the result back as data: every
- *  caller decides for itself what a nonzero exit or a timeout means. `errno` carries the
- *  spawn failure's own cause, so a caller can tell "the tool is not on this machine"
- *  (ENOENT) from any other failure to run it. */
+/** Runs one local support tool and hands the result back as data; `errno` carries the spawn
+ *  failure's own cause, so a caller can tell "not on this machine" (ENOENT) from any other
+ *  failure. */
 export type ToolRunner = (
   command: string,
   args: string[],
@@ -57,10 +56,8 @@ const spawnTool: ToolRunner = async (command, args, timeoutMs) => {
   }
 };
 
-// A module-level runner rather than a parameter, like the output sink: the callers that must
-// be swappable are arbitrarily deep. Checks script the Windows and WSL support tools through
-// this one seam — the probe's argv shape and its verdicts are verified on machines that have
-// neither — while production code never enters the swap and always reaches the real tools.
+// Module-level, not a parameter: callers needing to swap it are arbitrarily deep. Checks
+// script Windows/WSL tools through this seam; production always reaches the real tools.
 let toolRunner: ToolRunner = spawnTool;
 
 /** Runs `body` with support tools answered by `substitute` instead of executed. */
@@ -87,13 +84,10 @@ async function windowsOwnerSid(file: string): Promise<string> {
   return sid;
 }
 
-/** Builds the DACL from nothing rather than patching it, in one icacls invocation: drop
- *  inheritance, remove every foreign trustee the /save readback just named, grant the closed
- *  SID set. No /reset runs in front of it — /reset restored the parent's inheritable access
- *  onto a file that already held its secret, and a failure in the grant that followed left
- *  exactly that widened ACL behind. Every step of this call can only narrow, or grant within
- *  the closed set, so a failure leaves the file no wider than it arrived. Returns the owner
- *  SID so the result can be verified against it. */
+/** Builds the DACL from nothing rather than patching it: drop inheritance, remove every
+ *  foreign trustee, grant the closed SID set. No /reset in front — it would restore the
+ *  parent's inheritable access onto a file that already held its secret. Every step here can
+ *  only narrow, so a failure leaves the file no wider than it arrived. */
 async function grantWindowsAcl(file: string): Promise<string> {
   const owner = await windowsOwnerSid(file);
   const foreign = new Set(
@@ -152,22 +146,16 @@ function trusteeSid(trustee: string): string {
 }
 
 /** Resolves a trustee against a known owner SID, folding icacls's "LA" alias into the owner
- *  it actually names. LA is the well-known SDDL alias for a machine's built-in Administrator
- *  account (relative ID 500) — not a fixed SID like SYSTEM or the Administrators group, so it
- *  cannot live in SDDL_TRUSTEE_SIDS, but it is still locale-independent and unambiguous: when
- *  the owner IS that RID-500 account (a CI runner routinely runs as it), icacls prints the
- *  owner's own ACE as "LA" instead of the raw SID, and a byte-for-byte comparison against the
- *  owner then reads the owner's own grant as a foreign trustee. Only resolved when the owner
- *  actually is RID 500 — an LA grant on a file some other account owns names a different,
- *  genuinely foreign account and must still be reported. */
+ *  it names. LA is the SDDL alias for a machine's built-in Administrator (RID 500), not a
+ *  fixed SID; when the owner IS that account, icacls prints its ACE as "LA" and a byte
+ *  comparison would misread it as foreign. Resolved only when the owner actually is RID 500. */
 function resolvedTrustee(trustee: string, owner: string): string {
   if (trustee.toUpperCase() === "LA" && owner.endsWith("-500")) return owner;
   return trusteeSid(trustee);
 }
 
-/** Proves the grant instead of trusting it: only the allowed trustees may appear, the DACL
- *  must be sealed against inheritance, and the owner must hold full access. A leftover
- *  trustee is reported by SID — the one spelling of its name that does not move. */
+/** Proves the grant instead of trusting it: only allowed trustees may appear, the DACL must
+ *  be sealed against inheritance, and the owner must hold full access. Reported by SID. */
 async function assertDaclOwnerOnly(file: string, owner: string): Promise<void> {
   const { daclProtected, aces } = await savedAces(file);
   const allowed = new Set([owner, SYSTEM_SID, ADMINISTRATORS_SID]);
@@ -189,19 +177,17 @@ async function assertDaclOwnerOnly(file: string, owner: string): Promise<void> {
   }
 }
 
-/** What the attempt to list this machine's WSL distributions found. `absent` means there is
- *  genuinely no Linux side that could reach the file; `listed` carries the distributions to
- *  probe; `unlisted` means the enumeration itself failed — the check did not happen, and a
- *  failed enumeration is not evidence that there is no Linux side. */
+/** What listing this machine's WSL distributions found. `absent` = genuinely no Linux side;
+ *  `listed` = distributions to probe; `unlisted` = enumeration failed, not evidence of "no
+ *  Linux side". */
 export type WslListing =
   | { state: "absent" }
   | { state: "listed"; distros: string[] }
   | { state: "unlisted"; reason: string };
 
-/** The WSL distributions this machine can run, as far as they could be listed. Only wsl.exe
- *  missing outright (spawn ENOENT), a clean empty listing, and the "no installed
- *  distributions" answer count as absent; a timeout or any other failed listing is
- *  `unlisted` and must be reported, never read as "no WSL". The listing arrives as UTF-16. */
+/** The WSL distributions this machine can run, as far as listable. Only wsl.exe missing
+ *  outright, an empty listing, or "no installed distributions" count as absent; any other
+ *  failed listing is `unlisted` and must be reported, never read as "no WSL". */
 export async function installedWslDistros(): Promise<WslListing> {
   if (process.platform !== "win32") return { state: "absent" };
   const result = await runTool(systemTool("wsl.exe"), ["-l", "-q"], 15_000);
@@ -210,10 +196,8 @@ export async function installedWslDistros(): Promise<WslListing> {
     const distros = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== "");
     return distros.length === 0 ? { state: "absent" } : { state: "listed", distros };
   }
-  // The "no installed distributions" wording is localized, so matching it is text-sensitive.
-  // Accepted here and only here because the miss direction is safe: a localized message that
-  // does not match falls into the reported branch, and an honest false alarm beats a silent
-  // gap. A spawn failure with ENOENT is wsl.exe itself missing — genuinely no WSL.
+  // The "no installed distributions" wording is localized; accepted here since the miss
+  // direction is safe — a message that doesn't match falls into the reported branch instead.
   if (result.errno === "ENOENT" || /no installed distributions/i.test(text)) return { state: "absent" };
   return {
     state: "unlisted",
@@ -224,8 +208,8 @@ export async function installedWslDistros(): Promise<WslListing> {
 }
 
 /** The file's path inside a distribution, via the same bridge the transports use — the
- *  automount root is the distribution's own, not an assumed /mnt. Undefined when the file is
- *  not on a Windows drive, which no automount can address. */
+ *  automount root is the distribution's own, not an assumed /mnt. Undefined off a Windows
+ *  drive. */
 async function automountedPath(distro: string, file: string): Promise<string | undefined> {
   const bridge = await createPathBridge({
     kind: "wsl",
@@ -244,22 +228,17 @@ async function automountedPath(distro: string, file: string): Promise<string | u
   }
 }
 
-/** The verdict the unprivileged side prints. The path arrives as "$1" and is never pasted
- *  into this string: a file name is data, and every shell between here and the open must
- *  keep it that way. A probe that cannot see its argument says NOPROBE rather than guessing. */
+/** The verdict the unprivileged side prints. The path arrives as "$1", never pasted into
+ *  this string, so a file name stays data through every shell. No argument → NOPROBE. */
 const PROBE_SCRIPT =
   'if [ "${1+set}" = set ] && [ -n "$1" ]; then ' +
   'if head -c 0 -- "$1" >/dev/null 2>&1; then echo OPEN; else echo DENIED; fi; ' +
   "else echo NOPROBE; fi";
 
-/** Asks one distribution whether an unprivileged user can open the file. The path travels
- *  as a positional parameter at every shell — wsl.exe hands it to the outer sh as "$1", and
- *  runuser or su passes it on to the inner sh the same way — so no metacharacter in a file
- *  or directory name can become shell code at the root shell this runs under. `head -c 0`
- *  makes the open itself the answer; no content is read or printed. Probed per file, never
- *  cached per drive: reachability depends on the file's own mode, DrvFs metadata and parent
- *  directories, and a stale verdict would silence a warning that still holds. Exported for
- *  the checks, which drive it with a scripted runner. */
+/** Asks one distribution whether an unprivileged user can open the file. The path travels as
+ *  a positional parameter at every shell hop, so no metacharacter in a name can become shell
+ *  code. `head -c 0` makes the open itself the answer. Probed per file, never cached per
+ *  drive: reachability depends on the file's own mode and parent directories. */
 export async function probeWslOpen(distro: string, targetPath: string): Promise<string> {
   const script =
     "if command -v runuser >/dev/null 2>&1; then " +
@@ -277,15 +256,9 @@ export async function probeWslOpen(distro: string, targetPath: string): Promise<
   return `no verdict (exit ${result.code})`;
 }
 
-/** Directories already reported this process. reportWslBoundary spawns wsl.exe once per
- *  installed distribution — not cheap — so this cache avoids re-running it for every write
- *  of a deployment's .env: the temporary file AND the final rename each go through
- *  protectPrivateFile, so without it, generating a token alone would print the same warning
- *  twice, once per installed distribution, before bootstrap said anything useful. Keyed on the
- *  containing directory — the boundary a Windows-mounted drive creates is a property of
- *  where the deployment sits, not of which file inside it triggered the check — and kept for
- *  the life of the process only: a later run (a different day, a distribution installed or
- *  removed meanwhile) checks again. */
+/** Directories already reported this process. Avoids re-running wsl.exe (once per installed
+ *  distribution) for every write of a deployment's .env. Keyed on the containing directory,
+ *  kept for the process's lifetime only. */
 const reportedBoundaryDirs = new Set<string>();
 
 /** Test-only seam: the checks below script the same probe repeatedly against different
@@ -298,16 +271,9 @@ export function resetWslBoundaryDedupe(): void {
 type WslBoundaryFindings = { exposed: { distro: string; targetPath: string }[]; unverified: string[] };
 
 /** The Windows half is only half the protection when WSL is installed: every drive is
- *  automounted into every distribution, and across that boundary a Windows ACL carries no
- *  weight between Linux users. Where the deployment sits is the operator's decision, not a
- *  fault of this call, so the boundary is reported rather than enforced: each installed
- *  distribution is probed about the file itself, and whatever it can open — or whatever this probe
- *  could not answer, up to and including a distribution listing that failed outright — is said
- *  out loud instead of silently claimed as owner-only. At most once per process per directory
- *  (see reportedBoundaryDirs above), and never for a temporary file (protectPrivateFile's
- *  `boundary: false` skips the call before it reaches here) — a value nobody will ever read
- *  under that name is not a boundary worth reporting. `undefined` means nothing to say at all
- *  (no WSL, or this directory was already probed this process). */
+ *  automounted into every distribution, and a Windows ACL carries no weight between Linux
+ *  users across that boundary. Reported rather than enforced: each installed distribution is
+ *  probed, and whatever it can open is said out loud. At most once per process per directory. */
 async function findWslBoundary(file: string): Promise<WslBoundaryFindings | undefined> {
   const directory = dirname(resolve(file));
   if (reportedBoundaryDirs.has(directory)) return undefined;
@@ -342,9 +308,7 @@ async function reportWslBoundary(file: string): Promise<void> {
   const findings = await findWslBoundary(file);
   if (findings === undefined) return;
   const { exposed, unverified } = findings;
-  // One line naming every exposed distribution, not one line each, to avoid flooding the
-  // output before anything else printed. Running from Windows stays the supported setup
-  // either way — this is a hardening option, not a verdict that the setup is wrong.
+  // One line naming every exposed distribution, not one each, to avoid flooding output.
   if (exposed.length > 0) {
     warn(
       `${file} is owner-only on the Windows side only: ` +
@@ -366,9 +330,8 @@ async function reportWslBoundary(file: string): Promise<void> {
 }
 
 /** The condensed form: one line plus a pointer to the full explanation, instead of the two
- *  warning/info pairs above. For new-app/init, which suppress reportWslBoundary at file-creation
- *  time (`boundary: false`) and call this themselves once their own "next:" block is already on
- *  screen — the finding is real, but it should not be the first thing an operator sees. */
+ *  warning/info pairs above. For new-app/init, which suppress reportWslBoundary at
+ *  file-creation time and call this once their own "next:" block is already on screen. */
 export async function wslBoundaryNote(file: string): Promise<string | undefined> {
   const findings = await findWslBoundary(file);
   if (findings === undefined) return undefined;
@@ -382,13 +345,8 @@ export async function wslBoundaryNote(file: string): Promise<string | undefined>
 }
 
 /** Ensures a credential-bearing file is owner-only, and can prove it: POSIX modes where they
- *  apply; on Windows a rebuilt SID-exact ACL plus an honest report of what the WSL boundary
- *  can and cannot verify.
- *
- *  `boundary: false` skips that report — for a temporary file on its way to replacing the
- *  real one (replacePrivateFile's own createPrivateFile call): nobody will ever read a
- *  credential under that name, so a boundary report about it would be pure noise, printed
- *  before the report for the file that actually matters. */
+ *  apply; on Windows a rebuilt SID-exact ACL plus a WSL boundary report. `boundary: false`
+ *  skips that report — for a temporary file nobody will ever read a credential under. */
 export async function protectPrivateFile(file: string, options: { boundary?: boolean } = {}): Promise<void> {
   if (process.platform === "win32") {
     const owner = await grantWindowsAcl(file);
@@ -419,15 +377,9 @@ export async function protectPrivateFile(file: string, options: { boundary?: boo
   }
 }
 
-/** Seals a directory that holds private files: 700 where POSIX modes apply — execute
- *  included, since a directory the owner cannot enter protects nothing — and on Windows
- *  the same closed SID-exact DACL a credential file gets. The directory is sealed, not
- *  just the files inside it, because an editor that saves through atomic replacement
- *  creates its temporary file in this directory and renames it over the store: that
- *  temporary inherits the DIRECTORY's access, so a wide directory hands the file back
- *  wide no matter how carefully the file itself was protected. No WSL boundary probe
- *  here, unlike a file: what that probe decides is whether another system's user can read
- *  a file, and it is reported where files are protected. */
+/** Seals a directory that holds private files: 700 where POSIX modes apply, same closed
+ *  SID-exact DACL on Windows. Sealed because an atomic-replace editor's temporary file
+ *  inherits the DIRECTORY's access before rename. No WSL boundary probe here, unlike a file. */
 export async function protectPrivateDirectory(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true, mode: DIRECTORY_MODE });
   if (process.platform === "win32") {
@@ -460,12 +412,10 @@ export async function protectPrivateDirectory(dir: string): Promise<void> {
   }
 }
 
-/** What is wrong with `file`'s owner-only protection on this machine, or undefined when
- *  it holds as far as this side can see. Read-only on purpose, unlike protectPrivateFile:
- *  the caller that asks (secrets --apply) reads the file without rewriting it, so an
- *  operator's own ACL state is reported rather than silently corrected behind their back.
- *  The WSL boundary is not probed here either — that report belongs to protection, which
- *  is where a file gets (re)sealed, not to every read. */
+/** What is wrong with `file`'s owner-only protection, or undefined when it holds. Read-only
+ *  on purpose, unlike protectPrivateFile: the caller (secrets --apply) reads without
+ *  rewriting, so an operator's ACL state is reported, never silently corrected. No WSL
+ *  boundary probe here either — that belongs to protection. */
 export async function unprotectedPrivateFile(file: string): Promise<string | undefined> {
   if (process.platform === "win32") {
     try {
@@ -484,12 +434,9 @@ export async function unprotectedPrivateFile(file: string): Promise<string | und
   return (mode & 0o077) === 0 ? undefined : `mode is ${mode.toString(8)}, expected 600`;
 }
 
-/** Creates a private file without exposing its first byte under the process umask.
- *  `temp: true` (replacePrivateFile's own call for its temporary file) skips the WSL
- *  boundary report on both of protectPrivateFile's calls below — never for a name nothing
- *  will read a credential under. `boundary: false` skips it too, explicitly — for a caller
- *  (scaffold.ts's new-app, init.ts's init) that wants to print its own condensed note
- *  (wslBoundaryNote) later instead of the report firing here, mid-creation. */
+/** Creates a private file without exposing its first byte under the process umask. `temp:
+ *  true` skips the WSL boundary report (replacePrivateFile's temporary file). `boundary:
+ *  false` skips it too, for a caller that prints its own condensed note later. */
 async function createPrivateFileContent(file: string, content: string | Uint8Array, options: { temp?: boolean; boundary?: boolean } = {}): Promise<void> {
   const boundary = options.boundary ?? options.temp !== true;
   let handle: Awaited<ReturnType<typeof open>> | undefined;
@@ -528,16 +475,14 @@ export function createPrivateBinaryFile(file: string, content: Uint8Array): Prom
 }
 
 /** Host this module judges the rename retry by — injectable so the Windows-only path is
- *  provable from any host, the same seam TransportConfig.platform/hostPlatform gives
- *  createTransport (runtime/transport/transport.ts). */
+ *  provable from any host. */
 export const privateFileHost: { platform: string } = { platform: process.platform };
 
 type Renamer = (from: string, to: string) => Promise<void>;
 let renamer: Renamer = rename;
 
-/** Swappable for checks: real Windows file-lock contention (an editor or antivirus holding
- *  the target open) is not reproducible on demand, so the retry is proven against a scripted
- *  failure instead of a real lock. */
+/** Swappable for checks: real Windows file-lock contention isn't reproducible on demand, so
+ *  the retry is proven against a scripted failure instead. */
 export async function withPrivateFileRenamer<T>(substitute: Renamer, body: () => Promise<T>): Promise<T> {
   const previous = renamer;
   renamer = substitute;
@@ -555,11 +500,9 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
 
-/** POSIX rename(2) replaces an open target without complaint — nothing to retry there. Windows
- *  can hold the target open (an editor with the .env loaded, a backup tool or antivirus racing
- *  the temp sibling just written) and MoveFileEx then fails EPERM/EBUSY for a hold that is
- *  usually gone a moment later. A short retry absorbs that; a failure past it says what
- *  Windows itself does not. */
+/** POSIX rename(2) replaces an open target without complaint — nothing to retry there.
+ *  Windows can hold the target open (an editor, an antivirus scan) and MoveFileEx fails
+ *  EPERM/EBUSY for a hold usually gone a moment later. A short retry absorbs that. */
 export async function renameOverPrivateFile(temporary: string, file: string): Promise<void> {
   const attempts = privateFileHost.platform === "win32" ? RENAME_RETRY_ATTEMPTS : 1;
   for (let attempt = 1; ; attempt += 1) {
@@ -585,10 +528,9 @@ export async function renameOverPrivateFile(temporary: string, file: string): Pr
 
 /** Replaces a private file atomically on the same filesystem. */
 export async function replacePrivateFile(file: string, content: string): Promise<void> {
-  // Random per call: PID plus a millisecond timestamp collided when two replacements shared
-  // a millisecond, and the old catch-all cleanup then deleted a temporary file this call
-  // never created. `created` keeps the cleanup to files this call brought into being —
-  // createPrivateFile removes its own on failure and refuses an existing path untouched.
+  // Random per call: a PID+timestamp name once collided across replacements, and the old
+  // cleanup deleted a temporary this call never created. `created` scopes cleanup to files
+  // this call actually made.
   const temporary = `${file}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
   let created = false;
   try {

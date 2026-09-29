@@ -48,55 +48,24 @@ function normalizeRelativeSegments(path: string): string[] | null {
   return segments;
 }
 
-// Fed to `sh -s` on stdin with the candidate ancestors as argv — the same channel
-// existsVia() uses, because a multi-line argument does not survive wsl.exe's re-parsing.
-// Ancestors are reported, not followed: the contract refuses the link, it does not judge
-// its target. Explicit `exit 0` keeps the verdict on stdout alone — a for loop's exit
-// status is its body's last command, so an all-clear scan would otherwise exit 1.
+// Fed to `sh -s` on stdin with the candidate ancestors as argv, since a multi-line argument
+// doesn't survive wsl.exe's re-parsing. Explicit `exit 0` keeps the verdict on stdout alone —
+// a for loop's exit status is its body's last command, so an all-clear scan would exit 1.
 const SYMLINK_SCAN = `for p in "$@"; do
   [ -h "$p" ] && echo "$p"
 done
 exit 0
 `;
 
-/** A recipe may write private files only where its recipe.json declares them.
- *
- *  The privatePaths declaration is the single source the snapshot rules read: archive.ts
- *  excludes these paths from migrate and share, verify refuses archives that carry them.
- *  A file written anywhere else would be invisible to both — which is exactly how recipe
- *  credentials once travelled inside a migrate archive — so the write itself is refused,
- *  while the recipe is being developed, instead of silently leaking from every snapshot
- *  taken afterwards. Recipes are enumerated from the deployment's own recipe root, so the
- *  declaration a synthetic target is validated against is the deployed one.
- *
- *  The target is normalized by segments and compared against the declarations by segments,
- *  so `<data>/vault/../workspace/private.env` cannot pass as covered by a `vault`
- *  declaration. Symlink contract: a link BETWEEN the data directory and the declared root
- *  is refused, because it moves the write outside the subtree the declaration covers and
- *  the snapshots exclude; the data root itself may be a link (a deployment layout decision
- *  — a private write lands in the tree the link points to; backup is the exception and
- *  refuses a symlinked data root outright, because tar is handed the link's own name and
- *  would store the link instead of its content), and a
- *  link at the final component of a FILE target is replaced (mv -T), not written through.
- *  This is armor against a recipe author's
- *  path-assembly mistake, not isolation from hostile JavaScript — the hook already holds a
- *  full Context.
- *
- *  The verdict is computed on the string the kernel will actually walk: pathname resolution
- *  follows the RAW path's components, and a link sitting before a `..` vanishes from
- *  textual normalization but is still crossed on disk — so the symlink scan runs over the
- *  raw path's directory prefixes, not the normalized ones. With no link among them,
- *  textual and physical resolution agree, and the single verified path returned here is
- *  what every subsequent mkdir/write/mv uses; the helpers never fall back to the raw
- *  string. A link at the final component of a DIRECTORY
- *  target is refused too: `mkdir -p` and `chmod` do not replace it the way `mv -T` does,
- *  they act through it.
- *
- *  Returns the target's normalized data-relative path together with the declaration that
- *  covered it — the pair the private-paths ledger records, so a declared directory stays a
- *  declared directory after its declaration is gone while an undeclared ancestor of a file
- *  write never becomes one — and the target's
- *  absolute form for the write. */
+/** A recipe may write private files only where its recipe.json declares them. privatePaths
+ *  is the single source the snapshot rules read (archive.ts excludes, verify refuses), so a
+ *  file written anywhere else is refused up front. Target is normalized and compared by
+ *  segments, so `<data>/vault/../workspace/x` can't pass as covered by `vault`. Symlink
+ *  contract: a link between the data directory and the declared root is refused; a link at
+ *  the final component is replaced (file: `mv -T`) or refused (directory). Armor against
+ *  path-assembly mistakes, not isolation from hostile code. The symlink scan runs over the
+ *  RAW path's prefixes, not normalized, since a link before a `..` would otherwise vanish
+ *  from textual normalization while still crossed on disk. */
 async function assertDeclaredPrivatePath(
   ctx: Context,
   path: string,
@@ -123,8 +92,7 @@ async function assertDeclaredPrivatePath(
     );
   }
   // Every proper prefix of the raw path is a directory the kernel crosses before the final
-  // component; `.` and `..` inside a prefix are resolved as written, so they are scanned
-  // exactly where they stand. Directory mode adds the final component itself.
+  // component. Directory mode adds the final component itself.
   const rawSegments = rawRelative.split("/");
   const checked = Array.from(
     { length: rawSegments.length - 1 },
@@ -166,25 +134,17 @@ export async function ensurePrivateTargetDirectory(ctx: Context, path: string): 
 }
 
 /** Atomically replaces a target file with mode 600, preserving the old file on a failed write.
- *
- *  The staging sibling carries the real bytes from the first one written, so a process (or a
- *  cleanup) interrupted before the mv leaves them beside the target under a name the
- *  declaration's exact path never matches. The sibling therefore stays name-adjacent to the
- *  verified target on purpose: the whole `.clawforge-private-` family is what the snapshot
- *  policy excludes and verify refuses (service/archive/profile.ts, commands/lifecycle/verify.ts), and
- *  a successful run removes it here. */
+ *  The staging sibling stays name-adjacent to the verified target: the whole
+ *  `.clawforge-private-` family is excluded by the snapshot policy and refused by verify, so
+ *  an interrupted mv still leaves protected bytes behind. */
 export async function replacePrivateTargetFile(ctx: Context, path: string, content: string): Promise<PrivateFileResult> {
   if (!path.startsWith("/")) throw new Error(`private target file must be absolute: ${path}`);
   const { ledger, boundary, target } = await assertDeclaredPrivatePath(ctx, path, "file");
-  // Recorded before anything is written, same contract as ensurePrivateTargetDirectory:
-  // a write that cannot be remembered is refused rather than left unprotected.
+  // Same contract as ensurePrivateTargetDirectory: recorded before anything is written.
   await recordPrivateWrite(ledger, boundary);
-  // Created and validated through the file's own declaration rather than via
-  // ensurePrivateTargetDirectory: a declaration may name the exact file, and that entry
-  // then covers its parent directory too without the parent being declared a second time.
+  // Created via the file's own declaration rather than ensurePrivateTargetDirectory: an
+  // entry naming the exact file also covers its parent, without declaring it separately.
   await createPrivateDirectory(ctx, parentPath(target));
-  // The staging file and the mv both use the verified path: with the symlink contract
-  // above enforced, this is the only path any part of the write touches.
   const temporary = `${target}${PRIVATE_STAGING_MARKER}${randomBytes(8).toString("hex")}`;
   try {
     if (ctx.transport.writePrivateFile !== undefined) await ctx.transport.writePrivateFile(temporary, content);
@@ -203,17 +163,11 @@ function serializeShellEnv(entries: [string, string][]): string {
   return entries.map(([name, value]) => `export ${name}=${shellQuote(value)}`).join("\n") + "\n";
 }
 
-/** Runs a target command with secret values that never appear in any process's argv.
- *
- * Everything else here keeps secrets out of this process's own logs; handing one to
- * `ctx.transport.exec` still leaks it on the target — as an argument it sits in the target
- * command's `/proc/<pid>/cmdline` for the whole run, and the transport's own `env` option
- * parks values in the wrapping `env` process's argv for the window before it execs. So the
- * values travel once, through the transport's private write, into an owner-only file under
- * locksDir (the runtime's own env-file pattern), and a shell sources that file and replaces
- * itself with the command. Nothing here can see the values again once the file is written —
- * which is also why they are registered for redaction first: a failing child is reported
- * with its whole command line, and the command's own output may echo them. */
+/** Runs a target command with secret values that never appear in any process's argv. Passing
+ *  one to `ctx.transport.exec` directly would still leak it (an argument sits in
+ *  `/proc/<pid>/cmdline`, `env` parks values in the wrapping process's argv). Values travel
+ *  once, through a private write, into an owner-only file, and a shell sources it then
+ *  replaces itself with the command. Registered for redaction first. */
 export async function execWithSecrets(
   ctx: Context,
   command: string,
@@ -267,9 +221,7 @@ export async function execWithSecrets(
 }
 
 /** Replaces one KEY=VALUE entry while preserving unrelated target-env lines — core/env.ts's
- *  upsertEnvLine, which recognizes `export NAME=` and spacing round `=` the way parseEnv
- *  reads them, not just the bare `NAME=` prefix. Kept here under its established name: every
- *  caller already reads target-env content, not the repository's own .env. */
+ *  upsertEnvLine, which recognizes `export NAME=` and spacing round `=` like parseEnv does. */
 export function upsertEnvValue(content: string, name: string, value: string): string {
   return upsertEnvLine(content, name, value);
 }

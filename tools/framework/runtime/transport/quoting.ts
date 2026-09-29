@@ -9,14 +9,11 @@ import { shellQuote } from "../../core/io/shell.ts";
 import type { ExecOptions, ExecResult } from "./exec.ts";
 
 /** The two name markers of the tooling's own temp-sibling staging families: a private write
- *  stages `<path>.clawforge-private-<hex>` (private-config.ts, privateWriteCommand below), a
- *  publish stages `<path>.clawforge-publish-<hex>` (publishCommand below, LocalTransport.writeFile).
- *  Both siblings carry the file's real bytes from the first one written, so a process that dies
- *  before the rename — or a cleanup that fails — leaves them beside the target under a name no
- *  declared exact path matches. That is why the snapshot policy recognizes the marker families
- *  themselves (service/archive/profile.ts excludes them, commands/lifecycle/verify.ts refuses them), not
- *  only the declared paths. Defined here, where the names are created, so the policy readers
- *  cannot drift from the writers. */
+ *  stages `<path>.clawforge-private-<hex>`, a publish stages `<path>.clawforge-publish-<hex>`.
+ *  A process that dies before the rename leaves them beside the target under a name no
+ *  declared exact path matches, so the snapshot policy recognizes the marker families
+ *  themselves (service/archive/profile.ts excludes them, verify.ts refuses them). Defined
+ *  here, where the names are created, so the policy readers cannot drift from the writers. */
 export const PRIVATE_STAGING_MARKER = ".clawforge-private-";
 export const PUBLISH_STAGING_MARKER = ".clawforge-publish-";
 
@@ -36,10 +33,9 @@ export function privateWriteCommand(path: string): [string, string[]] {
 }
 
 /** Builds a publish command for a POSIX target: content lands in a temp sibling that is
- *  renamed over the wanted name. rename(2) swaps the directory entry, so an existing
- *  symlink at the target is replaced rather than written through, and a reader sees either
- *  the old or the new content — never a partial file (see
- *  docs/internal/review-2026-09-23-xxa-round-6.md). */
+ *  renamed over the wanted name. rename(2) swaps the directory entry, so an existing symlink
+ *  at the target is replaced rather than written through, and a reader sees either the old
+ *  or the new content — never a partial file. */
 export function publishCommand(path: string): [string, string[]] {
   const temporary = `${path}${PUBLISH_STAGING_MARKER}${randomBytes(8).toString("hex")}`;
   const script =
@@ -49,11 +45,10 @@ export function publishCommand(path: string): [string, string[]] {
   return ["sh", ["-c", script, "sh", temporary, path]];
 }
 
-/** Environment variables cross a process boundary only if something carries them. Setting
- *  them on the local `wsl.exe` or `ssh` process does not put them in the target's process:
- *  WSL passes only what WSLENV names, and ssh only what the server's AcceptEnv allows. So
- *  they are prepended to the remote command itself with `env`. */
-/** Builds the target-side `env` wrapper without retaining values that are being cleared. */
+/** Builds the target-side `env` wrapper without retaining values that are being cleared.
+ *  Setting variables on the local `wsl.exe`/`ssh` process doesn't put them in the target's
+ *  process (WSL passes only what WSLENV names, ssh only what AcceptEnv allows), so they are
+ *  prepended to the remote command with `env` instead. */
 export function withEnvPrefix(
   command: string,
   args: string[],
@@ -68,29 +63,17 @@ export function withEnvPrefix(
   return ["env", [...removals.flatMap((name) => ["-u", name]), ...assignments.map(([key, value]) => `${key}=${value}`), command, ...args]];
 }
 
-/** Answers the existence question on the target and says which of the four answers it is:
- *  `exists`, `absent`, `blocked <dir>`, or `loop <path>` — only the second means the path is
- *  not there.
+/** Answers the existence question on the target: `exists`, `absent`, `blocked <dir>`, or
+ *  `loop <path>` — only the second means the path is not there. `test -e` alone can't make
+ *  that distinction (exit 1, no output, for both a missing path and one this user can't
+ *  stat), so a negative answer is re-derived by walking the path from the root, confirming
+ *  each parent is searchable before the next component — every stat failure then means ENOENT.
  *
- *  `test -e` alone cannot make that distinction. It exits 1 and prints nothing both for a
- *  path that is genuinely missing and for one the target user was not allowed to stat,
- *  because all it sees is a failed stat with the reason thrown away. So a negative answer is
- *  re-derived by walking the path one component at a time, from the root: each parent is
- *  confirmed to be a directory that can be searched BEFORE the next component is looked at,
- *  which makes every stat along the way one whose failure can only mean ENOENT.
- *
- *  A symlink is resolved and its target walked the same way, because the reason `test -e`
- *  fails may lie entirely outside the path as written: config/openclaw.json pointing at a
- *  file under a directory this user cannot enter is not a missing config, and answering that
- *  it is deletes live credentials one caller later. `readlink` rather than `readlink -f`:
- *  resolving the whole chain in one step would hide which link in it was the problem, and
- *  loses the same invariant this walk exists to keep.
- *
- *  Kept to POSIX sh: it runs on whatever the target has. It is fed to `sh -s` on stdin
- *  rather than passed as an argument, because wsl.exe re-parses the command line it is given
- *  and a multi-line argument does not survive that trip — the shell received a broken `case`
- *  and answered "Syntax error: word unexpected". Over stdin the script is data on a pipe,
- *  which no argument parser between here and the target touches. */
+ *  A symlink is resolved and its target walked the same way: a config file under a directory
+ *  this user can't enter is not a missing config, and answering that it is deletes live
+ *  credentials one caller later. `readlink`, not `readlink -f`, so a broken chain names the
+ *  actual failing link. Fed to `sh -s` on stdin, since wsl.exe re-parses the command line and
+ *  a multi-line argument wouldn't survive. */
 const PRESENCE_PROBE = `
 p=$1
 if [ -e "$p" ]; then echo exists; exit 0; fi
@@ -129,24 +112,11 @@ done
 echo absent
 `;
 
-/** Present, absent, or "the check itself could not run" — and the third must never be
- *  answered as the second.
- *
- *  `result.code === 0` was once the whole test, so ssh exiting 255 because it never reached
- *  the host, or wsl.exe failing because the distro would not start, both read as "that path
- *  is not there" about a machine this process never spoke to. Reading exit 1 with an empty
- *  stderr as "absent" was the same mistake one level down: that is exactly what `test -e`
- *  reports for an existing file under a directory the current user cannot enter.
- *
- *  Callers act on the answer: `secrets --apply` rebuilt config/.env from the empty
- *  requirement list that follows and deleted the keys it no longer believed were needed, and
- *  `restore` skips moving live data aside — then unpacks the archive over it, with sudo —
- *  when it believes the data directory is absent. Anything short of a definite "not there"
- *  therefore throws.
- *
- *  Exported for testing, like listFilesVia: the case worth pinning — an existing file under a
- *  directory the user may not enter — needs a real shell and a real directory tree, and
- *  neither needs a WSL distribution or a server to stage. */
+/** Present, absent, or "the check itself could not run" — the third must never be answered
+ *  as the second. `result.code === 0` alone would read ssh exiting 255 or a failed wsl.exe
+ *  distro start as "not there"; exit 1 with empty stderr is the same trap. Callers act on the
+ *  answer (`secrets --apply` deletes keys, `restore` unpacks with sudo), so anything short of
+ *  a definite "not there" throws. */
 export async function existsVia(
   exec: (command: string, args: string[], options: ExecOptions) => Promise<ExecResult>,
   path: string,

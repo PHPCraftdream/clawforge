@@ -24,17 +24,15 @@ function claimPath(ctx: Context, generation: string): string {
   return `${guardPath(ctx)}/.claim-${generation}`;
 }
 
-/** Where a confirmed foreign takeover is recorded — beside the guard, never inside it: the
- *  guard directory itself is removed once the takeover completes, and the point of this
- *  record is to survive that. One append-only file for the deployment's whole history of
- *  them, since they are meant to be rare enough that a human reads this by hand. */
+/** Where a confirmed foreign takeover is recorded — beside the guard, never inside it, since
+ *  the guard directory is removed once the takeover completes and this record must survive
+ *  that. One append-only file for the deployment's whole history, rare enough to read by hand. */
 function foreignTakeoverLog(ctx: Context): string {
   return `${locksDir(ctx.settings.dataDir)}/foreign-lock-takeovers.jsonl`;
 }
 
-/** Best-effort append: a confirmed, explicit override of someone else's orphaned guard is
- *  exactly the kind of event that must not go unrecorded when writing it is possible at all —
- *  but it must never be the reason the takeover itself fails. */
+/** Best-effort append: a confirmed override of someone else's orphaned guard must not go
+ *  unrecorded when writable, but must never be the reason the takeover itself fails. */
 async function recordForeignTakeover(ctx: Context, confirmedHost: string, foreignOwner: MutationOwner): Promise<void> {
   const entry = {
     at: new Date().toISOString(),
@@ -106,25 +104,22 @@ function busy(path: string, owner?: MutationOwner): Error {
     ? "if no lock change is active, retry with --break-lock"
     : owner.machine === machineName()
       ? "wait for it to finish"
-      // A remote pid's liveness cannot be checked from here — names the exact flag and
-      // host id a command that accepts it needs, and the runbook for verifying first.
+      // A remote pid's liveness can't be checked from here — names the exact flag/host to use.
       : `check whether it is still running on ${owner.machine}; if that process is gone, rerun with ` +
         `--break-foreign-lock ${owner.machine} (see docs/architecture.md, instance lock)`;
   return new Error(`another instance-lock change is in progress at ${path} (${identity}); ${advice}`);
 }
 
-/** Failure exit from anywhere marker exists: drop it (best effort), then raise `error` —
- *  the one mechanism every failure branch below routes its marker cleanup through, replacing
- *  what used to be an identical `await ctx.transport.remove(marker).catch(() => {})` repeated
- *  at each throw site. Never resolves — always throws — so callers can `await` it mid-branch. */
+/** Failure exit from anywhere the marker exists: drop it (best effort), then raise `error`.
+ *  Never resolves — always throws — so callers can `await` it mid-branch. */
 async function abortClaim(ctx: Context, marker: string, error: unknown): Promise<never> {
   await ctx.transport.remove(marker).catch(() => {});
   throw error;
 }
 
 /** The uncontested path: nobody held `guard` a moment ago, so this `mkdir` alone is the win.
- *  Publishes the marker as owner and drops it; any failure — thrown or a failed write/link —
- *  gives the guard directory back rather than leaving an empty one behind. */
+ *  Publishes the marker as owner and drops it; any failure gives the guard directory back
+ *  rather than leaving an empty one behind. */
 async function claimFreshGuard(
   ctx: Context,
   guard: string,
@@ -149,9 +144,8 @@ async function claimFreshGuard(
 }
 
 /** Whether an existing guard can be taken over, before any marker is written: a live owner
- *  always refuses; a dead one is free; a foreign one needs `breakForeignLockHost` to match its
- *  recorded machine exactly. Returns whether this is a confirmed foreign takeover, to record
- *  once publishClaim actually succeeds. */
+ *  always refuses; a dead one is free; a foreign one needs `breakForeignLockHost` to match
+ *  its recorded machine exactly. Returns whether this is a confirmed foreign takeover. */
 function resolveGuardOwner(
   guard: string,
   current: MutationOwner | undefined,
@@ -165,11 +159,10 @@ function resolveGuardOwner(
   const alive = processIsAlive(current);
   if (alive === true) throw busy(guard, current);
   if (alive === undefined) {
-    // processIsAlive returns undefined for two different reasons: a genuinely foreign
-    // machine, or a probe error on THIS machine that proves nothing either way (EIO, a
-    // permission the signal itself needs). Only the first is what --break-foreign-lock is
-    // for — a probe error on an owner already recorded as this machine is never treated as
-    // foreign, confirmed host or not, since there is nothing "foreign" to confirm.
+    // processIsAlive returns undefined for two reasons: a genuinely foreign machine, or a
+    // probe error on THIS machine that proves nothing. Only the first is what
+    // --break-foreign-lock is for — an owner already recorded as this machine is never
+    // treated as foreign.
     if (current.machine === machineName() || breakForeignLockHost === undefined) throw busy(guard, current);
     if (breakForeignLockHost !== current.machine) {
       throw new Error(
@@ -177,14 +170,11 @@ function resolveGuardOwner(
           `"${current.machine}", not "${breakForeignLockHost}" — pass the exact host to confirm, or leave it alone`,
       );
     }
-    // Confirmed: an explicit, host-matched operator override, never automatic. Recorded
-    // once the takeover actually publishes below, alongside who did it and when.
+    // Confirmed: an explicit, host-matched operator override, never automatic.
     return true;
   }
-  // alive === false: proven dead on this machine, recoverable regardless of any flag (the
-  // guard's own short critical section, unlike the outer instance lock, has always allowed
-  // this — see instance-lock.ts's REPORTED-never-silently-taken note for why the outer one
-  // still requires --break-lock even then).
+  // alive === false: proven dead on this machine, recoverable regardless of any flag — unlike
+  // the outer instance lock (instance-lock.ts), which still requires --break-lock even then.
   return false;
 }
 
@@ -211,7 +201,7 @@ async function retireDeadCompetitors(
 }
 
 /** Parks the guard's current owner.json aside so publishClaim can replace it — refuses if the
- *  owner moved since it was read (another run got there first) or if parking itself fails. */
+ *  owner moved since it was read or if parking itself fails. */
 async function parkCurrentOwner(
   ctx: Context,
   guard: string,
@@ -252,8 +242,7 @@ async function retireStaleUnclaimedMarkers(ctx: Context, guard: string, marker: 
 }
 
 /** Publishes the marker as owner.json via `ln`, rolling the parked stale owner back if that
- *  fails — the only branch where marker cleanup stays conditional on the ln itself, since a
- *  failed publish must leave *something* readable as owner when the rollback also fails. */
+ *  fails — a failed publish must leave *something* readable as owner. */
 async function publishClaim(
   ctx: Context,
   guard: string,
@@ -284,8 +273,7 @@ async function publishClaim(
 
 /** The contested path: `guard` already exists, so winning it means proving its current owner
  *  is takeable, staking a claim marker, clearing every other claim, and publishing over
- *  whatever was there — each step its own function above, in the order a claim actually has
- *  to happen in. */
+ *  whatever was there. */
 async function claimExistingGuard(
   ctx: Context,
   guard: string,
@@ -343,11 +331,9 @@ async function release(ctx: Context, owner: MutationOwner): Promise<void> {
 }
 
 /** Runs a lock-state mutation under the shared, recoverable mutation guard.
- *
  *  `breakForeignLockHost` is the exact host id an operator has confirmed as the orphaned
  *  owner's machine — never inferred, never automatic. A mismatch refuses; a match takes over
- *  and records who did it, when, and which foreign owner it replaced (instance-mutation-guard.ts,
- *  runbook in docs/architecture.md). */
+ *  and records who did it, when, and which foreign owner it replaced. */
 export async function withMutationGuard<T>(
   ctx: Context,
   body: () => Promise<T>,

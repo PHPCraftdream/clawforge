@@ -1,6 +1,4 @@
-// Registry digest resolution and exit-code readback for ./clawforge upgrade, split out of
-// runtime/docker/runtime-docker.ts to keep it under the line cap. Lives beside it in
-// runtime/docker/, with incident-snapshot.ts, as Docker-specific diagnostics.
+// Registry digest resolution and exit-code readback for ./clawforge upgrade.
 
 import type { Transport } from "../transport/transport.ts";
 
@@ -17,11 +15,9 @@ export function channelHasTag(channel: string): boolean {
 }
 
 /** Registry digest for `reference` via `docker buildx imagetools inspect` — never pulls a
- *  layer or moves a local tag, unlike `docker pull`/`docker image inspect`, which only ever
- *  answer for what is already local. Undefined on any failure (offline registry, buildx
- *  missing, unparseable output): "could not ask" must never read as "asked and got nothing".
- *  The result keeps the channel (`repo:tag@sha256:…`): pulls still go by digest, and
- *  `upgrade` reads the tag back to know what to re-resolve. */
+ *  layer or moves a local tag, unlike `docker pull`/`docker image inspect`. Undefined on any
+ *  failure: "could not ask" must never read as "asked and got nothing". Keeps the channel
+ *  (`repo:tag@sha256:…`) so `upgrade` reads the tag back to know what to re-resolve. */
 export async function resolveImageDigest(transport: Transport, reference: string): Promise<string | undefined> {
   const result = await transport.exec("docker", ["buildx", "imagetools", "inspect", reference], { allowFailure: true });
   const digest = result.code === 0 ? /^Digest:\s+(\S+)/m.exec(result.stdout)?.[1] : undefined;

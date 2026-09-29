@@ -1,5 +1,4 @@
-// Pre-mutation evidence for ./clawforge incident's "preserve" phase, split out of
-// runtime/docker/runtime-docker.ts to keep it under the line cap.
+// Pre-mutation evidence for ./clawforge incident's "preserve" phase.
 
 import type { Transport } from "../transport/transport.ts";
 
@@ -22,10 +21,9 @@ export function redactInspectEnv(raw: string): string {
   return `${JSON.stringify(parsed, null, 2)}\n`;
 }
 
-/** A log tail plus the redacted `docker inspect` record for `containerId`, read by id rather
- *  than through compose: the caller reads this before a recreate removes the container and
- *  its json-file log. Undefined when there is no container; a half that failed is reported
- *  inline instead of losing the half that worked. */
+/** A log tail plus the redacted `docker inspect` record for `containerId`, read before a
+ *  recreate removes the container and its log. Undefined when there is no container; a half
+ *  that failed is reported inline instead of losing the half that worked. */
 export async function captureIncidentSnapshot(
   transport: Transport,
   containerId: string | undefined,

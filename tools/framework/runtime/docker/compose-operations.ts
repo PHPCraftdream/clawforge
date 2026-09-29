@@ -1,8 +1,6 @@
-// Compose invocation and the per-call environment file it needs — DockerRuntime's single
-// largest responsibility, split out of runtime-docker.ts to keep that file orchestration-only.
-// Settings can be replaced wholesale by reconcile(), so this class never caches them in a
-// field of its own: every read and write goes through the accessors the caller supplies,
-// which is the same Settings the constructing DockerRuntime instance holds.
+// Compose invocation and the per-call environment file it needs. Settings can be replaced
+// wholesale by reconcile(), so this class never caches them in a field of its own: every
+// read and write goes through the accessors the caller supplies.
 
 import { randomUUID } from "node:crypto";
 import { composeFile, locksDir, toSettings, loadEnv, type Settings } from "../../core/env.ts";
@@ -12,14 +10,10 @@ import type { PathBridge } from "../../core/paths.ts";
 import type { ExecResult, Transport } from "../transport/transport.ts";
 import { NotBootstrapped, type RunOneOffOptions } from "../runtime.ts";
 
-/** Removes `compose-*` directories a PAST call to `withEnvFile` left behind — a token-bearing
- *  compose.env survives a crash between the mkdir below and this method's own finally block
- *  (crash 139 mid-command, an OOM kill, anything that skips Node's own cleanup entirely). Only
- *  ones provably abandoned: an owner.json naming this machine and a pid that is provably gone
- *  (never a bare "unreadable owner.json", which a sibling call still mid-write toward its
- *  own — see the write order below — would also show for an instant; never a different
- *  machine's own clawforge, whose pid cannot be checked from here at all). Best-effort:
- *  a failed listing or removal here must never block the real compose call that follows. */
+/** Removes `compose-*` directories a PAST call to `withEnvFile` left behind (a crash between
+ *  mkdir and this method's finally block). Only ones provably abandoned: owner.json naming
+ *  this machine, with a pid provably gone. Best-effort: a failure here must never block the
+ *  real compose call that follows. */
 async function sweepStaleComposeEnvs(transport: Transport, directory: string): Promise<void> {
   let entries: string[];
   try {
@@ -77,11 +71,9 @@ export function serializeComposeEnv(env: Record<string, string>): string {
     .join("\n") + "\n";
 }
 
-/** Runs `docker compose` for one service against the deployment's own compose file, with the
- *  per-call env-file plumbing (`withEnvFile`, `compose`) that every compose invocation needs —
- *  the runtime's own env-file for a helper container start, a side stack's, a one-off run.
- *  Settings are read and written through accessors rather than a field: reconcile() replaces
- *  the whole object, and every other caller must see that replacement immediately. */
+/** Runs `docker compose` for one service, with the per-call env-file plumbing (`withEnvFile`,
+ *  `compose`) that every invocation needs. Settings are read/written through accessors:
+ *  reconcile() replaces the whole object, and every caller must see it immediately. */
 export class ComposeOperations {
   #transport: Transport;
   #getSettings: () => Settings;
@@ -109,10 +101,9 @@ export class ComposeOperations {
     this.#reconcileSettings = reconcileSettings;
   }
 
-  /** Supplies one operation's environment by file and removes it on completion. Defaults
-   *  to the settings this runtime was built with; reconcile() is the one caller that hands
-   *  in fresh ones read from disk. Public: the helper-container and side-stack callers share
-   *  this exact plumbing rather than each opening their own env-file. */
+  /** Supplies one operation's environment by file and removes it on completion. Defaults to
+   *  the settings this runtime was built with; reconcile() hands in fresh ones read from
+   *  disk. Public: helper-container and side-stack callers share this exact plumbing. */
   async withEnvFile<T>(
     action: (path: string) => Promise<T>,
     settings: Settings = this.#getSettings(),
@@ -132,12 +123,8 @@ export class ComposeOperations {
       try {
         await this.#transport.mkdirp(directory);
       } catch (error) {
-        // Distinguished from every other reason this mkdir can fail: a data directory that
-        // genuinely does not exist means nobody ever bootstrapped this deployment, and the
-        // sibling "-locks" directory this call is trying to create shares that parent — the
-        // exact write a still-root-owned parent refuses. Anything else (the parent exists,
-        // but permissions or disk space are wrong for some other reason) is a real failure
-        // and propagates as before.
+        // A missing data directory means nobody bootstrapped this deployment; the sibling
+        // "-locks" directory shares that parent. Any other failure propagates as-is.
         if (!(await this.#transport.exists(settings.dataDir))) {
           throw new NotBootstrapped(settings.dataDir);
         }
@@ -147,9 +134,8 @@ export class ComposeOperations {
       // Keep file creation private even before writeFile applies its mode.
       await this.#transport.exec("mkdir", ["-m", "700", privateDirectory]);
       cleanupNeeded = true;
-      // Owner recorded before the token-bearing file, not after: a crash between these two
-      // writes then leaves owner.json in place, which is exactly what the sweep above needs
-      // to prove the directory abandoned on a later run rather than leave it unowned forever.
+      // Owner recorded before the token-bearing file: a crash between these two writes still
+      // leaves owner.json in place, which the sweep above needs.
       await this.#transport.writeFile(ownerPath, owner, "600");
       await this.#transport.writeFile(path, body, "600");
       result = await action(path);
@@ -175,18 +161,10 @@ export class ComposeOperations {
   /** Compose needs the file and project directory in the target's coordinates: the tooling
    *  may be on Windows while compose runs inside WSL. */
   async #composeArgs(envFileOnTarget: string): Promise<string[]> {
-    // The service definition is shared, but the project directory is the deployment's, so two
-    // deployments running the same definition stay separate.
-    //
-    // The project name is the deployment's, stated rather than left to compose: it would
-    // otherwise come from COMPOSE_PROJECT_NAME in the project's .env, and two deployments
-    // copied from the same template would share containers, networks and volumes.
-    //
-    // --env-file REPLACES the project directory's own .env rather than adding to it (checked
-    // against compose v5: a variable only that .env defines comes out unset). That is why the
-    // file written above carries the whole environment and not just the secret part of it —
-    // and it is an improvement for a remote target, where the deployment directory, and the
-    // .env in it, is not necessarily on the machine compose runs on at all.
+    // Project directory is the deployment's, so two deployments sharing a definition stay
+    // separate. Project name is stated rather than left to compose, or they'd share
+    // containers/networks/volumes. --env-file REPLACES the project directory's own .env, so
+    // the file written above carries the whole environment, not just the secret part.
     const [file, projectDir] = await Promise.all([
       this.#paths.toTarget(composeFile),
       this.#paths.toTarget(deploymentDir()),
@@ -204,9 +182,8 @@ export class ComposeOperations {
     ];
   }
 
-  // Failures propagate by default: only the read-only queries below opt out, because
-  // "the project does not exist yet" is an answer, not an error. Public: the helper-container
-  // group runs startHelper/stopHelper/helperRunning through this same entry point.
+  // Failures propagate by default: only the read-only queries below opt out, since "the
+  // project doesn't exist yet" is an answer, not an error.
   async compose(
     args: string[],
     stream = false,
@@ -242,10 +219,8 @@ export class ComposeOperations {
   }
 
   /** `up` against the deployment .env as it is on disk NOW, not this process's start-time
-   *  snapshot (secrets --apply and incident rewrite .env, then call this). A settings builder,
-   *  when supplied, layers the app's computed settings over the fresh read, as the context does.
-   *  The fresh settings are then kept: a later compose call with the old ones would make
-   *  compose recreate the service with them (a rotated token silently reverted). */
+   *  snapshot. The fresh settings are then kept: a later compose call with the old ones would
+   *  make compose recreate the service with them (a rotated token silently reverted). */
   async reconcile(): Promise<void> {
     const current = this.#reconcileSettings !== undefined
       ? await this.#reconcileSettings()

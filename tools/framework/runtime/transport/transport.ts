@@ -1,15 +1,13 @@
 // Transport: how the tooling reaches the machine the instance lives on.
 //
 // This is the abstraction that lets the same code run from Windows, from WSL, or against a
-// server. "Where our code executes" and "where the target lives" are different things:
-// the Windows Node reaches a WSL target through wsl.exe, and nothing above this layer
-// needs to know that.
+// server: "where our code executes" and "where the target lives" are different things (the
+// Windows Node reaches a WSL target through wsl.exe), and nothing above this layer needs to
+// know that.
 //
-// This file is the module's public entry point. The contract and every implementation live
-// in their own files beside it — exec.ts (ExecOptions/ExecResult/Transport, spawnLocal),
-// quoting.ts (shell quoting, remote staging scripts, existsVia), local.ts, wsl.ts, ssh.ts —
-// and are re-exported here so nothing above this layer has to know the module was split, and
-// this file stays the one place that assembles a Transport from a TransportConfig.
+// This file is the module's public entry point; the contract and every implementation
+// (exec.ts, quoting.ts, local.ts, wsl.ts, ssh.ts) are re-exported here, and this file
+// assembles a Transport from a TransportConfig.
 //
 // Rule for everything built on top: never touch target files with node:fs directly. The
 // target may not share a filesystem with us. Go through the transport.

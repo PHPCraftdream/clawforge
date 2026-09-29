@@ -1,5 +1,4 @@
-// Target is a remote host reached over SSH. Split out of transport.ts to keep that file a
-// thin facade over the per-transport implementations.
+// Target is a remote host reached over SSH.
 //
 // Commands are passed as an argument array all the way through: ssh joins them into a
 // single remote command line, so anything containing spaces is quoted here rather than
@@ -58,10 +57,8 @@ export class SshTransport implements Transport {
         "check that ssh is installed and on PATH",
       );
     }
-    // Our own deadline killing ssh (SIGTERM → a signal-terminated -1, or code 255) can look
-    // exactly like ssh's own connection failure — isSshOwnFailure below cannot tell them
-    // apart. result.timedOut (set by spawnLocal) can, so it is checked first: a slow command
-    // must never be reported as TARGET_UNREACHABLE.
+    // Our own deadline killing ssh can look exactly like ssh's own connection failure —
+    // isSshOwnFailure can't tell them apart. result.timedOut can, checked first.
     if (result.timedOut === true) {
       if (options.allowFailure === true) return result;
       const error = composeExecFailure("ssh", sshArgs, result) as CommandFailure;

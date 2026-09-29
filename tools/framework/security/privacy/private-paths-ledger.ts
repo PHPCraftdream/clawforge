@@ -1,59 +1,20 @@
 // The deployment's memory of its own private target writes.
 //
-// A privatePaths declaration lives in the recipe's source tree and can disappear — the
-// recipe removed, or a set switched to one that no longer includes it — while the runtime
-// files an earlier private write left under the data directory stay exactly where they
-// are. Nothing recorded that a private write ever happened, so the moment the declaration
-// vanished, both the archive exclusions and verify's refusals lost the path: a credential
-// silently became shareable.
+// A privatePaths declaration can disappear (recipe removed, set switched) while the data it
+// protected stays on disk. Without a separate record, archive exclusions and verify's
+// refusals would lose the path the moment the declaration vanished — a credential silently
+// becomes shareable. This ledger is that record: every private write appends the written
+// path and its boundary; installedRecipePrivatePaths unions the ledger with current
+// declarations. A path stays protected until explicitly forgotten (forgetPrivatePaths,
+// after the data is deleted), which records a tombstone rather than relying on emptiness.
 //
-// This ledger is that missing record: every private write through the helpers in
-// private-config.ts appends the written path and the declaration boundary that authorized
-// it here, and the security-policy reader (installedRecipePrivatePaths) unions the ledger
-// with whatever the current declarations say. A path that was once written privately stays
-// excluded and refused until it is
-// explicitly forgotten — and the only forget is deliberate (forgetPrivatePaths, called
-// after the corresponding data has actually been deleted), which records a tombstone beside
-// the surviving entries so "deliberately forgotten" is a state of the ledger's own protocol
-// rather than a guess read off whether a file happens to exist. Nothing calls it
-// automatically: not a vanished recipe directory, not a set switch.
-// The ledger deliberately does NOT
-// follow the set source the way desiredStateFile does — it describes this target's
-// history, which outlives any one set.
+// File: <deployment>/config/private-paths.json. Reads fail closed; writes are strict once
+// config/ exists. Recording happens BEFORE the write it describes.
 //
-// The file is <deployment>/config/private-paths.json, beside the desired state and the
-// secrets template. Reads fail closed: a ledger that exists but cannot be parsed or
-// validated stops the policy readers, exactly as a broken recipe.json does — "cannot
-// verify the history" must never read as "no history". Writes from the helpers are strict
-// once the deployment's config/ exists (scaffold.ts and init.ts create it before any
-// recipe can run) and quietly skipped before that, which only the synthetic deployments
-// checks construct ever hit. Recording happens BEFORE the write it describes, so a private
-// write that cannot be remembered is refused rather than made unprotected.
-//
-// The record has a twin inside the data directory itself: config/clawforge-private-paths.json.
-// The deployment-side ledger describes the target but lives on the operator side, so a full
-// backup restored through a different deployment directory — a new folder, a lost one,
-// another machine managing the same target — needs its own copy of the history to arrive
-// with the data: fail-closed for a ledger that exists but cannot
-// be read is still fail-open for one that is simply not there. createArchive() publishes the
-// current ledger into the data root before a full backup, so the history travels physically
-// with the data it describes — the ownership ledger clawforge-managed.json lives in the data
-// root for the same reason — and restore imports it back before anything may act on the
-// restored data. migrate and share exclude the copy from their archives: it names this
-// instance's paths and travels with full backups only. A history the archive does not carry
-// is said at restore time, never silently read as "nothing to protect".
-//
-// publishPrivatePathsHistory keys off whether the local ledger FILE exists at all, not
-// whether it is empty: only forgetPrivatePaths ever writes an empty ledger, so emptiness
-// alone cannot tell "forgotten" from "never recorded here" — a lost or freshly recreated
-// deployment folder adopting a target that already carries the only surviving history. A
-// local file that was never written adopts the existing target history instead of erasing
-// it. The readers that never publish — migrate and share — still see the target's copy:
-// createArchive() reconciles it into the deployment-side ledger before the policy is read,
-// so a deployment folder pointed at already-existing target data learns what the target
-// alone still remembers. Publish itself replaces the copy atomically and skips the write
-// when the bytes are already identical — a plain exclusive create there would fail every
-// second full backup against the copy the first one had just written.
+// A twin copy lives in the data directory: config/clawforge-private-paths.json, so a restore
+// through a different deployment folder gets its own copy of the history with the data.
+// createArchive() publishes it before a full backup; restore imports it back first.
+// migrate/share exclude the copy — it travels with full backups only.
 
 import { randomBytes } from "node:crypto";
 import { access, readFile, rm, writeFile } from "node:fs/promises";
@@ -82,12 +43,8 @@ function validateEntry(value: unknown): string {
 }
 
 /** Parses and validates ledger content — shared by the deployment-side reader and the
- *  restored-history import, so an entry refused on this side is refused when it arrives
- *  from a backup too. Two arrays travel in the payload: the recorded paths and the
- *  tombstones. A path named by BOTH is a corrupt ledger — an entry is either recorded or
- *  deliberately forgotten, never both. A payload
- *  carrying tombstones is tolerated even when the caller only wants the paths: a target copy
- *  written by a newer backup is not something this side gets to reject. */
+ *  restored-history import, so an entry refused on one side is refused on both. A path
+ *  named by both arrays (recorded and tombstoned) is a corrupt ledger. */
 function readLedgerPayload(raw: string, file: string): { paths: string[]; forgotten: string[] } {
   let parsed: unknown;
   try {
@@ -117,10 +74,8 @@ function readLedgerPayload(raw: string, file: string): { paths: string[]; forgot
   return { paths: recorded, forgotten: dropped };
 }
 
-/** The ledger's state as it stands on disk: what it records, what it has deliberately
- *  forgotten, and whether the file exists at all. "Never written here" and "written, then
- *  emptied by a real forget" are different answers, and a reader that cannot tell them apart
- *  has to guess. */
+/** The ledger's state on disk: recorded paths, tombstones, and whether the file exists at
+ *  all — "never written" and "written, then emptied by a real forget" are different. */
 export interface PrivatePathsLedgerState {
   readonly paths: readonly string[];
   readonly forgotten: readonly string[];
@@ -143,10 +98,8 @@ async function readLedgerState(file: string): Promise<PrivatePathsLedgerState> {
 }
 
 /** Writes both arrays canonically: deduplicated, sorted, two-space indent, trailing newline.
- *  The tombstones are OMITTED when empty, so a ledger that never forgot anything keeps the
- *  exact byte format it always had and an older reader still reads it unchanged. The
- *  temporary sibling plus rename is what makes the write atomic: the previous ledger survives
- *  any failure before the rename succeeds. */
+ *  Tombstones are OMITTED when empty, so an older reader sees an unchanged byte format.
+ *  Temporary sibling plus rename makes the write atomic. */
 async function writeLedgerState(file: string, paths: readonly string[], forgotten: readonly string[]): Promise<void> {
   const unique = [...new Set(paths)].sort();
   const dropped = [...new Set(forgotten)].sort();
@@ -162,23 +115,16 @@ async function writeLedgerState(file: string, paths: readonly string[], forgotte
   }
 }
 
-// The update cycle itself is not a unit: read, merge, temporary write, rename are separate
-// steps, and the rename only keeps the JSON intact — it does not merge concurrent changes.
-// Two mutations racing inside one process — two private-write helpers under one hook's
-// Promise.all — could each read the same old version and publish different additions, and
-// the last rename silently dropped the first's. Every
-// mutation therefore queues behind its file's previous one: the read-merge-write cycle runs
-// strictly one at a time per ledger file, keyed by the resolved ledger path — the ledger's
-// real identity. A failed cycle reports to its own caller and releases the file; a refusal
-// must not jam the mutations queued behind it.
+// Read-merge-write is not atomic across concurrent mutations of the same process (two
+// private-write helpers under one hook's Promise.all could each read the same version and
+// the last rename would drop the first's addition). Every mutation therefore queues behind
+// its file's previous one, keyed by the resolved ledger path. A failed cycle releases the
+// file so it doesn't jam mutations queued behind it.
 const ledgerMutations = new Map<string, Promise<void>>();
 
-/** The serialized cycle every ledger change goes through: whatever the cycle does inside —
- *  read, merge, write, or a plain delete — the queue bookkeeping lives here. One
- *  cycle per resolved ledger path at a time. The cycle may await — whatever it delays, it
- *  delays for every other mutation of the same file, which is the point — but it must not
- *  start another mutation of that same file itself. A cycle that throws releases the file
- *  exactly like one that succeeds. */
+/** The serialized cycle every ledger change goes through: one cycle per resolved ledger path
+ *  at a time. Must not start another mutation of the same file from inside itself. A cycle
+ *  that throws releases the file exactly like one that succeeds. */
 async function runLedgerCycle<T>(file: string, cycle: () => Promise<T>): Promise<T> {
   const turn = (ledgerMutations.get(file) ?? Promise.resolve())
     .catch(() => {})
@@ -214,11 +160,8 @@ export function mutatePrivatePathsLedgerState<T>(
   });
 }
 
-/** The paths-only cycle, retained for the serialization regression check, which drives the
- *  queue's interleaving directly through this shape. Production mutators use the state-aware
- *  cycle; this wrapper exists so the old shape still cannot lose a tombstone — the merge sees
- *  the recorded paths, and whatever it returns is written back with the forgotten array
- *  reattached UNCHANGED. */
+/** Paths-only cycle for the serialization regression check. Merge sees the recorded paths
+ *  only; the forgotten array is reattached UNCHANGED so this shape cannot lose a tombstone. */
 export function mutatePrivatePathsLedger<T>(
   file: string,
   merge: (
@@ -232,20 +175,17 @@ export function mutatePrivatePathsLedger<T>(
 }
 
 /** Removes the ledger file outright, inside the same serialized cycle as every mutation, so a
- *  delete can never land between a queued mutation's read and its write. Deliberately no parse
- *  first: a rollback must be able to remove what was just written even while the process is
- *  mid-failure, and a ledger that cannot be parsed is exactly what this exists to clear. */
+ *  delete can't land between a queued mutation's read and write. No parse first: a rollback
+ *  must be able to remove a ledger that cannot even be parsed. */
 export async function removePrivatePathsLedger(file: string): Promise<void> {
   await runLedgerCycle(file, async () => {
     await rm(file, { force: true });
   });
 }
 
-/** The recorded half of the security policy: paths private-config.ts actually wrote on
- *  this deployment's target, data-relative. Quiet when there is no deployment selected or
- *  nothing has been recorded; strict (throws) when a ledger exists but cannot be read,
- *  parsed or validated — the same two-rule shape as the declaration reader it is merged
- *  with. */
+/** The recorded half of the security policy: paths private-config.ts actually wrote on this
+ *  deployment's target, data-relative. Quiet with no deployment selected; strict (throws)
+ *  when a ledger exists but cannot be read/parsed/validated. */
 export async function persistedPrivatePaths(): Promise<string[]> {
   // No deployment selected: the same answer as "no recipes configured".
   if (selectedDeployment() === undefined) return [];
@@ -254,9 +194,7 @@ export async function persistedPrivatePaths(): Promise<string[]> {
 }
 
 /** The full ledger state — recorded entries, tombstones, and whether the file exists — for
- *  the selected deployment. Quiet when there is no deployment selected (the same answer as
- *  "no recipes configured"); strict when a ledger exists but cannot be read, parsed or
- *  validated, exactly as the recorded-half reader above. */
+ *  the selected deployment. Same quiet/strict rules as persistedPrivatePaths above. */
 export async function privatePathsLedgerState(): Promise<PrivatePathsLedgerState> {
   // No deployment selected: nothing recorded, and no file to have written either.
   if (selectedDeployment() === undefined) return { paths: [], forgotten: [], existed: false };
@@ -278,14 +216,9 @@ export async function privatePathsPolicy(ctx: Context): Promise<string[]> {
   return [...new Set([...local.paths, ...activeTarget])].sort();
 }
 
-/** Whether the deployment-side ledger file has ever been written on THIS deployment
- *  folder — distinct from "reads as empty", which a missing file also does. recordPrivateWrite,
- *  importRestoredPrivatePathsHistory and forgetPrivatePaths only call writeLedgerState when a
- *  mutation actually changes the entries, so the file existing with zero entries can only
- *  happen through forgetPrivatePaths dropping the last one — a real, deliberate forget, now
- *  with the tombstone naming what was dropped. A file that was never written is a deployment
- *  folder that never recorded anything — which a lost or freshly recreated one looks exactly
- *  like. */
+/** Whether the deployment-side ledger file has ever been written on THIS deployment folder
+ *  — distinct from "reads as empty", which a missing file also does. A file existing with
+ *  zero entries can only happen via forgetPrivatePaths dropping the last one. */
 async function ledgerFileExists(file: string): Promise<boolean> {
   try {
     await access(file);
@@ -295,13 +228,10 @@ async function ledgerFileExists(file: string): Promise<boolean> {
   }
 }
 
-/** Reads the target-side history copy, the same escalation importRestoredPrivatePathsHistory
- *  uses: the copy was written through the private writer, so an unprivileged read can fail
- *  exactly when it must not be silently read as "absent". The copy's own bytes are returned
- *  beside the parsed entries — publish's skip-when-identical decision compares the bytes the
- *  target already holds against the bytes it would write. Returns undefined when there is no
- *  copy to adopt; throws when one exists but cannot be read or parsed — a history that cannot
- *  be verified must never look like "nothing to protect" here either. */
+/** Reads the target-side history copy, escalating like importRestoredPrivatePathsHistory
+ *  since the copy was written through the private writer. Raw bytes are returned alongside
+ *  the parsed entries for publish's skip-when-identical check. Undefined = no copy; throws
+ *  if one exists but can't be read/parsed (fail closed, never "nothing to protect"). */
 async function readTargetHistoryCopy(ctx: Context, file: string): Promise<{ raw: string; paths: string[] } | undefined> {
   if (!(await ctx.transport.exists(file))) return undefined;
   const readable = await ctx.transport.exec("test", ["-r", file], { allowFailure: true });
@@ -328,12 +258,8 @@ async function readTargetHistory(ctx: Context, file: string): Promise<string[] |
 }
 
 /** Adopts an existing target-side history into the local ledger instead of letting an empty,
- *  never-written local ledger erase it. Merges into the deployment-side file when one is
- *  selected (the union rule importRestoredPrivatePathsHistory already follows, tombstones
- *  included: an adoption no more resurrects a deliberately forgotten path than an import
- *  does) and returns the adopted entries so the caller republishes them rather than treating
- *  them as gone. Undefined when there is nothing to adopt: no target copy, or one that is
- *  itself empty (an already-forgotten history, not a lost deployment folder). */
+ *  never-written local ledger erase it. Respects tombstones (adoption never resurrects a
+ *  deliberately forgotten path). Undefined when there is nothing to adopt. */
 async function adoptExistingTargetHistory(
   existing: readonly string[],
   localFile: string | undefined,
@@ -350,37 +276,20 @@ async function adoptExistingTargetHistory(
   return [...existing];
 }
 
-/** Publishes the current ledger into the data root, for createArchive() to catch with the
- *  rest of the data in a full backup.
- *
- *  An empty history removes any copy left behind ONLY when the local ledger file itself
- *  exists — proof that forgetPrivatePaths actually ran here, not merely that this deployment
- *  folder has no entries. A local ledger that was never written is indistinguishable, by
- *  content alone, from one whose history was deliberately forgotten — but the target may
- *  still be the only surviving record of this instance's private paths (a new deployment
- *  folder, one recreated after loss, another machine adopting the same target). In that
- *  case the existing target history is adopted into
- *  the local ledger and republished rather than erased. Nothing is written when nothing was
- *  ever recorded and there is nothing to adopt: a deployment that never recorded a private
- *  write and has no target history either backs up without the file, and its absence then
- *  honestly means "nothing recorded", not "history lost".
- *
- *  The write is an atomic REPLACE, and it is skipped when the target already holds exactly
- *  the bytes publish would write — an EXCLUSIVE create there would fail the second full
- *  backup against the copy the first one had just written, and the republish after an
- *  adoption, regardless of what the ledger held. writeFile stages a unique
- *  sibling and renames it over the final name on every real transport (LocalTransport's
- *  rename, the remote publish command's `mv -f`), applies mode 600 where the sibling is
- *  created locally and chmods it remotely, and never deletes the old history first: a failure
- *  anywhere before the rename leaves the previous copy exactly where it was. */
+/** Publishes the current ledger into the data root, for createArchive() to catch in a full
+ *  backup. An empty history removes any copy left behind ONLY when the local ledger FILE
+ *  exists (proof forgetPrivatePaths ran) — a never-written local ledger looks identical to a
+ *  deliberately forgotten one by content alone, but the target may be the only surviving
+ *  record, so it's adopted and republished instead of erased. Atomic REPLACE, skipped when
+ *  the target already holds the exact bytes (an EXCLUSIVE create would fail every second
+ *  backup), and never deletes the old history first. */
 export async function publishPrivatePathsHistory(ctx: Context): Promise<void> {
   const file = privatePathsHistoryFile(ctx.settings.dataDir);
   // No deployment selected: publish falls back to whatever the target already carries.
   const localFile = selectedDeployment() === undefined ? undefined : privatePathsLedgerFile();
   const localRecorded = localFile !== undefined && (await ledgerFileExists(localFile));
-  // The target copy is read ONCE, before anything decides what to do about it: adoption input,
-  // the remove decision below, and the baseline the write is skipped against. A copy that
-  // exists but cannot be read or parsed throws here — fail closed, never read as "no history".
+  // Read ONCE: adoption input, remove decision, and the write's skip-baseline. Throws if the
+  // copy exists but can't be read/parsed — fail closed.
   const target = await readTargetHistoryCopy(ctx, file);
   const existing = target?.paths;
   let paths = await persistedPrivatePaths();
@@ -403,19 +312,14 @@ export async function publishPrivatePathsHistory(ctx: Context): Promise<void> {
 }
 
 /** Imports a restored history copy back into the deployment-side ledger. restore calls this
- *  after the layout check and before anything acts on the restored data, and passes a
- *  failure up — a copy that exists but cannot be read or parsed fails the restore while the
- *  previous data is still in place to be put back, because a history that cannot be
- *  verified must never read as "no history". Entries merge (union) with whatever this
- *  deployment already records; entries still leave only through forgetPrivatePaths.
- *  Returns the entries this import added. The restored archive physically carries the data
- *  again, so it supersedes tombstones: a path this ledger had deliberately forgotten, and
- *  which the archive just brought back, is recorded again and its tombstone dropped — the
- *  forget no longer describes reality. */
+ *  after the layout check and before anything acts on the restored data; a copy that exists
+ *  but cannot be read/parsed fails the restore while the previous data is still in place.
+ *  Entries merge (union); the restored archive physically carries the data again, so it
+ *  supersedes tombstones — a deliberately forgotten path the archive brings back is recorded
+ *  again and its tombstone dropped. Returns the entries this import added. */
 export async function importRestoredPrivatePathsHistory(ctx: Context, file: string): Promise<string[]> {
-  // Through sudoFor, not transport.readFile: extraction may have run privileged (a parent
-  // the transport user cannot write is exactly when restore escalates), and a root-owned
-  // history file must fail the restore deliberately, not look unreadable-by-accident.
+  // Through sudoFor, not transport.readFile: extraction may have run privileged, and a
+  // root-owned history file must fail the restore deliberately, not look unreadable-by-accident.
   const prefix = await sudoFor(ctx, file);
   const [head, ...rest] = [...prefix, "cat", file];
   const result = await ctx.transport.exec(head, rest);
@@ -432,26 +336,13 @@ export async function importRestoredPrivatePathsHistory(ctx: Context, file: stri
   });
 }
 
-/** Records a private write so its path stays protected after its declaration is gone.
- *
- *  Two facts travel together: the exact path that was written, and the declared private
- *  boundary that authorized it — assertDeclaredPrivatePath's matched declaration, a prefix
- *  of the path or the path itself. The boundary keeps exclusion and refusal after the
- *  declaration disappears exactly as wide as they were while it existed: a declared
- *  DIRECTORY keeps dropping as a whole branch, because the author did declare the whole
- *  directory. Ancestors the author never declared are deliberately NOT recorded: a
- *  private write to `config/secret.env` under a shared
- *  `config/` must not turn `config` into a private root of its own — the policy reader
- *  unions the ledger with the current declarations immediately, so an ancestor entry would
- *  exclude the shared directory's public content from migrate/share and widen the writes
- *  the helpers accept from the first write on, not only once the recipe is gone. Recording
- *  the written path alone would overcorrect — a declared directory would shrink to bare
- *  file rules the moment its declaration vanished — so the pair is the contract.
- *
- *  Quietly skipped when there is no deployment selected (the checks' shape: an explicit
- *  recipes root without a deployment) or the deployment has no config/ yet. An invalid
- *  entry — including a boundary that does not contain the written path — is refused even
- *  then: it is a programming error, not a policy answer. */
+/** Records a private write so its path stays protected after its declaration is gone. Two
+ *  facts travel together: the exact written path, and the declared boundary that authorized
+ *  it (a prefix of the path, or the path itself) — keeping exclusion as wide after the
+ *  declaration disappears as before. Ancestors the author never declared are NOT recorded: a
+ *  write to `config/secret.env` under a shared `config/` must not turn `config` into a
+ *  private root. Quietly skipped with no deployment selected or no config/ yet; an invalid
+ *  entry is refused regardless — a programming error, not a policy answer. */
 export async function recordPrivateWrite(relativePath: string, declaredBoundary?: string): Promise<void> {
   const entry = validateEntry(relativePath);
   const boundary = declaredBoundary === undefined ? entry : validateEntry(declaredBoundary);
@@ -478,18 +369,11 @@ export async function recordPrivateWrite(relativePath: string, declaredBoundary?
 }
 
 /** The explicit forget: drops ledger entries whose data has really been deleted, and records
- *  a tombstone for each of them.
- *
- *  This is the ONLY way an entry leaves the ledger. Requires a selected deployment: a
- *  deliberate action against an unknown deployment is a caller bug, not a no-op. A ledger
- *  that does not exist yet has nothing to forget and stays absent. The forget joins the same
- *  serialized cycle as recording, so a record running concurrently can never be lost
- *  under it.
- *
- *  The tombstone is what makes the forget a fact rather than an inference: the ledger's own
- *  protocol now distinguishes "deliberately forgotten" (a forgotten entry) from "history
- *  missing or lost" (no file, or a file without tombstones), which the existence — or the
- *  emptiness — of the file could never do on its own. */
+ *  a tombstone for each. The ONLY way an entry leaves the ledger. Requires a selected
+ *  deployment: acting against an unknown one is a caller bug, not a no-op. Joins the same
+ *  serialized cycle as recording, so a concurrent record can't be lost under it. The
+ *  tombstone distinguishes "deliberately forgotten" from "history missing/lost", which file
+ *  existence or emptiness alone could never do. */
 export async function forgetPrivatePaths(relativePaths: readonly string[]): Promise<void> {
   const file = privatePathsLedgerFile();
   const drop = new Set(relativePaths.map((entry) => validateEntry(entry)));
@@ -503,29 +387,17 @@ export async function forgetPrivatePaths(relativePaths: readonly string[]): Prom
   });
 }
 
-/** Reconciles the target-side history into the deployment-side ledger, for the readers that
- *  never publish.
- *
- *  createArchive() publishes the history for a full backup only; migrate and share exclude the
- *  copy, so nothing else ever asks the target what it still remembers. A deployment folder
- *  pointed at already-existing target data — a lost or freshly recreated one, another machine
- *  adopting the same instance — would otherwise reach migrate or share with no restore and no
- *  full backup yet, building its exclusions from a record that is not there. This function
- *  takes the union here, at the one point every archive passes through, before the policy is
- *  read.
- *
- *  Tombstones suppress resurrection: a path this ledger deliberately forgot is not re-recorded
- *  because the target still names it. An existing, entirely empty, tombstone-less ledger
- *  predates tombstones and is honored as the forget it can only be — a failed restore no
- *  longer fabricates that shape. Union only: entries still leave through forgetPrivatePaths,
- *  never through a reconcile. */
+/** Reconciles the target-side history into the deployment-side ledger, for readers that
+ *  never publish (migrate/share). A deployment folder pointed at already-existing target
+ *  data would otherwise build exclusions from a record that isn't there — this takes the
+ *  union before the policy is read. Tombstones suppress resurrection; an existing, entirely
+ *  empty, tombstone-less ledger predates tombstones and is honored as the forget it can only
+ *  be. Union only: entries still leave only through forgetPrivatePaths. */
 export async function reconcilePrivatePathsHistory(ctx: Context): Promise<void> {
-  // No deployment selected: nothing to merge into.
   if (selectedDeployment() === undefined) return;
   const file = privatePathsHistoryFile(ctx.settings.dataDir);
   const localFile = privatePathsLedgerFile();
-  // A copy that exists but cannot be read or validated throws: refuse loudly, and never read
-  // the failure as "no history".
+  // Throws if the copy exists but can't be read/validated — refuse loudly, never "no history".
   const existing = await readTargetHistory(ctx, file);
   if (existing === undefined || existing.length === 0) return;
   await mutatePrivatePathsLedgerState(localFile, (current) => {

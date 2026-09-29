@@ -1,31 +1,18 @@
 // One instance, one change at a time.
 //
-// Several people can reach the same instance now, and not all of them are people: a coder in
-// a terminal, an agent through the MCP surface, a cron job on the gateway itself. Two of
-// them applying at once is not a rare race — `apply` writes a configuration, restarts, then
-// re-provisions recipes, and the window between those steps is seconds long. Interleaved,
-// the instance ends up in a state neither run planned, both runs report success, and the
-// journal shows two tidy records of it.
+// Several people can reach the same instance now — a coder, an agent through MCP, a cron
+// job — and two applying at once is a real race: `apply` writes config, restarts, then
+// re-provisions recipes over a window seconds long. Interleaved, the instance ends up in a
+// state neither run planned, and both report success.
 //
-// The lock is a file on the target holding who has it and what they are doing, because that
-// is the only place both of them can see. It is advisory in the sense that it only stops
-// commands that ask — but every mutating command does ask, and nothing outside this
-// framework is trying to apply a declaration to this instance.
+// The lock is a file on the target naming who has it and what they're doing — advisory
+// (stops only commands that ask, but every mutating one does). A stale lock is REPORTED,
+// never silently taken. Taking one over is `--break-lock`, deliberately not `--force` (which
+// MCP sets automatically from the caller's confirm argument) — reusing that name would let
+// every confirmed tool call take over any lock another operation was holding.
 //
-// A stale lock is REPORTED, never silently taken. Silently stealing a lock is the same bug
-// one layer down: the run that lost it had no idea, and now two of them are writing again.
-// Whoever is looking at the message can see whether that process is really gone.
-//
-// Taking one over is `--break-lock`, and deliberately not `--force`. `--force` already means
-// "yes, I mean it" for a destructive command, and the MCP layer sets it automatically from
-// the caller's confirm argument — there being no terminal prompt to answer. Reusing that name
-// here would have made every confirmed tool call take over whatever lock another operation
-// was holding: two different permissions collapsed into one, and the more dangerous one
-// granted by default.
-//
-// The on-disk primitives (holder shape, staleness maths, directory claim/takeover/publish
-// steps) live in lock-claim.ts, same directory — this file adds reentrancy (chainLocks/
-// heldScopes below) and the released HeldLock handle on top, and re-exports what callers use.
+// On-disk primitives live in lock-claim.ts; this file adds reentrancy (chainLocks/
+// heldScopes) and the HeldLock handle.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -82,20 +69,10 @@ function lockResource(ctx: Context): string {
   return `${ctx.transport.description}\u0000${lockPath(ctx)}`;
 }
 
-/** Which lock paths the current asynchronous chain holds.
- *
- *  `apply` runs `provision-agent` as one of its steps, and that command takes the lock when
- *  invoked on its own. Without reentrancy recognition, an apply would be refused by its own
- *  lock, at its own fourth step, with a message accusing itself. The old answer was a
- *  process-global counter, and the counter knew too little: it could not tell a nested call
- *  of the current operation from an independent asynchronous chain that happens to run in
- *  the same process, and it was not tied to the instance being locked — the commands `set
- *  try` runs against its throwaway instance rode the outer operation's count and ran
- *  unlocked. What nests is the chain: an operation's body runs inside the chain scope
- *  runOwning() gives it, and only a call about the same instance reads as reentrant. The
- *  alternative — passing a "nested" flag down through every runner — spreads a fact about
- *  this process across the signatures of commands that otherwise have nothing to do with
- *  locking. */
+/** Which lock paths the current asynchronous chain holds. `apply` runs `provision-agent` as
+ *  a step, which takes the lock on its own — without reentrancy recognition, apply would
+ *  refuse itself. What nests is the chain: an operation's body runs inside the scope
+ *  runOwning() gives it, and only a call about the same instance reads as reentrant. */
 interface LockLease {
   released: boolean;
 }
@@ -130,13 +107,10 @@ function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, hea
         heldScopes.delete(handle);
       }
 
-      // Only ours, and checked with one operation instead of two. Reading the holder and
-      // then removing the directory left the whole gap open: a takeover completing between
-      // those two steps had its fresh lock deleted by the release that read the old holder.
-      // So ownership is answered by moving this acquisition's own generation marker aside —
-      // atomic, and only we can still own that exact path. A marker already moved away means
-      // a takeover rotated this identity out and the directory is somebody else's: nothing is
-      // touched, down to the holder file naming who it belongs to now.
+      // Only ours, checked with one operation instead of two: read-then-remove left a gap
+      // where a takeover completing in between had its fresh lock deleted by a release that
+      // read the old holder. Ownership is answered by moving this acquisition's own
+      // generation marker aside — atomic, and only we can still own that exact path.
       try {
         await withMutationGuard(ctx, async () => {
           const trash = await claimOwnedLockDirectory(ctx, generation);
@@ -152,9 +126,8 @@ function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, hea
 }
 
 /** Takes the lock for the duration of an operation, or refuses. Each step (lock-claim.ts) runs
- *  in the order a claim actually has to happen in: win or take over the directory, mint this
- *  acquisition's identity, stake its generation marker, publish holder.json, start its
- *  heartbeat, hand back the handle that releases it. */
+ *  in order: win or take over the directory, mint this acquisition's identity, stake its
+ *  generation marker, publish holder.json, start its heartbeat, hand back the release handle. */
 async function takeLockClaim(
   ctx: Context,
   what: string,
@@ -208,10 +181,8 @@ export async function withInstanceLock<T>(
 }
 
 /** Runs `body` as the chain that owns `held`'s lock: everything `body` calls recognises the
- *  hold, and the recognition ends when `body` settles. Releasing stays where it already was
- *  — the caller's own finally — so the paths in and out of `body` are exactly the paths the
- *  caller wrote. `held === undefined` is the nested shape: the calling chain is already
- *  inside the owning operation's scope, so there is nothing to register. */
+ *  hold until `body` settles. Releasing stays in the caller's own finally. `held === undefined`
+ *  is the nested shape: the calling chain is already inside the owning operation's scope. */
 export async function runOwning<T>(held: HeldLock | undefined, body: () => Promise<T>): Promise<T> {
   if (held === undefined) return body();
   const scope = new Map(chainLocks.getStore() ?? []);
@@ -247,31 +218,18 @@ export async function withLockUnlessHeld<T>(
   }
 }
 
-/** Pulls the confirmed host id out of `--break-foreign-lock <hostId>`, for the commands that
- *  parse their own argv well enough to leave it in place — see the `breakForeignLockHost` doc
- *  on `LockOptions` (lock-claim.ts) and instance-mutation-guard.ts. Exported so the few direct
- *  `withLockUnlessHeld()`/`takeLock()` callers (apply.ts, provision-agent, set.ts) read it the
- *  same way `guarded()` does below. */
+/** Pulls the confirmed host id out of `--break-foreign-lock <hostId>` — see
+ *  `breakForeignLockHost` on `LockOptions` (lock-claim.ts). Exported so the few direct
+ *  `withLockUnlessHeld()`/`takeLock()` callers read it the same way `guarded()` does below. */
 export function parseBreakForeignLockHost(args: string[]): string | undefined {
   const index = args.indexOf("--break-foreign-lock");
   return index === -1 ? undefined : args[index + 1];
 }
 
-/** What every mutating command wraps its work in.
- *
- *  A lock only two commands respected was a lock in name: `apply` took it while `restart`,
- *  `apply-config` and `push` changed the same instance beside it, which is the interleaving
- *  it exists to prevent. This is the one line each of them needs, and it reads the takeover
- *  flags from that command's own argv so no caller has to remember to pass them on.
- *
- *  Nested calls are a no-op: `apply` runs several of these commands as its steps and is
- *  already holding the lock, so acquiring again would refuse the run that started them.
- *
- *  `options.breakLockSupported` is the one thing a call site still states explicitly: a
- *  command whose own parser refuses --break-lock (backup, secrets, the internal smoke
- *  round-trip step) passes false so its refusal never offers a flag it cannot accept.
- *  configure-provider used to be in that list too; it now threads --break-lock like every
- *  other ordinary lock-taking command. */
+/** What every mutating command wraps its work in: reads the takeover flags from argv so no
+ *  caller has to pass them on. Nested calls are a no-op. `options.breakLockSupported` is the
+ *  one thing a call site still states explicitly, for a command whose parser refuses
+ *  --break-lock. */
 export async function guarded<T>(
   ctx: Context,
   what: string,

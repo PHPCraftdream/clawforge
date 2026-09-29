@@ -1,29 +1,11 @@
-// The security gate `doctor` and `accept` run, and only those two — it execs into the
-// instance twice per call, which is why `inspect`/`plan` do not run it on every call.
-//
-// Two kinds of finding, from places OpenClaw itself cannot see:
-//
-// In-instance: `openclaw security audit --json` and `openclaw secrets audit --json`, run
-// through the same sidecar CLI path every other command uses (openclaw-cli.ts). Their
-// severities differ (critical/warn/info vs error/warn/info) and their finding shape differs
-// (checkId+title+detail+remediation vs code+message+jsonPath) — normalized here into the
-// same two codes doctor/accept read: SECURITY_AUDIT_CRITICAL / SECURITY_AUDIT_WARN. "info"
-// findings (attack-surface summaries, OAuth residue) are not foot-guns and are dropped.
-//
-// Host-side, because the container cannot see its own Docker plumbing:
-//   - the gateway published on 0.0.0.0/:: (runningConnectionFacts' bindAddress) — blocking
-//     unless the deployment explicitly acknowledges it in config/security-suppressions.json.
-//   - on a Linux target with UFW active, Docker's DOCKER-USER chain runs ahead of UFW's own
-//     rules, so a published port can be reachable despite what UFW reports. A failed probe
-//     (no iptables, no permission) is reported as "could not check", never as fine.
-//   - permissions of the deployment's own secret files (.env, secrets/*), reusing
-//     unprotectedPrivateFile from private-file.ts rather than re-implementing it.
-//
-// Suppressions live in config/security-suppressions.json, by upstream checkId/code, each
-// with a reason. A suppressed finding is still returned in `findings` (so --json/verbose
-// output shows it) but excluded from `problems` — the list doctor/accept actually count.
-// Never a secret value anywhere: upstream's own messages avoid them, and jsonPath/file are
-// paths, not content.
+// The security gate `doctor` and `accept` run (execs into the instance twice per call, so
+// `inspect`/`plan` don't run it on every call). Two kinds of finding: in-instance
+// (`security audit`/`secrets audit --json`, normalized into SECURITY_AUDIT_CRITICAL/WARN,
+// "info" dropped), and host-side — since the container can't see its own Docker plumbing —
+// covering the gateway published on 0.0.0.0/:: (blocking unless acknowledged in
+// config/security-suppressions.json), UFW's DOCKER-USER bypass on Linux, and the
+// deployment's own secret-file permissions. Suppressions stay in `findings` but drop out of
+// `problems`. Never a secret value anywhere.
 
 import { access, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -45,8 +27,7 @@ export interface SecurityFinding {
   readonly severity: Severity;
   /** Human text only, never a secret value — upstream's own contract, kept here. */
   readonly message: string;
-  /** security audit's own per-finding remediation, when it gave one — more specific than
-   *  the generic "re-run the audit" nextAction, so it wins when present. */
+  /** Per-finding remediation, when given — more specific than the generic nextAction. */
   readonly remediation?: string;
   readonly suppressed: boolean;
   readonly suppressedReason?: string;
@@ -55,8 +36,8 @@ export interface SecurityFinding {
 export interface SecurityAuditReport {
   /** Every in-instance finding, including suppressed ones — what --json/verbose shows. */
   readonly findings: readonly SecurityFinding[];
-  /** Non-suppressed in-instance findings plus every host-side finding, ready to merge into
-   *  a caller's own problem list. */
+  /** Non-suppressed in-instance findings plus every host-side finding, ready to merge into a
+   *  caller's problem list. */
   readonly problems: readonly Problem[];
 }
 
@@ -220,9 +201,8 @@ async function commandPresent(ctx: Context, command: string): Promise<boolean> {
 }
 
 /** DOCKER-USER runs ahead of UFW's own chain, so a published port can bypass a firewall that
- *  looks active. `undefined` means "does not apply here" (no ufw on this target at all,
- *  confirmed inactive); a Problem otherwise — including the "could not check" case, which
- *  must never read as "fine". */
+ *  looks active. `undefined` means "does not apply here"; a Problem otherwise — including
+ *  "could not check", which must never read as "fine". */
 async function ufwDockerBypassProblem(ctx: Context): Promise<Problem | undefined> {
   if (!(await commandPresent(ctx, "ufw"))) return undefined; // ufw is not installed on this target — the check does not apply
 
@@ -289,8 +269,8 @@ async function hostExposureProblems(ctx: Context, acknowledge: { reason: string 
 // --- host-side: the deployment's own secret files -------------------------------------------
 
 /** .env plus every file under secrets/ — reusing unprotectedPrivateFile rather than a second
- *  implementation of what "owner-only" means on this platform. Local node:fs paths only:
- *  these live beside the deployment, on the operator's own machine, never on the target. */
+ *  implementation of "owner-only". Local node:fs paths only: these live beside the
+ *  deployment, never on the target. */
 async function privateFileProblems(): Promise<Problem[]> {
   if (selectedDeployment() === undefined) return [];
   const candidates: string[] = [envFile()];
@@ -312,9 +292,8 @@ async function privateFileProblems(): Promise<Problem[]> {
 export async function runSecurityAudit(ctx: Context): Promise<SecurityAuditReport> {
   const suppressions = await readSuppressions();
 
-  // A synchronous throw (a test stub with no isRunning at all) is as possible here as a
-  // rejection, and either one must degrade to "not running" rather than take doctor/accept
-  // down with it — this gate is an add-on, never the reason the command itself fails.
+  // A sync throw or a rejection must both degrade to "not running" — this gate is an add-on,
+  // never the reason the command itself fails.
   let running: boolean;
   try {
     running = await ctx.runtime.isRunning();
@@ -329,9 +308,9 @@ export async function runSecurityAudit(ctx: Context): Promise<SecurityAuditRepor
     ])).flat()
     : [];
 
-  // The gateway binds "lan" INSIDE its container so Docker can publish the port; audited from
-  // in there it reads as non-loopback. When the host publishes it on loopback only, those
-  // findings describe a bind nothing outside this host can reach: reported, not blocking.
+  // The gateway binds "lan" INSIDE its container, so audited from in there it reads as
+  // non-loopback. When the host publishes it on loopback only, those findings describe a
+  // bind nothing outside this host can reach: reported, not blocking.
   const loopbackOnly = running && await publishedLoopbackOnly(ctx);
   const findings = applySuppressions(inInstance, suppressions.suppressions).map((finding) =>
     loopbackOnly && finding.source === "security-audit" && CONTAINER_BIND_FINDING.test(finding.message)

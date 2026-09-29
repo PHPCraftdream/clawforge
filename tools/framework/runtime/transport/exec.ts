@@ -1,13 +1,10 @@
 // The transport contract (ExecOptions/ExecResult/Transport) and the one implementation that
-// needs no target at all: spawning a process locally. Every transport (local, WSL, SSH)
-// implements Transport; WslTransport and SshTransport both route their own exec() through
-// spawnLocal underneath (wsl.exe / ssh is itself a local child process). Split out of
-// transport.ts to keep that file a thin facade over the per-transport implementations.
+// needs no target at all: spawning a process locally. Every transport implements Transport;
+// WslTransport and SshTransport both route exec() through spawnLocal underneath.
 //
 // Rule for everything built on top: never touch target files with node:fs directly. The
-// target may not share a filesystem with us. Go through the transport.
-//
-// All operations are async by design — no *Sync calls anywhere.
+// target may not share a filesystem with us. Go through the transport. All operations are
+// async by design — no *Sync calls anywhere.
 
 import { spawn } from "node:child_process";
 import { maskSecrets } from "../../core/io/log.ts";
@@ -31,10 +28,9 @@ export interface ExecResult {
   stdout: string;
   stderr: string;
   /** The deadline (timeoutMs) killed the child — `code` is the signal-terminated remnant
-   *  (usually -1), not the command's own exit status. Absent otherwise, so a plain
-   *  `{ code, stdout, stderr }` object for a normal exit is unaffected. A transport built on
-   *  spawnLocal (wsl.exe, ssh) needs this to tell "my own deadline fired" apart from "the
-   *  wrapper failed for an unrelated reason" — both often collapse to the same negative code. */
+   *  (usually -1), not the command's own exit status. Absent otherwise. A transport built on
+   *  spawnLocal needs this to tell "my own deadline fired" apart from "the wrapper failed for
+   *  an unrelated reason" — both often collapse to the same negative code. */
   timedOut?: true;
 }
 
@@ -102,14 +98,9 @@ export interface Transport {
   readonly removeEmptyDir?: (path: string) => Promise<void>;
   /** Removes only empty directories below path; returns whether path itself was removed. */
   readonly removeEmptyTree?: (path: string) => Promise<boolean>;
-  /** Every regular file under `dir`, recursively, as POSIX-style paths relative to it.
-   *  A directory that does not exist is an empty list, not an error — the caller is usually
-   *  asking "what is there now" before putting something there.
-   *
-   *  Needed by anything that mirrors a directory rather than only writing into it: without
-   *  a listing there is no way to see what the target has that the source no longer does,
-   *  and a mirror that never deletes is not a mirror. A newline inside a filename is not
-   *  supported (the remote implementations parse a line-oriented listing). */
+  /** Every regular file under `dir`, recursively, as POSIX-style paths relative to it. A
+   *  missing directory is an empty list, not an error. A newline in a filename is not
+   *  supported (remote implementations parse a line-oriented listing). */
   listFiles(dir: string): Promise<string[]>;
   /** How an external client (an MCP client, a scheduler) should invoke a command of ours
    *  so that it reaches the target. Belongs here because only the transport knows whether
@@ -141,10 +132,9 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
   return new Promise((resolvePromise, rejectPromise) => {
     validateEnvNames(Object.keys(options.env ?? {}));
     validateEnvNames(options.unsetEnv ?? []);
-    // Streaming means "let the user watch it happen" on a real terminal, not merely "no sink":
-    // a plain pipe (`./clawforge status | cat`) has no sink either, but inheriting stdio onto it
-    // wires wsl.exe straight to an MSYS pipe on Windows — Node dies with exit 139 the moment the
-    // child writes. isTTY is undefined (not false) off a terminal, hence === true below.
+    // Streaming means "watch it happen on a real terminal", not merely "no sink": a plain
+    // pipe has no sink either, but inheriting stdio onto it wires wsl.exe straight to an MSYS
+    // pipe on Windows — Node dies with exit 139 the moment the child writes.
     const sink = outputSink();
     const streamToTerminal = options.stream === true && sink === undefined && options.input === undefined
       && process.stdout.isTTY === true && process.stderr.isTTY === true;
@@ -161,9 +151,8 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     let stderr = "";
     let launchError: Error | undefined;
     let inputError: Error | undefined;
-    // OC_DEBUG=1 wants the undiluted byte stream (entry/cli.ts's own escape hatch for a
-    // failure's full argv). Only the piped path below is ever filtered: streamToTerminal
-    // inherits stdio directly, so these "data" handlers never fire for it.
+    // OC_DEBUG=1 wants the undiluted byte stream. streamToTerminal inherits stdio directly,
+    // so these "data" handlers never fire for it anyway.
     const debug = process.env.OC_DEBUG === "1";
     const forwardStdout = debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stdout.write(text); });
     const forwardStderr = debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stderr.write(text); });

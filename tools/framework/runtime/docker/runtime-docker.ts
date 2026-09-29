@@ -1,15 +1,14 @@
 // Docker implementation of the runtime contract.
 //
-// The only module that knows the words "docker" and "compose". It takes the transport,
-// settings and path bridge directly rather than a Context, so the context can build it
-// without a circular import.
+// The only module that knows the words "docker" and "compose". Takes the transport, settings
+// and path bridge directly rather than a Context, so the context can build it without a
+// circular import.
 //
-// The class itself is a thin orchestrator: each responsibility (compose operations, direct
-// container/image introspection, the helper container, a side stack) lives in its own file
-// under runtime/docker/, constructed here with the dependencies it needs made explicit —
-// settings are handed over as accessors rather than a shared private field, because
-// reconcile() replaces the whole Settings object and every helper must see that replacement
-// immediately, not a snapshot taken at construction time.
+// A thin orchestrator: each responsibility (compose operations, container/image
+// introspection, the helper container, a side stack) lives in its own file under
+// runtime/docker/, constructed here. Settings are handed over as accessors rather than a
+// shared private field, since reconcile() replaces the whole Settings object and every
+// helper must see that replacement immediately, not a snapshot taken at construction time.
 
 import type { Settings } from "../../core/env.ts";
 import type { PathBridge } from "../../core/paths.ts";
@@ -32,10 +31,9 @@ export interface DockerRuntimeOptions {
   readonly service: string;
   /** How many log lines to show by default. */
   readonly logTail?: string;
-  /** Builds the Settings a recreate interpolates, re-reading .env at call time and
-   *  layering the application's computed settings back on top — the way the context
-   *  itself builds them. Without it reconcile() falls back to a bare .env re-read,
-   *  which silently drops app-computed Compose variables that .env does not carry. */
+  /** Builds the Settings a recreate interpolates, re-reading .env at call time and layering
+   *  the application's computed settings back on top. Without it reconcile() falls back to a
+   *  bare .env re-read, which silently drops app-computed Compose variables. */
   readonly reconcileSettings?: () => Promise<Settings>;
 }
 

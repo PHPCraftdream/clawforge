@@ -1,7 +1,6 @@
 // The optional long-lived helper container: startHelper/stopHelper/helperRunning warm it up
-// so execInHelper/execCommand can exec into an already-running container instead of paying
-// runOneOff's per-call create/destroy cost — measured directly: ~5-7s one-off vs ~1-3s exec
-// once warm. Split out of runtime-docker.ts to keep that file orchestration-only.
+// so execInHelper/execCommand can exec into it instead of paying runOneOff's per-call
+// create/destroy cost (~5-7s one-off vs ~1-3s exec once warm).
 
 import type { ExecResult, Transport } from "../transport/transport.ts";
 import { HelperNotRunning } from "../runtime.ts";
@@ -43,9 +42,7 @@ export class HelperContainer {
     args: string[],
     options: { input?: string; allowFailure?: boolean; timeoutMs?: number },
   ): Promise<ExecResult> {
-    // Only a RUNNING container (all=false): this is about to exec into it, and the same
-    // direct-label lookup containerId() otherwise uses for the main service serves any
-    // service name asked of it, helper containers included.
+    // Only a RUNNING container (all=false): about to exec into it.
     const id = await this.#containerId(service, false);
     if (id === undefined) {
       throw new HelperNotRunning(service);
@@ -61,10 +58,9 @@ export class HelperContainer {
     });
   }
 
-  /** "node dist/index.js" is hardcoded rather than taken from options: it is the `cli`
-   *  service's own entrypoint (see docker-compose.yml), which `docker exec` does not apply
-   *  on its own the way `compose run` does. execCommand below is the same call with the
-   *  entrypoint left to the caller, for everything that is not the app's own CLI. */
+  /** "node dist/index.js" is hardcoded: it's the `cli` service's own entrypoint, which
+   *  `docker exec` doesn't apply on its own the way `compose run` does. execCommand below is
+   *  the same call with the entrypoint left to the caller. */
   async execInHelper(
     service: string,
     args: string[],

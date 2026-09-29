@@ -1,28 +1,15 @@
 // Where a deployment keeps its own files.
 //
 // An application is a deployment: its .env, desired state, secret stores, recipes and
-// snapshots live in one directory, and several deployments can sit side by side sharing
-// this framework. Nothing here may be resolved against the repository root, or two
-// deployments would silently share one configuration.
+// snapshots live in one directory, and several deployments can sit side by side sharing this
+// framework. Nothing here may be resolved against the repository root, or two deployments
+// would silently share one configuration. The gate sets the directory before any command runs.
 //
-// The gate sets the directory before any command runs.
-//
-// DESIGN NOTE — npm distribution (see env.ts for the
-// matching note on the framework side). This module's contract — a directory is handed in
-// once by whatever the entry point is, and everything else derives from it, never from the
-// framework's own location — already needs no change for a second distribution mode:
-//
-//   - monorepo (today, this clawforge checkout): tools/clawforge.ts resolves
-//     `resolve(monorepoRoot, "apps", name)` and calls `useDeployment()` with it — several
-//     deployments side by side under apps/, picked by --app/OC_APP.
-//   - installed-as-dependency: a consumer repo has exactly one app, at its own
-//     project root — no apps/<name> nesting, since there is only ever one. The package's
-//     own bin entry calls `useDeployment()` with that root directly (the directory holding
-//     the thin ./clawforge shim the init/scaffold command writes, or simply process.cwd()).
-//
-// Both are just "a directory, handed in once" — this file does not need to know which
-// mode produced it. The work is entirely on the caller side (the entry points next to
-// tools/clawforge.ts and in the package), so this module stays mode-independent.
+// DESIGN NOTE — npm distribution (see env.ts for the matching note). A directory is handed
+// in once by whatever the entry point is, and everything else derives from it, never from
+// the framework's own location: monorepo mode resolves `apps/<name>` and calls
+// `useDeployment()`; installed-as-dependency mode has exactly one app at its own project
+// root. This file does not need to know which mode produced the directory.
 
 import { basename, resolve } from "node:path";
 import { safeName } from "../core/names.ts";
@@ -36,12 +23,9 @@ export function useDeployment(directory: string): void {
   activeDir = directory;
 }
 
-/** The active deployment directory, or undefined before anything has selected one — unlike
- *  deploymentDir() this never throws. Two uses: a caller that must step through several
- *  deployments in turn (list) saves this first and restores it when done, rather than leaving
- *  whichever one it looked at last as the global for everything that runs after it; a path
- *  getter's caller tests this instead of catching deploymentDir()'s throw, so an unrelated
- *  error from the getter propagates instead of reading as "no deployment". */
+/** The active deployment directory, or undefined before one is selected — unlike
+ *  deploymentDir() this never throws. Used by a caller stepping through several deployments
+ *  (list), and by a path getter's caller that tests this instead of catching a throw. */
 export function selectedDeployment(): string | undefined {
   return activeDir;
 }
@@ -64,28 +48,19 @@ export function applicationRecipesSetting(): string | undefined {
 }
 
 /** The deployment's own identity — the directory it lives in, always. Everything that
- *  crosses a process boundary or becomes an argument to another invocation of this tooling —
- *  deploy's remote apps/<name> path and its --app argument, archive file names, a built
- *  set's default name — uses this, and only this. It is never affected by
- *  OC_COMPOSE_PROJECT: that override exists for the one thing Docker itself names, not for
- *  this deployment's own identity, and conflating the two is exactly what made deploy
- *  construct a remote --app argument its own target would refuse. */
+ *  crosses a process boundary or becomes an argument to another invocation of this tooling
+ *  uses this, and only this. Never affected by OC_COMPOSE_PROJECT: that override exists for
+ *  the one thing Docker itself names, not for this deployment's own identity. */
 export function deploymentName(): string {
   return basename(deploymentDir());
 }
 
-// Docker Compose's own project-name rule (compose-spec), wider than safeName's: lowercase
-// alphanumeric, hyphens and underscores, starting with a letter or digit. Checked here so a
-// typo in OC_COMPOSE_PROJECT fails with a clear message instead of deep inside a compose
-// invocation.
+// Docker Compose's own project-name rule, checked here so a typo in OC_COMPOSE_PROJECT fails
+// with a clear message instead of deep inside a compose invocation.
 const COMPOSE_PROJECT_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
-/** Overrides what composeProjectName() returns, independent of deploymentName().
- *
- *  Docker's own project-name alphabet is wider than safeName's (it accepts underscores), and
- *  an instance that already exists under a name this deployment's directory cannot have
- *  should not have to be recreated just to be managed — set via OC_COMPOSE_PROJECT in .env,
- *  read once when the context is built. */
+/** Overrides what composeProjectName() returns, independent of deploymentName() — set via
+ *  OC_COMPOSE_PROJECT in .env, read once when the context is built. */
 export function useComposeProjectOverride(name: string | undefined): void {
   if (name !== undefined && !COMPOSE_PROJECT_PATTERN.test(name)) {
     throw new Error(
@@ -95,17 +70,15 @@ export function useComposeProjectOverride(name: string | undefined): void {
   composeOverride = name;
 }
 
-/** The raw override, or undefined when none is set — for a caller that needs to save and
- *  restore it around a nested Context, the same shape as set/artifacts/source.ts's own
- *  setSourceDir(). */
+/** The raw override, or undefined when none is set — for a caller that saves and restores it
+ *  around a nested Context. */
 export function composeProjectOverride(): string | undefined {
   return composeOverride;
 }
 
 /** What Docker actually calls this deployment's containers, networks and volumes — the
- *  directory's own name, unless OC_COMPOSE_PROJECT overrides it. The only consumer this is
- *  meant for is runtime-docker.ts's own compose invocations and the port-conflict check
- *  beside them; everywhere else wants deploymentName() instead. */
+ *  directory's own name unless OC_COMPOSE_PROJECT overrides it. Meant only for
+ *  runtime-docker.ts; everywhere else wants deploymentName() instead. */
 export function composeProjectName(): string {
   return composeOverride ?? deploymentName();
 }
@@ -124,11 +97,9 @@ export function envFile(): string {
   return resolve(deploymentDir(), ".env");
 }
 
-/** Declarative settings applied to the managed service.
- *
- *  Set-owned, so it follows the set source when one is in force: installing from an artifact
- *  reads the declaration out of the artifact while everything about the machine — .env, the
- *  secret stores, the lock — keeps coming from the deployment directory. */
+/** Declarative settings applied to the managed service. Set-owned: installing from an
+ *  artifact reads this out of the artifact while everything else (.env, secret stores, the
+ *  lock) keeps coming from the deployment directory. */
 export function desiredStateFile(): string {
   return resolve(setSourceDir() ?? deploymentDir(), "config", "desired-state.json");
 }

@@ -152,6 +152,8 @@ All notable changes to `@clawforge/framework` will be documented here.
   `.mcp.json` and `.codex/config.toml`. The launcher has no secrets or machine paths, so it is
   committed (unlike `.mcp.json`/`.codex/`, still gitignored); `mcp-setup` never overwrites a
   locally edited launcher silently — `--rewrite-launcher` is the explicit ask required.
+* Internal cleanup, no behavior change: comments condensed to the invariant across the
+  framework, longest blocks first.
 
 ### Fixed
 

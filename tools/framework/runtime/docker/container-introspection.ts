@@ -22,16 +22,12 @@ export class ContainerIntrospection {
   }
 
   /** The service's container id, or undefined when it does not exist. Matched by the two
-   *  labels compose itself writes on the container (project and service) rather than by
-   *  name — `docker ps --filter name=x` is a substring match, so a second deployment's
-   *  container would answer for the first — and asked of Docker directly rather than
-   *  through compose: finding a container by Docker's own labels needs no environment
-   *  interpolation at all, so it skips the compose env-file's whole setup/teardown (five
-   *  execs, one wsl.exe spawn each) for a fact plain `docker ps` answers in one. The same
-   *  shortcut recover-env's own bootstrap.ts already takes, for the same reason — reaching
-   *  a container this way needs no compose invocation. Asked fresh every call, never cached:
-   *  this runtime instance can outlive an external state change (an operator's own `docker
-   *  stop` while this same process is still running). */
+   *  labels compose writes on the container (project and service) rather than by name —
+   *  `docker ps --filter name=x` is a substring match, so a second deployment's container
+   *  would answer for the first. Asked of Docker directly rather than through compose, since
+   *  labels need no environment interpolation, skipping the compose env-file's whole
+   *  setup/teardown for a fact plain `docker ps` answers in one call. Asked fresh every call,
+   *  never cached: this runtime instance can outlive an external `docker stop`. */
   async containerId(service: string = this.#getService(), all = true): Promise<string | undefined> {
     const result = await this.#transport.exec(
       "docker",
@@ -51,14 +47,11 @@ export class ContainerIntrospection {
     return id === undefined || id === "" ? undefined : id;
   }
 
-  /** "missing" — no container at all (never created, or removed). "stopped" — the container
-   *  exists but its own process is not running: `.State.Health.Status` alone cannot tell this
-   *  apart from a running-but-unhealthy one, because Docker leaves the last healthcheck
-   *  verdict in place after a plain `docker stop` rather than clearing it — so a container
-   *  stopped while healthy, or one that failed its LAST check before stopping, both read
-   *  "unhealthy" for as long as they sit stopped. Checked first, before the health
-   *  verdict is even asked about. "starting"/"healthy"/"unhealthy"/"none" — Docker's own
-   *  verdict for a container that IS running, same as before. */
+  /** "missing" — no container at all. "stopped" — exists but not running: `.State.Health.Status`
+   *  alone can't tell this apart from running-but-unhealthy, since Docker leaves the last
+   *  healthcheck verdict in place after `docker stop` rather than clearing it. Checked first,
+   *  before the health verdict. "starting"/"healthy"/"unhealthy"/"none" — Docker's own verdict
+   *  for a container that IS running. */
   async health(): Promise<string> {
     const id = await this.containerId();
     if (id === undefined) return "missing";
@@ -145,10 +138,8 @@ export class ContainerIntrospection {
   }
 
   /** Reads the container's OWN environment back from Docker rather than from any file this
-   *  machine keeps — the container already has it, set once at creation from whatever .env
-   *  compose read that day, and it lives on inside the container across restarts of THIS
-   *  method's own caller even if the operator's copy is later lost. `docker inspect` is the
-   *  same introspection imageReference()/runningImageIdentity() already use; nothing here
+   *  machine keeps — set once at creation from whatever .env compose read that day, and it
+   *  lives on inside the container even if the operator's copy is later lost. Nothing here
    *  reads more than an operator who can already reach this target could read directly. */
   async runningEnvironment(): Promise<Record<string, string> | undefined> {
     const containerId = await this.containerId();
@@ -178,13 +169,11 @@ export class ContainerIntrospection {
 
   /** Reads the connection facts the running instance is actually reachable through. Compose
    *  resolved all of these from .env at container-creation time, so the values Docker holds
-   *  are what reach the instance however stale the operator's own copy has become. One
-   *  whole-object inspect, the same call runningImageIdentity() already makes; each field
-   *  keeps its provenance: the config bind mount strips to the data dir, the published
-   *  18789/tcp gives the port and (from the same entry's HostIp) the bind address, Docker's
-   *  own compose label — which portConflict() already reads — gives the project, and
-   *  .Config.Image keeps the original tag where the top-level .Image is the resolved ID and
-   *  would pin .env to a digest it never wrote. */
+   *  are what reach the instance however stale the operator's copy has become. One
+   *  whole-object inspect; each field keeps its provenance: the config bind mount strips to
+   *  the data dir, the published 18789/tcp gives the port and HostIp gives the bind address,
+   *  the compose label gives the project, and .Config.Image keeps the original tag (the
+   *  top-level .Image is the resolved ID and would pin .env to a digest it never wrote). */
   async runningConnectionFacts(): Promise<
     { dataDir?: string; port?: string; bindAddress?: string; composeProject?: string; image?: string } | undefined
   > {

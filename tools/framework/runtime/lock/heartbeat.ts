@@ -38,10 +38,9 @@ export type ReadHolder = (ctx: Context) => Promise<LockHolder | undefined>;
 export type WriteHolder = (ctx: Context, holder: LockHolder) => Promise<void>;
 
 /** Rewrites the holder's heartbeatAt — atomically, since `writeHolder` is expected to be
- *  transport.writeFile underneath (write-temp-then-rename on every transport, the same
- *  primitive the initial holder write already uses) — and only once `readHolder` proves
- *  `generation` still owns the lock: a takeover's fresh holder must never be overwritten by a
- *  heartbeat that started before the takeover landed. */
+ *  transport.writeFile underneath — and only once `readHolder` proves `generation` still
+ *  owns the lock: a takeover's fresh holder must never be overwritten by a heartbeat that
+ *  started before the takeover landed. */
 export async function refreshHeartbeat(
   ctx: Context,
   generation: string,

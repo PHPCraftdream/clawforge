@@ -48,10 +48,8 @@ function worstHealth(left: string | undefined, right: string | undefined): strin
 
 /** Builds one side stack: separate compose project, separate lifecycle, driven through the
  *  same env-file plumbing (`withEnvFile`) the main service's compose operations already own —
- *  a recipe's variables are declared in recipe.json and supplied from the deployment's .env
- *  (recipe.ts refuses to install one whose variables are not set there), so this is the
- *  environment a side stack is entitled to, and none of it belongs on the target's command
- *  line. */
+ *  a recipe's variables are declared in recipe.json and supplied from the deployment's .env,
+ *  and none of it belongs on the target's command line. */
 export function buildStack(
   transport: Transport,
   paths: PathBridge,
@@ -114,12 +112,9 @@ export function buildStack(
         if (typeof entry.Service !== "string" || entry.Service === "") continue;
         const running = entry.State === "running";
         const health = typeof entry.Health === "string" && entry.Health !== "" ? entry.Health : undefined;
-        // Replicas of one service arrive as separate entries under the same name.
-        // Requiring every replica to be running (and healthy, where a healthcheck
-        // exists) keeps the last-enumerated replica from answering for its dead
-        // siblings. A state that is not exactly "running" counts as not running, so
-        // the caller reports the service by name instead of dropping it from the
-        // requirement set.
+        // Replicas of one service arrive as separate entries under the same name. Requiring
+        // every replica running (and healthy) keeps the last-enumerated replica from
+        // answering for its dead siblings.
         const existing = states[entry.Service];
         states[entry.Service] = existing === undefined
           ? { running, health }

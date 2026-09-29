@@ -7,15 +7,12 @@ import type { Context } from "../../core/context.ts";
 
 const execFileAsync = promisify(execFile);
 
-// Whether a pid this framework recorded is still the process that recorded it — shared here,
-// rather than duplicated per caller, because every pid clawforge writes into a lock or guard
-// file (the mutation guard's own owner, the instance lock's holder, a compose invocation's
-// temporary env-file owner) is this tool's own process.pid, wherever it happens to run. The
-// Windows tooling reaches a WSL or SSH target through a transport, but the CLI process itself
-// never runs there: `process.pid` and `process.kill()` always mean the machine actually running
-// `clawforge`, never the target the transport reaches. Checking liveness THROUGH the transport
-// (asking the WSL target for its own hostname or process table) would compare the wrong two
-// things and call every cross-transport lock "foreign" forever.
+// Whether a pid this framework recorded is still the process that recorded it — shared here
+// since every pid clawforge writes into a lock/guard file is this tool's own process.pid,
+// wherever it runs. `process.pid`/`process.kill()` always mean the machine actually running
+// `clawforge`, never a WSL/SSH target reached through a transport — checking liveness THROUGH
+// the transport would compare the wrong two things and call every cross-transport lock
+// "foreign" forever.
 
 /** Host name plus the pid space its pids belong to. Windows Node and a WSL distro's Node on
  *  the same PC share a host name but not pids: without the scope, one side's live pid reads
@@ -36,9 +33,8 @@ function pidScope(): string {
 
 /** This process's own approximate start time, wall-clock ISO — recorded beside a pid so a
  *  later reader can tell a genuinely surviving process from an unrelated one the OS handed
- *  the same pid number after the original exited. Approximate: derived from process.uptime(),
- *  accurate to a few milliseconds — more than enough to catch a reused pid, since the OS does
- *  not hand out a just-freed pid again within milliseconds. */
+ *  the same pid after the original exited. Derived from process.uptime(), accurate to a few
+ *  milliseconds — enough to catch a reused pid. */
 export function ownProcessStartedAt(): string {
   return new Date(Date.now() - Math.round(process.uptime() * 1000)).toISOString();
 }
@@ -80,13 +76,9 @@ export interface LocalProcessRecord {
   readonly startedAt?: string;
 }
 
-/** "unknown" means: do not assume anything — a different machine's pid cannot be signalled
- *  from here, and a probe that errors for a reason other than "no such process" proves
- *  nothing either way. A caller must never treat "unknown" as "dead"; only a human deciding
- *  to break the lock gets to make that call.
- *
- *  Generic across callers (the instance lock's holder, a compose invocation's owner, the
- *  mutation guard's own owner). */
+/** "unknown" means: do not assume anything — a different machine's pid can't be signalled
+ *  from here, and a probe error other than "no such process" proves nothing either way. A
+ *  caller must never treat "unknown" as "dead"; only a human breaking the lock decides that. */
 export async function localLiveness(record: LocalProcessRecord): Promise<Liveness> {
   if (record.machine !== machineName()) return "unknown";
   let exists: boolean;

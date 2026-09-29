@@ -14,10 +14,9 @@ const COMPOSE_NOISE = [
 ];
 
 /** True for a line of Compose's own progress noise. Shared by meaningfulLines() (a
- *  rejection's detail) and spawnLocal's live streaming forwarder (transport.ts), so a
- *  failure's detail and what the operator watched scroll by agree on exactly what counts as
- *  noise. Trims its own input: a raw line straight off a chunk may still carry a trailing
- *  \r Compose wrote for a TTY's cursor control. */
+ *  rejection's detail) and spawnLocal's live streaming forwarder, so a failure's detail and
+ *  what the operator watched agree on what counts as noise. Trims its input: a raw chunk
+ *  line may still carry a trailing \r Compose wrote for a TTY's cursor control. */
 export function isComposeNoiseLine(line: string): boolean {
   return COMPOSE_NOISE.some((pattern) => pattern.test(line.trim()));
 }
@@ -27,12 +26,11 @@ export function meaningfulLines(text: string): string[] {
   return text.split("\n").map((line) => line.trim()).filter((line) => line !== "" && !isComposeNoiseLine(line));
 }
 
-/** Line-buffers a live stream's chunks (spawnLocal's piped forwarding path, runtime/transport/transport.ts)
- *  so a noise line split across two chunks is still recognized whole, and drops only complete
- *  lines that are Compose's own progress noise before handing the rest to `write` exactly as
- *  received — a real stderr line never on that precise list always survives. flush() (call at
- *  the stream's end) forwards whatever incomplete trailing text never reached a newline, so
- *  nothing is ever silently lost, only reordered by at most one buffered line. */
+/** Line-buffers a live stream's chunks so a noise line split across two chunks is still
+ *  recognized whole, and drops only complete lines that are Compose's progress noise before
+ *  handing the rest to `write` exactly as received. flush() forwards whatever incomplete
+ *  trailing text never reached a newline, so nothing is silently lost, only reordered by at
+ *  most one buffered line. */
 export function noiseFilteredForwarder(write: (chunk: string) => void): { push: (chunk: string) => void; flush: () => void } {
   let pending = "";
   return {
@@ -77,13 +75,11 @@ export function describeInvocation(command: string, args: string[]): string {
       index < 2 || (!COMPOSE_IDENTITY_FLAGS.has(token) && !COMPOSE_IDENTITY_FLAGS.has(tokens[index - 1])));
   }
 
-  // This framework's own `sh -c <script>` staging invocations (quoting.ts's publishCommand,
-  // privateWriteCommand) must never paste their multi-statement body into a headline — the
-  // real cause is whatever stderr said, appended separately by the caller; OC_DEBUG=1 still
-  // gets the untouched command via CommandFailure.fullCommand. Two shapes reach here: the
-  // plain array form (local/WSL — tokens[0]/[1] are literally "sh"/"-c") and SSH's, where the
-  // whole invocation, host included, is already one shell-quoted string ("'sh' '-c' '…'") by
-  // the time this runs (SshTransport.exec joins before spawnLocal ever sees it).
+  // This framework's own `sh -c <script>` staging invocations must never paste their
+  // multi-statement body into a headline — OC_DEBUG=1 still gets the untouched command via
+  // CommandFailure.fullCommand. Two shapes reach here: the plain array form (local/WSL) and
+  // SSH's, where the whole invocation is already one shell-quoted string by the time this
+  // runs (SshTransport.exec joins before spawnLocal ever sees it).
   if (tokens[0] === "sh" && tokens[1] === "-c") {
     tokens = [tokens[0], tokens[1], "…"];
   } else {

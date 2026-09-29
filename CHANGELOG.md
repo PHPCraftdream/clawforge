@@ -159,7 +159,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 * ssh target: a command that hit its `timeoutMs` left the remote process running (killing the
   local `ssh` sends the remote command no signal without a pty). The deadline is now also
-  enforced on the target by `timeout` when it exists, and keeps working after the connection is gone.
+  enforced on the target — by `timeout`, or by a plain-sh watchdog where it is missing (macOS) — and
+  keeps working after the connection is gone.
 * recipe hooks: a `#specifier` import failed with "escapes the recipe directory" when the recipe
   was reached through a symlinked path (macOS `/var` → `/private/var`), because Node reports the
   hook's own file realpath'd; the boundary is now taken in the same spelling as that file.

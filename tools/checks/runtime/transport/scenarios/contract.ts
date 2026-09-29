@@ -81,6 +81,8 @@ async function execScenarios(transport: Transport, label: (s: string) => string,
   {
     const input = `stdin-payload-${MULTIBYTE_UNIT}`;
     check(label("stdin passes through to the child exactly"), (await transport.exec("cat", [], { input })).stdout, input);
+    check(label("stdin still passes through under a deadline"), (await transport.exec("cat", [], { input, timeoutMs: 60_000 })).stdout, input);
+    check(label("a command under a deadline keeps its exit code"), (await transport.exec("sh", ["-c", "exit 3"], { allowFailure: true, timeoutMs: 60_000 })).code, 3);
   }
 
   for (const value of QUOTING_CASES) {

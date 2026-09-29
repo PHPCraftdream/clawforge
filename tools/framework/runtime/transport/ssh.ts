@@ -30,12 +30,18 @@ function isSshOwnFailure(code: number, stderr: string): boolean {
 }
 
 /** Killing the local ssh client does not stop the remote command: without a pty sshd sends it no
- *  signal. The deadline is therefore also enforced on the target by `timeout` (when it exists),
- *  which keeps working if the connection is already gone. */
+ *  signal. The deadline is therefore also enforced on the target — by `timeout` where it exists,
+ *  else by a watchdog in plain sh (macOS has no `timeout`) — and keeps working once the
+ *  connection is gone. The watchdog keeps stdin (fd 3: a background job would get /dev/null) and
+ *  detaches its own output so ssh does not wait on it. */
 function withRemoteDeadline(remote: string, timeoutMs: number | undefined): string {
   if (timeoutMs === undefined) return remote;
   const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
-  return `if command -v timeout >/dev/null 2>&1; then exec timeout -k 5 ${seconds} ${remote}; else exec ${remote}; fi`;
+  const watchdog =
+    `exec 3<&0; ${remote} <&3 3<&- & p=$!; ` +
+    `( sleep ${seconds}; kill -TERM $p; sleep 5; kill -KILL $p ) >/dev/null 2>&1 </dev/null & w=$!; ` +
+    "wait $p; r=$?; kill $w 2>/dev/null; exit $r";
+  return `if command -v timeout >/dev/null 2>&1; then exec timeout -k 5 ${seconds} ${remote}; fi; ${watchdog}`;
 }
 
 export class SshTransport implements Transport {

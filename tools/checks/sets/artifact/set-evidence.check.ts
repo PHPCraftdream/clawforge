@@ -7,6 +7,7 @@ import { accept } from "#framework/commands/orchestration/accept.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { listReceipts, readReceipt } from "#framework/set/artifacts/receipt.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { RunOneOffOptions } from "#framework/runtime/runtime.ts";
 
@@ -48,6 +49,25 @@ const ctx = {
         if (replaceContainer) containerReplaced = true;
         const answer = {jsonrpc:"2.0",id:2,result:{isError:toolError,content:[{type:"text",text:toolError?"tool unavailable":"wiki-ready"}]}};
         return {code:0,stdout:JSON.stringify({jsonrpc:"2.0",id:1,result:{protocolVersion:"2025-06-18",capabilities:{},serverInfo:{name:"fixture",version:"1"}}})+"\n"+JSON.stringify(answer)+"\n",stderr:""};
+      }
+      if (args[0] === "-c") {
+        const answers = [
+          ["'agents' 'list' '--json'", "[]"],
+          ["'mcp' 'list' '--json'", "{}"],
+          ["'cron' 'list' '--json'", '{"jobs":[]}'],
+          ["'--version'", "OpenClaw fixture"],
+          ["'plugins' 'list' '--json'", '{"plugins":[]}'],
+          ["'skills' 'list' '--json'", '{"skills":[]}'],
+        ] as const;
+        const results = (args[1] ?? "").split("\n")
+          .filter((line) => line.includes("node dist/index.js"))
+          .map((line) => {
+            const answer = answers.find(([command]) => line.includes(command));
+            return answer === undefined
+              ? { code: 1, stdout: "" }
+              : { code: 0, stdout: answer[1] };
+          });
+        return { code: 0, stdout: formatBatchStub(results), stderr: "" };
       }
       return {code:0,stdout:args[0]==="agents"?"[]":args[0]==="cron"?'{"jobs":[]}':"{}",stderr:""};
     },

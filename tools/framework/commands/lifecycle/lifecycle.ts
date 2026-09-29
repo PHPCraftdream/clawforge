@@ -4,18 +4,20 @@
 // transport in the context decide how the instance is actually started.
 
 import { readFile } from "node:fs/promises";
-import { log, info, warn, die, regexEscape } from "#src/core/io/log.ts";
+import { log, info, warn, die } from "#src/core/io/log.ts";
 import { shouldFollow, emit, withOutputSink } from "#src/core/io/output.ts";
 import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "#src/commands/management/secrets.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { envFile, deploymentName, composeProjectName } from "#src/runtime/deployment.ts";
-import { OWNER, sudoFor, runMaybePrivileged, needsOwnerEscalation } from "#src/runtime/datadir.ts";
+import { OWNER, needsOwnerEscalation, sudoFor } from "#src/runtime/datadir.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "./backup/index.ts";
 import { restoreArchive } from "./restore/index.ts";
+import { preflightPort } from "./bootstrap/prereqs.ts";
+export { preflightPort, listeningPortHolder } from "./bootstrap/prereqs.ts";
 import { imageChannel, channelHasTag } from "#src/runtime/docker/image-digest.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
@@ -40,77 +42,6 @@ export const LOGS_ARGUMENTS: CommandArgument[] = [
   { name: "since", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option", valueName: "duration|timestamp" },
   { name: "grep", description: "Only lines matching this regular expression", kind: "option", valueName: "pattern" },
 ];
-
-/** Whether `address:port` (or a wildcard bind covering it) already appears in a `ss`/`netstat`
- *  listening-socket listing. Matched loosely against just the local-address column, ending
- *  in ":<port>" — both tools' exact layout and spacing vary by version. */
-function listeningLine(output: string, address: string, port: string): string | undefined {
-  const pattern = new RegExp(`(?:^|\\s)(?:\\*|0\\.0\\.0\\.0|::|\\[::\\]|${regexEscape(address)}):${port}(?:\\s|$)`);
-  return output.split("\n").find((line) => pattern.test(line))?.trim();
-}
-
-/** `ss -ltnH` (falling back to `netstat -ltn` where `ss` is not installed) against the
- *  target. Docker's own publish list (portConflict, below) only sees what IT bound, so a
- *  bare process already holding the address:port fails compose deep inside `up` with
- *  nothing but a bind error naming the port — same failure a second deployment's container
- *  causes, from a listener this framework never considered. Absence of both tools is
- *  reported as "unavailable", never silently read as "free": a target this can never check
- *  must say so, not proceed as if it had. */
-export async function listeningPortHolder(ctx: Context, address: string, port: string): Promise<string | "unavailable" | undefined> {
-  for (const [command, args] of [
-    ["ss", ["-ltnH"]],
-    ["netstat", ["-ltn"]],
-  ] satisfies [string, string[]][]) {
-    let result: { code: number; stdout: string } | undefined;
-    try {
-      result = await ctx.transport.exec(command, args, { allowFailure: true });
-    } catch {
-      // The tool itself could not even be launched (e.g. a local transport with no such
-      // binary on PATH) — same as a nonzero exit below: try the next one.
-      result = undefined;
-    }
-    if (result === undefined || result.code !== 0) continue;
-    return listeningLine(result.stdout, address, port);
-  }
-  return "unavailable";
-}
-
-/** Another deployment on the same port fails deep inside compose with a bind error naming
- *  only the port. Said plainly here, before anything is started. */
-export async function preflightPort(ctx: Context): Promise<void> {
-  const holder = await ctx.runtime.portConflict(ctx.settings.gatewayPort);
-  if (holder !== undefined) {
-    die(
-      `port ${ctx.settings.gatewayPort} is already published by ${holder} — ` +
-        "give this deployment its own OPENCLAW_GATEWAY_PORT in .env",
-    );
-  }
-
-  // Docker's own publish list is the only thing the check above sees. If this deployment's
-  // OWN gateway is already running, it legitimately holds the address:port already — an
-  // ordinary bootstrap re-run, not a conflict — so the raw listening-socket probe below is
-  // skipped rather than refusing an instance against itself.
-  if (await ctx.runtime.isRunning()) return;
-
-  const { bindAddress, gatewayPort } = ctx.settings;
-  const listener = await listeningPortHolder(ctx, bindAddress, gatewayPort);
-  if (listener === "unavailable") {
-    warn(
-      `could not check whether ${bindAddress}:${gatewayPort} is already listening — neither ss nor netstat ` +
-        "answered on the target. Proceeding without that check: if compose then fails to bind, something else " +
-        "already holds this port.",
-    );
-    return;
-  }
-  if (listener !== undefined) {
-    die(
-      `${bindAddress}:${gatewayPort} is already listening (${listener}) — not through Docker, so the check ` +
-        "above never saw it. Give this deployment its own OPENCLAW_GATEWAY_PORT in .env, or stop whatever is " +
-        "using this one.\n" +
-        "This check and the later bind are not atomic — something else could still take the port in between.",
-    );
-  }
-}
 
 /** Starts the gateway and waits until it actually serves, not just until the container
  *  exists — a container that is "up" while crash-looping is the failure mode we hit. */
@@ -216,24 +147,69 @@ function assertSafeRemovalShape(target: DestroyTarget): void {
   const { path, envName } = target;
   const isPosixRoot = path.startsWith("/");
   const isWindowsRoot = /^[A-Za-z]:[\\/]/.test(path);
+  const isFilesystemRoot = path === "/" || /^[A-Za-z]:[\\/]$/.test(path);
   if (!isPosixRoot && !isWindowsRoot) die(`${envName} "${path}" is not an absolute path — refusing to remove it`);
+  if (/[\\/]{2,}/.test(path) || (!isFilesystemRoot && /[\\/]$/.test(path))) {
+    die(`${envName} "${path}" is not a normalized path — refusing to remove it`);
+  }
+  if (path.includes("/") && path.includes("\\")) die(`${envName} "${path}" mixes path separators — refusing to remove it`);
   const segments = path.split(/[\\/]+/).slice(1).filter((segment) => segment !== "");
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    die(`${envName} "${path}" contains a "." or ".." segment — refusing to remove it`);
+  }
   if (segments.length < 2) die(`${envName} "${path}" is a top-level directory — refusing to remove it`);
   if (HOME_SHAPED.test(path)) die(`${envName} "${path}" looks like a home directory — refusing to remove it`);
 }
 
-/** Refuses a target that is itself a symlink: `rm -rf` on it removes the link (harmless),
- *  but the ownership escalation destroyLocked runs first would act through whatever it
- *  actually points at — reachable in dry run too, since the plan should not promise to
- *  remove a path it will then refuse for real. */
-async function assertNotSymlink(ctx: Context, target: DestroyTarget): Promise<void> {
-  const link = await ctx.transport.exec("test", ["-L", target.path], { allowFailure: true });
-  if (link.code !== 0) return;
-  const resolved = await ctx.transport.exec("readlink", ["-f", target.path], { allowFailure: true });
-  die(
-    `${target.envName} "${target.path}" is a symlink${resolved.code === 0 && resolved.stdout.trim() !== "" ? ` to ${resolved.stdout.trim()}` : ""} — ` +
-      "refusing to remove it; point it at the real directory instead",
-  );
+/** Keep the physical parent as cwd from verification through deletion. */
+export const SAFE_DESTROY_SCRIPT = [
+  "target=$1; mode=$2",
+  "fail() { printf '%s\\n' \"$1\" >&2; exit 1; }",
+  "case $target in /*) ;; *) fail 'target is not a POSIX absolute path' ;; esac",
+  "case $mode in verify|remove) ;; *) fail 'invalid removal mode' ;; esac",
+  "parent=${target%/*}; name=${target##*/}",
+  "[ -n \"$parent\" ] || parent=/",
+  "[ -n \"$name\" ] || fail 'target basename is empty'",
+  "command -v readlink >/dev/null 2>&1 || fail 'readlink is unavailable'",
+  "probe=$(readlink -e -- / 2>/dev/null) || fail 'readlink -e is unavailable'",
+  "[ \"$probe\" = / ] || fail 'readlink -e is unavailable'",
+  "command -v rm >/dev/null 2>&1 || fail 'rm is unavailable'",
+  "physical=$(readlink -e -- \"$parent\") || fail 'parent cannot be resolved'",
+  "[ \"$physical\" = \"$parent\" ] || fail 'parent resolves through a symlink'",
+  "cd -P -- \"$parent\" || fail 'parent cannot be entered'",
+  "physical=$(pwd -P) || fail 'parent cannot be resolved after entry'",
+  "[ \"$physical\" = \"$parent\" ] || fail 'parent changed during verification'",
+  "if test -L \"./$name\"; then fail 'target is a symlink'; else code=$?; [ \"$code\" -eq 1 ] || fail 'target link test failed'; fi",
+  "if test -e \"./$name\"; then",
+  "  physical=$(readlink -e -- \"./$name\") || fail 'target cannot be resolved'",
+  "  [ \"$physical\" = \"$target\" ] || fail 'target resolves through a symlink'",
+  "else",
+  "  code=$?; [ \"$code\" -eq 1 ] || fail 'target existence test failed'",
+  "  exit 0",
+  "fi",
+  "[ \"$mode\" = remove ] || exit 0",
+  "physical=$(pwd -P) || fail 'parent cannot be resolved before removal'",
+  "[ \"$physical\" = \"$parent\" ] || fail 'parent changed before removal'",
+  "rm -rf -- \"./$name\"",
+].join("\n");
+
+interface PreparedDestroyTarget {
+  readonly target: DestroyTarget;
+  readonly prefix: readonly string[];
+}
+
+async function prepareDestroyTarget(ctx: Context, target: DestroyTarget, force: boolean): Promise<PreparedDestroyTarget> {
+  const parent = target.path.slice(0, target.path.lastIndexOf("/")) || "/";
+  return { target, prefix: await sudoFor(ctx, parent, { force }) };
+}
+
+async function verifyOrRemoveTarget(ctx: Context, prepared: PreparedDestroyTarget, mode: "verify" | "remove"): Promise<void> {
+  const { target, prefix } = prepared;
+  const [head, ...rest] = [...prefix, "sh", "-s", "--", target.path, mode];
+  const result = await ctx.transport.exec(head, rest, { allowFailure: true, input: SAFE_DESTROY_SCRIPT });
+  if (result.code !== 0) {
+    die(`${target.envName} "${target.path}" ${mode === "remove" ? "could not be removed" : "could not be verified"} safely: ${result.stderr.trim() || `exit ${result.code}`}`);
+  }
 }
 
 async function sizeReport(ctx: Context, path: string): Promise<string> {
@@ -259,13 +235,13 @@ async function printDestroyPlan(ctx: Context, targets: DestroyTarget[]): Promise
 
 /** containers/network/volumes first, always; the declared directories after, in
  *  destroyTargets' fixed order. */
-async function destroyLocked(ctx: Context, targets: DestroyTarget[]): Promise<void> {
+async function destroyLocked(ctx: Context, targets: PreparedDestroyTarget[]): Promise<void> {
   log(`stopping and removing containers, network and volumes of ${composeProjectName()}`);
   await ctx.runtime.stop(["-v"]);
-  const escalate = await needsOwnerEscalation(ctx, OWNER);
-  for (const target of targets) {
+  for (const prepared of targets) {
+    const { target } = prepared;
     log(`removing ${target.path}`);
-    await runMaybePrivileged(ctx, target.path, "rm", ["-rf", "--", target.path], { force: escalate });
+    await verifyOrRemoveTarget(ctx, prepared, "remove");
   }
 }
 
@@ -286,7 +262,8 @@ export async function destroy(ctx: Context, args: string[]): Promise<void> {
   await requireBootstrapped(ctx);
 
   if (parsed.yes !== true) {
-    for (const target of targets) await assertNotSymlink(ctx, target);
+    const force = targets.length > 0 && await needsOwnerEscalation(ctx, OWNER);
+    for (const target of targets) await verifyOrRemoveTarget(ctx, await prepareDestroyTarget(ctx, target, force), "verify");
     await printDestroyPlan(ctx, targets);
     return;
   }
@@ -299,9 +276,11 @@ export async function destroy(ctx: Context, args: string[]): Promise<void> {
         : `--confirm-name "${confirmName}" does not match this deployment's name "${deploymentName()}"`,
     );
   }
-  for (const target of targets) await assertNotSymlink(ctx, target);
+  const force = targets.length > 0 && await needsOwnerEscalation(ctx, OWNER);
+  const prepared = await Promise.all(targets.map((target) => prepareDestroyTarget(ctx, target, force)));
+  for (const target of prepared) await verifyOrRemoveTarget(ctx, target, "verify");
 
-  await guarded(ctx, "destroy", args, () => destroyLocked(ctx, targets));
+  await guarded(ctx, "destroy", args, () => destroyLocked(ctx, prepared));
 }
 
 /** One capability, two shapes. On a terminal this follows the log until interrupted; anywhere

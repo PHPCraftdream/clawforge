@@ -209,7 +209,7 @@ async function observeHealth(
 /** What OpenClaw itself has registered: one batched container for all six reads instead of
  *  one each — each `docker compose run --rm` pays Compose's create/destroy cost again
  *  (~5-7s), which was the dominant cost doctor/plan measured before batching. */
-async function observeRegistrations(ctx: Context, includeChannels: boolean) {
+async function observeRegistrations(ctx: Context, includeChannels: boolean, problems: Problem[]) {
   const batchCommands: string[][] = [
     ["agents", "list", "--json"],
     ["mcp", "list", "--json"],
@@ -223,27 +223,34 @@ async function observeRegistrations(ctx: Context, includeChannels: boolean) {
   const batchResults = await openclawCliBatch(ctx, batchCommands);
   const [agentsResult, mcpResult, cronResult, versionResult, pluginsResult, skillsResult] = batchResults;
   const channels = channelsIndex === undefined ? undefined : parseChannelsStatus(batchResults[channelsIndex]);
-  const agents = parseJsonOrEmpty(agentsResult, (parsed) =>
+  const agents = parseJsonOrUnknown(agentsResult, "agents list", problems, (parsed) =>
     (parsed as Array<{ id?: string }>).map((entry) => entry.id ?? "").filter((id) => id !== ""));
   // Full entries, not just names: a server registered under the wrong command (or disabled)
   // is broken, not missing — mcpServerMatches() is provision-agent's own comparison.
-  const mcpServerEntries = parseJsonOrEmpty(mcpResult, (parsed) =>
-    Object.entries(parsed as Record<string, { command?: unknown; args?: unknown; enabled?: unknown }>));
-  const mcpServers = mcpServerEntries.map(([name]) => name);
+  const mcpServerEntries = parseJsonOrUnknown(mcpResult, "mcp list", problems, (parsed) => {
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid registrations");
+    return Object.entries(parsed as Record<string, { command?: unknown; args?: unknown; enabled?: unknown }>);
+  });
+  const mcpServers = mcpServerEntries?.map(([name]) => name);
   // Whole jobs, not flattened names: message/timeout/target/delivery-mode drift can differ
   // while the schedule alone matches.
-  const liveJobs = parseJsonOrEmpty(cronResult, (parsed) =>
-    ((parsed as { jobs?: CronJob[] }).jobs ?? []));
-  const cronJobs = liveJobs
-    .map((job) => (job.schedule?.expr === undefined ? (job.name ?? "") : `${job.name ?? ""}@${job.schedule.expr}`))
+  const liveJobs = parseJsonOrUnknown(cronResult, "cron list", problems, (parsed) =>
+    (parsed as { jobs?: CronJob[] }).jobs as CronJob[]);
+  const cronJobs = liveJobs?.map((job) => (job.schedule?.expr === undefined ? (job.name ?? "") : `${job.name ?? ""}@${job.schedule.expr}`))
     .filter((name) => name !== "");
+
+  if (versionResult.code !== 0 || versionResult.stdout.trim() === "") {
+    reportCliReadFailure(problems, "version", versionResult.failure ?? (versionResult.code === 0 ? "empty response" : `exit ${versionResult.code}`));
+  }
+  const pluginsRead = parseJsonOrUnknown(pluginsResult, "plugins list", problems, (parsed) => (parsed as { plugins: unknown[] }).plugins);
+  const skillsRead = parseJsonOrUnknown(skillsResult, "skills list", problems, (parsed) => (parsed as { skills: unknown[] }).skills);
 
   const openclawVersionLine = versionResult.code === 0 ? versionResult.stdout.trim().split("\n")[0] : "";
   const openclawVersion = openclawVersionLine === "" ? undefined : openclawVersionLine;
 
   // Raw here; gather.ts normalises via pluginsForLock/skillsForLock before comparing.
-  const plugins = parsePluginsList(pluginsResult);
-  const skills = parseSkillsList(skillsResult);
+  const plugins = pluginsRead === undefined ? undefined : parsePluginsList(pluginsResult);
+  const skills = skillsRead === undefined ? undefined : parseSkillsList(skillsResult);
 
   return { agents, mcpServerEntries, mcpServers, liveJobs, cronJobs, channels, openclawVersion, plugins, skills };
 }
@@ -256,9 +263,9 @@ async function observeOwnership(
   ctx: Context,
   problems: Problem[],
   expectations: RecipeExpectation[],
-  agents: string[],
-  mcpServers: string[],
-  liveJobs: CronJob[],
+  agents: string[] | undefined,
+  mcpServers: string[] | undefined,
+  liveJobs: CronJob[] | undefined,
 ) {
   const declaredOwnership: DeclaredOwnership[] = expectations.flatMap(({ recipe, bundle }) => {
     const entries: DeclaredOwnership[] = [
@@ -280,9 +287,9 @@ async function observeOwnership(
     );
   }
   const foreignObjects = [
-    ...foreign(ledger, "agent", agents).map((name) => ({ kind: "agent" as const, name })),
-    ...foreign(ledger, "mcp-server", mcpServers).map((name) => ({ kind: "mcp-server" as const, name })),
-    ...foreign(ledger, "cron-job", liveJobs.map((job) => job.name ?? "").filter((name) => name !== "")).map((name) => ({ kind: "cron-job" as const, name })),
+    ...foreign(ledger, "agent", agents ?? []).map((name) => ({ kind: "agent" as const, name })),
+    ...foreign(ledger, "mcp-server", mcpServers ?? []).map((name) => ({ kind: "mcp-server" as const, name })),
+    ...foreign(ledger, "cron-job", (liveJobs ?? []).map((job) => job.name ?? "").filter((name) => name !== "")).map((name) => ({ kind: "cron-job" as const, name })),
   ];
   return { ledger, foreignObjects };
 }
@@ -294,24 +301,24 @@ async function checkRecipeExpectation(
   ctx: Context,
   problems: Problem[],
   expectation: RecipeExpectation,
-  registrations: { agents: string[]; mcpServerEntries: [string, { command?: unknown; args?: unknown; enabled?: unknown }][]; liveJobs: CronJob[] },
+  registrations: { agents?: string[]; mcpServerEntries?: [string, { command?: unknown; args?: unknown; enabled?: unknown }][]; liveJobs?: CronJob[] },
   ledger: Awaited<ReturnType<typeof readLedger>>,
 ): Promise<void> {
   const { agents, mcpServerEntries, liveJobs } = registrations;
   const { config, cronMessage } = expectation.bundle;
   const agentId = config.agentId;
 
-  if (!agents.includes(agentId)) {
+  if (agents !== undefined && !agents.includes(agentId)) {
     problems.push(
       problem("AGENT_MISSING", `recipe "${expectation.recipe}" declares agent "${agentId}", which the instance does not have`, `./clawforge provision-agent ${expectation.recipe}`),
     );
   }
-  const registeredServer = mcpServerEntries.find(([name]) => name === config.mcpServerName)?.[1];
-  if (registeredServer === undefined) {
+  const registeredServer = mcpServerEntries?.find(([name]) => name === config.mcpServerName)?.[1];
+  if (mcpServerEntries !== undefined && registeredServer === undefined) {
     problems.push(
       problem("MCP_SERVER_MISSING", `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is not registered`, `./clawforge provision-agent ${expectation.recipe}`),
     );
-  } else if (!mcpServerMatches(registeredServer, expectation.recipe)) {
+  } else if (registeredServer !== undefined && !mcpServerMatches(registeredServer, expectation.recipe)) {
     problems.push(
       problem(
         "MCP_SERVER_MISSING",
@@ -320,7 +327,7 @@ async function checkRecipeExpectation(
       ),
     );
   }
-  if (config.cronJobName !== undefined && cronMessage !== undefined) {
+  if (liveJobs !== undefined && config.cronJobName !== undefined && cronMessage !== undefined) {
     const live = liveJobs.find((job) => job.name === config.cronJobName);
     if (live === undefined) {
       problems.push(
@@ -388,14 +395,14 @@ export async function observeLive(
   // watch check's opt-in: adds `channels status --json` to the batch below instead of a
   // second container. inspect/doctor/plan/apply never pass true.
   includeChannels = false,
-): Promise<Partial<ObservedState> & { plugins: PluginListEntry[]; skills: SkillListEntry[] }> {
+): Promise<Partial<ObservedState> & { plugins?: PluginListEntry[]; skills?: SkillListEntry[] }> {
   const { probes, health } = await observeHealth(ctx, problems, configMtimeMs);
 
   // Outbound counterpart of the probes above, from the one vantage they lack.
   const egress = await observeEgress(ctx, liveConfig, problems);
 
   // --- what OpenClaw itself has registered ----------------------------------------------
-  const registrations = await observeRegistrations(ctx, includeChannels);
+  const registrations = await observeRegistrations(ctx, includeChannels, problems);
   const { agents, mcpServerEntries, mcpServers, liveJobs, cronJobs, channels, openclawVersion, plugins, skills } = registrations;
 
   const expectations = await recipeExpectations();
@@ -408,15 +415,24 @@ export async function observeLive(
   return { probes, health, egress, agents, mcpServers, cronJobs, foreignObjects, openclawVersion, plugins, skills, channels };
 }
 
-/** One batched call's `--json` list, or empty on failure — a failing list must not take
- *  the whole inspection down. */
-function parseJsonOrEmpty<T>(result: BatchedCliResult, extract: (parsed: unknown) => T[]): T[] {
-  if (result.code !== 0) return [];
-  try {
-    return extract(JSON.parse(result.stdout));
-  } catch {
-    return [];
+/** A failed list remains unknown; callers may compare only confirmed values. */
+function parseJsonOrUnknown<T>(result: BatchedCliResult, name: string, problems: Problem[], extract: (parsed: unknown) => T[]): T[] | undefined {
+  if (result.code !== 0) {
+    reportCliReadFailure(problems, name, result.failure ?? `exit ${result.code}`);
+    return undefined;
   }
+  try {
+    const value = extract(JSON.parse(result.stdout));
+    if (!Array.isArray(value)) throw new Error("invalid list");
+    return value;
+  } catch {
+    reportCliReadFailure(problems, name, "invalid JSON response");
+    return undefined;
+  }
+}
+
+function reportCliReadFailure(problems: Problem[], name: string, reason: string): void {
+  problems.push(problem("CLI_READ_FAILED", `openclaw ${name} could not be read (${reason}); live state is unknown`));
 }
 
 /** `channels status --json`'s batched read, only attempted when includeChannels opted in.

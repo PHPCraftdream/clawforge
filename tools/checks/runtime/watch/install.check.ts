@@ -99,7 +99,7 @@ interface RecordedCall { readonly command: string; readonly args: string[] }
  *  guard fixture (an in-memory tree that emulates mkdir/rmdir/ln/mv/rm faithfully — the same
  *  one instance-lock.check.ts's own split uses), so install/uninstall run their REAL locking
  *  code across repeated --apply cycles, not a hand-rolled approximation of it. */
-function crontabTransport(initial = ""): { transport: Context["transport"]; calls: RecordedCall[]; crontab: () => string } {
+function crontabTransport(initial = "", listingFailure?: ExecResult): { transport: Context["transport"]; calls: RecordedCall[]; crontab: () => string } {
   const { ctx: fixtureCtx } = stubContext();
   const baseExec = fixtureCtx.transport.exec;
   let current = initial;
@@ -113,6 +113,7 @@ function crontabTransport(initial = ""): { transport: Context["transport"]; call
         return { code: 0, stdout: "/usr/bin/crontab\n", stderr: "" };
       }
       if (command === "crontab" && args[0] === "-l") {
+        if (listingFailure !== undefined) return listingFailure;
         return current === "" ? { code: 1, stdout: "", stderr: "no crontab for user" } : { code: 0, stdout: current, stderr: "" };
       }
       if (command === "crontab" && args[0] === "-") {
@@ -199,6 +200,14 @@ try {
   await withOutputSink((chunk) => written.push(chunk), () => watchUninstall(ctx, ["--apply"]));
   check("a second uninstall reports nothing to remove", written.join("").includes("nothing to remove"), true);
   check("and never re-writes the crontab", calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
+
+  const unreadableInitial = `${FOREIGN}\n`;
+  const unreadable = crontabTransport(unreadableInitial, { code: 1, stdout: "", stderr: "permission denied" });
+  const unreadableCtx = { ...ctx, transport: unreadable.transport } as Context;
+  const readError = await deathOf(() => withOutputSink(() => {}, () => watchInstall(unreadableCtx, ["--apply"])));
+  check("watch install aborts on crontab read failure", readError.includes("could not read crontab"), true);
+  check("watch install leaves existing entries untouched on read failure", unreadable.crontab(), unreadableInitial);
+  check("watch install never writes after a crontab read failure", unreadable.calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
 } finally {
   await rm(root, { recursive: true, force: true });
 }
@@ -214,10 +223,14 @@ try {
     settings: {},
   } as unknown as Context;
   const written: string[] = [];
-  await withOutputSink((chunk) => written.push(chunk), () => watchInstall(ctx, []));
+  await withOutputSink((chunk) => written.push(chunk), () => withScheduleRunner(
+    async () => ({ code: 0, stdout: "", stderr: "" }),
+    () => watchInstall(ctx, []),
+    "win32",
+  ));
   check("an unsupported transport prints instructions instead of a crontab line", written.join("").includes("Run this yourself"), true);
 
-  if (process.platform === "win32") {
+  {
     check("...and, on an actual Windows host, a ready schtasks command too", written.join("").includes("schtasks"), true);
 
     const recorded: { command: string; args: string[] }[] = [];
@@ -228,9 +241,32 @@ try {
           return { code: 0, stdout: "", stderr: "" };
         },
         () => watchInstall(ctx, ["--apply"]),
+        "win32",
       ));
-    check("--apply on Windows runs schtasks through the recording transport, never a real one", recorded.length, 1);
-    check("...targeting this job's own task name", recorded[0]?.args.includes(scheduledTaskName("watch", name)) ?? false, true);
+      check("--apply on Windows runs schtasks through the recording transport, never a real one", recorded.length, 1);
+      check("...targeting this job's own task name", recorded[0]?.args.includes(scheduledTaskName("watch", name)) ?? false, true);
+
+    check("Windows install records the applied interval", (await readWatchState())?.intervalMinutes, DEFAULT_WATCH_INTERVAL_MINUTES);
+    const failed = await deathOf(() => withOutputSink(() => {}, () =>
+      withScheduleRunner(
+        async () => ({ code: 1, stdout: "", stderr: "access denied" }),
+        () => watchInstall(ctx, ["--apply", "--interval", "10"]),
+        "win32",
+      )));
+    check("a failed Windows reinstall is reported", failed.includes("access denied"), true);
+    check("a failed Windows reinstall does not overwrite the installed interval", (await readWatchState())?.intervalMinutes, DEFAULT_WATCH_INTERVAL_MINUTES);
+
+    const deleted: { command: string; args: string[] }[] = [];
+    await withOutputSink(() => {}, () => withScheduleRunner(
+      async (command, args) => {
+        deleted.push({ command, args: [...args] });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      () => watchUninstall(ctx, ["--apply"]),
+      "win32",
+    ));
+    check("Windows uninstall deletes the same watch task", deleted[0]?.args, ["/delete", "/tn", scheduledTaskName("watch", name), "/f"]);
+    check("Windows uninstall clears the interval after deletion succeeds", (await readWatchState())?.intervalMinutes, undefined);
 
     const localCtx = {
       transport: { description: "local", clientInvocation: (entry: string, args: string[]) => ({ command: entry, args }) },
@@ -245,13 +281,15 @@ try {
           return { code: 0, stdout: "", stderr: "" };
         },
         () => watchInstall(localCtx, ["--apply"]),
+        "win32",
       ));
     check(
       "a native Windows host (no WSL involved) runs node directly, not the bash shim",
       localRecorded[0]?.args.some((arg) => arg.includes(process.execPath)) ?? false,
       true,
     );
-  } else {
+  }
+  if (process.platform !== "win32") {
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--apply"])));
     check("--apply refuses outright on an unsupported, non-Windows transport", message.includes("refusing --apply"), true);
   }

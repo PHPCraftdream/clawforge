@@ -45,6 +45,9 @@ export interface TargetSpec {
   /** Explicit override for a server's registered command/args/enabled, for the drift cases. */
   mcpServerEntries?: Record<string, { command?: unknown; args?: unknown; enabled?: unknown }>;
   cronJobs?: Record<string, unknown>[];
+  /** A failed container or one failed command inside an otherwise complete batch. */
+  batchFailure?: "throw" | "exit";
+  batchSlotFailures?: readonly string[];
   /** `plugins list --json`'s entries, defaulting to none — a case that says nothing about
    *  plugins provokes no PLUGIN_DRIFT, same reasoning as agents/mcpServers above. */
   plugins?: PluginListEntry[];
@@ -220,6 +223,8 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
           // line's own quoted argv rather than by position or count, so either shape answers
           // correctly regardless of how many commands it asked for.
           if (args[0] === "-c") {
+            if (spec.batchFailure === "throw") throw new Error("batch transport failed");
+            if (spec.batchFailure === "exit") return { code: 1, stdout: "", stderr: "" };
             const script = args[1] ?? "";
             const known: { needle: string; result: ExecResult }[] = [
               { needle: "'agents' 'list' '--json'", result: agentsList },
@@ -235,7 +240,12 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
             const results = script
               .split("\n")
               .filter((line) => line.includes("node dist/index.js"))
-              .map((line) => known.find((entry) => line.includes(entry.needle))?.result ?? { code: 1, stdout: "", stderr: "" });
+              .map((line) => {
+                const matched = known.find((entry) => line.includes(entry.needle));
+                return matched !== undefined && spec.batchSlotFailures?.includes(matched.needle)
+                  ? { code: 7, stdout: "", stderr: "" }
+                  : matched?.result ?? { code: 1, stdout: "", stderr: "" };
+              });
             return { code: 0, stdout: formatBatchStub(results), stderr: "" };
           }
 

@@ -6,6 +6,7 @@
 import type { Context } from "../../core/context.ts";
 import { answeredProbe } from "../../runtime/datadir.ts";
 import { deploymentName } from "../../runtime/deployment.ts";
+import { TransportUnreachableError } from "../../runtime/transport/transport.ts";
 import { parseBackupArchive, parseReplacedCopyName, type Profile } from "./profile.ts";
 import { dataDirName, dataDirParent } from "./pack.ts";
 
@@ -37,16 +38,38 @@ function basenameOf(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
-/** The prefix needed to READ `dir`, or undefined when it does not exist (nothing to list).
- *  sudoFor answers the write question and refuses outright without passwordless sudo — a
- *  listing needs neither: a readable directory needs no escalation, and an unreadable one
- *  uses `sudo -n` only when that works without a password. */
-async function readPrefix(ctx: Context, dir: string): Promise<string[] | undefined> {
-  if ((await answeredProbe(ctx, "test", ["-d", dir], [0, 1])).code !== 0) return undefined;
-  const readable = await answeredProbe(ctx, "sh", ["-c", 'test -r "$1" && test -x "$1"', "sh", dir], [0, 1]);
-  if (readable.code === 0) return [];
-  const sudo = await ctx.transport.exec("sudo", ["-n", "true"], { allowFailure: true });
-  return sudo.code === 0 ? ["sudo", "-n"] : [];
+/** A listing did not complete; its contents are unknown, not empty. */
+export class InventoryUnreadableError extends Error {
+  readonly kind: "archives" | "replaced copies";
+
+  constructor(kind: "archives" | "replaced copies", reason: string) {
+    super(`${kind} inventory unreadable; contents unknown (${reason})`);
+    this.kind = kind;
+    this.name = "InventoryUnreadableError";
+  }
+}
+
+/** A missing path is certain only when a traversable ancestor proves its child absent. */
+const ABSENT_PROBE = 'p=$1; while [ "$p" != / ]; do parent=${p%/*}; [ -n "$parent" ] || parent=/; if [ -d "$parent" ]; then [ -r "$parent" ] && [ -x "$parent" ] || exit 2; [ ! -e "$p" ] && [ ! -L "$p" ] && exit 0; exit 2; fi; p=$parent; done; exit 2';
+
+/** The prefix needed to read `dir`, or undefined when it is provably absent. */
+async function readPrefix(ctx: Context, dir: string, kind: InventoryUnreadableError["kind"]): Promise<string[] | undefined> {
+  try {
+    const directory = await answeredProbe(ctx, "test", ["-d", dir], [0, 1]);
+    if (directory.code !== 0) {
+      const absent = await answeredProbe(ctx, "sh", ["-c", ABSENT_PROBE, "sh", dir], [0, 2]);
+      if (absent.code === 0) return undefined;
+      throw new InventoryUnreadableError(kind, "directory cannot be verified");
+    }
+    const readable = await answeredProbe(ctx, "sh", ["-c", 'test -r "$1" && test -x "$1"', "sh", dir], [0, 1]);
+    if (readable.code === 0) return [];
+    const sudo = await ctx.transport.exec("sudo", ["-n", "true"], { allowFailure: true });
+    if (sudo.code === 0) return ["sudo", "-n"];
+    throw new InventoryUnreadableError(kind, "read access denied");
+  } catch (error) {
+    if (error instanceof InventoryUnreadableError || error instanceof TransportUnreachableError) throw error;
+    throw new InventoryUnreadableError(kind, "directory probe failed");
+  }
 }
 
 /** Every archive of THIS deployment in `backupDir`, newest first. A sibling deployment's
@@ -54,17 +77,14 @@ async function readPrefix(ctx: Context, dir: string): Promise<string[] | undefin
  *  rotate() and restore's newestArchive() already filter — parseBackupArchive says so. */
 export async function listBackupArchives(ctx: Context, backupDir: string): Promise<BackupArchiveInfo[]> {
   const deployment = deploymentName();
-  const prefix = await readPrefix(ctx, backupDir);
+  const prefix = await readPrefix(ctx, backupDir, "archives");
   if (prefix === undefined) return [];
   const [head, ...rest] = [
     ...prefix, "find", backupDir, "-maxdepth", "1", "-type", "f",
     "-name", `${deployment}-*.tar.gz`, "-printf", "%s\t%T@\t%p\n",
   ];
-  // find returns success for an empty directory and non-zero for an unreadable one —
-  // reported as no archives rather than surfaced as a hard error, same as rotate()'s
-  // comment on its own identical listing explains.
   const result = await ctx.transport.exec(head, rest, { allowFailure: true });
-  if (result.code !== 0) return [];
+  if (result.code !== 0) throw new InventoryUnreadableError("archives", `find exited ${result.code}`);
 
   const entries: BackupArchiveInfo[] = [];
   for (const line of result.stdout.split("\n")) {
@@ -101,14 +121,14 @@ export function defaultRestoreArchive(archives: readonly BackupArchiveInfo[]): B
 export async function listReplacedCopies(ctx: Context, dataDir: string): Promise<ReplacedCopyInfo[]> {
   const name = dataDirName(dataDir);
   const parent = dataDirParent(dataDir);
-  const prefix = await readPrefix(ctx, parent);
+  const prefix = await readPrefix(ctx, parent, "replaced copies");
   if (prefix === undefined) return [];
   const [head, ...rest] = [
     ...prefix, "find", parent, "-maxdepth", "1", "-type", "d",
     "-name", `${name}.replaced-*`, "-printf", "%T@\t%p\n",
   ];
   const result = await ctx.transport.exec(head, rest, { allowFailure: true });
-  if (result.code !== 0) return [];
+  if (result.code !== 0) throw new InventoryUnreadableError("replaced copies", `find exited ${result.code}`);
 
   const candidates: { path: string; modifiedAt: string; stamp: string }[] = [];
   for (const line of result.stdout.split("\n")) {

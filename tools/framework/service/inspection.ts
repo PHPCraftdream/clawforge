@@ -31,6 +31,7 @@ export type ProblemCode =
   | "AGENT_MISSING"
   | "MCP_SERVER_MISSING"
   | "CRON_DRIFT"
+  | "CLI_READ_FAILED"
   | "LOCK_MISSING"
   | "LOCK_DRIFT"
   | "PLUGIN_DRIFT"
@@ -56,6 +57,7 @@ export type ProblemCode =
   | "UFW_DOCKER_BYPASS"
   | "PRIVATE_FILE_INSECURE"
   | "BACKUP_MISSING"
+  | "BACKUP_UNREADABLE"
   | "BACKUP_STALE"
   | "DISK_LOW";
 
@@ -160,6 +162,11 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     severity: "blocking",
     summary: "a cron job differs from what its recipe declares, or is absent",
     nextAction: "./clawforge apply",
+  },
+  CLI_READ_FAILED: {
+    severity: "blocking",
+    summary: "the OpenClaw CLI could not confirm the live registrations",
+    nextAction: "./clawforge inspect",
   },
   LOCK_MISSING: {
     severity: "warning",
@@ -331,6 +338,11 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     summary: "this deployment has never produced a full backup archive",
     nextAction: "./clawforge backup",
   },
+  BACKUP_UNREADABLE: {
+    severity: "warning",
+    summary: "the backup archive inventory could not be read",
+    nextAction: "./clawforge backup list",
+  },
   BACKUP_STALE: {
     severity: "warning",
     // A silently-stopped scheduled job is the ordinary cause, so the remedy reinstalls the
@@ -463,9 +475,10 @@ export interface ObservedState {
    *  two whole documents, since a live config contains far more than we declare. */
   readonly config: Readonly<Record<string, unknown>>;
   readonly secrets: readonly SecretStatus[];
-  readonly agents: readonly string[];
-  readonly mcpServers: readonly string[];
-  readonly cronJobs: readonly string[];
+  /** Absent when the corresponding CLI read failed; [] means confirmed empty. */
+  readonly agents?: readonly string[];
+  readonly mcpServers?: readonly string[];
+  readonly cronJobs?: readonly string[];
   /** Present on the instance, absent from the ledger — not created by this framework, never
    *  proposed for removal. Reported so the boundary is visible, not guessed at. */
   readonly foreignObjects: readonly { readonly kind: OwnedKind; readonly name: string }[];

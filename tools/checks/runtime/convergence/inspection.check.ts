@@ -45,6 +45,8 @@ check(
     // Upkeep findings: whether this deployment could be recovered, not whether it serves.
     "BACKUP_MISSING",
     "BACKUP_STALE",
+    "BACKUP_UNREADABLE",
+    "CLI_READ_FAILED",
     "CONFIG_DRIFT",
     "CRON_DRIFT",
     "DECLARATION_MISSING",

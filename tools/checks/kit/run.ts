@@ -7,7 +7,7 @@
 import { availableParallelism } from "node:os";
 import { reportError } from "#framework/core/io/log.ts";
 import { emit } from "#framework/core/io/output.ts";
-import { discoverChecks, selectChecks, splitExclusive, sweepOrphanedCheckDeployments, type LabeledCheck } from "./discover.ts";
+import { discoverChecks, selectChecks, splitExclusive, type LabeledCheck } from "./discover.ts";
 import { runCheckFile, type CheckResult } from "./spawn.ts";
 import { CapabilityProbe, isCapability, type Capability } from "./capabilities/capabilities.ts";
 import { gateFor, parseRequireList, skipLine, summaryLine } from "./capabilities/gate.ts";
@@ -98,8 +98,6 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
     reportError((error as Error).message);
     return 1;
   }
-
-  await sweepOrphanedCheckDeployments();
 
   const labeled = await discoverChecks();
   const matching = new Set(selectChecks(labeled.map((entry) => entry.label), filters));

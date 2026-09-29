@@ -31,7 +31,7 @@ const NATIVE_LISTING = [
 /** `openclaw backup create` reports the exact path it was told to use as `--output` when
  *  that names a file directly rather than a directory — verified against the real image
  *  (see the task's own probes). Simulated here the same way. */
-type NativeCreateOutcome = "ok" | "verify-false" | "unsupported";
+type NativeCreateOutcome = "ok" | "verify-false" | "unsupported" | "write-fail";
 
 /** Whether nothing else tracked sits underneath `path` — the stub's crude stand-in for
  *  `find -type f`, since its one `files` set carries directories and files alike. */
@@ -136,10 +136,10 @@ function stubNativeCtx(
         // A verified create actually writes the archive at --output, addressable back on the
         // host at the same path createNativeArchive built it from — needed for the cleanup
         // checks below to have something real to find and remove.
-        if (outcome === "ok") files.add(fromContainerPath(containerOutput, mounts));
+        if (outcome === "ok" || outcome === "write-fail") files.add(fromContainerPath(containerOutput, mounts));
         return {
-          code: outcome === "verify-false" ? 1 : 0,
-          stdout: JSON.stringify({ verified: outcome === "ok", archivePath: containerOutput }),
+          code: outcome === "verify-false" || outcome === "write-fail" ? 1 : 0,
+          stdout: outcome === "write-fail" ? "" : JSON.stringify({ verified: outcome === "ok", archivePath: containerOutput }),
           stderr: "",
         };
       },
@@ -199,6 +199,23 @@ function stubNativeCtx(
   });
   check("refusing on verify failure is reported", message.length > 0, true);
   check("a refused verify never publishes an archive", [...files].some((path) => path.endsWith(".tar.gz")), false);
+}
+
+// --- a failed create after writing its output must clean the live credential-bearing file --
+
+{
+  const { ctx, files, calls } = stubNativeCtx("write-fail");
+  let message = "";
+  await withOutputSink(() => {}, async () => {
+    try { await createBackup(ctx, { profile: "full", native: true }); } catch (error) { message = (error as Error).message; }
+  });
+  check("a create failure after writing surfaces as an error", message.length > 0, true);
+  check(
+    "the failed create output is removed from the live config directory",
+    [...files].some((path) => path.startsWith(`${DATA_DIR}/config/.clawforge-native-`)),
+    false,
+  );
+  check("cleanup explicitly removes the native output", calls.some((call) => call.startsWith("exec rm -f --") && call.includes(".clawforge-native-")), true);
 }
 
 // --- a live file the native archive omits (session transcripts, in the pinned image: the

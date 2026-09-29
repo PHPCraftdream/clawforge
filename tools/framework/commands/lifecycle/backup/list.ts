@@ -17,6 +17,7 @@ import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
 import {
   listBackupArchives, listReplacedCopies, defaultRestoreArchive,
+  InventoryUnreadableError,
   type BackupArchiveInfo, type ReplacedCopyInfo,
 } from "#src/service/archive/index.ts";
 
@@ -57,6 +58,7 @@ export async function backupList(ctx: Context, args: string[], scope?: ActionSco
       listReplacedCopies(ctx, dataDir),
     ]);
   } catch (error) {
+    if (error instanceof InventoryUnreadableError) die(error.message);
     if (!(error instanceof TransportUnreachableError)) throw error;
     const found = unreachableProblem(error);
     die(`${found.code}  ${found.detail}\n    → ${found.nextAction}`);

@@ -128,6 +128,8 @@ export async function openclawCliJson<T>(ctx: Context, args: string[]): Promise<
 export interface BatchedCliResult {
   readonly code: number;
   readonly stdout: string;
+  /** Set when the batch could not provide this slot. */
+  readonly failure?: string;
 }
 
 /** Delimits one command's output from the next inside the batch script below. Distinctive
@@ -139,9 +141,8 @@ const BATCH_MARKER = "__clawforge_cli_batch__";
  *  gatherInspection's reads paid that four times over for one inspection, dominating its
  *  wall time far more than any single wsl.exe spawn). No scope-upgrade retry here (contrast
  *  openclawCli/run() above): every caller today is a read-only query without model
- *  approval, where a refused call already falls back to an empty/absent answer — the same
- *  outcome a plain non-zero exit produces here. A write needing that retry belongs on
- *  openclawCli, one call at a time. The script never uses `set -e`/`&&`: one command's
+ *  approval; a refusal leaves the read unknown. Writes use openclawCli one at a time.
+ *  The script never uses `set -e`/`&&`: one command's
  *  failure must not skip its own marker or stop the rest from running. The exit marker
  *  always starts on its own line, so output without a trailing newline still parses; the
  *  temp directory is removed last, since under `cli-start` the container outlives the call. */
@@ -174,9 +175,12 @@ export async function openclawCliBatch(ctx: Context, commands: readonly string[]
   } catch {
     // The container itself never ran (gateway unreachable, image missing, …): every command
     // inside it is equally unanswered, same gap a single failed runOneOff leaves.
-    return commands.map(() => ({ code: 1, stdout: "" }));
+    return commands.map(() => ({ code: 1, stdout: "", failure: "batch transport failed" }));
   }
 
+  if (result.code !== 0) {
+    return commands.map(() => ({ code: result.code, stdout: "", failure: `batch exited ${result.code}` }));
+  }
   return parseBatchOutput(result.stdout, commands.length);
 }
 
@@ -184,7 +188,11 @@ export async function openclawCliBatch(ctx: Context, commands: readonly string[]
  *  openclawCliBatch wrote. A command whose markers never appear reports failed rather than
  *  crashing the caller with a missing array entry. */
 function parseBatchOutput(stdout: string, count: number): BatchedCliResult[] {
-  const results: BatchedCliResult[] = Array.from({ length: count }, () => ({ code: 1, stdout: "" }));
+  const results: BatchedCliResult[] = Array.from({ length: count }, () => ({
+    code: 1,
+    stdout: "",
+    failure: "batch output incomplete",
+  }));
   const beginPattern = new RegExp(`^${BATCH_MARKER}(\\d+):begin$`);
   const exitPattern = new RegExp(`^${BATCH_MARKER}(\\d+):exit:(-?\\d+)$`);
 

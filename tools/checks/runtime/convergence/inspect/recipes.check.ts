@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
 import { recipeExpectations } from "#framework/commands/orchestration/inspect/declared.ts";
 import { mcpServerSpec } from "#framework/commands/management/provision-agent/index.ts";
+import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes, matchingJob } from "./fixture.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -16,6 +17,25 @@ import { check, finish } from "#checks/kit/harness.ts";
 const { deployment, goodChecksums, stubContext } = await setupFixtureDeployment();
 
 try {
+  for (const batchFailure of ["throw", "exit"] as const) {
+    const inspection = await gatherInspection(stubContext({ batchFailure, mirrorChecksums: goodChecksums, targetEnv: "ZAI_API_KEY=k\n" }));
+    check(`${batchFailure}: failed batch is reported as unknown`, inspection.problems.some((entry) => entry.code === "CLI_READ_FAILED"), true);
+    check(`${batchFailure}: registrations remain unknown rather than empty`, [inspection.observed.agents, inspection.observed.mcpServers, inspection.observed.cronJobs], [undefined, undefined, undefined]);
+    check(`${batchFailure}: failed batch is not missing registrations`, codes(inspection.problems).filter((code) => ["AGENT_MISSING", "MCP_SERVER_MISSING", "CRON_DRIFT"].includes(code)), []);
+    check(`${batchFailure}: failed batch plans no provisioning`, planActions(inspection).some((action) => action.id.startsWith("provision-agent:")), false);
+  }
+  for (const [needle, name, missingCode, field] of [
+    ["'agents' 'list' '--json'", "agents list", "AGENT_MISSING", "agents"],
+    ["'mcp' 'list' '--json'", "mcp list", "MCP_SERVER_MISSING", "mcpServers"],
+    ["'cron' 'list' '--json'", "cron list", "CRON_DRIFT", "cronJobs"],
+  ] as const) {
+    const inspection = await gatherInspection(stubContext({
+      batchSlotFailures: [needle], mirrorChecksums: goodChecksums, targetEnv: "ZAI_API_KEY=k\n",
+    }));
+    check(`${name}: one failed slot is reported separately`, inspection.problems.filter((entry) => entry.code === "CLI_READ_FAILED").map((entry) => entry.detail.includes(name)), [true]);
+    check(`${name}: only failed registration is unknown`, inspection.observed[field], undefined);
+    check(`${name}: failed slot cannot prove absence`, codes(inspection.problems).includes(missingCode), false);
+  }
   {
     const inspection = await gatherInspection(
       stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums, agents: ["main"], mcpServers: [] }),

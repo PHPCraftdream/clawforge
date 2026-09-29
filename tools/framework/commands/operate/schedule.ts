@@ -97,12 +97,13 @@ export async function probeCrontab(ctx: Context): Promise<void> {
   }
 }
 
-/** crontab -l exits non-zero both for "no crontab yet for this user" (the ordinary case once
- *  probeCrontab() above already proved the binary exists) and for a real failure; only the
- *  former is expected to reach here, so it reads as empty rather than as an error. */
+/** Only a known no-crontab diagnostic means the table is empty; other failures must stop writes. */
 export async function readCrontab(ctx: Context): Promise<string> {
-  const listing = await ctx.transport.exec("crontab", ["-l"], { allowFailure: true });
-  return listing.code === 0 ? listing.stdout : "";
+  const listing = await ctx.transport.exec("crontab", ["-l"], { allowFailure: true, env: { LC_ALL: "C" } });
+  if (listing.code === 0) return listing.stdout;
+  const diagnostic = (listing.stderr || listing.stdout).trim();
+  if (listing.code === 1 && /^(?:crontab:\s*)?no crontab for .+$/i.test(diagnostic)) return "";
+  die(`could not read crontab on ${ctx.transport.description} (exit ${listing.code}): ${diagnostic || "no diagnostic"}`);
 }
 
 export async function writeCrontab(ctx: Context, lines: string[]): Promise<void> {
@@ -124,7 +125,7 @@ export interface SchedulingSupport {
 export function schedulingSupport(ctx: Context): SchedulingSupport {
   const description = ctx.transport.description;
   if (description.startsWith("ssh:")) return { supported: true };
-  if (description === "local" && process.platform !== "win32") return { supported: true };
+  if (description === "local" && schedulerPlatform !== "win32") return { supported: true };
   if (description.startsWith("wsl:")) {
     return {
       supported: false,
@@ -215,15 +216,19 @@ export function schtasksDeleteCommand(taskName: string): { command: string; args
  *  this through without ever really creating a scheduled task. */
 type ScheduleRunner = typeof spawnLocal;
 let scheduleRunner: ScheduleRunner = spawnLocal;
+let schedulerPlatform = process.platform;
 
 /** Runs `body` with the scheduler command answered by `substitute` instead of executed. */
-export async function withScheduleRunner<T>(substitute: ScheduleRunner, body: () => Promise<T>): Promise<T> {
+export async function withScheduleRunner<T>(substitute: ScheduleRunner, body: () => Promise<T>, platform = process.platform): Promise<T> {
   const previous = scheduleRunner;
+  const previousPlatform = schedulerPlatform;
   scheduleRunner = substitute;
+  schedulerPlatform = platform;
   try {
     return await body();
   } finally {
     scheduleRunner = previous;
+    schedulerPlatform = previousPlatform;
   }
 }
 
@@ -253,7 +258,7 @@ export async function printSchedulingInstructions(
   minutes: number,
   jobArgs: readonly string[],
   apply: boolean,
-): Promise<void> {
+): Promise<boolean> {
   const installed = await installedShimExists(deploymentDir());
   const entryHost = installed ? resolve(deploymentDir(), "clawforge") : resolve(monorepoRoot, "clawforge");
   const posixArgs = installed ? [...jobArgs] : ["--app", name, ...jobArgs];
@@ -262,10 +267,10 @@ export async function printSchedulingInstructions(
   info("no unattended install exists for this target from here. Run this yourself, on a scheduler that can reach it:");
   info(`  ${displayCommandLine(invocation.command, invocation.args)}`);
 
-  if (process.platform !== "win32") {
+  if (schedulerPlatform !== "win32") {
     info("on Windows that means wiring it into Task Scheduler by hand — this command never creates or touches one.");
     if (apply) die("refusing --apply: no correct unattended install exists for this target (see above)");
-    return;
+    return false;
   }
 
   const action = await windowsScheduledAction(ctx, jobArgs, invocation);
@@ -275,9 +280,31 @@ export async function printSchedulingInstructions(
   info(`  ${displayCommandLine(create.command, create.args)}`);
   if (!apply) {
     info("run it yourself, or re-run with --apply to have this command run it for you");
-    return;
+    return false;
   }
   const result = await scheduleRunner(create.command, create.args, { allowFailure: true });
   if (result.code !== 0) die(`schtasks could not create ${taskName} (exit ${result.code}): ${(result.stderr || result.stdout).trim()}`);
   info(`installed via Task Scheduler as "${taskName}"`);
+  return true;
+}
+
+/** Prints or removes this job's deterministic Task Scheduler entry on Windows. */
+export async function printUnschedulingInstructions(job: string, name: string, apply: boolean): Promise<boolean> {
+  if (schedulerPlatform !== "win32") {
+    info(`remove any entry you wired in yourself (e.g. Windows Task Scheduler): ${scheduledTaskName(job, name)}`);
+    if (apply) die("refusing --apply: no correct unattended uninstall exists for this target");
+    return false;
+  }
+
+  const taskName = scheduledTaskName(job, name);
+  const remove = schtasksDeleteCommand(taskName);
+  info(`Task Scheduler removal: ${displayCommandLine(remove.command, remove.args)}`);
+  if (!apply) {
+    info("re-run with --apply to remove this task");
+    return false;
+  }
+  const result = await scheduleRunner(remove.command, remove.args, { allowFailure: true });
+  if (result.code !== 0) die(`schtasks could not delete ${taskName} (exit ${result.code}): ${(result.stderr || result.stdout).trim()}`);
+  info(`removed via Task Scheduler: "${taskName}"`);
+  return true;
 }

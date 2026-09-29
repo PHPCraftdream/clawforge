@@ -14,7 +14,9 @@ import {
   jobMarker,
   parseIntervalToMinutes,
   posixTargetInvocation,
+  printUnschedulingInstructions,
   printSchedulingInstructions,
+  readCrontab,
   schedulingSupport,
   scheduledTaskName,
   schtasksCreateCommand,
@@ -123,6 +125,48 @@ for (const minutes of [7, 25, 45, 59, 90, 300, 420]) {
   check("...and /f, so a re-run replaces the same task instead of refusing", create.args.includes("/f"), true);
 }
 check("schtasksDeleteCommand names the task and forces it", schtasksDeleteCommand("clawforge-myapp-backup"), { command: "schtasks", args: ["/delete", "/tn", "clawforge-myapp-backup", "/f"] });
+
+// Read failures may only become an empty table when cron explicitly says there is none.
+{
+  const listing = async (code: number, stdout: string, stderr: string) => {
+    let env: Record<string, string> | undefined;
+    const ctx = {
+      transport: {
+        description: "ssh:user@host",
+        async exec(_command: string, _args: string[], options?: { env?: Record<string, string> }) {
+          env = options?.env;
+          return { code, stdout, stderr };
+        },
+      },
+    } as unknown as Context;
+    const error = await deathOf(() => readCrontab(ctx));
+    return { error, env };
+  };
+  const empty = await listing(1, "", "no crontab for user");
+  check("the known no-crontab diagnostic means an empty table", empty.error, "");
+  check("crontab diagnostics use the stable C locale", empty.env, { LC_ALL: "C" });
+  const denied = await listing(1, "", "permission denied");
+  check("an unreadable crontab is surfaced instead of treated as empty", denied.error.includes("could not read crontab"), true);
+  const transportFailure = await listing(255, "", "connection lost");
+  check("a transport failure is surfaced instead of treated as empty", transportFailure.error.includes("connection lost"), true);
+}
+
+{
+  const removed: { command: string; args: string[] }[] = [];
+  const didRemove = await withScheduleRunner(
+    async (command, args) => {
+      removed.push({ command, args: [...args] });
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    () => printUnschedulingInstructions("backup", "myapp", true),
+    "win32",
+  );
+  check("Windows uninstall executes the matching named task deletion", removed[0], {
+    command: "schtasks",
+    args: ["/delete", "/tn", scheduledTaskName("backup", "myapp"), "/f"],
+  });
+  check("Windows uninstall reports successful removal", didRemove, true);
+}
 
 // --- posixTargetInvocation(): ssh vs. a monorepo checkout vs. an installed shim -------------
 

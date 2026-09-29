@@ -306,6 +306,7 @@ async function installSetUnderLock(
   // First thing under the lock, before storeArtifactForRollback: a corrupt control marker
   // must stop the run here, not after the instance has already changed.
   await preflightControlMarkers(ctx);
+  refuseUnreliableCliRead(await computePlan(ctx));
   await storeArtifactForRollback(artifact, verified);
   const ranSteps = await applyFromSource(ctx, args, operationId);
 
@@ -377,6 +378,8 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
     return false;
   }
 
+  refuseUnreliableCliRead(plan);
+
   const executable = plan.actions.filter((action) => action.advisory !== true);
   if (executable.length === 0) {
     await reportNoExecutableActions(ctx, jsonOnly, plan);
@@ -385,6 +388,14 @@ async function applyFromSource(ctx: Context, args: string[], heldOperationId?: s
 
   await runPlan(ctx, args, jsonOnly, plan, heldOperationId);
   return true;
+}
+
+/** Never enact a plan based on an unconfirmed live registration read. */
+export function refuseUnreliableCliRead(plan: Pick<Plan, "problems">): void {
+  const failed = plan.problems.filter((entry) => entry.code === "CLI_READ_FAILED");
+  if (failed.length > 0) {
+    die(`apply stopped before changes: ${failed.map((entry) => entry.detail).join("; ")}. Retry ./clawforge inspect`);
+  }
 }
 
 /** The declaration a caller planned against, if it named one. Checked before any step runs:

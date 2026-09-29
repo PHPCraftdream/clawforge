@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { toSettings } from "#framework/core/env.ts";
+import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions } from "#framework/runtime/transport/transport.ts";
 
@@ -184,6 +185,24 @@ export async function createFixture(): Promise<LifecycleFixture> {
         runningImageIdentity: async () => (state.running ? { imageId: "img-1", digests: [settings.image], containerId: "container-1" } : undefined),
         runOneOff: async (_service: string, args: string[]) => {
           let stdout = "{}";
+          if (args[0] === "-c") {
+            const replies = new Map([
+              ["'agents' 'list' '--json'", "[]"],
+              ["'mcp' 'list' '--json'", "{}"],
+              ["'cron' 'list' '--json'", '{"jobs":[]}'],
+              ["'--version'", "OpenClaw fixture"],
+              ["'plugins' 'list' '--json'", '{"plugins":[]}'],
+              ["'skills' 'list' '--json'", '{"skills":[]}'],
+              ["'channels' 'status' '--json'", '{"channelAccounts":{}}'],
+            ]);
+            const results = (args[1] ?? "").split("\n")
+              .filter((line) => line.includes("node dist/index.js"))
+              .map((line) => {
+                const reply = [...replies].find(([command]) => line.includes(command))?.[1];
+                return reply === undefined ? { code: 1, stdout: "" } : { code: 0, stdout: reply };
+              });
+            return { code: 0, stdout: formatBatchStub(results), stderr: "" };
+          }
           if (args.includes("onboard")) files.set(configFile, "{}");
           if (args.includes("--batch-file")) {
             const entries = JSON.parse(files.get(args[args.indexOf("--batch-file") + 1])!);

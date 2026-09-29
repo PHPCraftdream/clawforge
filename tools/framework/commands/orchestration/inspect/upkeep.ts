@@ -15,13 +15,11 @@
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import { parseDiskMinFreeMb, parseDurationThreshold } from "#src/core/env.ts";
-import { listBackupArchives, defaultRestoreArchive } from "#src/service/archive/index.ts";
+import { listBackupArchives, defaultRestoreArchive, InventoryUnreadableError } from "#src/service/archive/index.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 
-/** Both findings below are best-effort, never load-bearing: an unexpected answer reads as
- *  "nothing to report", not a reason to take the inspection down. TransportUnreachableError
- *  is the exception — that's gatherInspection's own TARGET_UNREACHABLE to report. */
+/** Unexpected probes are best-effort; a known unreadable backup inventory is reported. */
 async function bestEffort(body: () => Promise<void>): Promise<void> {
   try {
     await body();
@@ -44,7 +42,14 @@ const DEFAULT_DISK_MIN_FREE_MB = 1024;
 export async function observeBackupHealth(ctx: Context, problems: Problem[]): Promise<void> {
   await bestEffort(async () => {
     const { backupDir } = ctx.settings;
-    const archives = await listBackupArchives(ctx, backupDir);
+    let archives;
+    try {
+      archives = await listBackupArchives(ctx, backupDir);
+    } catch (error) {
+      if (!(error instanceof InventoryUnreadableError)) throw error;
+      problems.push(problem("BACKUP_UNREADABLE", `${error.message}; backup availability cannot be determined`));
+      return;
+    }
     const newest = defaultRestoreArchive(archives);
     if (newest === undefined) {
       problems.push(problem("BACKUP_MISSING", `no full backup archive in ${backupDir}`));

@@ -5,7 +5,7 @@
 // (running or stopped) refuses either way, and name/symlink refusals never touch the
 // filesystem at all.
 
-import { mkdtemp, mkdir, writeFile, rm, symlink, access } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { removeApp } from "#framework/integration/deployment/remove.ts";
@@ -13,6 +13,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { NotBootstrapped } from "#framework/runtime/runtime.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
+import type { DeploymentSummary } from "#framework/integration/list.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-remove-app-check-"));
@@ -39,6 +40,7 @@ async function buildContext(_app: AppDefinition, directory: string): Promise<Con
   const name = directory.split(/[/\\]/).pop() ?? "";
   if (name.startsWith("running")) return stubContext(async () => true);
   if (name.startsWith("stopped")) return stubContext(async () => false);
+  if (name.startsWith("error")) throw new Error("target unreachable");
   return stubContext(async () => { throw new NotBootstrapped(`/srv/${name}/data`); });
 }
 
@@ -72,6 +74,33 @@ async function captured(body: () => Promise<number>): Promise<{ code: number; te
   const { code } = await captured(() => removeApp("to-remove", ["--yes"], { appsRoot: root, buildContext }));
   check("a real run exits 0", code, 0);
   check("the directory is gone", await exists(directory), false);
+}
+
+// An unreachable target is not proof that local configuration is safe to delete.
+{
+  const directory = await writeDeployment("error-target", 18106);
+  const secretFile = resolve(directory, "secrets", "token.txt");
+  await writeFile(secretFile, "fixture-secret-sentinel", "utf8");
+  const message = await withOutputSink(() => {}, async () => {
+    try { await removeApp("error-target", ["--yes"], { appsRoot: root, buildContext }); return ""; }
+    catch (error) { return (error as Error).message; }
+  });
+  check("an unreachable target blocks removal", message.includes("state is error"), true);
+  check("local secret survives an unreachable target", await readFile(secretFile, "utf8"), "fixture-secret-sentinel");
+}
+
+for (const state of ["unchecked", "missing"] as const) {
+  const name = `${state}-state`;
+  const directory = await writeDeployment(name, 18107);
+  const secretFile = resolve(directory, "secrets", "token.txt");
+  await writeFile(secretFile, "fixture-secret-sentinel", "utf8");
+  const listDeployments = async (): Promise<DeploymentSummary[]> => state === "missing" ? [] : [{ name, state: "unchecked" } as DeploymentSummary];
+  const message = await withOutputSink(() => {}, async () => {
+    try { await removeApp(name, ["--yes"], { appsRoot: root, buildContext, listDeployments }); return ""; }
+    catch (error) { return (error as Error).message; }
+  });
+  check(`${state} state blocks removal`, message.includes(`state is ${state === "missing" ? "unknown" : "unchecked"}`), true);
+  check(`${state} state preserves local secrets`, await readFile(secretFile, "utf8"), "fixture-secret-sentinel");
 }
 
 // --- refuses while the instance is still bootstrapped ------------------------------------------

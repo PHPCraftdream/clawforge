@@ -9,7 +9,7 @@
 // parsed by parseIntervalToMinutes into the same minutes cronSchedule() validates, so the two
 // commands' intervals can never encode differently for the same duration.
 
-import { die, info, log, warn } from "#src/core/io/log.ts";
+import { info, log, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
@@ -23,6 +23,7 @@ import {
   parseIntervalToMinutes,
   posixTargetInvocation,
   printSchedulingInstructions,
+  printUnschedulingInstructions,
   probeCrontab,
   readCrontab,
   schedulingSupport,
@@ -106,8 +107,7 @@ export async function backupUninstall(ctx: Context, args: string[], scope?: Acti
 
   if (!support.supported) {
     warn(`no unattended schedule could have been installed on ${ctx.transport.description} in the first place: ${support.reason}`);
-    info("remove any entry you wired in yourself (e.g. Windows Task Scheduler) directly");
-    if (apply) die("refusing --apply: nothing this command could have installed here");
+    await printUnschedulingInstructions(JOB, name, apply);
     return;
   }
 

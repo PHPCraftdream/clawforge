@@ -79,7 +79,9 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
       const versionResult = ok("OpenClaw 2026.6.34\n");
       // observeLive's own batched read (openclawCliBatch): `--entrypoint sh cli -c <script>`
       // is the shape only that call ever passes.
-      if (tail[0] === "-c") return ok(formatBatchStub([agentsResult, mcpResult, cronResult, versionResult]));
+      if (tail[0] === "-c") return ok(formatBatchStub([
+        agentsResult, mcpResult, cronResult, versionResult, json({ plugins: [] }), json({ skills: [] }),
+      ]));
       // provision-agent's own reconcile.ts still reads these one at a time, unbatched.
       if (tail[0] === "agents" && tail[1] === "list") return agentsResult;
       if (tail[0] === "mcp" && tail[1] === "list") return mcpResult;

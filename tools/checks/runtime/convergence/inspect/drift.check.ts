@@ -9,6 +9,7 @@ import { gatherInspection, renderJson } from "#framework/commands/orchestration/
 import { configValuesEqual, effectiveDeclarationPaths, prospectiveConfig, valueAt } from "#framework/commands/orchestration/inspect/helpers.ts";
 import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { apply } from "#framework/commands/orchestration/apply.ts";
+import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import { createFixture } from "#checks/sets/lifecycle/set-lifecycle/fixture.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, codes, CONFIG_FILE } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -23,6 +24,27 @@ try {
     const fixture = await createFixture();
     try {
       fixture.state.running = true;
+      const runOneOff = fixture.ctx.runtime.runOneOff.bind(fixture.ctx.runtime);
+      fixture.ctx.runtime.runOneOff = async (service, args, options) => {
+        if (args[0] !== "-c") return runOneOff(service, args, options);
+        const answers = [
+          ["'agents' 'list' '--json'", "[]"],
+          ["'mcp' 'list' '--json'", "{}"],
+          ["'cron' 'list' '--json'", '{"jobs":[]}'],
+          ["'--version'", "OpenClaw fixture"],
+          ["'plugins' 'list' '--json'", '{"plugins":[]}'],
+          ["'skills' 'list' '--json'", '{"skills":[]}'],
+        ] as const;
+        const results = (args[1] ?? "").split("\n")
+          .filter((line) => line.includes("node dist/index.js"))
+          .map((line) => {
+            const answer = answers.find(([command]) => line.includes(command));
+            return answer === undefined
+              ? { code: 1, stdout: "" }
+              : { code: 0, stdout: answer[1] };
+          });
+        return { code: 0, stdout: formatBatchStub(results), stderr: "" };
+      };
       const configPath = `${fixture.sourceData}/config/openclaw.json`;
       const declarationPath = resolve(fixture.root, "config", "desired-state.json");
       let restarts = 0;

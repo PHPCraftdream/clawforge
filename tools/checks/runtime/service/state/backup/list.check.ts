@@ -87,4 +87,16 @@ function emptyContext(): Context {
   check("no replaced copies reports an empty list", parsed.replacedCopies, []);
 }
 
+{
+  const ctx = emptyContext();
+  ctx.transport.exec = async (command: string): Promise<{ code: number; stdout: string; stderr: string }> =>
+    command === "find"
+      ? { code: 1, stdout: "", stderr: "sensitive detail" }
+      : { code: 0, stdout: "", stderr: "" };
+  let error: unknown;
+  try { await withOutputSink(() => {}, () => backupList(ctx, ["--json"])); } catch (caught) { error = caught; }
+  check("failed listing reports unknown instead of returning empty JSON", String(error).includes("unreadable; contents unknown"), true);
+  check("failed listing hides target stderr", String(error).includes("sensitive detail"), false);
+}
+
 finish("backup list");

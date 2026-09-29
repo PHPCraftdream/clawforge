@@ -26,6 +26,7 @@ import {
   jobMarker,
   posixTargetInvocation,
   printSchedulingInstructions,
+  printUnschedulingInstructions,
   probeCrontab,
   readCrontab,
   schedulingSupport,
@@ -110,7 +111,8 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
 
   if (!support.supported) {
     warn(`cannot install an unattended schedule on ${ctx.transport.description}: ${support.reason}`);
-    await printSchedulingInstructions(ctx, JOB, name, interval, [JOB, "check"], apply);
+    const installed = await printSchedulingInstructions(ctx, JOB, name, interval, [JOB, "check"], apply);
+    if (installed) await recordInstalledInterval(interval);
     return;
   }
 
@@ -147,8 +149,8 @@ export async function watchUninstall(ctx: Context, args: string[]): Promise<void
 
   if (!support.supported) {
     warn(`no unattended schedule could have been installed on ${ctx.transport.description} in the first place: ${support.reason}`);
-    info("remove any entry you wired in yourself (e.g. Windows Task Scheduler) directly");
-    if (apply) die("refusing --apply: nothing this command could have installed here");
+    const removed = await printUnschedulingInstructions(JOB, name, apply);
+    if (removed) await recordInstalledInterval(undefined);
     return;
   }
 

@@ -7,7 +7,7 @@
 import { resolve } from "node:path";
 import {
   listBackupArchives, listReplacedCopies, defaultRestoreArchive,
-  replacedCopyName, parseReplacedCopyName, type BackupArchiveInfo,
+  replacedCopyName, parseReplacedCopyName, InventoryUnreadableError, type BackupArchiveInfo,
 } from "#framework/service/archive/index.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -62,9 +62,13 @@ function stubContext(execImpl: (command: string, args: string[]) => Promise<{ co
 }
 
 {
-  const ctx = stubContext(async () => ({ code: 1, stdout: "", stderr: "no such directory" }));
-  const archives = await listBackupArchives(ctx, BACKUP_DIR);
-  check("an unreadable/missing backup directory reports no archives, not a thrown error", archives, []);
+  const ctx = stubContext(async (command) => command === "find"
+    ? { code: 1, stdout: `100\t1767398400\t${BACKUP_DIR}/${NAME}-20260103-000000.tar.gz`, stderr: "permission denied: sensitive detail" }
+    : { code: 0, stdout: "", stderr: "" });
+  let error: unknown;
+  try { await listBackupArchives(ctx, BACKUP_DIR); } catch (caught) { error = caught; }
+  check("a failed partial archive listing is unknown, never empty", error instanceof InventoryUnreadableError, true);
+  check("listing errors do not expose target stderr", String(error).includes("sensitive detail"), false);
 }
 
 // --- listReplacedCopies --------------------------------------------------------------------
@@ -100,6 +104,16 @@ function stubContext(execImpl: (command: string, args: string[]) => Promise<{ co
   check("no replaced copies is an empty list, and du is never called for zero candidates", copies, []);
 }
 
+{
+  const ctx = stubContext(async (command) => command === "find"
+    ? { code: 1, stdout: `1767398400\t${DATA_DIR}.replaced-2026-01-03T00-00-00-000Z`, stderr: "sensitive detail" }
+    : { code: 0, stdout: "", stderr: "" });
+  let error: unknown;
+  try { await listReplacedCopies(ctx, DATA_DIR); } catch (caught) { error = caught; }
+  check("a failed partial replaced-copy listing is unknown, never empty", error instanceof InventoryUnreadableError, true);
+  check("replaced-copy listing errors omit target stderr", String(error).includes("sensitive detail"), false);
+}
+
 // --- defaultRestoreArchive -------------------------------------------------------------------
 
 {
@@ -131,7 +145,7 @@ function stubContext(execImpl: (command: string, args: string[]) => Promise<{ co
   check("a sibling name that merely starts with the prefix is refused", parseReplacedCopyName("data-old.replaced-2026-01-01T00-00-00-000Z", "data"), undefined);
 }
 
-// --- a listing is a read: a missing or unreadable directory never demands sudo -------------
+// --- a provably missing directory needs neither a listing nor sudo ---------------------------
 
 {
   const calls: string[] = [];
@@ -139,15 +153,45 @@ function stubContext(execImpl: (command: string, args: string[]) => Promise<{ co
     settings: { backupDir: BACKUP_DIR, dataDir: DATA_DIR },
     transport: {
       async exists(): Promise<boolean> { return false; },
-      async exec(command: string): Promise<{ code: number; stdout: string; stderr: string }> {
+      async exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
         calls.push(command);
-        return { code: 1, stdout: "", stderr: "" }; // nothing exists; sudo would ask for a password
+        return { code: command === "sh" && args[2] !== 'test -r "$1" && test -x "$1"' ? 0 : 1, stdout: "", stderr: "" };
       },
     },
   } as unknown as Context;
   check("a missing backup directory lists no archives", await listBackupArchives(ctx, BACKUP_DIR), []);
   check("a missing data parent lists no replaced copies", await listReplacedCopies(ctx, DATA_DIR), []);
   check("and neither probed sudo", calls.includes("sudo"), false);
+}
+
+{
+  const ctx = stubContext(async (command, args) => {
+    if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
+    if (command === "sh") return { code: 2, stdout: "", stderr: "" };
+    return { code: 0, stdout: "", stderr: "" };
+  });
+  let error: unknown;
+  try { await listBackupArchives(ctx, BACKUP_DIR); } catch (caught) { error = caught; }
+  check("an unverified directory is not called absent", error instanceof InventoryUnreadableError, true);
+}
+
+{
+  const ctx = stubContext(async (command) => {
+    if (command === "sh" || command === "sudo") return { code: 1, stdout: "", stderr: "sensitive detail" };
+    return { code: 0, stdout: "", stderr: "" };
+  });
+  let error: unknown;
+  try { await listReplacedCopies(ctx, DATA_DIR); } catch (caught) { error = caught; }
+  check("existing directory without read access is unknown", error instanceof InventoryUnreadableError, true);
+  check("access error does not expose target stderr", String(error).includes("sensitive detail"), false);
+}
+
+{
+  const ctx = stubContext(async () => ({ code: 126, stdout: "", stderr: "sensitive detail" }));
+  let error: unknown;
+  try { await listBackupArchives(ctx, BACKUP_DIR); } catch (caught) { error = caught; }
+  check("failed directory probe leaves inventory unknown", error instanceof InventoryUnreadableError, true);
+  check("failed directory probe omits target stderr", String(error).includes("sensitive detail"), false);
 }
 
 finish("backup inventory");

@@ -46,6 +46,35 @@ check("--expect right before --dry-run needs a value, not a swallowed flag", dea
 check("--set right before --dry-run needs a value, not a swallowed flag", deathOf(() => isApplyDryRun(["--set", "--dry-run"])), "--set needs a value");
 check("apply still recognizes dry-run after an option value", isApplyDryRun(["--expect", "checksum", "--dry-run"]), true);
 
+{
+  const { deployment, goodChecksums, stubContext } = await setupFixtureDeployment();
+  try {
+    const base = stubContext({
+      targetEnv: "ZAI_API_KEY=k\n",
+      mirrorChecksums: goodChecksums,
+      liveConfig: { gateway: { mode: "remote" } },
+      batchSlotFailures: ["'mcp' 'list' '--json'"],
+    });
+    let mutations = 0;
+    const ctx = {
+      ...base,
+      transport: {
+        ...base.transport,
+        writeFile: async () => { mutations++; throw new Error("unexpected write"); },
+        mkdir: async () => { mutations++; throw new Error("unexpected mkdir"); },
+      },
+    } as Context;
+    let error = "";
+    await withOutputSink(() => {}, async () => {
+      try { await apply(ctx, []); } catch (caught) { error = caught instanceof Error ? caught.message : String(caught); }
+    });
+    check("apply refuses uncertain CLI state before config drift could mutate", error.includes("apply stopped before changes") && error.includes("mcp list"), true);
+    check("apply performs no target writes after a failed read", mutations, 0);
+  } finally {
+    await teardownFixtureDeployment(deployment);
+  }
+}
+
 function action(id: string, advisory = false): PlanAction {
   return { id, summary: id, command: `./clawforge ${id}`, because: [], ...(advisory ? { advisory: true } : {}) };
 }

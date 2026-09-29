@@ -30,6 +30,7 @@ function stubContext(options: {
   archives?: readonly ArchiveFixture[];
   env?: Record<string, string>;
   availableMbByPath?: Record<string, number>;
+  findFailure?: boolean;
 }): Context {
   const archives = options.archives ?? [];
   const now = Date.now();
@@ -41,6 +42,7 @@ function stubContext(options: {
         if (command === "test" && args[0] === "-d") return { code: 0, stdout: "", stderr: "" };
         if (command === "sh") return { code: 0, stdout: "", stderr: "" };
         if (command === "find") {
+          if (options.findFailure) return { code: 1, stdout: "", stderr: "sensitive detail" };
           const lines = archives.map((entry) => {
             const mtimeEpoch = (now - entry.ageMs) / 1000;
             return `${entry.sizeBytes ?? 1024}\t${mtimeEpoch}\t${BACKUP_DIR}/${entry.name}`;
@@ -77,6 +79,13 @@ function codes(problems: readonly Problem[]): string[] {
   check("no archives at all reports BACKUP_MISSING", codes(problems), ["BACKUP_MISSING"]);
   check("BACKUP_MISSING is a warning", problems[0]?.severity, "warning");
   check("BACKUP_MISSING names the backup directory", problems[0]?.detail.includes(BACKUP_DIR), true);
+}
+
+{
+  const problems: Problem[] = [];
+  await observeBackupHealth(stubContext({ findFailure: true }), problems);
+  check("failed backup listing reports unreadable, not missing", codes(problems), ["BACKUP_UNREADABLE"]);
+  check("doctor detail hides target stderr", problems[0]?.detail.includes("sensitive detail"), false);
 }
 
 {

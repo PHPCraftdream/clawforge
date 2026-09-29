@@ -357,6 +357,22 @@ function assertSafeDataDir(dataDir: string): void {
   }
 }
 
+/** Backup and snapshot roots use the same path spelling contract as the data root. */
+function assertSafeSiblingDir(name: "OC_BACKUP_DIR" | "OC_SNAPSHOT_DIR", directory: string): void {
+  const isPosixRoot = directory.startsWith("/");
+  const isWindowsRoot = WINDOWS_ROOT.test(directory);
+  if (!isPosixRoot && !isWindowsRoot) die(`${name} "${directory}" is not an absolute path`);
+  if (/[\\/]{2,}/.test(directory) || /[\\/]$/.test(directory)) {
+    die(`${name} "${directory}" is not a normalized path (repeated or trailing separators)`);
+  }
+  if (directory.includes("/") && directory.includes("\\")) die(`${name} "${directory}" mixes path separators`);
+  const segments = directory.split(/[\\/]+/).slice(1);
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    die(`${name} "${directory}" contains a "." or ".." segment`);
+  }
+  if (segments.length < 2) die(`${name} "${directory}" is a top-level directory`);
+}
+
 export function toSettings(env: Env): Settings {
   const dataDir = env.OC_DATA_DIR;
   if (!dataDir) die("OC_DATA_DIR is not set in .env");
@@ -368,14 +384,18 @@ export function toSettings(env: Env): Settings {
   const cut = lastSeparator(dataDir);
   const parentOfData = cut < 0 ? "" : dataDir.slice(0, cut) || separator;
   const siblingSeparator = parentOfData === separator ? "" : separator;
+  const backupDir = env.OC_BACKUP_DIR ?? `${parentOfData}${siblingSeparator}backups`;
+  const snapshotDir = env.OC_SNAPSHOT_DIR ?? `${parentOfData}${siblingSeparator}snapshots`;
+  assertSafeSiblingDir("OC_BACKUP_DIR", backupDir);
+  assertSafeSiblingDir("OC_SNAPSHOT_DIR", snapshotDir);
 
   return {
     env,
     dataDir,
-    backupDir: env.OC_BACKUP_DIR ?? `${parentOfData}${siblingSeparator}backups`,
+    backupDir,
     // Snapshots hold secrets, so they default outside the repository and away from Windows
     // mounts, where chmod is accepted and then silently ignored.
-    snapshotDir: env.OC_SNAPSHOT_DIR ?? `${parentOfData}${siblingSeparator}snapshots`,
+    snapshotDir,
     bindAddress,
     gatewayPort,
     serviceUrl: `http://${bindAddress}:${gatewayPort}`,

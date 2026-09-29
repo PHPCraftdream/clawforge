@@ -4,6 +4,8 @@
 // never touch runtime.stop/start, whether the archive validates or not.
 
 import { restore, restoreDryRun, restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
+import { push } from "#framework/commands/lifecycle/state.ts";
+import { NATIVE_MANIFEST_NAME } from "#framework/commands/lifecycle/backup/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -17,15 +19,17 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
 const DATA_DIR = "/srv/openclaw/data";
 const ARCHIVE = "/srv/openclaw/backups/openclaw-x.tar.gz";
+const FULL_ENTRIES = ["data/", "data/config/", "data/config/openclaw.json", "data/config/identity/", "data/config/identity/device-auth.json"];
+const NO_IDENTITY_ENTRIES = ["data/", "data/config/", "data/config/openclaw.json"];
 
 const MUTATING = new Set(["mv", "rm", "mkdir", "chmod", "chown"]);
 
 /** A restore.check.ts-shaped stub, plus exec recording and a runtime that throws if ever
  *  touched — the check for "dry-run stops before the act phase" is that these never fire. */
-function makeCtx(entries: string[]): { ctx: Context; calls: { command: string; args: string[] }[] } {
+function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRestore"]): { ctx: Context; calls: { command: string; args: string[] }[] } {
   const calls: { command: string; args: string[] }[] = [];
   const ctx = {
-    settings: { dataDir: DATA_DIR, backupDir: "/srv/openclaw/backups", env: {} },
+    settings: { dataDir: DATA_DIR, backupDir: "/srv/openclaw/backups", snapshotDir: "/srv/openclaw/snapshots", env: {} },
     transport: {
       description: "stub",
       async exists(): Promise<boolean> { return true; },
@@ -51,12 +55,48 @@ function makeCtx(entries: string[]): { ctx: Context; calls: { command: string; a
       async start(): Promise<void> { throw new Error("dry-run must never start the gateway"); },
       async waitForHealth(): Promise<void> { throw new Error("dry-run must never wait for health"); },
     },
+    applicationBeforeRestore: beforeRestore,
   } as unknown as Context;
   return { ctx, calls };
 }
 
-const FULL_ENTRIES = ["data/", "data/config/", "data/config/openclaw.json", "data/config/identity/", "data/config/identity/device-auth.json"];
-const NO_IDENTITY_ENTRIES = ["data/", "data/config/", "data/config/openclaw.json"];
+// A hook may fetch or decrypt the actual archive; preview cannot safely run it.
+{
+  let called = false;
+  const { ctx, calls } = makeCtx(FULL_ENTRIES, async () => { called = true; return "/other/archive.tar.gz"; });
+  let output = "";
+  await withOutputSink(() => {}, () => restoreDryRun(ctx, "/encrypted/input", {}, true), (line) => { output += line; });
+  const plan = JSON.parse(output) as { includesIdentity: boolean | null; checksDeferred: string[]; archiveSizeBytes?: number };
+  check("preview never invokes beforeRestore", called, false);
+  check("preview does not list or stat an encrypted input", calls.some((call) => call.command === "tar" || call.command === "stat"), false);
+  check("preview does not mutate the target with a hook", calls.some((call) => MUTATING.has(call.command)), false);
+  check("identity remains unknown until the hook runs", plan.includesIdentity, null);
+  check("plan identifies the deferred hook", plan.checksDeferred.some((item) => item.includes("beforeRestore")), true);
+  check("uninspected archive has no size", plan.archiveSizeBytes, undefined);
+}
+
+// The embedded native manifest needs extraction under live data; preview defers that check.
+{
+  const { ctx, calls } = makeCtx([...FULL_ENTRIES, `data/${NATIVE_MANIFEST_NAME}`]);
+  let output = "";
+  await withOutputSink(() => {}, () => restoreDryRun(ctx, ARCHIVE, {}, true), (line) => { output += line; });
+  const plan = JSON.parse(output) as { nativeManifestPresent: boolean; nativeManifestVerified: boolean; checksDeferred: string[] };
+  check("preview sees the native manifest", plan.nativeManifestPresent, true);
+  check("preview does not claim native verification", plan.nativeManifestVerified, false);
+  check("plan identifies native verification as real-restore only", plan.checksDeferred.some((item) => item.includes("native manifest")), true);
+  check("native preview never extracts or writes", calls.some((call) => MUTATING.has(call.command) || (call.command === "tar" && call.args.includes("-xzf"))), false);
+}
+
+{
+  let called = false;
+  const { ctx, calls } = makeCtx(FULL_ENTRIES, async () => { called = true; return ARCHIVE; });
+  let output = "";
+  await withOutputSink(() => {}, () => push(ctx, [ARCHIVE, "--dry-run", "--json"]), (line) => { output += line; });
+  const plan = JSON.parse(output) as { checksDeferred: string[] };
+  check("push preview never invokes beforeRestore", called, false);
+  check("push preview reports the deferred hook", plan.checksDeferred.some((item) => item.includes("beforeRestore")), true);
+  check("push preview does not inspect or mutate the archive", calls.some((call) => call.command === "tar" || MUTATING.has(call.command)), false);
+}
 
 // --- a passing archive: reported, nothing touched ------------------------------------------
 

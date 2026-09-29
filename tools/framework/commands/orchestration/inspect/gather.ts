@@ -231,8 +231,8 @@ async function gatherRunningInspection(
   problems.push(
     ...compareLock(await readLock(), {
       ...composition,
-      plugins: pluginsForLock(live.plugins),
-      skills: skillsForLock(live.skills),
+      plugins: live.plugins === undefined || live.skills === undefined ? undefined : pluginsForLock(live.plugins),
+      skills: live.plugins === undefined || live.skills === undefined ? undefined : skillsForLock(live.skills),
     }),
   );
 
@@ -253,9 +253,9 @@ async function gatherRunningInspection(
       connectionFacts: connectionFacts,
       channels: live.channels,
       config: configState.config,
-      agents: live.agents ?? [],
-      mcpServers: live.mcpServers ?? [],
-      cronJobs: live.cronJobs ?? [],
+      agents: live.agents,
+      mcpServers: live.mcpServers,
+      cronJobs: live.cronJobs,
       foreignObjects: live.foreignObjects ?? [],
       openclawVersion: live.openclawVersion,
     },
@@ -407,9 +407,12 @@ function renderText(inspection: Inspection): void {
   info(`config     ${declared.config.length} declared setting(s), ${problems.filter((entry) => entry.code === "CONFIG_DRIFT").length} drifted`);
   info(`secrets    ${observed.secrets.filter((entry) => entry.present).length}/${observed.secrets.length} present`);
   info(`recipes    ${declared.recipes.length === 0 ? "(none)" : declared.recipes.join(", ")}`);
-  if (observed.agents.length > 0) info(`agents     ${observed.agents.join(", ")}`);
-  if (observed.mcpServers.length > 0) info(`mcp        ${observed.mcpServers.join(", ")}`);
-  if (observed.cronJobs.length > 0) info(`cron       ${observed.cronJobs.join(", ")}`);
+  if (observed.agents === undefined) info("agents     unknown (CLI read failed)");
+  else if (observed.agents.length > 0) info(`agents     ${observed.agents.join(", ")}`);
+  if (observed.mcpServers === undefined) info("mcp        unknown (CLI read failed)");
+  else if (observed.mcpServers.length > 0) info(`mcp        ${observed.mcpServers.join(", ")}`);
+  if (observed.cronJobs === undefined) info("cron       unknown (CLI read failed)");
+  else if (observed.cronJobs.length > 0) info(`cron       ${observed.cronJobs.join(", ")}`);
   if (observed.foreignObjects.length > 0) {
     info(`foreign    ${observed.foreignObjects.map((entry) => `${entry.kind}:${entry.name}`).join(", ")} (not created by this framework — never touched)`);
   }

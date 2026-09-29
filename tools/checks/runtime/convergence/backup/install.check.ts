@@ -34,7 +34,7 @@ interface RecordedCall { readonly command: string; readonly args: string[] }
 /** Same fixture watch/install.check.ts uses: a stub `crontab`/`sh -c "command -v crontab"`
  *  layered over the real instance-lock fixture, so install/uninstall run their real locking
  *  code across repeated --apply cycles. */
-function crontabTransport(initial = ""): { transport: Context["transport"]; calls: RecordedCall[]; crontab: () => string } {
+function crontabTransport(initial = "", listingFailure?: ExecResult): { transport: Context["transport"]; calls: RecordedCall[]; crontab: () => string } {
   const { ctx: fixtureCtx } = stubContext();
   const baseExec = fixtureCtx.transport.exec;
   let current = initial;
@@ -48,6 +48,7 @@ function crontabTransport(initial = ""): { transport: Context["transport"]; call
         return { code: 0, stdout: "/usr/bin/crontab\n", stderr: "" };
       }
       if (command === "crontab" && args[0] === "-l") {
+        if (listingFailure !== undefined) return listingFailure;
         return current === "" ? { code: 1, stdout: "", stderr: "no crontab for user" } : { code: 0, stdout: current, stderr: "" };
       }
       if (command === "crontab" && args[0] === "-") {
@@ -129,6 +130,14 @@ try {
   await withOutputSink((chunk) => written.push(chunk), () => backupUninstall(ctx, ["--apply"]));
   check("a second uninstall reports nothing to remove", written.join("").includes("nothing to remove"), true);
   check("and never re-writes the crontab", calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
+
+  const unreadableInitial = `${FOREIGN}\n${WATCH_ENTRY}\n`;
+  const unreadable = crontabTransport(unreadableInitial, { code: 1, stdout: "", stderr: "permission denied" });
+  const unreadableCtx = { ...ctx, transport: unreadable.transport } as Context;
+  const readError = await deathOf(() => withOutputSink(() => {}, () => backupInstall(unreadableCtx, ["--apply"])));
+  check("backup install aborts on crontab read failure", readError.includes("could not read crontab"), true);
+  check("backup install leaves existing entries untouched on read failure", unreadable.crontab(), unreadableInitial);
+  check("backup install never writes after a crontab read failure", unreadable.calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
 } finally {
   await rm(root, { recursive: true, force: true });
 }
@@ -143,10 +152,14 @@ try {
     settings: {},
   } as unknown as Context;
   const written: string[] = [];
-  await withOutputSink((chunk) => written.push(chunk), () => backupInstall(ctx, []));
+  await withOutputSink((chunk) => written.push(chunk), () => withScheduleRunner(
+    async () => ({ code: 0, stdout: "", stderr: "" }),
+    () => backupInstall(ctx, []),
+    "win32",
+  ));
   check("an unsupported transport prints instructions instead of a crontab line", written.join("").includes("Run this yourself"), true);
 
-  if (process.platform === "win32") {
+  {
     const recorded: { command: string; args: string[] }[] = [];
     await withOutputSink(() => {}, () =>
       withScheduleRunner(
@@ -155,10 +168,28 @@ try {
           return { code: 0, stdout: "", stderr: "" };
         },
         () => backupInstall(ctx, ["--apply"]),
+        "win32",
       ));
     check("--apply on Windows runs schtasks through the recording transport, never a real one", recorded.length, 1);
     check("...targeting backup's own task name, distinct from watch's", recorded[0]?.args.includes(scheduledTaskName("backup", deploymentName())), true);
-  } else {
+    const deleted: { command: string; args: string[] }[] = [];
+    await withOutputSink(() => {}, () => withScheduleRunner(
+      async (command, args) => {
+        deleted.push({ command, args: [...args] });
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      () => backupUninstall(ctx, ["--apply"]),
+      "win32",
+    ));
+    check("Windows backup uninstall deletes its matching task", deleted[0]?.args, ["/delete", "/tn", scheduledTaskName("backup", deploymentName()), "/f"]);
+    const failed = await deathOf(() => withOutputSink(() => {}, () => withScheduleRunner(
+      async () => ({ code: 1, stdout: "", stderr: "access denied" }),
+      () => backupUninstall(ctx, ["--apply"]),
+      "win32",
+    )));
+    check("a failed Windows backup uninstall is reported", failed.includes("access denied"), true);
+  }
+  if (process.platform !== "win32") {
     const message = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--apply"])));
     check("--apply refuses outright on an unsupported, non-Windows transport", message.includes("refusing --apply"), true);
   }

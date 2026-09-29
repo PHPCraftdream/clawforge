@@ -5,7 +5,11 @@
 // backup/prune-replaced.check.ts layers its own domain exec handling over, not a stand-in
 // for the lock.
 
-import { destroy } from "#framework/commands/lifecycle/lifecycle.ts";
+import { destroy, SAFE_DESTROY_SCRIPT } from "#framework/commands/lifecycle/lifecycle.ts";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve, sep } from "node:path";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { takeLock } from "#framework/runtime/lock/instance-lock.ts";
@@ -21,14 +25,21 @@ const DATA_DIR = "/srv/destroy-check/data";
 const BACKUP_DIR = "/srv/destroy-check/backups";
 const SNAPSHOT_DIR = "/srv/destroy-check/snapshots";
 
-/** Layers what destroy's own guards/removal need (exists, `id`/`test -w` for sudoFor, `du`,
- *  `test -L`/`readlink`, and a runtime with stop/showStatus) over the real lock fixture, the
- *  same way prune-replaced.check.ts layers `find`/`du`/`test -L` over it. `order` records
- *  runtime.stop and each `rm` target as they happen, so the real sequence is what gets
- *  asserted rather than the end state alone. */
+interface DestroyOptions {
+  readonly inaccessible?: Set<string>;
+  readonly failedTest?: boolean;
+  readonly failedResolver?: boolean;
+  readonly noReadlink?: boolean;
+  readonly sudo?: boolean;
+  readonly afterStop?: () => void;
+}
+
+/** Layers destroy's target-side checks over the real lock fixture. */
 function destroyContext(
   present: string[] = [DATA_DIR, BACKUP_DIR, SNAPSHOT_DIR],
   symlinks: Set<string> = new Set(),
+  canonicalPaths: Map<string, string> = new Map(),
+  setup: DestroyOptions = {},
 ): { ctx: Context; dirs: Set<string>; order: string[] } {
   const { ctx: fixtureCtx, dirs } = stubContext();
   for (const dir of present) dirs.add(dir);
@@ -37,23 +48,43 @@ function destroyContext(
   const transport: Context["transport"] = {
     ...fixtureCtx.transport,
     async exists(path: string): Promise<boolean> { return dirs.has(path); },
-    async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
-      if (command === "id") return { code: 0, stdout: "1000\n", stderr: "" }; // matches OWNER — no escalation needed
+    async exec(command: string, args: string[], execOptions?: ExecOptions): Promise<ExecResult> {
+      if (command === "id") return { code: 0, stdout: `${setup.sudo ? 1001 : 1000}\n`, stderr: "" };
       if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
-      if (command === "test" && args[0] === "-L") return { code: symlinks.has(args[1] ?? "") ? 0 : 1, stdout: "", stderr: "" };
-      if (command === "readlink") return { code: 0, stdout: "/elsewhere\n", stderr: "" };
-      if (command === "du") return { code: 0, stdout: `4\t${args[args.length - 1]}`, stderr: "" };
-      // Only destroy's own three targets — the lock's own release also does an `rm` for its
-      // bookkeeping marker, which is not what this order is about.
-      if (command === "rm" && [DATA_DIR, BACKUP_DIR, SNAPSHOT_DIR].includes(args[args.length - 1] ?? "")) {
-        order.push(`rm:${args[args.length - 1]}`);
+      if (command === "sh" && args[0] === "-c" && args[1] === "command -v sudo") {
+        return { code: 0, stdout: "/usr/bin/sudo\n", stderr: "" };
       }
-      return baseExec(command, args, options);
+      if (command === "sudo" && args.join(" ") === "-n true") return { code: 0, stdout: "", stderr: "" };
+      if ((command === "sh" && args[0] === "-s") || (command === "sudo" && args[0] === "-n" && args[1] === "sh" && args[2] === "-s")) {
+        const elevated = command === "sudo";
+        const path = args.at(-2) ?? "";
+        const mode = args.at(-1) ?? "";
+        const parent = path.slice(0, path.lastIndexOf("/")) || "/";
+        order.push(`${elevated ? "sudo:" : "plain:"}${mode}:${path}`);
+        check("destroy passes a fixed shell script through stdin", execOptions?.input, SAFE_DESTROY_SCRIPT);
+        if (setup.noReadlink) return { code: 1, stdout: "", stderr: "readlink is unavailable" };
+        if (setup.failedResolver) return { code: 1, stdout: "", stderr: "parent cannot be resolved" };
+        if (setup.inaccessible?.has(parent)) return { code: 1, stdout: "", stderr: "parent cannot be entered" };
+        if (canonicalPaths.has(path) || canonicalPaths.has(parent)) {
+          return { code: 1, stdout: "", stderr: "parent resolves through a symlink" };
+        }
+        if ([...symlinks].some((entry) => path === entry || path.startsWith(`${entry}/`))) {
+          return { code: 1, stdout: "", stderr: "target is a symlink" };
+        }
+        if (setup.failedTest) return { code: 2, stdout: "", stderr: "target link test failed" };
+        if (mode === "remove" && dirs.has(path)) {
+          order.push(`rm:${path}`);
+          for (const dir of [...dirs].filter((entry) => entry === path || entry.startsWith(`${path}/`))) dirs.delete(dir);
+        }
+        return { code: 0, stdout: "", stderr: "" };
+      }
+      if (command === "du") return { code: 0, stdout: `4\t${args[args.length - 1]}`, stderr: "" };
+      return baseExec(command, args, execOptions);
     },
   };
   const runtime = {
     async isRunning(): Promise<boolean> { return true; },
-    async stop(extraArgs: string[] = []): Promise<void> { order.push(`stop:${extraArgs.join(",")}`); },
+    async stop(extraArgs: string[] = []): Promise<void> { order.push(`stop:${extraArgs.join(",")}`); setup.afterStop?.(); },
     async showStatus(): Promise<void> { order.push("showStatus"); },
   };
   const ctx = {
@@ -117,9 +148,29 @@ for (const [name, dataDir, expectedSubstring] of [
   ["a single-segment path", "/srv", "top-level directory"],
   ["a home-directory-shaped path", "/home/alice", "home directory"],
   ["a relative path", "srv/data", "not an absolute path"],
+  ["parent traversal", "/srv/instance/../../home/alice", ".."],
+  ["dot segment", "/srv/./data", ".."],
+  ["repeated separators", "/srv//data", "normalized path"],
+  ["mixed separators", "C:\\srv/data", "mixes path separators"],
 ] as const) {
   const message = await refused(() => destroy(shapeContext(dataDir), ["--data"]));
   check(`refuses ${name}`, message.includes(expectedSubstring), true);
+}
+
+for (const [flag, envName, path] of [
+  ["--backups", "OC_BACKUP_DIR", "/srv/instance/../../home/alice"],
+  ["--snapshots", "OC_SNAPSHOT_DIR", "/srv/./snapshots"],
+] as const) {
+  const ctx = {
+    settings: {
+      dataDir: DATA_DIR,
+      backupDir: envName === "OC_BACKUP_DIR" ? path : BACKUP_DIR,
+      snapshotDir: envName === "OC_SNAPSHOT_DIR" ? path : SNAPSHOT_DIR,
+      env: {},
+    },
+  } as unknown as Context;
+  const message = await refused(() => destroy(ctx, [flag]));
+  check(`${envName} unsafe path is refused`, message.includes(envName), true);
 }
 
 // --- symlink guard: checked in dry run too, so the plan never promises what a real run
@@ -131,6 +182,17 @@ for (const [name, dataDir, expectedSubstring] of [
   check("refuses a symlinked target, even in dry run", message.includes("symlink"), true);
 }
 
+{
+  const linkedParent = "/srv/destroy-check/link/backups";
+  const ctx = {
+    settings: { dataDir: DATA_DIR, backupDir: linkedParent, snapshotDir: SNAPSHOT_DIR, env: {} },
+  } as unknown as Context;
+  const { ctx: transportCtx } = destroyContext([linkedParent], new Set(), new Map([[linkedParent, "/outside/backups"]]));
+  const linkedCtx = { ...transportCtx, settings: ctx.settings } as Context;
+  const message = await refused(() => destroy(linkedCtx, ["--backups"]));
+  check("refuses a path reached through a symlinked parent", message.includes("resolves through a symlink"), true);
+}
+
 // --- real run: removes exactly the flagged parts, in order, under the real lock -------------
 
 {
@@ -138,17 +200,116 @@ for (const [name, dataDir, expectedSubstring] of [
   await output(() => destroy(ctx, ["--data", "--backups", "--snapshots", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check(
     "stops containers first, then removes data, backups, snapshots in that order",
-    order,
+    order.filter((entry) => entry.startsWith("stop:") || entry.startsWith("rm:")),
     ["stop:-v", `rm:${DATA_DIR}`, `rm:${BACKUP_DIR}`, `rm:${SNAPSHOT_DIR}`],
   );
+  check("each target has a preflight and a same-invocation removal", [DATA_DIR, BACKUP_DIR, SNAPSHOT_DIR].every((path) =>
+    order.indexOf(`plain:verify:${path}`) < order.indexOf(`plain:remove:${path}`) &&
+    order.indexOf(`plain:remove:${path}`) < order.indexOf(`rm:${path}`)), true);
   check("every flagged target is gone", [dirs.has(DATA_DIR), dirs.has(BACKUP_DIR), dirs.has(SNAPSHOT_DIR)], [false, false, false]);
+}
+
+for (const [name, setup, expected] of [
+  ["inaccessible parent", { inaccessible: new Set(["/srv/destroy-check"]) }, "parent cannot be entered"],
+  ["readlink unavailable", { noReadlink: true }, "readlink is unavailable"],
+  ["resolver failure", { failedResolver: true }, "parent cannot be resolved"],
+  ["test exit other than 0 or 1", { failedTest: true }, "target link test failed"],
+] as const) {
+  const { ctx, order, dirs } = destroyContext([DATA_DIR], new Set(), new Map(), setup);
+  const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check(`${name} refuses removal`, message.includes(expected), true);
+  check(`${name} never reaches rm`, order.some((entry) => entry.startsWith("rm:")), false);
+  check(`${name} preserves the target`, dirs.has(DATA_DIR), true);
+}
+
+{
+  const { ctx, order } = destroyContext([DATA_DIR], new Set(), new Map(), { sudo: true });
+  await output(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check("owner escalation uses the same sudo prefix even when parent is writable", order.filter((entry) => entry.includes(`:${DATA_DIR}`)),
+    [`sudo:verify:${DATA_DIR}`, `sudo:remove:${DATA_DIR}`, `rm:${DATA_DIR}`]);
+}
+
+{
+  const links = new Set<string>();
+  const { ctx, dirs, order } = destroyContext([DATA_DIR], links, new Map(), { afterStop: () => { links.add("/srv/destroy-check"); } });
+  const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check("symlink introduced after preflight is refused", message.includes("symlink"), true);
+  check("symlink introduced after preflight never reaches rm", order.some((entry) => entry.startsWith("rm:")), false);
+  check("symlink introduced after preflight preserves target", dirs.has(DATA_DIR), true);
+}
+
+if (process.platform === "linux") {
+  const temporary = mkdtempSync(join(tmpdir(), "clawforge-destroy-check-"));
+  const root = realpathSync(temporary);
+  try {
+    const safe = join(root, "safe");
+    const outside = join(root, "outside");
+    mkdirSync(safe);
+    mkdirSync(outside);
+    const target = join(safe, "data");
+    mkdirSync(target);
+    writeFileSync(join(outside, "keep"), "keep");
+    const run = (path: string, mode: "verify" | "remove") => spawnSync("sh", ["-s", "--", path, mode], {
+      input: SAFE_DESTROY_SCRIPT,
+      encoding: "utf8",
+    });
+    check("target-side script verifies a real directory", run(target, "verify").status, 0);
+    symlinkSync(outside, join(safe, "link"));
+    check("target-side script rejects a symlinked ancestor", run(join(safe, "link", "keep"), "remove").status === 0, false);
+    check("symlinked ancestor leaves external file untouched", existsSync(join(outside, "keep")), true);
+    check("target-side script rejects a missing parent", run(join(root, "absent", "data"), "remove").status === 0, false);
+    const racing = join(root, "racing");
+    const moved = join(root, "racing-moved");
+    const wrapperDir = join(root, "bin");
+    mkdirSync(racing);
+    mkdirSync(join(racing, "data"));
+    mkdirSync(join(outside, "data"));
+    mkdirSync(wrapperDir);
+    const wrapper = join(wrapperDir, "readlink");
+    writeFileSync(wrapper, [
+      "#!/bin/sh",
+      '"$REAL_READLINK" "$@" || exit $?',
+      'if [ "$3" = "$RACE_PARENT" ]; then',
+      '  mv -- "$RACE_PARENT" "$RACE_MOVED" || exit',
+      '  ln -s -- "$RACE_OUTSIDE" "$RACE_PARENT" || exit',
+      "fi",
+    ].join("\n"));
+    chmodSync(wrapper, 0o700);
+    const raced = spawnSync("sh", ["-s", "--", join(racing, "data"), "remove"], {
+      input: SAFE_DESTROY_SCRIPT,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${wrapperDir}:${process.env.PATH ?? ""}`,
+        REAL_READLINK: "/usr/bin/readlink",
+        RACE_PARENT: racing,
+        RACE_MOVED: moved,
+        RACE_OUTSIDE: outside,
+      },
+    });
+    check("parent replacement inside the removal call is refused", raced.status === 0, false);
+    check("parent replacement leaves the original target", existsSync(join(moved, "data")), true);
+    check("parent replacement leaves the symlink destination", existsSync(join(outside, "data")), true);
+    check("target-side script removes only its verified sibling", run(target, "remove").status, 0);
+    check("external sibling survives target-side deletion", existsSync(join(outside, "keep")), true);
+    check("verified sibling was removed", existsSync(target), false);
+  } finally {
+    const resolved = resolve(root);
+    if (resolved.startsWith(`${resolve(tmpdir())}${sep}`) && resolved.includes("clawforge-destroy-check-")) {
+      rmSync(resolved, { recursive: true, force: true });
+    }
+  }
 }
 
 {
   // Only --data: backups/snapshots are never touched.
   const { ctx, dirs, order } = destroyContext();
   await output(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
-  check("only the requested target is removed", order, ["stop:-v", `rm:${DATA_DIR}`]);
+  check(
+    "only the requested target is removed",
+    order.filter((entry) => entry.startsWith("stop:") || entry.startsWith("rm:")),
+    ["stop:-v", `rm:${DATA_DIR}`],
+  );
   check("the others are left alone", [dirs.has(BACKUP_DIR), dirs.has(SNAPSHOT_DIR)], [true, true]);
 }
 

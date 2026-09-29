@@ -118,16 +118,16 @@ accepts for the whole data directory, but narrowed here to log tails rather than
 database. `backup` reports how many such files it added. `restore` does not delete the
 current data — it renames the directory to `<data>.replaced-<timestamp>`.
 
-`restore --dry-run` runs the same archive selection and validation as a real restore — the
-structural check, and the embedded-native-manifest re-verification when the archive carries
-one — and stops there: no lock is taken, and the gateway is never stopped, nothing is moved,
-written or extracted. It reports the archive it picked (name, size, modification time),
-whether it carries identity (`config/identity`), the source data directory and the
-`<data>.replaced-<stamp>` pattern it would move aside to (the stamp itself is only known at
-the time of a real run), and the ordered steps a real restore would perform. It exits
-non-zero with the same refusal a real restore would give when the archive is missing,
-unreadable or fails validation. `--force` alongside `--dry-run` is accepted but has nothing
-to do — a dry run never asks for confirmation in the first place.
+`restore --dry-run` selects the archive and checks its structure and links when no
+`beforeRestore` hook is configured. A hook may fetch or decrypt a different archive, so
+the preview does not run it or inspect its input as a tar archive; archive size, date and
+identity remain unknown. When an archive contains an embedded native manifest, the
+preview detects it but defers `openclaw backup verify` to the real restore, because that
+verification extracts a temporary file under live data. The plan names all deferred checks.
+No lock is taken, and nothing is stopped, moved, written or extracted. The plan also
+reports the data directory, the `<data>.replaced-<stamp>` pattern and the ordered restore
+steps. For archives inspected in the preview, a missing or structurally invalid archive
+is refused. `--force` has no effect on a preview, which never asks for confirmation.
 
 Rotation removes one archive per run, the oldest beyond `OC_BACKUP_KEEP`, rather than the
 whole backlog at once — the same rotation and naming for a native archive as for any other

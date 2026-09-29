@@ -584,11 +584,9 @@ async function resolvePushArchive(ctx: Context, archiveArg: string | undefined):
   return found;
 }
 
-/** `--dry-run`: mirrors restore's own (buildRestorePlan, over the same prepareRestore this
- *  push would run), plus what push adds on top — the secrets sidecar it would install.
- *  Nothing here stops, moves, writes or extracts anything; no lock is taken. */
+/** `--dry-run`: shares restore's read-only preview, then reports the secrets sidecar. */
 async function pushDryRun(ctx: Context, archive: string, options: RestoreOptions, jsonOnly: boolean): Promise<void> {
-  const prepared = await prepareRestore(ctx, archive, options);
+  const prepared = await prepareRestore(ctx, archive, options, "preview");
   const plan = await buildRestorePlan(ctx, prepared, options);
   const secretsPath = `${archive}${SECRETS_SUFFIX}`;
   const hasSecrets = await ctx.transport.exists(secretsPath);

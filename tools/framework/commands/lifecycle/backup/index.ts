@@ -288,19 +288,20 @@ async function createNativeArchive(
     throw new NativeBackupUnsupportedError(`${ctx.runtime.description} cannot address ${nativeTarget} inside the sidecar: ${(error as Error).message}`);
   }
 
-  let outcome: { verified?: boolean; archivePath?: string };
-  try {
-    outcome = await openclawCliJson(ctx, ["backup", "create", "--verify", "--json", "--output", containerOutput]);
-  } catch (error) {
-    throw new NativeBackupUnsupportedError((error as Error).message);
-  }
-  if (outcome.verified !== true) throw new Error("openclaw backup create did not report a verified archive");
-  const nativeArchive = outcome.archivePath === undefined ? nativeTarget : ctx.paths.fromContainer(outcome.archivePath);
-
   // Until the mv into staging, a full archive (credentials included) sits in the live data
   // directory; any failure below must not leave it there.
+  let nativeArchive = nativeTarget;
   let movedIntoStaging = false;
   try {
+    let outcome: { verified?: boolean; archivePath?: string };
+    try {
+      outcome = await openclawCliJson(ctx, ["backup", "create", "--verify", "--json", "--output", containerOutput]);
+    } catch (error) {
+      throw new NativeBackupUnsupportedError((error as Error).message);
+    }
+    if (outcome.archivePath !== undefined) nativeArchive = ctx.paths.fromContainer(outcome.archivePath);
+    if (outcome.verified !== true) throw new Error("openclaw backup create did not report a verified archive");
+
     const nativeEntries = await listArchive(ctx, nativeArchive);
     const nativeRoot = archiveRoot(nativeEntries);
     const nativeWorkdir = `${stagingDir}/native`;

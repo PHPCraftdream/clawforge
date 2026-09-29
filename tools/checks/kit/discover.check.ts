@@ -3,6 +3,12 @@
 
 import { check, finish } from "#checks/kit/harness.ts";
 import { discoverChecks, parseRequires, splitExclusive } from "#checks/kit/discover.ts";
+import { runChecks } from "#checks/kit/run.ts";
+import { appsDir } from "#framework/integration/deployment/scaffold.ts";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { randomBytes } from "node:crypto";
+import { withOutputSink } from "#framework/core/io/output.ts";
 
 const found = await discoverChecks();
 const exclusive = found.filter((entry) => entry.exclusive).map((entry) => entry.label);
@@ -36,6 +42,33 @@ check(
     message = error instanceof Error ? error.message : String(error);
   }
   check("an unknown capability throws, naming the file and the bad capability", message.includes("x.check.ts") && message.includes("ssh"), true);
+}
+
+// A real deployment can share the old cleanup's naming shape and contain private config.
+{
+  await mkdir(appsDir, { recursive: true });
+  let directory = "";
+  for (;;) {
+    directory = resolve(appsDir, `guard-check-${randomBytes(4).toString("hex")}`);
+    try {
+      await mkdir(directory);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
+  const secretFile = resolve(directory, "secrets", "sentinel.txt");
+  await mkdir(resolve(directory, "secrets"));
+  await writeFile(secretFile, "fixture-secret-sentinel", "utf8");
+  try {
+    await withOutputSink(() => {}, () => runChecks({ list: true }));
+    check("--list preserves a deployment with a check-shaped name", await readFile(secretFile, "utf8"), "fixture-secret-sentinel");
+
+    await withOutputSink(() => {}, () => runChecks({ filters: ["no-such-check-filter-9e13"] }));
+    check("an unmatched filter preserves the same deployment", await readFile(secretFile, "utf8"), "fixture-secret-sentinel");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 finish("discovery");

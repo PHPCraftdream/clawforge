@@ -530,6 +530,26 @@ function inspectionWith(problems: Problem[]): Inspection {
     // Positive control: readable control markers — apply --set installs for real and records
     // the marker through the atomic publish route.
     fixture.files.delete(ledgerPath);
+    const failedBatchCtx = {
+      ...ctx,
+      runtime: {
+        ...ctx.runtime,
+        runOneOff: async (service: string, args: string[]) => args[0] === "-c"
+          ? { code: 7, stdout: "", stderr: "batch failed" }
+          : ctx.runtime.runOneOff(service, args),
+      },
+    } as unknown as Context;
+    const beforeBatchRefusal = JSON.stringify([...fixture.files]);
+    const beforeBatchEvents = fixture.events.length;
+    const failedBatch = await fixture.captured(() => apply(failedBatchCtx, ["--set", artifact, "--json"]));
+    check("apply --set refuses a failed live CLI batch", failedBatch.error?.message.includes("CLI") || failedBatch.error?.message.includes("could not be read"), true);
+    check("the failed CLI batch leaves target files unchanged", JSON.stringify([...fixture.files]), beforeBatchRefusal);
+    check("the failed CLI batch stores no set or installed marker",
+      (await access(join(setsDir, `lifecycle-${built.id}.tar.gz`)).then(() => true, () => false)) === false
+        && !fixture.files.has(markerPath)
+        && fixture.events.slice(beforeBatchEvents).filter((event) => !event.includes("operation.lock")).join("|") === "",
+      true);
+
     cliCalls.length = 0;
     const beforeInstall = fixture.events.length;
     const installed = await fixture.captured(() => apply(ctx, ["--set", artifact, "--json"]));

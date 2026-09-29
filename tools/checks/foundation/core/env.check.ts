@@ -343,6 +343,22 @@ check("native Windows backupDir is a sibling", windowsSettings.backupDir, "C:\\s
 check("native Windows snapshotDir is a sibling", windowsSettings.snapshotDir, "C:\\srv\\openclaw\\snapshots");
 check("native Windows lock directory is a sibling", locksDir(windowsSettings.dataDir), "C:\\srv\\openclaw\\data-locks");
 
+for (const [name, value] of [
+  ["OC_BACKUP_DIR", "/srv/data/../outside"],
+  ["OC_BACKUP_DIR", "/srv//backups"],
+  ["OC_BACKUP_DIR", "C:\\srv\\backups/mixed"],
+  ["OC_SNAPSHOT_DIR", "/srv/./snapshots"],
+  ["OC_SNAPSHOT_DIR", "/srv//snapshots"],
+  ["OC_SNAPSHOT_DIR", "C:\\srv\\snapshots/"],
+] as const) {
+  try {
+    toSettings({ OC_DATA_DIR: "/srv/app/data", [name]: value });
+    check(`${name} unsafe path spelling is rejected`, "did not throw", "threw");
+  } catch (error) {
+    check(`${name} unsafe path spelling is rejected`, (error as Error).message.includes(name), true);
+  }
+}
+
 // Depth is a backstop, not the safety property. A normal, valid-looking standard directory
 // two segments deep passes on purpose — the safety comes from ensureDataDirs
 // (runtime/datadir.ts), which resolves the canonical root through its ancestors and

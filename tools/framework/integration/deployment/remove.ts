@@ -18,6 +18,8 @@ export interface RemoveAppOptions {
   /** Forwarded to listDeployments() — same reason it takes one: a check hands back a
    *  stub Context instead of resolving a real transport and Docker. */
   readonly buildContext?: ListDeploymentsOptions["buildContext"];
+  /** Overridable so a check can model a missing or inconclusive inventory row. */
+  readonly listDeployments?: typeof listDeployments;
 }
 
 async function directorySizeBytes(directory: string): Promise<number> {
@@ -73,8 +75,13 @@ async function resolveTargetDirectory(name: string, appsRoot: string): Promise<s
 
 /** The same state `./clawforge list` reports, read through listDeployments() rather than a
  *  second detector — a running/stopped verdict here means exactly what it means there. */
-async function currentState(name: string, appsRoot: string, buildContext: RemoveAppOptions["buildContext"]): Promise<string | undefined> {
-  const summaries = await listDeployments({ appsRoot, checkStatus: true, buildContext });
+async function currentState(
+  name: string,
+  appsRoot: string,
+  buildContext: RemoveAppOptions["buildContext"],
+  list: NonNullable<RemoveAppOptions["listDeployments"]>,
+): Promise<string | undefined> {
+  const summaries = await list({ appsRoot, checkStatus: true, buildContext });
   return summaries.find((entry) => entry.name === name)?.state;
 }
 
@@ -96,12 +103,15 @@ export async function removeApp(name: string, args: string[], options: RemoveApp
   const yes = args.includes("--yes");
 
   const directory = await resolveTargetDirectory(name, appsRoot);
-  const state = await currentState(name, appsRoot, options.buildContext);
+  const state = await currentState(name, appsRoot, options.buildContext, options.listDeployments ?? listDeployments);
   if (state === "running" || state === "stopped") {
     die(
       `${name} still has a bootstrapped instance (${state}) — run ./clawforge --app ${name} destroy first ` +
         "(and --data if the data should go too)",
     );
+  }
+  if (state !== "not-bootstrapped") {
+    die(`${name} instance state is ${state ?? "unknown"} — refusing to remove local configuration; confirm the target is reachable and run list again`);
   }
 
   const entries = (await readdir(directory, { withFileTypes: true })).map((entry) => entry.name).sort();

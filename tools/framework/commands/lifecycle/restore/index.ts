@@ -286,9 +286,7 @@ async function verifyEmbeddedNativeManifest(ctx: Context, archive: string, manif
   }
 }
 
-/** Prepared inputs for the restore transaction: hook applied, archive validated
- *  structurally and against the native manifest, ancestry checked. Exported: --dry-run
- *  builds its plan from exactly this, never from a second, looser validation pass. */
+/** Prepared inputs for execution or a read-only preview. */
 export interface PreparedRestore {
   archive: string;
   entries: string[];
@@ -296,13 +294,27 @@ export interface PreparedRestore {
   dataDir: string;
   parent: string;
   nativeManifestVerified: boolean;
+  nativeManifestPresent: boolean | null;
+  archiveValidationDeferred: boolean;
 }
 
-/** Validate/prepare phase: runs the beforeRestore hook and checks the archive is safe to
- *  unpack (structure, root name, embedded native manifest). Nothing is stopped or moved yet,
- *  and no operator confirmation is asked here — a die() leaves the instance untouched, and
- *  --dry-run stops right after this returns. */
-export async function prepareRestore(ctx: Context, archive: string, options: RestoreOptions): Promise<PreparedRestore> {
+/** Validate an archive; preview defers hooks and native verification that may write. */
+export async function prepareRestore(
+  ctx: Context,
+  archive: string,
+  options: RestoreOptions,
+  mode: "execute" | "preview" = "execute",
+): Promise<PreparedRestore> {
+  const { dataDir } = ctx.settings;
+  const name = dataDirName(dataDir);
+  const parent = dataDirParent(dataDir);
+
+  // A hook may fetch or decrypt another archive. Preview must defer its validation.
+  if (mode === "preview" && options.internal !== true && ctx.applicationBeforeRestore !== undefined) {
+    await verifyDataDirAncestry(ctx, dataDir);
+    return { archive, entries: [], name, dataDir, parent, nativeManifestVerified: false, nativeManifestPresent: null, archiveValidationDeferred: true };
+  }
+
   // Before anything else — nothing is validated, stopped or moved yet. A hook can decrypt
   // or fetch the real archive and hand back the path to use instead; a failure here means
   // the restore never started, so there is nothing to compensate.
@@ -314,10 +326,6 @@ export async function prepareRestore(ctx: Context, archive: string, options: Res
       die(`beforeRestore hook failed, restore did not start: ${(error as Error).message}`);
     }
   }
-
-  const { dataDir } = ctx.settings;
-  const name = dataDirName(dataDir);
-  const parent = dataDirParent(dataDir);
 
   if (!(await ctx.transport.exists(archive))) die(`archive not found: ${archive}`);
 
@@ -345,12 +353,12 @@ export async function prepareRestore(ctx: Context, archive: string, options: Res
   }
 
   const nativeManifestEntry = `${name}/${NATIVE_MANIFEST_NAME}`;
-  const nativeManifestVerified = entries.some((entry) => entry.replace(/^\.\//, "") === nativeManifestEntry);
-  if (nativeManifestVerified) await verifyEmbeddedNativeManifest(ctx, archive, nativeManifestEntry);
+  const nativeManifestPresent = entries.some((entry) => entry.replace(/^\.\//, "") === nativeManifestEntry);
+  if (nativeManifestPresent && mode === "execute") await verifyEmbeddedNativeManifest(ctx, archive, nativeManifestEntry);
 
   await verifyDataDirAncestry(ctx, dataDir);
 
-  return { archive, entries, name, dataDir, parent, nativeManifestVerified };
+  return { archive, entries, name, dataDir, parent, nativeManifestVerified: nativeManifestPresent && mode === "execute", nativeManifestPresent, archiveValidationDeferred: false };
 }
 
 /** State performRestore's try block accumulates, needed by rollbackRestore if it fails. */
@@ -559,11 +567,9 @@ export async function restoreArchive(
   await reportRestoreOutcome(ctx, prepared.archive, aside, options);
 }
 
-/** `--dry-run`: the same selection and validation a real restore runs (prepareRestore),
- *  reported instead of acted on — performRestore() is never reached, so nothing here stops,
- *  moves, writes or extracts anything on the target. */
+/** `--dry-run`: report read-only checks and those deferred until execution. */
 export async function restoreDryRun(ctx: Context, archive: string, options: RestoreOptions = {}, jsonOnly = false): Promise<void> {
-  const prepared = await prepareRestore(ctx, archive, options);
+  const prepared = await prepareRestore(ctx, archive, options, "preview");
   const plan = await buildRestorePlan(ctx, prepared, options);
   if (jsonOnly) {
     emit(`${JSON.stringify({ ok: true, changed: false, dryRun: true, ...plan }, null, 2)}\n`);

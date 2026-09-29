@@ -1,10 +1,8 @@
-// Finds *.check.ts files under tools/checks, and sweeps the deployments a killed run can
-// leave behind under apps/.
+// Finds *.check.ts files under tools/checks.
 
-import { open, readdir, rm, stat } from "node:fs/promises";
+import { open, readdir } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { CAPABILITIES, isCapability, type Capability } from "./capabilities/capabilities.ts";
 
 /** tools/checks — one level up from this file, so moving kit/ does not move the root. */
@@ -85,23 +83,4 @@ export function splitExclusive(entries: readonly LabeledCheck[]): { pooled: Labe
 export function selectChecks(labels: readonly string[], filters: readonly string[]): string[] {
   if (filters.length === 0) return [...labels];
   return labels.filter((label) => filters.some((filter) => label.includes(filter)));
-}
-
-// Checks that create a real deployment under apps/ remove it in a finally block; a killed
-// run skips it and leaves e.g. apps/cli-help-check-97131cc3. Only names of exactly that
-// shape (-check-<hex>) older than the suite's duration are swept.
-const SWEEP_AGE_MINUTES = 30;
-const CHECK_DEPLOYMENT_NAME = /-check-[0-9a-f]{8,10}$/;
-
-export async function sweepOrphanedCheckDeployments(): Promise<void> {
-  const entries = await readdir(appsDir, { withFileTypes: true }).catch(() => []);
-  const cutoff = Date.now() - SWEEP_AGE_MINUTES * 60_000;
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !CHECK_DEPLOYMENT_NAME.test(entry.name)) continue;
-    const full = resolve(appsDir, entry.name);
-    const info = await stat(full).catch(() => undefined);
-    if (info === undefined || info.mtimeMs >= cutoff) continue;
-    await rm(full, { recursive: true, force: true });
-    process.stderr.write(`swept orphaned check deployment: apps/${entry.name}\n`);
-  }
 }

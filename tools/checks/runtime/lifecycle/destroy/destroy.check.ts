@@ -30,7 +30,10 @@ interface DestroyOptions {
   readonly failedTest?: boolean;
   readonly failedResolver?: boolean;
   readonly noReadlink?: boolean;
-  readonly sudo?: boolean;
+  readonly uid?: number;
+  readonly unwritable?: Set<string>;
+  readonly unsearchable?: Set<string>;
+  readonly noSudo?: boolean;
   readonly afterStop?: () => void;
 }
 
@@ -49,12 +52,19 @@ function destroyContext(
     ...fixtureCtx.transport,
     async exists(path: string): Promise<boolean> { return dirs.has(path); },
     async exec(command: string, args: string[], execOptions?: ExecOptions): Promise<ExecResult> {
-      if (command === "id") return { code: 0, stdout: `${setup.sudo ? 1001 : 1000}\n`, stderr: "" };
-      if (command === "test" && args[0] === "-w") return { code: 0, stdout: "", stderr: "" };
+      if (command === "id") return { code: 0, stdout: `${setup.uid ?? 1000}\n`, stderr: "" };
+      if (command === "test" && args[0] === "-w") {
+        return { code: setup.unwritable?.has(args[1] ?? "") ? 1 : 0, stdout: "", stderr: "" };
+      }
+      if (command === "test" && args[0] === "-x") {
+        return { code: setup.unsearchable?.has(args[1] ?? "") ? 1 : 0, stdout: "", stderr: "" };
+      }
       if (command === "sh" && args[0] === "-c" && args[1] === "command -v sudo") {
         return { code: 0, stdout: "/usr/bin/sudo\n", stderr: "" };
       }
-      if (command === "sudo" && args.join(" ") === "-n true") return { code: 0, stdout: "", stderr: "" };
+      if (command === "sudo" && args.join(" ") === "-n true") {
+        return { code: setup.noSudo ? 1 : 0, stdout: "", stderr: "" };
+      }
       if ((command === "sh" && args[0] === "-s") || (command === "sudo" && args[0] === "-n" && args[1] === "sh" && args[2] === "-s")) {
         const elevated = command === "sudo";
         const path = args.at(-2) ?? "";
@@ -223,10 +233,56 @@ for (const [name, setup, expected] of [
 }
 
 {
-  const { ctx, order } = destroyContext([DATA_DIR], new Set(), new Map(), { sudo: true });
+  const { ctx, order } = destroyContext([BACKUP_DIR, SNAPSHOT_DIR], new Set(), new Map(), { uid: 1001, noSudo: true });
+  await output(() => destroy(ctx, ["--backups", "--snapshots"]));
+  await output(() => destroy(ctx, ["--backups", "--snapshots", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check("a different uid can inspect and remove writable directories without sudo", order.filter((entry) => entry.includes(`:${BACKUP_DIR}`) || entry.includes(`:${SNAPSHOT_DIR}`)),
+    [`plain:verify:${BACKUP_DIR}`, `plain:verify:${SNAPSHOT_DIR}`, `plain:verify:${BACKUP_DIR}`, `plain:verify:${SNAPSHOT_DIR}`, `plain:remove:${BACKUP_DIR}`, `rm:${BACKUP_DIR}`, `plain:remove:${SNAPSHOT_DIR}`, `rm:${SNAPSHOT_DIR}`]);
+}
+
+{
+  const { ctx, order } = destroyContext([DATA_DIR], new Set(), new Map(), { uid: 1001, unwritable: new Set([DATA_DIR]) });
   await output(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
-  check("owner escalation uses the same sudo prefix even when parent is writable", order.filter((entry) => entry.includes(`:${DATA_DIR}`)),
+  check("a protected target uses the same sudo prefix for verification and removal", order.filter((entry) => entry.includes(`:${DATA_DIR}`)),
     [`sudo:verify:${DATA_DIR}`, `sudo:remove:${DATA_DIR}`, `rm:${DATA_DIR}`]);
+}
+
+{
+  const { ctx, order } = destroyContext([DATA_DIR, BACKUP_DIR], new Set(), new Map(), {
+    uid: 1001, unwritable: new Set([DATA_DIR]),
+  });
+  await output(() => destroy(ctx, ["--data", "--backups", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check("mixed target permissions select separate prefixes", order.filter((entry) => entry.includes(`:${DATA_DIR}`) || entry.includes(`:${BACKUP_DIR}`)),
+    [`sudo:verify:${DATA_DIR}`, `plain:verify:${BACKUP_DIR}`, `sudo:remove:${DATA_DIR}`, `rm:${DATA_DIR}`, `plain:remove:${BACKUP_DIR}`, `rm:${BACKUP_DIR}`]);
+}
+
+{
+  const { ctx, order, dirs } = destroyContext([DATA_DIR], new Set(), new Map(), {
+    uid: 1001, unwritable: new Set([DATA_DIR]), noSudo: true,
+  });
+  const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check("a protected target without passwordless sudo is refused", message.includes("sudo asks for a password"), true);
+  check("a protected target without sudo is never verified or removed", order.some((entry) => entry.includes(`:${DATA_DIR}`)), false);
+  check("a protected target without sudo preserves the target", dirs.has(DATA_DIR), true);
+}
+
+{
+  const { ctx, order } = destroyContext([DATA_DIR], new Set(), new Map(), {
+    uid: 1001, unsearchable: new Set(["/srv/destroy-check"]),
+  });
+  await output(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check("an unsearchable parent uses sudo for both phases", order.filter((entry) => entry.includes(`:${DATA_DIR}`)),
+    [`sudo:verify:${DATA_DIR}`, `sudo:remove:${DATA_DIR}`, `rm:${DATA_DIR}`]);
+}
+
+{
+  const { ctx, order, dirs } = destroyContext([DATA_DIR], new Set(), new Map(), {
+    uid: 1001, unsearchable: new Set(["/srv/destroy-check"]), noSudo: true,
+  });
+  const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check("a protected parent without passwordless sudo is refused", message.includes("sudo asks for a password"), true);
+  check("a protected parent without sudo is never verified or removed", order.some((entry) => entry.includes(`:${DATA_DIR}`)), false);
+  check("a protected parent without sudo preserves the target", dirs.has(DATA_DIR), true);
 }
 
 {

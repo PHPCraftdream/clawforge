@@ -11,7 +11,7 @@ import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "#src/commands/management/secrets.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { envFile, deploymentName, composeProjectName } from "#src/runtime/deployment.ts";
-import { OWNER, needsOwnerEscalation, sudoFor } from "#src/runtime/datadir.ts";
+import { answeredProbe, sudoFor } from "#src/runtime/datadir.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "./backup/index.ts";
@@ -198,9 +198,14 @@ interface PreparedDestroyTarget {
   readonly prefix: readonly string[];
 }
 
-async function prepareDestroyTarget(ctx: Context, target: DestroyTarget, force: boolean): Promise<PreparedDestroyTarget> {
+async function prepareDestroyTarget(ctx: Context, target: DestroyTarget): Promise<PreparedDestroyTarget> {
   const parent = target.path.slice(0, target.path.lastIndexOf("/")) || "/";
-  return { target, prefix: await sudoFor(ctx, parent, { force }) };
+  const parentExecutable = (await answeredProbe(ctx, "test", ["-x", parent], [0, 1])).code === 0;
+  const present = await ctx.transport.exists(target.path);
+  const targetAccessible = !present ||
+    (await answeredProbe(ctx, "test", ["-w", target.path], [0, 1])).code === 0 &&
+    (await answeredProbe(ctx, "test", ["-x", target.path], [0, 1])).code === 0;
+  return { target, prefix: await sudoFor(ctx, parent, { force: !parentExecutable || !targetAccessible }) };
 }
 
 async function verifyOrRemoveTarget(ctx: Context, prepared: PreparedDestroyTarget, mode: "verify" | "remove"): Promise<void> {
@@ -262,8 +267,7 @@ export async function destroy(ctx: Context, args: string[]): Promise<void> {
   await requireBootstrapped(ctx);
 
   if (parsed.yes !== true) {
-    const force = targets.length > 0 && await needsOwnerEscalation(ctx, OWNER);
-    for (const target of targets) await verifyOrRemoveTarget(ctx, await prepareDestroyTarget(ctx, target, force), "verify");
+    for (const target of targets) await verifyOrRemoveTarget(ctx, await prepareDestroyTarget(ctx, target), "verify");
     await printDestroyPlan(ctx, targets);
     return;
   }
@@ -276,8 +280,7 @@ export async function destroy(ctx: Context, args: string[]): Promise<void> {
         : `--confirm-name "${confirmName}" does not match this deployment's name "${deploymentName()}"`,
     );
   }
-  const force = targets.length > 0 && await needsOwnerEscalation(ctx, OWNER);
-  const prepared = await Promise.all(targets.map((target) => prepareDestroyTarget(ctx, target, force)));
+  const prepared = await Promise.all(targets.map((target) => prepareDestroyTarget(ctx, target)));
   for (const target of prepared) await verifyOrRemoveTarget(ctx, target, "verify");
 
   await guarded(ctx, "destroy", args, () => destroyLocked(ctx, prepared));

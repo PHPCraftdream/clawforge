@@ -308,6 +308,37 @@ export function redactEndpoint(url: string): string {
   return url.replace(/\/\/[^@/\s]*@/g, "//***@");
 }
 
+const SECRET_CONFIG_KEY = /(?:password|passwd|secret|token|credential|authorization|api[_-]?key|private[_-]?key|client[_-]?key|access[_-]?key)/i;
+
+/** Keep config comparisons private while making their reported values safe to inspect. */
+export function publicConfigValue(path: string, value: unknown): unknown {
+  const segments = (() => {
+    try { return configPathParts(path).map((part) => part.key); }
+    catch { return [path]; }
+  })();
+  if (segments.some((segment) => SECRET_CONFIG_KEY.test(segment))) return "[redacted]";
+  return redactConfigValue(value);
+}
+
+function redactConfigValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    if (/\b[a-z][a-z\d+.-]*:\/\/[^\s/]+@/i.test(value)) return "[redacted]";
+    try {
+      const url = new URL(value);
+      if (url.username !== "" || url.password !== "" || [...url.searchParams.keys()].some((key) => SECRET_CONFIG_KEY.test(key))) {
+        return "[redacted]";
+      }
+    } catch { /* Ordinary config strings are not URLs. */ }
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(redactConfigValue);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+    key,
+    SECRET_CONFIG_KEY.test(key) ? "[redacted]" : redactConfigValue(child),
+  ]));
+}
+
 // Re-exported rather than reimplemented, so "which framework is this" has exactly one
 // answer, not two copies that could drift.
 export { frameworkVersion } from "#src/commands/management/lock.ts";

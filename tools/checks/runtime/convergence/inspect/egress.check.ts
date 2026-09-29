@@ -8,8 +8,11 @@
 
 import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { EGRESS_EXEC_TIMEOUT_MS, egressProbeScript } from "#framework/commands/orchestration/inspect/egress-probe.ts";
-import { gatherInspection, renderJson, doctor } from "#framework/commands/orchestration/inspect/gather.ts";
+import { gatherInspection, renderJson, doctor, inspect, printProblem } from "#framework/commands/orchestration/inspect/gather.ts";
+import { computePlan } from "#framework/commands/orchestration/plan.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { HelperNotRunning } from "#framework/runtime/runtime.ts";
@@ -226,6 +229,59 @@ try {
     const inspection = await gatherInspection(ctx);
     check("the reported endpoint keeps its host and loses its credentials", inspection.observed.egress, [{ path: "channels.telegram.proxy", endpoint: "socks5h://***@tor.example:9050", state: "ok" }]);
     check("the credential value reaches no output at all", JSON.stringify(renderJson(inspection)).includes("not-a-real-password"), false);
+  }
+
+  {
+    const declarationPath = resolve(deployment, "config", "desired-state.json");
+    const original = await readFile(declarationPath, "utf8");
+    const credentialUrl = "socks5h://demo-user:demo-pass@proxy.example:9050";
+    const desiredUrl = "socks5h://other-user:other-pass@proxy.example:9050";
+    const liveConfig = {
+      channels: { telegram: { proxy: credentialUrl } },
+      settings: { public: "visible", nested: { apiKey: "live-key", endpoint: "https://host.example/?token=live-token" } },
+    };
+    const declared = [
+      { path: "channels.telegram.proxy", value: desiredUrl },
+      { path: "settings", value: { public: "changed", nested: { apiKey: "declared-key", endpoint: "https://host.example/?token=declared-token" } } },
+    ];
+    try {
+      await writeFile(declarationPath, JSON.stringify(declared));
+      const ctx = stubContext({ ...CLEAN, liveConfig });
+      const inspection = await gatherInspection(ctx);
+      const drift = inspection.problems.filter((entry) => entry.code === "CONFIG_DRIFT");
+      check("credential and nested config drift is still compared", drift.map((entry) => entry.detail), [
+        "channels.telegram.proxy differs from the declaration",
+        "settings differs from the declaration",
+      ]);
+      check("ordinary nested values remain useful", inspection.observed.config.settings, {
+        public: "visible", nested: { apiKey: "[redacted]", endpoint: "[redacted]" },
+      });
+      check("credential URL is redacted in observed config", inspection.observed.config["channels.telegram.proxy"], "[redacted]");
+      check("credential URL is redacted in declared config", inspection.declared.config[0]?.value, "[redacted]");
+      check("ordinary declared config stays readable", inspection.declared.config[1]?.value, {
+        public: "changed", nested: { apiKey: "[redacted]", endpoint: "[redacted]" },
+      });
+      const serialized = JSON.stringify(renderJson(inspection));
+      for (const secret of ["demo-user", "demo-pass", "other-user", "other-pass", "live-key", "declared-key", "live-token", "declared-token"]) {
+        check(`inspect JSON excludes ${secret}`, serialized.includes(secret), false);
+      }
+      const plan = await computePlan(ctx);
+      check("plan remains aware of both config drift paths", plan.problems.filter((entry) => entry.code === "CONFIG_DRIFT").length, 2);
+      check("plan JSON excludes config credentials", JSON.stringify(plan).includes("demo-pass"), false);
+      const output: string[] = [];
+      await withOutputSink((chunk) => output.push(chunk), () => inspect(ctx, ["--json"]));
+      await withOutputSink((chunk) => output.push(chunk), async () => {
+        try { await doctor(ctx, ["--json"]); }
+        catch { /* Config drift makes doctor fail after reporting it. */ }
+      });
+      for (const entry of drift) await withOutputSink((chunk) => output.push(chunk), async () => printProblem(entry));
+      check("CLI/MCP and doctor problem text exclude config credentials", output.join("").includes("demo-pass"), false);
+      await writeFile(declarationPath, '{"path":"settings.nested.apiKey","value":"malformed-private-value",');
+      const malformed = await gatherInspection(ctx);
+      check("invalid desired JSON does not expose its source", JSON.stringify(renderJson(malformed)).includes("malformed-private-value"), false);
+    } finally {
+      await writeFile(declarationPath, original);
+    }
   }
 
   // --- K. the whole-exec deadline, and timeout as a first-class observation ----------------

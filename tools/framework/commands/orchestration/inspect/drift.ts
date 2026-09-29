@@ -72,7 +72,7 @@ export async function observeConfig(
       const desired = valueAt(target, entry.path);
       if (!configValuesEqual(actual, desired)) {
         problems.push(
-          problem("CONFIG_DRIFT", `${entry.path} is ${JSON.stringify(actual)}, declared ${JSON.stringify(desired)}`),
+          problem("CONFIG_DRIFT", `${entry.path} differs from the declaration`),
         );
       }
     }

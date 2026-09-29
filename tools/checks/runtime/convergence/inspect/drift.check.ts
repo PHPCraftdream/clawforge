@@ -500,7 +500,7 @@ try {
     const drift = inspection.problems.find((entry) => entry.code === "CONFIG_DRIFT");
     check("exactly the changed setting is reported", inspection.problems.length, 1);
     check("a differing declared value is drift", drift !== undefined, true);
-    check("and the detail names both values", drift?.detail, 'gateway.mode is "remote", declared "local"');
+    check("the detail names only the path and mismatch", drift?.detail, "gateway.mode differs from the declaration");
     check("the remedy is the one command that fixes it", drift?.nextAction, "./clawforge apply");
   }
 

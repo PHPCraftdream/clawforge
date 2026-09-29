@@ -28,7 +28,7 @@ import type { Problem, Inspection, SecretStoreObservation } from "#src/service/i
 import type { SecretStatus } from "#src/service/secrets.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
-import { prospectiveConfig, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
+import { prospectiveConfig, publicConfigValue, readLiveConfigForProspective, frameworkVersion } from "./helpers.ts";
 import { declaredState, observeDeclarationFile } from "./declared.ts";
 import { observeConfig, observeConnectionFacts, observeSecretStore } from "./drift.ts";
 import { observeLive } from "./live.ts";
@@ -58,15 +58,34 @@ export async function gatherInspection(ctx: Context, options?: GatherInspectionO
   const problems: Problem[] = [];
   const declared = await declaredState(ctx, problems);
   try {
-    return await gatherReachedInspection(ctx, declared, problems, options);
+    return publicInspection(await gatherReachedInspection(ctx, declared, problems, options));
   } catch (error) {
     if (!(error instanceof TransportUnreachableError)) throw error;
-    return {
+    return publicInspection({
       declared,
       observed: { running: false, probes: {}, config: {}, secrets: [], agents: [], mcpServers: [], cronJobs: [], foreignObjects: [] },
       problems: [...problems, unreachableProblem(error)],
-    };
+    });
   }
+}
+
+function publicInspection(inspection: Inspection): Inspection {
+  return {
+    ...inspection,
+    declared: {
+      ...inspection.declared,
+      config: inspection.declared.config.map((entry) => ({
+        path: entry.path,
+        value: publicConfigValue(entry.path, entry.value),
+      })),
+    },
+    observed: {
+      ...inspection.observed,
+      config: Object.fromEntries(Object.entries(inspection.observed.config).map(([path, value]) => [
+        path, publicConfigValue(path, value),
+      ])),
+    },
+  };
 }
 
 /** observeConfig()'s own return shape, named here so the preflight/running split below can

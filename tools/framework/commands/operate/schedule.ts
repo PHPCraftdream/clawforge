@@ -176,7 +176,7 @@ async function windowsNodeInvocation(jobArgs: readonly string[]): Promise<Schedu
     return {
       cwd: deploymentDir(),
       command: process.execPath,
-      args: [resolve(deploymentDir(), "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js"), ...jobArgs],
+      args: [resolve(deploymentDir(), "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js"), "--project-root", deploymentDir(), ...jobArgs],
     };
   }
   return {

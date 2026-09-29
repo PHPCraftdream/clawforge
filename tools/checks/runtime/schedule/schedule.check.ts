@@ -4,9 +4,10 @@
 // apply path, proven here against a recording transport that never touches a real
 // scheduled task (see schedule.ts's own withScheduleRunner).
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   cronLine,
   cronSchedule,
@@ -26,6 +27,9 @@ import {
   withScheduleRunner,
 } from "#framework/commands/operate/schedule.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
+import { monorepoRoot } from "#framework/core/env.ts";
+import { shellQuote } from "#framework/core/io/shell.ts";
+import { WslTransport } from "#framework/runtime/transport/wsl.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -125,6 +129,19 @@ for (const minutes of [7, 25, 45, 59, 90, 300, 420]) {
   check("...and /f, so a re-run replaces the same task instead of refusing", create.args.includes("/f"), true);
 }
 check("schtasksDeleteCommand names the task and forces it", schtasksDeleteCommand("clawforge-myapp-backup"), { command: "schtasks", args: ["/delete", "/tn", "clawforge-myapp-backup", "/f"] });
+
+{
+  const path = "/mnt/c/team's app/clawforge";
+  const args = ["backup", "a b", "it's", "$(touch injected)", "a; false"];
+  const invocation = new WslTransport("test-distro").clientInvocation(path, args);
+  check("WSL scheduled invocation keeps shell syntax in one quoted argument", invocation, {
+    command: "wsl.exe",
+    args: [
+      "-d", "test-distro", "--exec", "bash", "-lc",
+      `cd -- ${shellQuote("/mnt/c/team's app")} && ${[shellQuote("./clawforge"), ...args.map(shellQuote)].join(" ")}`,
+    ],
+  });
+}
 
 // Read failures may only become an empty table when cron explicitly says there is none.
 {
@@ -226,6 +243,47 @@ try {
     const message = await deathOf(() => withOutputSink(() => {}, () => printSchedulingInstructions(wslCtx, "backup", name, 1440, ["backup"], true)));
     check("--apply on a non-Windows host refuses outright — no scheduler here to drive", message.includes("refusing --apply"), true);
   }
+
+  const installedRoot = join(root, "installed project");
+  const otherCwd = join(root, "other directory");
+  await mkdir(installedRoot);
+  await mkdir(otherCwd);
+  await writeFile(join(installedRoot, "clawforge"), "");
+  await writeFile(join(installedRoot, "app.ts"), 'export default { name: "fixture", summary: "Fixture", commands: {} };\n');
+  useDeployment(installedRoot);
+  const installedCtx = {
+    transport: { description: "local", clientInvocation: (entry: string, args: string[]) => ({ command: entry, args }) },
+    paths: { async toTarget(path: string): Promise<string> { return path; } },
+    settings: {},
+  } as unknown as Context;
+  const installedActions: { command: string; args: string[] }[] = [];
+  await withOutputSink(() => {}, () => withScheduleRunner(
+    async (command, args) => {
+      installedActions.push({ command, args: [...args] });
+      return { code: 0, stdout: "", stderr: "" };
+    },
+    () => printSchedulingInstructions(installedCtx, "backup", "fixture", 1440, ["backup"], true),
+    "win32",
+  ));
+  check("installed Windows task passes its project root to the package entry", installedActions[0]?.args, [
+    "/create", "/tn", "clawforge-fixture-backup", "/sc", "DAILY", "/tr",
+    displayCommandLine(process.execPath, [
+      resolve(installedRoot, "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js"),
+      "--project-root", installedRoot, "backup",
+    ]), "/f",
+  ]);
+
+  const entry = resolve(monorepoRoot, "tools", "framework", "entry", "bin.ts");
+  const fromOtherCwd = spawnSync(process.execPath, ["--experimental-strip-types", entry, "--project-root", installedRoot, "help"], {
+    cwd: otherCwd,
+    encoding: "utf8",
+  });
+  check("installed entry loads app.ts from the scheduled root outside its cwd", fromOtherCwd.status, 0);
+  const withoutRoot = spawnSync(process.execPath, ["--experimental-strip-types", entry, "help"], {
+    cwd: otherCwd,
+    encoding: "utf8",
+  });
+  check("installed entry cannot use the unrelated cwd as its app", withoutRoot.status, 1);
 } finally {
   await rm(root, { recursive: true, force: true });
 }

@@ -7,6 +7,7 @@
 // default shell, which expands literal `$()` and backticks in otherwise safe argv values.
 
 import { listFilesVia } from "../../security/transport-listing.ts";
+import { shellQuote } from "../../core/io/shell.ts";
 import type { CommandFailure, ExecOptions, ExecResult, Transport } from "./exec.ts";
 import { spawnLocal, isWrapperFailureCode, composeExecFailure, TransportUnreachableError } from "./exec.ts";
 import { existsVia, privateWriteCommand, publishCommand, withEnvPrefix } from "./quoting.ts";
@@ -118,12 +119,11 @@ export class WslTransport implements Transport {
   }
 
   clientInvocation(entryPath: string, args: string[]): { command: string; args: string[] } {
-    // Wrapped in bash -lc on purpose: MSYS rewrites a bare /mnt/... argument into
-    // C:/Program Files/Git/mnt/... on its way through wsl.exe.
+    // A single shell argument avoids MSYS rewriting a bare /mnt/... path.
     const cut = entryPath.lastIndexOf("/");
-    const directory = entryPath.slice(0, cut);
+    const directory = cut < 0 ? "." : entryPath.slice(0, cut) || "/";
     const entry = entryPath.slice(cut + 1);
-    const inner = `cd '${directory}' && ./${entry} ${args.join(" ")}`.trim();
-    return { command: "wsl.exe", args: ["-d", this.#distro, "--", "bash", "-lc", inner] };
+    const inner = `cd -- ${shellQuote(directory)} && ${[shellQuote(`./${entry}`), ...args.map(shellQuote)].join(" ")}`;
+    return { command: "wsl.exe", args: ["-d", this.#distro, "--exec", "bash", "-lc", inner] };
   }
 }

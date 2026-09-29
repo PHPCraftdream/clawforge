@@ -1,7 +1,7 @@
 // Vocabulary shared by inspect/doctor/lock/plan/apply for "this instance is in order".
 // Severity and next action are properties OF THE CODE (the table below), not arguments a
 // call site passes — a caller cannot invent a CONFIG_DRIFT that is merely a warning. Only
-// the detail (what was observed, with values) is per call. Codes are a stable contract: an
+// the detail (what was observed, without secrets) is per call. Codes are a stable contract: an
 // agent branches on them, so renaming one is a breaking change.
 
 import type { SecretStatus } from "./secrets.ts";
@@ -393,7 +393,7 @@ export function unreachableProblem(error: TransportUnreachableError): Problem {
 /** What this repository says the instance should be. */
 export interface DeclaredState {
   readonly deployment: string;
-  /** Every path/value pair in config/desired-state.json. */
+  /** Declared paths and safe display values; comparison uses the private source. */
   readonly config: readonly { readonly path: string; readonly value: unknown }[];
   readonly image: string;
   /** Recipes with an agent bundle, by name — what provision-agent would set up. */
@@ -471,7 +471,7 @@ export interface ObservedState {
   /** Image actually in use, and its digest when the runtime can resolve one. */
   readonly image?: string;
   readonly imageDigest?: string;
-  /** Live values for the paths the declaration names — drift is a comparison, not a diff of
+  /** Safe display values for declared paths — drift is a comparison, not a diff of
    *  two whole documents, since a live config contains far more than we declare. */
   readonly config: Readonly<Record<string, unknown>>;
   readonly secrets: readonly SecretStatus[];

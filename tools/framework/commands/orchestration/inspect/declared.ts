@@ -64,10 +64,10 @@ export async function declaredState(ctx: Context, problems: Problem[]): Promise<
     try {
       const parsed = JSON.parse(raw) as { path: string; value?: unknown }[];
       config = parsed.map((entry) => ({ path: entry.path, value: entry.value }));
-    } catch (error) {
+    } catch {
       // Exists but unparseable must be reported, not treated like "no file". Same code
       // observeConfig() (drift.ts) uses for the equivalent LIVE-config failure.
-      problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} exists but is not valid JSON: ${(error as Error).message}`));
+      problems.push(problem("CONFIG_DRIFT", `${desiredStateFile()} exists but is not valid JSON`));
     }
   }
 

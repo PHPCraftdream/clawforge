@@ -15,7 +15,7 @@
 import { access } from "node:fs/promises";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, type GateCommand } from "../integration/gate.ts";
 import { reportError } from "../core/io/log.ts";
@@ -25,8 +25,14 @@ import { normalizeVersionAlias, versionGateCommand } from "../integration/versio
 import { makeCompletionGateCommand } from "../integration/completion.ts";
 import type { AppDefinition } from "../core/app.ts";
 
-const argv = normalizeVersionAlias(process.argv.slice(2));
-const appRoot = process.cwd();
+const launchArgv = process.argv.slice(2);
+const scheduled = launchArgv[0] === "--project-root";
+if (scheduled && (launchArgv[1] === undefined || !isAbsolute(launchArgv[1]))) {
+  reportError("--project-root requires an absolute directory");
+  process.exit(1);
+}
+const appRoot = scheduled ? resolve(launchArgv[1]) : process.cwd();
+const argv = normalizeVersionAlias(scheduled ? launchArgv.slice(2) : launchArgv);
 
 // Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
 // consumer repo. `check` is absent: it needs this repository's own test suite, unshipped.
@@ -76,7 +82,7 @@ useDeployment(appRoot);
 function retryWithTypeStripping(): never {
   const result = spawnSync(
     process.execPath,
-    ["--experimental-strip-types", fileURLToPath(import.meta.url), ...argv],
+    ["--experimental-strip-types", fileURLToPath(import.meta.url), ...launchArgv],
     { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1" } },
   );
   process.exit(result.status ?? 1);

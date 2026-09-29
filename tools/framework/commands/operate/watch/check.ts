@@ -11,7 +11,7 @@ import { emit, isCaptured } from "../../../core/io/output.ts";
 import { gatherInspection } from "../../orchestration/inspect/gather.ts";
 import type { Inspection, Problem, ProblemCode, ChannelsStatusResponse } from "../../../service/inspection.ts";
 import type { Context } from "../../../core/context.ts";
-import { readWatchState, writeWatchState } from "./state.ts";
+import { readWatchState, writeWatchState, withWatchStateLock, withOperatorWatchState } from "./state.ts";
 import type { WatchLevel, WatchReason, WatchState } from "./state.ts";
 import {
   WATCH_HEARTBEAT_URL_ENV,
@@ -263,6 +263,7 @@ export async function runWatchCycle(
   jsonOnly: boolean,
   heartbeatUrl?: URL,
 ): Promise<void> {
+  await withWatchStateLock(async () => {
   const now = new Date().toISOString();
   const transition = await detectWatchTransition(level, reasons);
   await deliverTransitionAlert(webhookTarget, transition, level, reasons, now);
@@ -280,6 +281,7 @@ export async function runWatchCycle(
   if (level !== "ok") {
     die(`the instance is ${level}: ${reasons.map((entry) => entry.code).join(", ") || "no reason recorded"}`);
   }
+  });
 }
 
 /** Adds channel/disk findings unless the target is unreachable or not bootstrapped; channels
@@ -303,11 +305,14 @@ async function withAdditionalFindings(
 /** A configuration error stops watchCheck before any cycle; record it so `watch status`
  *  shows it. Only lastRunAt/lastError move. */
 async function recordConfigError(error: unknown): Promise<void> {
-  const previous = await readWatchState();
-  await writeWatchState({ ...previous, lastRunAt: new Date().toISOString(), lastError: errorDetail(error) });
+  await withWatchStateLock(async () => {
+    const previous = await readWatchState();
+    await writeWatchState({ ...previous, lastRunAt: new Date().toISOString(), lastError: errorDetail(error) });
+  });
 }
 
 export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
+  await withOperatorWatchState(ctx, async () => {
   const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
 
   // Validated before gatherInspection ever reaches the target: a misconfigured webhook or
@@ -331,6 +336,7 @@ export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
   const { level, reasons } = await withAdditionalFindings(ctx, base);
 
   await runWatchCycle(webhookTarget, level, reasons, jsonOnly, heartbeatUrl);
+  });
 }
 
 // --- `watch test` -----------------------------------------------------------------------
@@ -344,14 +350,17 @@ export interface WatchTestResult {
 
 /** A test ping is the same signal as a cycle's, so it updates only the heartbeat fields. */
 async function recordHeartbeatOutcome(now: string, detail: string | undefined): Promise<void> {
-  const previous = await readWatchState();
-  await writeWatchState({ ...previous, heartbeatAt: detail === undefined ? now : previous?.heartbeatAt, heartbeatError: detail });
+  await withWatchStateLock(async () => {
+    const previous = await readWatchState();
+    await writeWatchState({ ...previous, heartbeatAt: detail === undefined ? now : previous?.heartbeatAt, heartbeatError: detail });
+  });
 }
 
 /** Proves delivery on demand: a test message (marked as a test, never a transition payload)
  *  to the webhook and a heartbeat ping, for whichever is configured. Any configured target
  *  that fails exits non-zero; none configured is reported, not failed. */
 export async function watchTest(ctx: Context, args: string[]): Promise<void> {
+  await withOperatorWatchState(ctx, async () => {
   const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
   const now = new Date().toISOString();
   const results: WatchTestResult[] = [];
@@ -396,4 +405,5 @@ export async function watchTest(ctx: Context, args: string[]): Promise<void> {
   if (failed.length > 0) {
     die(`watch test: ${failed.map((result) => result.target).join(", ")} failed to deliver`);
   }
+  });
 }

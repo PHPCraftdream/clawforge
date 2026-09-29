@@ -70,6 +70,11 @@ An operator finds out the instance stopped doing its job without polling by hand
   would otherwise spam an operator every cycle) — this is what makes the diagnostics above the
   only trace of a cron-run failure between cycles; run `./clawforge watch test` (below) to
   prove delivery works before relying on it.
+  Cycles serialize on the machine storing this history, from reading the previous state
+  through alert delivery and atomic publication. A competing cycle fails explicitly with
+  `watch cycle busy` without publishing state. This is not the target instance lock:
+  monitoring still works when the target is offline. Only a provably dead same-machine
+  owner is reclaimed automatically; unknown/foreign owners fail closed.
 
   **Notification format.** `OC_WATCH_WEBHOOK_FORMAT` picks the payload shape: `generic`
   (default — the original `{deployment, from, to, reasons, at}` JSON, plus `codesAdded` and
@@ -188,13 +193,21 @@ An operator finds out the instance stopped doing its job without polling by hand
   kernel lock. Read/write failures report categories and exit codes without echoing table
   contents or command output; an unreadable table is never overwritten as empty. External
   editors such as `crontab -e` do not participate in this advisory lock.
-  `--apply` also records `--interval` into this deployment's
-  own watch state (cleared by `watch uninstall --apply`) — the only place this framework can
-  observe the real schedule, since cron itself is never asked afterwards; `watch status`'s
-  staleness check reads it from there.
+  `--apply` records the execution location and interval in `state/watch-schedule.json`
+  beside the job's history (cleared by `watch uninstall --apply`). SSH cron jobs use
+  `<remotePath>/apps/<deployment>/state/watch.json` on the target. Local/POSIX and Windows/
+  WSL operator-side schedules use the operator deployment's `state/watch.json`.
+  Operator-invoked SSH `watch check`/`watch test` instead use `state/watch-operator.json`,
+  a separate ad-hoc history; they do not overwrite or claim to update the remote schedule.
+  To inspect that ad-hoc trace, read that local JSON file; `watch status` reports the
+  scheduled source, not this separate history.
 * `./clawforge watch status` — the persisted last state, when it last changed, and whether a
   webhook/heartbeat is configured — plus the heartbeat's own last successful ping time, and
   its last failure if the most recent ping did not succeed. Never either URL itself.
+  SSH status reads the remote scheduled history through transport, including errors and
+  pending delivery; it never substitutes an operator-side cycle. JSON identifies the source
+  with `historyLocation` and `historyKnown`. When the source is unavailable/unreadable,
+  history is explicitly unknown (`historyKnown: false`, `stale: null`), not “never ran”.
   "Changed" (`changedAt`) means the STATE changed — the level, or (at a non-`ok` level) the
   reason-code set — not just the level; a reason's detail text alone moving does not count.
   Also reports `lastRunAt` (when `watch check` last ran *at all*, config error or delivery
@@ -202,7 +215,7 @@ An operator finds out the instance stopped doing its job without polling by hand
   `alertPending` (an undelivered change and since when — `from`/`to` read the same level for
   a codes-only change, and the text names which reason codes appeared/cleared the same way
   the webhook alert itself does). Warns when the last run looks stale: more than 3× the
-  interval `watch install --apply` recorded (`intervalMinutes` in the state file), or 3× the
+  interval `watch install --apply` recorded (schedule metadata, exposed as `intervalMinutes`), or 3× the
   documented default (5 minutes, `DEFAULT_WATCH_INTERVAL_MINUTES` in `install.ts`) when no
   interval was ever recorded — a state file from before this field existed, or a schedule
   wired up by hand outside `watch install`. Three missed intervals rather than one: a single

@@ -1,16 +1,111 @@
-// Persisted watch state: one small JSON file per deployment, on the OPERATOR side —
-// deploymentDir(), never ctx.settings.dataDir (the target): watch check runs from wherever
-// this tooling runs, the one place guaranteed to still be there between cycles when the
-// instance being watched is itself down.
-//
-// Read with plain node:fs, like every other operator-side file — deploymentDir() is always
-// local to whoever runs this tooling, whatever transport reaches the target.
+// Cycles store state on the machine executing the tooling. SSH operator checks use a
+// separate ad-hoc history; scheduled status reads the target deployment through transport.
 
-import { mkdir, open, readFile, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, unlink, readdir, rmdir } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { deploymentDir } from "../../../runtime/deployment.ts";
 import { renameOverPrivateFile } from "../../../security/privacy/private-file.ts";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { posix } from "node:path";
+import type { Context } from "../../../core/context.ts";
+import { deploymentName } from "../../../runtime/deployment.ts";
+import { localLiveness, machineName, ownProcessStartedAt } from "../../../runtime/lock/process-identity.ts";
+
+const stateScope = new AsyncLocalStorage<string>();
+
+export function withOperatorWatchState<T>(ctx: Context, action: () => Promise<T>): Promise<T> {
+  return stateScope.run(resolve(deploymentDir(), "state", ctx.transport?.description.startsWith("ssh:") ? "watch-operator.json" : "watch.json"), action);
+}
+
+/** A local exclusion, never the target instance lock: offline targets remain observable.
+ *  Only provably dead owners are reclaimed. Unpublished/foreign owners fail closed.
+ *  Cleanup removes the unique owner file and an EMPTY directory, never a newer owner. */
+export async function withWatchStateLock<T>(action: () => Promise<T>): Promise<T> {
+  const directory = `${watchStateFile()}.lock`;
+  await mkdir(resolve(directory, ".."), { recursive: true });
+  const owner = `${process.pid}-${randomBytes(12).toString("hex")}.json`;
+  const claim = async (): Promise<boolean> => {
+    try { await mkdir(directory); return true; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      return false;
+    }
+  };
+  if (!await claim()) {
+    const entries = await readdir(directory);
+    if (entries.length === 1 && entries[0].endsWith(".json")) {
+      try {
+        const record = JSON.parse(await readFile(resolve(directory, entries[0]), "utf8"));
+        if (Number.isInteger(record.pid) && record.pid > 0 && typeof record.machine === "string" &&
+            await localLiveness(record) === "dead") {
+          await unlink(resolve(directory, entries[0]));
+          await rmdir(directory);
+        }
+      } catch { /* A concurrent cleanup or an unknown owner cannot authorize takeover. */ }
+    }
+    if (!await claim()) throw new Error("watch cycle busy: another process owns this history; cycle not run");
+  }
+  try {
+    const handle = await open(resolve(directory, owner), "wx");
+    try {
+      await handle.writeFile(JSON.stringify({ pid: process.pid, machine: machineName(), startedAt: ownProcessStartedAt() }));
+    } finally { await handle.close(); }
+    return await action();
+  } finally {
+    await unlink(resolve(directory, owner)).catch(() => {});
+    await rmdir(directory).catch(() => {});
+  }
+}
+
+export function scheduledWatchLocation(ctx: Context): { location: string; file: string; remote: boolean } {
+  const remote = ctx.transport?.description.startsWith("ssh:") ?? false;
+  const directory = remote ? posix.join(ctx.settings.remotePath, "apps", deploymentName(), "state") : resolve(deploymentDir(), "state");
+  return { remote, location: remote ? "target" : "operator", file: remote ? posix.join(directory, "watch.json") : resolve(directory, "watch.json") };
+}
+
+/** Interval metadata has its own atomic file, so install/uninstall cannot overwrite a
+ *  concurrently completing cycle. WSL/Windows schedules execute on the operator. */
+export async function recordWatchSchedule(ctx: Context, intervalMinutes: number | undefined): Promise<void> {
+  const source = scheduledWatchLocation(ctx);
+  const file = source.file.replace(/watch\.json$/, "watch-schedule.json");
+  const content = `${JSON.stringify({ location: source.location, intervalMinutes: intervalMinutes ?? null })}\n`;
+  if (source.remote) {
+    await ctx.transport.mkdirp(posix.dirname(file));
+    await ctx.transport.writeFile(file, content);
+  } else {
+    await writeStateAt(file, JSON.parse(content));
+  }
+}
+
+export async function readScheduledWatchState(ctx: Context): Promise<{ state?: WatchState; location: string; known: boolean }> {
+  const source = scheduledWatchLocation(ctx);
+  try {
+    const read = async (file: string): Promise<string | undefined> => {
+      if (!source.remote) {
+        try { return await readFile(file, "utf8"); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
+      }
+      const result = await ctx.transport.exec("sh", ["-c", 'if [ -f "$1" ]; then cat -- "$1"; elif [ ! -e "$1" ]; then printf "{}"; else exit 1; fi', "watch-state", file], { allowFailure: true });
+      if (result.code !== 0) throw new Error("scheduled watch history unavailable");
+      return result.stdout;
+    };
+    const raw = await read(source.file);
+    const state = raw === undefined ? undefined : parseWatchState(raw);
+    if (raw !== undefined && state === undefined) throw new Error("corrupt watch history");
+    const metadataRaw = await read(source.file.replace(/watch\.json$/, "watch-schedule.json"));
+    const metadata = metadataRaw === undefined ? undefined : JSON.parse(metadataRaw);
+    if (metadata !== undefined && (metadata === null || typeof metadata !== "object" ||
+        (metadata.intervalMinutes !== undefined && metadata.intervalMinutes !== null &&
+         (typeof metadata.intervalMinutes !== "number" || !Number.isFinite(metadata.intervalMinutes) || metadata.intervalMinutes <= 0)))) {
+      throw new Error("corrupt watch schedule metadata");
+    }
+    return { location: source.location, known: true,
+      state: metadata?.intervalMinutes === undefined ? state : { ...state, intervalMinutes: metadata.intervalMinutes ?? undefined } };
+  } catch {
+    return { location: source.location, known: false };
+  }
+}
 
 export type WatchLevel = "ok" | "degraded" | "down";
 
@@ -55,10 +150,9 @@ export interface WatchState {
      *  refreshes every retry so a further code change mid-outage is not lost. */
     readonly toCodes?: readonly string[];
   };
-  /** Minutes between cycles, recorded by `watch install --apply` when a schedule is actually
-   *  installed, cleared by `watch uninstall --apply` — the only way this framework observes
-   *  the real interval, since cron is never asked afterwards. Absent for an old state file or
-   *  a hand-wired schedule; `watch status` then falls back to DEFAULT_WATCH_INTERVAL_MINUTES. */
+  /** Legacy embedded interval, retained when reading older cycle files. New installs keep
+   *  this in watch-schedule.json so a concurrent cycle cannot overwrite schedule metadata.
+   *  Status overlays that metadata, or uses DEFAULT_WATCH_INTERVAL_MINUTES when absent. */
   readonly intervalMinutes?: number;
   /** When the heartbeat (OC_WATCH_HEARTBEAT_URL) last answered success — set by both `watch
    *  check` and `watch test`. Absent when no heartbeat is configured, or none has ever
@@ -70,7 +164,7 @@ export interface WatchState {
 }
 
 export function watchStateFile(): string {
-  return resolve(deploymentDir(), "state", "watch.json");
+  return stateScope.getStore() ?? resolve(deploymentDir(), "state", "watch.json");
 }
 
 function isWatchLevel(value: unknown): value is WatchLevel {
@@ -177,7 +271,10 @@ export async function readWatchState(): Promise<WatchState | undefined> {
  *  security/private-file.ts's replacePrivateFile, minus the owner-only ACL work that file
  *  exists for: this content carries no secret, only a level, reason codes and timestamps. */
 export async function writeWatchState(state: WatchState): Promise<void> {
-  const file = watchStateFile();
+  await writeStateAt(watchStateFile(), state);
+}
+
+async function writeStateAt(file: string, state: WatchState | { location: string; intervalMinutes: number | null }): Promise<void> {
   await mkdir(resolve(file, ".."), { recursive: true });
   const temporary = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   const content = `${JSON.stringify(state, null, 2)}\n`;

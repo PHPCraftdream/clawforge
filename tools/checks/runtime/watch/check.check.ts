@@ -20,7 +20,7 @@
 //   retry path and old-state compatibility are covered in webhook.check.ts, alongside that
 //   file's own delivery-failure coverage).
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { watchLevel, runWatchCycle, resolveWatchOutcome } from "#framework/commands/operate/watch/index.ts";
@@ -37,6 +37,7 @@ import type { Problem } from "#framework/service/inspection.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { Inspection } from "#framework/service/inspection.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { machineName, platformProbes } from "#framework/runtime/lock/process-identity.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -530,6 +531,59 @@ try {
     check("the first cycle after a config-error-only state records changedAt", typeof baseline.changedAt, "string");
     check("and clears the recorded error", baseline.lastError, undefined);
     check("changedAt is this cycle itself", baseline.changedAt, baseline.checkedAt);
+  }
+  // Controlled runners hold the first POST while a second cycle attempts the same history.
+  {
+    await writeWatchState({ level: "ok", reasons: [] });
+    calls.length = 0;
+    let entered!: () => void;
+    let release!: () => void;
+    const posting = new Promise<void>((resolve) => { entered = resolve; });
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    nextResponse = async () => { entered(); await barrier; return new Response(null, { status: 200 }); };
+    const first = deathOf(() => runWatchCycle(webhookTarget, "down", [{ code: "GATEWAY_DOWN", detail: "offline" }], false));
+    await posting;
+    try {
+      const busy = await deathOf(() => runWatchCycle(webhookTarget, "down", [{ code: "GATEWAY_DOWN", detail: "offline" }], false));
+      check("a competing runner reports contention rather than a stale transition", busy.includes("watch cycle busy"), true);
+      check("the competing runner cannot deliver a duplicate alert", calls.length, 1);
+    } finally { release(); }
+    await first;
+    nextResponse = () => new Response(null, { status: 200 });
+    await deathOf(() => runWatchCycle(webhookTarget, "down", [{ code: "GATEWAY_DOWN", detail: "offline" }], false));
+    check("a later identical cycle still does not alert", calls.length, 1);
+    const down = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+    check("the serialized history is consistently down with no pending alert", [down.level, down.alertPending], ["down", undefined]);
+    await runWatchCycle(webhookTarget, "ok", [], false);
+    await runWatchCycle(webhookTarget, "ok", [], false);
+    check("recovery sends exactly one additional transition alert", calls.length, 2);
+    nextResponse = () => new Response(null, { status: 503 });
+    await deathOf(() => runWatchCycle(webhookTarget, "down", [{ code: "GATEWAY_DOWN", detail: "offline again" }], false));
+    const failed = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+    await deathOf(() => runWatchCycle(webhookTarget, "down", [{ code: "GATEWAY_DOWN", detail: "offline again" }], false));
+    const retry = JSON.parse(await readFile(watchStateFile(), "utf8")) as WatchState;
+    check("delivery retries keep the original transition and failure start", [retry.level, retry.alertPending?.since, retry.alertPending?.toCodes], ["ok", failed.alertPending?.since, ["GATEWAY_DOWN"]]);
+    nextResponse = () => new Response(null, { status: 200 });
+  }
+  {
+    const lock = `${watchStateFile()}.lock`;
+    await mkdir(lock);
+    const unknownOwner = join(lock, "unknown.json");
+    await writeFile(unknownOwner, JSON.stringify({ pid: process.pid, machine: "foreign-host" }));
+    const refused = await deathOf(() => runWatchCycle(undefined, "ok", [], true));
+    check("unknown/foreign owner is not reclaimed", refused.includes("watch cycle busy"), true);
+    check("unknown owner record remains intact", JSON.parse(await readFile(unknownOwner, "utf8")).machine, "foreign-host");
+    await rm(lock, { recursive: true });
+    await mkdir(lock);
+    await writeFile(join(lock, "reused.json"), JSON.stringify({ pid: process.pid, machine: machineName(), startedAt: "2000-01-01T00:00:00.000Z" }));
+    const originalProbe = platformProbes.processStartedAt;
+    platformProbes.processStartedAt = async () => "2026-01-01T00:00:00.000Z";
+    try {
+      await runWatchCycle(undefined, "ok", [], true);
+      check("provably stale PID identity permits the next completed cycle", JSON.parse(await readFile(watchStateFile(), "utf8")).level, "ok");
+    } finally { platformProbes.processStartedAt = originalProbe; }
+    // The newly acquired lock was released: a subsequent invocation can publish too.
+    await runWatchCycle(undefined, "ok", [], true);
   }
 
   // --- watchTest(): a one-off delivery probe — never touches level/reasons/alertPending,

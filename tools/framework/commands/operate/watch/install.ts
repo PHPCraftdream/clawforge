@@ -32,7 +32,7 @@ import {
   updateCrontab,
   type ScheduledInvocation,
 } from "../schedule.ts";
-import { readWatchState, writeWatchState } from "./state.ts";
+import { recordWatchSchedule } from "./state.ts";
 
 export { cronSchedule, displayCommandLine, schedulingSupport };
 
@@ -93,14 +93,6 @@ function parseUninstallArgs(args: string[]): boolean {
   return parseDeclaredArgs(WATCH_UNINSTALL_ARGUMENTS, args).apply === true;
 }
 
-/** Records (or clears) the real interval on this deployment's own watch state, so `watch
- *  status`'s staleness check compares against what was actually installed rather than a
- *  guess — the operator-side state file every watch action already shares (state.ts's own
- *  header), regardless of which transport the schedule itself runs on. */
-async function recordInstalledInterval(minutes: number | undefined): Promise<void> {
-  const previous = await readWatchState();
-  await writeWatchState({ ...previous, intervalMinutes: minutes });
-}
 
 export async function watchInstall(ctx: Context, args: string[]): Promise<void> {
   const { interval, apply } = parseInstallArgs(args);
@@ -110,7 +102,7 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
   if (!support.supported) {
     warn(`cannot install an unattended schedule on ${ctx.transport.description}: ${support.reason}`);
     const installed = await printSchedulingInstructions(ctx, JOB, name, interval, [JOB, "check"], apply);
-    if (installed) await recordInstalledInterval(interval);
+    if (installed) await recordWatchSchedule(ctx, interval);
     return;
   }
 
@@ -132,7 +124,7 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
   await requireBootstrapped(ctx);
   await guarded(ctx, "watch install --apply", args, async () => {
     await updateCrontab(ctx, JOB, name, line);
-    await recordInstalledInterval(interval);
+    await recordWatchSchedule(ctx, interval);
     log("installed");
   });
 }
@@ -145,7 +137,7 @@ export async function watchUninstall(ctx: Context, args: string[]): Promise<void
   if (!support.supported) {
     warn(`no unattended schedule could have been installed on ${ctx.transport.description} in the first place: ${support.reason}`);
     const removed = await printUnschedulingInstructions(JOB, name, apply);
-    if (removed) await recordInstalledInterval(undefined);
+    if (removed) await recordWatchSchedule(ctx, undefined);
     return;
   }
 
@@ -156,10 +148,11 @@ export async function watchUninstall(ctx: Context, args: string[]): Promise<void
 
   await guarded(ctx, "watch uninstall --apply", args, async () => {
     if (!await updateCrontab(ctx, JOB, name)) {
+      await recordWatchSchedule(ctx, undefined);
       info("no watch schedule was installed for this deployment — nothing to remove");
       return;
     }
-    await recordInstalledInterval(undefined);
+    await recordWatchSchedule(ctx, undefined);
     log("removed");
   });
 }

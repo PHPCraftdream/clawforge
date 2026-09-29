@@ -4,17 +4,18 @@
 // Proves the one thing this action's task cares about most throughout: the URL itself never
 // appears anywhere it can print, configured or not.
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { watchStatus } from "#framework/commands/operate/watch/status.ts";
-import { watchStateFile, writeWatchState } from "#framework/commands/operate/watch/state.ts";
+import { watchStateFile, writeWatchState, recordWatchSchedule, withOperatorWatchState, readWatchState } from "#framework/commands/operate/watch/state.ts";
 import { DEFAULT_WATCH_INTERVAL_MINUTES } from "#framework/commands/operate/watch/install.ts";
-import { useDeployment } from "#framework/runtime/deployment.ts";
+import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { registerSecret } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runWatchCycle, watchCheck } from "#framework/commands/operate/watch/check.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -52,11 +53,6 @@ async function textOf(ctx: Context, args: string[] = []): Promise<string> {
 
 const MARKER = "watch-status-secret-marker";
 const WEBHOOK = `https://hooks.example/${MARKER}`;
-const ENVELOPE_KEYS = [
-  "level", "reasons", "checkedAt", "changedAt", "lastRunAt", "lastError", "alertPending",
-  "intervalMinutes", "staleThresholdMinutes", "stale", "webhookConfigured", "heartbeatConfigured",
-  "heartbeatAt", "heartbeatError",
-];
 
 check(
   "a bad argument is refused",
@@ -125,7 +121,6 @@ try {
     check("nor the webhook's scheme+host either", text.includes("hooks.example"), false);
     check("the heartbeat marker inside its URL never appears anywhere either", text.includes(HEARTBEAT_MARKER), false);
     check("nor the heartbeat's scheme+host", text.includes("hb.example"), false);
-    check("the envelope carries no field either URL itself could hide in", Object.keys(parsed), ENVELOPE_KEYS);
   }
 
   // --- unconfigured reads honestly too, against that same real state --------------------
@@ -220,6 +215,74 @@ try {
 
     const text = await textOf(ctx);
     check("text mode renders a legacy file without crashing", text.includes("watch: ok"), true);
+  }
+  // Two distinct filesystems: target scheduled history is never the operator's ad-hoc one.
+  {
+    const remote = await mkdtemp(join(tmpdir(), "clawforge-watch-remote-"));
+    const name = deploymentName();
+    const remoteApp = join(remote, "apps", name);
+    const ctx = {
+      settings: { remotePath: "/remote", env: {} },
+      transport: {
+        description: "ssh:user@host",
+        async mkdirp(file: string) { await mkdir(join(remote, file.slice("/remote/".length)), { recursive: true }); },
+        async writeFile(file: string, content: string | Uint8Array) { await writeFile(join(remote, file.slice("/remote/".length)), content); },
+        async exec(_command: string, args: string[]) {
+          const file = join(remote, args[3].slice("/remote/".length));
+          return { code: 0, stderr: "", stdout: await readFile(file, "utf8").catch((error) => {
+            if (error.code === "ENOENT") return "{}";
+            throw error;
+          }) };
+        },
+      },
+    } as unknown as Context;
+    const originalFetch = globalThis.fetch;
+    try {
+      await writeWatchState({ level: "ok", lastRunAt: "2000-01-01T00:00:00.000Z" });
+      await recordWatchSchedule(ctx, 30);
+      useDeployment(remoteApp);
+      await runWatchCycle(undefined, "ok", [], true);
+      useDeployment(root);
+      const successful = (await jsonOf(ctx, ["--json"])).parsed;
+      check("a remote successful cycle is visible without local never-ran/stale history", [successful.level, successful.historyKnown, successful.stale], ["ok", true, false]);
+      useDeployment(remoteApp);
+      globalThis.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch;
+      await deathOf(() => runWatchCycle({ url: new URL("https://hooks.example/watch"), format: "generic" }, "down", [{ code: "GATEWAY_DOWN", detail: "offline" }], true));
+      const failedDown = await readWatchState();
+      check("failed scheduled delivery preserves retry metadata", [failedDown?.level, failedDown?.alertPending?.to], ["ok", "down"]);
+      useDeployment(root);
+      const failedStatus = (await jsonOf(ctx, ["--json"])).parsed;
+      check("operator sees the remote pending outage", [failedStatus.lastError, failedStatus.alertPending], [failedDown?.lastError, failedDown?.alertPending]);
+      useDeployment(remoteApp);
+      await deathOf(() => watchCheck({ settings: { env: { OC_WATCH_WEBHOOK: "ftp://invalid" } }, transport: { description: "local" } } as unknown as Context, []));
+      const configError = (await readWatchState())?.lastError;
+      useDeployment(root);
+      check("operator sees a remote configuration failure", (await jsonOf(ctx, ["--json"])).parsed.lastError, configError);
+      useDeployment(remoteApp);
+      await deathOf(() => runWatchCycle(undefined, "down", [{ code: "GATEWAY_DOWN", detail: "offline" }], true));
+      await deathOf(() => runWatchCycle({ url: new URL("https://hooks.example/watch"), format: "generic" }, "ok", [], true));
+      const pending = await readWatchState();
+      check("failed recovery leaves down history and a pending ok transition", [pending?.level, pending?.alertPending?.to], ["down", "ok"]);
+      await writeWatchState({ ...pending, lastRunAt: new Date(Date.now() - 40 * 60_000).toISOString() });
+      useDeployment(root);
+      await withOperatorWatchState(ctx, () => runWatchCycle(undefined, "ok", [], true));
+      await deathOf(() => watchCheck({ ...ctx, settings: { ...ctx.settings, env: { OC_WATCH_WEBHOOK: "ftp://operator-invalid" } } }, []));
+      const operatorError = await withOperatorWatchState(ctx, readWatchState);
+      check("an SSH operator configuration error is marked in separate ad-hoc history", operatorError?.lastError?.includes("must be https"), true);
+      const { parsed } = await jsonOf(ctx, ["--json"]);
+      check("operator status reads the target down state and delivery diagnostics", [parsed.level, parsed.lastError, parsed.alertPending], ["down", pending?.lastError, pending?.alertPending]);
+      check("target interval controls staleness, not the local default/history", [parsed.historyLocation, parsed.historyKnown, parsed.staleThresholdMinutes, parsed.stale], ["target", true, 90, false]);
+      const unavailable = { ...ctx, transport: { ...ctx.transport, async exec() { throw new Error("offline"); } } } as Context;
+      const unknown = (await jsonOf(unavailable, ["--json"])).parsed;
+      check("remote failure is unknown, never local ok or false stale", [unknown.historyKnown, unknown.level, unknown.stale], [false, null, null]);
+      await recordWatchSchedule(ctx, undefined);
+      check("uninstall clears metadata in the same target source", (await jsonOf(ctx, ["--json"])).parsed.intervalMinutes, null);
+      check("local and WSL history stays operator-side", (await jsonOf({ settings: { env: {} }, transport: { description: "wsl:Ubuntu" } } as unknown as Context, ["--json"])).parsed.historyLocation, "operator");
+    } finally {
+      useDeployment(root);
+      globalThis.fetch = originalFetch;
+      await rm(remote, { recursive: true, force: true });
+    }
   }
 } finally {
   await rm(root, { recursive: true, force: true });

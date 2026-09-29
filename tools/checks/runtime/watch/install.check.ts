@@ -19,7 +19,7 @@ import {
   withoutMarkedLine,
 } from "#framework/commands/operate/watch/install.ts";
 import { scheduledTaskName, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
-import { readWatchState } from "#framework/commands/operate/watch/state.ts";
+import { readScheduledWatchState } from "#framework/commands/operate/watch/state.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext } from "#checks/runtime/convergence/instance-lock/fixture.ts";
@@ -108,8 +108,15 @@ function crontabTransport(initial = "", listingFailure?: ExecResult): { transpor
   const transport: Context["transport"] = {
     ...fixtureCtx.transport,
     description: "ssh:user@host",
+    async mkdirp(path: string): Promise<void> {
+      const result = await baseExec("mkdir", ["-p", path]);
+      if (result.code !== 0) throw new Error("fixture directory creation failed");
+    },
     async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
       calls.push({ command, args });
+      if (command === "sh" && args[2] === "watch-state") {
+        return { code: 0, stdout: await fixtureCtx.transport.readFile(args[3]).catch(() => "{}"), stderr: "" };
+      }
       if (command === "sh" && args[2] === "clawforge-crontab-update") {
         calls.push({ command: "crontab", args: ["-l"] });
         const transaction = stubCrontabTransaction(args, current, listingFailure);
@@ -167,7 +174,7 @@ try {
   check("another deployment's watch entry survives install", afterFirstInstall.includes(OTHER_DEPLOYMENT), true);
   check("our own marker is present", afterFirstInstall.includes(watchMarker(name)), true);
   check("the default interval is 5", afterFirstInstall.includes(`*/5 * * * * cd`), true);
-  check("the default interval is recorded to watch state", (await readWatchState())?.intervalMinutes, DEFAULT_WATCH_INTERVAL_MINUTES);
+  check("the default interval is recorded on the scheduled target", (await readScheduledWatchState(ctx)).state?.intervalMinutes, DEFAULT_WATCH_INTERVAL_MINUTES);
 
   // --apply again, with a different interval: replaces the SAME line rather than duplicating it.
   await withOutputSink(() => {}, () => watchInstall(ctx, ["--apply", "--interval", "10"]));
@@ -175,7 +182,7 @@ try {
   const ourLines = afterSecondInstall.split("\n").filter((line) => line.includes(watchMarker(name)));
   check("re-installing replaces the one line rather than adding a second", ourLines.length, 1);
   check("the new interval took effect", ourLines[0]?.startsWith("*/10 * * * *"), true);
-  check("the new interval is recorded to watch state too", (await readWatchState())?.intervalMinutes, 10);
+  check("reinstall updates the target interval", (await readScheduledWatchState(ctx)).state?.intervalMinutes, 10);
   check("the foreign and other-deployment lines are still untouched", [afterSecondInstall.includes(FOREIGN), afterSecondInstall.includes(OTHER_DEPLOYMENT)], [true, true]);
 
   // an hour-stepped interval (a multiple of 60) prints the hour-field schedule, not */120.
@@ -208,7 +215,7 @@ try {
   check("uninstall removes our own line", afterUninstall.includes(watchMarker(name)), false);
   check("uninstall leaves the foreign entry alone", afterUninstall.includes(FOREIGN), true);
   check("uninstall leaves another deployment's entry alone", afterUninstall.includes(OTHER_DEPLOYMENT), true);
-  check("uninstall clears the recorded interval", (await readWatchState())?.intervalMinutes, undefined);
+  check("uninstall clears the target interval", (await readScheduledWatchState(ctx)).state?.intervalMinutes, undefined);
 
   // uninstall --apply again: nothing to remove, and it does not touch the crontab at all.
   calls.length = 0;
@@ -262,7 +269,7 @@ try {
       check("--apply on Windows runs schtasks through the recording transport, never a real one", recorded.length, 1);
       check("...targeting this job's own task name", recorded[0]?.args.includes(scheduledTaskName("watch", name)) ?? false, true);
 
-    check("Windows install records the applied interval", (await readWatchState())?.intervalMinutes, DEFAULT_WATCH_INTERVAL_MINUTES);
+    check("Windows install records the applied interval", (await readScheduledWatchState(ctx)).state?.intervalMinutes, DEFAULT_WATCH_INTERVAL_MINUTES);
     const failed = await deathOf(() => withOutputSink(() => {}, () =>
       withScheduleRunner(
         async () => ({ code: 1, stdout: "", stderr: "access denied" }),
@@ -270,7 +277,7 @@ try {
         "win32",
       )));
     check("a failed Windows reinstall is reported", failed.includes("access denied"), true);
-    check("a failed Windows reinstall does not overwrite the installed interval", (await readWatchState())?.intervalMinutes, DEFAULT_WATCH_INTERVAL_MINUTES);
+    check("a failed Windows reinstall does not overwrite the installed interval", (await readScheduledWatchState(ctx)).state?.intervalMinutes, DEFAULT_WATCH_INTERVAL_MINUTES);
 
     const deleted: { command: string; args: string[] }[] = [];
     await withOutputSink(() => {}, () => withScheduleRunner(
@@ -282,7 +289,7 @@ try {
       "win32",
     ));
     check("Windows uninstall deletes the same watch task", deleted[0]?.args, ["/delete", "/tn", scheduledTaskName("watch", name), "/f"]);
-    check("Windows uninstall clears the interval after deletion succeeds", (await readWatchState())?.intervalMinutes, undefined);
+    check("Windows uninstall clears the interval after deletion succeeds", (await readScheduledWatchState(ctx)).state?.intervalMinutes, undefined);
 
     const localCtx = {
       transport: { description: "local", clientInvocation: (entry: string, args: string[]) => ({ command: entry, args }) },

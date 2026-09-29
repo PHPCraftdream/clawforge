@@ -7,7 +7,7 @@
 import { info, log, warn } from "../../../core/io/log.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
-import { readWatchState } from "./state.ts";
+import { readScheduledWatchState } from "./state.ts";
 import { codeDiff, describeTransition, watchHeartbeatUrlRaw, watchWebhookRaw } from "./webhook.ts";
 import { WATCH_CHECK_ARGUMENTS } from "./check.ts";
 import { DEFAULT_WATCH_INTERVAL_MINUTES } from "./install.ts";
@@ -38,7 +38,7 @@ function isStale(reference: string | undefined, intervalMinutes: number | undefi
 export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
   const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
 
-  const state = await readWatchState();
+  const { state, location, known } = await readScheduledWatchState(ctx);
   const webhookConfigured = watchWebhookRaw(ctx) !== undefined;
   const heartbeatConfigured = watchHeartbeatUrlRaw(ctx) !== undefined;
   const lastRunAt = referenceTime(state?.lastRunAt, state?.checkedAt);
@@ -49,6 +49,8 @@ export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
     emit(
       `${JSON.stringify(
         {
+          historyLocation: location,
+          historyKnown: known,
           level: state?.level ?? null,
           reasons: state?.reasons ?? [],
           checkedAt: state?.checkedAt ?? null,
@@ -57,8 +59,8 @@ export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
           lastError: state?.lastError ?? null,
           alertPending: state?.alertPending ?? null,
           intervalMinutes: state?.intervalMinutes ?? null,
-          staleThresholdMinutes: thresholdMinutes,
-          stale,
+          staleThresholdMinutes: known ? thresholdMinutes : null,
+          stale: known ? stale : null,
           webhookConfigured,
           heartbeatConfigured,
           heartbeatAt: state?.heartbeatAt ?? null,
@@ -71,6 +73,11 @@ export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
+  info(`watch history: ${location}`);
+  if (!known) {
+    warn("watch: scheduled history unknown — storage machine unavailable or history unreadable; no local history substituted");
+    return;
+  }
   if (lastRunAt === undefined) {
     log("watch: no check has run yet");
     info("run ./clawforge watch check, or schedule it with ./clawforge watch install");

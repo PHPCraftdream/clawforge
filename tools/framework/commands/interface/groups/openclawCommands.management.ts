@@ -490,8 +490,10 @@ export const managementCommands: Record<string, AppCommand> = {
       "reason TARGET_UNREACHABLE, rather than dying before a cycle can alert or record " +
       "anything (channel/disk are skipped in that case, and also while NOT_BOOTSTRAPPED — " +
       "no data directory yet to measure).\n" +
-      "Compared against the last state persisted for this deployment (its own operator-side " +
-      "directory, never <data>/config — atomic write); a webhook POST (OC_WATCH_WEBHOOK in " +
+      "Compared against this machine's deployment history (atomic write), serialized across " +
+      "processes through delivery and persistence; a busy cycle reports contention. SSH operator " +
+      "cycles use separate state/watch-operator.json, not the remote scheduled history. A " +
+      "webhook POST (OC_WATCH_WEBHOOK in " +
       "this deployment's .env, https only unless it is localhost) fires only on a " +
       "TRANSITION, so an unchanged state never pages anyone twice.\n" +
       "A failed POST leaves the persisted level at its old value on purpose, so the same " +
@@ -554,6 +556,9 @@ export const managementCommands: Record<string, AppCommand> = {
       "status — the persisted last state, when it last changed, and whether a webhook/" +
       "heartbeat is configured (plus the heartbeat's own last successful ping time, and its " +
       "last failure if the most recent ping did not succeed) — never either URL itself.\n" +
+      "SSH status reads target-side scheduled history through transport, never local ad-hoc " +
+      "cycles; unavailable history is unknown. Local/WSL scheduled history is operator-side. " +
+      "Install stores location/interval in state/watch-schedule.json beside that history.\n" +
       "Also reports when `watch check` last ran at all (a config error or a failed delivery " +
       "still counts), the most recent config/delivery error, an alert still waiting to be " +
       "delivered (since when, and what transition), and warns when that last run is stale —\n" +

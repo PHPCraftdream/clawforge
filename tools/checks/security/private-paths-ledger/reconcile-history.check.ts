@@ -72,10 +72,11 @@ async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefi
 
 const sorted = (paths: readonly string[]): string => JSON.stringify([...paths].sort());
 
-/** A real POSIX filesystem with real GNU tar: this machine off Windows, a WSL distribution
+/** A real POSIX filesystem with real GNU tar: this machine on Linux, a WSL distribution
  *  on it. Where neither exists the archive group is skipped, loudly. */
 async function realPosixTransport(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {

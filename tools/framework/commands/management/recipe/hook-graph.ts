@@ -223,6 +223,25 @@ function resolveConditionalTarget(entry: unknown, key: string, packageJsonPath: 
   return resolveConditionalTarget(record[keys[0] as string], key, packageJsonPath);
 }
 
+function isInside(root: string, path: string): boolean {
+  const within = relative(root, path);
+  return !within.startsWith("..") && !isAbsolute(within);
+}
+
+/** The recipe directory in the same spelling as `fromFile`: Node reports a hook's own URL
+ *  realpath'd (macOS /var → /private/var), so a lexical boundary would read the recipe's own
+ *  package.json as outside it. */
+async function boundaryFor(fromFile: string, recipeDirectory: string): Promise<string> {
+  if (isInside(recipeDirectory, fromFile)) return recipeDirectory;
+  try {
+    const real = await realpath(recipeDirectory);
+    if (isInside(real, fromFile)) return real;
+  } catch {
+    // Unreadable: the lexical boundary stands and the check below refuses.
+  }
+  return recipeDirectory;
+}
+
 export interface PackageImportResolution {
   readonly packageJsonPath: string;
   readonly targetPath: string;
@@ -237,7 +256,8 @@ export interface PackageImportResolution {
  *  absolute paths, and `..` escapes are rejected explicitly. */
 export async function resolvePackageImport(specifier: string, fromFile: string, recipeDirectory: string): Promise<PackageImportResolution> {
   const key = specifier.split("?")[0] as string;
-  const packageJsonPath = await packageScopeFileWithin(fromFile, recipeDirectory);
+  const boundary = await boundaryFor(fromFile, recipeDirectory);
+  const packageJsonPath = await packageScopeFileWithin(fromFile, boundary);
   let manifest: unknown;
   try {
     manifest = JSON.parse(await readFile(packageJsonPath, "utf8"));
@@ -265,7 +285,7 @@ export async function resolvePackageImport(specifier: string, fromFile: string, 
   }
 
   const targetPath = resolve(packageDirectory, target);
-  const withinRecipe = relative(recipeDirectory, targetPath);
+  const withinRecipe = relative(boundary, targetPath);
   if (withinRecipe.startsWith("..") || isAbsolute(withinRecipe)) {
     throw new Error(`recipe hook package import ${specifier}: target "${target}" escapes the recipe directory`);
   }

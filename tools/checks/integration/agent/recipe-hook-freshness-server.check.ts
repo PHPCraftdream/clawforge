@@ -1,3 +1,4 @@
+// check:requires gnu-userland
 // Checks that a long-lived MCP server does not keep executing a stale recipe hook.
 //
 // recipe.ts loads app-owned hooks with `import()`, and Node's module map is keyed by URL:
@@ -128,7 +129,7 @@ try {
 
   const code = await server.close();
   checkTracked("the server survives the mid-session swap and exits cleanly", code, 0);
-  if (anyFailed) process.stderr.write(`server stderr:\n${server.diagnostics()}\n`);
+  if (anyFailed) process.stderr.write(`first answer: ${JSON.stringify(first)}\nserver stderr:\n${server.diagnostics()}\n`);
 } finally {
   await rm(resolve(appsDir, deploymentName), { recursive: true, force: true });
 }

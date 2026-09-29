@@ -22,9 +22,19 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+import { hasDocker, hasGnuUserland } from "#checks/kit/capabilities/capabilities.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 useLinuxHost();
+
+// A confirmed call takes the instance lock through the local transport's mkdir/mv, and mcp-creds
+// reads a real compose project: hosts without GNU userland (macOS, a stock Windows runner) or
+// docker skip those assertions by name instead of failing them.
+const gnuUserland = await hasGnuUserland();
+const skipped = (name: string, needs: string): void => { process.stderr.write(`  skip ${name} (needs ${needs})\n`); };
+const checkLocked = gnuUserland ? check : (name: string): void => skipped(name, "GNU mkdir/mv/tar");
+const dockerToo = gnuUserland && await hasDocker();
+const checkCreds = dockerToo ? check : (name: string): void => skipped(name, "GNU userland and a docker daemon");
 
 const lines = [
   "null",
@@ -338,16 +348,16 @@ try {
 
     check("recipe verify without confirm is refused like onboard", textOf(1).includes("pass confirm: true"), true);
     check("the refusal is a tool error reply", (byId.get(1)?.result as { isError?: boolean } | undefined)?.isError, true);
-    check("confirmed recipe verify succeeds", byId.get(2)?.error, undefined);
+    checkLocked("confirmed recipe verify succeeds", byId.get(2)?.error, undefined);
     const structured = (byId.get(2)?.result as { structuredContent?: { changed?: boolean } } | undefined)?.structuredContent;
     // The hook's own JSON says nothing about changed, so the envelope must fall back to
     // "assume it changed something" — never to changed:false, which nothing here can back.
-    check("a confirmed verify is not reported as changed:false", structured?.changed, true);
+    checkLocked("a confirmed verify is not reported as changed:false", structured?.changed, true);
 
     const onboardStructured = (byId.get(3)?.result as { structuredContent?: { changed?: boolean; result?: unknown } } | undefined)?.structuredContent;
-    check("confirmed recipe onboard succeeds", byId.get(3)?.error, undefined);
-    check("a confirmed onboard is not reported as changed:false", onboardStructured?.changed, true);
-    check("onboard's own JSON rides in the envelope whole", onboardStructured?.result, { ok: true, steps: ["dashboard ready"] });
+    checkLocked("confirmed recipe onboard succeeds", byId.get(3)?.error, undefined);
+    checkLocked("a confirmed onboard is not reported as changed:false", onboardStructured?.changed, true);
+    checkLocked("onboard's own JSON rides in the envelope whole", onboardStructured?.result, { ok: true, steps: ["dashboard ready"] });
     const listReply = byId.get(4)?.result as { structuredContent?: { changed?: boolean; result?: unknown } } | undefined;
     check("recipe list answers in the declared envelope too", listReply?.structuredContent !== undefined, true);
     check("a read-only action's envelope reports it changed nothing", listReply?.structuredContent?.changed, false);
@@ -660,8 +670,8 @@ function conforms(
     check("probe: a masked key keeps its shape", probe?.structured.includes("***_endpoint"), true);
     check("probe: a masked value keeps its neighbourhood", probe?.structured.includes("token=***"), true);
     const creds = answerOf(3);
-    check("mcp-creds succeeds over MCP", creds?.isError, undefined);
-    check("mcp-creds: the declared deliberate export still hands over the token", creds?.text.includes(secret), true);
+    checkCreds("mcp-creds succeeds over MCP", creds?.isError, undefined);
+    checkCreds("mcp-creds: the declared deliberate export still hands over the token", creds?.text.includes(secret), true);
     const gateOk = answerOf(4);
     check("gate-echo: the healthy gate answer is a success", gateOk?.isError, undefined);
     check("gate-echo: the raw token is gone from the text", gateOk?.text.includes(secret), false);

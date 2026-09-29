@@ -157,6 +157,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* ssh target: a command that hit its `timeoutMs` left the remote process running (killing the
+  local `ssh` sends the remote command no signal without a pty). The deadline is now also
+  enforced on the target by `timeout` when it exists, and keeps working after the connection is gone.
+* recipe hooks: a `#specifier` import failed with "escapes the recipe directory" when the recipe
+  was reached through a symlinked path (macOS `/var` → `/private/var`), because Node reports the
+  hook's own file realpath'd; the boundary is now taken in the same spelling as that file.
 * `control-mcp`: `ping` answered `method not found` instead of the empty result MCP clients
   use as a keep-alive; `initialize`'s `serverInfo.version` said `"1"` instead of the framework
   version. `tools/call` used to run strictly one at a time in the read loop, so a long call
@@ -407,6 +413,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Internal
 
+* checks: new `gnu-userland` capability (GNU-compatible `mkdir`/`mv` and GNU `tar` on this
+  process's PATH). Checks that drive the local transport skip on macOS and on a Windows runner
+  without them, instead of failing on BSD `tar`/`mv` or a missing `mkdir`; the Linux CI job
+  requires it. The nine "real POSIX filesystem" checks no longer treat every non-Windows host as Linux.
 * Comments condensed to the invariant; imports of one style per file.
 
 ## 0.1.0

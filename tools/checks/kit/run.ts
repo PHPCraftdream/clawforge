@@ -21,7 +21,7 @@ export interface RunChecksOptions {
   readonly list?: boolean;
   /** Concurrent check-file processes. Defaults to OC_CHECK_JOBS, else min(4, cores/2), at least 1. */
   readonly jobs?: number;
-  /** Capabilities (docker, wsl, posix-sh, rsync, linux-host, windows-host, ssh-loopback) whose
+  /** Capabilities (docker, wsl, posix-sh, rsync, linux-host, windows-host, ssh-loopback, gnu-userland) whose
    *  absence must fail a file that requires them, instead of skipping it — merged with
    *  OC_CHECK_REQUIRE. */
   readonly require?: readonly string[];

@@ -57,7 +57,7 @@ jobs:
         # (see CONTRIBUTING.md, "Host capability labels") includes it — this job assumes
         # that has landed (see docs/guide/requirements.md).
         env:
-          OC_CHECK_REQUIRE: docker,ssh-loopback,posix-sh,rsync,linux-host
+          OC_CHECK_REQUIRE: docker,ssh-loopback,posix-sh,rsync,linux-host,gnu-userland
           OC_CHECK_SSH_HOST: localhost
         run: npm test
 

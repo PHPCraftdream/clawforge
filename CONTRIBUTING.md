@@ -85,7 +85,8 @@ never via wsl.exe), `rsync` (a real rsync binary), `linux-host` (`process.platfo
 "linux"`), `windows-host` (`process.platform === "win32"`), `ssh-loopback` (`ssh -o
 BatchMode=yes -o ConnectTimeout=5 ${OC_CHECK_SSH_HOST:-localhost} true` succeeds — key-based,
 non-interactive; BatchMode refuses instead of prompting, so a host with no key set up answers
-"absent" instead of hanging). Each is probed at most once per run, only when some selected file
+"absent" instead of hanging), `gnu-userland` (this process's own `mkdir`, `mv` and `tar` are GNU-compatible
+— macOS ships BSD ones, a stock Windows runner has no `mkdir`). Each is probed at most once per run, only when some selected file
 actually requires it, and a probe failure (missing tool, timeout, anything) reads as "absent"
 rather than crashing the run.
 
@@ -122,7 +123,7 @@ this runner is supposed to have into a hard failure instead of a silent skip:
 
 | Job | Matrix cell | `OC_CHECK_REQUIRE` | Provisions before checks |
 | --- | --- | --- | --- |
-| `checks` — "Linux (local + ssh)" | Linux host, `local` + host-side `ssh` | `docker,ssh-loopback,posix-sh,rsync,linux-host` | loopback `sshd` + key auth |
+| `checks` — "Linux (local + ssh)" | Linux host, `local` + host-side `ssh` | `docker,ssh-loopback,posix-sh,rsync,linux-host,gnu-userland` | loopback `sshd` + key auth |
 | `macos-checks` — "macOS (ssh target only)" | macOS host, `ssh` (no `local`, by design) | `ssh-loopback` | loopback `sshd` + key auth (`systemsetup -setremotelogin`) |
 | `windows-checks` — "Windows (no WSL)" | Windows host, no WSL distro (the negative case) | unset | nothing — capability-gated files just skip |
 | `windows-wsl` — "Windows (WSL2)" | Windows host, `wsl`, hosted-runner best effort | `wsl` | `wsl --install -d Ubuntu-24.04` (see the job's own header comment for the nested-virtualization caveat) |

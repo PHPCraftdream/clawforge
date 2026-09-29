@@ -9,7 +9,7 @@
 // failure directions of tar's old glob reading (a declaration `vault[1]` excluded the
 // undeclared sibling vault1 while the literal directory vault[1] shipped). The assertions
 // below therefore run against real GNU tar, reached through a real POSIX transport — the
-// machine's own filesystem off Windows, a WSL distribution on it — onto a one-shot scratch
+// machine's own filesystem on Linux, a WSL distribution on it — onto a one-shot scratch
 // directory, over the exact command line createArchive builds. Only a machine with neither
 // a local POSIX filesystem nor a WSL distribution skips that group; the pure declaration
 // and malformed-manifest groups run unconditionally, so the file stays meaningful
@@ -66,10 +66,11 @@ async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefi
   return undefined;
 }
 
-/** A real POSIX filesystem with real GNU tar: this machine off Windows, a WSL distribution
+/** A real POSIX filesystem with real GNU tar: this machine on Linux, a WSL distribution
  *  with GNU tar on it. Where neither exists the group is skipped, loudly. */
 async function realPosixTransport(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 3)) {

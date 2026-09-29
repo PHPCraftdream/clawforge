@@ -95,7 +95,7 @@ for (const testCase of [
 }
 
 // Passing a path with shell metacharacters as a literal find argument must not execute it.
-if (process.platform !== "win32") {
+if (process.platform === "linux") {
   const root = await mkdtemp(join(tmpdir(), "clawforge-backup-quote-check-"));
   const marker = join(root, "shell-injected");
   const backupDir = join(root, `backup files '$(touch ${marker})' ; echo hacked`);
@@ -127,7 +127,8 @@ if (process.platform !== "win32") {
 }
 
 async function posixTransport(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {

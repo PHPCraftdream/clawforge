@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, rename, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rename, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -10,7 +10,7 @@ import { projectPort } from "#framework/core/env.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 
-const root = await mkdtemp(join(tmpdir(), "clawforge-mcp-project-"));
+const root = await realpath(await mkdtemp(join(tmpdir(), "clawforge-mcp-project-")));
 let monorepoApp: string | undefined;
 let claimedSibling: string | undefined;
 try {

@@ -9,7 +9,7 @@
 // restored config/ and auth-secrets/ into an external directory.
 //
 // Every scenario here is the real thing: a real GNU tar archive, a real symlink, a real
-// unpack through the framework's own transport — local off Windows, a WSL distribution on
+// unpack through the framework's own transport — local on Linux, a WSL distribution on
 // it. A simulated tar cannot reproduce this class of bug, which is the same lesson the
 // 2026-09-21 audit recorded for the private-snapshot checks.
 //
@@ -27,10 +27,11 @@ import { parseWslDistroListing } from "#framework/commands/interface/host/contex
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-/** A real POSIX filesystem with real symlinks and real GNU tar: this machine off Windows,
+/** A real POSIX filesystem with real symlinks and real GNU tar: this machine on Linux,
  *  a WSL distribution on it. Where neither exists the group is skipped, loudly. */
 async function realPosixTransport(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {

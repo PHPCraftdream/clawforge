@@ -11,7 +11,7 @@
 // is driven over those same real listings. The lesson of the 2026-09-21 audit: a simulated
 // tar cannot contradict the code it was modelled on.
 //
-// The archive/verify group needs a real POSIX filesystem — local off Windows, a WSL
+// The archive/verify group needs a real POSIX filesystem — local on Linux, a WSL
 // distribution on it — and is skipped cleanly without one.
 
 import { randomBytes } from "node:crypto";
@@ -33,10 +33,11 @@ function skip(name: string): void {
   process.stderr.write(`  skip ${name}\n`);
 }
 
-/** A real POSIX filesystem with real GNU tar: this machine off Windows, a WSL distribution
+/** A real POSIX filesystem with real GNU tar: this machine on Linux, a WSL distribution
  *  on it. Where neither exists the archive group is skipped, loudly. */
 async function realPosixTransport(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {

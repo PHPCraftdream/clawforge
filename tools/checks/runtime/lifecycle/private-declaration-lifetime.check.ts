@@ -12,7 +12,7 @@
 // simulated tar cannot contradict the code it was modelled on.
 //
 // The ledger's own contract and the fail-closed reads need no target and run everywhere;
-// the archive/verify group needs a real POSIX filesystem — local off Windows, a WSL
+// the archive/verify group needs a real POSIX filesystem — local on Linux, a WSL
 // distribution on it — and is skipped cleanly without one.
 
 import { randomBytes } from "node:crypto";
@@ -58,10 +58,11 @@ async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefi
   return undefined;
 }
 
-/** A real POSIX filesystem with real GNU tar: this machine off Windows, a WSL distribution
+/** A real POSIX filesystem with real GNU tar: this machine on Linux, a WSL distribution
  *  on it. Where neither exists the archive group is skipped, loudly. */
 async function realPosixTransport(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {

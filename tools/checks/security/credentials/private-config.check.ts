@@ -431,10 +431,11 @@ if (process.platform === "win32") {
   }
 }
 
-/** A real POSIX filesystem with real symlinks and real GNU tar: this machine off Windows,
+/** A real POSIX filesystem with real symlinks and real GNU tar: this machine on Linux,
  *  a WSL distribution on it. Where neither exists the group is skipped, loudly. */
 async function realPosixTransport(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {
@@ -457,7 +458,7 @@ async function realPosixTransport(): Promise<Transport | undefined> {
 // private writes — they land in the tree the link points to. (Backup is the exception: it
 // refuses a symlinked data root outright, because tar would store the link itself.)
 // This needs a real shell over a real filesystem, so the group runs on a real POSIX
-// transport — the machine's own filesystem off Windows, a WSL distribution on it — and
+// transport — the machine's own filesystem on Linux, a WSL distribution on it — and
 // skips, loudly through checkExec, only where neither exists.
 
 {

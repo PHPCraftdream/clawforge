@@ -8,7 +8,7 @@
 
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 
-export const CAPABILITIES = ["docker", "wsl", "posix-sh", "rsync", "linux-host", "windows-host", "ssh-loopback"] as const;
+export const CAPABILITIES = ["docker", "wsl", "posix-sh", "rsync", "linux-host", "windows-host", "ssh-loopback", "gnu-userland"] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 export function isCapability(value: string): value is Capability {
@@ -67,6 +67,18 @@ export async function isWindowsHost(): Promise<boolean> {
   return process.platform === "win32";
 }
 
+/** GNU-compatible coreutils (GNU or uutils) and GNU tar as this process's own `mkdir`/`mv`/`tar`: what LocalTransport-backed
+ *  checks (useLinuxHost, `mv -T`, `tar --quoting-style`) assume. macOS ships BSD ones and a
+ *  stock Windows runner has no mkdir at all. */
+export async function hasGnuUserland(): Promise<boolean> {
+  return swallow(async () => {
+    const versions = await Promise.all(
+      ["mkdir", "mv", "tar"].map((tool) => spawnLocal(tool, ["--version"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })),
+    );
+    return versions.every((result, index) => result.code === 0 && (index === 2 ? /GNU tar/ : /(GNU|uutils) coreutils/).test(result.stdout));
+  });
+}
+
 const SSH_LOOPBACK_TIMEOUT_MS = 8_000;
 
 /** A real, reachable, key-based loopback ssh target at OC_CHECK_SSH_HOST (default localhost):
@@ -93,6 +105,7 @@ export const DEFAULT_PROBES: ProbeMap = {
   "linux-host": isLinuxHost,
   "windows-host": isWindowsHost,
   "ssh-loopback": hasSshLoopback,
+  "gnu-userland": hasGnuUserland,
 };
 
 /** Probes each capability at most once per instance, regardless of how many files ask —

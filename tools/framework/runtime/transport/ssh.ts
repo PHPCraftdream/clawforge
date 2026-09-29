@@ -29,6 +29,15 @@ function isSshOwnFailure(code: number, stderr: string): boolean {
   return code === 255 && SSH_OWN_FAILURE.some((pattern) => pattern.test(stderr));
 }
 
+/** Killing the local ssh client does not stop the remote command: without a pty sshd sends it no
+ *  signal. The deadline is therefore also enforced on the target by `timeout` (when it exists),
+ *  which keeps working if the connection is already gone. */
+function withRemoteDeadline(remote: string, timeoutMs: number | undefined): string {
+  if (timeoutMs === undefined) return remote;
+  const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+  return `if command -v timeout >/dev/null 2>&1; then exec timeout -k 5 ${seconds} ${remote}; else exec ${remote}; fi`;
+}
+
 export class SshTransport implements Transport {
   readonly description: string;
   #host: string;
@@ -45,7 +54,7 @@ export class SshTransport implements Transport {
 
   async exec(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
     const [head, rest] = withEnvPrefix(command, args, options.env, options.unsetEnv);
-    const remote = [head, ...rest].map(SshTransport.quote).join(" ");
+    const remote = withRemoteDeadline([head, ...rest].map(SshTransport.quote).join(" "), options.timeoutMs);
     const sshArgs = [this.#host, remote];
     let result: ExecResult;
     try {

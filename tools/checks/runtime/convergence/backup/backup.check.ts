@@ -365,14 +365,15 @@ function rotationContext(
 //
 // createBackup() used to hand tar the link's own name and report success: the archive held
 // exactly one entry — the link — and none of the data. Every scenario here is the real
-// thing: a real GNU tar archive, a real symlink, a real transport (local off Windows, a WSL
+// thing: a real GNU tar archive, a real symlink, a real transport (local on Linux, a WSL
 // distribution on it). A simulated tar cannot reproduce this class of bug. No instance and
 // no gateway: the runtime stub fails loudly if the gateway is ever asked to start.
 
-/** A real POSIX filesystem with real symlinks and real GNU tar: this machine off Windows,
+/** A real POSIX filesystem with real symlinks and real GNU tar: this machine on Linux,
  *  a WSL distribution on it. Where neither exists the group is skipped, loudly. */
 async function realPosixTransport(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {

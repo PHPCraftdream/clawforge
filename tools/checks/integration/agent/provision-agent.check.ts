@@ -516,13 +516,14 @@ function stubContext(listAnswer: unknown) {
 // its own workspace before the operator runs provisioning; the framework then overwrote
 // whatever the link pointed at, with the operator's privileges, outside the data mount.
 //
-// These scenarios need a real POSIX filesystem with real symlinks: local off Windows, a WSL
+// These scenarios need a real POSIX filesystem with real symlinks: local on Linux, a WSL
 // distribution on it — the same idiom as restore-symlink-boundary.check.ts. The recipe
 // source is read by Node directly, so on Windows it stays on the Windows side while only
 // the target lives in the distribution.
 
 async function realPosixTarget(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {

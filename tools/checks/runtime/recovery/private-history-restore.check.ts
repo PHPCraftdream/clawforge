@@ -15,7 +15,7 @@
 // docs/internal/review-2026-09-23-xs-round-4.md), the import's merge and its two refusals. It needs no
 // target and runs everywhere.
 // Part B is the whole scenario over real GNU tar and a real POSIX filesystem (LocalTransport
-// off Windows, a WSL distribution on it): a real private write through the fixture recipe's
+// on Linux, a WSL distribution on it): a real private write through the fixture recipe's
 // prepare hook, a full backup, then a restore through a DIFFERENT, fresh operator-side
 // deployment with NO recipes — the written file is still classified private (excluded from
 // share, refused by verify) — a corrupt history copy fails the restore with the previous data
@@ -68,10 +68,11 @@ async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefi
   return undefined;
 }
 
-/** A real POSIX filesystem with real GNU tar: this machine off Windows, a WSL distribution
+/** A real POSIX filesystem with real GNU tar: this machine on Linux, a WSL distribution
  *  on it. Where neither exists the archive group is skipped, loudly. */
 async function realPosixTransport(): Promise<Transport | undefined> {
-  if (process.platform !== "win32") return new LocalTransport();
+  if (process.platform === "linux") return new LocalTransport();
+  if (process.platform !== "win32") return undefined;
   try {
     const listing = await spawnLocal("wsl.exe", ["--list", "--quiet"], { allowFailure: true, timeoutMs: 30_000 });
     for (const distro of parseWslDistroListing(listing.stdout).slice(0, 2)) {

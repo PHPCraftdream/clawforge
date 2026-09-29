@@ -47,7 +47,7 @@ const flatten = (calls: { command: string; args: string[] }[]) => calls.map((cal
   const flat = flatten(calls);
   const frameworkRsync = calls.find((call) => call.command === "rsync" && call.args.at(-1) === "deployer@server:/srv/cf/");
   check("with no --path, the framework mirrors to OC_REMOTE_PATH (/srv/cf)", frameworkRsync !== undefined, true);
-  const appMkdir = flat.find((line) => line.includes("mkdir -p") && line.includes("/srv/cf/apps/example app/config"));
+  const appMkdir = flat.find((line) => line.includes("# clawforge-child-prepare") && line.includes("/srv/cf/apps/example app/config"));
   check("the deployment's remote app directory is nested under OC_REMOTE_PATH", appMkdir !== undefined, true);
   check("no --path was given, so no mismatch note is printed", output.includes("differs from OC_REMOTE_PATH"), false);
 }

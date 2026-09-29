@@ -389,6 +389,7 @@ function skip(name: string): void {
         ? inShellTerms.stdout.trim()
         : forwardRoot;
       const markerPath = `${posixRoot}/.clawforge-deploy-marker`;
+      const markerPathForNode = `${forwardRoot}/.clawforge-deploy-marker`;
       const runScript = async (script: string) =>
         spawnLocal("sh", ["-c", ["sh", "-c", script].map(SshTransport.quote).join(" ")], { allowFailure: true });
 
@@ -403,13 +404,15 @@ function skip(name: string): void {
 
       const line1 = "clawforge-deploy-root-v1 name=example app";
       const line2 = "created=2026-09-23T00:00:00.000Z id=test";
-      const written = await runScript(markerWriteScript(markerPath, line1, line2));
+      const written = await runScript(markerWriteScript(markerPathForNode, line1, line2));
       check("the marker write script runs through a real shell", written.code, 0);
       check(
         "and writes exactly the two marker lines, name with spaces intact",
         (await readFile(`${forwardRoot}/.clawforge-deploy-marker`)).toString(),
         `${line1}\n${line2}\n`,
       );
+      const duplicateWrite = await runScript(markerWriteScript(markerPathForNode, line1, line2));
+      check("a marker created after a stale probe is never overwritten", duplicateWrite.code !== 0, true);
 
       const second = await runScript(rootProbeScript(posixRoot, markerPath));
       check(
@@ -423,6 +426,20 @@ function skip(name: string): void {
       await writeFile(`${forwardRoot}/.clawforge-deploy-marker`, `${line1}\nchanged\n`);
       const changedMarker = await runScript(markerVerifyScript(markerPath, line1, line2));
       check("marker verification rejects changed bytes", changedMarker.code !== 0, true);
+
+      await rm(markerPathForNode);
+      const outsideMarker = resolve(root, "outside-marker");
+      let linkCreated = true;
+      try {
+        await symlink(outsideMarker, markerPathForNode);
+      } catch {
+        linkCreated = false;
+      }
+      if (linkCreated) {
+        const linkedWrite = await runScript(markerWriteScript(markerPathForNode, line1, line2));
+        check("an adopted root's dangling marker symlink refuses exclusive creation", linkedWrite.code !== 0, true);
+        check("marker creation never follows the link outside its root", await readFile(outsideMarker).then(() => true, () => false), false);
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }

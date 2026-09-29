@@ -13,23 +13,45 @@ import { SENSITIVE_RECIPE_NAME } from "./recipe-portable-content.ts";
 
 const execFileAsync = promisify(execFile);
 
-/** Never leaves this machine. Local state, credentials, and every deployment directory —
- *  the deployment's own files are delivered separately and by name. */
+/** Local tool/state directories are absent from every rsync payload. */
+const LOCAL_DIRECTORIES = [
+  ".claude",
+  ".idea",
+  ".vscode",
+  "node_modules",
+  "worktrees",
+] as const;
+
+const GENERATED_ROOTS = ["dist", "build", "coverage", ".cache", ".tmp", "scratch"] as const;
+const GENERATED_FRAMEWORK_PATHS = ["/tools/framework/dist/", "/tools/framework/build/"] as const;
+
+/** Filters shared by the framework and deployment payload mirrors. */
 export const EXCLUDES = [
   ".env",
   ".mcp.json",
-  ".git/",
-  // Claude Code local state (settings, session artefacts, agent worktrees) — never part of
-  // what a server runs.
-  ".claude/",
-  "apps/",
+  // A linked worktree has a .git file, while a regular checkout has a directory.
+  ".git",
+  ...LOCAL_DIRECTORIES.map((name) => `${name}/`),
   "backups/",
   "data/",
   "snapshots/",
   "secrets/",
   "*.tar.gz",
   "*.tar.zst",
+  "*.swp",
+  ".DS_Store",
+  "Thumbs.db",
   "*.token",
+];
+
+/** Generated checkout output and other deployments are absent from the framework mirror. */
+export const FRAMEWORK_EXCLUDES = [
+  ...EXCLUDES,
+  "/apps/",
+  ...GENERATED_ROOTS.map((name) => `/${name}/`),
+  ...GENERATED_FRAMEWORK_PATHS,
+  "*.tgz",
+  "*.tsbuildinfo",
 ];
 
 /** Records a remote directory as CREATED for a ClawForge deployment. `mkdir -p` proves a
@@ -111,13 +133,12 @@ async function gitTrackedBlobHashes(root: string): Promise<Set<string> | undefin
   }
 }
 
-/** Walks `root` — the tree the first rsync sends wholesale — for any name the shared
- *  sensitive-name policy (SENSITIVE_RECIPE_NAME) holds private, wherever it sits (EXCLUDES
- *  above is a fixed glob list and doesn't cover this alone). A matched name is exempted only
+/** Walks the mirrored tree for private names not covered by fixed rsync excludes.
+ *  A matched name is exempted only
  *  when byte-identical to reviewed content: a git-tracked file that is completely clean
  *  (path presence alone is not byte identity), or content matching a tracked blob's hash
- *  (covers build output). Directories are never exempted. `apps/`, `.git/`, `.claude/` are
- *  skipped by name at the checkout root only. Symlinks are reported but never followed. */
+ *  (covers reviewed content copies). Directories are never exempted. Excluded local
+ *  directories are skipped; symlinks are reported but never followed. */
 export async function collectSensitiveCheckoutNames(root: string): Promise<{ path: string; reason: string }[]> {
   const found: { path: string; reason: string }[] = [];
   const tracked = await gitTrackedFiles(root);
@@ -151,7 +172,12 @@ export async function collectSensitiveCheckoutNames(root: string): Promise<{ pat
   async function walk(current: string, base: string): Promise<void> {
     const entries = await readEntries(current);
     for (const entry of entries) {
-      if (base === "" && entry.isDirectory() && (entry.name === "apps" || entry.name === ".git" || entry.name === ".claude")) continue;
+      if (entry.isDirectory() && (
+        LOCAL_DIRECTORIES.some((name) => name === entry.name)
+        || entry.name === ".git"
+        || (base === "" && (entry.name === "apps" || GENERATED_ROOTS.some((name) => name === entry.name)))
+        || (base === "tools/framework" && (entry.name === "dist" || entry.name === "build"))
+      )) continue;
       const relativePath = base === "" ? entry.name : `${base}/${entry.name}`;
       if (SENSITIVE_RECIPE_NAME.test(relativePath)) {
         const trackedHere = tracked?.has(relativePath) === true;
@@ -184,6 +210,91 @@ export async function collectSensitiveCheckoutNames(root: string): Promise<{ pat
  *  runRemote(), which needs identical quoting. */
 export function quoted(value: string): string {
   return shellQuote(value);
+}
+
+/** Creates one directory at a time, refusing links before any remote write. */
+export function directoryPrepareScript(path: string, sudo: boolean): string {
+  return [
+    sudo ? "# clawforge-root-prepare" : "# clawforge-child-prepare",
+    `p=${quoted(path)}`,
+    "rest=${p#/}",
+    "current=/",
+    "cd -P / || exit 1",
+    'while [ -n "$rest" ]; do',
+    '  segment=${rest%%/*}',
+    '  if [ "$segment" = "$rest" ]; then rest=; else rest=${rest#*/}; fi',
+    '  [ -n "$segment" ] && [ "$segment" != . ] && [ "$segment" != .. ] || exit 1',
+    '  if [ "$current" = / ]; then next="/$segment"; else next="$current/$segment"; fi',
+    '  [ ! -L "$segment" ] || exit 1',
+    '  if [ -e "$segment" ]; then',
+    '    [ -d "$segment" ] || exit 1',
+    '  else',
+    sudo
+      ? '    mkdir -- "$segment" 2>/dev/null || { sudo -n mkdir -- "$segment" && sudo -n chown -h -- "$(id -u):$(id -g)" "$segment"; } || exit 1'
+      : '    mkdir -- "$segment" || exit 1',
+    '  fi',
+    '  [ ! -L "$segment" ] || exit 1',
+    '  cd -P -- "$segment" || exit 1',
+    '  [ "$(pwd -P)" = "$next" ] || exit 1',
+    '  current=$next',
+    'done',
+  ].join("\n");
+}
+
+/** Checks every existing component immediately before a remote receiver starts. */
+export function directoryGuardScript(path: string): string {
+  return [
+    "# clawforge-destination-guard",
+    `p=${quoted(path)}`,
+    "rest=${p#/}",
+    "current=/",
+    "cd -P / || exit 1",
+    'while [ -n "$rest" ]; do',
+    '  segment=${rest%%/*}',
+    '  if [ "$segment" = "$rest" ]; then rest=; else rest=${rest#*/}; fi',
+    '  [ -n "$segment" ] && [ "$segment" != . ] && [ "$segment" != .. ] || exit 1',
+    '  if [ "$current" = / ]; then next="/$segment"; else next="$current/$segment"; fi',
+    '  [ ! -L "$segment" ] && [ -d "$segment" ] || exit 1',
+    '  cd -P -- "$segment" || exit 1',
+    '  [ "$(pwd -P)" = "$next" ] || exit 1',
+    '  current=$next',
+    'done',
+  ].join("\n");
+}
+
+/** Pins an rsync receiver to its verified directory inode, then uses `.` as destination. */
+export function guardedRsyncPath(root: string, destination: string): string {
+  if (
+    !destination.startsWith(`${root}/`) && destination !== root ||
+    posix.normalize(destination) !== destination ||
+    posix.normalize(root) !== root
+  ) {
+    die(`deploy destination is outside its root: ${destination}`);
+  }
+  const script = [
+    'const fs = require("node:fs");',
+    'const { spawnSync } = require("node:child_process");',
+    `const root = ${JSON.stringify(root)};`,
+    `const destination = ${JSON.stringify(destination)};`,
+    'const fail = () => { process.stderr.write("unsafe deploy destination\\n"); process.exit(1); };',
+    'let current = "";',
+    'for (const segment of destination.slice(1).split("/")) {',
+    '  current += `/${segment}`;',
+    '  let stat;',
+    '  try { stat = fs.lstatSync(current); } catch { fail(); }',
+    '  if (!stat.isDirectory() || stat.isSymbolicLink()) fail();',
+    '  if (fs.realpathSync(current) !== current) fail();',
+    '}',
+    'if (destination !== root && !destination.startsWith(`${root}/`)) fail();',
+    'try { process.chdir(destination); } catch { fail(); }',
+    'if (process.cwd() !== destination) fail();',
+    'const args = process.argv.slice(1);',
+    'if (args[0] !== "--server" || args.at(-1) !== `${destination}/`) fail();',
+    'args[args.length - 1] = ".";',
+    'const result = spawnSync("rsync", args, { stdio: "inherit" });',
+    'process.exit(result.status ?? 1);',
+  ].join("\n");
+  return `node -e ${quoted(script)} --`;
 }
 
 /** The first question about the remote root, asked before anything is mirrored into it: does
@@ -222,15 +333,24 @@ export function parseRootProbe(stdout: string): { state?: string; canonical?: st
   return probe;
 }
 
-/** Takes the root over on purpose: writes the marker (deployment name, then when and which
- *  run marked it) so the next deploy recognizes the directory as this deployment's. printf
- *  rather than echo, since echo would mangle a value starting with a dash. Exported for
- *  root-boundary.check.ts. */
+/** Creates the root marker exclusively inside the verified directory. */
 export function markerWriteScript(markerPath: string, line1: string, line2: string): string {
-  return [
-    "# clawforge-root-marker-write",
-    `printf '%s\\n' ${quoted(line1)} ${quoted(line2)} > ${quoted(markerPath)}`,
+  const script = [
+    'const fs = require("node:fs");',
+    'const path = require("node:path");',
+    `const root = path.resolve(${JSON.stringify(posix.dirname(markerPath))});`,
+    `const marker = ${JSON.stringify(posix.basename(markerPath))};`,
+    `const content = ${JSON.stringify(`${line1}\n${line2}\n`)};`,
+    'if (fs.realpathSync(root) !== root) throw new Error("unsafe marker root");',
+    'process.chdir(root);',
+    'if (process.cwd() !== root) throw new Error("changed marker root");',
+    'try { fs.lstatSync(marker); throw new Error("marker already exists"); }',
+    'catch (error) { if (error.code !== "ENOENT") throw error; }',
+    'const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW;',
+    'const fd = fs.openSync(marker, flags, 0o600);',
+    'try { fs.writeFileSync(fd, content); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }',
   ].join("\n");
+  return `# clawforge-root-marker-write\nnode -e ${quoted(script)} --`;
 }
 
 /** What an adopted root actually holds, listed BEFORE the destructive sync — taking over an

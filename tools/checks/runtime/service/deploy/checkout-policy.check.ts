@@ -199,7 +199,7 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
   const customRsync = customCalls.find((call) => call.command === "rsync" && call.args.some((arg) => arg.includes("custom recipes")));
   const customRemote = customRsync?.args.at(-1) ?? "";
   check("relative recipesDir is sent to its matching remote directory", customRemote.includes("/apps/example app/custom recipes/"), true);
-  const customMkdir = customCalls.find((call) => call.command === "ssh" && call.args.at(-1)?.includes("mkdir -p") && call.args.at(-1)?.includes("custom recipes"));
+  const customMkdir = customCalls.find((call) => call.command === "ssh" && call.args.at(-1)?.includes("# clawforge-child-prepare") && call.args.at(-1)?.includes("custom recipes"));
   check("relative recipesDir is created under the remote app", customMkdir?.args.at(-1)?.includes("custom recipes"), true);
   check("relative recipesDir does not also write the default root", customRemote.includes("/apps/example app/recipes/"), false);
 }
@@ -567,6 +567,37 @@ check("the framework sync above used the checkout root", rsyncs[0].args.some((ar
       );
     } finally {
       if (planted) await rm(claudeScratch, { recursive: true, force: true });
+    }
+  }
+
+  // The preflight scan must skip the same local checkout trees rsync omits, while still
+  // visiting authored source below a nested apps/ directory.
+  {
+    const root = await mkdtemp(join(tmpdir(), "clawforge-checkout-filter-"));
+    try {
+      for (const name of [
+        "node_modules/pkg/.env.production",
+        "tools/node_modules/pkg/.env.production",
+        "worktrees/agent/.env.production",
+        "tools/worktrees/agent/.env.production",
+        "tools/framework/dist/.env.production",
+        "build/.env.production",
+        "scratch/.env.production",
+        "apps/.env.production",
+        "tools/checks/integration/apps/.env.production",
+        "tools/checks/integration/build/.env.production",
+      ]) {
+        const path = resolve(root, name);
+        await mkdir(resolve(path, ".."), { recursive: true });
+        await writeFile(path, "fixture\n");
+      }
+      const findings = await collectSensitiveCheckoutNames(root);
+      check("local checkout trees do not enter the preflight scan", findings, [
+        { path: "tools/checks/integration/apps/.env.production", reason: "sensitive-name policy" },
+        { path: "tools/checks/integration/build/.env.production", reason: "sensitive-name policy" },
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   }
 }

@@ -11,6 +11,7 @@ import { log, info, die } from "#src/core/io/log.ts";
 import {
   MARKER_FILE,
   MARKER_PREFIX,
+  directoryPrepareScript,
   markerWriteScript,
   parseRootProbe,
   quoted,
@@ -102,12 +103,11 @@ export async function prepareRemoteRoot(
   adopt: boolean,
 ): Promise<RemoteRoot> {
   log(`preparing ${remotePath} on ${target}`);
-  // sudo -n: this runs without a terminal, so a password prompt would hang rather than ask.
+  // Existing components are checked before each mkdir; sudo changes only a new child.
   const prepared = await runRemote(
     ctx,
     target,
-    `mkdir -p ${quoted(remotePath)} 2>/dev/null || ` +
-      `{ sudo -n mkdir -p ${quoted(remotePath)} && sudo -n chown "$(id -u):$(id -g)" ${quoted(remotePath)}; }`,
+    directoryPrepareScript(remotePath, true),
     { allowFailure: true },
   );
   if (prepared.code !== 0) {

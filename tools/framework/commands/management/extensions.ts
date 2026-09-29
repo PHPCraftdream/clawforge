@@ -43,41 +43,47 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value !== "";
 }
 
-/** Parses one `openclawCliBatch` slot's stdout as the plugins list. A failed or malformed
- *  read answers with an empty list — gap, not verdict: unreadable is not evidence of "none". */
-export function parsePluginsList(result: BatchedCliResult): PluginListEntry[] {
-  if (result.code !== 0) return [];
-  try {
-    const parsed = JSON.parse(result.stdout) as { plugins?: unknown[] };
-    if (!Array.isArray(parsed.plugins)) return [];
-    return parsed.plugins
-      .map((entry) => entry as Record<string, unknown>)
-      .filter((entry) => isNonEmptyString(entry.id) && isNonEmptyString(entry.origin))
-      .map((entry) => ({
-        id: entry.id as string,
-        name: isNonEmptyString(entry.name) ? entry.name : undefined,
-        version: isNonEmptyString(entry.version) ? entry.version : undefined,
-        origin: entry.origin as string,
-        enabled: entry.enabled === true,
-      }));
-  } catch {
-    return [];
+/** Failed or malformed inventories remain unknown; only a validated empty array is none. */
+function inventoryEntries(result: BatchedCliResult, key: "plugins" | "skills", problems: Problem[]): Record<string, unknown>[] | undefined {
+  let reason = result.failure ?? (result.code !== 0 ? `exit ${result.code}` : undefined);
+  if (reason === undefined) {
+    try {
+      const parsed = JSON.parse(result.stdout) as Record<string, unknown> | null;
+      const entries = parsed?.[key];
+      if (!Array.isArray(entries) || entries.some((entry) =>
+        entry === null || typeof entry !== "object" || Array.isArray(entry) ||
+        (key === "plugins"
+          ? !isNonEmptyString(entry.id) || !isNonEmptyString(entry.origin) ||
+            (entry.name !== undefined && !isNonEmptyString(entry.name)) ||
+            (entry.version !== undefined && !isNonEmptyString(entry.version)) ||
+            (entry.enabled !== undefined && typeof entry.enabled !== "boolean")
+          : !isNonEmptyString(entry.name) || !isNonEmptyString(entry.source)))) {
+        throw new Error("invalid inventory");
+      }
+      return entries;
+    } catch {
+      reason = "invalid JSON response";
+    }
   }
+  problems.push(problem("CLI_READ_FAILED", `openclaw ${key} list could not be read (${reason}); live state is unknown`));
+  return undefined;
 }
 
-/** Same shape of parse for `skills list --json`'s top-level `skills` array. */
-export function parseSkillsList(result: BatchedCliResult): SkillListEntry[] {
-  if (result.code !== 0) return [];
-  try {
-    const parsed = JSON.parse(result.stdout) as { skills?: unknown[] };
-    if (!Array.isArray(parsed.skills)) return [];
-    return parsed.skills
-      .map((entry) => entry as Record<string, unknown>)
-      .filter((entry) => isNonEmptyString(entry.name) && isNonEmptyString(entry.source))
-      .map((entry) => ({ name: entry.name as string, source: entry.source as string }));
-  } catch {
-    return [];
-  }
+export function parsePluginsList(result: BatchedCliResult, problems: Problem[] = []): PluginListEntry[] | undefined {
+  return inventoryEntries(result, "plugins", problems)?.map((entry) => ({
+    id: entry.id as string,
+    name: entry.name as string | undefined,
+    version: entry.version as string | undefined,
+    origin: entry.origin as string,
+    enabled: entry.enabled === true,
+  }));
+}
+
+export function parseSkillsList(result: BatchedCliResult, problems: Problem[] = []): SkillListEntry[] | undefined {
+  return inventoryEntries(result, "skills", problems)?.map((entry) => ({
+    name: entry.name as string,
+    source: entry.source as string,
+  }));
 }
 
 /** OpenClaw's own provenance tag, normalised to the category this framework's lock records.

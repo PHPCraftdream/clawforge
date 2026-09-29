@@ -242,15 +242,13 @@ async function observeRegistrations(ctx: Context, includeChannels: boolean, prob
   if (versionResult.code !== 0 || versionResult.stdout.trim() === "") {
     reportCliReadFailure(problems, "version", versionResult.failure ?? (versionResult.code === 0 ? "empty response" : `exit ${versionResult.code}`));
   }
-  const pluginsRead = parseJsonOrUnknown(pluginsResult, "plugins list", problems, (parsed) => (parsed as { plugins: unknown[] }).plugins);
-  const skillsRead = parseJsonOrUnknown(skillsResult, "skills list", problems, (parsed) => (parsed as { skills: unknown[] }).skills);
 
   const openclawVersionLine = versionResult.code === 0 ? versionResult.stdout.trim().split("\n")[0] : "";
   const openclawVersion = openclawVersionLine === "" ? undefined : openclawVersionLine;
 
   // Raw here; gather.ts normalises via pluginsForLock/skillsForLock before comparing.
-  const plugins = pluginsRead === undefined ? undefined : parsePluginsList(pluginsResult);
-  const skills = skillsRead === undefined ? undefined : parseSkillsList(skillsResult);
+  const plugins = parsePluginsList(pluginsResult, problems);
+  const skills = parseSkillsList(skillsResult, problems);
 
   return { agents, mcpServerEntries, mcpServers, liveJobs, cronJobs, channels, openclawVersion, plugins, skills };
 }

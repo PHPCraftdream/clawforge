@@ -115,7 +115,7 @@ async function recipeNames(): Promise<string[]> {
  *  asks for it; `inspect`/`doctor` reuse observeLive's own batched read instead. */
 export async function currentComposition(
   ctx: Context,
-  options?: { readonly includeExtensions?: boolean },
+  options?: { readonly includeExtensions?: boolean; readonly problems?: Problem[] },
 ): Promise<DeploymentLock> {
   const recipes: DeploymentLock["recipes"] = {};
   for (const name of await recipeNames()) {
@@ -139,11 +139,16 @@ export async function currentComposition(
   let plugins: LockPlugin[] | undefined;
   let skills: LockSkill[] | undefined;
   if (options?.includeExtensions === true) {
-    // One container for both reads. An unreachable target answers every slot with a failed
-    // result, which parsePluginsList/parseSkillsList read as "none" rather than throwing.
+    // Failed reads stay absent, never a confirmed empty inventory.
+    const problems = options.problems ?? [];
     const [pluginsResult, skillsResult] = await openclawCliBatch(ctx, [[...PLUGINS_LIST_ARGS], [...SKILLS_LIST_ARGS]]);
-    plugins = pluginsForLock(parsePluginsList(pluginsResult));
-    skills = skillsForLock(parseSkillsList(skillsResult));
+    const pluginEntries = parsePluginsList(pluginsResult, problems);
+    const skillEntries = parseSkillsList(skillsResult, problems);
+    plugins = pluginEntries === undefined ? undefined : pluginsForLock(pluginEntries);
+    skills = skillEntries === undefined ? undefined : skillsForLock(skillEntries);
+    if (options.problems === undefined && (plugins === undefined || skills === undefined)) {
+      throw new Error(problems.map((entry) => entry.detail).join("; "));
+    }
   }
 
   return {
@@ -275,8 +280,11 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
   if (current.skills !== undefined && lock.skills === undefined && current.skills.length > 0) {
     problems.push(problem("LOCK_DRIFT", "the lock predates skill pinning and does not record it — re-pin to cover installed skills"));
   }
-  if (current.plugins !== undefined || current.skills !== undefined) {
-    problems.push(...compareExtensions(lock.plugins, current.plugins ?? [], lock.skills, current.skills ?? []));
+  if (current.plugins !== undefined) {
+    problems.push(...compareExtensions(lock.plugins, current.plugins, undefined, []));
+  }
+  if (current.skills !== undefined) {
+    problems.push(...compareExtensions(undefined, [], lock.skills, current.skills));
   }
 
   return problems;
@@ -287,10 +295,11 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
   const jsonOnly = parsed.json === true;
   const checkOnly = parsed.check === true;
 
-  const current = await currentComposition(ctx, { includeExtensions: true });
+  const inventoryProblems: Problem[] = [];
+  const current = await currentComposition(ctx, { includeExtensions: true, problems: inventoryProblems });
 
   if (checkOnly) {
-    const problems = compareLock(await readLock(), current);
+    const problems = [...inventoryProblems, ...compareLock(await readLock(), current)];
     if (jsonOnly || isCaptured()) {
       emit(`${JSON.stringify({ deployment: current.deployment, problems, nextActions: nextActions(problems) }, null, 2)}\n`);
       return;
@@ -303,6 +312,10 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
     for (const entry of problems) info(`${entry.code}  ${entry.detail}`);
     return;
   }
+  if (inventoryProblems.length > 0) {
+    throw new Error(`lock not written: ${inventoryProblems.map((entry) => entry.detail).join("; ")}`);
+  }
+
 
   await writeFile(lockFile(), `${JSON.stringify(current, null, 2)}\n`, "utf8");
 

@@ -5,10 +5,10 @@
 // tag that stayed the same while the image behind it moved, a framework version bump, a
 // declaration replaced wholesale, a secret the instance did not use to need.
 
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { compareLock, COMMIT_ADVICE, LOCK_VERSION, declarationChecksum, currentComposition } from "#framework/commands/management/lock.ts";
+import { compareLock, COMMIT_ADVICE, LOCK_VERSION, declarationChecksum, currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
 import { gitInitAdvice } from "#framework/integration/deployment/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
@@ -17,6 +17,9 @@ import type { LockPlugin, LockSkill } from "#framework/commands/management/exten
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
+import type { Problem } from "#framework/service/inspection.ts";
+import type { BatchedCliResult } from "#framework/service/openclaw-cli.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 const files = { "server.ts": "a".repeat(64), "data/page.md": "b".repeat(64) };
@@ -192,7 +195,7 @@ check(
   const thirdPartyPlugin = { id: "acme-tool", name: "@acme/tool", version: "1.0.0", origin: "npm", enabled: true };
   check(
     "a bundled plugin never reaches the lock",
-    pluginsForLock(parsePluginsList({ code: 0, stdout: JSON.stringify({ plugins: [bundledPlugin, thirdPartyPlugin] }) })),
+    pluginsForLock(parsePluginsList({ code: 0, stdout: JSON.stringify({ plugins: [bundledPlugin, thirdPartyPlugin] }) })!),
     [{ id: "acme-tool", name: "@acme/tool", version: "1.0.0", source: "npm" }],
   );
 
@@ -201,15 +204,10 @@ check(
   const thirdPartySkill = { name: "acme-skill", source: "clawhub" };
   check(
     "a bundled or OpenClaw-extra skill never reaches the lock either",
-    skillsForLock(parseSkillsList({ code: 0, stdout: JSON.stringify({ skills: [bundledSkill, extraSkill, thirdPartySkill] }) })),
+    skillsForLock(parseSkillsList({ code: 0, stdout: JSON.stringify({ skills: [bundledSkill, extraSkill, thirdPartySkill] }) })!),
     [{ name: "acme-skill", source: "clawhub" }],
   );
 
-  // A malformed or failed read (a stopped instance, an unbootstrapped one, a CLI that
-  // answered something other than JSON) is a gap, not evidence of nothing installed — the
-  // same "gap, not a verdict" every other batched read in inspect/live.ts already gives.
-  check("a failed read answers with no plugins, not a thrown error", parsePluginsList({ code: 1, stdout: "" }), []);
-  check("malformed JSON answers with no skills either", parseSkillsList({ code: 0, stdout: "not json" }), []);
 }
 
 {
@@ -311,6 +309,106 @@ check("and confirms secrets are already kept out of that new repository", initAd
     }
     check("a recipes root that is a file dies rather than pinning an empty composition", message !== "", true);
     check("naming the recipes path", message.includes(resolve(deployment, "recipes")), true);
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+    useDeployment(resolve(monorepoRoot, "apps", "example app"));
+  }
+}
+
+// Exercise the durable writer and check command, not just the normalization helpers.
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-lock-inventory-"));
+  useDeployment(deployment);
+  await mkdir(resolve(deployment, "config"));
+  const plugin = { id: "acme-tool", name: "@acme/tool", version: "1.0.0", origin: "npm", enabled: true };
+  const skill = { name: "acme-skill", source: "clawhub" };
+  const success = (key: string, entries: unknown[]): BatchedCliResult => ({ code: 0, stdout: JSON.stringify({ [key]: entries }) });
+  const plugins = success("plugins", [plugin]);
+  const skills = success("skills", [skill]);
+  let slots = [plugins, skills];
+  let wholeBatch: "ok" | "throw" | "exit" | "incomplete" = "ok";
+  const ctx = {
+    settings: { image: "fixture@sha256:aaa", dataDir: "/fixture/data" },
+    transport: { exists: async () => true, readFile: async () => "{}" },
+    runtime: {
+      imageReference: async () => "fixture@sha256:aaa",
+      runOneOff: async () => {
+        if (wholeBatch === "throw") throw new Error("transport unavailable");
+        if (wholeBatch === "exit") return { code: 1, stdout: "", stderr: "" };
+        return {
+          code: 0, stderr: "",
+          stdout: slots.slice(0, wholeBatch === "incomplete" ? 1 : 2).map((slot, index) =>
+            `__clawforge_cli_batch__${index}:begin\n${slot.stdout}\n__clawforge_cli_batch__${index}:exit:${slot.code}`).join("\n"),
+        };
+      },
+    },
+  } as unknown as Context;
+  const cases: { name: string; slots: BatchedCliResult[]; batch?: "ok" | "throw" | "exit" | "incomplete"; unknown: string[] }[] = [
+    { name: "whole batch transport failure", slots: [plugins, skills], batch: "throw", unknown: ["plugins", "skills"] },
+    { name: "whole batch nonzero exit", slots: [plugins, skills], batch: "exit", unknown: ["plugins", "skills"] },
+    { name: "incomplete batch", slots: [plugins, skills], batch: "incomplete", unknown: ["skills"] },
+    { name: "failed plugins", slots: [{ code: 1, stdout: "" }, skills], unknown: ["plugins"] },
+    { name: "failed skills", slots: [plugins, { code: 1, stdout: "" }], unknown: ["skills"] },
+    { name: "malformed plugins JSON", slots: [{ code: 0, stdout: "not json" }, skills], unknown: ["plugins"] },
+    { name: "malformed skills JSON", slots: [plugins, { code: 0, stdout: "not json" }], unknown: ["skills"] },
+    { name: "missing plugins array", slots: [{ code: 0, stdout: "{}" }, skills], unknown: ["plugins"] },
+    { name: "non-array skills", slots: [plugins, { code: 0, stdout: '{"skills":{}}' }], unknown: ["skills"] },
+    { name: "invalid plugin entry", slots: [success("plugins", [plugin, { id: "broken" }]), skills], unknown: ["plugins"] },
+    { name: "invalid skill entry", slots: [plugins, success("skills", [skill, null])], unknown: ["skills"] },
+  ];
+  try {
+    const baseline = await currentComposition(ctx, { includeExtensions: true });
+    for (const priorPins of [true, false]) {
+      const prior = { ...baseline, ...(priorPins ? {} : { plugins: [], skills: [] }) };
+      const priorBytes = `${JSON.stringify(prior, null, 4)}\n`;
+      for (const scenario of cases) {
+        slots = scenario.slots;
+        wholeBatch = scenario.batch ?? "ok";
+        await writeFile(lockFile(), priorBytes);
+        const label = `${scenario.name}, prior ${priorPins ? "pins" : "empty"}`;
+        let refusal = "";
+        try { await withOutputSink(() => {}, () => lock(ctx, ["--json"])); }
+        catch (error) { refusal = (error as Error).message; }
+        check(`${label}: writer refuses unknown inventory`, refusal.includes("lock not written") && scenario.unknown.every((key) => refusal.includes(`${key} list`)), true);
+        check(`${label}: writer preserves exact prior bytes`, await readFile(lockFile(), "utf8"), priorBytes);
+        let output = "";
+        await withOutputSink((chunk) => { output += chunk; }, () => lock(ctx, ["--check", "--json"]));
+        const report = JSON.parse(output) as { problems: Problem[] };
+        check(`${label}: check names only unknown inventories`,
+          report.problems.filter((entry) => entry.code === "CLI_READ_FAILED").map((entry) =>
+            entry.detail.includes("plugins list") ? "plugins" : "skills"), scenario.unknown);
+        check(`${label}: unknown inventories do not imply deletion`,
+          report.problems.some((entry) => entry.detail.includes("no longer installed")), false);
+        check(`${label}: check also preserves prior bytes`, await readFile(lockFile(), "utf8"), priorBytes);
+      }
+    }
+    wholeBatch = "ok";
+    slots = [{ code: 1, stdout: "" }, success("skills", [])];
+    await writeFile(lockFile(), JSON.stringify(baseline));
+    let partialOutput = "";
+    await withOutputSink((chunk) => { partialOutput += chunk; }, () => lock(ctx, ["--check", "--json"]));
+    const partial = JSON.parse(partialOutput) as { problems: Problem[] };
+    check("confirmed skill removal remains visible when plugins are unknown",
+      partial.problems.map((entry) => entry.code), ["CLI_READ_FAILED", "SKILL_DRIFT"]);
+    let compositionRefusal = "";
+    try { await currentComposition(ctx, { includeExtensions: true }); }
+    catch (error) { compositionRefusal = (error as Error).message; }
+    check("composition callers without an outcome collector cannot silently accept unknown pins",
+      compositionRefusal.includes("plugins list") && compositionRefusal.includes("unknown"), true);
+    slots = [success("plugins", []), success("skills", [])];
+    await writeFile(lockFile(), JSON.stringify(baseline));
+    let output = "";
+    await withOutputSink((chunk) => { output += chunk; }, () => lock(ctx, ["--check", "--json"]));
+    const removed = JSON.parse(output) as { problems: Problem[] };
+    check("confirmed empty inventories prove both removals", removed.problems.map((entry) => entry.code), ["PLUGIN_DRIFT", "SKILL_DRIFT"]);
+    await withOutputSink(() => {}, () => lock(ctx, ["--json"]));
+    const repinned = JSON.parse(await readFile(lockFile(), "utf8")) as DeploymentLock;
+    check("confirmed empty inventory can explicitly remove prior pins", [repinned.plugins, repinned.skills], [[], []]);
+    slots = [plugins, skills];
+    await withOutputSink(() => {}, () => lock(ctx, ["--json"]));
+    const restored = JSON.parse(await readFile(lockFile(), "utf8")) as DeploymentLock;
+    check("successful inventory retains plugin identity and version", restored.plugins, baseline.plugins);
+    check("successful inventory retains skill identity", restored.skills, baseline.skills);
   } finally {
     await rm(deployment, { recursive: true, force: true });
     useDeployment(resolve(monorepoRoot, "apps", "example app"));

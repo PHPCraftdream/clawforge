@@ -130,6 +130,17 @@ async function run(ctx: Context): Promise<string> {
 {
   const output = await run(ctxFor({ bindAddress: "0.0.0.0", port: "18789" }, { present: false }));
   checkTrue("a drifted bind address (vs. configured .env) is noted", output.includes("differs from configured OC_BIND_ADDRESS"));
+  checkTrue("bind drift recommends recreation with up", output.includes("./clawforge up to recreate the container with the .env value"));
+  checkTrue("adopting a running bind requires the explicit .env edit", output.includes("OC_BIND_ADDRESS=0.0.0.0 in .env to adopt the running one"));
+  check("bind drift never recommends restart or unsupported recovery", /restart|recover-env/.test(output), false);
+}
+
+{
+  const ctx = ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false });
+  const output = await run({ ...ctx, settings: { ...ctx.settings, bindAddress: "0.0.0.0" } });
+  checkTrue("reverse bind drift also recommends up", output.includes("./clawforge up to recreate the container"));
+  checkTrue("reverse bind drift offers the actual runtime bind", output.includes("OC_BIND_ADDRESS=127.0.0.1 in .env"));
+  check("reverse drift does not suggest unsupported recovery", output.includes("recover-env"), false);
 }
 
 {

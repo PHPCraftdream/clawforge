@@ -3,12 +3,20 @@
 // die before ever touching the local ssh client under a captured/piped output, the same
 // `shouldFollow()` gate `host` already uses).
 //
-// No transport is exercised here at all: exposeSsh never calls ctx.transport (the tunnel is a
-// LOCAL process on the operator's own machine, reached through spawnLocal, not the target).
+// Foreground execution uses a stub child; no tunnel or target is opened.
 
+import childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { exposeSsh, sshTunnelCommand } from "#framework/commands/operate/expose/ssh.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
+import { CommandFailedError } from "#framework/core/io/log.ts";
+import { main } from "#framework/entry/cli.ts";
+import { selectedDeployment, useDeployment } from "#framework/runtime/deployment.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
@@ -119,5 +127,78 @@ checkTrue(
   "--run refuses without a real terminal, rather than blocking this check on a real ssh process",
   (await deathOf(() => run(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]))).includes("needs a real terminal"),
 );
+
+// Stub the builtin child boundary while keeping the real runner and CLI error handling.
+{
+  const originalSpawn = childProcess.spawn;
+  const originalStdoutTTY = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+  const originalStderrTTY = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+  const originalWrite = process.stderr.write;
+  const originalExitCode = process.exitCode;
+  const originalDeployment = selectedDeployment();
+  const root = await mkdtemp(join(tmpdir(), "clawforge-expose-ssh-"));
+  const calls: { command: string; args: readonly string[]; stdio: unknown }[] = [];
+  let childCode = 0;
+  let output = "";
+  try {
+    await writeFile(join(root, ".env"), "OC_DATA_DIR=/srv/fixture/data\nOC_TARGET_LOCATION=ssh\nOC_SSH_HOST=user@host\n");
+    useDeployment(root);
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+    Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      output += typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    childProcess.spawn = ((command: string, args: readonly string[], options: { stdio?: unknown }) => {
+      calls.push({ command, args, stdio: options.stdio });
+      const child = Object.assign(new EventEmitter(), { stdin: null, stdout: null, stderr: null });
+      queueMicrotask(() => child.emit("close", childCode));
+      return child;
+    }) as typeof childProcess.spawn;
+    syncBuiltinESMExports();
+
+    childCode = 7;
+    let failure: unknown;
+    try { await exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]); }
+    catch (error) { failure = error; }
+    process.stderr.write = originalWrite;
+    check("foreground failure carries the child exit code", failure instanceof CommandFailedError && failure.exitCode, 7);
+    check("foreground starts only the tunnel command", calls[0], {
+      command: "ssh", args: ["-N", "-L", "18789:127.0.0.1:18789", "user@host"], stdio: ["inherit", "inherit", "inherit"],
+    });
+
+    for (const code of [7, 255, 0]) {
+      childCode = code;
+      output = "";
+      process.stderr.write = ((chunk: string) => { output += chunk; return true; }) as typeof process.stderr.write;
+      await main({ name: "ssh-fixture", description: "SSH exit fixture", commands: {
+        tunnel: { summary: "open tunnel", run: exposeSsh },
+      } }, ["tunnel", "--run"]);
+      process.stderr.write = originalWrite;
+      check(`CLI propagates SSH exit ${code}`, process.exitCode, code);
+      check(`CLI reports failure only for SSH exit ${code}`, output.includes("SSH tunnel failed"), code !== 0);
+    }
+
+    const beforeGate = calls.length;
+    checkTrue("capture refuses foreground even with a TTY", (await deathOf(() => run(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]))).includes("needs a real terminal"));
+    Object.defineProperty(process.stdout, "isTTY", { value: undefined, configurable: true });
+    process.stderr.write = (() => true) as typeof process.stderr.write;
+    const refusal = await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]));
+    process.stderr.write = originalWrite;
+    checkTrue("plain pipe refuses foreground", refusal.includes("needs a real terminal"));
+    check("terminal gates never start a child", calls.length, beforeGate);
+  } finally {
+    childProcess.spawn = originalSpawn;
+    syncBuiltinESMExports();
+    process.stderr.write = originalWrite;
+    process.exitCode = originalExitCode;
+    if (originalStdoutTTY === undefined) Reflect.deleteProperty(process.stdout, "isTTY");
+    else Object.defineProperty(process.stdout, "isTTY", originalStdoutTTY);
+    if (originalStderrTTY === undefined) Reflect.deleteProperty(process.stderr, "isTTY");
+    else Object.defineProperty(process.stderr, "isTTY", originalStderrTTY);
+    if (originalDeployment !== undefined) useDeployment(originalDeployment);
+    await rm(root, { recursive: true, force: true });
+  }
+}
 
 finish("expose ssh");

@@ -11,6 +11,7 @@ somewhere else anyway, narrowest scope first:
   `http://127.0.0.1:<localPort>` URL it opens (`--local-port` to pick a different local port);
   `--run` opens it in the foreground through the local `ssh` client until Ctrl+C — that needs
   a real terminal, and is refused under MCP or a plain pipe rather than blocking one forever.
+  An SSH client failure returns that client's exit code through the CLI.
   `wsl`/`local` targets are told no tunnel is needed: Docker Desktop's WSL2 integration already
   forwards the published port to this machine's own loopback.
 * `./clawforge expose tailscale` — probes, on the target, whether `tailscale` exists and is
@@ -25,6 +26,9 @@ somewhere else anyway, narrowest scope first:
   moment `OC_BIND_ADDRESS` is edited without a recreate), whether that is loopback-only, and a
   summary of `tailscale serve status` when tailscale is present. Warns loudly when the bind
   address is `0.0.0.0` or `::` — reachable from every interface on the host, not just loopback.
+  If it differs from `OC_BIND_ADDRESS`, run `./clawforge up` to recreate the container and
+  apply `.env`; `restart` preserves existing port bindings. To adopt the running bind instead,
+  explicitly edit `OC_BIND_ADDRESS` in `.env`; `recover-env --adopt-runtime` does not adopt it.
   The same one-line summary appears in `./clawforge status`.
 
 ## Health monitoring: `watch`

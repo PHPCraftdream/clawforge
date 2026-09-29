@@ -78,14 +78,16 @@ export async function exposeStatus(ctx: Context, args: string[]): Promise<void> 
   if (summary.running && facts?.bindAddress !== undefined && facts.bindAddress !== ctx.settings.bindAddress) {
     info(
       `note: the running container differs from configured OC_BIND_ADDRESS=${ctx.settings.bindAddress} — ` +
-        "restart to apply the .env value, or ./clawforge recover-env --adopt-runtime to adopt the running one.",
+        "run ./clawforge up to recreate the container with the .env value, or explicitly set " +
+        `OC_BIND_ADDRESS=${facts.bindAddress} in .env to adopt the running one.`,
     );
   }
   if (summary.wildcard) {
     warn(`the gateway is published on ${summary.bindAddress} — reachable from every interface on this host, not loopback-only.`);
     warn(
       "put a reverse proxy with TLS and authentication in front of it (see .env.example), or set " +
-        "OC_BIND_ADDRESS back to 127.0.0.1 and use ./clawforge expose ssh or ./clawforge expose tailscale instead.",
+        "OC_BIND_ADDRESS back to 127.0.0.1, run ./clawforge up to apply it, and use " +
+        "./clawforge expose ssh or ./clawforge expose tailscale instead.",
     );
   } else if (!summary.loopback) {
     warn(`the gateway is published on ${summary.bindAddress}, not a recognized loopback address — confirm this is intentional.`);

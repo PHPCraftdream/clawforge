@@ -470,7 +470,7 @@ type SecurityEvent = {
   args?: string[];
 };
 
-function privateScanContext(options: { failMkdir?: boolean; failWrite?: boolean; failTar?: boolean; failGrep?: boolean } = {}) {
+function privateScanContext(options: { failMkdir?: boolean; failWrite?: boolean; failTar?: boolean; failGrep?: boolean; grepResult?: ExecResult } = {}) {
   const events: SecurityEvent[] = [];
   const configPath = "/srv/openclaw/data/config/.env";
   const listing = "data/\ndata/workspace/SOUL.md\n";
@@ -507,6 +507,7 @@ function privateScanContext(options: { failMkdir?: boolean; failWrite?: boolean;
           return { code: 0, stdout: "", stderr: "" };
         }
         if (command === "grep" && options.failGrep) return { code: 2, stdout: "", stderr: "grep failed" };
+        if (command === "grep") return options.grepResult ?? { code: 1, stdout: "", stderr: "" };
         return { code: 0, stdout: "", stderr: "" };
       },
     },
@@ -545,6 +546,25 @@ async function rejected(call: () => Promise<unknown>): Promise<boolean> {
   const { ctx, events } = privateScanContext({ failGrep: true });
   checkTrue("a grep failure is reported", await rejected(() => verifySnapshot(ctx, ARCHIVE, "share")));
   checkTrue("a grep failure still cleans the private session", events.some((event) => event.kind === "exec" && event.command === "rm"));
+}
+for (const [label, grepResult] of [
+  ["signal with empty output", { code: -1, stdout: "", stderr: "" }],
+  ["signal with partial output", { code: -1, stdout: "data/workspace/first.md\n", stderr: "" }],
+  ["timeout with exit zero", { code: 0, stdout: "", stderr: "", timedOut: true }],
+  ["timeout with exit one", { code: 1, stdout: "", stderr: "", timedOut: true }],
+  ["grep error", { code: 2, stdout: "", stderr: "" }],
+  ["unexpected exit", { code: 127, stdout: "", stderr: "" }],
+] satisfies [string, ExecResult][]) {
+  const { ctx, events } = privateScanContext({ grepResult });
+  checkTrue(`${label} refuses verification`, await rejected(() => verifySnapshot(ctx, ARCHIVE, "share")));
+  const pattern = events.find((event) => event.kind === "write")?.path;
+  const session = events.find((event) => event.kind === "mkdir")?.path;
+  checkTrue(`${label} removes its pattern file`, events.some((event) => event.kind === "remove" && event.path === pattern));
+  checkTrue(`${label} removes its private session`, events.some((event) => event.command === "rm" && event.args?.includes(session ?? "")));
+}
+for (const [code, stdout, expected] of [[1, "", true], [0, "data/workspace/SOUL.md\n", false]] as const) {
+  const { ctx } = privateScanContext({ grepResult: { code, stdout, stderr: "" } });
+  check(`completed grep ${code} preserves its verdict`, await withOutputSink(() => {}, () => verifySnapshot(ctx, ARCHIVE, "share")), expected);
 }
 {
   const { ctx, events } = privateScanContext({ failTar: true });

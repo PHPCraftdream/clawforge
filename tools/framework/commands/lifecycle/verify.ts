@@ -283,9 +283,8 @@ async function findSecrets(ctx: Context, directory: string, values: string[], pa
       { allowFailure: true },
     );
 
-    // grep answers 0 for "found", 1 for "not found", 2 or more for a failure. Reading the
-    // last as "nothing found" would pass an archive after an unreadable file.
-    if (result.code > 1) {
+    // Only a completed grep can clear the archive; interrupted stdout may be partial.
+    if (result.timedOut || (result.code !== 0 && result.code !== 1)) {
       throw new Error(`scanning ${directory} failed (grep exit ${result.code}): ${result.stderr.trim()}`);
     }
 

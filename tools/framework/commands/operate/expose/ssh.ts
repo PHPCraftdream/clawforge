@@ -4,7 +4,7 @@
 // (or a shared filesystem, for local) already forwards the published port to this machine's
 // own loopback.
 
-import { log, info, die } from "#src/core/io/log.ts";
+import { log, info, die, dieWithExitCode } from "#src/core/io/log.ts";
 import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import { shouldFollow } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
@@ -63,5 +63,6 @@ export async function exposeSsh(ctx: Context, args: string[]): Promise<void> {
     die("--run opens a blocking tunnel and needs a real terminal — run the printed command yourself, or omit --run to just see it.");
   }
   log("opening the tunnel (Ctrl+C to stop)...");
-  await spawnLocal(command[0], command.slice(1), { stream: true, allowFailure: true });
+  const result = await spawnLocal(command[0], command.slice(1), { stream: true, allowFailure: true });
+  if (result.code !== 0) dieWithExitCode(`SSH tunnel failed (exit ${result.code})`, result.code);
 }

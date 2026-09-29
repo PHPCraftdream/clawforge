@@ -474,6 +474,9 @@ export const managementCommands: Record<string, AppCommand> = {
       "then layers on two findings of its own: CHANNEL_UNHEALTHY (degraded) for a " +
       "configured, enabled channel account that `openclaw channels status --json` reports " +
       "not running, erroring or not connected\n" +
+      "A requested channel read that fails or returns malformed or incomplete telemetry " +
+      "produces CHANNEL_UNKNOWN (degraded), preventing healthy recovery and heartbeat pings; " +
+      "an unrequested read adds no finding.\n" +
       "(skipped while the gateway itself is down — nothing to exec a CLI call into; " +
       "verified on OpenClaw 2026.6.34 — that CLI has no dead-letter/delivery-failure " +
       "signal, only connection/auth trouble, so that is all this reports),\n" +
@@ -530,6 +533,8 @@ export const managementCommands: Record<string, AppCommand> = {
       "240,360,480,720,1440 — anything else is refused, naming the nearest valid values, " +
       "rather than silently misfiring),\n" +
       "marked so a re-run replaces only its own line and uninstall removes only it.\n" +
+      "Cron installation refuses % in the working directory, command, arguments or marker " +
+      "before touching the scheduler, including a percent preceded by a backslash.\n" +
       "Only where this framework can actually trust an unattended cron to find this " +
       "tooling's own node and checkout: a real SSH host (deploy already mirrored the " +
       "checkout there) or a POSIX `local` target.\n" +

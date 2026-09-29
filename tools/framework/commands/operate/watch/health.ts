@@ -5,6 +5,7 @@ import { maskSecrets } from "../../../core/io/log.ts";
 import type { Context } from "../../../core/context.ts";
 import type { ExecResult } from "../../../runtime/transport/transport.ts";
 import type { ChannelAccountStatus, ChannelsStatusResponse } from "../../../service/inspection.ts";
+import { isChannelsStatusResponse } from "../../../service/inspection.ts";
 import type { WatchLevel, WatchReason } from "./state.ts";
 
 export const DISK_MIN_MB_ENV = "OC_WATCH_DISK_MIN_MB";
@@ -37,8 +38,8 @@ function channelFinding(id: string, detail: string): WatchFinding {
  *  even with a stale lastError. An absent response is a gap, not a verdict. */
 export function channelFindings(response: ChannelsStatusResponse | undefined): WatchFinding[] {
   if (response === undefined) return [];
-  const accounts = response.channelAccounts;
-  if (accounts === null || typeof accounts !== "object") return [];
+  if (!isChannelsStatusResponse(response)) return [{ level: "degraded", reason: { code: "CHANNEL_UNKNOWN", detail: "channel telemetry has an invalid response shape" } }];
+  const accounts = response.channelAccounts ?? {};
 
   const findings: WatchFinding[] = [];
   for (const [channel, entry] of Object.entries(accounts)) {

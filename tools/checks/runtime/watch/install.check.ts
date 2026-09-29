@@ -140,6 +140,14 @@ try {
     runtime: { async isRunning(): Promise<boolean> { return true; } },
   } as unknown as Context;
 
+  for (const remotePath of ["/opt/project%blue", "/opt/project\\%blue"]) {
+    calls.length = 0;
+    const unsupported = { ...ctx, settings: { ...ctx.settings, remotePath } };
+    const error = await deathOf(() => withOutputSink(() => {}, () => watchInstall(unsupported, ["--apply"])));
+    check("percent paths fail before scheduling", error.includes("does not support %"), true);
+    check("percent refusal touches no target command", calls.length, 0);
+  }
+
   // print-only (no --apply): never touches crontab at all.
   await withOutputSink(() => {}, () => watchInstall(ctx, []));
   check("print-only install never reads or writes the real crontab", calls.some((call) => call.command === "crontab"), false);

@@ -242,7 +242,7 @@ try {
     const ctx = stubContext({
       targetEnv: "ZAI_API_KEY=k\n",
       mirrorChecksums: goodChecksums,
-      channelsStatus: { telegram: [{ accountId: "default", enabled: true, configured: true }] },
+      channelsStatus: { telegram: [{ accountId: "default", enabled: true, configured: true, running: true }] },
     });
     const counted = {
       ...ctx,
@@ -259,7 +259,7 @@ try {
     check(
       "observed.channels carries channels status --json's parsed answer",
       inspection.observed.channels,
-      { channelAccounts: { telegram: [{ accountId: "default", enabled: true, configured: true }] } },
+      { channelAccounts: { telegram: [{ accountId: "default", enabled: true, configured: true, running: true }] } },
     );
   }
 
@@ -272,6 +272,7 @@ try {
       { channels: true },
     );
     check("a failing channels command inside the batch leaves observed.channels absent, not a crash", inspection.observed.channels, undefined);
+    check("a requested channel failure is unknown telemetry", inspection.problems.some((entry) => entry.code === "CHANNEL_UNKNOWN"), true);
   }
 
   {
@@ -279,6 +280,7 @@ try {
       stubContext({ targetEnv: "ZAI_API_KEY=k\n", mirrorChecksums: goodChecksums, channelsStatus: { telegram: [] } }),
     );
     check("without the option, observed.channels is absent even when channel data is available", inspection.observed.channels, undefined);
+    check("without the option, no channel telemetry failure is reported", inspection.problems.some((entry) => entry.code === "CHANNEL_UNKNOWN"), false);
   }
 
   {

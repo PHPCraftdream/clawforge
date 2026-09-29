@@ -32,6 +32,7 @@ export type ProblemCode =
   | "MCP_SERVER_MISSING"
   | "CRON_DRIFT"
   | "CLI_READ_FAILED"
+  | "CHANNEL_UNKNOWN"
   | "LOCK_MISSING"
   | "LOCK_DRIFT"
   | "PLUGIN_DRIFT"
@@ -168,6 +169,11 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     severity: "blocking",
     summary: "the OpenClaw CLI could not confirm the live registrations",
     nextAction: "./clawforge inspect",
+  },
+  CHANNEL_UNKNOWN: {
+    severity: "warning",
+    summary: "the requested channel telemetry could not be confirmed",
+    nextAction: "./clawforge cli channels status --json",
   },
   LOCK_MISSING: {
     severity: "warning",
@@ -436,8 +442,7 @@ export interface SecretStoreObservation {
   readonly missing: readonly string[];
 }
 
-/** One channel account, as `openclaw channels status --json` reports it. Loosely typed on
- *  purpose: this reads someone else's report looking for trouble, not validating it. */
+/** Channel telemetry fields are unknown until the response is validated. */
 export interface ChannelAccountStatus {
   readonly accountId?: unknown;
   readonly enabled?: unknown;
@@ -450,6 +455,26 @@ export interface ChannelAccountStatus {
 /** `openclaw channels status --json`'s own shape, by channel name. */
 export interface ChannelsStatusResponse {
   readonly channelAccounts?: Record<string, unknown>;
+}
+
+/** Confirms the channel report's structure before interpreting liveness. */
+export function isChannelsStatusResponse(value: unknown): value is ChannelsStatusResponse {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const accounts = (value as ChannelsStatusResponse).channelAccounts;
+  if (accounts === undefined || accounts === null || typeof accounts !== "object" || Array.isArray(accounts)) return false;
+  return Object.values(accounts).every((entries) => Array.isArray(entries) && entries.every((entry: unknown) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const account = entry as ChannelAccountStatus;
+    if (typeof account.configured !== "boolean") return false;
+    for (const field of [account.enabled, account.running, account.connected]) {
+      if (field !== undefined && typeof field !== "boolean") return false;
+    }
+    if (account.accountId !== undefined && typeof account.accountId !== "string") return false;
+    if (account.lastError !== undefined && account.lastError !== null && typeof account.lastError !== "string") return false;
+    const hasState = typeof account.running === "boolean" || typeof account.connected === "boolean";
+    const hasError = typeof account.lastError === "string" && account.lastError.trim() !== "";
+    return account.configured !== true || account.enabled === false || hasState || hasError;
+  }));
 }
 
 /** What the instance actually is, right now. */
@@ -472,7 +497,7 @@ export interface ObservedState {
   readonly secretStore?: SecretStoreObservation;
   /** `channels status --json`'s answer, gathered in the same batched CLI call only when the
    *  caller opts in (gatherInspection's `channels` option — only `watch check` does).
-   *  Absence is a gap, never a verdict. */
+   *  Requested failures also produce CHANNEL_UNKNOWN; an unrequested read does not. */
   readonly channels?: ChannelsStatusResponse;
   /** Image actually in use, and its digest when the runtime can resolve one. */
   readonly image?: string;

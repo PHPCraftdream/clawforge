@@ -126,6 +126,9 @@ An operator finds out the instance stopped doing its job without polling by hand
     dead-letter or delivery-failure signal for a channel — this reports connection/auth
     trouble, never "a message could not be delivered", because no machine-readable signal for
     that exists in this CLI surface to build it from.
+    Requested reads that fail or return malformed or incomplete telemetry report
+    `CHANNEL_UNKNOWN` (`degraded`). Losing telemetry cannot declare a healthy recovery or
+    send a healthy heartbeat. Reads that were not requested add no channel finding.
   * `DISK_LOW` / `DISK_UNKNOWN` — free space on the data directory's filesystem (`df -Pk
     <dataDir>` on the target, through the same transport everything else uses), against
     `OC_WATCH_DISK_MIN_MB` in this deployment's `.env` (default 1024 MB): `degraded` below
@@ -166,7 +169,10 @@ An operator finds out the instance stopped doing its job without polling by hand
   fallback alike) is shared with `backup install`/`backup uninstall` — see
   [Backup and restore](data-and-backups.md#backup-and-restore) — through
   `commands/operate/schedule.ts`, so the two jobs cannot drift into two different
-  implementations of the same idea. `--apply` also records `--interval` into this deployment's
+  implementations of the same idea. Cron installation refuses `%` in the working directory,
+  command, arguments or marker before any scheduler change, including `\%`: cron interprets
+  percent signs before shell quoting. Unsupported existing rows are preserved by uninstall.
+  `--apply` also records `--interval` into this deployment's
   own watch state (cleared by `watch uninstall --apply`) — the only place this framework can
   observe the real schedule, since cron itself is never asked afterwards; `watch status`'s
   staleness check reads it from there.
@@ -198,8 +204,9 @@ An operator finds out the instance stopped doing its job without polling by hand
 
 OpenClaw's own incident runbook, run by the framework because each step needs something only
 it can reach: `./clawforge incident` runs five phases in order, contain → preserve → rotate →
-audit → collect, and never stops early — a failed phase is noted, not fatal, so the operator
-gets the fullest report and the freshest evidence it can produce.
+audit → collect, and attempts every phase after a failure so the operator gets the fullest
+report and the freshest evidence it can produce. Preserve, rotate, audit or collect failures
+produce a non-zero exit after the remaining phases have been attempted.
 
 * **contain** — turns off, on the target, only the `tailscale serve` route(s) that proxy to
   THIS gateway — never `tailscale serve reset`, which would also drop every other service's
@@ -214,7 +221,10 @@ gets the fullest report and the freshest evidence it can produce.
 * **preserve** — before rotate can recreate the container (and take its `json-file` log with
   it), a log tail and an env-redacted `docker inspect` of the container running right now are
   written into this run's own evidence directory. Known secrets — including the gateway token
-  about to be rotated away — are masked out of both files before they are written.
+  about to be rotated away — are masked out of both files before they are written. A snapshot,
+  directory-protection or file-write failure marks this evidence as incomplete, records a
+  masked reason and lists only successfully written files. Rotation, audit and collection
+  still proceed, including when only the first evidence file was saved.
 * **rotate** — a fresh `OPENCLAW_GATEWAY_TOKEN`, written to `.env` and recreated into the
   running container so it actually takes effect (a repo-env value like this one is fixed at
   container-creation time; a plain restart would not apply it). Every MCP client paired
@@ -226,15 +236,16 @@ gets the fullest report and the freshest evidence it can produce.
   short status summary, joined with preserve's own files into one manifest — into a private,
   owner-only `apps/<name>/incidents/<timestamp>/` directory, never inside the repository's
   tracked tree (`apps/` is gitignored wholesale). Every file is masked for known secrets
-  before it is written. Preserve and collect run and write unconditionally, even when rotate
-  or audit fails: the report still shows where the evidence landed, and the original failure
-  still reaches the operator afterwards as a non-zero exit.
+  before it is written. Preserve and collect are attempted even when another phase fails:
+  the report shows confirmed pre-rotate evidence paths and any incomplete-evidence errors.
+  A collection failure does not claim a completed archive or replace an earlier preserve
+  error; the failure still reaches the operator afterwards as a non-zero exit.
 
 `--dry-run` prints the plan and performs none of it, not even taking the instance lock.
 `--tail <n>` bounds how much log each of preserve/collect captures (default 500 lines).
 `--keep-exposure` proceeds past the publicly-bound refusal. `--json` emits the full report —
-every phase's actions and notes, the security findings, and where the evidence went — as one
-JSON object.
+every phase's actions and notes, preserve's confirmed `files`, any evidence-phase `error`,
+the security findings, and where the evidence went — as one JSON object.
 
 After a real incident: rotate already invalidated every existing MCP pairing, so run
 `./clawforge mcp-creds` (or `mcp-setup`) again for each client before trusting it to reconnect.

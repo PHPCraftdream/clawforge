@@ -3,7 +3,7 @@
 // see a name that resolves there and nowhere else — the 2026-09-20 outage, invisible to
 // every probe for a day. It asks only the endpoints the live configuration names, in one
 // exec, and reports what cannot be reached as EGRESS_UNREACHABLE, a warning: the instance
-// is up and the outside world is not this deployment's fault. See fixture.ts for the
+// is up and the outside world is not this deployment's fault. See ../fixture.ts for the
 // shared stub and on-disk deployment.
 
 import { createServer } from "node:http";
@@ -17,8 +17,8 @@ import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { HelperNotRunning } from "#framework/runtime/runtime.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
-import { setupFixtureDeployment, teardownFixtureDeployment } from "./fixture.ts";
-import type { TargetSpec } from "./fixture.ts";
+import { setupFixtureDeployment, teardownFixtureDeployment } from "../fixture.ts";
+import type { TargetSpec } from "../fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";

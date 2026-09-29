@@ -53,6 +53,7 @@ async function deathOf(run: () => unknown): Promise<string> {
   const findings = (codes: Problem["code"][]): Problem[] => codes.map((code) => problem(code, `${code} detail`));
   check("no problems -> ok, no reasons", watchLevel([]), { level: "ok", reasons: [] });
   check("EGRESS_UNREACHABLE alone -> degraded (warning severity)", watchLevel(findings(["EGRESS_UNREACHABLE"])).level, "degraded");
+  check("CHANNEL_UNKNOWN alone -> degraded (telemetry is not confirmed)", watchLevel(findings(["CHANNEL_UNKNOWN"])).level, "degraded");
   check("GATEWAY_DOWN alone -> down (blocking severity)", watchLevel(findings(["GATEWAY_DOWN"])).level, "down");
   check("GATEWAY_UNHEALTHY alone -> down (blocking severity)", watchLevel(findings(["GATEWAY_UNHEALTHY"])).level, "down");
   check("NOT_BOOTSTRAPPED alone -> down (blocking severity)", watchLevel(findings(["NOT_BOOTSTRAPPED"])).level, "down");

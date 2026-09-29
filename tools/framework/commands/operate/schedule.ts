@@ -81,6 +81,9 @@ export function parseIntervalToMinutes(raw: string): number {
 }
 
 export function cronLine(minutes: number, invocation: ScheduledInvocation, job: string, name: string): string {
+  if ([invocation.cwd, invocation.command, ...invocation.args, jobMarker(job, name)].some((part) => part.includes("%"))) {
+    throw new Error("cron scheduling does not support % in the working directory, command, arguments or marker");
+  }
   const args = invocation.args.map((arg) => SshTransport.quote(arg)).join(" ");
   return `${cronSchedule(minutes)} cd ${SshTransport.quote(invocation.cwd)} && ${invocation.command} ${args} >/dev/null 2>&1 ${jobMarker(job, name)}`;
 }
@@ -96,6 +99,7 @@ export function crontabLines(text: string): string[] {
 }
 
 function ownedCronLine(line: string, job: string, name: string): boolean {
+  if (line.includes("%")) return false;
   const match = /^((?:\S+\s+){4}\S+) cd ('(?:[^']|'\\'')*') && \.\/clawforge (.+) >\/dev\/null 2>&1 (# clawforge-[^\r\n]+)$/.exec(line);
   if (match === null || match[4] !== jobMarker(job, name)) return false;
   if (!VALID_INTERVAL_MINUTES.some((minutes) => cronSchedule(minutes) === match[1])) return false;

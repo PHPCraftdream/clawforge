@@ -50,21 +50,17 @@ try {
       async writeFile(path: string, content: string): Promise<void> {
         writes[path] = content;
       },
+      async writePrivateFile(path: string, content: string | Uint8Array): Promise<void> {
+        if (writes[path] !== undefined) throw new Error("private staging already exists");
+        writes[path] = typeof content === "string" ? content : new TextDecoder().decode(content);
+      },
       async remove(path: string): Promise<void> { delete writes[path]; },
       async exec(
         command: string,
         args: string[],
-        options?: { input?: string | Uint8Array },
       ): Promise<{ code: number; stdout: string; stderr: string }> {
         if (command === "mkdir" && args[0] !== "-p") return { code: 0, stdout: "", stderr: "" };
         if (command === "test" && args[0] === "-d") return { code: 1, stdout: "", stderr: "" };
-        // loadSecrets stages the keys privately and publishes them with one rename; both
-        // steps have to land here or nothing ever reaches config/.env in this model.
-        if (command === "sh" && args[0] === "-c" && args[1]?.includes("umask 077") === true) {
-          const staging = args[1].split("'")[1] ?? "";
-          const input = options?.input ?? "";
-          writes[staging] = typeof input === "string" ? input : new TextDecoder().decode(input);
-        }
         if (command === "mv") {
           const source = args[args.length - 2] ?? "";
           const destination = args[args.length - 1] ?? "";

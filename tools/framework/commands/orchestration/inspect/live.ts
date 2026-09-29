@@ -17,7 +17,7 @@ import {
   mcpServerMatches,
 } from "#src/commands/management/provision-agent/index.ts";
 import type { CronJob } from "#src/commands/management/provision-agent/index.ts";
-import { problem } from "#src/service/inspection.ts";
+import { problem, isChannelsStatusResponse } from "#src/service/inspection.ts";
 import type { Problem, DeclaredState, ObservedState, EgressObservation, ChannelsStatusResponse } from "#src/service/inspection.ts";
 import {
   PLUGINS_LIST_ARGS,
@@ -222,7 +222,7 @@ async function observeRegistrations(ctx: Context, includeChannels: boolean, prob
   const channelsIndex = includeChannels ? batchCommands.push(["channels", "status", "--json"]) - 1 : undefined;
   const batchResults = await openclawCliBatch(ctx, batchCommands);
   const [agentsResult, mcpResult, cronResult, versionResult, pluginsResult, skillsResult] = batchResults;
-  const channels = channelsIndex === undefined ? undefined : parseChannelsStatus(batchResults[channelsIndex]);
+  const channels = channelsIndex === undefined ? undefined : parseChannelsStatus(batchResults[channelsIndex], problems);
   const agents = parseJsonOrUnknown(agentsResult, "agents list", problems, (parsed) =>
     (parsed as Array<{ id?: string }>).map((entry) => entry.id ?? "").filter((id) => id !== ""));
   // Full entries, not just names: a server registered under the wrong command (or disabled)
@@ -435,13 +435,18 @@ function reportCliReadFailure(problems: Problem[], name: string, reason: string)
   problems.push(problem("CLI_READ_FAILED", `openclaw ${name} could not be read (${reason}); live state is unknown`));
 }
 
-/** `channels status --json`'s batched read, only attempted when includeChannels opted in.
- *  Absent, not an empty shape, on failure — gap, not verdict. */
-function parseChannelsStatus(result: BatchedCliResult): ChannelsStatusResponse | undefined {
-  if (result.code !== 0) return undefined;
-  try {
-    return JSON.parse(result.stdout) as ChannelsStatusResponse;
-  } catch {
+/** A requested read's failure stays unknown, with no raw CLI output in its reason. */
+export function parseChannelsStatus(result: BatchedCliResult | undefined, problems: Problem[]): ChannelsStatusResponse | undefined {
+  const unknown = (reason: string): undefined => {
+    problems.push(problem("CHANNEL_UNKNOWN", `openclaw channels status could not be confirmed (${reason}); channel state is unknown`));
     return undefined;
+  };
+  if (result === undefined) return unknown("missing response");
+  if (result.code !== 0) return unknown(`exit ${result.code}`);
+  try {
+    const parsed: unknown = JSON.parse(result.stdout);
+    return isChannelsStatusResponse(parsed) ? parsed : unknown("invalid response shape");
+  } catch {
+    return unknown("invalid JSON response");
   }
 }

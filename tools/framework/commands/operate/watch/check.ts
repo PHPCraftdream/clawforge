@@ -49,6 +49,7 @@ const LIVENESS_CODES: ReadonlySet<ProblemCode> = new Set([
   "GATEWAY_DOWN",
   "GATEWAY_UNHEALTHY",
   "EGRESS_UNREACHABLE",
+  "CHANNEL_UNKNOWN",
 ]);
 
 /** Blocking-severity liveness findings mean the instance is not doing its job at all

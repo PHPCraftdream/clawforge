@@ -46,6 +46,7 @@ check(
     "BACKUP_MISSING",
     "BACKUP_STALE",
     "BACKUP_UNREADABLE",
+    "CHANNEL_UNKNOWN",
     "CLI_READ_FAILED",
     "CONFIG_DRIFT",
     "CRON_DRIFT",
@@ -105,6 +106,12 @@ check(
 );
 
 // --- problem() takes severity and remedy from the table, not from the caller ------------
+
+{
+  const unknown = problem("CHANNEL_UNKNOWN", "requested channel telemetry was not confirmed");
+  check("unknown channel telemetry is advisory, never proven down", unknown.severity, "warning");
+  check("channel telemetry has a CLI diagnostic remedy", unknown.nextAction, "./clawforge cli channels status --json");
+}
 
 {
   const drift = problem("CONFIG_DRIFT", "gateway.mode is \"local\", declared \"remote\"");

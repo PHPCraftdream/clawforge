@@ -7,7 +7,7 @@ import { createContext } from "#framework/core/context.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { requirements, requirementsForConfig } from "#framework/service/secrets.ts";
 import { preflightSecrets, secrets as secretsCommand } from "#framework/commands/management/secrets.ts";
-import type { ExecOptions, ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
+import type { ExecResult, Transport } from "#framework/runtime/transport/transport.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
@@ -26,16 +26,9 @@ class MemoryTransport implements Transport {
   readonly description = "memory";
   readonly files = new Map<string, string>();
 
-  async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
+  async exec(command: string, args: string[]): Promise<ExecResult> {
     if (command === "mkdir") return { code: 0, stdout: "", stderr: "" };
     if (command === "rm" && args[0] === "-rf") this.files.delete(args[1]);
-    // Provider keys are staged privately and published by rename (loadSecrets), so a model
-    // that only knows writeFile never sees them arrive.
-    if (command === "sh" && args[0] === "-c" && args[1]?.includes("umask 077") === true) {
-      const staging = args[1].split("'")[1] ?? "";
-      const input = options?.input ?? "";
-      this.files.set(staging, typeof input === "string" ? input : new TextDecoder().decode(input));
-    }
     if (command === "mv") {
       const source = args[args.length - 2] ?? "";
       const destination = args[args.length - 1] ?? "";
@@ -54,6 +47,10 @@ class MemoryTransport implements Transport {
   }
   async writeFile(path: string, content: string | Uint8Array): Promise<void> {
     this.files.set(path, typeof content === "string" ? content : new TextDecoder().decode(content));
+  }
+  async writePrivateFile(path: string, content: string | Uint8Array): Promise<void> {
+    assert.equal(this.files.has(path), false, "private staging creation is exclusive");
+    await this.writeFile(path, content);
   }
   async exists(path: string): Promise<boolean> { return this.files.has(path); }
   async mkdirp(_path: string): Promise<void> {}

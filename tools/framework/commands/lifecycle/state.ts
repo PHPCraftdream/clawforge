@@ -5,13 +5,13 @@
 // deleting it.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
-import { shellQuote } from "#src/core/io/shell.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv, parseRetention } from "#src/core/env.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
-import { sudoFor, runMaybePrivileged, needsOwnerEscalation, secretsFileOnTarget } from "#src/runtime/datadir.ts";
+import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
+import { publishPrivateTargetFile } from "#src/security/privacy/private-target-file.ts";
 import { archiveRoot, isProfile, listArchive, listSnapshotArchives, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { requirements, template } from "#src/service/secrets.ts";
@@ -261,17 +261,6 @@ export async function dumpSecrets(ctx: Context): Promise<string | undefined> {
   return ctx.transport.readFile(path);
 }
 
-/** Creates a new file whose contents are private from the first byte, with an exclusive
- *  umask-077 write for transports without the capability (the shape verify.ts uses for
- *  its scan files). */
-async function writePrivate(ctx: Context, path: string, content: string): Promise<void> {
-  if (typeof ctx.transport.writePrivateFile === "function") {
-    await ctx.transport.writePrivateFile(path, content);
-    return;
-  }
-  await ctx.transport.exec("sh", ["-c", `umask 077; set -C; cat > ${shellQuote(path)}`], { input: content });
-}
-
 /** Installs provider keys on the target with mode 600, owner 1000:1000 — OpenClaw refuses
  *  to read a root-owned env file.
  *
@@ -283,24 +272,7 @@ async function writePrivate(ctx: Context, path: string, content: string): Promis
 export async function loadSecrets(ctx: Context, content: string): Promise<void> {
   if (content.trim() === "") die("refusing to install an empty secrets file");
   const path = secretsFileOnTarget(ctx);
-  // A random suffix, not a fixed staging name: set -C refuses to create over a staging
-  // file a previous crash left behind, which would break every later install until
-  // someone removed it by hand.
-  const staging = `${path}.clawforge-${randomBytes(8).toString("hex")}`;
-  try {
-    await writePrivate(ctx, staging, content);
-    // Owner before publication: the gateway user must be able to read the keys the moment
-    // they appear at the final path, not after a follow-up chown gets around to it.
-    await runMaybePrivileged(ctx, staging, "chown", ["1000:1000", staging], { force: await needsOwnerEscalation(ctx, "1000:1000") });
-    // Probed against the staging path so sudoFor asks about the directory the rename
-    // actually needs, not the file being replaced.
-    await runMaybePrivileged(ctx, staging, "mv", ["-fT", "--", staging, path]);
-  } catch (error) {
-    // Best effort: a staging file that cannot be removed is a cosmetic leak next to the
-    // intact keys the rename never touched.
-    await runMaybePrivileged(ctx, staging, "rm", ["-f", "--", staging]).catch(() => {});
-    throw error;
-  }
+  await publishPrivateTargetFile(ctx, path, content);
   const count = content.split("\n").filter((line) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(line)).length;
   log(`installed ${path} (${count} variable(s))`);
 }

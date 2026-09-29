@@ -91,12 +91,16 @@ function channelsResponse(channelAccounts: unknown): ChannelsStatusResponse {
 }
 
 {
-  check("an absent response (CLI call failed, or channels was never asked) is a gap, not a finding", channelFindings(undefined), []);
+  check("an absent payload adds nothing; requested failures carry an inspection problem", channelFindings(undefined), []);
 }
 
 {
   const malformed = channelsResponse("not an object");
-  check("a malformed channelAccounts shape is a gap, not a finding", channelFindings(malformed), []);
+  check("a malformed channelAccounts shape remains unknown", channelFindings(malformed).map((entry) => [entry.level, entry.reason.code]), [["degraded", "CHANNEL_UNKNOWN"]]);
+  for (const accounts of [[], { channel: "invalid" }, { channel: [null] }, { channel: [{}] }, { channel: [{ configured: true, running: "true" }] }, { channel: [{ configured: true }] }]) {
+    check("malformed or incomplete accounts cannot imply health", channelFindings(channelsResponse(accounts))[0]?.reason.code, "CHANNEL_UNKNOWN");
+  }
+  check("confirmed empty accounts are healthy", channelFindings(channelsResponse({})), []);
 }
 
 // --- diskFindings(): degraded below the threshold, down below 10% of it or 100 MB -----------

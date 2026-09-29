@@ -51,6 +51,8 @@ export interface IncidentPhase {
   readonly phase: "contain" | "preserve" | "rotate" | "audit" | "collect";
   readonly actions: readonly string[];
   readonly notes: readonly string[];
+  readonly error?: string;
+  readonly files?: readonly string[];
 }
 
 export interface IncidentReport {
@@ -64,10 +66,7 @@ export interface IncidentReport {
   readonly archive?: string;
 }
 
-/** Thrown by runPhases when rotate or audit fails. Carries the report built so far — contain,
- *  preserve and collect all still ran, so the operator sees exactly what this run did before
- *  the original failure reaches them as a non-zero exit (incident() rethrows `cause`
- *  unchanged). */
+/** Carries phase failures and the report after every remaining phase was attempted. */
 export class IncidentPhaseFailure extends Error {
   readonly report: IncidentReport;
   constructor(report: IncidentReport, cause: unknown) {
@@ -259,39 +258,52 @@ function incidentDir(timestamp: string): string {
   return resolve(deploymentDir(), "incidents", timestamp);
 }
 
-/** Saves a log tail and an env-redacted `docker inspect` of the container running RIGHT NOW, before
- *  rotate's reconcile() can recreate it and take the old one's json-file log with it. Never
- *  throws: a snapshot failure is noted, not fatal — rotate must still run. */
+interface IncidentEvidenceIO {
+  readonly protectDirectory: typeof protectPrivateDirectory;
+  readonly writeFile: typeof createPrivateFile;
+}
+
+const evidenceIO: IncidentEvidenceIO = { protectDirectory: protectPrivateDirectory, writeFile: createPrivateFile };
+
+/** Preserves the old container before rotation; failures retain only confirmed files. */
 export async function preserveEvidence(
   ctx: Context,
   options: IncidentOptions,
   dir: string,
-): Promise<IncidentPhase & { files: readonly string[] }> {
+  io: IncidentEvidenceIO = evidenceIO,
+): Promise<IncidentPhase & { files: readonly string[]; failure?: Error }> {
   const actions: string[] = [];
   const notes: string[] = [];
+  const files: string[] = [];
 
   if (options.dryRun) {
     actions.push("would preserve a log tail and `docker inspect` of the current container before rotate recreates it");
     return { phase: "preserve", actions, notes, files: [] };
   }
 
-  let snapshot: { logs: string; inspect: string } | undefined;
+  let step = "snapshot the running container before rotate";
   try {
-    snapshot = await ctx.runtime.captureIncidentSnapshot?.(options.tail);
+    const snapshot = await ctx.runtime.captureIncidentSnapshot?.(options.tail);
+    if (snapshot === undefined) {
+      notes.push(`${ctx.runtime.description} has nothing running to snapshot, or cannot introspect it — no pre-rotate evidence to preserve`);
+      return { phase: "preserve", actions, notes, files };
+    }
+    step = `protect the pre-rotate evidence directory ${dir}`;
+    await io.protectDirectory(dir);
+    for (const [name, content] of [["pre-rotate-logs.txt", snapshot.logs], ["pre-rotate-inspect.json", snapshot.inspect]]) {
+      const path = resolve(dir, name);
+      step = `write pre-rotate evidence ${path}`;
+      await io.writeFile(path, maskSecrets(content));
+      files.push(name);
+      actions.push(`preserved pre-rotate evidence into ${path}`);
+    }
   } catch (error) {
-    notes.push(`could not snapshot the running container before rotate: ${(error as Error).message}`);
-    return { phase: "preserve", actions, notes, files: [] };
+    const detail = maskSecrets(error instanceof Error ? error.message : String(error));
+    const reason = maskSecrets(`could not ${step}: ${detail} — pre-rotate evidence is incomplete; rotate proceeds regardless`);
+    notes.push(reason);
+    return { phase: "preserve", actions, notes, files, error: reason, failure: new Error(reason) };
   }
-  if (snapshot === undefined) {
-    notes.push(`${ctx.runtime.description} has nothing running to snapshot, or cannot introspect it — no pre-rotate evidence to preserve`);
-    return { phase: "preserve", actions, notes, files: [] };
-  }
-
-  await protectPrivateDirectory(dir);
-  await createPrivateFile(resolve(dir, "pre-rotate-logs.txt"), maskSecrets(snapshot.logs));
-  await createPrivateFile(resolve(dir, "pre-rotate-inspect.json"), maskSecrets(snapshot.inspect));
-  actions.push(`preserved the pre-rotate container's log tail and inspect into ${dir}`);
-  return { phase: "preserve", actions, notes, files: ["pre-rotate-logs.txt", "pre-rotate-inspect.json"] };
+  return { phase: "preserve", actions, notes, files };
 }
 
 export async function collectEvidence(
@@ -336,12 +348,23 @@ function render(report: IncidentReport): void {
   if (report.archive !== undefined) info(`evidence: ${report.archive}`);
 }
 
-/** contain → preserve → rotate → audit → collect. Preserve and collect always run and always
- *  write their evidence — collect's write is unconditional even when rotate or audit failed —
- *  so a phase failure is carried on the thrown IncidentPhaseFailure rather than swallowed: the
- *  operator sees the full report AND the original error still reaches them as a non-zero exit
- *  (incident() below). */
-export async function runPhases(ctx: Context, options: IncidentOptions): Promise<IncidentReport> {
+interface IncidentOperations {
+  readonly preserve: typeof preserveEvidence;
+  readonly rotate: typeof rotateToken;
+  readonly audit: typeof runAudits;
+  readonly collect: typeof collectEvidence;
+}
+
+const incidentOperations: IncidentOperations = {
+  preserve: preserveEvidence, rotate: rotateToken, audit: runAudits, collect: collectEvidence,
+};
+
+/** Attempts every phase, then reports any failure with the evidence actually saved. */
+export async function runPhases(
+  ctx: Context,
+  options: IncidentOptions,
+  operations: IncidentOperations = incidentOperations,
+): Promise<IncidentReport> {
   const contain = await containExposure(ctx, options).catch((error: unknown): IncidentPhase => ({
     phase: "contain",
     actions: [],
@@ -349,12 +372,15 @@ export async function runPhases(ctx: Context, options: IncidentOptions): Promise
   }));
 
   const dir = incidentDir(new Date().toISOString().replaceAll(/[:.]/g, "-"));
-  const preserve = await preserveEvidence(ctx, options, dir);
+  const preserve = await operations.preserve(ctx, options, dir).catch((error: unknown) => {
+    const reason = maskSecrets(`preserve failed: ${error instanceof Error ? error.message : String(error)} — pre-rotate evidence is incomplete`);
+    return { phase: "preserve" as const, actions: [], notes: [reason], files: [], error: reason, failure: new Error(reason) };
+  });
 
   let rotate: IncidentPhase;
   let rotateError: unknown;
   try {
-    rotate = await rotateToken(ctx, options);
+    rotate = await operations.rotate(ctx, options);
   } catch (error) {
     rotateError = error;
     rotate = { phase: "rotate", actions: [], notes: [`rotate failed: ${(error as Error).message}`] };
@@ -365,7 +391,7 @@ export async function runPhases(ctx: Context, options: IncidentOptions): Promise
   let doctorLint: { raw: string; error?: string } | undefined;
   let auditError: unknown;
   try {
-    const result = await runAudits(ctx);
+    const result = await operations.audit(ctx);
     audit = result.phase;
     security = result.security;
     doctorLint = result.doctorLint;
@@ -374,23 +400,31 @@ export async function runPhases(ctx: Context, options: IncidentOptions): Promise
     audit = { phase: "audit", actions: [], notes: [`audit failed: ${(error as Error).message}`] };
   }
 
-  const collect = await collectEvidence(ctx, options, dir, preserve.files, security, doctorLint);
+  let collect: IncidentPhase & { archive?: string };
+  let collectError: unknown;
+  try {
+    collect = await operations.collect(ctx, options, dir, preserve.files, security, doctorLint);
+  } catch (error) {
+    const reason = maskSecrets(`collect failed: ${error instanceof Error ? error.message : String(error)} — evidence is incomplete`);
+    collectError = new Error(reason);
+    collect = { phase: "collect", actions: [], notes: [reason], error: reason };
+  }
 
   const report: IncidentReport = {
     deployment: deploymentName(),
     dryRun: options.dryRun,
     phases: [
       contain,
-      { phase: preserve.phase, actions: preserve.actions, notes: preserve.notes },
+      { phase: preserve.phase, actions: preserve.actions, notes: preserve.notes, files: preserve.files, error: preserve.error },
       rotate,
       audit,
-      { phase: collect.phase, actions: collect.actions, notes: collect.notes },
+      { phase: collect.phase, actions: collect.actions, notes: collect.notes, error: collect.error },
     ],
     security,
     archive: collect.archive,
   };
 
-  const failure = rotateError ?? auditError;
+  const failure = preserve.failure ?? rotateError ?? auditError ?? collectError;
   if (failure !== undefined) throw new IncidentPhaseFailure(report, failure);
   return report;
 }
@@ -411,8 +445,7 @@ export async function incident(ctx: Context, args: string[]): Promise<void> {
       : await guarded(ctx, "incident", args, () => runPhases(ctx, options));
   } catch (error) {
     if (!(error instanceof IncidentPhaseFailure)) throw error;
-    // Evidence is already on disk (preserve/collect ran unconditionally) — the report is shown
-    // so the operator knows where, and then the ORIGINAL failure propagates unchanged.
+    // Report completed work before propagating the phase failure.
     if (jsonOnly || isCaptured()) emit(`${JSON.stringify(error.report, null, 2)}\n`);
     else render(error.report);
     throw error.cause;

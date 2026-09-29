@@ -24,6 +24,7 @@ import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { publishPrivateTargetFile } from "#src/security/privacy/private-target-file.ts";
 
 /** Drives both rollback's own parser and its openclawCommands declaration. */
 export const ROLLBACK_ARGUMENTS: CommandArgument[] = [
@@ -294,7 +295,7 @@ async function restoreConfigBeforeCurrentSet(ctx: Context, installed: InstalledS
   if (installingOperation?.configSnapshot !== undefined && (await ctx.transport.exists(installingOperation.configSnapshot))) {
     const live = `${ctx.settings.dataDir}/config/openclaw.json`;
     log(`putting back the configuration from before ${installingOperation.id}, so nothing the current set added is left behind`);
-    await ctx.transport.writeFile(live, await ctx.transport.readFile(installingOperation.configSnapshot));
+    await publishPrivateTargetFile(ctx, live, await ctx.transport.readFile(installingOperation.configSnapshot));
     await journal.step("restore-config", "done", `from ${installingOperation.configSnapshot}`);
     return;
   }
@@ -336,7 +337,7 @@ export async function rollback(ctx: Context, args: string[]): Promise<void> {
   try {
     await runOwning(held, async () => {
       log(`putting back the configuration from before ${target.id}`);
-      await ctx.transport.writeFile(live, await ctx.transport.readFile(snapshot));
+      await publishPrivateTargetFile(ctx, live, await ctx.transport.readFile(snapshot));
       await journal.step("restore-config", "done", `from ${snapshot}`);
 
       if (options.restartAfter) {

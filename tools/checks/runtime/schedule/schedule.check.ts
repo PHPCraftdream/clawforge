@@ -74,6 +74,19 @@ check("only an exact generated entry is removed; foreign rows and blank lines su
 const quoted = cronLine(5, { cwd: "/owner's app", command: "./clawforge", args: ["--app", "myapp", "watch", "check"] }, "watch", "myapp");
 check("an owned line with a quoted path and explicit deployment is removed", withoutMarkedLine(`${quoted}\n`, "watch", "myapp"), []);
 
+for (const path of ["/srv/project%blue", "/srv/project\\%blue", "/srv/project\\\\%blue"]) {
+  check("percent paths are refused even with a preceding backslash", (await deathOf(() => cronLine(5, { cwd: path, command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp"))).includes("does not support %"), true);
+  const legacy = owned.replace("'/x'", shellQuote(path));
+  check("unsupported legacy percent rows are preserved", withoutMarkedLine(`${legacy}\n`, "watch", "myapp"), [legacy]);
+}
+for (const invocation of [
+  { cwd: "/x", command: "./clawforge%", args: ["watch", "check"] },
+  { cwd: "/x", command: "./clawforge", args: ["watch", "%"] },
+]) {
+  check("percent in commands or arguments is refused", (await deathOf(() => cronLine(5, invocation, "watch", "myapp"))).includes("does not support %"), true);
+}
+check("percent in markers is refused", (await deathOf(() => cronLine(5, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "my%app"))).includes("does not support %"), true);
+
 // --- cronSchedule(): only true divisors of 60 (minutes) or 24 (hours) fire evenly — shared
 // by both jobs, and by schtasksSchedule()'s own range check ---------------------------------
 

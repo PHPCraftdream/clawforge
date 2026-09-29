@@ -504,7 +504,9 @@ function secretsScenario(options: { privateFile?: boolean; fail?: SecretFailure;
         return finish(options.noSudo === true ? { code: 1, stdout: "", stderr: "sudo: not found" } : { code: 0, stdout: "/usr/bin/sudo\n", stderr: "" });
       }
       if (!args[1]?.includes("umask 077") || !args[1]?.includes("set -C")) throw new Error("fallback staging write is not private and exclusive");
-      stage(args[1].split("'")[1] ?? "", typeof execOptions?.input === "string" ? execOptions.input : "");
+      const destination = /ln -T -- "\$temporary" '([^']+)'/.exec(args[1])?.[1];
+      if (destination === undefined) throw new Error("fallback staging destination is missing");
+      stage(destination, typeof execOptions?.input === "string" ? execOptions.input : "");
       return { code: 0, stdout: "", stderr: "" };
     }
     if (command === "chown") {

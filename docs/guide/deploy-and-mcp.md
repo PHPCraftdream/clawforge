@@ -173,6 +173,16 @@ A failing tool call returns what the command had already said before it stopped,
 reason — the order a console shows them in. Losing the first half would leave a client with
 only the last sentence of a story it could otherwise tell in full.
 
+**The server stays responsive while a call runs.** `ping` answers `{}`, as MCP's keep-alive
+expects; `serverInfo.version` in `initialize`'s reply is the framework's own version. A long
+`tools/call` (an `upgrade`, a `recipe install`) no longer blocks `ping`, `tools/list` or a
+later call from being answered — every other method is handled straight away, while
+`tools/call`s queue and run one at a time among themselves (they share one captured-output
+stream, so two running truly concurrently would interleave into each other's result).
+`notifications/cancelled` (`{requestId}`) answers the named call immediately with an
+`isError` "cancelled" result instead of waiting for it; the command itself keeps running to
+completion — there is no clean abort — and the instance lock still protects state either way.
+
 ## Deploying to a server
 
 ```bash

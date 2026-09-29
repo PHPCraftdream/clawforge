@@ -31,6 +31,7 @@ import { maskSecrets, UserError } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
 import { maskStructuredOutput, maskStructuredResult, toolEnvelope, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../../commands/operate/recover-env/index.ts";
+import { frameworkVersion } from "../../commands/management/lock.ts";
 
 export * from "./schema.ts";
 
@@ -156,21 +157,28 @@ function send(response: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(response)}\n`);
 }
 
+// A tools/call id lands here the moment `notifications/cancelled` answers it early, so the
+// call's own eventual reply — the command keeps running to completion, there being no clean
+// abort; the instance lock protects state either way — is dropped instead of sent twice.
+const cancelledIds = new Set<number | string>();
+
 function reply(id: number | string | undefined, result: unknown): void {
   if (id === undefined) return;
+  if (cancelledIds.delete(id)) return;
   send({ jsonrpc: "2.0", id, result });
 }
 
 function replyError(id: number | string | undefined, code: number, message: string): void {
   if (id === undefined) return;
+  if (cancelledIds.delete(id)) return;
   send({ jsonrpc: "2.0", id, error: { code, message: maskSecrets(message) } });
 }
 
-function handleInitialize(id: number | string | undefined, app: AppDefinition): void {
+async function handleInitialize(id: number | string | undefined, app: AppDefinition): Promise<void> {
   reply(id, {
     protocolVersion: PROTOCOL_VERSION,
     capabilities: { tools: { listChanged: false } },
-    serverInfo: { name: `${app.name}-control`, version: "1" },
+    serverInfo: { name: `${app.name}-control`, version: (await frameworkVersion()) ?? "unknown" },
   });
 }
 
@@ -386,6 +394,14 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
 
   const lines = createInterface({ input: process.stdin });
 
+  // captureRun's output sink (core/io/output.ts) is one process-global slot, so two tools/call
+  // runs actually executing at once would interleave into each other's captured text. Every
+  // tools/call is chained onto this queue instead — one command runs at a time — while every
+  // other method (ping, tools/list, initialize, cancellation) is answered straight from the
+  // loop below and never waits behind it.
+  let callQueue: Promise<unknown> = Promise.resolve();
+  const inFlightCallIds = new Set<number | string>();
+
   for await (const line of lines) {
     if (line.trim() === "") continue;
 
@@ -415,23 +431,70 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
 
     switch (request.method) {
       case "initialize":
-        handleInitialize(request.id, app);
+        await handleInitialize(request.id, app);
         break;
 
       case "notifications/initialized":
         // Notification: no response expected.
         break;
 
+      case "ping":
+        reply(request.id, {});
+        break;
+
       case "tools/list":
         handleToolsList(request.id, tools, gateTools);
         break;
 
-      case "tools/call":
-        await handleToolsCall(request, app, tools, gateTools, gateCommands, gateHelp);
+      case "tools/call": {
+        const id = request.id;
+        if (id !== undefined) inFlightCallIds.add(id);
+        // Not awaited: queuing (not blocking) this call is what keeps the loop free to read
+        // and answer the next line — a ping, a cancellation, another tools/list — while this
+        // one is still running.
+        callQueue = callQueue
+          .then(() => {
+            // Cancelled while still queued: never start it.
+            if (id !== undefined && cancelledIds.delete(id)) return undefined;
+            return handleToolsCall(request, app, tools, gateTools, gateCommands, gateHelp);
+          })
+          .catch((error) => {
+            // handleToolsCall answers its own failures; this only guards a throw from
+            // dispatch itself so one bad call cannot break every call queued behind it.
+            replyError(id, -32603, error instanceof Error ? error.message : String(error));
+          })
+          .finally(() => {
+            if (id !== undefined) inFlightCallIds.delete(id);
+          });
         break;
+      }
+
+      case "notifications/cancelled": {
+        // Notification: no reply to this message itself. Answers the CALL it names instead,
+        // immediately, without waiting for it — see cancelledIds above.
+        const requestId = (request.params ?? {}).requestId;
+        if (
+          (typeof requestId === "string" || typeof requestId === "number")
+          && inFlightCallIds.has(requestId)
+          && !cancelledIds.has(requestId)
+        ) {
+          cancelledIds.add(requestId);
+          send({
+            jsonrpc: "2.0",
+            id: requestId,
+            result: { isError: true, content: [{ type: "text", text: "cancelled" }] },
+          });
+        }
+        break;
+      }
 
       default:
         replyError(request.id, -32601, `method not found: ${request.method}`);
     }
   }
+
+  // stdin closed; the last queued tools/call may still be running (every link already
+  // catches its own rejection above, so this never throws). The caller's own await of
+  // serveMcp() must answer for it too, not return while it is still in flight.
+  await callQueue;
 }

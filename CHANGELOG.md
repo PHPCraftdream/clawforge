@@ -105,9 +105,16 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
-* `check`'s documentation-privacy check flagged a quoted regex literal (`(.*)`) and an
-  ellipsis placeholder (`…`) in a review doc as leaked credential values; a captured
-  "credential" now needs at least one letter or digit — no real token is pure punctuation.
+* `control-mcp`: `ping` answered `method not found` instead of the empty result MCP clients
+  use as a keep-alive; `initialize`'s `serverInfo.version` said `"1"` instead of the framework
+  version. `tools/call` used to run strictly one at a time in the read loop, so a long call
+  (an `upgrade`, a `recipe install`) blocked `ping`, `tools/list` and every other call behind
+  it; calls now queue instead of blocking the loop, so `ping`/`tools/list`/`initialize` stay
+  responsive while one runs, and `notifications/cancelled` answers the named call immediately
+  with an `isError` "cancelled" result (the command itself keeps running to completion —
+  there being no clean abort — and the instance lock still protects state). `tools/call`s
+  still run one at a time among themselves, since the captured-output sink they share is one
+  process-global slot.
 * `upgrade` with no `--image` re-resolves the pinned channel at the registry instead of
   comparing the digest pin to itself.
 * The security gate tells a missing `ufw` from one that failed to answer, on every transport.

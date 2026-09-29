@@ -294,6 +294,18 @@ only ever suggests `--break-lock` once the holder is actually stale or provably 
 recently-refreshed holder is told to wait, or to run `./clawforge operations <id>` to see what
 it is doing, never to break its own lock.
 
+The generation check and heartbeat publication run together under the same
+`operation.mutation` guard as acquisition, takeover and release. Only one refresh can be in
+flight per holder; guard contention skips that tick and retries on the next interval rather
+than breaking another mutation's guard. Release cancels future ticks and drains the refresh
+already started **before** acquiring the guard for removal: draining inside the guard could
+deadlock a refresh waiting to acquire it. A refresh cancelled while awaiting the guard or
+reading the holder does not publish; a write already started finishes before release removes
+the lock. Thus an old heartbeat cannot replace the next holder's record or prevent that
+holder from releasing its own lock. Controlled transport barriers in
+`runtime/convergence/instance-lock/heartbeat-lifecycle.check.ts` cover delayed reads/writes,
+queued guard acquisition, takeover, and refresh/guard-publication failures without real delays.
+
 The lock is a **directory**, and that choice is the mechanism rather than an implementation
 detail: creating a directory that already exists fails, atomically, on every POSIX filesystem,
 and the same single `mkdir` works through `wsl.exe` and `ssh` alike. It must not be `mkdir -p`

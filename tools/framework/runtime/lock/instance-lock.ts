@@ -18,7 +18,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { withMutationGuard } from "../../security/instance-mutation-guard.ts";
 import { newOperationId } from "../../service/operations.ts";
-import { heartbeatScheduler, startHeartbeat, type TimerHandle } from "./heartbeat.ts";
+import { startHeartbeat, type Heartbeat } from "./heartbeat.ts";
 import {
   type LockHolder,
   type LockOptions,
@@ -87,8 +87,8 @@ export function lockHeldHere(ctx: Context): boolean {
 }
 
 /** Assembles the handle a caller releases; release() closes over this acquisition's own generation. */
-function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, heartbeatTimer: TimerHandle): HeldLock {
-  let released = false;
+function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, heartbeat: Heartbeat): HeldLock {
+  let releasing: Promise<void> | undefined;
   const resource = lockResource(ctx);
   let handle: HeldLock;
   handle = {
@@ -96,9 +96,7 @@ function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, hea
     path: lockPath(ctx),
     resource,
     async release(): Promise<void> {
-      if (released) return;
-      released = true;
-      heartbeatScheduler.cancel(heartbeatTimer);
+      if (releasing !== undefined) return releasing;
 
       const binding = heldScopes.get(handle);
       if (binding !== undefined) {
@@ -111,15 +109,20 @@ function buildHeldLock(ctx: Context, holder: LockHolder, generation: string, hea
       // where a takeover completing in between had its fresh lock deleted by a release that
       // read the old holder. Ownership is answered by moving this acquisition's own
       // generation marker aside — atomic, and only we can still own that exact path.
-      try {
-        await withMutationGuard(ctx, async () => {
-          const trash = await claimOwnedLockDirectory(ctx, generation);
-          if (trash !== undefined) await removeOwnedLock(ctx, generation, trash);
-        });
-      } catch {
-        // A lock that cannot be removed becomes a stale one, which is reported and can be
-        // forced. Failing the operation here would be worse: the work is already done.
-      }
+      releasing = (async () => {
+        try {
+          // Drain before claiming the guard: a queued refresh may still need that guard
+          // to observe cancellation, and an in-flight publication must finish before removal.
+          await heartbeat.stop();
+          await withMutationGuard(ctx, async () => {
+            const trash = await claimOwnedLockDirectory(ctx, generation);
+            if (trash !== undefined) await removeOwnedLock(ctx, generation, trash);
+          });
+        } catch {
+          // Failed cleanup leaves a reported stale lock.
+        }
+      })();
+      return releasing;
     },
   };
   return handle;
@@ -142,9 +145,9 @@ async function takeLockClaim(
 
   // Refreshes heartbeatAt on an interval for as long as this acquisition is held — the fix
   // for STALE_AFTER_MS alone reading a live `recipe install` as abandoned mid-build.
-  const heartbeatTimer = startHeartbeat(ctx, generation, readLockHolder, writeHolderRecord);
+  const heartbeat = startHeartbeat(ctx, generation, readLockHolder, writeHolderRecord);
 
-  return buildHeldLock(ctx, holder, generation, heartbeatTimer);
+  return buildHeldLock(ctx, holder, generation, heartbeat);
 }
 
 /** Serializes every path-changing claim from the initial read through holder publication. */

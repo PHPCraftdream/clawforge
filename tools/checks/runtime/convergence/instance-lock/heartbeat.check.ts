@@ -1,16 +1,13 @@
 // The holder refreshes its own record while it lives — the fix for STALE_AFTER_MS alone
 // reading a long `recipe install` as abandoned mid-build. This file covers the refresh logic
-// itself, heartbeat-based staleness against a legacy record's takenAt-only fallback, and that
-// takeLock()/release() actually wire heartbeatScheduler rather than heartbeat.ts's functions
-// only existing in isolation.
+// itself and heartbeat-based staleness against a legacy record's takenAt-only fallback.
+// Controlled acquisition/release races live in heartbeat-lifecycle.check.ts.
 //
 // No real waiting anywhere: heartbeatScheduler is swapped for a synchronous stand-in a check
 // fires on demand, and every age comparison below takes an explicit `now` instead of the wall
 // clock.
 
 import {
-  takeLock,
-  readLockHolder,
   isStale,
   ageMs,
   heartbeatAgeMs,
@@ -18,17 +15,10 @@ import {
   HEARTBEAT_STALE_AFTER_MS,
   type LockHolder,
 } from "#framework/runtime/lock/instance-lock.ts";
-import { heartbeatScheduler, refreshHeartbeat, startHeartbeat, HEARTBEAT_INTERVAL_MS } from "#framework/runtime/lock/heartbeat.ts";
+import { heartbeatScheduler, refreshHeartbeat, startHeartbeat } from "#framework/runtime/lock/heartbeat.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext } from "./fixture.ts";
-import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
-
-/** Flushes pending microtasks (readHolder/writeHolder inside refreshHeartbeat) before a check
- *  reads their effect — a fire-and-forget scheduled tick is not awaited by design. */
-function flush(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
 
 // --- staleness reads the heartbeat once one exists, never just takenAt -------------------------
 
@@ -78,7 +68,7 @@ function flush(): Promise<void> {
 // --- refreshHeartbeat only ever touches a holder it still owns ----------------------------------
 
 {
-  const ctx = {} as Context;
+  const { ctx } = stubContext();
   let written: LockHolder | undefined;
   const ownHolder: LockHolder = { operationId: "op-7", what: "apply", by: "x", takenAt: new Date().toISOString(), generation: "gen-a" };
 
@@ -95,80 +85,37 @@ function flush(): Promise<void> {
   check("no current holder at all is also a no-op, not a crash", written, undefined);
 }
 
-// --- startHeartbeat wires heartbeatScheduler, swallows a failure, logs only the first -----------
+// --- failed refreshes retry, without leaking errors or repeating diagnostics ------------------
 
 {
   const originalSchedule = heartbeatScheduler.schedule;
   const originalCancel = heartbeatScheduler.cancel;
-  let scheduledMs: number | undefined;
-  let tick: (() => void) | undefined;
-  const fakeTimer = {} as NodeJS.Timeout;
-  heartbeatScheduler.schedule = (fn: () => void, ms: number) => { scheduledMs = ms; tick = fn; return fakeTimer; };
+  let tick: (() => Promise<void>) | undefined;
+  heartbeatScheduler.schedule = (fn) => { tick = fn; return {}; };
   heartbeatScheduler.cancel = () => {};
 
   try {
     let calls = 0;
-    const ctx = {} as Context;
-    const timer = startHeartbeat(ctx, "gen-c", async () => ({
+    const { ctx } = stubContext();
+    const heartbeat = startHeartbeat(ctx, "gen-c", async () => ({
       operationId: "op-8", what: "apply", by: "x", takenAt: new Date().toISOString(), generation: "gen-c",
     }), async () => { calls += 1; throw new Error("boom"); });
-
-    check("startHeartbeat schedules on HEARTBEAT_INTERVAL_MS", scheduledMs, HEARTBEAT_INTERVAL_MS);
-    check("and returns exactly the scheduler's own timer handle", timer, fakeTimer);
 
     const previousDebug = process.env.OC_DEBUG;
     process.env.OC_DEBUG = "1";
     let logged = "";
     await withOutputSink((chunk) => { logged += chunk; }, async () => {
-      tick?.();
-      tick?.();
-      await flush();
+      await tick?.();
+      await tick?.();
     });
     if (previousDebug === undefined) delete process.env.OC_DEBUG; else process.env.OC_DEBUG = previousDebug;
 
     check("a failing refresh never throws out of the scheduled tick", calls, 2);
     const occurrences = logged.split("heartbeat refresh failed").length - 1;
     check("only the first failure is logged", occurrences, 1);
-  } finally {
-    heartbeatScheduler.schedule = originalSchedule;
-    heartbeatScheduler.cancel = originalCancel;
-  }
-}
-
-// --- end to end: takeLock()/release() actually start and stop a real heartbeat ------------------
-
-{
-  const originalSchedule = heartbeatScheduler.schedule;
-  const originalCancel = heartbeatScheduler.cancel;
-  let scheduled = 0;
-  let cancelled = 0;
-  let tick: (() => void) | undefined;
-  heartbeatScheduler.schedule = (fn: () => void) => { scheduled += 1; tick = fn; return {} as NodeJS.Timeout; };
-  heartbeatScheduler.cancel = () => { cancelled += 1; };
-
-  try {
-    const { ctx } = stubContext();
-    let writes = 0;
-    const originalWriteFile = ctx.transport.writeFile;
-    ctx.transport.writeFile = async (path: string, content: string | Uint8Array, mode?: string) => {
-      writes += 1;
-      return originalWriteFile(path, content, mode);
-    };
-
-    // Two writes to win a fresh claim: the mutation guard's own owner-claim file (temp +
-    // link, instance-mutation-guard.ts) and the instance lock's holder.json.
-    const held = await takeLock(ctx, "recipe install", "op-9");
-    const afterClaim = writes;
-    check("taking the lock writes both the guard's owner file and the holder record", afterClaim, 2);
-    check("and starts exactly one heartbeat", scheduled, 1);
-
-    tick?.();
-    await flush();
-    check("a real tick writes the holder record again — the heartbeat refresh", writes, afterClaim + 1);
-    check("the refreshed record is still readable and still this generation's", (await readLockHolder(ctx))?.operationId, "op-9");
-
-    await held.release();
-    check("releasing stops the heartbeat", cancelled, 1);
+    await heartbeat.stop();
+    await tick?.();
+    check("a cancelled callback cannot start another refresh", calls, 2);
   } finally {
     heartbeatScheduler.schedule = originalSchedule;
     heartbeatScheduler.cancel = originalCancel;

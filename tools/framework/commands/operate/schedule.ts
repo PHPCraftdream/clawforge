@@ -86,8 +86,23 @@ export function cronLine(minutes: number, invocation: ScheduledInvocation, job: 
 }
 
 export function withoutMarkedLine(text: string, job: string, name: string): string[] {
-  const needle = jobMarker(job, name);
-  return text.split("\n").filter((line) => line.trim() !== "" && !line.includes(needle));
+  return crontabLines(text).filter((line) => !ownedCronLine(line.endsWith("\r") ? line.slice(0, -1) : line, job, name));
+}
+
+export function crontabLines(text: string): string[] {
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+
+function ownedCronLine(line: string, job: string, name: string): boolean {
+  const match = /^((?:\S+\s+){4}\S+) cd ('(?:[^']|'\\'')*') && \.\/clawforge (.+) >\/dev\/null 2>&1 (# clawforge-[^\r\n]+)$/.exec(line);
+  if (match === null || match[4] !== jobMarker(job, name)) return false;
+  if (!VALID_INTERVAL_MINUTES.some((minutes) => cronSchedule(minutes) === match[1])) return false;
+  const jobArgs = job === "watch" ? ["watch", "check"] : job === "backup" ? ["backup"] : undefined;
+  if (jobArgs === undefined) return false;
+  const quoted = (args: string[]): string => args.map(SshTransport.quote).join(" ");
+  return match[3] === quoted(jobArgs) || match[3] === quoted(["--app", name, ...jobArgs]);
 }
 
 export async function probeCrontab(ctx: Context): Promise<void> {

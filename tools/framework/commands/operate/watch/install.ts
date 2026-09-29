@@ -21,6 +21,7 @@ import { parseDeclaredArgs } from "../../../core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../../interface/groups/shared-arguments.ts";
 import {
   cronLine as sharedCronLine,
+  crontabLines,
   cronSchedule,
   displayCommandLine,
   jobMarker,
@@ -162,11 +163,12 @@ export async function watchUninstall(ctx: Context, args: string[]): Promise<void
   await guarded(ctx, "watch uninstall --apply", args, async () => {
     await probeCrontab(ctx);
     const existing = await readCrontab(ctx);
-    if (!existing.includes(watchMarker(name))) {
+    const kept = withoutMarkedLine(existing, name);
+    if (kept.length === crontabLines(existing).length) {
       info("no watch schedule was installed for this deployment — nothing to remove");
       return;
     }
-    await writeCrontab(ctx, withoutMarkedLine(existing, name));
+    await writeCrontab(ctx, kept);
     await recordInstalledInterval(undefined);
     log("removed");
   });

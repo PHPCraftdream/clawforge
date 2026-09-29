@@ -113,6 +113,7 @@ function baseExcludes(dataName: string): string[] {
     `${root}/config/openclaw.json.bak*`,
     `${root}/config/openclaw.json.last-good`,
     `${root}/config/clawforge-desired.json`,
+    `${root}/config/clawforge-desired.dry-*.json`,
     // Provider-key staging is private from creation and normally removed after rename, but a
     // process can die between those steps. It is credential material, never instance state.
     `${root}/config/.env.clawforge-*`,

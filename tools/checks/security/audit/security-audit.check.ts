@@ -5,7 +5,7 @@
 import { mkdir, mkdtemp, rm, writeFile, chmod } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { runSecurityAudit } from "#framework/security/audit.ts";
+import { privateFileProblems, runSecurityAudit } from "#framework/security/audit.ts";
 import { blockingProblems } from "#framework/service/inspection.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { createPrivateFile, protectPrivateDirectory } from "#framework/security/privacy/private-file.ts";
@@ -359,6 +359,34 @@ await withDeployment(async () => {
 });
 
 // --- host-side: the deployment's own secret file permissions --------------------------------
+
+await withDeployment(async (dir) => {
+  const denied = (code: string): NodeJS.ErrnoException => Object.assign(new Error("sensitive diagnostic"), { code });
+  const problems = await privateFileProblems({
+    list: async () => { throw denied("EACCES"); },
+    readable: async () => { throw denied("EIO"); },
+  });
+  check("unreadable directory and file are both reported", problems.map((entry) => entry.code), ["PRIVATE_FILE_UNREADABLE", "PRIVATE_FILE_UNREADABLE"]);
+  check("findings identify paths and errno without exception text", problems.map((entry) => entry.detail), [
+    `${resolve(dir, "secrets")} could not be checked (EACCES)`,
+    `${resolve(dir, ".env")} could not be checked (EIO)`,
+  ]);
+  const absent = await privateFileProblems({
+    list: async () => { throw denied("ENOENT"); },
+    readable: async () => { throw denied("ENOENT"); },
+  });
+  check("only ENOENT means absent", absent.length, 0);
+});
+
+await withDeployment(async (dir) => {
+  const denied = Object.assign(new Error("sensitive diagnostic"), { code: "EACCES" });
+  const problems = await privateFileProblems({
+    list: async () => [{ name: "local.env", isFile: () => true }],
+    readable: async (file) => { if (file === resolve(dir, "secrets", "local.env")) throw denied; },
+  });
+  check("an unreadable secret file is reported", problems.some((entry) => entry.code === "PRIVATE_FILE_UNREADABLE" && entry.detail.includes("local.env")), true);
+  check("the exception text is not leaked", problems.some((entry) => entry.detail.includes("sensitive diagnostic")), false);
+});
 
 await withDeployment(async (dir) => {
   await createPrivateFile(resolve(dir, ".env"), "OPENCLAW_GATEWAY_TOKEN=check-value\n");

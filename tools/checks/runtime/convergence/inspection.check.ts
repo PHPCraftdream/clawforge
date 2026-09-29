@@ -75,6 +75,7 @@ check(
     // Third-party plugins/skills against config/deployment.lock.json — commands/management/extensions.ts.
     "PLUGIN_DRIFT",
     "PRIVATE_FILE_INSECURE",
+    "PRIVATE_FILE_UNREADABLE",
     // The gateway runs, but nothing can answer a prompt without one.
     "PROVIDER_MISSING",
     "RECIPE_MIRROR_DRIFT",

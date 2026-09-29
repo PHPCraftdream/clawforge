@@ -12,7 +12,7 @@ import type { Context } from "#src/core/context.ts";
 import { parseEnv, parseRetention } from "#src/core/env.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, needsOwnerEscalation, secretsFileOnTarget } from "#src/runtime/datadir.ts";
-import { archiveRoot, isProfile, listArchive, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
+import { archiveRoot, isProfile, listArchive, listSnapshotArchives, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { requirements, template } from "#src/service/secrets.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
@@ -70,12 +70,6 @@ async function ensureSnapshotDir(ctx: Context): Promise<string> {
 
 function stamp(): string {
   return new Date().toISOString().replaceAll(/[:.]/g, "-").slice(0, 19);
-}
-
-function snapshotGlob(directory: string): string {
-  return snapshotDeploymentNames(deploymentName())
-    .map((name) => `${shellQuote(`${directory}/${name}-state-`)}*.tar.gz`)
-    .join(" ");
 }
 
 /** Writes a staged sidecar, escalating when its directory requires it. */
@@ -570,16 +564,13 @@ async function pullLocked(ctx: Context, profile: Profile, hot: boolean, leaveSto
 
 /** The snapshot a bare `push` (no `<archive>`) would pick: newest first, resolved the same
  *  way whether the run is real or --dry-run. Read-only — no lock needed to compute this. */
-async function resolvePushArchive(ctx: Context, archiveArg: string | undefined): Promise<string> {
+export async function resolvePushArchive(ctx: Context, archiveArg: string | undefined): Promise<string> {
   const snapshotDir = ctx.settings.snapshotDir;
   let archive = archiveArg;
   if (archive !== undefined && !archive.startsWith("/")) archive = `${snapshotDir}/${archive}`;
   if (archive !== undefined) return archive;
 
-  const prefix = await sudoFor(ctx, snapshotDir);
-  const [head, ...rest] = [...prefix, "sh", "-c", `ls -1t ${snapshotGlob(snapshotDir)} 2>/dev/null`];
-  const listing = await ctx.transport.exec(head, rest, { allowFailure: true });
-  const found = selectSnapshotPaths(listing.stdout, deploymentName())[0];
+  const found = (await listSnapshotArchives(ctx, snapshotDir))[0];
   if (found === undefined) die(`no snapshots in ${snapshotDir} — run ./clawforge pull first`);
   return found;
 }

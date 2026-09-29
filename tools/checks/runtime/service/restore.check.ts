@@ -10,6 +10,7 @@ import { access, mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { restoreArchive, newestArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { NATIVE_MANIFEST_NAME } from "#framework/commands/lifecycle/backup/index.ts";
+import { InventoryUnreadableError } from "#framework/service/archive/index.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -229,17 +230,16 @@ check("the gateway is never started when a required secret is missing", startCal
 // with an archive carrying neither identity nor credentials: the gateway could not start, and
 // the real data survived only as <data>.replaced-<stamp>.
 
-function listingContext(paths: string[]): Context {
+function listingContext(paths: string[], listingCode = 0, directoryExists = true): Context {
   return {
     settings: { backupDir: BACKUP_DIR },
     transport: {
-      async exists(): Promise<boolean> {
-        return true;
-      },
       async exec(command: string, args: string[]): Promise<ExecResult> {
-        if (args.includes("-w")) return { code: 0, stdout: "", stderr: "" };
-        if (command === "sh" && args.some((arg) => arg.includes("ls -1t"))) {
-          return { code: 0, stdout: `${paths.join("\n")}\n`, stderr: "" };
+        if (command === "test" && args[0] === "-d") return { code: directoryExists ? 0 : 1, stdout: "", stderr: "" };
+        if (command === "sh" && !directoryExists) return { code: 0, stdout: "", stderr: "" };
+        if (command === "sh") return { code: 0, stdout: "", stderr: "" };
+        if (command === "find") {
+          return { code: listingCode, stdout: paths.map((path, index) => `100\t${1767484800 - index}\t${path}`).join("\n"), stderr: "private detail" };
         }
         return { code: 0, stdout: "", stderr: "" };
       },
@@ -277,6 +277,18 @@ const NAME = deploymentName();
   const picked = await newestArchive(listingContext([`${BACKUP_DIR}/${NAME}-20260103-000000-share.tar.gz`]), BACKUP_DIR);
   check("a directory holding only profile archives offers nothing to restore", picked.archive, undefined);
   check("and says which ones it passed over", picked.skipped.length, 1);
+}
+
+{
+  const empty = await newestArchive(listingContext([]), BACKUP_DIR);
+  check("an empty readable directory has no archive", empty.archive, undefined);
+  check("an absent directory has no archive", (await newestArchive(listingContext([], 0, false), BACKUP_DIR)).archive, undefined);
+
+  let error: unknown;
+  try { await newestArchive(listingContext([`${BACKUP_DIR}/${NAME}-20260103-000000.tar.gz`], 1), BACKUP_DIR); }
+  catch (caught) { error = caught; }
+  check("a failed partial listing cannot be reported as empty", error instanceof InventoryUnreadableError, true);
+  check("listing failure hides target stderr", String(error).includes("private detail"), false);
 }
 
 // The automatic restore selector uses the same target-side glob as backup rotation. Keep the

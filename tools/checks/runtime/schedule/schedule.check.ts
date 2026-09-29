@@ -53,12 +53,26 @@ check("...and per deployment", scheduledTaskName("backup", "myapp") === schedule
 check(
   "withoutMarkedLine drops only the named job's marked line for the named deployment",
   withoutMarkedLine(
-    "0 3 * * * /usr/bin/other.sh\n*/5 * * * * ./clawforge watch check # clawforge-watch:myapp\n0 0 * * * ./clawforge backup # clawforge-backup:myapp\n",
+    `0 3 * * * /usr/bin/other.sh\n${cronLine(5, { cwd: "/x", command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp")}\n${cronLine(1440, { cwd: "/x", command: "./clawforge", args: ["backup"] }, "backup", "myapp")}\n`,
     "backup",
     "myapp",
   ),
-  ["0 3 * * * /usr/bin/other.sh", "*/5 * * * * ./clawforge watch check # clawforge-watch:myapp"],
+  ["0 3 * * * /usr/bin/other.sh", cronLine(5, { cwd: "/x", command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp")],
 );
+
+const owned = cronLine(5, { cwd: "/x", command: "./clawforge", args: ["watch", "check"] }, "watch", "myapp");
+const foreign = [
+  `# note: ${jobMarker("watch", "myapp")}`,
+  `*/5 * * * * echo '${jobMarker("watch", "myapp")}'`,
+  `${owned} extra`,
+  owned.replace("'watch' 'check'", "'backup'"),
+  owned.replace("# clawforge-watch:myapp", "# clawforge-watch:myapp-extra"),
+  "",
+  "  ",
+];
+check("only an exact generated entry is removed; foreign rows and blank lines survive", withoutMarkedLine(`${foreign.join("\n")}\n${owned}\n`, "watch", "myapp"), foreign);
+const quoted = cronLine(5, { cwd: "/owner's app", command: "./clawforge", args: ["--app", "myapp", "watch", "check"] }, "watch", "myapp");
+check("an owned line with a quoted path and explicit deployment is removed", withoutMarkedLine(`${quoted}\n`, "watch", "myapp"), []);
 
 // --- cronSchedule(): only true divisors of 60 (minutes) or 24 (hours) fire evenly — shared
 // by both jobs, and by schtasksSchedule()'s own range check ---------------------------------

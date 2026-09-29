@@ -52,6 +52,8 @@ export interface VerifyFinding {
     | "unexpected-path"
     | "embedded-provider-key"
     | "embedded-gateway-token"
+    | "embedded-secret-field"
+    | "credential-url"
     | "unreadable-archived-config"
     | "credential-in-archive"
     | "identity-token-in-archive";
@@ -79,14 +81,14 @@ export function forbiddenRules(profile: Profile, recipePrivatePaths: readonly st
   if (profile === "share") {
     return {
       literals: [...recipePrivatePaths, "config/.env", "config/identity/", "config/devices/", "config/state/", "config/agents/"],
-      prefixes: ["config/.env.clawforge-"],
+      prefixes: ["config/.env.clawforge-", "config/clawforge-desired.dry-"],
       fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
     };
   }
   if (profile === "migrate") {
     return {
       literals: [...recipePrivatePaths, "config/.env"],
-      prefixes: ["config/.env.clawforge-"],
+      prefixes: ["config/.env.clawforge-", "config/clawforge-desired.dry-"],
       fragments: [PRIVATE_STAGING_MARKER, PUBLISH_STAGING_MARKER],
     };
   }
@@ -147,6 +149,69 @@ async function writePrivateFile(ctx: Context, path: string, content: string): Pr
  *  definition) travels by name; a literal string IS the secret. */
 function isLiteralSecret(value: unknown): value is string {
   return collectSecretRefs(value).length === 0 && typeof value === "string" && value.length > 0;
+}
+
+const CONFIG_PATH = "config/openclaw.json";
+
+function secretField(key: string): boolean {
+  const name = key.replaceAll(/[-_]/g, "").toLowerCase();
+  return /(?:token|secret|password|passwd|credentials?|authorization)$/.test(name)
+    || /(?:api|auth|private|access|client|encryption|signing)key(?:id)?$/.test(name);
+}
+
+function envReference(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const node = value as Record<string, unknown>;
+  return Object.keys(node).every((key) => key === "source" || key === "id")
+    && node.source === "env" && typeof node.id === "string" && node.id.length > 0;
+}
+
+function credentialUrl(value: string): boolean {
+  if (!/^[a-z][a-z\d+.-]*:\/\//i.test(value)) return false;
+  try {
+    const url = new URL(value);
+    if (url.username !== "" || url.password !== "") return true;
+    if ([...url.searchParams].some(([key, entry]) => secretField(key) && entry !== "")) return true;
+    return /(?:^|[&#?])(?:token|secret|password|api[_-]?key)=/i.test(url.hash);
+  } catch {
+    return value.includes("@");
+  }
+}
+
+/** Inspects the archived config itself; finding locations never include user-supplied keys. */
+function embeddedConfigFindings(config: unknown): Pick<VerifyFinding, "kind" | "detail">[] {
+  if (config === null || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("invalid config root");
+  }
+  const findings: Pick<VerifyFinding, "kind" | "detail">[] = [];
+  const visit = (node: unknown, path: string, ancestors: readonly string[]): void => {
+    if (typeof node === "string") {
+      if (credentialUrl(node)) findings.push({ kind: "credential-url", detail: `${CONFIG_PATH} (${path})` });
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => visit(item, `${path}[${index}]`, ancestors));
+      return;
+    }
+    if (node === null || typeof node !== "object") return;
+    Object.entries(node).forEach(([key, value], index) => {
+      const next = `${path}.field[${index}]`;
+      if (secretField(key) && value !== null && value !== "") {
+        const knownProviderKey = ancestors.length === 3 && ancestors[0] === "models"
+          && ancestors[1] === "providers" && key === "apiKey"
+          && typeof value === "string" && value.length >= 12;
+        const knownGatewayToken = ancestors.length === 2 && ancestors[0] === "gateway"
+          && ancestors[1] === "auth" && key === "token" && isLiteralSecret(value);
+        if (!envReference(value) && !knownProviderKey && !knownGatewayToken) {
+          findings.push({ kind: "embedded-secret-field", detail: `${CONFIG_PATH} (${next})` });
+        }
+      } else {
+        visit(value, next, [...ancestors, key]);
+      }
+    });
+  };
+  visit(config, "$", []);
+  return findings;
 }
 
 async function collectSecrets(ctx: Context): Promise<{ critical: string[]; identity: string[] }> {
@@ -388,8 +453,15 @@ async function contentScan(
           }
           if (fatal) failures += 1;
         }
-      } catch (error) {
-        warn(`the archive's own openclaw.json could not be parsed, so it could not be checked for an embedded key: ${(error as Error).message}`);
+        const extraFindings = embeddedConfigFindings(archivedConfig);
+        for (const finding of extraFindings) {
+          const fatal = profile !== "full";
+          (fatal ? warn : info)(`the archive's own openclaw.json contains ${finding.kind} at ${finding.detail}`);
+          onFinding?.({ ...finding, fatal });
+          if (fatal) failures += 1;
+        }
+      } catch {
+        warn("the archive's own openclaw.json could not be safely checked");
         onFinding?.({ kind: "unreadable-archived-config", detail: "config/openclaw.json", fatal: true });
         failures += 1;
       }

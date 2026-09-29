@@ -81,6 +81,49 @@ check("and stays a .json file", dry.endsWith(".json"), true);
   }
 }
 
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-apply-config-map-check-"));
+  try {
+    await mkdir(resolve(deployment, "config"), { recursive: true });
+    await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
+    useDeployment(deployment);
+    const staged = new Set<string>();
+    let writes = 0;
+    let oneOffs = 0;
+    const ctx = {
+      settings: { dataDir: "/srv/clawforge" },
+      transport: {
+        async writeFile(path: string): Promise<void> {
+          writes += 1;
+          staged.add(path);
+          throw new Error("partial write");
+        },
+        async remove(path: string): Promise<void> { staged.delete(path); },
+      },
+      paths: { toContainer: (): never => { throw new Error("no bind mount"); } },
+      runtime: {
+        async isRunning(): Promise<boolean> { return true; },
+        async runOneOff(): Promise<void> { oneOffs += 1; },
+      },
+    } as unknown as Context;
+
+    await withOutputSink(() => {}, async () => {
+      try { await applyConfig(ctx, ["--dry-run"]); } catch { /* expected */ }
+    });
+    check("a failed mount mapping never stages the dry-run payload", writes, 0);
+    check("a failed mount mapping never enters the container", oneOffs, 0);
+
+    ctx.paths.toContainer = (path: string) => path;
+    await withOutputSink(() => {}, async () => {
+      try { await applyConfig(ctx, ["--dry-run"]); } catch { /* expected */ }
+    });
+    check("a partial staging failure removes the dry-run payload", [...staged], []);
+    check("a partial staging failure never enters the container", oneOffs, 0);
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+  }
+}
+
 // --- --dump: the reverse run, rebuilding the declaration from the instance's own config -------
 //
 // When the operator's copy of desired-state.json is lost, the live openclaw.json is the only

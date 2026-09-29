@@ -84,8 +84,8 @@ export async function applyConfig(
     return;
   }
 
-  // A dry run writes nothing, so it needs no lock — and taking one would make an inspection
-  // of a busy instance fail for no reason.
+  // A dry run changes no applied config, so it needs no lock. Its isolated staging file
+  // is removed after the container reads it.
   if (dryRun) return writeDesiredState(ctx, true, options.restartAdvice, jsonOnly);
   if (jsonOnly) {
     let caught: unknown;
@@ -123,9 +123,6 @@ async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = 
 
   const fileName = stagedFileName(dryRun);
   const stagedOnTarget = `${ctx.settings.dataDir}/config/${fileName}`;
-  log(`staging ${fileName} on the target`);
-  await ctx.transport.writeFile(stagedOnTarget, payload);
-
   // The path the CLI sees is the container's, not the target's — asked of the bridge
   // rather than written out by hand.
   const stagedInContainer = ctx.paths.toContainer(stagedOnTarget);
@@ -133,8 +130,10 @@ async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = 
   const runArgs = ["config", "set", "--batch-file", stagedInContainer];
   if (dryRun) runArgs.push("--dry-run");
 
-  log(dryRun ? "applying desired state (dry run)" : "applying desired state");
   try {
+    log(`staging ${fileName} on the target`);
+    await ctx.transport.writeFile(stagedOnTarget, payload);
+    log(dryRun ? "applying desired state (dry run)" : "applying desired state");
     await ctx.runtime.runOneOff("gateway", ["dist/index.js", ...runArgs], {
       noDeps: true,
       entrypoint: "node",

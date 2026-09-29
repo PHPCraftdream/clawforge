@@ -56,6 +56,7 @@ export type ProblemCode =
   | "GATEWAY_EXPOSURE_ACKNOWLEDGED"
   | "UFW_DOCKER_BYPASS"
   | "PRIVATE_FILE_INSECURE"
+  | "PRIVATE_FILE_UNREADABLE"
   | "BACKUP_MISSING"
   | "BACKUP_UNREADABLE"
   | "BACKUP_STALE"
@@ -329,6 +330,11 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     severity: "warning",
     summary: "a deployment secret file (.env, secrets/*) is not owner-only protected",
     nextAction: "./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)",
+  },
+  PRIVATE_FILE_UNREADABLE: {
+    severity: "warning",
+    summary: "a deployment secret file or its directory could not be checked",
+    nextAction: "./clawforge doctor  (check local filesystem access, then retry)",
   },
 
   // Upkeep findings: whether this deployment could actually be recovered, not whether it is

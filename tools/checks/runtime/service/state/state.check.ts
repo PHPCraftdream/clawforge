@@ -5,8 +5,8 @@
 // exception rather than a structural rejection. Backup staging must still be cleaned.
 
 import { resolve } from "node:path";
-import { loadSecrets, pull, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
-import { parseSnapshotArchive } from "#framework/service/archive/index.ts";
+import { loadSecrets, pull, resolvePushArchive, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
+import { InventoryUnreadableError, parseSnapshotArchive } from "#framework/service/archive/index.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { takeLock } from "#framework/runtime/lock/instance-lock.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -69,6 +69,42 @@ check(
   )[0],
   "/srv/snapshots/example app-state-2026-01-12T03-04-05.tar.gz",
 );
+
+{
+  const directory = "/srv/openclaw/snapshots";
+  const newer = `${directory}/${snapshotName("example app", "2026-01-12T03-04-05")}`;
+  const older = `${directory}/${snapshotName("example app", "2026-01-11T03-04-05")}`;
+  const sibling = `${directory}/${snapshotName("example app-state", "2026-01-13T03-04-05")}`;
+  const listingContext = (lines: string[], code = 0, exists = true): Context => ({
+    settings: { snapshotDir: directory },
+    transport: {
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        if (command === "test" && args[0] === "-d") return { code: exists ? 0 : 1, stdout: "", stderr: "" };
+        if (command === "sh") return { code: 0, stdout: "", stderr: "" };
+        if (command === "find") return { code, stdout: lines.join("\n"), stderr: "private detail" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  }) as unknown as Context;
+
+  check("push selects the newest valid snapshot", await resolvePushArchive(listingContext([
+    `100\t${older}`, `300\t${sibling}`, `200\t${newer}`,
+  ]), undefined), newer);
+  check("push preserves an explicit archive without listing", await resolvePushArchive(listingContext([], 1), older), older);
+  for (const [label, ctx] of [
+    ["empty", listingContext([])],
+    ["absent", listingContext([], 0, false)],
+  ] as const) {
+    let error: unknown;
+    try { await resolvePushArchive(ctx, undefined); } catch (caught) { error = caught; }
+    check(`${label} snapshot directory reports no snapshots`, String(error).includes("no snapshots"), true);
+  }
+  let error: unknown;
+  try { await resolvePushArchive(listingContext([`200\t${newer}`], 1), undefined); }
+  catch (caught) { error = caught; }
+  check("failed partial snapshot listing remains unknown", error instanceof InventoryUnreadableError, true);
+  check("snapshot listing failure hides target stderr", String(error).includes("private detail"), false);
+}
 
 // Backup staging cleanup runs `rm -rf`; verify.ts's scan temp cleanup uses transport.remove().
 const removed: string[] = [];

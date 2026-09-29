@@ -19,6 +19,7 @@ import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import {
   cronLine,
+  crontabLines,
   jobMarker,
   parseIntervalToMinutes,
   posixTargetInvocation,
@@ -119,11 +120,12 @@ export async function backupUninstall(ctx: Context, args: string[], scope?: Acti
   await guarded(ctx, "backup uninstall --apply", args, async () => {
     await probeCrontab(ctx);
     const existing = await readCrontab(ctx);
-    if (!existing.includes(jobMarker(JOB, name))) {
+    const kept = withoutMarkedLine(existing, JOB, name);
+    if (kept.length === crontabLines(existing).length) {
       info("no backup schedule was installed for this deployment — nothing to remove");
       return;
     }
-    await writeCrontab(ctx, withoutMarkedLine(existing, JOB, name));
+    await writeCrontab(ctx, kept);
     log("removed");
   });
 }

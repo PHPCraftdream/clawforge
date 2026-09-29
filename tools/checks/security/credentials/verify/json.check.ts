@@ -19,12 +19,13 @@ function makeCtx(options: {
   verboseListing: string;
   liveApiKey?: string;
   archivedApiKey?: string;
+  archivedConfig?: unknown;
 }): Context {
   const liveConfigPath = "/srv/openclaw/data/config/openclaw.json";
   const liveConfigBody = JSON.stringify({
     models: { providers: options.liveApiKey === undefined ? {} : { custom: { apiKey: options.liveApiKey } } },
   });
-  const archivedConfigBody = JSON.stringify({
+  const archivedConfigBody = JSON.stringify(options.archivedConfig ?? {
     models: { providers: options.archivedApiKey === undefined ? {} : { custom: { apiKey: options.archivedApiKey } } },
   });
   // verifySnapshot picks its own random workdir; captured off the `tar -xzf ... -C <dir>`
@@ -71,6 +72,33 @@ const CLEAN_VERBOSE =
   "drwxr-xr-x user/group 0 2026-01-01 00:00 data/\n" +
   "-rw-r--r-- user/group 0 2026-01-01 00:00 data/config/openclaw.json\n" +
   "-rw-r--r-- user/group 0 2026-01-01 00:00 data/workspace/SOUL.md\n";
+
+for (const [name, archivedConfig, kind, marker] of [
+  ["proxy URL only in archive", { channels: { telegram: { proxy: "socks5://fixture-user:fixture-pass@example.invalid:1080" } } }, "credential-url", "fixture-pass"],
+  ["nested secret only in archive", { plugins: { custom: { credentials: { opaque: "fixture-private-value" } } } }, "embedded-secret-field", "fixture-private-value"],
+  ["secret-bearing URL query", { channels: { telegram: { proxy: "https://example.invalid/?access_token=fixture-query-value" } } }, "credential-url", "fixture-query-value"],
+  ["generic nested credential URL", { components: { "synthetic-field-name": { endpoint: "https://fixture-user:fixture-nested-pass@example.invalid/" } } }, "credential-url", "fixture-nested-pass"],
+] as const) {
+  const ctx = makeCtx({ listing: CLEAN_LISTING, verboseListing: CLEAN_VERBOSE, archivedConfig });
+  let output = "";
+  let rejected = false;
+  await withOutputSink((chunk) => { output += chunk; }, async () => {
+    try { await verify(ctx, [ARCHIVE, "--json"]); } catch { rejected = true; }
+  });
+  const payload = JSON.parse(output) as { findings: { kind: string; detail: string }[] };
+  check(`${name} is rejected independently of live credentials`, rejected, true);
+  check(`${name} reports its kind`, payload.findings.some((finding) => finding.kind === kind), true);
+  check(`${name} does not print its value`, output.includes(marker), false);
+  check(`${name} does not print a user-defined field name`, output.includes("synthetic-field-name"), false);
+}
+
+{
+  const archivedConfig = { channels: { telegram: { botToken: { source: "env", id: "BOT_TOKEN" } } } };
+  const ctx = makeCtx({ listing: CLEAN_LISTING, verboseListing: CLEAN_VERBOSE, archivedConfig });
+  let output = "";
+  await withOutputSink((chunk) => { output += chunk; }, () => verify(ctx, [ARCHIVE, "--json"]));
+  check("an env reference in a secret field stays shareable", (JSON.parse(output) as { passed: boolean }).passed, true);
+}
 
 {
   const ctx = makeCtx({ listing: FATAL_LISTING, verboseListing: FATAL_VERBOSE });

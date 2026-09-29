@@ -7,7 +7,8 @@
 // deployment's own secret-file permissions. Suppressions stay in `findings` but drop out of
 // `problems`. Never a secret value anywhere.
 
-import { access, readFile, readdir } from "node:fs/promises";
+import { constants, type Dirent } from "node:fs";
+import { access, readFile, readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Context } from "../core/context.ts";
 import { deploymentDir, envFile, secretsDir, selectedDeployment } from "../runtime/deployment.ts";
@@ -271,16 +272,43 @@ async function hostExposureProblems(ctx: Context, acknowledge: { reason: string 
 /** .env plus every file under secrets/ — reusing unprotectedPrivateFile rather than a second
  *  implementation of "owner-only". Local node:fs paths only: these live beside the
  *  deployment, never on the target. */
-async function privateFileProblems(): Promise<Problem[]> {
+interface PrivateFileProbe {
+  readonly list: (directory: string) => Promise<Pick<Dirent, "name" | "isFile">[]>;
+  readonly readable: (file: string) => Promise<void>;
+}
+
+const privateFileProbe: PrivateFileProbe = {
+  list: (directory) => readdir(directory, { withFileTypes: true }),
+  readable: async (file) => {
+    await access(file, constants.R_OK);
+    await stat(file);
+  },
+};
+
+function unreadablePrivateFile(path: string, error: unknown): Problem {
+  const code = (error as NodeJS.ErrnoException).code ?? "UNKNOWN";
+  return problem("PRIVATE_FILE_UNREADABLE", `${path} could not be checked (${code})`);
+}
+
+export async function privateFileProblems(probe: PrivateFileProbe = privateFileProbe): Promise<Problem[]> {
   if (selectedDeployment() === undefined) return [];
   const candidates: string[] = [envFile()];
-  const entries = await readdir(secretsDir(), { withFileTypes: true }).catch(() => []);
+  const problems: Problem[] = [];
+  let entries: Pick<Dirent, "name" | "isFile">[] = [];
+  try {
+    entries = await probe.list(secretsDir());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") problems.push(unreadablePrivateFile(secretsDir(), error));
+  }
   for (const entry of entries) if (entry.isFile()) candidates.push(resolve(secretsDir(), entry.name));
 
-  const problems: Problem[] = [];
   for (const file of candidates) {
-    const exists = await access(file).then(() => true, () => false);
-    if (!exists) continue;
+    try {
+      await probe.readable(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") problems.push(unreadablePrivateFile(file, error));
+      continue;
+    }
     const exposure = await unprotectedPrivateFile(file);
     if (exposure !== undefined) problems.push(problem("PRIVATE_FILE_INSECURE", `${file} is not owner-only (${exposure})`));
   }

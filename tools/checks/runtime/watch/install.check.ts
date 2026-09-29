@@ -45,9 +45,9 @@ check(
   "*/5 * * * * cd '/opt/open claw' && ./clawforge '--app' 'my app' 'watch' 'check' >/dev/null 2>&1 # clawforge-watch:myapp",
 );
 check(
-  "withoutMarkedLine keeps every other line and drops only the marked one, and blanks",
-  withoutMarkedLine("0 3 * * * /usr/bin/backup.sh\n*/5 * * * * ./clawforge watch check # clawforge-watch:myapp\n\n0 4 * * * /usr/bin/other.sh\n", "myapp"),
-  ["0 3 * * * /usr/bin/backup.sh", "0 4 * * * /usr/bin/other.sh"],
+  "withoutMarkedLine preserves other lines and blanks",
+  withoutMarkedLine(`0 3 * * * /usr/bin/backup.sh\n${cronLine(5, { cwd: "/x", command: "./clawforge", args: ["watch", "check"] }, "myapp")}\n\n0 4 * * * /usr/bin/other.sh\n`, "myapp"),
+  ["0 3 * * * /usr/bin/backup.sh", "", "0 4 * * * /usr/bin/other.sh"],
 );
 check(
   "withoutMarkedLine leaves a DIFFERENT deployment's marked line alone",

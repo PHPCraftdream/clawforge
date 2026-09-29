@@ -20,11 +20,11 @@ import {
   listArchive,
   listArchiveLinks,
   parseBackupArchive,
+  listBackupArchives,
   replacedCopyName,
   reportableProblems,
 } from "#src/service/archive/index.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { SshTransport } from "#src/runtime/transport/transport.ts";
 import { openclawCli } from "#src/service/openclaw-cli.ts";
 import { NATIVE_MANIFEST_NAME } from "#src/commands/lifecycle/backup/index.ts";
 import { buildRestorePlan, printRestorePlan } from "./plan.ts";
@@ -88,32 +88,17 @@ function formatArchiveStamp(stamp: string): string {
  *  `pull` writes migrate and share archives into the same backup directory; restoring one
  *  of those over a live instance is not a restore (a migrate archive has no config/.env, a
  *  share archive has neither identity nor devices) — so those are skipped by default. Named
- *  explicitly, any archive is still restorable. Exported for testing: which archive
- *  `./clawforge restore` picks is the decision worth pinning. */
+ *  explicitly, any archive is still restorable. The shared inventory distinguishes an
+ *  empty directory from an unreadable one. Exported to pin the selection rule. */
 export async function newestArchive(
   ctx: Context,
   directory: string,
 ): Promise<{ archive?: string; skipped: string[] }> {
-  const prefix = await sudoFor(ctx, directory);
-  const [head, ...rest] = [
-    ...prefix,
-    "sh",
-    "-c",
-    `ls -1t ${SshTransport.quote(`${directory}/${deploymentName()}-`)}*.tar.gz 2>/dev/null`,
-  ];
-  const result = await ctx.transport.exec(head, rest, { allowFailure: true });
-
+  const archives = await listBackupArchives(ctx, directory);
   const skipped: string[] = [];
-  for (const line of result.stdout.split("\n")) {
-    const path = line.trim();
-    if (path === "") continue;
-    const name = path.slice(path.lastIndexOf("/") + 1);
-    const parsed = parseBackupArchive(name, deploymentName());
-    // Not this deployment's archive at all (a sibling sharing the directory, or a file
-    // someone else put there): not a candidate, and not worth reporting either.
-    if (parsed === undefined) continue;
-    if (parsed.profile === "full") return { archive: path, skipped };
-    skipped.push(`${name} (profile: ${parsed.profile})`);
+  for (const entry of archives) {
+    if (entry.profile === "full") return { archive: entry.path, skipped };
+    skipped.push(`${entry.name} (profile: ${entry.profile})`);
   }
   return { skipped };
 }

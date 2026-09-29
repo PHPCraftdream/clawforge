@@ -410,6 +410,11 @@ check("share allow-list does not contradict its exclusions", contradiction, unde
       excludesFor(profile, "data").includes("data/config/.env.clawforge-*"),
       true,
     );
+    check(
+      `interrupted dry-run payload never travels in ${profile}`,
+      excludesFor(profile, "data").includes("data/config/clawforge-desired.dry-*.json"),
+      true,
+    );
   }
 
   // The journal is this host's history and its snapshots are copies of THIS host's

@@ -7,7 +7,7 @@ import type { Context } from "../../core/context.ts";
 import { answeredProbe } from "../../runtime/datadir.ts";
 import { deploymentName } from "../../runtime/deployment.ts";
 import { TransportUnreachableError } from "../../runtime/transport/transport.ts";
-import { parseBackupArchive, parseReplacedCopyName, type Profile } from "./profile.ts";
+import { parseBackupArchive, parseReplacedCopyName, parseSnapshotArchive, snapshotDeploymentNames, type Profile } from "./profile.ts";
 import { dataDirName, dataDirParent } from "./pack.ts";
 
 export interface BackupArchiveInfo {
@@ -73,8 +73,8 @@ async function readPrefix(ctx: Context, dir: string, kind: InventoryUnreadableEr
 }
 
 /** Every archive of THIS deployment in `backupDir`, newest first. A sibling deployment's
- *  archive sharing the directory, or a file `pull` left there, is excluded the same way
- *  rotate() and restore's newestArchive() already filter — parseBackupArchive says so. */
+ *  archive sharing the directory, or a file `pull` left there, is excluded by
+ *  parseBackupArchive. Restore consumes this inventory too. */
 export async function listBackupArchives(ctx: Context, backupDir: string): Promise<BackupArchiveInfo[]> {
   const deployment = deploymentName();
   const prefix = await readPrefix(ctx, backupDir, "archives");
@@ -106,12 +106,37 @@ export async function listBackupArchives(ctx: Context, backupDir: string): Promi
   return entries;
 }
 
-/** Which archive a bare `./clawforge restore` (no argument) would pick — restore.ts's
- *  newestArchive() applies the same rule over its own listing; kept as a separate, tiny
- *  reimplementation so `backup list` (service layer) never depends on a command module. A
- *  change to the rule itself has to be made in both places. */
+/** Which archive a bare restore would pick from the shared inventory. */
 export function defaultRestoreArchive(archives: readonly BackupArchiveInfo[]): BackupArchiveInfo | undefined {
   return archives.find((entry) => entry.profile === "full");
+}
+
+/** Published snapshots of this deployment, newest first. Listing failures stay unknown. */
+export async function listSnapshotArchives(ctx: Context, snapshotDir: string): Promise<string[]> {
+  const deployment = deploymentName();
+  const prefix = await readPrefix(ctx, snapshotDir, "archives");
+  if (prefix === undefined) return [];
+  const names = snapshotDeploymentNames(deployment);
+  const [head, ...rest] = [
+    ...prefix, "find", snapshotDir, "-maxdepth", "1", "-type", "f", "(",
+    ...names.flatMap((name, index) => [...(index === 0 ? [] : ["-o"]), "-name", `${name}-state-*.tar.gz`]),
+    ")", "-printf", "%T@\t%p\n",
+  ];
+  const result = await ctx.transport.exec(head, rest, { allowFailure: true });
+  if (result.code !== 0) throw new InventoryUnreadableError("archives", `find exited ${result.code}`);
+
+  const entries: { path: string; modified: number }[] = [];
+  for (const line of result.stdout.split("\n")) {
+    if (line === "") continue;
+    const tab = line.indexOf("\t");
+    if (tab < 0) throw new InventoryUnreadableError("archives", "listing malformed");
+    const modified = Number(line.slice(0, tab));
+    const path = line.slice(tab + 1);
+    if (!Number.isFinite(modified)) throw new InventoryUnreadableError("archives", "listing malformed");
+    if (parseSnapshotArchive(basenameOf(path), deployment) !== undefined) entries.push({ path, modified });
+  }
+  entries.sort((a, b) => b.modified - a.modified);
+  return entries.map((entry) => entry.path);
 }
 
 /** Every `<dataDir>.replaced-<stamp>` sibling restore left next to the data directory,

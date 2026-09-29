@@ -91,7 +91,7 @@ try {
   check(
     "migrate keeps the staging family a prefix rule",
     JSON.stringify(forbiddenRules("migrate", ["x"]).prefixes),
-    JSON.stringify(["config/.env.clawforge-"]),
+    JSON.stringify(["config/.env.clawforge-", "config/clawforge-desired.dry-"]),
   );
   check(
     "the share rule table adds its identity/state directories as literals",
@@ -101,7 +101,7 @@ try {
   check(
     "share keeps the staging family a prefix rule too",
     JSON.stringify(forbiddenRules("share", []).prefixes),
-    JSON.stringify(["config/.env.clawforge-"]),
+    JSON.stringify(["config/.env.clawforge-", "config/clawforge-desired.dry-"]),
   );
   check(
     "full forbids nothing structurally",

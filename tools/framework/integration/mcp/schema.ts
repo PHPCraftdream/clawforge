@@ -197,9 +197,13 @@ function shortenDescription(description: string): string {
 export function schemaArgumentDescription(argument: CommandArgument): string | undefined {
   if (isTrivialDescription(argument.name, argument.description)) return undefined;
   const short = shortenDescription(argument.description);
+  // Which action(s) of a multi-action command this argument belongs to (backup's own
+  // --keep) — same wording help-render.ts prints, so an agent reading tools/list and one
+  // reading --help are told the same thing.
+  const scoped = argument.actions === undefined ? short : `${short} (${argument.actions.join(", ")})`;
   return argument.kind === "option" && argument.valueName !== undefined
-    ? `${short} (value: <${argument.valueName}>)`
-    : short;
+    ? `${scoped} (value: <${argument.valueName}>)`
+    : scoped;
 }
 
 /** JSON Schema for a command, derived from its declared arguments. */

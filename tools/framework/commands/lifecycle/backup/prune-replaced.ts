@@ -12,7 +12,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { runMaybePrivileged, sudoFor, needsOwnerEscalation, OWNER, answeredProbe } from "#src/runtime/datadir.ts";
 import {
@@ -30,13 +30,14 @@ export const BACKUP_APPLY_ARGUMENT: CommandArgument = {
   name: "apply",
   description: "Actually apply the action (delete, or install/uninstall the schedule) instead of only previewing/printing it",
   kind: "flag",
+  actions: ["prune-replaced", "install", "uninstall"],
 };
 
 /** The declared, help/MCP-visible shape — `--json` is declared once, in list.ts, and
  *  reused here (not redeclared) so the merged `backup` command never lists it twice. */
 export const BACKUP_PRUNE_ARGUMENTS: CommandArgument[] = [
   BACKUP_APPLY_ARGUMENT,
-  { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n" },
+  { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n", actions: ["prune-replaced"] },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
@@ -82,8 +83,8 @@ async function deleteReplacedCopy(ctx: Context, dataDir: string, path: string): 
   await runMaybePrivileged(ctx, path, "rm", ["-rf", "--", path], { force: await needsOwnerEscalation(ctx, OWNER) });
 }
 
-export async function backupPruneReplaced(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(PRUNE_PARSE_ARGUMENTS, args);
+export async function backupPruneReplaced(ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
+  const parsed = parseDeclaredArgs(PRUNE_PARSE_ARGUMENTS, args, scope);
   const apply = parsed.apply === true;
   const jsonOnly = parsed.json === true;
   const keep = parseKeep(parsed.keep as string | undefined);

@@ -19,7 +19,7 @@
 import { die, info, log, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
@@ -45,7 +45,7 @@ const DEFAULT_BACKUP_INTERVAL = "1d";
  *  shared BACKUP_APPLY_ARGUMENT (prune-replaced.ts), not a second declaration of the same
  *  name — see its own comment for why. */
 export const BACKUP_INSTALL_ARGUMENTS: CommandArgument[] = [
-  { name: "interval", description: "With install: how often (default 1d) — minutes must divide 60 (e.g. 30m), hours must divide a day (e.g. 6h), or 1d", kind: "option", valueName: "interval" },
+  { name: "interval", description: "With install: how often (default 1d) — minutes must divide 60 (e.g. 30m), hours must divide a day (e.g. 6h), or 1d", kind: "option", valueName: "interval", actions: ["install"] },
   BACKUP_APPLY_ARGUMENT,
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
@@ -60,18 +60,18 @@ export const BACKUP_UNINSTALL_ARGUMENTS: CommandArgument[] = [
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
-function parseInstallArgs(args: string[]): { minutes: number; interval: string; apply: boolean } {
-  const parsed = parseDeclaredArgs(BACKUP_INSTALL_ARGUMENTS, args);
+function parseInstallArgs(args: string[], scope?: ActionScope): { minutes: number; interval: string; apply: boolean } {
+  const parsed = parseDeclaredArgs(BACKUP_INSTALL_ARGUMENTS, args, scope);
   const raw = parsed.interval === undefined || parsed.interval === "" ? DEFAULT_BACKUP_INTERVAL : parsed.interval as string;
   return { minutes: parseIntervalToMinutes(raw), interval: raw, apply: parsed.apply === true };
 }
 
-function parseUninstallArgs(args: string[]): boolean {
-  return parseDeclaredArgs(BACKUP_UNINSTALL_ARGUMENTS, args).apply === true;
+function parseUninstallArgs(args: string[], scope?: ActionScope): boolean {
+  return parseDeclaredArgs(BACKUP_UNINSTALL_ARGUMENTS, args, scope).apply === true;
 }
 
-export async function backupInstall(ctx: Context, args: string[]): Promise<void> {
-  const { minutes, interval, apply } = parseInstallArgs(args);
+export async function backupInstall(ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
+  const { minutes, interval, apply } = parseInstallArgs(args, scope);
   const support = schedulingSupport(ctx);
   const name = deploymentName();
 
@@ -106,8 +106,8 @@ export async function backupInstall(ctx: Context, args: string[]): Promise<void>
   });
 }
 
-export async function backupUninstall(ctx: Context, args: string[]): Promise<void> {
-  const apply = parseUninstallArgs(args);
+export async function backupUninstall(ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
+  const apply = parseUninstallArgs(args, scope);
   const support = schedulingSupport(ctx);
   const name = deploymentName();
 

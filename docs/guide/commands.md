@@ -21,6 +21,15 @@ default or refuses: `recipe` alone lists the catalog (its default action, harmle
 accident); `set`, `watch` and `expose` alone have no such default, so they name every action
 and point at `--help` instead of guessing one.
 
+Every command's argv is parsed the same generic way, from the same declaration `--help` and
+the MCP schema come from: `--opt value` and `--opt=value` are both understood; an option
+given twice (`--tail 5 --tail 6`) is refused rather than silently keeping the last one; an
+option's value is never the next token when that token is itself one of the command's own
+`--flag`s (`--opt=-x` still takes a value that legitimately starts with `-`); a bare `--`
+ends option parsing, so everything after it is positional. `backup`'s own action-specific
+flags (`--keep`, `--interval`) are refused by name when given to the wrong action, e.g.
+`backup list --keep 3` names `prune-replaced` rather than calling `--keep` unknown.
+
 | Command | Arguments | Purpose |
 | --- | --- | --- |
 | `bootstrap` | `[--check] [--no-pull] [--break-lock] [--break-foreign-lock <hostId>]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance. A fresh pull of a tag is pinned to the digest it just proved, in `.env` — an already digest-pinned deployment is left alone; `./clawforge upgrade` moves it from there. `--check` runs none of that: a read-only prerequisite report (docker, compose v2, the data/backup/snapshot directories, the gateway port, free disk space), one `ok`/`WARN`/`FAIL` line each, no lock, nothing created — run it once on a new host before the first real bootstrap |

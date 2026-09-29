@@ -7,6 +7,7 @@ import { splitInlineOptions, reportUnknownArgument } from "#framework/entry/cli.
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
 import { parseDeclaredArgs, UnknownArgumentError, UnknownActionError, dieUnknownAction } from "#framework/core/arguments.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -235,9 +236,14 @@ check(
   { path: "/tmp" },
 );
 check(
-  "--flag=value is refused — a flag carries no value to assign",
+  "--flag=value is refused — a flag carries no value to assign, named as such rather than unknown",
   deathOf(() => parseDeclaredArgs([FLAG_ARG], ["--dry-run=x"])),
-  "unknown argument: --dry-run=x",
+  "--dry-run is a flag and takes no value",
+);
+check(
+  "--flag=false is refused the same way — a flag is never given a value, true or otherwise",
+  deathOf(() => parseDeclaredArgs([FLAG_ARG], ["--dry-run=false"])),
+  "--dry-run is a flag and takes no value",
 );
 check(
   "a second bare positional is refused, not silently replacing the first",
@@ -250,6 +256,132 @@ check(
   "--path needs a value",
 );
 
+// --- generic parser: U6 report table — a value option does not swallow a following
+// declared flag/option, a repeated value option is refused, `--` ends option parsing -------
+
+const GREP_ARG: CommandArgument = { name: "grep", description: "d", kind: "option", valueName: "pattern" };
+const JSON_ARG: CommandArgument = { name: "json", description: "d", kind: "flag" };
+const TAIL_ARG: CommandArgument = { name: "tail", description: "d", kind: "option", valueName: "n" };
+const LOGS_ARGS: CommandArgument[] = [GREP_ARG, JSON_ARG, TAIL_ARG];
+
+check(
+  "an option does not swallow a following declared flag as its value (report: logs --grep --json)",
+  deathOf(() => parseDeclaredArgs(LOGS_ARGS, ["--grep", "--json"])),
+  "--grep needs a value",
+);
+check(
+  "...naming the option that needed the value, not the one it would have swallowed",
+  deathOf(() => parseDeclaredArgs(LOGS_ARGS, ["--tail", "--grep", "x"])),
+  "--tail needs a value",
+);
+check(
+  "a value that legitimately starts with - still works via the inline =value form",
+  parseDeclaredArgs(LOGS_ARGS, ["--grep=-x"]),
+  { grep: "-x" },
+);
+check(
+  "a value shaped like a flag but not a DECLARED one is still taken literally, unchanged",
+  parseDeclaredArgs(LOGS_ARGS, ["--grep", "-x"]),
+  { grep: "-x" },
+);
+check(
+  "and the same holds for a token that merely looks like a long option of another command",
+  parseDeclaredArgs(LOGS_ARGS, ["--grep", "--not-declared-here"]),
+  { grep: "--not-declared-here" },
+);
+
+check(
+  "a repeated value option is refused (report: --tail 5 --tail 6 silently kept 6)",
+  deathOf(() => parseDeclaredArgs(LOGS_ARGS, ["--tail", "5", "--tail", "6"])),
+  "--tail given more than once",
+);
+check(
+  "...the same whether the first occurrence was inline or two tokens",
+  deathOf(() => parseDeclaredArgs(LOGS_ARGS, ["--tail=5", "--tail", "6"])),
+  "--tail given more than once",
+);
+check(
+  "a repeated FLAG is unaffected — no repeatable notion exists, and none is added for flags",
+  parseDeclaredArgs(LOGS_ARGS, ["--json", "--json"]),
+  { json: true },
+);
+
+check(
+  "a bare -- ends option parsing: everything after is positional, flag-shaped or not",
+  parseDeclaredArgs([POSITIONAL_ARG], ["--", "--not-a-flag"]),
+  { host: "--not-a-flag" },
+);
+check(
+  "-- alone, with nothing after, is consumed without becoming a positional itself",
+  parseDeclaredArgs([FLAG_ARG], ["--"]),
+  {},
+);
+check(
+  "a command that declares no positional/variadic still refuses the token after --, as today",
+  deathOf(() => parseDeclaredArgs([FLAG_ARG], ["--", "extra"])),
+  "unknown argument: extra",
+);
+check(
+  "--tail=-1 is accepted by the parser — a negative-looking inline value is the command's own to refuse",
+  parseDeclaredArgs([TAIL_ARG], ["--tail=-1"]),
+  { tail: "-1" },
+);
+
+// --- generic parser: U6 report — a flag declared only for another action of the same
+// multi-action command (backup) names that action instead of "unknown argument" -------------
+
+const KEEP_ARG: CommandArgument = { name: "keep", description: "d", kind: "option", valueName: "n", actions: ["prune-replaced"] };
+const APPLY_ARG: CommandArgument = { name: "apply", description: "d", kind: "flag", actions: ["prune-replaced", "install", "uninstall"] };
+const LIST_ONLY_ARGS: CommandArgument[] = [JSON_ARG];
+
+check(
+  "a flag declared only for another action names that action, not 'unknown' (report: backup list --keep)",
+  deathOf(() => parseDeclaredArgs(LIST_ONLY_ARGS, ["--keep", "3"], { action: "list", siblings: [...LIST_ONLY_ARGS, KEEP_ARG] })),
+  "--keep applies to `prune-replaced`, not `list`",
+);
+check(
+  "an argument shared by several actions lists every one of them",
+  deathOf(() => parseDeclaredArgs(LIST_ONLY_ARGS, ["--apply"], { action: "list", siblings: [...LIST_ONLY_ARGS, APPLY_ARG] })),
+  "--apply applies to `prune-replaced`, `install`, `uninstall`, not `list`",
+);
+check(
+  "with no scope, the same call falls back to the plain unknown-argument refusal",
+  deathOf(() => parseDeclaredArgs(LIST_ONLY_ARGS, ["--keep", "3"])),
+  "unknown argument: --keep",
+);
+
+// The report's own case, through the real declaration backup wires up (not a stand-in) —
+// BACKUP_LIST_ARGUMENTS/BACKUP_ALL_ARGUMENTS are what backup/index.ts and list.ts actually
+// parse against, so this fails if the real wiring (not just the mechanism above) drifts.
+{
+  const listArgs = openclawCommands.backup.arguments ?? [];
+  check(
+    "backup declares --keep only for prune-replaced in its merged declaration",
+    listArgs.find((argument) => argument.name === "keep")?.actions,
+    ["prune-replaced"],
+  );
+}
+
+// --- help-render: `backup --help` groups a multi-action command's flags by action -----------
+
+{
+  let printed = "";
+  await withOutputSink((chunk) => {
+    printed += chunk;
+  }, async () => {
+    renderCommandHelp("backup", openclawCommands.backup);
+  });
+  check("--keep's help line names the one action it applies to", /--keep <n>\s+.*\(prune-replaced\)/.test(printed), true);
+  check("--interval's help line names install, not every action", /--interval <interval>\s+.*\(install\)/.test(printed), true);
+  check(
+    "--apply's help line lists every action that shares it",
+    /--apply\s+.*\(prune-replaced, install, uninstall\)/.test(printed),
+    true,
+  );
+  // An argument with no `actions` (json, hot, break-lock…) prints exactly as before — no
+  // stray "()" from an empty group.
+  check("an argument with no actions field gets no parenthetical group at all", printed.includes("()"), false);
+}
 
 // --- --opt=value reaches every argv reader as two tokens --------------------------------
 check("an inline declared option is split", splitInlineOptions(openclawCommands.apply, ["--set=x", "--dry-run"]), ["--set", "x", "--dry-run"]);

@@ -76,6 +76,19 @@ export function dieUnknownAction(action: string, message: string, choices: reado
   throw new UnknownActionError(suggestion === undefined ? message : `${message} (did you mean ${suggestion}?)`);
 }
 
+/** Only for a multi-action command (backup) whose declaration spans several actions: the
+ *  action currently being parsed, and the full cross-action declaration to check an
+ *  unrecognized flag against before giving up on it as wholly unknown — see
+ *  CommandArgument's own `actions` field. */
+export interface ActionScope {
+  readonly action: string;
+  readonly siblings: readonly CommandArgument[];
+}
+
+function formatActions(actions: readonly string[]): string {
+  return actions.map((name) => `\`${name}\``).join(", ");
+}
+
 /** One value per declared argument, keyed by its name (not its `--flag` spelling):
  *   flag        true once seen, otherwise absent
  *   option      the value once seen (from `--opt value` or `--opt=value`); otherwise absent
@@ -86,22 +99,35 @@ export function dieUnknownAction(action: string, message: string, choices: reado
  */
 export type ParsedArgs = Record<string, string | boolean | string[] | undefined>;
 
+/** Whether `token` is `--name` or `--name=...` for a flag/option this same declaration
+ *  knows — the one shape an option's value must not swallow (see parseDeclaredArgs). */
+function isDeclaredLongFlag(token: string, named: ReadonlyMap<string, CommandArgument>): boolean {
+  if (!token.startsWith("--")) return false;
+  const eq = token.indexOf("=");
+  return named.has(eq === -1 ? token.slice(2) : token.slice(2, eq));
+}
+
 /** Answers only the syntactic question every hand-written parser answered the same way:
  *  which declared argument does this token belong to, and does every token belong to one.
  *  Throws UnknownArgumentError as `unknown argument: <token>` on an undeclared flag/option
- *  (naming the nearest declared one when it is close enough to be worth guessing at), on
- *  `--flag=value` for a boolean flag (flags carry no value), and on a bare token with no
- *  positional or variadic slot left for it; dies as `--<name> needs a value` when an option
- *  is the last token in argv, with nothing after it to take as its value.
+ *  (naming the nearest declared one when it is close enough to be worth guessing at, or —
+ *  given `scope` — the other action it actually belongs to), on `--flag=value` for a
+ *  boolean flag (flags carry no value), and on a bare token with no positional or variadic
+ *  slot left for it; dies as `--<name> needs a value` when an option is the last token in
+ *  argv, or the next one is a `--flag`/`--option` this same declaration knows (so a missing
+ *  value cannot silently swallow the next real argument — `--opt=-x`'s inline form still
+ *  takes anything literally), and as `--<name> given more than once` on a second `--opt`.
+ *  A bare `--` ends option parsing: every token after it is positional/variadic regardless
+ *  of shape, the same convention `host`'s own hand-rolled parser already follows.
  *
  *  Deliberately does not enforce `required`, `choices`, or an option's value shape beyond
- *  "some value must follow" (a number, a regex, an enum, "must not look like another
- *  flag") — every command already validates those itself, in its own words, and keeps
+ *  the above — every command already validates those itself, in its own words, and keeps
  *  doing so against the values this returns. Some options already relied on taking
  *  literally whatever token follows, flag-shaped or not (an artifact path, a store name);
  *  this preserves that by never rejecting a `--opt value` value on the strength of its
- *  shape — only `--opt=value`'s inline form is unambiguous enough to always take. */
-export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: readonly string[]): ParsedArgs {
+ *  shape — only a token that is itself one of this declaration's own flags/options stops
+ *  being swallowed. */
+export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: readonly string[], scope?: ActionScope): ParsedArgs {
   const named = new Map<string, CommandArgument>();
   const positionals: CommandArgument[] = [];
   let variadic: CommandArgument | undefined;
@@ -111,13 +137,21 @@ export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: re
     else named.set(argument.name, argument);
   }
 
+  // True once a bare `--` was seen: every remaining token is positional/variadic, even one
+  // that looks like a flag.
+  let optionsEnded = false;
   const result: ParsedArgs = {};
   let filled = 0;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
 
-    if (token.startsWith("-")) {
+    if (!optionsEnded && token === "--") {
+      optionsEnded = true;
+      continue;
+    }
+
+    if (!optionsEnded && token.startsWith("-")) {
       // --opt=value is split before lookup so --app=name (long understood at the gate)
       // and every other declared option read the same syntax consistently.
       let flagToken = token;
@@ -131,24 +165,30 @@ export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: re
       }
       const argument = flagToken.startsWith("--") ? named.get(flagToken.slice(2)) : undefined;
       if (argument === undefined) {
-        const suggestion = flagToken.startsWith("--")
-          ? closestCommand(flagToken.slice(2), [...named.keys()])
-          : undefined;
+        const key = flagToken.startsWith("--") ? flagToken.slice(2) : undefined;
+        if (key !== undefined && scope !== undefined) {
+          const sibling = scope.siblings.find((candidate) => candidate.name === key);
+          if (sibling?.actions !== undefined && !sibling.actions.includes(scope.action)) {
+            throw new UnknownArgumentError(`--${key} applies to ${formatActions(sibling.actions)}, not \`${scope.action}\``);
+          }
+        }
+        const suggestion = key === undefined ? undefined : closestCommand(key, [...named.keys()]);
         dieUnknownArgument(token, suggestion === undefined ? undefined : `--${suggestion}`);
       }
       if (argument.kind === "flag") {
         // A flag carries no value — "=value" on one is a mistake worth naming, not a
         // silently ignored suffix.
-        if (inlineValue !== undefined) dieUnknownArgument(token);
+        if (inlineValue !== undefined) die(`--${argument.name} is a flag and takes no value`);
         result[argument.name] = true;
         continue;
       }
+      if (result[argument.name] !== undefined) die(`--${argument.name} given more than once`);
       if (inlineValue !== undefined) {
         result[argument.name] = inlineValue;
         continue;
       }
       const value = argv[index + 1];
-      if (value === undefined) die(`--${argument.name} needs a value`);
+      if (value === undefined || isDeclaredLongFlag(value, named)) die(`--${argument.name} needs a value`);
       result[argument.name] = value;
       index += 1;
       continue;

@@ -45,7 +45,10 @@ export function renderCommandHelp(name: string, command: HelpDeclaration): void 
   for (const argument of command.arguments ?? []) {
     const required = argument.required === true ? " (required)" : "";
     const choices = argument.choices === undefined ? "" : ` [${argument.choices.join("|")}]`;
-    info(`  ${argumentLabel(argument).padEnd(USAGE_COLUMN)} ${argument.description}${choices}${required}`);
+    // A multi-action command's argument that belongs to only some of its actions (backup's
+    // own --keep, install-only) — see CommandArgument's `actions`.
+    const scope = argument.actions === undefined ? "" : ` (${argument.actions.join(", ")})`;
+    info(`  ${argumentLabel(argument).padEnd(USAGE_COLUMN)} ${argument.description}${scope}${choices}${required}`);
   }
   if (command.details !== undefined) {
     info("");

@@ -69,6 +69,13 @@ export interface CommandArgument {
    *  tools/checks/foundation/core/arguments.check.ts fails the moment a declared option
    *  omits it. */
   readonly valueName?: string;
+  /** For a command whose declaration spans several sub-actions (backup's own `action`
+   *  positional): which action(s) this argument belongs to. Absent for a single-action
+   *  command, or for an argument every action of a multi-action one shares. Read by
+   *  help-render (prints "(prune-replaced)" beside the argument) and by parseDeclaredArgs'
+   *  own cross-action lookup (core/arguments.ts), so `backup list --keep` names
+   *  `prune-replaced` instead of calling `--keep` wholly unknown. */
+  readonly actions?: readonly string[];
 }
 
 export interface AppCommand {

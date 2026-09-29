@@ -30,7 +30,7 @@ import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/managemen
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "#src/commands/lifecycle/verify.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
@@ -614,10 +614,13 @@ export async function backup(ctx: Context, args: string[]): Promise<void> {
   // `prune-replaced`, `install` or `uninstall` token can never collide with one. Anything
   // else (including undefined) falls through to creation unchanged — its own parser below
   // rejects a genuinely unknown bare token exactly as it always has.
-  if (first === "list") return backupList(ctx, rest);
-  if (first === "prune-replaced") return backupPruneReplaced(ctx, rest);
-  if (first === "install") return backupInstall(ctx, rest);
-  if (first === "uninstall") return backupUninstall(ctx, rest);
+  // Lets each action's own parser name the RIGHT action when a flag belongs to a
+  // different one — `backup list --keep` names `prune-replaced`, not just "unknown".
+  const scopeFor = (action: string): ActionScope => ({ action, siblings: BACKUP_ALL_ARGUMENTS });
+  if (first === "list") return backupList(ctx, rest, scopeFor("list"));
+  if (first === "prune-replaced") return backupPruneReplaced(ctx, rest, scopeFor("prune-replaced"));
+  if (first === "install") return backupInstall(ctx, rest, scopeFor("install"));
+  if (first === "uninstall") return backupUninstall(ctx, rest, scopeFor("uninstall"));
 
   const options: BackupOptions = {};
   const parsed = parseDeclaredArgs(BACKUP_ARGUMENTS, args);

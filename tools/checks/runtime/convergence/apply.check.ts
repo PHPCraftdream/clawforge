@@ -28,9 +28,22 @@ import { check, finish } from "#checks/kit/harness.ts";
 
 const ctx = {} as unknown as Context;
 
+/** isApplyDryRun/parseDeclaredArgs throw rather than return, so the message is the observable. */
+function deathOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return "";
+}
+
 check("apply recognizes a standalone dry-run flag", isApplyDryRun(["--dry-run"]), true);
-check("apply does not treat --expect's value as a dry-run flag", isApplyDryRun(["--expect", "--dry-run"]), false);
-check("apply does not treat --set's value as a dry-run flag", isApplyDryRun(["--set", "--dry-run"]), false);
+// --expect/--set with nothing after but another of apply's own flags used to swallow it as
+// a bogus value (a checksum/artifact literally "--dry-run") and silently drop the flag —
+// now that value option refuses to swallow a declared flag and names which one needs a value.
+check("--expect right before --dry-run needs a value, not a swallowed flag", deathOf(() => isApplyDryRun(["--expect", "--dry-run"])), "--expect needs a value");
+check("--set right before --dry-run needs a value, not a swallowed flag", deathOf(() => isApplyDryRun(["--set", "--dry-run"])), "--set needs a value");
 check("apply still recognizes dry-run after an option value", isApplyDryRun(["--expect", "checksum", "--dry-run"]), true);
 
 function action(id: string, advisory = false): PlanAction {

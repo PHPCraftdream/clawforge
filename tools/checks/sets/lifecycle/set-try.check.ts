@@ -93,8 +93,16 @@ check(
 
 // --- teardownTry: lifecycle cleanup is best-effort and always targets the try root --------
 
-const valueNamedLikeModel = parseSetTryArgs(["--set", "--with-model", "--json"]);
-check("set try reads --with-model only as a flag, not as --set's value", valueNamedLikeModel.withModel, false);
+// --set with nothing after but another of set try's own flags used to swallow it as a bogus
+// artifact path (literally "--with-model") and silently drop the flag; the parser now
+// refuses to swallow a declared flag and names --set instead.
+let missingSetValue: unknown;
+try {
+  parseSetTryArgs(["--set", "--with-model", "--json"]);
+} catch (error) {
+  missingSetValue = error;
+}
+check("--set right before --with-model needs a value, not a swallowed flag", missingSetValue instanceof Error ? missingSetValue.message : missingSetValue, "--set needs a value");
 
 check("SSH is refused before unsafe local staging", tryTargetProblem("ssh", "win32")?.includes("not supported"), true);
 check("WSL is refused from a non-Windows tool host", tryTargetProblem("wsl", "linux")?.includes("requires"), true);

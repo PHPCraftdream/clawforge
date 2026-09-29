@@ -331,6 +331,20 @@ All notable changes to `@clawforge/framework` will be documented here.
   (<reason>), …` when anything is excluded, and warns that `prepare.ts`/`verify.ts`/
   `onboard.ts` run on this machine with the operator's rights during `bootstrap`/`up`/`recipe
   verify`.
+* `parseDeclaredArgs` (every command's argv parser): a value option swallowed the next
+  token even when it was itself a declared flag/option of the same command (`logs --grep
+  --json` took `"--json"` as the pattern) — it now dies as `--grep needs a value` instead;
+  a value that legitimately starts with `-` still works via `--grep=-x`. A value option
+  given twice (`--tail 5 --tail 6`) silently kept the last one — now refused as `--tail
+  given more than once`. `--json=false`/`--json=x` on a flag reported `unknown argument`
+  instead of naming the real mistake — now `--json is a flag and takes no value`. A bare
+  `--` reported `unknown argument: --`; it now ends option parsing the way `host`'s own
+  hand-rolled parser already did, so everything after it is positional. `backup list
+  --keep 3` reported `--keep` as wholly unknown even though it is declared, just not for
+  `list` — `CommandArgument` gained an optional `actions` field so a multi-action
+  command's own argument can say which action(s) it belongs to; the refusal now reads
+  `--keep applies to \`prune-replaced\`, not \`list\``, and `backup --help`/its MCP
+  description group `--keep`/`--interval`/`--apply` by the action(s) they apply to.
 
 ## 0.1.0
 

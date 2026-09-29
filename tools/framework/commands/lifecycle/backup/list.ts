@@ -14,7 +14,7 @@ import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { unreachableProblem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
 import {
   listBackupArchives, listReplacedCopies, defaultRestoreArchive,
   type BackupArchiveInfo, type ReplacedCopyInfo,
@@ -45,8 +45,8 @@ function replacedLine(entry: ReplacedCopyInfo): string {
   return `${entry.name}  ${humanSize(entry.sizeBytes)}  ${entry.modifiedAt}`;
 }
 
-export async function backupList(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = parseDeclaredArgs(BACKUP_LIST_ARGUMENTS, args).json === true;
+export async function backupList(ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
+  const jsonOnly = parseDeclaredArgs(BACKUP_LIST_ARGUMENTS, args, scope).json === true;
 
   const { backupDir, dataDir } = ctx.settings;
   let archives: BackupArchiveInfo[];

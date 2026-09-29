@@ -123,15 +123,7 @@ async function declaredConfig(problems: Problem[]): Promise<unknown> {
   return (parsed as { path: string; value?: unknown }[]).map((entry) => entry.value);
 }
 
-/** Every finding a set can produce without a gateway.
- *
- *  Takes the manifest rather than a directory: `set build` already collected the tree into
- *  one, and validating a built artifact must give exactly the same answers as validating the
- *  tree it came from. Two collectors would be two answers. */
-export async function validateSet(manifest: SetManifest, options: { checkFiles?: boolean } = {}): Promise<Problem[]> {
-  const problems: Problem[] = [];
-
-  // --- the image is pinned ------------------------------------------------------------
+function checkImagePinned(manifest: SetManifest, problems: Problem[]): void {
   if (!manifest.requires.image.includes("@sha256:")) {
     problems.push(
       problem(
@@ -140,16 +132,16 @@ export async function validateSet(manifest: SetManifest, options: { checkFiles?:
       ),
     );
   }
+}
 
-  // --- recipes are complete -------------------------------------------------------------
-  //
-  // Checked against the working tree only when asked: a built artifact carries its files as
-  // checksums rather than paths on this machine, and looking for them here would report a
-  // valid artifact as broken on any machine that did not happen to build it.
+/** Checked against the working tree only when asked: a built artifact carries its files as
+ *  checksums rather than paths on this machine, and looking for them here would report a
+ *  valid artifact as broken on any machine that did not happen to build it. */
+async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, problems: Problem[]): Promise<void> {
   for (const [name, recipe] of Object.entries(manifest.recipes)) {
     const declaresAgent = recipe.agent !== undefined;
 
-    if (options.checkFiles === true) {
+    if (checkFiles) {
       const dir = resolve(recipesDir(), name);
       if (!(await exists(dir))) {
         problems.push(problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" is declared but ${dir} does not exist`));
@@ -183,8 +175,9 @@ export async function validateSet(manifest: SetManifest, options: { checkFiles?:
       );
     }
   }
+}
 
-  // --- references resolve -----------------------------------------------------------------
+function checkReferencesResolve(manifest: SetManifest, problems: Problem[]): void {
   const declaredAgents = new Set(
     Object.values(manifest.recipes)
       .map((recipe) => recipe.agent?.agentId)
@@ -216,8 +209,9 @@ export async function validateSet(manifest: SetManifest, options: { checkFiles?:
       }
     }
   }
+}
 
-  // --- schedules are schedules -------------------------------------------------------------
+function checkSchedulesValid(manifest: SetManifest, problems: Problem[]): void {
   for (const [name, recipe] of Object.entries(manifest.recipes)) {
     const schedule = recipe.agent?.cronSchedule;
     if (schedule === undefined) continue;
@@ -226,12 +220,12 @@ export async function validateSet(manifest: SetManifest, options: { checkFiles?:
       problems.push(problem("SET_SCHEDULE_INVALID", `recipe "${name}": ${reason}`));
     }
   }
+}
 
-  // --- every referenced secret has a name in the set ------------------------------------------
-  //
-  // The gateway resolves SecretRefs at startup and reports a missing one only in its log, as
-  // a crash loop. A set that references a variable it does not require is that failure,
-  // declared in advance.
+/** The gateway resolves SecretRefs at startup and reports a missing one only in its log, as
+ *  a crash loop. A set that references a variable it does not require is that failure,
+ *  declared in advance. */
+async function checkSecretsDeclared(manifest: SetManifest, problems: Problem[]): Promise<void> {
   const declaredSecrets = new Set(manifest.secrets);
   for (const ref of collectSecretRefs(await declaredConfig(problems))) {
     if (!declaredSecrets.has(ref.name)) {
@@ -240,6 +234,19 @@ export async function validateSet(manifest: SetManifest, options: { checkFiles?:
       );
     }
   }
+}
 
+/** Every finding a set can produce without a gateway.
+ *
+ *  Takes the manifest rather than a directory: `set build` already collected the tree into
+ *  one, and validating a built artifact must give exactly the same answers as validating the
+ *  tree it came from. Two collectors would be two answers. */
+export async function validateSet(manifest: SetManifest, options: { checkFiles?: boolean } = {}): Promise<Problem[]> {
+  const problems: Problem[] = [];
+  checkImagePinned(manifest, problems);
+  await checkRecipesComplete(manifest, options.checkFiles === true, problems);
+  checkReferencesResolve(manifest, problems);
+  checkSchedulesValid(manifest, problems);
+  await checkSecretsDeclared(manifest, problems);
   return problems;
 }

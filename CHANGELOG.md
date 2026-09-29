@@ -110,6 +110,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   affect another. Runs with bounded parallelism by default (`--jobs <n>` / `OC_CHECK_JOBS` to
   control it); each file's output prints as one block, in a stable file order, once it
   completes.
+* Internal refactor, no behavior change: `apply`'s `applyFromSource`/`applyWithSource`, the
+  recipe portable-content walker's `collectPortableRecipeFiles`, `pull`'s `pullLocked`,
+  `rollback`'s `rollbackSet`, `accept`'s `acceptFromSource`/`runCheck`, `watch check`'s
+  `runWatchCycle` and `set validate`'s `validateSet` are each split into smaller, named
+  private helpers.
 
 ### Fixed
 

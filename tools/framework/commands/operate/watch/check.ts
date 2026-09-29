@@ -121,69 +121,93 @@ export async function resolveWatchOutcome(
  *  without also having to stand up gatherInspection's whole target-reaching machinery — the
  *  same reason gather.ts itself is split into gather/observe/helpers. Takes the
  *  already-parsed targets, not a Context: this needs nothing else from one. */
-export async function runWatchCycle(
-  webhookTarget: WatchWebhookTarget | undefined,
-  level: WatchLevel,
-  reasons: WatchReason[],
-  jsonOnly: boolean,
-  heartbeatUrl?: URL,
-): Promise<void> {
+/** What changed since the last completed cycle. No previous state is not a transition:
+ *  there is nothing to have changed FROM, and the first cycle after `watch install` (or
+ *  after a corrupt/missing state file) should establish a baseline rather than page on it. */
+interface WatchTransition {
+  readonly previous: WatchState | undefined;
+  readonly previousLevel: WatchLevel | undefined;
+  readonly previousReasons: readonly WatchReason[];
+  readonly added: readonly string[];
+  readonly cleared: readonly string[];
+  readonly transitioned: boolean;
+}
+
+async function detectWatchTransition(level: WatchLevel, reasons: WatchReason[]): Promise<WatchTransition> {
   const previous = await readWatchState();
-  const now = new Date().toISOString();
-  // No previous state is not a transition: there is nothing to have changed FROM, and the
-  // first cycle after `watch install` (or after a corrupt/missing state file) should
-  // establish a baseline rather than page on it.
   const previousLevel = previous?.level;
   const previousReasons = previous?.reasons ?? [];
   const { added, cleared } = codeDiff(
     previousReasons.map((entry) => entry.code),
     reasons.map((entry) => entry.code),
   );
-  const transitioned = isTransition(previousLevel, level, added, cleared);
+  return { previous, previousLevel, previousReasons, added, cleared, transitioned: isTransition(previousLevel, level, added, cleared) };
+}
 
-  if (transitioned && previousLevel !== undefined && webhookTarget !== undefined) {
-    try {
-      await postWebhookAlert(webhookTarget, transitionPayload(previousLevel, level, previousReasons, reasons, now));
-    } catch (error) {
-      // Level and reasons stay as they were so the next cycle retries the same change; only
-      // the diagnostics move. since/fromCodes keep the start of the streak, toCodes this attempt.
-      const detail = errorDetail(error);
-      await writeWatchState({
-        ...previous!,
-        lastRunAt: now,
-        lastError: detail,
-        alertPending: {
-          from: previousLevel,
-          to: level,
-          since: previous!.alertPending?.since ?? now,
-          fromCodes: previous!.alertPending?.fromCodes ?? previousReasons.map((entry) => entry.code),
-          toCodes: reasons.map((entry) => entry.code),
-        },
-      });
-      die(
-        `watch: ${summary(level)}, but the alert for ${describeTransition(previousLevel, level, added, cleared)} was not delivered: ` +
-          `${detail}\nstate was left at "${previousLevel}" so this is retried next cycle`,
-      );
-    }
+/** Sends the transition webhook alert, when one applies. On delivery failure, persists a
+ *  retry marker (level/reasons untouched, so the next cycle retries the same change) and
+ *  dies — this cycle must not go on to report a change it never actually announced. */
+async function deliverTransitionAlert(
+  webhookTarget: WatchWebhookTarget | undefined,
+  transition: WatchTransition,
+  level: WatchLevel,
+  reasons: WatchReason[],
+  now: string,
+): Promise<void> {
+  const { transitioned, previous, previousLevel, previousReasons, added, cleared } = transition;
+  if (!transitioned || previousLevel === undefined || webhookTarget === undefined) return;
+
+  try {
+    await postWebhookAlert(webhookTarget, transitionPayload(previousLevel, level, previousReasons, reasons, now));
+  } catch (error) {
+    // Level and reasons stay as they were so the next cycle retries the same change; only
+    // the diagnostics move. since/fromCodes keep the start of the streak, toCodes this attempt.
+    const detail = errorDetail(error);
+    await writeWatchState({
+      ...previous!,
+      lastRunAt: now,
+      lastError: detail,
+      alertPending: {
+        from: previousLevel,
+        to: level,
+        since: previous!.alertPending?.since ?? now,
+        fromCodes: previous!.alertPending?.fromCodes ?? previousReasons.map((entry) => entry.code),
+        toCodes: reasons.map((entry) => entry.code),
+      },
+    });
+    die(
+      `watch: ${summary(level)}, but the alert for ${describeTransition(previousLevel, level, added, cleared)} was not delivered: ` +
+        `${detail}\nstate was left at "${previousLevel}" so this is retried next cycle`,
+    );
   }
+}
 
-  // Dead-man's switch: pinged only while THIS cycle itself reads ok — a ping mid-outage
-  // would tell the external service the instance is fine when it is not, defeating the
-  // whole point of a heartbeat that is supposed to stop the moment something really is
-  // down. A failed ping is a warning only: the heartbeat target being unreachable says
-  // nothing about the instance watch exists to report on, so it never moves level or the
-  // exit code.
-  let heartbeatOutcome: { ok: true } | { ok: false; detail: string } | undefined;
-  if (level === "ok" && heartbeatUrl !== undefined) {
-    try {
-      await postHeartbeat(heartbeatUrl);
-      heartbeatOutcome = { ok: true };
-    } catch (error) {
-      heartbeatOutcome = { ok: false, detail: errorDetail(error) };
-    }
+type WatchHeartbeatOutcome = { ok: true } | { ok: false; detail: string };
+
+/** Dead-man's switch: pinged only while THIS cycle itself reads ok — a ping mid-outage
+ *  would tell the external service the instance is fine when it is not, defeating the whole
+ *  point of a heartbeat that is supposed to stop the moment something really is down. A
+ *  failed ping is a warning only: the heartbeat target being unreachable says nothing about
+ *  the instance watch exists to report on, so it never moves level or the exit code. */
+async function pingWatchHeartbeat(level: WatchLevel, heartbeatUrl: URL | undefined): Promise<WatchHeartbeatOutcome | undefined> {
+  if (level !== "ok" || heartbeatUrl === undefined) return undefined;
+  try {
+    await postHeartbeat(heartbeatUrl);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, detail: errorDetail(error) };
   }
+}
 
-  const state: WatchState = {
+function buildWatchCycleState(
+  level: WatchLevel,
+  reasons: WatchReason[],
+  now: string,
+  transitioned: boolean,
+  previous: WatchState | undefined,
+  heartbeatOutcome: WatchHeartbeatOutcome | undefined,
+): WatchState {
+  return {
     level,
     reasons,
     checkedAt: now,
@@ -197,8 +221,21 @@ export async function runWatchCycle(
     heartbeatAt: heartbeatOutcome?.ok ? now : previous?.heartbeatAt,
     heartbeatError: heartbeatOutcome === undefined ? previous?.heartbeatError : heartbeatOutcome.ok ? undefined : heartbeatOutcome.detail,
   };
-  await writeWatchState(state);
+}
 
+function reportWatchCycle(
+  jsonOnly: boolean,
+  level: WatchLevel,
+  reasons: WatchReason[],
+  transitioned: boolean,
+  webhookTarget: WatchWebhookTarget | undefined,
+  state: WatchState,
+  previousLevel: WatchLevel | undefined,
+  added: readonly string[],
+  cleared: readonly string[],
+  heartbeatOutcome: WatchHeartbeatOutcome | undefined,
+  now: string,
+): void {
   if (jsonOnly || isCaptured()) {
     emit(
       `${JSON.stringify(
@@ -217,17 +254,36 @@ export async function runWatchCycle(
         2,
       )}\n`,
     );
-  } else {
-    log(`watch: ${summary(level)}`);
-    if (reasons.length === 0) info("no liveness problems found");
-    for (const reason of reasons) warn(`${reason.code}  ${reason.detail}`);
-    if (heartbeatOutcome !== undefined && !heartbeatOutcome.ok) warn(`heartbeat ping failed: ${heartbeatOutcome.detail}`);
-    info(
-      previousLevel === undefined
-        ? "first cycle — baseline recorded, no alert sent"
-        : transitioned ? `state changed: ${describeTransition(previousLevel, level, added, cleared)}` : "state unchanged since the last cycle",
-    );
+    return;
   }
+  log(`watch: ${summary(level)}`);
+  if (reasons.length === 0) info("no liveness problems found");
+  for (const reason of reasons) warn(`${reason.code}  ${reason.detail}`);
+  if (heartbeatOutcome !== undefined && !heartbeatOutcome.ok) warn(`heartbeat ping failed: ${heartbeatOutcome.detail}`);
+  info(
+    previousLevel === undefined
+      ? "first cycle — baseline recorded, no alert sent"
+      : transitioned ? `state changed: ${describeTransition(previousLevel, level, added, cleared)}` : "state unchanged since the last cycle",
+  );
+}
+
+export async function runWatchCycle(
+  webhookTarget: WatchWebhookTarget | undefined,
+  level: WatchLevel,
+  reasons: WatchReason[],
+  jsonOnly: boolean,
+  heartbeatUrl?: URL,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const transition = await detectWatchTransition(level, reasons);
+  await deliverTransitionAlert(webhookTarget, transition, level, reasons, now);
+
+  const heartbeatOutcome = await pingWatchHeartbeat(level, heartbeatUrl);
+
+  const state = buildWatchCycleState(level, reasons, now, transition.transitioned, transition.previous, heartbeatOutcome);
+  await writeWatchState(state);
+
+  reportWatchCycle(jsonOnly, level, reasons, transition.transitioned, webhookTarget, state, transition.previousLevel, transition.added, transition.cleared, heartbeatOutcome, now);
 
   // Every cycle's exit code says what an external scheduler needs to know, independent of
   // whether an alert fired this time: 0 while the instance is doing its job, non-zero

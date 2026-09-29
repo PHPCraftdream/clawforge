@@ -52,6 +52,7 @@
 // resolves to a directory the walk is already inside is refused instead of recursed into.
 
 import { access, lstat, readdir, realpath, stat } from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { warn } from "../../core/io/log.ts";
 import { declaredPrivateFiles } from "../../service/recipe.ts";
@@ -118,102 +119,27 @@ export async function collectPortableRecipeFiles(
   options: { walkRoot?: string; excludeTop?: string } = {},
 ): Promise<{ files: string[]; excluded: { path: string; reason: string }[] }> {
   const walkRoot = options.walkRoot ?? recipeDirectory;
-  const excludeTop = options.excludeTop;
-  const declared = await declaredPortablePrivateFiles(recipeDirectory);
   const realRoot = await realpath(recipeDirectory);
+  const realWalkRoot = await resolveContainedWalkRoot(walkRoot, realRoot);
 
-  const files: string[] = [];
-  const excluded: { path: string; reason: string }[] = [];
+  const state: PortableWalkState = {
+    recipeDirectory,
+    realRoot,
+    declared: await declaredPortablePrivateFiles(recipeDirectory),
+    excludeTop: options.excludeTop,
+    files: [],
+    excluded: [],
+  };
+  await walkPortableDirectory(state, walkRoot, "", realWalkRoot, new Set([realRoot, realWalkRoot]));
 
-  async function walk(current: string, base: string, realCurrent: string, activeDirs: Set<string>): Promise<void> {
-    const entries = await readdir(current, { withFileTypes: true });
-    for (const entry of entries) {
-      if (base === "" && excludeTop !== undefined && entry.name === excludeTop) continue;
-      const full = resolve(current, entry.name);
-      const relativePath = base === "" ? entry.name : `${base}/${entry.name}`;
-      const recipeRelative = relative(recipeDirectory, full).replaceAll("\\", "/");
-      if (excludesPortablePath(recipeRelative, declared)) {
-        excluded.push({ path: recipeRelative, reason: "declared privateFiles" });
-        continue;
-      }
-      if (SENSITIVE_RECIPE_NAME.test(recipeRelative)) {
-        excluded.push({ path: recipeRelative, reason: "sensitive-name policy" });
-        continue;
-      }
-      // Where the bytes of this entry actually live: a link resolves fully, anything else is
-      // its parent's real path plus its own name. Resolution only changes the answer when it
-      // MOVES the path — the entry is a link, or is reached through one — and then the two
-      // checks above must hold for the real path too. A public name pointing at a private
-      // target is still the private target, and a declaration written against the real path
-      // must not be dodgeable by reaching the same directory under an alias.
-      const real = entry.isSymbolicLink()
-        ? await realpath(full).catch((error: NodeJS.ErrnoException) => {
-            if (error.code === "ENOENT") {
-              // A child link that resolves nowhere is a broken bundle, not an absent one:
-              // fail the walk under the link's own name rather than a bare ENOENT a caller
-              // could misread as "nothing here".
-              throw new Error(`${recipeRelative} is a symlink that does not resolve`);
-            }
-            throw error;
-          })
-        : resolve(realCurrent, entry.name);
-      const realRecipeRelative = relative(realRoot, real).replaceAll("\\", "/");
-      if (realRecipeRelative !== recipeRelative) {
-        if (excludesPortablePath(realRecipeRelative, declared)) {
-          excluded.push({ path: recipeRelative, reason: "declared privateFiles (symlink target)" });
-          continue;
-        }
-        if (SENSITIVE_RECIPE_NAME.test(realRecipeRelative)) {
-          excluded.push({ path: recipeRelative, reason: "sensitive-name policy (symlink target)" });
-          continue;
-        }
-      }
-      // Containment is decided on the RESOLVED path of every entry, whatever the Dirent
-      // reports: the type bit is the walk's own bookkeeping, not evidence of where
-      // the bytes live. Inside a contained walk a plain entry is contained by
-      // construction, so this only fires once the walk itself has already escaped — the
-      // same refusal a symlink earns, without first asking the Dirent's opinion.
-      if (real !== realRoot && !real.startsWith(realRoot + sep)) {
-        throw new Error(
-          `${recipeRelative} resolves outside the recipe directory — refusing to follow it to ${real}`,
-        );
-      }
-      if (entry.isSymbolicLink()) {
-        const stats = await stat(real);
-        if (stats.isDirectory()) await walkInto(full, relativePath, real, recipeRelative, realRecipeRelative, activeDirs);
-        else files.push(relativePath);
-        continue;
-      }
-      if (entry.isDirectory()) await walkInto(full, relativePath, real, recipeRelative, realRecipeRelative, activeDirs);
-      else files.push(relativePath);
-    }
-  }
+  reportExcluded(state.excluded);
+  return { files: state.files, excluded: state.excluded };
+}
 
-  // Stack-scoped on purpose, never a memo of every directory seen: the same directory may be
-  // reached through two unrelated aliases and both walks are legitimate. What must never
-  // happen is following a link into a directory the walk is ALREADY inside — that recursion
-  // has no bottom, so the entry whose resolution is on the current path is refused by name.
-  async function walkInto(
-    full: string,
-    relativePath: string,
-    real: string,
-    recipeRelative: string,
-    realRecipeRelative: string,
-    activeDirs: Set<string>,
-  ): Promise<void> {
-    if (activeDirs.has(real)) {
-      throw new Error(
-        `${recipeRelative} resolves to ${realRecipeRelative || "."}, which the walk is already inside — following it would loop`,
-      );
-    }
-    activeDirs.add(real);
-    try {
-      await walk(full, relativePath, real, activeDirs);
-    } finally {
-      activeDirs.delete(real);
-    }
-  }
-
+/** The root itself is vetted before the first readdir: a walk root that resolves outside
+ *  the recipe would have every file under it arrive as an ordinary child — no Dirent can
+ *  report an escape that IS the root. Fails the whole walk, identically for every carrier. */
+async function resolveContainedWalkRoot(walkRoot: string, realRoot: string): Promise<string> {
   let realWalkRoot: string;
   try {
     realWalkRoot = await realpath(walkRoot);
@@ -230,22 +156,151 @@ export async function collectPortableRecipeFiles(
     }
     throw error;
   }
-  // The root itself is vetted before the first readdir: a walk root that resolves outside
-  // the recipe would have every file under it arrive as an ordinary child — no Dirent can
-  // report an escape that IS the root. Fail the whole walk, identically for every carrier.
   if (realWalkRoot !== realRoot && !realWalkRoot.startsWith(realRoot + sep)) {
     throw new Error(
       `walk root ${walkRoot} resolves outside the recipe directory — refusing to walk it to ${realWalkRoot}`,
     );
   }
-  await walk(walkRoot, "", realWalkRoot, new Set([realRoot, realWalkRoot]));
+  return realWalkRoot;
+}
 
-  if (excluded.length > 0) {
-    warn(
-      `recipe portable-content policy held back: ${excluded.map((entry) => `${entry.path} (${entry.reason})`).join(", ")}`,
+function reportExcluded(excluded: readonly { path: string; reason: string }[]): void {
+  if (excluded.length === 0) return;
+  warn(
+    `recipe portable-content policy held back: ${excluded.map((entry) => `${entry.path} (${entry.reason})`).join(", ")}`,
+  );
+}
+
+/** State threaded through one collectPortableRecipeFiles walk — a plain object rather than
+ *  closures over local variables, so each step of the walk is its own checkable function. */
+interface PortableWalkState {
+  readonly recipeDirectory: string;
+  readonly realRoot: string;
+  readonly declared: readonly string[];
+  readonly excludeTop: string | undefined;
+  readonly files: string[];
+  readonly excluded: { path: string; reason: string }[];
+}
+
+async function walkPortableDirectory(
+  state: PortableWalkState,
+  current: string,
+  base: string,
+  realCurrent: string,
+  activeDirs: Set<string>,
+): Promise<void> {
+  const entries = await readdir(current, { withFileTypes: true });
+  for (const entry of entries) {
+    if (base === "" && state.excludeTop !== undefined && entry.name === state.excludeTop) continue;
+    await visitPortableEntry(state, entry, current, base, realCurrent, activeDirs);
+  }
+}
+
+/** Declared privateFiles or the sensitive-name heuristic, matched against one path — used
+ *  both for the entry's own (logical) path and, separately, for a symlink's real target. */
+function excludedByPolicy(state: PortableWalkState, path: string, reasonSuffix: string): string | undefined {
+  if (excludesPortablePath(path, state.declared)) return `declared privateFiles${reasonSuffix}`;
+  if (SENSITIVE_RECIPE_NAME.test(path)) return `sensitive-name policy${reasonSuffix}`;
+  return undefined;
+}
+
+async function visitPortableEntry(
+  state: PortableWalkState,
+  entry: Dirent,
+  current: string,
+  base: string,
+  realCurrent: string,
+  activeDirs: Set<string>,
+): Promise<void> {
+  const full = resolve(current, entry.name);
+  const relativePath = base === "" ? entry.name : `${base}/${entry.name}`;
+  const recipeRelative = relative(state.recipeDirectory, full).replaceAll("\\", "/");
+
+  const nameReason = excludedByPolicy(state, recipeRelative, "");
+  if (nameReason !== undefined) {
+    state.excluded.push({ path: recipeRelative, reason: nameReason });
+    return;
+  }
+
+  // Where the bytes of this entry actually live: a link resolves fully, anything else is
+  // its parent's real path plus its own name. Resolution only changes the answer when it
+  // MOVES the path — the entry is a link, or is reached through one — and then the two
+  // checks above must hold for the real path too. A public name pointing at a private
+  // target is still the private target, and a declaration written against the real path
+  // must not be dodgeable by reaching the same directory under an alias.
+  const real = await resolvePortableEntryTarget(entry, full, realCurrent, recipeRelative);
+  const realRecipeRelative = relative(state.realRoot, real).replaceAll("\\", "/");
+  if (realRecipeRelative !== recipeRelative) {
+    const targetReason = excludedByPolicy(state, realRecipeRelative, " (symlink target)");
+    if (targetReason !== undefined) {
+      state.excluded.push({ path: recipeRelative, reason: targetReason });
+      return;
+    }
+  }
+
+  // Containment is decided on the RESOLVED path of every entry, whatever the Dirent
+  // reports: the type bit is the walk's own bookkeeping, not evidence of where
+  // the bytes live. Inside a contained walk a plain entry is contained by
+  // construction, so this only fires once the walk itself has already escaped — the
+  // same refusal a symlink earns, without first asking the Dirent's opinion.
+  if (real !== state.realRoot && !real.startsWith(state.realRoot + sep)) {
+    throw new Error(
+      `${recipeRelative} resolves outside the recipe directory — refusing to follow it to ${real}`,
     );
   }
-  return { files, excluded };
+
+  if (entry.isSymbolicLink()) {
+    const stats = await stat(real);
+    if (stats.isDirectory()) await walkPortableSubdirectory(state, full, relativePath, real, recipeRelative, realRecipeRelative, activeDirs);
+    else state.files.push(relativePath);
+    return;
+  }
+  if (entry.isDirectory()) await walkPortableSubdirectory(state, full, relativePath, real, recipeRelative, realRecipeRelative, activeDirs);
+  else state.files.push(relativePath);
+}
+
+async function resolvePortableEntryTarget(
+  entry: Dirent,
+  full: string,
+  realCurrent: string,
+  recipeRelative: string,
+): Promise<string> {
+  if (!entry.isSymbolicLink()) return resolve(realCurrent, entry.name);
+  return realpath(full).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") {
+      // A child link that resolves nowhere is a broken bundle, not an absent one:
+      // fail the walk under the link's own name rather than a bare ENOENT a caller
+      // could misread as "nothing here".
+      throw new Error(`${recipeRelative} is a symlink that does not resolve`);
+    }
+    throw error;
+  });
+}
+
+// Stack-scoped on purpose, never a memo of every directory seen: the same directory may be
+// reached through two unrelated aliases and both walks are legitimate. What must never
+// happen is following a link into a directory the walk is ALREADY inside — that recursion
+// has no bottom, so the entry whose resolution is on the current path is refused by name.
+async function walkPortableSubdirectory(
+  state: PortableWalkState,
+  full: string,
+  relativePath: string,
+  real: string,
+  recipeRelative: string,
+  realRecipeRelative: string,
+  activeDirs: Set<string>,
+): Promise<void> {
+  if (activeDirs.has(real)) {
+    throw new Error(
+      `${recipeRelative} resolves to ${realRecipeRelative || "."}, which the walk is already inside — following it would loop`,
+    );
+  }
+  activeDirs.add(real);
+  try {
+    await walkPortableDirectory(state, full, relativePath, real, activeDirs);
+  } finally {
+    activeDirs.delete(real);
+  }
 }
 
 /** The one walk of a recipe's `agent/` bundle, shared by every reader that needs it:

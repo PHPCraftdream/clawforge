@@ -31,9 +31,10 @@ import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
+import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { isHealthy, blockingProblems } from "#src/service/inspection.ts";
-import { runSecurityAudit, type SecurityFinding } from "#src/security/audit.ts";
+import { runSecurityAudit, type SecurityFinding, type SecurityAuditReport } from "#src/security/audit.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 
@@ -229,6 +230,115 @@ function callFailure(
   return undefined;
 }
 
+/** The three verdicts every check kind reports through — built once per runCheck call so
+ *  each branch stays a plain function of (ctx, recipe, check, verdicts). */
+interface CheckVerdicts {
+  readonly fail: (detail: string) => AcceptanceResult;
+  readonly pass: (detail?: string) => AcceptanceResult;
+  readonly unclear: (detail: string) => AcceptanceResult;
+}
+
+async function runMcpRespondsCheck(ctx: Context, recipe: string, check: AcceptanceCheck, verdicts: CheckVerdicts): Promise<AcceptanceResult> {
+  const expected = Array.isArray(check.tools) ? (check.tools as string[]) : [];
+  const { responses, exitCode, stderr } = await askRecipeServer(ctx, recipe, [
+    { jsonrpc: "2.0", id: 1, method: "initialize" },
+    { jsonrpc: "2.0", id: 2, method: "tools/list" },
+  ]);
+  const initialized = responses.find((response) => response.id === 1);
+  const listed = responses.find((response) => response.id === 2);
+  const broken = callFailure(initialized, exitCode, stderr) ?? callFailure(listed, exitCode, stderr);
+  if (broken !== undefined) return verdicts.unclear(broken);
+
+  const tools = ((listed?.result as { tools?: { name: string }[] } | undefined)?.tools ?? []).map((tool) => tool.name);
+  const absent = expected.filter((tool) => !tools.includes(tool));
+  return absent.length === 0
+    ? verdicts.pass(`${tools.length} tool(s): ${tools.join(", ")}`)
+    : verdicts.fail(`missing tool(s): ${absent.join(", ")} — offered ${tools.join(", ")}`);
+}
+
+async function runMcpToolCheck(ctx: Context, recipe: string, check: AcceptanceCheck, verdicts: CheckVerdicts): Promise<AcceptanceResult> {
+  const tool = typeof check.tool === "string" ? check.tool : undefined;
+  if (tool === undefined) return verdicts.unclear('the check declares no "tool"');
+  const args = (check.arguments ?? {}) as Record<string, unknown>;
+  const { responses, exitCode, stderr } = await askRecipeServer(ctx, recipe, [
+    { jsonrpc: "2.0", id: 1, method: "initialize" },
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: tool, arguments: args } },
+  ]);
+  const initialized = responses.find((response) => response.id === 1);
+  const answer = responses.find((response) => response.id === 2);
+
+  // Did the call succeed, and only then: does the answer say what was declared. In the
+  // other order, a tool answering isError with "no such page" passes whenever the
+  // expected text happens to appear in that message.
+  const broken = callFailure(initialized, exitCode, stderr) ?? callFailure(answer, exitCode, stderr);
+  if (broken !== undefined) return verdicts.unclear(broken);
+
+  const text = textOf(answer);
+  if (text === "") return verdicts.unclear("the tool answered with nothing");
+  if (typeof check.expect === "string" && !text.includes(check.expect)) {
+    return verdicts.fail(`the answer does not contain ${JSON.stringify(check.expect)} — got ${JSON.stringify(text.slice(0, 120))}`);
+  }
+  return verdicts.pass(typeof check.expect === "string" ? `contains ${JSON.stringify(check.expect)}` : `${text.length} character(s)`);
+}
+
+async function runAgentHasToolsCheck(ctx: Context, recipe: string, check: AcceptanceCheck, verdicts: CheckVerdicts): Promise<AcceptanceResult> {
+  const agentId = typeof check.agent === "string" ? check.agent : undefined;
+  const server = typeof check.server === "string" ? check.server : undefined;
+  if (agentId === undefined || server === undefined) return verdicts.unclear('the check needs both "agent" and "server"');
+
+  // Reaching openclawCliJson at all is an obtained verdict from here on: the instance
+  // answered, and either it has the agent/server declared or it does not.
+  const agents = await openclawCliJson<Array<{ id: string }>>(ctx, ["agents", "list", "--json"]);
+  if (!agents.some((entry) => entry.id === agentId)) return verdicts.fail(`the instance has no agent "${agentId}"`);
+
+  const servers = await openclawCliJson<Record<string, { command?: unknown; args?: unknown }>>(ctx, ["mcp", "list", "--json"]);
+  const entry = servers[server];
+  if (entry === undefined) return verdicts.fail(`MCP server "${server}" is not registered, so agent "${agentId}" cannot call it`);
+  // A name present says nothing about whether it still launches the recipe's own
+  // server.ts — a hand-edited or stale command registers cleanly and answers nothing.
+  if (!mcpServerMatches(entry, recipe)) {
+    return verdicts.fail(`MCP server "${server}" is registered but its command does not match recipe "${recipe}" — it will not serve the recipe's tools`);
+  }
+  return verdicts.pass(`agent "${agentId}" and MCP server "${server}" are both registered`);
+}
+
+async function runCronMatchesCheck(ctx: Context, check: AcceptanceCheck, verdicts: CheckVerdicts): Promise<AcceptanceResult> {
+  const jobName = typeof check.job === "string" ? check.job : undefined;
+  const schedule = typeof check.schedule === "string" ? check.schedule : undefined;
+  if (jobName === undefined) return verdicts.unclear('the check declares no "job"');
+
+  const listed = await openclawCliJson<{ jobs: { name?: string; schedule?: { expr?: string; tz?: string } }[] }>(ctx, ["cron", "list", "--json"]);
+  const job = listed.jobs.find((entry) => entry.name === jobName);
+  if (job === undefined) return verdicts.fail(`no cron job named "${jobName}"`);
+  if (schedule !== undefined && job.schedule?.expr !== schedule) {
+    return verdicts.fail(`"${jobName}" runs at ${job.schedule?.expr ?? "(none)"}, declared ${schedule}`);
+  }
+  if (typeof check.timezone === "string" && job.schedule?.tz !== check.timezone) {
+    return verdicts.fail(`"${jobName}" timezone is ${job.schedule?.tz ?? "(host default)"}, declared ${check.timezone}`);
+  }
+  return verdicts.pass(`"${jobName}" at ${job.schedule?.expr ?? "(none)"}`);
+}
+
+async function runAgentAnswersCheck(ctx: Context, check: AcceptanceCheck, verdicts: CheckVerdicts): Promise<AcceptanceResult> {
+  // The one kind that costs money. Reaching here means it was explicitly asked for.
+  const agentId = typeof check.agent === "string" ? check.agent : undefined;
+  const message = typeof check.message === "string" ? check.message : undefined;
+  if (agentId === undefined || message === undefined) return verdicts.unclear('the check needs both "agent" and "message"');
+
+  const result = await ctx.runtime.runOneOff(
+    "cli",
+    ["agent", "--agent", agentId, "-m", message],
+    { profile: "cli", input: "", allowFailure: true },
+  );
+  if (result.code !== 0) return verdicts.unclear(`the agent call exited ${result.code}: ${result.stderr.trim().split("\n").slice(-2).join(" ")}`);
+  const answer = result.stdout.trim();
+  if (answer === "") return verdicts.unclear("the agent answered with nothing");
+  if (typeof check.expect === "string" && !answer.toLowerCase().includes(check.expect.toLowerCase())) {
+    return verdicts.fail(`the answer does not mention ${JSON.stringify(check.expect)} — got ${JSON.stringify(answer.slice(0, 160))}`);
+  }
+  return verdicts.pass(`answered ${answer.length} character(s)`);
+}
+
 /** Runs one declared check. Exported so each kind can be exercised on its own.
  *
  *  Never throws: a call that cannot even reach the instance is exactly what "could not
@@ -238,121 +348,27 @@ function callFailure(
  *  is a verdict; the second is "could-not-check" regardless of how it happened to fail. */
 export async function runCheck(ctx: Context, recipe: string, check: AcceptanceCheck): Promise<AcceptanceResult> {
   const name = check.name ?? check.kind;
-  const fail = (detail: string): AcceptanceResult => ({ name, kind: check.kind, status: "failed", detail });
-  const pass = (detail?: string): AcceptanceResult => ({ name, kind: check.kind, status: "passed", detail });
-  const unclear = (detail: string): AcceptanceResult => ({ name, kind: check.kind, status: "could-not-check", detail });
+  const verdicts: CheckVerdicts = {
+    fail: (detail) => ({ name, kind: check.kind, status: "failed", detail }),
+    pass: (detail) => ({ name, kind: check.kind, status: "passed", detail }),
+    unclear: (detail) => ({ name, kind: check.kind, status: "could-not-check", detail }),
+  };
 
   try {
     switch (check.kind) {
-      case "mcp_responds": {
-        const expected = Array.isArray(check.tools) ? (check.tools as string[]) : [];
-        const { responses, exitCode, stderr } = await askRecipeServer(ctx, recipe, [
-          { jsonrpc: "2.0", id: 1, method: "initialize" },
-          { jsonrpc: "2.0", id: 2, method: "tools/list" },
-        ]);
-        const initialized = responses.find((response) => response.id === 1);
-        const listed = responses.find((response) => response.id === 2);
-        const broken = callFailure(initialized, exitCode, stderr) ?? callFailure(listed, exitCode, stderr);
-        if (broken !== undefined) return unclear(broken);
-
-        const tools = ((listed?.result as { tools?: { name: string }[] } | undefined)?.tools ?? []).map((tool) => tool.name);
-        const absent = expected.filter((tool) => !tools.includes(tool));
-        return absent.length === 0
-          ? pass(`${tools.length} tool(s): ${tools.join(", ")}`)
-          : fail(`missing tool(s): ${absent.join(", ")} — offered ${tools.join(", ")}`);
-      }
-
-      case "mcp_tool": {
-        const tool = typeof check.tool === "string" ? check.tool : undefined;
-        if (tool === undefined) return unclear('the check declares no "tool"');
-        const args = (check.arguments ?? {}) as Record<string, unknown>;
-        const { responses, exitCode, stderr } = await askRecipeServer(ctx, recipe, [
-          { jsonrpc: "2.0", id: 1, method: "initialize" },
-          { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: tool, arguments: args } },
-        ]);
-        const initialized = responses.find((response) => response.id === 1);
-        const answer = responses.find((response) => response.id === 2);
-
-        // Did the call succeed, and only then: does the answer say what was declared. In the
-        // other order, a tool answering isError with "no such page" passes whenever the
-        // expected text happens to appear in that message.
-        const broken = callFailure(initialized, exitCode, stderr) ?? callFailure(answer, exitCode, stderr);
-        if (broken !== undefined) return unclear(broken);
-
-        const text = textOf(answer);
-        if (text === "") return unclear("the tool answered with nothing");
-        if (typeof check.expect === "string" && !text.includes(check.expect)) {
-          return fail(`the answer does not contain ${JSON.stringify(check.expect)} — got ${JSON.stringify(text.slice(0, 120))}`);
-        }
-        return pass(typeof check.expect === "string" ? `contains ${JSON.stringify(check.expect)}` : `${text.length} character(s)`);
-      }
-
-      case "agent_has_tools": {
-        const agentId = typeof check.agent === "string" ? check.agent : undefined;
-        const server = typeof check.server === "string" ? check.server : undefined;
-        if (agentId === undefined || server === undefined) return unclear('the check needs both "agent" and "server"');
-
-        // Reaching openclawCliJson at all is an obtained verdict from here on: the instance
-        // answered, and either it has the agent/server declared or it does not.
-        const agents = await openclawCliJson<Array<{ id: string }>>(ctx, ["agents", "list", "--json"]);
-        if (!agents.some((entry) => entry.id === agentId)) return fail(`the instance has no agent "${agentId}"`);
-
-        const servers = await openclawCliJson<Record<string, { command?: unknown; args?: unknown }>>(ctx, ["mcp", "list", "--json"]);
-        const entry = servers[server];
-        if (entry === undefined) return fail(`MCP server "${server}" is not registered, so agent "${agentId}" cannot call it`);
-        // A name present says nothing about whether it still launches the recipe's own
-        // server.ts — a hand-edited or stale command registers cleanly and answers nothing.
-        if (!mcpServerMatches(entry, recipe)) {
-          return fail(`MCP server "${server}" is registered but its command does not match recipe "${recipe}" — it will not serve the recipe's tools`);
-        }
-        return pass(`agent "${agentId}" and MCP server "${server}" are both registered`);
-      }
-
-      case "cron_matches": {
-        const jobName = typeof check.job === "string" ? check.job : undefined;
-        const schedule = typeof check.schedule === "string" ? check.schedule : undefined;
-        if (jobName === undefined) return unclear('the check declares no "job"');
-
-        const listed = await openclawCliJson<{ jobs: { name?: string; schedule?: { expr?: string; tz?: string } }[] }>(ctx, ["cron", "list", "--json"]);
-        const job = listed.jobs.find((entry) => entry.name === jobName);
-        if (job === undefined) return fail(`no cron job named "${jobName}"`);
-        if (schedule !== undefined && job.schedule?.expr !== schedule) {
-          return fail(`"${jobName}" runs at ${job.schedule?.expr ?? "(none)"}, declared ${schedule}`);
-        }
-        if (typeof check.timezone === "string" && job.schedule?.tz !== check.timezone) {
-          return fail(`"${jobName}" timezone is ${job.schedule?.tz ?? "(host default)"}, declared ${check.timezone}`);
-        }
-        return pass(`"${jobName}" at ${job.schedule?.expr ?? "(none)"}`);
-      }
-
-      case "agent_answers": {
-        // The one kind that costs money. Reaching here means it was explicitly asked for.
-        const agentId = typeof check.agent === "string" ? check.agent : undefined;
-        const message = typeof check.message === "string" ? check.message : undefined;
-        if (agentId === undefined || message === undefined) return unclear('the check needs both "agent" and "message"');
-
-        const result = await ctx.runtime.runOneOff(
-          "cli",
-          ["agent", "--agent", agentId, "-m", message],
-          { profile: "cli", input: "", allowFailure: true },
-        );
-        if (result.code !== 0) return unclear(`the agent call exited ${result.code}: ${result.stderr.trim().split("\n").slice(-2).join(" ")}`);
-        const answer = result.stdout.trim();
-        if (answer === "") return unclear("the agent answered with nothing");
-        if (typeof check.expect === "string" && !answer.toLowerCase().includes(check.expect.toLowerCase())) {
-          return fail(`the answer does not mention ${JSON.stringify(check.expect)} — got ${JSON.stringify(answer.slice(0, 160))}`);
-        }
-        return pass(`answered ${answer.length} character(s)`);
-      }
-
+      case "mcp_responds": return await runMcpRespondsCheck(ctx, recipe, check, verdicts);
+      case "mcp_tool": return await runMcpToolCheck(ctx, recipe, check, verdicts);
+      case "agent_has_tools": return await runAgentHasToolsCheck(ctx, recipe, check, verdicts);
+      case "cron_matches": return await runCronMatchesCheck(ctx, check, verdicts);
+      case "agent_answers": return await runAgentAnswersCheck(ctx, check, verdicts);
       default:
-        return unclear(`unknown check kind "${check.kind}" — this framework does not implement it`);
+        return verdicts.unclear(`unknown check kind "${check.kind}" — this framework does not implement it`);
     }
   } catch (error) {
     // openclawCliJson throws on a call the instance itself refused (a scope upgrade that
     // never landed, a connection the gateway closed) — reaching the instance failed, which
     // is this check's job to report, not a reason to take the rest of the suite down with it.
-    return unclear(error instanceof Error ? error.message : String(error));
+    return verdicts.unclear(error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -377,26 +393,19 @@ export async function accept(ctx: Context, args: string[]): Promise<void> {
   );
 }
 
-async function acceptFromSource(ctx: Context, args: string[], verified?: VerifiedArtifact): Promise<void> {
-  const startedAt = new Date().toISOString();
-  const parsed = parseDeclaredArgs(ACCEPT_FROM_SOURCE_ARGUMENTS, args);
-  const jsonOnly = parsed.json === true;
-  const withModel = parsed["with-model"] === true;
-  const wanted = parsed.recipe as string | undefined;
+/** Tallies one accept run across every selected recipe's declared checks. */
+interface AcceptanceRunTotals {
+  readonly report: Record<string, AcceptanceResult[]>;
+  readonly passed: number;
+  readonly failed: number;
+  readonly notChecked: number;
+  readonly couldNotCheck: number;
+}
 
-  const recipes = wanted === undefined ? await recipesWithAcceptance() : [wanted];
-  if (recipes.length === 0) {
-    die("no recipe declares acceptance checks — add recipes/<name>/acceptance.json");
-  }
-
+async function runAcceptanceChecks(ctx: Context, recipes: string[], withModel: boolean): Promise<AcceptanceRunTotals> {
   const report: Record<string, AcceptanceResult[]> = {};
-  const before = verified === undefined ? undefined : await observeRuntime(ctx, verified.manifest);
-  let matchedBefore = false;
-  if (verified !== undefined) {
-    try { matchedBefore = isHealthy(await gatherInspection(ctx)); } catch { /* Unverified binding. */ }
-  }
   let passed = 0;
-  let failedCount = 0;
+  let failed = 0;
   let notChecked = 0;
   let couldNotCheck = 0;
 
@@ -423,7 +432,7 @@ async function acceptFromSource(ctx: Context, args: string[], verified?: Verifie
         const result = await runCheck(ctx, recipe, check);
         results.push(result);
         if (result.status === "passed") passed += 1;
-        else if (result.status === "failed") failedCount += 1;
+        else if (result.status === "failed") failed += 1;
         else if (result.status === "could-not-check") couldNotCheck += 1;
         else notChecked += 1;
       } catch (error) {
@@ -439,64 +448,120 @@ async function acceptFromSource(ctx: Context, args: string[], verified?: Verifie
     report[recipe] = results;
   }
 
-  // The security gate: only doctor and accept run it (each audit is a container exec) — see
-  // security/audit.ts. A blocking finding fails acceptance the same way a failed
-  // check does; a warning is reported but does not.
+  return { report, passed, failed, notChecked, couldNotCheck };
+}
+
+/** The security gate: only doctor and accept run it (each audit is a container exec) — see
+ *  security/audit.ts. A blocking finding fails acceptance the same way a failed check does;
+ *  a warning is reported but does not. */
+async function buildAcceptanceReport(
+  ctx: Context,
+  totals: AcceptanceRunTotals,
+): Promise<{ answer: AcceptanceReport; security: SecurityAuditReport; securityBlocking: number }> {
   const security = await runSecurityAudit(ctx);
   const securityBlocking = blockingProblems(security.problems).length;
   const securityWarnings = security.problems.length - securityBlocking;
 
-  let answer: AcceptanceReport = {
+  const answer: AcceptanceReport = {
     deployment: deploymentName(),
-    recipes: report,
-    passed,
-    failed: failedCount,
-    notChecked,
-    couldNotCheck,
-    summary: summarize(passed, failedCount, notChecked, couldNotCheck),
-    healthy: passed > 0 && failedCount === 0 && notChecked === 0 && couldNotCheck === 0 && securityBlocking === 0,
+    recipes: totals.report,
+    passed: totals.passed,
+    failed: totals.failed,
+    notChecked: totals.notChecked,
+    couldNotCheck: totals.couldNotCheck,
+    summary: summarize(totals.passed, totals.failed, totals.notChecked, totals.couldNotCheck),
+    healthy: totals.passed > 0 && totals.failed === 0 && totals.notChecked === 0 && totals.couldNotCheck === 0 && securityBlocking === 0,
     security: { findings: security.findings, blocking: securityBlocking, warnings: securityWarnings },
   };
+  return { answer, security, securityBlocking };
+}
 
-  if (verified !== undefined && before !== undefined) {
-    const after = await observeRuntime(ctx, verified.manifest);
-    let matchedAfter = false;
-    try { matchedAfter = isHealthy(await gatherInspection(ctx)); } catch { /* Unverified binding. */ }
-    const receipt = await saveEvidence({
-      verified, source: "accept", startedAt, withModel, selected: recipes, results: report,
-      observed: after, subjectVerified: matchedBefore && matchedAfter && runtimeMatches(verified.manifest, before, after),
-    });
-    answer = { ...answer, receipt: { id: receipt.receiptId, setId: receipt.setId, verdict: receipt.verdict } };
-    if (!jsonOnly && !isCaptured()) info(`receipt: ${receipt.receiptId} (${receipt.verdict})`);
+/** Observes the runtime again after the checks ran, saves the evidence receipt, and folds
+ *  it into the answer — only when this run started from a verified --set artifact. */
+async function attachAcceptanceReceipt(
+  ctx: Context,
+  verified: VerifiedArtifact,
+  before: ObservedRuntime,
+  matchedBefore: boolean,
+  startedAt: string,
+  withModel: boolean,
+  recipes: string[],
+  report: Record<string, AcceptanceResult[]>,
+  answer: AcceptanceReport,
+  jsonOnly: boolean,
+): Promise<AcceptanceReport> {
+  const after = await observeRuntime(ctx, verified.manifest);
+  let matchedAfter = false;
+  try { matchedAfter = isHealthy(await gatherInspection(ctx)); } catch { /* Unverified binding. */ }
+  const receipt = await saveEvidence({
+    verified, source: "accept", startedAt, withModel, selected: recipes, results: report,
+    observed: after, subjectVerified: matchedBefore && matchedAfter && runtimeMatches(verified.manifest, before, after),
+  });
+  if (!jsonOnly && !isCaptured()) info(`receipt: ${receipt.receiptId} (${receipt.verdict})`);
+  return { ...answer, receipt: { id: receipt.receiptId, setId: receipt.setId, verdict: receipt.verdict } };
+}
+
+function printAcceptanceReport(
+  answer: AcceptanceReport,
+  report: Record<string, AcceptanceResult[]>,
+  security: SecurityAuditReport,
+  notChecked: number,
+  withModel: boolean,
+): void {
+  for (const [recipe, results] of Object.entries(report)) {
+    log(`recipe ${recipe}`);
+    for (const result of results) {
+      const line = `${result.status.toUpperCase().padEnd(7)} ${result.name}${result.detail === undefined ? "" : `  ${result.detail}`}`;
+      if (result.status === "failed") warn(line);
+      else info(line);
+    }
   }
+  if (security.findings.length > 0) {
+    log("security");
+    for (const finding of security.findings) {
+      const label = finding.suppressed ? "SUPPRESSED" : finding.severity === "blocking" ? "BLOCKING" : "WARN";
+      const line = `${label.padEnd(10)} ${finding.source} ${finding.checkId}  ${finding.message}` +
+        (finding.suppressed ? ` (suppressed: ${finding.suppressedReason})` : "");
+      if (finding.severity === "blocking" && !finding.suppressed) warn(line);
+      else info(line);
+    }
+  }
+  log(answer.summary);
+  if (notChecked > 0 && !withModel) info("the not-checked ones call the model: ./clawforge accept --with-model");
+}
+
+async function acceptFromSource(ctx: Context, args: string[], verified?: VerifiedArtifact): Promise<void> {
+  const startedAt = new Date().toISOString();
+  const parsed = parseDeclaredArgs(ACCEPT_FROM_SOURCE_ARGUMENTS, args);
+  const jsonOnly = parsed.json === true;
+  const withModel = parsed["with-model"] === true;
+  const wanted = parsed.recipe as string | undefined;
+
+  const recipes = wanted === undefined ? await recipesWithAcceptance() : [wanted];
+  if (recipes.length === 0) {
+    die("no recipe declares acceptance checks — add recipes/<name>/acceptance.json");
+  }
+
+  const before = verified === undefined ? undefined : await observeRuntime(ctx, verified.manifest);
+  let matchedBefore = false;
+  if (verified !== undefined) {
+    try { matchedBefore = isHealthy(await gatherInspection(ctx)); } catch { /* Unverified binding. */ }
+  }
+
+  const totals = await runAcceptanceChecks(ctx, recipes, withModel);
+  const { answer: baseAnswer, security, securityBlocking } = await buildAcceptanceReport(ctx, totals);
+  const answer = verified !== undefined && before !== undefined
+    ? await attachAcceptanceReceipt(ctx, verified, before, matchedBefore, startedAt, withModel, recipes, totals.report, baseAnswer, jsonOnly)
+    : baseAnswer;
 
   if (jsonOnly || isCaptured()) {
     emit(`${JSON.stringify(answer, null, 2)}\n`);
   } else {
-    for (const [recipe, results] of Object.entries(report)) {
-      log(`recipe ${recipe}`);
-      for (const result of results) {
-        const line = `${result.status.toUpperCase().padEnd(7)} ${result.name}${result.detail === undefined ? "" : `  ${result.detail}`}`;
-        if (result.status === "failed") warn(line);
-        else info(line);
-      }
-    }
-    if (security.findings.length > 0) {
-      log("security");
-      for (const finding of security.findings) {
-        const label = finding.suppressed ? "SUPPRESSED" : finding.severity === "blocking" ? "BLOCKING" : "WARN";
-        const line = `${label.padEnd(10)} ${finding.source} ${finding.checkId}  ${finding.message}` +
-          (finding.suppressed ? ` (suppressed: ${finding.suppressedReason})` : "");
-        if (finding.severity === "blocking" && !finding.suppressed) warn(line);
-        else info(line);
-      }
-    }
-    log(answer.summary);
-    if (notChecked > 0 && !withModel) info("the not-checked ones call the model: ./clawforge accept --with-model");
+    printAcceptanceReport(answer, totals.report, security, totals.notChecked, withModel);
   }
 
-  if (failedCount > 0 || couldNotCheck > 0 || securityBlocking > 0) {
+  if (totals.failed > 0 || totals.couldNotCheck > 0 || securityBlocking > 0) {
     const securityNote = securityBlocking > 0 ? `; ${securityBlocking} blocking security finding(s)` : "";
-    throw new Error(`${failedCount + couldNotCheck} acceptance check(s) did not pass${securityNote}`);
+    throw new Error(`${totals.failed + totals.couldNotCheck} acceptance check(s) did not pass${securityNote}`);
   }
 }

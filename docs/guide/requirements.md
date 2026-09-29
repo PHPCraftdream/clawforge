@@ -99,3 +99,32 @@ target-reached sibling of `LOCAL_TARGET_UNSUPPORTED` above. It is checked only b
   installation rather than a stub.
 * A real macOS or a real remote Linux server, reached with `OC_TARGET_LOCATION=ssh`, is the
   only way to exercise the `ssh` rows end to end; nothing in CI does this today.
+
+### CI job → matrix cell mapping
+
+`.github/workflows/ci.yml` runs on every push/PR; `.github/workflows/windows-full.yml` is
+manual (`workflow_dispatch`) on a self-hosted runner. Each job sets `OC_CHECK_REQUIRE` (see
+CONTRIBUTING.md's "Host capability labels") to turn a missing capability into a hard failure
+for the capabilities this runner is supposed to have, instead of a silent skip:
+
+| Job (`ci.yml` / `windows-full.yml`) | Matrix cell | `OC_CHECK_REQUIRE` |
+| --- | --- | --- |
+| `checks` — "Linux (local + ssh)" | Linux host, `local` (default) and host-side `ssh` coverage | `docker,ssh-loopback,posix-sh,rsync,linux-host` |
+| `macos-checks` — "macOS (ssh target only)" | macOS host, `ssh` (the only target macOS can pick; no `local`) | `ssh-loopback` |
+| `windows-checks` — "Windows (no WSL)" | Windows host, no WSL distro — the "no-WSL" negative case | unset — no capability is demanded, so a Windows host without WSL (or without loopback ssh provisioned) stays green by skipping `wsl`-only checks rather than failing on them |
+| `windows-wsl` — "Windows (WSL2)" | Windows host, `wsl` (default via `auto`), hosted-runner best effort | `wsl` |
+| `windows-full.yml`'s `checks` | Windows host, `wsl`, self-hosted with real WSL2 + Docker | `docker,wsl` |
+
+`ssh-loopback` (a loopback, key-based `ssh` the runner provisions for itself — see
+`tools/checks/kit/capabilities/capabilities.ts`) proves the framework's `ssh` transport
+against a real `sshd`, not a stub; it is not the same thing as `OC_TARGET_LOCATION=ssh`
+against a real remote host, which no CI job does today (see the paragraph above).
+
+**Unverifiable without running Actions:** whether `sudo systemsetup -setremotelogin on`
+enables sshd synchronously (no reboot/wait) on GitHub's hosted `macos-latest` image, and
+whether `wsl --install` can start a real WSL2 distro at all on hosted `windows-latest`
+(nested virtualization has historically been unavailable there — this is why
+`windows-full.yml` uses a self-hosted runner). Both were authored from documented behavior
+and a careful reading of the runner constraints, not from an actual Actions run; the
+`windows-wsl` job is deliberately best-effort and names its own likely cause on failure
+rather than failing with a bare exit code.

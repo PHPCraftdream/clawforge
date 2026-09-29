@@ -111,14 +111,38 @@ say exactly what a check file printing its own "skip" line to stderr would other
 repeat by hand, and a moved or renamed file keeps working everywhere without anyone updating a
 CI path list.
 
+## CI jobs and the host × target matrix
+
+`.github/workflows/ci.yml` runs four jobs on every push/PR, one per named cell of the
+host × target matrix in `docs/guide/requirements.md` ("Windows, `local`" is refused by the
+framework itself, so it has no job); `.github/workflows/windows-full.yml` is a fifth,
+manual (`workflow_dispatch`) job on a self-hosted runner with a real WSL2 distro and Docker.
+Each job's `OC_CHECK_REQUIRE` (see "Host capability labels" above) turns a missing capability
+this runner is supposed to have into a hard failure instead of a silent skip:
+
+| Job | Matrix cell | `OC_CHECK_REQUIRE` | Provisions before checks |
+| --- | --- | --- | --- |
+| `checks` — "Linux (local + ssh)" | Linux host, `local` + host-side `ssh` | `docker,ssh-loopback,posix-sh,rsync,linux-host` | loopback `sshd` + key auth |
+| `macos-checks` — "macOS (ssh target only)" | macOS host, `ssh` (no `local`, by design) | `ssh-loopback` | loopback `sshd` + key auth (`systemsetup -setremotelogin`) |
+| `windows-checks` — "Windows (no WSL)" | Windows host, no WSL distro (the negative case) | unset | nothing — capability-gated files just skip |
+| `windows-wsl` — "Windows (WSL2)" | Windows host, `wsl`, hosted-runner best effort | `wsl` | `wsl --install -d Ubuntu-24.04` (see the job's own header comment for the nested-virtualization caveat) |
+| `windows-full.yml`'s `checks` | Windows host, `wsl`, self-hosted, real WSL2 + Docker | `docker,wsl` | nothing — the self-hosted runner already has both |
+
+`docs/guide/requirements.md`'s "How to test each cell" has the same table with more detail
+on what `ssh-loopback` does and does not prove. **Not verified by an actual Actions run**
+(authored without network/CI access): whether `systemsetup -setremotelogin` enables sshd
+synchronously on hosted `macos-latest`, and whether hosted `windows-latest` can start a real
+WSL2 distro at all — nested virtualization has historically been unavailable there, which is
+exactly why `windows-full.yml` needs a self-hosted runner; `windows-wsl` is deliberately
+best-effort and fails with a named reason rather than a bare exit code if it can't.
+
 ## Reproducing Linux CI locally
 
-CI runs two jobs: `ubuntu-latest` and `windows-latest`, both `npm run check` plus
-typecheck/lint, build, pack:check — the "host capability labels" section above is what keeps
-the Windows job green without a hand-maintained path list: a file that genuinely cannot run
-there names the capability it is missing, is skipped (not failed), and the closing summary
-says so. A change to transport, shell invocation, or path handling can still pass on Windows
-and fail on Linux — a
+The `checks` job's `npm run check` plus typecheck/lint, build, pack:check — the "host
+capability labels" section above is what keeps every job green without a hand-maintained path
+list: a file that genuinely cannot run somewhere names the capability it is missing, is
+skipped (not failed), and the closing summary says so. A change to transport, shell
+invocation, or path handling can still pass on Windows and fail on Linux — a
 dash-vs-bash wording difference or a check that assumes `wsl.exe` is absent are two real
 examples this slipped through before. Run `npm run check:linux` before pushing any such
 change; it needs Docker (Desktop on Windows/macOS, Engine on Linux) and otherwise refuses with

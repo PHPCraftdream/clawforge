@@ -4,11 +4,11 @@
 // the file through a drive mount, the refusal IS the success case. Platform-specific
 // assertions print a skip line elsewhere rather than failing.
 
-import { access, chmod, mkdir, mkdtemp, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPrivateFile, installedWslDistros, probeWslOpen, protectPrivateFile, replacePrivateFile, resetWslBoundaryDedupe, withToolRunner } from "#framework/security/privacy/private-file.ts";
+import { createPrivateFile, installedWslDistros, privateFileHost, probeWslOpen, protectPrivateFile, replacePrivateFile, resetWslBoundaryDedupe, withPrivateFileRenamer, withToolRunner } from "#framework/security/privacy/private-file.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
@@ -574,9 +574,71 @@ async function dedupeChecks(root: string): Promise<void> {
   checkTrue("and still reports the real path once", replaceCaptured.includes('"Ubuntu-24.04" opens'));
 }
 
+/** Windows can hold a target file open (an editor, a backup tool, antivirus) long enough for
+ *  `rename` to fail EPERM/EBUSY where POSIX never would — replacePrivateFile retries in that
+ *  case, real OS behavior never entering it: platform and the rename step are both injected,
+ *  so the retry, its cap and its host-specific message are provable from any check host. */
+async function renameRetryChecks(root: string): Promise<void> {
+  const realPlatform = privateFileHost.platform;
+  try {
+    const file = join(root, "rename-retry.env");
+    await createPrivateFile(file, "OPENCLAW_GATEWAY_TOKEN=before\n");
+
+    privateFileHost.platform = "win32";
+    let calls = 0;
+    await withPrivateFileRenamer(async (from, to) => {
+      calls += 1;
+      if (calls < 3) {
+        const error = new Error("EPERM: operation not permitted") as NodeJS.ErrnoException;
+        error.code = "EPERM";
+        throw error;
+      }
+      await rename(from, to);
+    }, () => replacePrivateFile(file, "OPENCLAW_GATEWAY_TOKEN=after\n"));
+    check("a transient EPERM on Windows is retried until it succeeds", await readFile(file, "utf8"), "OPENCLAW_GATEWAY_TOKEN=after\n");
+    check("exactly the failing attempts plus the one that succeeds are made", calls, 3);
+
+    let persistentError: Error | undefined;
+    await withPrivateFileRenamer(async () => {
+      const error = new Error("EBUSY: resource busy or locked") as NodeJS.ErrnoException;
+      error.code = "EBUSY";
+      throw error;
+    }, async () => {
+      try {
+        await replacePrivateFile(file, "OPENCLAW_GATEWAY_TOKEN=stuck\n");
+      } catch (error) {
+        persistentError = error as Error;
+      }
+    });
+    checkTrue("a lock that never clears on Windows names the likely cause", persistentError?.message.includes("open in another program") === true);
+    check("the file is untouched after every retry is exhausted", await readFile(file, "utf8"), "OPENCLAW_GATEWAY_TOKEN=after\n");
+
+    privateFileHost.platform = "linux";
+    let posixAttempts = 0;
+    let posixError: NodeJS.ErrnoException | undefined;
+    await withPrivateFileRenamer(async () => {
+      posixAttempts += 1;
+      const error = new Error("EPERM") as NodeJS.ErrnoException;
+      error.code = "EPERM";
+      throw error;
+    }, async () => {
+      try {
+        await replacePrivateFile(file, "OPENCLAW_GATEWAY_TOKEN=posix\n");
+      } catch (error) {
+        posixError = error as NodeJS.ErrnoException;
+      }
+    });
+    check("a non-Windows host never retries a rename failure", posixAttempts, 1);
+    check("and the original errno surfaces unrewrapped", posixError?.code, "EPERM");
+  } finally {
+    privateFileHost.platform = realPlatform;
+  }
+}
+
 const root = await mkdtemp(join(tmpdir(), "clawforge-private-file-check-"));
 try {
   await probeContractChecks();
+  await renameRetryChecks(root);
   const listing = process.platform === "win32" ? await installedWslDistros() : { state: "absent" as const };
   const distros = listing.state === "listed" ? listing.distros : [];
   const listingFailure = listing.state === "unlisted" ? listing.reason : undefined;

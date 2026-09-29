@@ -497,6 +497,62 @@ export function createPrivateBinaryFile(file: string, content: Uint8Array): Prom
   return createPrivateFileContent(file, content);
 }
 
+/** Host this module judges the rename retry by — injectable so the Windows-only path is
+ *  provable from any host, the same seam TransportConfig.platform/hostPlatform gives
+ *  createTransport (runtime/transport/transport.ts). */
+export const privateFileHost: { platform: string } = { platform: process.platform };
+
+type Renamer = (from: string, to: string) => Promise<void>;
+let renamer: Renamer = rename;
+
+/** Swappable for checks: real Windows file-lock contention (an editor or antivirus holding
+ *  the target open) is not reproducible on demand, so the retry is proven against a scripted
+ *  failure instead of a real lock. */
+export async function withPrivateFileRenamer<T>(substitute: Renamer, body: () => Promise<T>): Promise<T> {
+  const previous = renamer;
+  renamer = substitute;
+  try {
+    return await body();
+  } finally {
+    renamer = previous;
+  }
+}
+
+const RENAME_RETRY_ATTEMPTS = 5;
+const RENAME_RETRY_DELAY_MS = 100;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+}
+
+/** POSIX rename(2) replaces an open target without complaint — nothing to retry there. Windows
+ *  can hold the target open (an editor with the .env loaded, a backup tool or antivirus racing
+ *  the temp sibling just written) and MoveFileEx then fails EPERM/EBUSY for a hold that is
+ *  usually gone a moment later. A short retry absorbs that; a failure past it says what
+ *  Windows itself does not. */
+async function renameOverPrivateFile(temporary: string, file: string): Promise<void> {
+  const attempts = privateFileHost.platform === "win32" ? RENAME_RETRY_ATTEMPTS : 1;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await renamer(temporary, file);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const transient = code === "EPERM" || code === "EBUSY";
+      if (!transient || attempt >= attempts) {
+        if (privateFileHost.platform === "win32" && transient) {
+          throw new Error(
+            `could not replace ${file}: it appears to be open in another program (an editor, backup tool or ` +
+              `antivirus scan) — close it and retry (${(error as Error).message})`,
+          );
+        }
+        throw error;
+      }
+      await delay(RENAME_RETRY_DELAY_MS * attempt);
+    }
+  }
+}
+
 /** Replaces a private file atomically on the same filesystem. */
 export async function replacePrivateFile(file: string, content: string): Promise<void> {
   // Random per call: PID plus a millisecond timestamp collided when two replacements shared
@@ -508,7 +564,7 @@ export async function replacePrivateFile(file: string, content: string): Promise
   try {
     await createPrivateFile(temporary, content, { temp: true });
     created = true;
-    await rename(temporary, file);
+    await renameOverPrivateFile(temporary, file);
   } catch (error) {
     if (created) await unlink(temporary).catch(() => {});
     throw error;

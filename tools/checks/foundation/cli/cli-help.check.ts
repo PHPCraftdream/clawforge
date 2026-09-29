@@ -18,14 +18,15 @@ import { createApp, appsDir } from "#framework/integration/deployment/scaffold.t
 import { monorepoRoot } from "#framework/core/env.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-/** Runs the real gate with a hard deadline: a hang and a slow success must not look the
- *  same to this check. */
-function runGate(args: string[], timeoutMs = 8000): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
+/** Runs the real gate with a hard deadline. stdin stays an open, never-written pipe: a server
+ *  wrongly started by --help would block on it, whereas /dev/null's EOF would let it exit and hide
+ *  the hang. The deadline is generous — a cold start under a loaded machine is slow, a hang is forever. */
+function runGate(args: string[], timeoutMs = 45_000): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
   return new Promise((resolvePromise) => {
     const proc = spawn(
       process.execPath,
       ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
-      { stdio: ["ignore", "pipe", "pipe"] },
+      { stdio: ["pipe", "pipe", "pipe"] },
     );
     let stdout = "";
     let stderr = "";

@@ -492,8 +492,8 @@ export const managementCommands: Record<string, AppCommand> = {
       "no data directory yet to measure).\n" +
       "Compared against this machine's deployment history (atomic write), serialized across " +
       "processes through delivery and persistence; a busy cycle reports contention. SSH operator " +
-      "cycles use separate state/watch-operator.json, not the remote scheduled history. A " +
-      "webhook POST (OC_WATCH_WEBHOOK in " +
+      "cycles use separate state/watch-operator.json, not the remote scheduled history.\n" +
+      "A webhook POST (OC_WATCH_WEBHOOK in " +
       "this deployment's .env, https only unless it is localhost) fires only on a " +
       "TRANSITION, so an unchanged state never pages anyone twice.\n" +
       "A failed POST leaves the persisted level at its old value on purpose, so the same " +

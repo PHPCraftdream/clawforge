@@ -135,6 +135,7 @@ function makeStubContext(goodPrompts: Record<string, string>): (spec: TargetSpec
         env: { OPENCLAW_GATEWAY_TOKEN: "a-token-value" },
       },
       transport: {
+        description: "local",
         async exists(path: string): Promise<boolean> {
           if (path === configFile) return true;
           if (path === envFile) return spec.targetEnv !== undefined;

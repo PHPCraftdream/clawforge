@@ -2,7 +2,7 @@ import { gatherInspection } from "#framework/commands/orchestration/inspect/gath
 import { parseChannelsStatus } from "#framework/commands/orchestration/inspect/live.ts";
 import type { Problem } from "#framework/service/inspection.ts";
 import { watchCheck } from "#framework/commands/operate/watch/check.ts";
-import { readWatchState, writeWatchState } from "#framework/commands/operate/watch/state.ts";
+import { readWatchState, writeWatchState, withOperatorWatchState } from "#framework/commands/operate/watch/state.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "../fixture.ts";
@@ -38,6 +38,7 @@ try {
       calls.push({ url: String(input), body: init?.body === undefined ? undefined : JSON.parse(String(init.body)) });
       return new Response(null, { status: 200 });
     }) as typeof fetch;
+    await withOperatorWatchState(ctx, async () => {
     await writeWatchState({ level: "degraded", reasons: [{ code: "CHANNEL_UNHEALTHY", detail: "fixture channel disconnected" }], checkedAt: "2020-01-01T00:00:00.000Z" });
     let failed = false;
     try {
@@ -52,6 +53,7 @@ try {
     check("unknown telemetry sends no healthy heartbeat", calls.some((entry) => entry.url.includes("heartbeat.example")), false);
     check("unknown telemetry sends no recovery alert", calls.some((entry) => (entry.body as { to?: string } | undefined)?.to === "ok"), false);
     check("changed degraded reasons send one alert", calls.length, 1);
+    });
   }
 } finally {
   globalThis.fetch = originalFetch;

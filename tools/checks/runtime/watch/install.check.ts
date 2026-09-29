@@ -101,7 +101,7 @@ interface RecordedCall { readonly command: string; readonly args: string[] }
  *  one instance-lock.check.ts's own split uses), so install/uninstall run their REAL locking
  *  code across repeated --apply cycles, not a hand-rolled approximation of it. */
 function crontabTransport(initial = "", listingFailure?: ExecResult): { transport: Context["transport"]; calls: RecordedCall[]; crontab: () => string } {
-  const { ctx: fixtureCtx } = stubContext();
+  const { ctx: fixtureCtx, dirs } = stubContext();
   const baseExec = fixtureCtx.transport.exec;
   let current = initial;
   const calls: RecordedCall[] = [];
@@ -109,8 +109,7 @@ function crontabTransport(initial = "", listingFailure?: ExecResult): { transpor
     ...fixtureCtx.transport,
     description: "ssh:user@host",
     async mkdirp(path: string): Promise<void> {
-      const result = await baseExec("mkdir", ["-p", path]);
-      if (result.code !== 0) throw new Error("fixture directory creation failed");
+      dirs.add(path);
     },
     async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
       calls.push({ command, args });

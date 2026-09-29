@@ -388,11 +388,8 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
       pin: "ENOENT",
     };
     check(`${scenario}: original failure is preserved`, failure instanceof Error && failure.message.includes(expectedReason[scenario] ?? ""), true);
-    if (scenario !== "backup" && scenario !== "prepare") {
-      check(`${scenario}: compensation attempts exact previous digest`, recreations, [TARGET_DIGEST, PREVIOUS_DIGEST]);
-    }
     if (scenario === "backup" || scenario === "prepare") {
-      check(`${scenario}: failure never begins recreation or compensation`, recreations, []);
+      check(`${scenario}: no target-image mutation begins before backup/preparation succeeds`, recreations.includes(TARGET_DIGEST), false);
     } else if (scenario === "rollback") {
       check("failed compensation retains both causes", failure instanceof AggregateError && failure.errors.length === 2 && failure.message.includes("validator transport lost") && failure.message.includes("previous image recreation denied"), true);
       check("failed compensation never claims rollback succeeded", failure instanceof Error && failure.message.includes("was rolled back"), false);

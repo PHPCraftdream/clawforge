@@ -157,6 +157,16 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* Upgrade validates with the target digest's CLI and confirms gateway identity before
+  pinning; exceptions after recreation begins attempt rollback and report both causes
+  when compensation fails.
+* `lock` preserves existing pins when plugin/skill inventory is failed or malformed;
+  `--check` reports unknown inventory instead of false removal or a match.
+* SSH `watch status` reads target-side scheduled history and interval metadata;
+  operator-side ad-hoc cycles use separate history. Concurrent cycles serialize alert
+  delivery and state publication instead of duplicating a transition alert.
+* The `afterBackup` offsite example preserves binary archives through base64 transfer
+  and verifies the written copy's SHA-256; transport text reads are explicitly text-only.
 * Egress diagnostics redact inline URL credentials in endpoint and probe detail across
   text/JSON `inspect`, `doctor`, `plan` and MCP while preserving original probe input.
 * Instance-lock heartbeats share the acquisition/release mutation guard; release drains

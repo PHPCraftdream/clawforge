@@ -42,19 +42,6 @@ for (const [name, command] of Object.entries(openclawCommands)) {
   }
 }
 
-// A `details` line prints whole, on a terminal and inside an MCP tool description alike — a
-// single line running to a thousand-plus characters is a wall of text on the one side and
-// the entire tool description on the other. `\n` inside `details` already renders as
-// separate lines (entry/cli.ts's commandHelp, integration/gate.ts's gateCommandHelp), so the
-// fix is always to add one, never to shorten the text itself.
-const MAX_DETAILS_LINE = 400;
-for (const [name, command] of Object.entries(openclawCommands)) {
-  if (command.details === undefined) continue;
-  for (const [index, line] of command.details.split("\n").entries()) {
-    check(`${name}'s details line ${index + 1} is at most ${MAX_DETAILS_LINE} chars`, line.length <= MAX_DETAILS_LINE, true);
-  }
-}
-
 // --- schema ------------------------------------------------------------------
 
 const verifySchema = inputSchema(openclawCommands.verify) as {

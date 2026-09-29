@@ -5,7 +5,7 @@
 // care about the artifact's specific declared content, only that it is a valid set.
 
 import assert from "node:assert/strict";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildSet } from "#framework/commands/sets/set.ts";
@@ -13,7 +13,7 @@ import { setTry } from "#framework/commands/sets/set-try.ts";
 import { deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { setSourceDir } from "#framework/set/artifacts/source.ts";
 import { listReceipts } from "#framework/set/artifacts/receipt.ts";
-import { parseEnv } from "#framework/core/env.ts";
+import { parseEnv, serializeEnvLine } from "#framework/core/env.ts";
 import { createFixture } from "./fixture.ts";
 
 const fixture = await createFixture();
@@ -23,12 +23,20 @@ const { report } = fixture;
 // A set that declares one secret name, and its value on "this machine" — the real
 // target's config/.env in the model, which is the live half of the merge setTry() feeds
 // from. The name travels in the artifact; the value must never.
-const secretValue = "try-fixture-wiki-token";
-await writeFile(join(root, "config", "secrets.template.env"), "WIKI_TOKEN=\n");
-files.set(`${sourceData}/config/.env`, `WIKI_TOKEN=${secretValue}\n`);
+const secretValue = `  alpha #beta "quoted" 'literal'  `;
+const localValue = `  local #value "quoted"  `;
+const staleValue = "stale-local-value";
+await writeFile(join(root, "config", "secrets.template.env"), "WIKI_TOKEN=\nLOCAL_ONLY=\n");
+files.set(`${sourceData}/config/.env`, `${serializeEnvLine("WIKI_TOKEN", secretValue)}\n`);
 
 try {
   const built = await buildSet(ctx, "lifecycle-try");
+  await mkdir(join(root, "secrets"));
+  await writeFile(join(root, "secrets", "lifecycle-try.env"), [
+    serializeEnvLine("WIKI_TOKEN", staleValue),
+    serializeEnvLine("LOCAL_ONLY", localValue),
+    "",
+  ].join("\n"));
   const privateDirectories: string[] = [];
   const privateFiles: string[] = [];
 
@@ -68,6 +76,11 @@ try {
   assert.equal(directValueWrite, false, "key values must never be written directly into config/.env");
   const stagedPath = [...writeContents].find(([path, content]) => !path.endsWith("config/.env") && content.includes(secretValue))?.[0] ?? "";
   assert.notEqual(stagedPath, "", "the key values are staged privately before publication");
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(parseEnv(writeContents.get(stagedPath) ?? "")).filter(([name]) => name === "WIKI_TOKEN" || name === "LOCAL_ONLY")),
+    { WIKI_TOKEN: secretValue, LOCAL_ONLY: localValue },
+    "live and local values round-trip without losing whitespace, comments, or quotes",
+  );
   assert.ok(
     events.some((event) => {
       if (!event.startsWith("mv:")) return false;
@@ -77,6 +90,43 @@ try {
     "key values must arrive at config/.env by a rename from their staging path",
   );
 
+  const originalReadFile = ctx.transport.readFile.bind(ctx.transport);
+  const liveSecretsPath = `${sourceData}/config/.env`;
+  for (const code of ["EACCES", "EIO", "ETIMEDOUT", "ENOENT"]) {
+    const protectedBefore: number = privateDirectories.length;
+    const eventsBefore = events.length;
+    (ctx.transport as { readFile: typeof originalReadFile }).readFile = async (path) => {
+      if (path === liveSecretsPath) throw Object.assign(new Error(`synthetic read failure: ${secretValue}`), { code });
+      return originalReadFile(path);
+    };
+    const refused = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
+    assert.match(refused.error?.message ?? "", /cannot read live secrets/);
+    assert.equal(refused.error?.message.includes(secretValue), false);
+    assert.equal(privateDirectories.length, protectedBefore, "read failure cannot create a trial");
+    assert.equal(events.length, eventsBefore, "read failure cannot mutate target state");
+  }
+  const originalExists = ctx.transport.exists.bind(ctx.transport);
+  const protectedBeforeProbe = privateDirectories.length;
+  const eventsBeforeProbe = events.length;
+  (ctx.transport as { exists: typeof originalExists }).exists = async (path) => {
+    if (path === liveSecretsPath) throw new Error(`synthetic probe failure: ${secretValue}`);
+    return originalExists(path);
+  };
+  const unknownPresence = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
+  assert.match(unknownPresence.error?.message ?? "", /cannot read live secrets/);
+  assert.equal(unknownPresence.error?.message.includes(secretValue), false);
+  assert.equal(privateDirectories.length, protectedBeforeProbe, "an inconclusive presence probe cannot create a trial");
+  assert.equal(events.length, eventsBeforeProbe, "an inconclusive presence probe cannot mutate target state");
+  (ctx.transport as { exists: typeof originalExists }).exists = originalExists;
+  (ctx.transport as { readFile: typeof originalReadFile }).readFile = originalReadFile;
+  files.set(liveSecretsPath, "WIKI_TOKEN='first\rsecond'\n");
+  const protectedBeforeMultiline = privateDirectories.length;
+  const eventsBeforeMultiline = events.length;
+  const invalidValue = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
+  assert.match(invalidValue.error?.message ?? "", /environment value for WIKI_TOKEN contains a newline or carriage return/);
+  assert.equal(privateDirectories.length, protectedBeforeMultiline, "an unsupported value is refused before trial creation");
+  assert.equal(events.length, eventsBeforeMultiline, "an unsupported value cannot mutate target state");
+  files.delete(liveSecretsPath);
   fixture.state.failPull = true;
   const failedTry = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
   assert.match(failedTry.error?.message ?? "", /pull failed/);
@@ -95,6 +145,10 @@ try {
   fixture.state.failStop = false;
   const kept = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json", "--keep"], dependencies));
   assert.equal(kept.error, undefined, kept.error?.message);
+  assert.ok(
+    [...writeContents].some(([, content]) => parseEnv(content).WIKI_TOKEN === staleValue),
+    "only a proven missing live file permits the local-store fallback",
+  );
   assert.equal(report(kept.output).torndown, false);
   await access(join(fixture.state.lastTryDir, "config", "desired-state.json"));
   const keptApp = await import(pathToFileURL(join(fixture.state.lastTryDir, "app.ts")).href);

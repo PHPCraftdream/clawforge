@@ -78,6 +78,13 @@ export function remoteRecipesPath(remoteApp: string): string {
   }
 
   const remoteRelative = fromDeployment.replaceAll("\\", "/");
+  const [root] = remoteRelative.toLowerCase().split("/");
+  if (["secrets", "data", "backups", "snapshots", ".env"].includes(root ?? "")) {
+    die(
+      `deploy cannot send recipesDir (${setting}) from a private deployment root. ` +
+        "Keep recipes outside secrets/, data/, backups/, snapshots/ and .env.",
+    );
+  }
   return `${remoteApp}/${remoteRelative}`;
 }
 

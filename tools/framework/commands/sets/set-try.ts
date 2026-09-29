@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { parseEnv, frameworkRoot } from "#src/core/env.ts";
+import { parseEnv, serializeEnvLine, frameworkRoot } from "#src/core/env.ts";
 import { useDeployment, deploymentDir, envFile, composeProjectOverride, useComposeProjectOverride } from "#src/runtime/deployment.ts";
 import { createContext } from "#src/core/context.ts";
 import type { Context } from "#src/core/context.ts";
@@ -173,11 +173,18 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   const secretValues: Record<string, string> = Object.fromEntries(
     (await localSecretValues()).map(({ name, value }) => [name.replace(/ \([^)]*\)$/, ""), value]),
   );
+  const liveSecretsPath = secretsFileOnTarget(ctx);
+  let liveSecrets: string | undefined;
   try {
-    Object.assign(secretValues, parseEnv(await ctx.transport.readFile(secretsFileOnTarget(ctx))));
+    liveSecrets = await ctx.transport.readFile(liveSecretsPath);
   } catch {
-    // Real instance down, or never bootstrapped — nothing live to read.
+    // exists() distinguishes a missing path from an unreadable one on every transport.
+    const absent = await ctx.transport.exists(liveSecretsPath).then((present) => !present, () => false);
+    if (!absent) {
+      die("cannot read live secrets from the target; set try was not started");
+    }
   }
+  if (liveSecrets !== undefined) Object.assign(secretValues, parseEnv(liveSecrets));
 
   // deploymentName() derives the compose project name from the directory basename, so
   // tryName must already be lowercase-and-hyphens (unlike mkdtemp's random suffix, which
@@ -200,12 +207,6 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   let provisioned = false;
 
   try {
-    await mkdir(dirname(tempDir), { recursive: true });
-    await mkdir(tempDir);
-    tempDirCreated = true;
-    await (dependencies.protectPrivateDirectory ?? protectPrivateDirectory)(tempDir);
-    await cp(staging, tempDir, { recursive: true });
-
     const { manifest, id } = unpacked.verified;
 
     let problems;
@@ -236,6 +237,16 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
     if (typeof manifest.requires?.image !== "string" || /[\r\n]/.test(manifest.requires.image)) {
       die("this set has an invalid image reference");
     }
+
+    const targetLines = manifest.secrets
+      .filter((name) => name !== "OPENCLAW_GATEWAY_TOKEN" && secretValues[name] !== undefined)
+      .map((name) => serializeEnvLine(name, secretValues[name]));
+
+    await mkdir(dirname(tempDir), { recursive: true });
+    await mkdir(tempDir);
+    tempDirCreated = true;
+    await (dependencies.protectPrivateDirectory ?? protectPrivateDirectory)(tempDir);
+    await cp(staging, tempDir, { recursive: true });
 
     const port = await (dependencies.findFreePort ?? findFreePort)();
     const token = randomBytes(24).toString("hex");
@@ -282,9 +293,6 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
 
       // Values only, never the gateway token (this instance generated its own). Anything
       // the set needs but this machine doesn't know is left absent for preflightSecrets to report.
-      const targetLines = manifest.secrets
-        .filter((name) => name !== "OPENCLAW_GATEWAY_TOKEN" && secretValues[name] !== undefined)
-        .map((name) => `${name}=${secretValues[name]}`);
       if (targetLines.length > 0) {
         await loadSecrets(tryCtx, `${targetLines.join("\n")}\n`);
       }

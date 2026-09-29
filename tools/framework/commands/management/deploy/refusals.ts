@@ -3,12 +3,36 @@
 // answer from all four. A file that policy holds private refuses the whole deploy rather
 // than being excluded and left for rsync globs to guess at.
 
+import { lstat, realpath } from "node:fs/promises";
 import { die } from "#src/core/io/log.ts";
 import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";
 import { collectPortableRecipeFiles, SENSITIVE_RECIPE_NAME } from "#src/security/privacy/recipe-portable-content.ts";
 import { collectSensitiveCheckoutNames } from "#src/security/privacy/deploy-boundary.ts";
 import { listRecipeDirectories } from "#src/service/recipe.ts";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
+
+const ROOT_STORE_NAME = /^[^./\\][^/\\]*\.env$/i;
+const PRIVATE_ROOTS = new Set(["secrets", "data", "backups", "snapshots", ".env"]);
+
+/** Checks the actual rsync source, including a recipe-root symlink. */
+async function assertRecipeSourceRoot(): Promise<void> {
+  const source = recipesDir();
+  try {
+    await lstat(source);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  const actual = await realpath(source);
+  const deployment = await realpath(deploymentDir());
+  const fromDeployment = relative(deployment, actual);
+  if (fromDeployment === "" || fromDeployment === ".." || fromDeployment.startsWith(`..${sep}`) || isAbsolute(fromDeployment)) {
+    die("deploy refuses a recipesDir source that is not contained below the deployment");
+  }
+  if (PRIVATE_ROOTS.has((fromDeployment.split(sep)[0] ?? "").toLowerCase())) {
+    die("deploy refuses a recipesDir source that resolves into a private deployment root");
+  }
+}
 
 /** Every path the portable-content policy holds back across the three trees deploy sends:
  *  the recipes root, the deployment's config/, and the checkout root itself. Reports only
@@ -17,14 +41,18 @@ import { resolve } from "node:path";
 export async function collectRefusals(sourceRoot: string): Promise<string[]> {
   const carrying: string[] = [];
 
+  await assertRecipeSourceRoot();
   const recipesRoot = recipesDir();
   const recipeEntries = (await listRecipeDirectories(recipesRoot))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   for (const entry of recipeEntries) {
     // A sensitive-named top-level entry — file, link or directory — refuses on its own,
     // before the walk below could even be reached.
-    if (SENSITIVE_RECIPE_NAME.test(entry.name)) {
-      carrying.push(`recipes/${entry.name} (sensitive-name policy)`);
+    const rootReason = SENSITIVE_RECIPE_NAME.test(entry.name)
+      ? "sensitive-name policy"
+      : ROOT_STORE_NAME.test(entry.name) ? "store-shaped source-root file" : undefined;
+    if (rootReason !== undefined) {
+      carrying.push(`recipes/${entry.name} (${rootReason})`);
       continue;
     }
     if (!entry.isDirectory()) continue;

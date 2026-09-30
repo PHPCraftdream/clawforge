@@ -102,14 +102,14 @@ $ ./clawforge status   → то же, код 1
 «run it yourself» и строку (проба в `app1`):
 
 ```
-schtasks /create /tn clawforge-<id>-backup /sc DAILY /tr "wsl.exe -d Ubuntu-24.04 --exec bash -lc \"cd -- '/mnt/d/…/app1' && './clawforge' 'backup'\"" /f
+schtasks /create /tn clawforge-<id>-backup /sc DAILY /tr "wsl.exe -d Ubuntu-24.04 --exec bash -lc \"cd -- '<путь в WSL>/app1' && './clawforge' 'backup'\"" /f
 ```
 
 `displayCommandLine` экранирует внутренние кавычки как `\"` — это правило CRT для argv, а не
 синтаксис оболочки:
 
 - Git Bash: MSYS переписывает аргументы-«пути». Те же аргументы, переданные `node`, приходят
-  как `["C:/Program Files/Git/create", "C:/Program Files/Git/tn", …, "F:/"]` —
+  как `["<каталог Git>/create", "<каталог Git>/tn", …, "<диск>:/"]` —
   воспроизведено; `schtasks` получит мусор.
 - `cmd.exe` (по коду): обратная косая черта для `cmd` не экранирует, каждая `"` переключает
   режим кавычек, поэтому после `-lc \"` кавычки закрыты и `&&` делит строку. Первая часть —

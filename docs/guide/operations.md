@@ -46,6 +46,14 @@ remain useful. This applies to successful observations as well as `EGRESS_UNREAC
 in text/JSON `inspect`, `doctor`, `plan` and captured MCP output; inline credentials do not
 need to have been registered in the secret store to be protected.
 
+Parseable endpoints are sanitized structurally with the same WHATWG URL semantics the
+probe uses: spaces or encoded spaces in userinfo, actual TAB/LF/CR, and HTTP-family
+backslash or missing-slash forms cannot bypass masking. Public spelling may therefore
+be normalized; the private probe input remains byte-for-byte unchanged. Malformed
+authorities use conservative masking instead of publishing raw credentials on a parse
+error. Embedded diagnostic URLs follow the same policy, even when they are not the
+original configured endpoint and credentials cross whitespace boundaries.
+
 The deployment folder itself — the operator side — is part of the same comparison. Three
 findings cover it, each naming the command that reads that part back from the instance: a
 connection fact in `.env` that no longer matches the running container (`ENV_STALE`, naming the

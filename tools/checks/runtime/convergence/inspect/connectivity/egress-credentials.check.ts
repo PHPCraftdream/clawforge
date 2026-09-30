@@ -1,9 +1,9 @@
 import { gatherInspection, inspect, doctor } from "#framework/commands/orchestration/inspect/gather.ts";
 import { redactEndpoint, redactEndpointText, publicConfigValue } from "#framework/commands/orchestration/inspect/helpers.ts";
 import { computePlan, plan } from "#framework/commands/orchestration/plan.ts";
-import { withOutputSink } from "#framework/core/io/output.ts";
-import { maskSecrets } from "#framework/core/io/log.ts";
-import { toolEnvelope, maskStructuredResult } from "#framework/integration/mcp/schema.ts";
+import { spawnLocal } from "#framework/runtime/transport/transport.ts";
+import { fileURLToPath } from "node:url";
+import { credentialCases, unknownDiagnosticUrl } from "./credential-consumer.fixture.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "../fixture.ts";
 import type { ExecOptions } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -26,6 +26,12 @@ check("standalone config URLs without an authority still redact credential queri
 check("diagnostics preserve surrounding punctuation", redactEndpointText(`failed (${providerUrl}), retry`), `failed (${publicProvider}), retry`);
 check("malformed endpoint diagnostics use the known original URL", redactEndpointText("failed https://bad host/v1?token=broken-value", "https://bad host/v1?token=broken-value"), "failed https://bad host/v1?token=***");
 check("URL query punctuation cannot expose credential suffixes", redactEndpointText("failed https://provider.example/v1?token=prefix)private-tail"), "failed https://provider.example/v1?token=***");
+for (const entry of credentialCases) {
+  const publicUrl = redactEndpoint(entry.url);
+  check(`${entry.label}: raw authority and password suffix disappear`, publicUrl.includes(entry.username) || publicUrl.includes(entry.password.split(/\s|%20/).at(-1)!), false);
+  check(`${entry.label}: useful path and ordinary query survive`, publicUrl.includes("/v1?view=brief&api_key=***&api_key=***&access%5Ftoken=***#***"), true);
+  check(`${entry.label}: unknown diagnostic URL crosses whitespace safely`, redactEndpointText(`failed (${entry.url}), retry`), `failed (${publicUrl}), retry`);
+}
 
 /** Captures terminal writers without changing command output mode. */
 async function terminalOutput(body: () => Promise<void>): Promise<string> {
@@ -49,6 +55,12 @@ async function terminalOutput(body: () => Promise<void>): Promise<string> {
 const { deployment, stubContext, goodChecksums } = await setupFixtureDeployment();
 try {
   for (const state of ["ok", "dns", "unreachable", "invalid", "timeout"] as const) {
+    for (const entry of [{ label: "prior-query-policy", url: providerUrl, username: "inline-user", password: "inline-password" }, ...credentialCases]) {
+    const providerUrl = entry.url;
+    const publicProvider = redactEndpoint(providerUrl);
+    let normalizedPassword = entry.password;
+    try { normalizedPassword = new URL(providerUrl).password; } catch { /* Malformed authority still needs masking. */ }
+    const forbidden = [...secrets, entry.username, encodeURIComponent(entry.username), entry.password, normalizedPassword, entry.password.split(/\s|%20/).at(-1)!];
     const base = stubContext({
       targetEnv: "ZAI_API_KEY=k\n",
       mirrorChecksums: goodChecksums,
@@ -68,7 +80,7 @@ try {
           inputs.push(urls);
           return {
             code: 0,
-            stdout: JSON.stringify(urls.map((url) => ({ url, state, detail: `probe diagnostic ${url} E_SYNTHETIC` }))),
+            stdout: JSON.stringify(urls.map((url) => ({ url, state, detail: `probe diagnostic ${url} E_SYNTHETIC; other ${unknownDiagnosticUrl}` }))),
             stderr: "",
           };
         },
@@ -78,7 +90,7 @@ try {
     check(`${state}: live-only endpoints are probed with original credentials`, inputs[0], [providerUrl, proxyUrl]);
     check(`${state}: observations retain host/path and redact credentials`, inspection.observed.egress?.map((entry) => entry.endpoint), [publicProvider, publicProxy]);
     check(`${state}: endpoint status remains diagnostic`, inspection.observed.egress?.map((entry) => entry.state), [state, state]);
-    check(`${state}: probe detail shares URL redaction`, inspection.observed.egress?.map((entry) => entry.detail), [`probe diagnostic ${publicProvider} E_SYNTHETIC`, `probe diagnostic ${publicProxy} E_SYNTHETIC`]);
+    check(`${state}: probe detail shares URL redaction`, inspection.observed.egress?.map((entry) => entry.detail), [`probe diagnostic ${publicProvider} E_SYNTHETIC; other ${redactEndpoint(unknownDiagnosticUrl)}`, `probe diagnostic ${publicProxy} E_SYNTHETIC; other ${redactEndpoint(unknownDiagnosticUrl)}`]);
     const findings = inspection.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE");
     check(`${state}: failures retain their findings`, findings.length, state === "ok" ? 0 : 2);
 
@@ -103,34 +115,51 @@ try {
     const planPayload = JSON.parse(planJson) as { problems: { code: string }[] };
     check(`${state}: plan JSON retains failed endpoint diagnostics`, planPayload.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE").length, findings.length);
     if (state !== "ok") {
-      check(`${state}: doctor text retains diagnostic host/path`, doctorText.includes("provider.example/v1/models") && doctorText.includes("proxy.example:9050/connect"), true);
-      check(`${state}: plan text retains diagnostic host/path`, planText.includes("provider.example/v1/models") && planText.includes("proxy.example:9050/connect"), true);
-    }
-    const capturedMCP: Record<string, string> = {};
-    for (const [name, command] of Object.entries({ inspect, doctor, plan })) {
-      let captured = "";
-      let machine = "";
-      await withOutputSink((chunk) => { captured += chunk; }, async () => {
-        try { await command(ctx, []); }
-        catch (error) {
-          // Like MCP, preserve the emitted diagnostics even when doctor rejects the verdict.
-          if (name !== "doctor") throw error;
-        }
-      }, (chunk) => { machine += chunk; });
-      const envelope = maskStructuredResult(toolEnvelope({ summary: name, readOnly: true, structured: true }, captured, machine, "synthetic-capture", []));
-      capturedMCP[name] = JSON.stringify({ content: [{ type: "text", text: maskSecrets(captured) }], structuredContent: envelope });
-      if (name === "inspect" || state !== "ok") {
-        check(`${state}: captured MCP ${name} preserves diagnostic host/path`, capturedMCP[name].includes("provider.example/v1/models") && capturedMCP[name].includes("proxy.example:9050/connect"), true);
-      }
+      check(`${state}: doctor text retains diagnostic host/path`, doctorText.includes("/v1") && doctorText.includes("proxy.example:9050/connect"), true);
+      check(`${state}: plan text retains diagnostic host/path`, planText.includes("/v1") && planText.includes("proxy.example:9050/connect"), true);
     }
     check(`${state}: terminal text contains sanitized egress`, terminalText.includes(publicProvider) && terminalText.includes(publicProxy), true);
-    const outputs = { inspection: JSON.stringify(inspection), terminalText, terminalJson, doctorText, doctorJson, planText, planJson, plan: JSON.stringify(computed), capturedMCP: JSON.stringify(capturedMCP) };
+    const outputs = { inspection: JSON.stringify(inspection), terminalText, terminalJson, doctorText, doctorJson, planText, planJson, plan: JSON.stringify(computed) };
     for (const [name, text] of Object.entries(outputs)) {
-      check(`${state}: ${name} excludes every unregistered inline credential`, secrets.filter((secret) => text.includes(secret)), []);
+      check(`${entry.label}/${state}: ${name} excludes every unregistered inline credential`, [...forbidden, "unknown-fictional-user", "UNKNOWN SUFFIX", "SUFFIX", "FAKE_DETAIL_TOKEN", "FAKE_DETAIL_FRAGMENT"].filter((secret) => text.includes(secret)), []);
     }
     check(`${state}: all diagnostic calls retain original probe input`, inputs.every((urls) => urls[0] === providerUrl && urls[1] === proxyUrl), true);
+    }
   }
 } finally {
   await teardownFixtureDeployment(deployment);
+}
+const executableFixture = fileURLToPath(new URL("./credential-consumer.fixture.ts", import.meta.url));
+const forbidden = [
+  ...credentialCases.flatMap(({ username, password, url }) => {
+    let normalized = password;
+    try { normalized = new URL(url).password; } catch { /* Invalid URL uses raw fallback. */ }
+    return [username, encodeURIComponent(username), password, normalized, password.split(/\s|%20/).at(-1)!];
+  }),
+  "fictional-proxy-user", "PROXY SUFFIX", "SUFFIX", "FAKE_PROXY_TOKEN",
+  "unknown-fictional-user", "UNKNOWN SUFFIX", "FAKE_DETAIL_TOKEN", "FAKE_DETAIL_FRAGMENT",
+  "FAKE_QUERY_SECRET", "FAKE_REPEAT_SECRET", "FAKE_ENCODED_SECRET", "FAKE_FRAGMENT_SECRET",
+];
+for (const command of ["inspect", "doctor", "plan"]) {
+  for (const args of [[], ["--json"]]) {
+    const result = await spawnLocal(process.execPath, ["--experimental-strip-types", executableFixture, command, ...args], { allowFailure: true, timeoutMs: 30_000 });
+    check(`executable ${command} ${args}: command completes or doctor reports blocking fixture findings`, command === "doctor" ? [0, 1].includes(result.code) : result.code === 0, true);
+    const output = `${result.stdout}${result.stderr}`;
+    check(`executable ${command} ${args}: diagnostics retain useful host/path`, output.includes("provider.example/v1") && output.includes("proxy.example:9050/connect"), true);
+    check(`executable ${command} ${args}: no raw/normalized credential or whitespace suffix`, forbidden.filter((secret) => output.includes(secret)), []);
+  }
+}
+const mcp = await spawnLocal(process.execPath, ["--experimental-strip-types", executableFixture, "control-mcp"], {
+  input: ["inspect", "doctor", "plan"].map((name, id) => JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: {} } })).join("\n") + "\n",
+  timeoutMs: 30_000,
+});
+check("real control MCP fixture exits cleanly", mcp.code, 0);
+const responses = mcp.stdout.trim().split(/\r?\n/).map((line) => JSON.parse(line) as { id: number; result: { content: { text: string }[]; structuredContent: { result: unknown } } });
+for (const [id, name] of ["inspect", "doctor", "plan"].entries()) {
+  const response = responses.find((entry) => entry.id === id);
+  const text = JSON.stringify(response) ?? "";
+  check(`real MCP ${name}: structured diagnostic retains host/path`, (JSON.stringify(response?.result.structuredContent.result) ?? "").includes("provider.example/v1"), true);
+  check(`real MCP ${name}: text diagnostic retains host/path`, response?.result.content.some(({ text }) => text.includes("provider.example/v1")), true);
+  check(`real MCP ${name}: excludes raw/normalized credentials and whitespace suffixes`, forbidden.filter((secret) => text.includes(secret)), []);
 }
 finish("egress credential URL publication");

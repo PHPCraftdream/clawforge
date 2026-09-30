@@ -306,10 +306,28 @@ export function egressEndpoints(liveConfig: unknown): EgressEndpoint[] {
 const SECRET_CONFIG_KEY = /(?:password|passwd|secret|token|credential|authorization|(?:api|private|client|access|auth|encryption|signing)[_-]?key|^auth$|^key$|^signature$|^sig$)/i;
 
 /** Removes URL credentials while preserving diagnostic host/path and ordinary query values.
- *  Parse query names with URLSearchParams (including percent escapes), but keep the rest
- *  verbatim: even an invalid URL must be safe to report when the probe rejects it. */
+ *  Use the probe's WHATWG parser before publishing credentials: special schemes accept
+ *  backslashes/missing slashes and strip TAB/LF/CR, while spaces in userinfo are encoded.
+ *  Invalid authorities still need conservative masking, not a parser-error escape hatch. */
 export function redactEndpoint(url: string): string {
-  const withoutUserinfo = url.replace(/\/\/[^/\s?#]*@/g, "//***@");
+  let withoutUserinfo = url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.username !== "" || parsed.password !== "") {
+      parsed.username = "***";
+      parsed.password = "";
+      withoutUserinfo = parsed.href;
+    }
+  } catch {
+    // Normalize only the parser's ignored controls and special-scheme separators.
+    // Whitespace is NOT an authority boundary: it may be part of the credentials.
+    const raw = url.replace(/[\t\n\r]/g, "");
+    const special = /^(?:https?|ftp|wss?|file):/i.test(raw.trimStart());
+    const authority = special
+      ? /^(\s*[a-z][a-z\d+.-]*:[ /\\]*)([^/\\?#]*@)/i
+      : /^(\s*[a-z][a-z\d+.-]*:\/\/)([^/?#]*@)/i;
+    withoutUserinfo = raw.replace(authority, "$1***@");
+  }
   const fragment = withoutUserinfo.indexOf("#");
   const base = fragment < 0 ? withoutUserinfo : withoutUserinfo.slice(0, fragment);
   const query = base.indexOf("?");
@@ -321,10 +339,13 @@ export function redactEndpoint(url: string): string {
   return fragment < 0 ? redacted : `${redacted}#***`;
 }
 
-/** Uses the same URL policy inside probe diagnostics. */
+/** Uses the same URL policy inside probe diagnostics, even without a known endpoint.
+ *  First consume a complete credential authority across whitespace, then its host/path.
+ *  A whitespace tokenizer alone would publish the password suffix after SPACE/TAB/LF/CR.
+ *  Conservative over-masking of an ambiguous malformed authority is intentional. */
 export function redactEndpointText(text: string, endpoint?: string): string {
   const known = endpoint === undefined || endpoint === "" ? text : text.split(endpoint).join(redactEndpoint(endpoint));
-  return known.replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s<>"]+/gi, (url) => {
+  return known.replace(/\b[a-z][a-z\d+.\-\t\r\n]*:[ /\\\t\r\n]*(?:[^/\\?#<>"]*@)?[^\s<>"]*/gi, (url) => {
     const suffix = /[),.;]+$/.exec(url)?.[0] ?? "";
     return `${redactEndpoint(url.slice(0, url.length - suffix.length))}${suffix}`;
   });

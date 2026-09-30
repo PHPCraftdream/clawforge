@@ -99,6 +99,7 @@ export function refreshCheckTransport(spec: RefreshSpec, state: RefreshState, dr
     if (command === "sudo" && args[0] === "-n") return dispatch(args[1], args.slice(2));
     if (command === "docker") return docker(args);
     if (command === "mkdir" || command === "chown" || command === "rmdir") return ok();
+    if (command === "test" && args[0] === "-w") return ok();
     if (command === "test") return { code: 1, stdout: "", stderr: "" };
     if (command === "stat") return ok(`${new Date(1_000_000).toISOString().replace("T", " ").replace("Z", " +0000")}\n`);
     if (command === "sh" && args[1]?.includes("sha256sum")) {

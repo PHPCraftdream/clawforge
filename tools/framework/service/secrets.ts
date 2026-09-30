@@ -11,6 +11,7 @@ import JSON5 from "json5";
 import type { Context } from "../core/context.ts";
 import type { AppSecret } from "../core/app.ts";
 import { parseEnv } from "../core/env.ts";
+import { answeredProbe, sudoFor } from "../runtime/datadir.ts";
 
 /** Where a variable is expected to be defined. */
 export type SecretLocation = "repo-env" | "target-env";
@@ -301,13 +302,25 @@ export async function requirements(ctx: Context): Promise<SecretRequirement[]> {
   return requirementsForConfig(ctx, config);
 }
 
+async function readTargetSecrets(ctx: Context, path: string): Promise<string> {
+  try {
+    return await ctx.transport.readFile(path);
+  } catch (error) {
+    const readable = await answeredProbe(ctx, "test", ["-r", path], [0, 1]);
+    if (readable.code === 0) throw error;
+    const prefix = await sudoFor(ctx, path, { force: true });
+    const [head, ...rest] = [...prefix, "cat", path];
+    return (await ctx.transport.exec(head, rest)).stdout;
+  }
+}
+
 /** Requirements plus whether each is actually satisfied, for a caller-supplied list —
  *  resolves presence for requirements computed some other way than requirements(ctx)
  *  (inspect's prospective, declared-merged requirements). */
 export async function statusForRequirements(ctx: Context, needed: SecretRequirement[]): Promise<SecretStatus[]> {
   const targetPath = `${ctx.settings.dataDir}/config/.env`;
   const targetEnv = (await ctx.transport.exists(targetPath))
-    ? parseEnv(await ctx.transport.readFile(targetPath))
+    ? parseEnv(await readTargetSecrets(ctx, targetPath))
     : {};
 
   return needed.map((entry) => {

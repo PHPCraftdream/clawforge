@@ -160,6 +160,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Private target publication checks destination access before staging secret bytes and uses
   noninteractive sudo when required. `push` can install snapshot keys into restored
   UID-1000 data from a different operator account without relaxing private file modes.
+  Secret preflight also reads a permission-protected target environment with noninteractive
+  sudo after verifying that ordinary read access is denied; unrelated read failures still
+  abort.
 * Restore/deploy checks use canonical macOS marker paths, gate the GNU-only local archive
   scenario on actual userland support, and handle UID-1000 restored data from a different
   Linux operator account without losing health assertions or fixture cleanup.

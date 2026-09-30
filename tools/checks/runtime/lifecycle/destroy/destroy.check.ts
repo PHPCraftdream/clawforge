@@ -424,4 +424,27 @@ if (process.platform === "linux") {
   check("never bootstrapped removal leaves no lock directory behind", [...dirs], []);
 }
 
+// --- dry run on absent directories: no privilege probe, no "for a real run" ----------------
+
+{
+  // Password-gated sudo, parent not enterable: the old dry run died on /srv for absent dirs.
+  const { ctx, order } = destroyContext([], new Set(), new Map(), {
+    uid: 1001, noSudo: true, neverBootstrapped: true,
+    unwritable: new Set(["/srv/destroy-check"]), unsearchable: new Set(["/srv/destroy-check"]),
+  });
+  const text = await output(() => destroy(ctx, ["--backups", "--snapshots"]));
+  check("absent dry run needs no sudo and runs no target script", order, []);
+  check("absent dry run reports the directories absent", text.includes(`${BACKUP_DIR}`) && text.includes("absent"), true);
+  check("absent dry run says there is nothing to remove", text.includes("nothing to remove"), true);
+  check("absent dry run does not invite a real run", text.includes("--yes") || text.includes("for a real run"), false);
+}
+
+{
+  // A present target is still verified, and the real-run invitation stays.
+  const { ctx, order } = destroyContext([BACKUP_DIR], new Set(), new Map(), { uid: 1001, noSudo: true, neverBootstrapped: true });
+  const text = await output(() => destroy(ctx, ["--backups", "--snapshots"]));
+  check("present target is still verified in the dry run", order, [`plain:verify:${BACKUP_DIR}`]);
+  check("present target keeps the real-run hint", text.includes("for a real run"), true);
+}
+
 finish("destroy");

@@ -314,9 +314,23 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
       log("the instance matches config/deployment.lock.json");
       return;
     }
-    log(`${problems.length} difference(s) from the lock`);
-    for (const entry of problems) info(`${entry.code}  ${entry.detail}`);
-    dieWithExitCode(`${problems.length} difference(s) from the lock`, 1);
+    // Unread inventories are not differences: nothing could be compared. One summary line, via the exit.
+    const unread = problems.filter((entry) => inventoryProblems.includes(entry));
+    const differences = problems.filter((entry) => !inventoryProblems.includes(entry));
+    if (unread.length > 0) {
+      const notRunning = unread.every((entry) => entry.code === "GATEWAY_DOWN");
+      info(`could not compare — ${notRunning ? "instance is not running" : "inventory not read"}:`);
+      for (const entry of unread) info(`  ${entry.code}  ${entry.detail}`);
+    }
+    if (differences.length > 0) {
+      if (unread.length > 0) info("differences:");
+      for (const entry of differences) info(`  ${entry.code}  ${entry.detail}`);
+    }
+    const summary = [
+      ...(differences.length > 0 ? [`${differences.length} difference(s) from the lock`] : []),
+      ...(unread.length > 0 ? [`${unread.length} inventory read(s) could not be compared`] : []),
+    ];
+    dieWithExitCode(summary.join("; "), 1);
   }
   if (inventoryProblems.length > 0) {
     throw new Error(`lock not written: ${inventoryProblems.map((entry) => entry.detail).join("; ")}`);

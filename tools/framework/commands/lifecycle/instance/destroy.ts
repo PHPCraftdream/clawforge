@@ -5,7 +5,7 @@ import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { deploymentName, composeProjectName } from "#src/runtime/deployment.ts";
-import { answeredProbe, sudoFor } from "#src/runtime/datadir.ts";
+import { answeredProbe, sudoFor, sudoForRead } from "#src/runtime/datadir.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -126,14 +126,14 @@ async function verifyOrRemoveTarget(ctx: Context, prepared: PreparedDestroyTarge
 
 async function sizeReport(ctx: Context, path: string): Promise<string> {
   if (!(await ctx.transport.exists(path))) return "absent";
-  const prefix = await sudoFor(ctx, path);
+  const prefix = await sudoForRead(ctx, path);
   const [head, ...rest] = [...prefix, "du", "-sk", path];
   const result = await ctx.transport.exec(head, rest, { allowFailure: true });
   const kb = Number(result.stdout.trim().split(/\s+/)[0]);
   return result.code === 0 && Number.isFinite(kb) ? `${kb} KiB` : "unknown size";
 }
 
-async function printDestroyPlan(ctx: Context, targets: DestroyTarget[], bootstrapped: boolean): Promise<void> {
+async function printDestroyPlan(ctx: Context, targets: DestroyTarget[], bootstrapped: boolean, anyPresent: boolean): Promise<void> {
   if (bootstrapped) {
     log(`containers, network and volumes of ${composeProjectName()} — would stop and remove:`);
     await ctx.runtime.showStatus();
@@ -144,7 +144,8 @@ async function printDestroyPlan(ctx: Context, targets: DestroyTarget[], bootstra
   if (targets.length === 0 && bootstrapped) {
     info("no --data/--backups/--snapshots given — only the containers/network/volumes above would go");
   }
-  info("dry run — nothing removed. Pass --yes and --confirm-name <deployment name> for a real run");
+  if (!bootstrapped && !anyPresent) info("dry run — nothing to remove");
+  else info("dry run — nothing removed. Pass --yes and --confirm-name <deployment name> for a real run");
 }
 
 const NEVER_BOOTSTRAPPED = "nothing to destroy: never bootstrapped — no containers, network, volumes or data directory";
@@ -184,8 +185,14 @@ export async function destroy(ctx: Context, args: string[]): Promise<void> {
   });
 
   if (parsed.yes !== true) {
-    for (const target of targets) await verifyOrRemoveTarget(ctx, await prepareDestroyTarget(ctx, target), "verify");
-    await printDestroyPlan(ctx, targets, bootstrapped);
+    // An absent target is reported absent without any privilege probe.
+    let anyPresent = false;
+    for (const target of targets) {
+      if (!(await ctx.transport.exists(target.path))) continue;
+      anyPresent = true;
+      await verifyOrRemoveTarget(ctx, await prepareDestroyTarget(ctx, target), "verify");
+    }
+    await printDestroyPlan(ctx, targets, bootstrapped, anyPresent);
     return;
   }
 

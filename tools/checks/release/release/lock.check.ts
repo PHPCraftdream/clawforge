@@ -431,6 +431,29 @@ check("and confirms secrets are already kept out of that new repository", initAd
       check(`${name} instance: unreadable inventory is classified`, codes, isRunning ? ["CLI_READ_FAILED", "CLI_READ_FAILED"] : ["GATEWAY_DOWN", "GATEWAY_DOWN"]);
       check(`${name} instance: not-running detail`, down.output.includes("not running — start it or bootstrap first"), !isRunning);
     }
+    // Human output (no sink: log/info go to stderr): unread inventories are not differences,
+    // and the summary is printed once, by the failure.
+    const humanRun = async (): Promise<{ text: string; failure: string }> => {
+      let text = "";
+      let failure = "";
+      const realWrite = process.stderr.write;
+      process.stderr.write = ((chunk: string | Uint8Array) => { text += String(chunk); return true; }) as typeof process.stderr.write;
+      try { await lock(ctx, ["--check"]); } catch (error) { failure = (error as Error).message; } finally { process.stderr.write = realWrite; }
+      return { text, failure };
+    };
+    running = false;
+    wholeBatch = "throw";
+    await rm(lockFile(), { force: true });
+    const unread = await humanRun();
+    check("not running: unread inventories are named as not compared", unread.text.includes("could not compare — instance is not running:"), true);
+    check("not running: both inventories listed", unread.text.match(/GATEWAY_DOWN/g)?.length, 2);
+    check("not running: only the missing lock is a difference", unread.text.match(/LOCK_MISSING/g)?.length, 1);
+    check("not running: the summary is the failure alone, not repeated in the output", unread.text.includes("difference(s) from the lock"), false);
+    check("not running: one summary counting differences and unread separately", unread.failure, "1 difference(s) from the lock; 2 inventory read(s) could not be compared");
+    await writeFile(lockFile(), JSON.stringify(baseline));
+    const onlyUnread = await humanRun();
+    check("only unread inventories: no difference count", onlyUnread.failure, "2 inventory read(s) could not be compared");
+    check("only unread inventories: no differences section", onlyUnread.text.includes("differences:"), false);
     running = true;
     wholeBatch = "ok";
     await withOutputSink(() => {}, () => lock(ctx, ["--json"]));

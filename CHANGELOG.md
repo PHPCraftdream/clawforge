@@ -15,6 +15,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   `./clawforge new-app <name>` instead of writing an `app.ts` the checkout gate cannot load.
 * Without `CLAWFORGE_INVOKED_AS` (MCP launcher, `npx`, `node_modules/.bin`) hints say `./clawforge`
   for the app's own package copy and `clawforge` only for the system-wide one.
+* `destroy` without `--yes` no longer asks for sudo for directories that do not exist: an absent
+  target is reported absent (present ones are verified as before), `du` uses read access instead
+  of write access, and when nothing exists to remove it says so instead of inviting `--yes`.
+* `lock --check` on an instance that is not running separates "could not compare" (inventories not
+  read) from real differences, and ends with a single summary line instead of printing it twice.
+  The exit code and the `--json` output are unchanged.
 * System-wide `clawforge` in a subfolder of an app (e.g. `<app>/recipes`) now finds the deployment
   by walking up to the nearest `app.ts` instead of reporting `no app.ts` and advising `init`; the
   found root is what delegation uses. `init` still initialises the current directory only and

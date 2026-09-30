@@ -206,8 +206,15 @@ All notable changes to `@clawforge/framework` will be documented here.
   and messages that pointed at repository-relative `docs/...` paths (WSL boundary, instance lock,
   recipe cutover) now print absolute GitHub URLs from one helper (`core/io/docs-url.ts`).
 * `clawforge init --local` (system-wide install: `app.ts` was unresolved in editors) prints the
-  `npm install --save-dev` command that gives the app its own `@clawforge/framework` for types; init
+  `npm install --no-save` command that gives the app its own `@clawforge/framework` for types; init
   does not run npm. Without the flag, init hints at it.
+* A command deadline now ends the command's whole process tree, not only its top process: the
+  ssh watchdog used on targets without `timeout` (macOS) signals a process group (`setsid`, else
+  job control, else a `ps`-walked tree), and local execution signals the command and its
+  `ps`-walked descendants on POSIX (same process group, so Ctrl+C still reaches it), so an orphaned
+  child no longer holds the call open. The transport contract check now
+  asserts that a child of a timed-out command is gone and the call returns at the deadline, for
+  local, wsl and ssh.
 * Private target publication decides escalation once, on the destination directory, and uses it
   for staging, rename and cleanup alike. An operator who is the runtime owner (uid 1000) writing
   into a root-only directory used to stage through sudo and then rename and clean up without it:

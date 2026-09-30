@@ -132,7 +132,7 @@ async function timeoutScenario(transport: Transport, label: (s: string) => strin
   try {
     // `exec sleep 20` replaces the shell's own process image (same pid) with sleep, so the
     // pid this records is the long-running process the deadline is supposed to end.
-    await transport.exec("sh", ["-c", `echo $$ > ${shellQuote(pidFile)}; exec sleep 20`], { timeoutMs: 300 });
+    await transport.exec("sh", ["-c", `echo $$ > ${shellQuote(pidFile)}; exec sleep 20`], { timeoutMs: 3000 });
   } catch (error) {
     rejected = error as Error & { timedOut?: boolean };
   }
@@ -146,6 +146,24 @@ async function timeoutScenario(transport: Transport, label: (s: string) => strin
   const pid = (await transport.readFile(pidFile)).trim();
   const stillAlive = await transport.exec("sh", ["-c", `kill -0 ${shellQuote(pid)} 2>/dev/null`], { allowFailure: true });
   check(label("the timed-out command's process is actually gone on the target, not left running"), stillAlive.code !== 0, true);
+}
+
+/** The deadline must end the command's whole process tree, not just its top process. */
+async function timeoutTreeScenario(transport: Transport, label: (s: string) => string, tmp: string): Promise<void> {
+  const childPidFile = `${tmp}/timeout-child-pid`;
+  const started = Date.now();
+  try {
+    await transport.exec("sh", ["-c", `sleep 30 & echo $! > ${shellQuote(childPidFile)}; wait`], { timeoutMs: 3000 });
+  } catch {
+    // The rejection itself is asserted by timeoutScenario.
+  }
+  // A surviving child holds the output pipes open, so the call would only return once it exits.
+  checkTrue(label("a timed-out command returns at its deadline, not when its child exits"), Date.now() - started < 15_000);
+  await new Promise((resolve) => setTimeout(resolve, 4000));
+  const pid = (await transport.readFile(childPidFile)).trim();
+  const stillAlive = await transport.exec("sh", ["-c", `kill -0 ${shellQuote(pid)} 2>/dev/null`], { allowFailure: true });
+  if (stillAlive.code === 0) await transport.exec("sh", ["-c", `kill -9 ${shellQuote(pid)} 2>/dev/null`], { allowFailure: true });
+  check(label("the timed-out command's child process is gone too, not orphaned"), stillAlive.code !== 0, true);
 }
 
 async function unreachableScenario(label: (s: string) => string, options: TransportScenarioOptions): Promise<void> {
@@ -177,6 +195,7 @@ export async function runTransportScenarios(
     await execScenarios(transport, label, options);
     await fileScenarios(transport, label, tmp);
     await timeoutScenario(transport, label, tmp);
+    await timeoutTreeScenario(transport, label, tmp);
     await unreachableScenario(label, options);
   } finally {
     await transport.remove(tmp);

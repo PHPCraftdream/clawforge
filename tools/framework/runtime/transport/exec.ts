@@ -131,6 +131,34 @@ function unsetInheritedEnvironment(environment: Record<string, string | undefine
   }
 }
 
+/** `root` and its descendants per `ps`, parents first; only `root` without ps; none on Windows,
+ *  where the caller signals the child itself. */
+async function processTree(root: number): Promise<number[]> {
+  if (process.platform === "win32") return [];
+  const listing = await new Promise<string | undefined>((settle) => {
+    const ps = spawn("ps", ["-A", "-o", "pid=", "-o", "ppid="], { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    ps.stdout.on("data", (chunk: Buffer) => { out += String(chunk); });
+    ps.on("error", () => settle(undefined));
+    ps.on("close", (code) => settle(code === 0 ? out : undefined));
+  });
+  if (listing === undefined) return [root];
+  const children = new Map<number, number[]>();
+  for (const line of listing.split("\n")) {
+    const [pid, ppid] = line.trim().split(/\s+/).map(Number);
+    if (pid === undefined || ppid === undefined || !Number.isInteger(pid) || !Number.isInteger(ppid)) continue;
+    children.set(ppid, [...(children.get(ppid) ?? []), pid]);
+  }
+  const tree: number[] = [];
+  const queue = [root];
+  while (queue.length > 0) {
+    const pid = queue.shift() as number;
+    tree.push(pid);
+    queue.push(...(children.get(pid) ?? []));
+  }
+  return tree;
+}
+
 /** Spawns a process locally. Arguments are passed as an array — never a shell string —
  *  so quoting is impossible to get wrong. */
 export function spawnLocal(command: string, args: string[], options: ExecOptions = {}): Promise<ExecResult> {
@@ -155,6 +183,23 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
       stdio: streamToTerminal ? ["inherit", "inherit", "inherit"] : ["pipe", "pipe", "pipe"],
       env: environment,
     });
+    // A deadline ends the child's whole tree: its own children would outlive it and hold the
+    // output pipes open. Walked, not a new process group — that would cut it off from Ctrl+C.
+    const doomed = new Set<number>();
+    const killTree = async (signal: NodeJS.Signals): Promise<void> => {
+      if (child.pid !== undefined) for (const pid of await processTree(child.pid)) doomed.add(pid);
+      if (doomed.size === 0) {
+        child.kill(signal);
+        return;
+      }
+      for (const pid of doomed) {
+        try {
+          process.kill(pid, signal);
+        } catch {
+          // Already gone.
+        }
+      }
+    };
 
     let stdout = "";
     let stderr = "";
@@ -211,8 +256,8 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
       ? undefined
       : setTimeout(() => {
         timedOut = true;
-        child.kill("SIGTERM");
-        escalate = setTimeout(() => child.kill("SIGKILL"), 5000);
+        void killTree("SIGTERM");
+        escalate = setTimeout(() => void killTree("SIGKILL"), 5000);
       }, options.timeoutMs);
 
     // Handle early stdin closure and wait for the complete child result.

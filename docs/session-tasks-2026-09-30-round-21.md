@@ -39,3 +39,8 @@ MCP dispatch checks сгруппированы по layout limit; incidental arg
 удалён вместо перепинивания новой token representation. Адресный повтор layout,
 MCP safety и обоих dispatch checks прошёл (4 файла); typecheck/Oxlint прошли.
 Все временные smoke scripts удалены. Исправления фиксируются перед раундом 22.
+
+После коммита `2fe4682` свежий общий прогон прошёл: 183 check-файла,
+6 capability-пропусков с тем же breakdown. Дополнительный Linux-прогон в чистом
+node:24 контейнере прошёл: 10 check-файлов recipe/MCP dispatch/readiness,
+typecheck и Oxlint. Это полный passing-after результат, а не сумма адресных повторов.

@@ -179,6 +179,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   running the plugin/skill inventory is reported as `GATEWAY_DOWN` ("not running — start it or
   bootstrap first") instead of `CLI_READ_FAILED` "batch transport failed"; a running instance whose
   read failed keeps `CLI_READ_FAILED`.
+* Scheduled jobs of a system-wide (global-mode) deployment start. The `./clawforge` shim's
+  no-local-package fallback runs the global package's `dist/entry/bin.js` with the node it already
+  found instead of exec'ing npm's shim (which failed with `exec: node: not found` under WSL and
+  cron), and the Windows Task Scheduler line records the running package's entry instead of a
+  non-existent `node_modules/@clawforge/framework/...` path.
 * Private target publication decides escalation once, on the destination directory, and uses it
   for staging, rename and cleanup alike. An operator who is the runtime owner (uid 1000) writing
   into a root-only directory used to stage through sudo and then rename and clean up without it:

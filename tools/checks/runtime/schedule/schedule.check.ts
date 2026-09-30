@@ -12,6 +12,7 @@ import {
   cronLine,
   cronSchedule,
   displayCommandLine,
+  installedEntryScript,
   jobMarker,
   parseIntervalToMinutes,
   posixTargetInvocation,
@@ -291,6 +292,16 @@ try {
     encoding: "utf8",
   });
   check("installed entry loads app.ts from the scheduled root outside its cwd", fromOtherCwd.status, 0);
+  // Global mode: no local package, so the job runs the running package's built entry.
+  const fakeRunning = join(root, "running", "bin.js");
+  await mkdir(join(root, "running"));
+  await writeFile(fakeRunning, "");
+  const localEntry = join(installedRoot, "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js");
+  check("global mode schedules the running package's entry, not a missing local one", installedEntryScript(installedRoot, fakeRunning), fakeRunning);
+  check("without a built running entry the local path is kept", installedEntryScript(installedRoot, join(root, "absent.js")), localEntry);
+  await mkdir(join(localEntry, ".."), { recursive: true });
+  await writeFile(localEntry, "");
+  check("a local package wins over the running one", installedEntryScript(installedRoot, fakeRunning), localEntry);
   const withoutRoot = spawnSync(process.execPath, ["--experimental-strip-types", entry, "help"], {
     cwd: otherCwd,
     encoding: "utf8",

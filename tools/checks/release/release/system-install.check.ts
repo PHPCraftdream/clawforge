@@ -114,6 +114,22 @@ try {
     const shimmed = await run(bash, ["./clawforge", "version"], fresh, { env });
     tail(shimmed);
     check("without a local package the ./clawforge shim hands over to the system-wide command", shimmed.output.trim(), `clawforge ${expected}`);
+
+    // A global `clawforge` on PATH that cannot run (npm's shim without node on PATH) must not
+    // be exec'd: the shim runs the package next to it with the node it already found.
+    const stub = 'process.stdout.write(`stub ${process.argv.slice(2).join(" ")}`);\n';
+    for (const [label, packageRoot] of [["windows layout", "bin"], ["posix layout", "."]] as const) {
+      const fake = join(outside, `cf-fake-${label.split(" ")[0]}`);
+      const fakeBin = join(fake, "bin");
+      const entryDir = join(fake, packageRoot, ...(packageRoot === "." ? ["lib"] : []), "node_modules", "@clawforge", "framework", "dist", "entry");
+      await mkdir(entryDir, { recursive: true });
+      await writeFile(join(entryDir, "bin.js"), stub, "utf8");
+      await mkdir(fakeBin, { recursive: true });
+      await writeFile(join(fakeBin, "clawforge"), "#!/bin/sh\necho 'exec: node: not found' >&2\nexit 97\n", { mode: 0o755 });
+      const viaGlobalPackage = await run(bash, ["./clawforge", "status"], fresh, { env: withOnPath(fakeBin) });
+      tail(viaGlobalPackage);
+      check(`the shim runs the global package next to a global command that cannot run itself (${label})`, viaGlobalPackage.output.trim(), "stub status");
+    }
   }
 
   // --- an app pinning its own local package --------------------------------------------------

@@ -71,12 +71,35 @@ if [[ -z "$node_bin" ]]; then
 fi
 script_path="$DIR/node_modules/@clawforge/framework/dist/entry/bin.js"
 if [[ ! -f "$script_path" ]]; then
-  # No install of its own: the system-wide clawforge command, never this file again.
+  # No install of its own: run the system-wide package with the node found above (npm's own
+  # shim needs node on PATH, which cron and WSL-with-Windows-node lack). Never this file again.
+  entry_rel="node_modules/@clawforge/framework/dist/entry/bin.js"
+  global=""
+  search=()
   if global="$(command -v clawforge)" && [[ "$(cd "$(dirname "$global")" && pwd)" != "$DIR" ]]; then
-    exec "$global" "$@"
+    global_dir="$(cd "$(dirname "$global")" && pwd)"
+    if resolved="$(readlink -f "$global" 2>/dev/null)"; then search+=("$resolved"); fi
+    search+=("$global_dir/$entry_rel" "$global_dir/../lib/$entry_rel")
+  else
+    global=""
   fi
-  echo "error: $script_path not found — run npm install, or install clawforge system-wide" >&2
-  exit 1
+  node_dir="$(dirname "$(command -v "$node_bin")")"
+  search+=("$node_dir/../lib/$entry_rel" "\${HOME:-/nonexistent}/.local/lib/$entry_rel" "/usr/local/lib/$entry_rel" "/usr/lib/$entry_rel")
+  found=""
+  for candidate in "\${search[@]}"; do
+    if [[ -f "$candidate" && "$candidate" == */dist/entry/bin.js ]]; then
+      found="$candidate"
+      break
+    fi
+  done
+  if [[ -n "$found" ]]; then
+    script_path="$found"
+  elif [[ -n "$global" ]]; then
+    exec "$global" "$@"
+  else
+    echo "error: $script_path not found — run npm install, or install clawforge system-wide" >&2
+    exit 1
+  fi
 fi
 node_platform="$("$node_bin" -e 'process.stdout.write(process.platform)' 2>/dev/null || echo unknown)"
 if [[ "$node_platform" == "win32" ]]; then

@@ -15,7 +15,9 @@
 
 import { access, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { posix, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { die, info } from "../../core/io/log.ts";
 import { monorepoRoot } from "../../core/env.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
@@ -294,6 +296,17 @@ export async function posixTargetInvocation(ctx: Context, jobArgs: readonly stri
     : { cwd: monorepoRoot, command: "./clawforge", args: ["--app", name, ...jobArgs] };
 }
 
+/** The built entry of the framework copy that runs this code (dist/entry/bin.js), if it is one. */
+const runningEntry = fileURLToPath(new URL("../../entry/bin.js", import.meta.url));
+
+/** The entry script an installed deployment's job runs: its own local package, else — the
+ *  system-wide case, no local package — the running package's built entry. Falls back to the
+ *  local path when neither exists (e.g. running from sources). */
+export function installedEntryScript(root: string, running = runningEntry): string {
+  const local = resolve(root, "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js");
+  return existsSync(local) || !existsSync(running) ? local : running;
+}
+
 /** Node itself, invoked directly — the Windows counterpart to posixTargetInvocation's
  *  `./clawforge` shim. `schtasks /tr` has no shell of its own to run a bash script through,
  *  unlike crontab's real shell, so this cannot reuse the shim path at all. */
@@ -304,7 +317,7 @@ async function windowsNodeInvocation(jobArgs: readonly string[]): Promise<Schedu
     return {
       cwd: deploymentDir(),
       command: process.execPath,
-      args: [resolve(deploymentDir(), "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js"), "--project-root", deploymentDir(), ...jobArgs],
+      args: [installedEntryScript(deploymentDir()), "--project-root", deploymentDir(), ...jobArgs],
     };
   }
   return {

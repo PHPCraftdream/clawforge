@@ -166,6 +166,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* `destroy` on a deployment that was never bootstrapped no longer answers "never been
+  bootstrapped — run `./clawforge bootstrap`": it reports there is nothing to destroy and exits
+  0 (dry run and `--yes --confirm-name` alike), takes no lock and creates no directory. Present
+  `--backups`/`--snapshots` directories are still removed; a bootstrapped deployment is unchanged.
 * Private target publication decides escalation once, on the destination directory, and uses it
   for staging, rename and cleanup alike. An operator who is the runtime owner (uid 1000) writing
   into a root-only directory used to stage through sudo and then rename and clean up without it:

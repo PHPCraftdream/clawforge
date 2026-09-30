@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { NotBootstrapped } from "#framework/runtime/runtime.ts";
 import { takeLock } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "#checks/runtime/convergence/instance-lock/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -35,6 +36,7 @@ interface DestroyOptions {
   readonly unsearchable?: Set<string>;
   readonly noSudo?: boolean;
   readonly afterStop?: () => void;
+  readonly neverBootstrapped?: boolean;
 }
 
 /** Layers destroy's target-side checks over the real lock fixture. */
@@ -93,7 +95,10 @@ function destroyContext(
     },
   };
   const runtime = {
-    async isRunning(): Promise<boolean> { return true; },
+    async isRunning(): Promise<boolean> {
+      if (setup.neverBootstrapped) throw new NotBootstrapped(DATA_DIR);
+      return true;
+    },
     async stop(extraArgs: string[] = []): Promise<void> { order.push(`stop:${extraArgs.join(",")}`); setup.afterStop?.(); },
     async showStatus(): Promise<void> { order.push("showStatus"); },
   };
@@ -381,6 +386,42 @@ if (process.platform === "linux") {
     await held.release();
   }
   check("nothing was removed while refused", dirs.has(DATA_DIR), true);
+}
+
+// --- never bootstrapped: nothing to destroy, exit 0, no lock home created --------------------
+
+{
+  const { ctx, dirs, order } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
+  const text = await output(() => destroy(ctx, ["--data"]));
+  check("never bootstrapped dry run says nothing to destroy", text.includes("nothing to destroy") && text.includes("dry run"), true);
+  check("never bootstrapped dry run does not show a container plan", order.includes("showStatus"), false);
+  check("never bootstrapped dry run creates nothing", [...dirs], []);
+}
+
+{
+  const { ctx, dirs, order } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
+  const text = await output(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check("never bootstrapped real run says nothing to destroy", text.includes("nothing to destroy"), true);
+  check("never bootstrapped real run stops and removes nothing", order.filter((e) => e.startsWith("stop:") || e.startsWith("rm:")), []);
+  check("never bootstrapped real run creates no lock directory", [...dirs], []);
+}
+
+{
+  const message = await refused(async () => {
+    const { ctx } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
+    await destroy(ctx, ["--yes", "--confirm-name", "not-this-deployment"]);
+  });
+  check("never bootstrapped still needs the right --confirm-name", message.includes("does not match"), true);
+}
+
+{
+  // --backups/--snapshots are independent directories and still go when present.
+  const { ctx, dirs, order } = destroyContext([BACKUP_DIR], new Set(), new Map(), { neverBootstrapped: true });
+  const text = await output(() => destroy(ctx, ["--backups", "--snapshots"]));
+  check("never bootstrapped dry run names the present backup dir", text.includes(BACKUP_DIR), true);
+  await output(() => destroy(ctx, ["--backups", "--snapshots", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  check("never bootstrapped real run removes the present backup dir only", order.filter((e) => e.startsWith("rm:")), [`rm:${BACKUP_DIR}`]);
+  check("never bootstrapped removal leaves no lock directory behind", [...dirs], []);
 }
 
 finish("destroy");

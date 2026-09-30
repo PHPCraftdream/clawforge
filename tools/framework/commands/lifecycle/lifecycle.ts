@@ -6,7 +6,7 @@
 import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { shouldFollow, emit, withOutputSink } from "#src/core/io/output.ts";
-import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
+import { sleep, requireBootstrapped, NotBootstrapped } from "#src/runtime/runtime.ts";
 import { refreshContext, type Context } from "#src/core/context.ts";
 import { preflightSecrets } from "#src/commands/management/secrets.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
@@ -226,23 +226,29 @@ async function sizeReport(ctx: Context, path: string): Promise<string> {
   return result.code === 0 && Number.isFinite(kb) ? `${kb} KiB` : "unknown size";
 }
 
-async function printDestroyPlan(ctx: Context, targets: DestroyTarget[]): Promise<void> {
-  log(`containers, network and volumes of ${composeProjectName()} — would stop and remove:`);
-  await ctx.runtime.showStatus();
-  for (const target of targets) {
+async function printDestroyPlan(ctx: Context, targets: DestroyTarget[], bootstrapped: boolean): Promise<void> {
+  if (bootstrapped) {
+    log(`containers, network and volumes of ${composeProjectName()} — would stop and remove:`);
+    await ctx.runtime.showStatus();
+  } else log(NEVER_BOOTSTRAPPED);
+  for (const target of bootstrapped ? targets : targets.filter((entry) => entry.flag !== "data")) {
     info(`would remove ${target.path} (${target.envName}, ${await sizeReport(ctx, target.path)})`);
   }
-  if (targets.length === 0) {
+  if (targets.length === 0 && bootstrapped) {
     info("no --data/--backups/--snapshots given — only the containers/network/volumes above would go");
   }
   info("dry run — nothing removed. Pass --yes and --confirm-name <deployment name> for a real run");
 }
 
-/** containers/network/volumes first, always; the declared directories after, in
- *  destroyTargets' fixed order. */
-async function destroyLocked(ctx: Context, targets: PreparedDestroyTarget[]): Promise<void> {
-  log(`stopping and removing containers, network and volumes of ${composeProjectName()}`);
-  await ctx.runtime.stop(["-v"]);
+const NEVER_BOOTSTRAPPED = "nothing to destroy: never bootstrapped — no containers, network, volumes or data directory";
+
+/** containers/network/volumes first, always (when bootstrapped); the declared directories
+ *  after, in destroyTargets' fixed order. */
+async function destroyLocked(ctx: Context, targets: PreparedDestroyTarget[], bootstrapped = true): Promise<void> {
+  if (bootstrapped) {
+    log(`stopping and removing containers, network and volumes of ${composeProjectName()}`);
+    await ctx.runtime.stop(["-v"]);
+  } else log(NEVER_BOOTSTRAPPED);
   for (const prepared of targets) {
     const { target } = prepared;
     log(`removing ${target.path}`);
@@ -264,11 +270,15 @@ export async function destroy(ctx: Context, args: string[]): Promise<void> {
   const targets = destroyTargets(ctx, parsed);
   for (const target of targets) assertSafeRemovalShape(target);
 
-  await requireBootstrapped(ctx);
+  // Never bootstrapped: no instance or lock home exists — only the independent dirs can be there.
+  const bootstrapped = await ctx.runtime.isRunning().then(() => true, (error) => {
+    if (error instanceof NotBootstrapped) return false;
+    throw error;
+  });
 
   if (parsed.yes !== true) {
     for (const target of targets) await verifyOrRemoveTarget(ctx, await prepareDestroyTarget(ctx, target), "verify");
-    await printDestroyPlan(ctx, targets);
+    await printDestroyPlan(ctx, targets, bootstrapped);
     return;
   }
 
@@ -280,10 +290,13 @@ export async function destroy(ctx: Context, args: string[]): Promise<void> {
         : `--confirm-name "${confirmName}" does not match this deployment's name "${deploymentName()}"`,
     );
   }
-  const prepared = await Promise.all(targets.map((target) => prepareDestroyTarget(ctx, target)));
+  const present = bootstrapped ? targets : [];
+  if (!bootstrapped) for (const target of targets) if (await ctx.transport.exists(target.path)) present.push(target);
+  const prepared = await Promise.all(present.map((target) => prepareDestroyTarget(ctx, target)));
   for (const target of prepared) await verifyOrRemoveTarget(ctx, target, "verify");
 
-  await guarded(ctx, "destroy", args, () => destroyLocked(ctx, prepared));
+  if (bootstrapped) await guarded(ctx, "destroy", args, () => destroyLocked(ctx, prepared));
+  else await destroyLocked(ctx, prepared, false);
 }
 
 /** One capability, two shapes. On a terminal this follows the log until interrupted; anywhere

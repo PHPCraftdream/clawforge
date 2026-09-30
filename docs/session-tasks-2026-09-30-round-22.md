@@ -38,3 +38,8 @@ fixture contexts: явно заданы валидные Docker namespaces; syml
 выбирает свой deployment/пустой recipes root перед обязательным preflight.
 Адресный повтор всех четырёх файлов прошёл; typecheck/Oxlint прошли.
 Исправления и результаты фиксируются перед раундом 23.
+
+После коммита `9e1762d` свежий общий прогон прошёл: 183 check-файла,
+7 capability-пропусков с тем же breakdown. Финальный Linux clean node:24
+прогон restore ownership/recipe identity/lifecycle hooks/pull privacy прошёл:
+4 check-файла, typecheck и Oxlint. Это полный passing-after результат.

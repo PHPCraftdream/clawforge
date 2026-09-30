@@ -87,6 +87,17 @@ try {
   const outsideStatus = await clawforge(["status"], outside);
   check("outside any app the advice stays: run clawforge init", outsideStatus.code === 1 && outsideStatus.output.includes("run: clawforge init"), true);
 
+  // Outside an app, help lists the gate commands instead of failing.
+  for (const args of [["help"], ["--help"], ["-h"]]) {
+    const gateHelp = await clawforge(args, outside);
+    check(`outside any app clawforge ${args.join(" ")} lists the gate commands and exits 0`, gateHelp.code === 0 && ["init", "version", "completion"].every((name) => gateHelp.output.includes(name)), true);
+    check(`and points at an initialised app folder (${args.join(" ")})`, gateHelp.output.includes("initialised app folder") && !gateHelp.output.includes("no app.ts"), true);
+  }
+  const gateInitHelp = await clawforge(["help", "init"], outside);
+  check("outside any app help init prints init's help", gateInitHelp.code === 0 && gateInitHelp.output.includes("Refuses if app.ts already exists"), true);
+  const appHelp = await clawforge(["help", "status"], outside);
+  check("outside any app help <app command> says it needs an app folder", appHelp.code === 1 && appHelp.output.includes("needs an app folder"), true);
+
   // --- a fresh app folder with no framework of its own ----------------------------------------
   const fresh = join(outside, "cf-fresh");
   await mkdir(fresh);
@@ -101,6 +112,11 @@ try {
   check("so the deployment's own commands are listed", helped.output.includes("bootstrap"), true);
   check("the global command's help footer says clawforge help <command>", helped.output.includes("Run `clawforge help <command>` or `clawforge <command> --help`"), true);
   check("and never advises ./clawforge, which does not run in every shell", helped.output.includes("Usage: ./clawforge") || helped.output.includes("`./clawforge help"), false);
+  check("the help heading carries the directory name, not a hardcoded openclaw", helped.output.includes("cf-fresh — ") && !helped.output.includes("openclaw — "), true);
+  const localAgain = await clawforge(["init", "--local"], fresh);
+  check("init --local in an initialised folder prints the npm line and exits 0", localAgain.code === 0 && localAgain.output.includes("npm install --no-save "), true);
+  const plainAgain = await clawforge(["init"], fresh);
+  check("plain init in an initialised folder still refuses", plainAgain.code === 1 && plainAgain.output.includes("already initialised"), true);
 
   // A subfolder of the app: the deployment is found upward; init there is refused, not nested.
   const sub = join(fresh, "recipes", "sub");

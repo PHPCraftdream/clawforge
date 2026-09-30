@@ -302,7 +302,7 @@ try {
   await mkdir(join(localEntry, ".."), { recursive: true });
   await writeFile(localEntry, "");
   check("a local package wins over the running one", installedEntryScript(installedRoot, fakeRunning), localEntry);
-  const withoutRoot = spawnSync(process.execPath, ["--experimental-strip-types", entry, "help"], {
+  const withoutRoot = spawnSync(process.execPath, ["--experimental-strip-types", entry, "status"], {
     cwd: otherCwd,
     encoding: "utf8",
   });

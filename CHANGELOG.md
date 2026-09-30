@@ -27,6 +27,17 @@ All notable changes to `@clawforge/framework` will be documented here.
   server's mirrored checkout runs `./clawforge`). Fixed the cut-off sentence in the `init`
   next-steps text ("…if one is needed"); the `Install:` comments of the generated completion
   scripts name the real invocation, script bodies unchanged.
+* `clawforge init --local` in an already initialised directory now prints the
+  `npm install --no-save "<package directory>"` line and exits 0 without writing anything, so the
+  editor-types advice `init` gives is reachable; plain `init` there still refuses, and a fresh
+  `init --local` is unchanged.
+* Outside a deployment, `clawforge help`, `--help` and `-h` list the gate commands (`init`,
+  `version`, `completion`) and say the full list appears inside an initialised app folder, exit 0;
+  `help <gate command>` prints its help. `help <app command>` says it needs an app folder. Every
+  other command keeps the `no app.ts … run: clawforge init` error.
+* `clawforge init` writes the directory's name into `app.ts` (`name:`), as `new-app` does, instead of
+  a hardcoded `openclaw`: the help heading and the MCP `serverInfo` (`<name>-control`) now differ
+  per deployment.
 * System-wide `clawforge` in a subfolder of an app (e.g. `<app>/recipes`) now finds the deployment
   by walking up to the nearest `app.ts` instead of reporting `no app.ts` and advising `init`; the
   found root is what delegation uses. `init` still initialises the current directory only and

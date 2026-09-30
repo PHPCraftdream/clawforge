@@ -122,7 +122,8 @@ over the system-wide command.
 With the system-wide install the app has no `node_modules/@clawforge/framework`, so `app.ts` runs but
 editors cannot resolve its `@clawforge/framework/...` imports (the file shows as unresolved). Opt in
 with `clawforge init --local`: it prints the exact `npm install --no-save <package directory>`
-command (init never runs npm; `--no-save` keeps a machine path out of `package.json`, and a later
+command (init never runs npm; it works at any time: in an already initialised folder it only prints
+the command and writes nothing, while plain `init` there still refuses; `--no-save` keeps a machine path out of `package.json`, and a later
 plain `npm install` removes the link again). The package is not on the registry yet, hence the
 directory of the running copy; once published, `npm install --save-dev @clawforge/framework`.
 

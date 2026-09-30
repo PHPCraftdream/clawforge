@@ -11,7 +11,7 @@
 // the installed one (exactly one deployment, at the repo root), `check` needs this
 // repository's own test suite, which the npm package doesn't ship. Each gate builds its own list.
 
-import { info, reportError } from "../core/io/log.ts";
+import { info, log, reportError } from "../core/io/log.ts";
 import { closestCommand } from "../core/arguments.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
 import type { AppDefinition, CommandArgument } from "../core/app.ts";
@@ -65,6 +65,31 @@ export async function runGateCommand(
     reportError(error);
     return 1;
   }
+}
+
+/** `help`/`--help`/`-h` where no deployment exists: the gate's own commands only. Returns the
+ *  exit code, or undefined when argv is not a help request. */
+export function helpWithoutDeployment(commands: GateCommand[], argv: string[]): number | undefined {
+  const first = argv[0];
+  if (first !== "help" && first !== "--help" && first !== "-h") return undefined;
+  const target = first === "help" ? argv[1] : undefined;
+  if (target === undefined || target === "--help" || target === "-h" || target === "help") {
+    log("clawforge — manage self-hosted OpenClaw deployments");
+    info("");
+    info("Usage: ./clawforge <command> [options]");
+    info("");
+    for (const line of gateHelpLines(commands)) info(line);
+    info("");
+    info("The full command list appears inside an initialised app folder (create one with: ./clawforge init).");
+    return 0;
+  }
+  const command = commands.find((entry) => entry.name === target);
+  if (command !== undefined) {
+    gateCommandHelp(command);
+    return 0;
+  }
+  reportError(`"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — run: ./clawforge init`);
+  return 1;
 }
 
 /** What a leading `--app <name>` or `--app=<name>` split off argv, if either was there. */

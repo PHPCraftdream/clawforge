@@ -98,7 +98,10 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
     const message = await run(root);
     check("a fresh directory initialises without refusing", message, undefined);
     check("app.ts was written", await readFile(resolve(root, "app.ts"), "utf8").then(() => true, () => false), true);
-    check("desired-state.json was written", await readFile(resolve(root, "config", "desired-state.json"), "utf8").then(() => true, () => false), true);
+    const declared = await readFile(resolve(root, "app.ts"), "utf8");
+    check("app.ts names the deployment after its directory", declared.includes('name: "deployment-fresh",'), true);
+    check("and no longer hardcodes the name openclaw", declared.includes('name: "openclaw"'), false);
+    check("desired-state.json was written",await readFile(resolve(root, "config", "desired-state.json"), "utf8").then(() => true, () => false), true);
     check(".env was written", await readFile(resolve(root, ".env"), "utf8").then(() => true, () => false), true);
 
     // The published image (2026.6.x) rejects the whole config write on an unknown key
@@ -130,6 +133,38 @@ async function runNode(root: string, file: string): Promise<{ code: number | nul
     check("the deployment .gitignore excludes machine-local watch state", gitignoreLines.includes("state/"), true);
     check("and excludes built set artifacts", gitignoreLines.includes("sets/"), true);
     check("and still excludes the installed, unvendored package", gitignoreLines.includes("node_modules/"), true);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+}
+
+// --- init --local on an initialised directory prints the npm line and writes nothing -------
+
+{
+  const base = await mkdtemp(join(tmpdir(), "clawforge-init-check-"));
+  const root = join(base, "deployment-local");
+  await mkdir(root, { recursive: true });
+  try {
+    check("the first init succeeds", await run(root), undefined);
+    const files = ["app.ts", ".env", ".gitignore", "package.json", "clawforge"];
+    const before = await Promise.all(files.map((name) => readFile(resolve(root, name), "utf8")));
+
+    let output = "";
+    let message: string | undefined;
+    await withOutputSink(
+      (chunk) => { output += chunk; },
+      async () => {
+        try {
+          await initApp(root, { local: true });
+        } catch (error) {
+          message = (error as Error).message;
+        }
+      },
+    );
+    check("init --local on an initialised directory does not refuse", message, undefined);
+    check("it prints the no-save npm install line", output.includes("npm install --no-save "), true);
+    check("and writes nothing", await Promise.all(files.map((name) => readFile(resolve(root, name), "utf8"))), before);
+    check("plain init on the same directory still refuses", (await run(root))?.includes("already initialised"), true);
   } finally {
     await rm(base, { recursive: true, force: true });
   }

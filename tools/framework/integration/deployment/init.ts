@@ -20,7 +20,8 @@ import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
 import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";
 
-const DECLARATION = `// This deployment.
+function declarationFor(name: string): string {
+  return `// This deployment.
 //
 // Says which service this deployment manages and which framework commands it exposes.
 // Its configuration lives next to this file: .env, config/, secrets/, recipes/.
@@ -32,7 +33,7 @@ import { mountPoints } from "@clawforge/framework/mounts";
 import { openclawCommands } from "@clawforge/framework/commands";
 
 export default defineApp({
-  name: "openclaw",
+  name: "${name}",
   description: "self-hosted OpenClaw instance",
 
   service: { name: "gateway", logTail: "100" },
@@ -43,6 +44,7 @@ export default defineApp({
   commands: openclawCommands,
 });
 `;
+}
 
 const DESIRED_STATE = `[
   { "path": "gateway.mode", "value": "local" },
@@ -244,7 +246,7 @@ async function applyModuleType(root: string, action: ModuleTypeAction): Promise<
 }
 
 export const INIT_ARGUMENTS: CommandArgument[] = [
-  { name: "local", description: "Print the npm command for editor types", kind: "flag" },
+  { name: "local", description: "Print the npm command for editor types (also in an already initialised directory)", kind: "flag" },
 ];
 
 /** The package directory this CLI runs from: frameworkRoot in source, its parent in dist/. */
@@ -291,6 +293,11 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
     () => true,
     () => false,
   );
+  // --local on an initialised directory only prints the editor-types line; nothing is written.
+  if (exists && options.local === true) {
+    for (const line of await localTypesLines()) info(line);
+    return;
+  }
   if (exists) die(`${appFile} already exists — this directory is already initialised`);
 
   // Checked BEFORE anything is written: app.ts isn't the only leftover state init could
@@ -311,7 +318,7 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
   await mkdir(resolve(root, "recipes"), { recursive: true });
 
   await applyModuleType(root, moduleType);
-  await writeFile(appFile, DECLARATION, "utf8");
+  await writeFile(appFile, declarationFor(base), "utf8");
   await writeFile(resolve(root, "config", "desired-state.json"), DESIRED_STATE, "utf8");
   const env = await deploymentEnv(root, base);
   // boundary: false — the WSL-boundary note (if any) is printed after "next:" below, not

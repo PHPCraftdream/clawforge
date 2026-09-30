@@ -17,7 +17,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
 import { main } from "./cli.ts";
-import { runGateCommand, gateHelpLines, type GateCommand } from "../integration/gate.ts";
+import { runGateCommand, gateHelpLines, helpWithoutDeployment, type GateCommand } from "../integration/gate.ts";
 import { reportError } from "../core/io/log.ts";
 import { INVOKED_AS_ENV, cli, invocation, setInvocation, takeInvokedAs } from "../core/io/invocation.ts";
 import { useDeployment } from "../runtime/deployment.ts";
@@ -79,7 +79,8 @@ const gateCommands: GateCommand[] = [
       "that delegates to this package's CLI. Project MCP settings for Claude Code and Codex " +
       "are created automatically, without changing global client settings.\n" +
       "The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
-      "Refuses if app.ts already exists — run this once, then ./clawforge bootstrap.",
+      "Refuses if app.ts already exists — run this once, then ./clawforge bootstrap. `init --local` in an already\n" +
+      "initialised directory only prints the editor-types npm line and writes nothing.",
     arguments: INIT_ARGUMENTS,
     run: async (args) => {
       await initApp(appRoot, { local: parseDeclaredArgs(INIT_ARGUMENTS, args).local === true });
@@ -99,6 +100,8 @@ const appFile = resolve(appRoot, "app.ts");
 try {
   await access(appFile);
 } catch {
+  const helpExit = helpWithoutDeployment(gateCommands, argv);
+  if (helpExit !== undefined) process.exit(helpExit);
   reportError(`no app.ts in ${appRoot}`);
   if (checkout !== undefined) reportError(`this is a ClawForge checkout (${checkout}) — './clawforge' in its root is the entry`);
   else reportError(`this directory has not been initialised as an OpenClaw deployment yet — run: ${cli("init")}`);

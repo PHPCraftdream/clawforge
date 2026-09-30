@@ -26,7 +26,8 @@ export function normalizeVersionAlias(argv: string[]): string[] {
 
 function real(path: string): string {
   try {
-    return realpathSync(path);
+    // native: the long, canonical name (Windows expands 8.3 short names; macOS /var → /private/var).
+    return realpathSync.native(path);
   } catch {
     return resolve(path);
   }

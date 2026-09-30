@@ -193,6 +193,9 @@ try {
     "",
   ].join("\n");
   await writeFile(join(pinned, "app.ts"), probeApp, "utf8");
+  // The probe never touches the target; ssh keeps a macOS host (no local target) out of its way.
+  const pinnedEnv = join(pinned, ".env");
+  await writeFile(pinnedEnv, (await readFile(pinnedEnv, "utf8")).replace(/^OC_TARGET_LOCATION=.*$/m, "OC_TARGET_LOCATION=ssh").replace(/^OC_SSH_HOST=.*$/m, "OC_SSH_HOST=probe.invalid"), "utf8");
   const probe = await clawforge(["probe"], pinned);
   tail(probe);
   check("a descendant does not inherit the hand-over flag", probe.output.includes("flag:unset"), true);

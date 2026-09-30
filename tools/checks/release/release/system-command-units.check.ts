@@ -2,7 +2,7 @@
 // app.ts, the one-shot delegation flag, the version source classification and the installer's
 // PATH-shadow detection. The installed end-to-end runs are in system-install.check.ts.
 
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { findAppRoot } from "#framework/entry/root.ts";
@@ -11,7 +11,8 @@ import { classifyCopy } from "#framework/integration/version.ts";
 import { resolveOnPath, shadowMessage } from "#tools/dev/resolve-on-path.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
-const scratch = mkdtempSync(join(tmpdir(), "clawforge-system-units-"));
+// Canonical, as classifyCopy reports it (macOS /var → /private/var, Windows 8.3 names).
+const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "clawforge-system-units-")));
 try {
   // --- upward search ------------------------------------------------------------------------
   const app = join(scratch, "app");

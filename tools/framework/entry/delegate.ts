@@ -12,6 +12,8 @@ import { createRequire, registerHooks } from "node:module";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
 import { INVOKED_AS_ENV, invocation } from "../core/io/invocation.ts";
+import { reportError } from "../core/io/log.ts";
+import { splitLeadingAppFlag } from "../integration/gate.ts";
 
 const PACKAGE = "@clawforge/framework";
 const DELEGATED = "CLAWFORGE_DELEGATED";
@@ -27,7 +29,7 @@ function localEntry(appRoot: string): string | undefined {
 }
 
 /** The checkout's own gate: `root` holds tools/clawforge.ts next to the framework sources. */
-function checkoutGate(root: string): string | undefined {
+export function checkoutGate(root: string): string | undefined {
   const gate = resolve(root, "tools", "clawforge.ts");
   try {
     const manifest = JSON.parse(readFileSync(resolve(root, "tools", "framework", "package.json"), "utf8")) as { name?: unknown };
@@ -79,7 +81,23 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
   if (inCheckout !== undefined) runInstead(inCheckout, argv, false);
   const parent = dirname(appRoot);
   const appGate = basename(parent) === "apps" && existsSync(resolve(appRoot, "app.ts")) ? checkoutGate(dirname(parent)) : undefined;
-  if (appGate !== undefined) runInstead(appGate, ["--app", basename(appRoot), ...argv], false);
+  if (appGate !== undefined) runInstead(appGate, withApp(basename(appRoot), argv), false);
+}
+
+/** `--app <name>` for the gate, once: a leading one in `argv` is kept when it names the same
+ *  deployment and refused when it names another (the cwd already selects this one). */
+function withApp(name: string, argv: string[]): string[] {
+  const { value, missingValue, rest } = splitLeadingAppFlag(argv);
+  if (missingValue) {
+    reportError("--app needs a deployment name");
+    process.exit(1);
+  }
+  if (value === undefined) return ["--app", name, ...argv];
+  if (value !== name) {
+    reportError(`--app ${value} conflicts with this directory, deployment ${name} of the checkout — run ./clawforge --app ${value} from the checkout root`);
+    process.exit(1);
+  }
+  return ["--app", name, ...rest];
 }
 
 /** Lets the deployment's app.ts import @clawforge/framework from this very package when it

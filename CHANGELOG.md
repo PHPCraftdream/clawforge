@@ -6,6 +6,15 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* System-wide `clawforge` in `apps/<name>` of a checkout no longer doubles `--app`: the same name is
+  passed on once, another one is a clear error. On a hand-over, hints for a non-default deployment
+  now read `<invoked-as> --app <name>` (`clawforge --app foo bootstrap` from the checkout root),
+  plain only when the cwd is inside that deployment.
+* System-wide `clawforge` inside a checkout no longer advises `init` in a non-app subfolder (it
+  says `./clawforge` in the checkout root is the entry), and `init` there is refused with
+  `./clawforge new-app <name>` instead of writing an `app.ts` the checkout gate cannot load.
+* Without `CLAWFORGE_INVOKED_AS` (MCP launcher, `npx`, `node_modules/.bin`) hints say `./clawforge`
+  for the app's own package copy and `clawforge` only for the system-wide one.
 * System-wide `clawforge` in a subfolder of an app (e.g. `<app>/recipes`) now finds the deployment
   by walking up to the nearest `app.ts` instead of reporting `no app.ts` and advising `init`; the
   found root is what delegation uses. `init` still initialises the current directory only and

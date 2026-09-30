@@ -169,6 +169,14 @@ try {
   tail(localHelp);
   check("and runs the deployment's commands", localHelp.code === 0 && localHelp.output.includes("bootstrap"), true);
 
+  // No entry named itself (npx, node_modules/.bin, the MCP launcher): the app's own copy has no
+  // global command behind it, so hints say the committed ./clawforge shim.
+  const localBin = await run(process.execPath, [join(localPackage, "dist", "entry", "bin.js"), "help"], pinned, { env });
+  tail(localBin);
+  check("an app's own package run directly hints ./clawforge", localBin.output.includes("Run `./clawforge help <command>`"), true);
+  const globalBin = await run(process.execPath, [join(globalPackage, "dist", "entry", "bin.js"), "help"], fresh, { env });
+  check("the global package run directly still hints clawforge", globalBin.output.includes("Run `clawforge help <command>`"), true);
+
   const pinnedSub = join(pinned, "recipes");
   const localInfo = lastJson(await clawforge(["version", "--json"], pinnedSub));
   check("version --json from a subfolder of an app with its own package says local", [localInfo.source, localInfo.path, localInfo.version], ["local", await realpath(localPackage), `${expected}-local`]);
@@ -209,6 +217,32 @@ try {
   check("and its hints keep the name the user typed", inApp.output.includes("Run `clawforge help <command>`"), true);
   const checkoutInfo = lastJson(await clawforge(["version", "--json"], resolve(appsDir, checkoutApp)));
   check("version --json in a checkout app says checkout and the checkout root", [checkoutInfo.source, checkoutInfo.path], ["checkout", await realpath(monorepoRoot)]);
+  // --app is passed on once: the same name as the cwd's is kept, another one is refused.
+  const appDir = resolve(appsDir, checkoutApp);
+  const sameApp = await clawforge(["--app", checkoutApp, "help"], appDir);
+  check("apps/<name> accepts its own --app without doubling it", sameApp.code === 0 && sameApp.output.includes("new-app"), true);
+  const otherApp = await clawforge(["--app", "someone-else", "help"], appDir);
+  check("a different --app there is a clear error, not an unknown command", otherApp.code === 1 && otherApp.output.includes("conflicts with this directory") && !otherApp.output.includes("unknown command"), true);
+  // A named deployment is named in the hints unless the cwd already selects it.
+  const fromRoot = await clawforge(["--app", checkoutApp, "status"], monorepoRoot);
+  check("from the checkout root hints keep the named deployment", fromRoot.output.includes(`clawforge --app ${checkoutApp} bootstrap`), true);
+  const fromApp = await clawforge(["status"], appDir);
+  check("from apps/<name> the cwd selects it, so hints stay plain", fromApp.output.includes("clawforge bootstrap") && !fromApp.output.includes("--app"), true);
+
+  // The global command inside a checkout never creates a deployment in the framework sources.
+  const docs = resolve(monorepoRoot, "docs");
+  const inDocs = await clawforge(["status"], docs);
+  check("in a non-app subfolder of a checkout it names the checkout entry", inDocs.code === 1 && inDocs.output.includes("'./clawforge' in its root") && !inDocs.output.includes("clawforge init"), true);
+  const freshApp = resolve(appsDir, `${checkoutApp}-new`);
+  await mkdir(freshApp, { recursive: true });
+  try {
+    const initInCheckout = await clawforge(["init"], freshApp);
+    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes("'./clawforge' new-app <name>"), true);
+    check("and writes nothing", existsSync(join(freshApp, "app.ts")), false);
+  } finally {
+    await rm(freshApp, { recursive: true, force: true });
+  }
+
   const atRoot = await clawforge(["help"], monorepoRoot);
   tail(atRoot);
   check("and at the checkout root too", atRoot.code === 0 && atRoot.output.includes("new-app"), true);

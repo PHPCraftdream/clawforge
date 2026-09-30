@@ -17,6 +17,7 @@
 import { resolve } from "node:path";
 import { access, readdir } from "node:fs/promises";
 import { main } from "./framework/entry/cli.ts";
+import { isWithin } from "./framework/entry/root.ts";
 import {
   runGateCommand,
   gateHelpLines,
@@ -300,7 +301,8 @@ try {
 }
 
 // A non-default deployment is named in every hint, so it can be pasted as is.
-if (invokedAs === undefined && name !== "openclaw") setInvocation(`./clawforge --app ${name}`);
+// A hand-over from apps/<name> already selects it by the cwd; from anywhere else it must be named.
+if (name !== "openclaw" && !(invokedAs !== undefined && isWithin(deploymentDir, process.cwd()))) setInvocation(`${invokedAs ?? "./clawforge"} --app ${name}`);
 
 // Set before anything reads configuration: every path below resolves against it.
 useDeployment(deploymentDir);

@@ -116,7 +116,14 @@ try {
   }
   {
     const message = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "not-a-duration"])));
-    check("a malformed --interval is refused, named", message.includes("--interval must look like"), true);
+    check("a malformed --interval is refused, named", message.includes("number of minutes or look like 30m"), true);
+  }
+  {
+    const written: string[] = [];
+    await withOutputSink((chunk) => written.push(chunk), () => backupInstall(ctx, ["--interval", "30"]));
+    check("a bare number is minutes, as in `watch install`", written.join("").includes("*/30 * * * *"), true);
+    const message = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "45m"])));
+    check("--interval 45m suggests only values backup itself accepts", message.includes("nearest valid: 30m, 1h"), true);
   }
 
   // uninstall --apply: removes only OUR marked line.

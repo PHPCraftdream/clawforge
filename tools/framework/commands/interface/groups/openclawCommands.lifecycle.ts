@@ -172,7 +172,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "— prune-replaced never touches an archive.\n" +
       "install / uninstall — print (and, with --apply, install through the transport) a " +
       "crontab entry that runs a plain `./clawforge backup` every --interval (default 1d) — " +
-      "minutes must divide 60 (e.g. 30m), hours must divide a day (e.g. 6h), or 1d; anything " +
+      "30m, 6h, 1d or a bare number of minutes (as `watch install`); minutes must divide 60, hours must divide a day; anything " +
       "else is refused, naming the nearest valid values — the schedule OC_BACKUP_KEEP " +
       "presumes but nothing installed before this,\n" +
       "mirroring `watch install`/`watch uninstall` exactly (same marker convention, " +

@@ -146,7 +146,9 @@ export async function exposeTailscale(ctx: Context, args: string[]): Promise<voi
   info(command.join(" "));
   info("reachable to tailnet members only — the exact https URL depends on this machine's");
   info("tailnet name; see `tailscale serve status` (or ./clawforge expose status) once applied.");
-  info("undo with: tailscale serve reset (run on the target)");
+  // The bare-target form above serves https 443 at "/": turn off just that route.
+  const undo = tailscaleServeOffCommand({ hostPort: "", port: "443", mountPoint: "/" });
+  info(`undo with: ${undo.join(" ")} (run on the target; removes only this route — confirm the port with \`tailscale serve status\`)`);
 
   if (!apply) {
     if (!probe.present) info("install tailscale on the target, then `tailscale up`, before --apply");

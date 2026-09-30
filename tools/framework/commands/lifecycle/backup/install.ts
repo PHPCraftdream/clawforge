@@ -5,9 +5,9 @@
 // OC_BACKUP_KEEP (.env.example) presumes backups happen on a schedule; this command supplies
 // backup's own job name, target invocation and interval shape onto schedule.ts's machinery.
 //
-// One difference from watch: `--interval` here is a duration string (30m/6h/1d, default 1d),
-// parsed by parseIntervalToMinutes into the same minutes cronSchedule() validates, so the two
-// commands' intervals can never encode differently for the same duration.
+// `--interval` is the shared duration grammar (30m/6h/1d or bare minutes; default 1d),
+// parsed by parseIntervalToMinutes — the same parser `watch install` uses — into the minutes
+// cronSchedule() validates, so the two commands cannot drift.
 
 import { info, infoRaw, log, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
@@ -37,7 +37,7 @@ const DEFAULT_BACKUP_INTERVAL = "1d";
  *  shared BACKUP_APPLY_ARGUMENT (prune-replaced.ts), not a second declaration of the same
  *  name — see its own comment for why. */
 export const BACKUP_INSTALL_ARGUMENTS: CommandArgument[] = [
-  { name: "interval", description: "With install: how often (default 1d) — minutes must divide 60 (e.g. 30m), hours must divide a day (e.g. 6h), or 1d", kind: "option", valueName: "interval", actions: ["install"] },
+  { name: "interval", description: "With install: how often (default 1d) — 30m, 6h, 1d or a bare number of minutes; minutes must divide 60, hours must divide a day", kind: "option", valueName: "interval", actions: ["install"] },
   BACKUP_APPLY_ARGUMENT,
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,

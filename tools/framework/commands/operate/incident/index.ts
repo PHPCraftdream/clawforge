@@ -125,8 +125,8 @@ export async function containExposure(ctx: Context, options: IncidentOptions): P
     notes.push(
       "could not reliably parse `tailscale serve status --json` on the target — turned nothing off. If this " +
         "gateway is exposed through tailscale serve, turn it off yourself: `tailscale serve --https=443 off` " +
-        "(match the port `tailscale serve status` shows), or `tailscale serve reset` to clear every route on " +
-        "that host, including any that belong to other services.",
+        "(match the port `tailscale serve status` shows; never `tailscale serve reset`, which also clears " +
+        "routes that belong to other services).",
     );
     return { phase: "contain", actions, notes };
   }

@@ -6,6 +6,7 @@ import { backupInstall, backupUninstall } from "#framework/commands/lifecycle/ba
 import { watchInstall, watchUninstall } from "#framework/commands/operate/watch/install.ts";
 import { cronLine, jobMarker, posixTargetInvocation, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
+import { WslTransport } from "#framework/runtime/transport/wsl.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext } from "#checks/runtime/convergence/instance-lock/fixture.ts";
 import { stubCrontabTransaction } from "#checks/runtime/schedule/fixture.ts";
@@ -98,6 +99,13 @@ try {
     }, "linux",
   ));
 
+  // Windows hosts only ever schedule a WSL target (local is refused there).
+  const wsl = new WslTransport("Ubuntu-24.04");
+  const winContexts = contexts.map((base) => ({
+    ...base,
+    paths: { async toTarget(path: string) { return path.replaceAll("\\", "/"); } },
+    transport: { ...base.transport, description: "wsl:Ubuntu-24.04", clientInvocation: wsl.clientInvocation.bind(wsl) },
+  }) as unknown as Context);
   const tasks = new Map<string, string>();
   const calls: string[][] = [];
   // A pre-key task cannot safely establish root ownership: never overwrite/delete it.
@@ -117,18 +125,20 @@ try {
         const names: string[] = [];
         for (const index of [0, 1]) {
           useDeployment(roots[index]);
-          await install(contexts[index], ["--apply"]);
+          await install(winContexts[index], ["--apply"]);
           const call = calls.at(-1)!;
           names.push(call[call.indexOf("/tn") + 1]);
           const action = tasks.get(names[index])!;
-          check(`${job}: Windows action ${index} binds correct installed project root`, action.includes(roots[index]) && action.includes("--project-root") && !action.includes(roots[1 - index]), true);
+          const own = roots[index].replaceAll("\\", "/");
+          const other = roots[1 - index].replaceAll("\\", "/");
+          check(`${job}: Windows action ${index} binds its own deployment root`, action.includes(own) && !action.includes(other), true);
         }
         check(`${job}: same-basename Windows task names differ`, names[0] !== names[1], true);
         const bAction = tasks.get(names[1]);
         useDeployment(roots[0]);
-        await install(contexts[0], ["--apply"]);
+        await install(winContexts[0], ["--apply"]);
         check(`${job}: Windows reinstall addresses A only`, calls.at(-1)?.[2], names[0]);
-        await uninstall(contexts[0], ["--apply"]);
+        await uninstall(winContexts[0], ["--apply"]);
         check(`${job}: Windows delete addresses A only`, calls.at(-1), ["/delete", "/tn", names[0], "/f"]);
         check(`${job}: Windows B action survives exactly`, tasks.get(names[1]), bAction);
         check(`${job}: Windows A was removed`, tasks.has(names[0]), false);

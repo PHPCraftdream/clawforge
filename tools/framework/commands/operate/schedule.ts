@@ -15,9 +15,7 @@
 
 import { access, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
 import { posix, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { die, info, infoRaw } from "../../core/io/log.ts";
 import { monorepoRoot } from "../../core/env.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
@@ -76,10 +74,16 @@ const MINUTE_DIVISORS = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30];
 const HOUR_DIVISORS = [1, 2, 3, 4, 6, 8, 12, 24];
 const VALID_INTERVAL_MINUTES = [...MINUTE_DIVISORS, ...HOUR_DIVISORS.map((hours) => hours * 60)];
 
-function nearestValidIntervals(minutes: number): number[] {
+/** An interval the way `--interval` spells it: 30m, 6h, 1d. */
+function formatInterval(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  return minutes === 1440 ? "1d" : `${minutes / 60}h`;
+}
+
+function nearestValidIntervals(minutes: number): string[] {
   const below = [...VALID_INTERVAL_MINUTES].reverse().find((value) => value <= minutes);
   const above = VALID_INTERVAL_MINUTES.find((value) => value >= minutes);
-  return [...new Set([below, above].filter((value): value is number => value !== undefined))];
+  return [...new Set([below, above].filter((value): value is number => value !== undefined))].map(formatInterval);
 }
 
 export function cronSchedule(minutes: number): string {
@@ -92,19 +96,19 @@ export function cronSchedule(minutes: number): string {
   }
   const nearest = nearestValidIntervals(minutes).join(", ");
   throw new Error(
-    `--interval has no faithful encoding: minutes must divide 60 (${MINUTE_DIVISORS.join(",")}), hours must divide a day (${HOUR_DIVISORS.join(",")}) — nearest valid: ${nearest}`,
+    `--interval has no faithful encoding: minutes must divide 60 (${MINUTE_DIVISORS.map(formatInterval).join(",")}), hours must divide a day (${HOUR_DIVISORS.map((hours) => formatInterval(hours * 60)).join(",")}) — nearest valid: ${nearest}`,
   );
 }
 
-/** "30m" / "6h" / "1d" → minutes, for a command whose own --interval takes a duration string
- *  rather than watch's bare minute count. Range-checked through cronSchedule() so the two
- *  parsers cannot silently accept an interval the cron line itself would then refuse. */
+/** One `--interval` grammar for every scheduled job: "30m" / "6h" / "1d", or a bare number
+ *  of minutes ("10" = "10m"). Range-checked through cronSchedule() so no job accepts an
+ *  interval the cron line itself would then refuse. */
 export function parseIntervalToMinutes(raw: string): number {
-  const match = /^(\d+)(m|h|d)$/.exec(raw.trim());
-  if (match === null) die(`--interval must look like 30m, 6h or 1d (minutes, hours or days) — got "${raw}"`);
+  const match = /^(\d+)([mhd]?)$/.exec(raw.trim());
+  if (match === null) die(`--interval must be a number of minutes or look like 30m, 6h or 1d (minutes, hours or days) — got "${raw}"`);
   const value = Number(match[1]);
   const unit = match[2];
-  const minutes = unit === "m" ? value : unit === "h" ? value * 60 : value * 1440;
+  const minutes = unit === "h" ? value * 60 : unit === "d" ? value * 1440 : value;
   try {
     cronSchedule(minutes);
   } catch (error) {
@@ -250,8 +254,8 @@ export interface SchedulingSupport {
 }
 
 /** ssh and a POSIX `local` are real, always-on machines this framework already knows how to
- *  reach unattended; everything else (a WSL Docker host, `local` on Windows) has no
- *  crontab/systemd this tooling can trust to be there. */
+ *  reach unattended; a WSL Docker host has no crontab/systemd this tooling can trust to be
+ *  there. A `local` target on Windows is refused by createTransport, so it never gets here. */
 export function schedulingSupport(ctx: Context): SchedulingSupport {
   const description = ctx.transport.description;
   if (description.startsWith("ssh:")) return { supported: true };
@@ -264,7 +268,7 @@ export function schedulingSupport(ctx: Context): SchedulingSupport {
         "proven to also run — a crontab entry installed there cannot be trusted to find either one unattended",
     };
   }
-  return { supported: false, reason: "Windows has no crontab or systemd for this command to install into" };
+  return { supported: false, reason: "this target has no crontab this command can install into" };
 }
 
 /** One pasteable command line: an argument with spaces or shell operators (WSL's
@@ -309,37 +313,6 @@ export async function posixTargetInvocation(ctx: Context, jobArgs: readonly stri
     : { cwd: monorepoRoot, command: "./clawforge", args: ["--app", name, ...jobArgs] };
 }
 
-/** The built entry of the framework copy that runs this code (dist/entry/bin.js), if it is one. */
-const runningEntry = fileURLToPath(new URL("../../entry/bin.js", import.meta.url));
-
-/** The entry script an installed deployment's job runs: its own local package, else — the
- *  system-wide case, no local package — the running package's built entry. Falls back to the
- *  local path when neither exists (e.g. running from sources). */
-export function installedEntryScript(root: string, running = runningEntry): string {
-  const local = resolve(root, "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js");
-  return existsSync(local) || !existsSync(running) ? local : running;
-}
-
-/** Node itself, invoked directly — the Windows counterpart to posixTargetInvocation's
- *  `./clawforge` shim. `schtasks /tr` has no shell of its own to run a bash script through,
- *  unlike crontab's real shell, so this cannot reuse the shim path at all. */
-async function windowsNodeInvocation(jobArgs: readonly string[]): Promise<ScheduledInvocation> {
-  const name = deploymentName();
-  const installed = await installedShimExists(deploymentDir());
-  if (installed) {
-    return {
-      cwd: deploymentDir(),
-      command: process.execPath,
-      args: [installedEntryScript(deploymentDir()), "--project-root", deploymentDir(), ...jobArgs],
-    };
-  }
-  return {
-    cwd: monorepoRoot,
-    command: process.execPath,
-    args: ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "--app", name, ...jobArgs],
-  };
-}
-
 /** cron's own accepted range (cronSchedule), translated into schtasks' vocabulary: a bare
  *  minute count under an hour, or an hour/day step above it. */
 export function schtasksSchedule(minutes: number): { readonly sc: string; readonly mo?: string } {
@@ -349,14 +322,24 @@ export function schtasksSchedule(minutes: number): { readonly sc: string; readon
   return hours === 24 ? { sc: "DAILY" } : { sc: "HOURLY", mo: String(hours) };
 }
 
+/** schtasks rejects a /tr value longer than this ("Value for '/tr' option cannot be more than 261 character(s)"). */
+export const SCHTASKS_RUN_LIMIT = 261;
+
 /** `/f` forces overwrite: re-running this replaces the SAME named task instead of schtasks
  *  refusing "already exists" — Task Scheduler's counterpart to crontab's marked-line
  *  replace, keyed by task name instead of a marker inside a shared file. */
 export function schtasksCreateCommand(taskName: string, minutes: number, action: { readonly command: string; readonly args: readonly string[] }): { command: string; args: string[] } {
   const { sc, mo } = schtasksSchedule(minutes);
+  const run = displayCommandLine(action.command, action.args);
+  if (run.length > SCHTASKS_RUN_LIMIT) {
+    throw new Error(
+      `the Task Scheduler action is ${run.length} characters and schtasks accepts at most ${SCHTASKS_RUN_LIMIT} for /tr — ` +
+      "shorten the deployment's path (move it to a shorter directory) or its app name, then re-run",
+    );
+  }
   return {
     command: "schtasks",
-    args: ["/create", "/tn", taskName, "/sc", sc, ...(mo === undefined ? [] : ["/mo", mo]), "/tr", displayCommandLine(action.command, action.args), "/f"],
+    args: ["/create", "/tn", taskName, "/sc", sc, ...(mo === undefined ? [] : ["/mo", mo]), "/tr", run, "/f"],
   };
 }
 
@@ -386,25 +369,11 @@ export async function withScheduleRunner<T>(substitute: ScheduleRunner, body: ()
   }
 }
 
-/** The command a Windows Task Scheduler entry needs for `job` on the current deployment —
- *  wsl: the same `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- …; exec …"` line a human would run (WslTransport's own
- *  clientInvocation, already built from the configured OC_WSL_DISTRO); a native Windows host
- *  (`local` transport): node invoked directly, since there is no shell here to run the bash
- *  shim through. */
-async function windowsScheduledAction(
-  ctx: Context,
-  jobArgs: readonly string[],
-  posixInvocation: { readonly command: string; readonly args: readonly string[] },
-): Promise<{ command: string; args: readonly string[] }> {
-  if (ctx.transport.description.startsWith("wsl:")) return posixInvocation;
-  return windowsNodeInvocation(jobArgs);
-}
-
 /** Prints — and, with `apply` on an actual Windows host, also runs through scheduleRunner —
  *  what an operator-side scheduler needs on a transport schedulingSupport() already said no
- *  to. ssh/local-POSIX never reach here. On any other host (a wsl:/local transport driven
- *  from a non-Windows machine — not possible from shipped entry points, but not ruled out
- *  structurally) this falls back to a purely manual message. */
+ *  to. ssh/local-POSIX never reach here. On Windows only a WSL target does; on any other
+ *  host (not possible from shipped entry points, but not ruled out structurally) this
+ *  falls back to a purely manual message. Refuses a /tr longer than schtasks accepts. */
 export async function printSchedulingInstructions(
   ctx: Context,
   job: string,
@@ -421,15 +390,20 @@ export async function printSchedulingInstructions(
   info("no unattended install exists for this target from here. Run this yourself, on a scheduler that can reach it:");
   infoRaw(`  ${displayCommandLine(invocation.command, invocation.args)}`);
 
-  if (schedulerPlatform !== "win32") {
+  // Only a WSL target on a Windows host has a schtasks line to offer (local is refused on Windows).
+  if (schedulerPlatform !== "win32" || !ctx.transport.description.startsWith("wsl:")) {
     info("on Windows that means wiring it into Task Scheduler by hand — this command never creates or touches one.");
     if (apply) die("refusing --apply: no correct unattended install exists for this target (see above)");
     return false;
   }
 
-  const action = await windowsScheduledAction(ctx, jobArgs, invocation);
   const taskName = scheduledTaskName(job, await schedulerIdentity(ctx));
-  const create = schtasksCreateCommand(taskName, minutes, action);
+  let create: { command: string; args: string[] };
+  try {
+    create = schtasksCreateCommand(taskName, minutes, invocation);
+  } catch (error) {
+    return die((error as Error).message);
+  }
   const pasteable = cmdExeLine(create.command, create.args);
   if (pasteable === undefined) {
     info("on Windows, Task Scheduler can run this instead, but a path here has a character (% & | < > ^) that cannot be pasted into cmd.exe; use --apply");

@@ -18,6 +18,19 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `init --local` in a checkout deployment (`apps/<name>` or a subfolder) prints that the editor types
   already resolve through the checkout and exits 0, instead of "unknown command: init" or an
   `npm install` line for the global package.
+* `--interval` is one grammar for `watch install` and `backup install`: a bare number is minutes,
+  or `30m`/`6h`/`1d` (existing values keep working). The refusal names nearest valid values in that
+  same spelling (`6h, 8h`), never an empty list (`watch install --interval 10m` used to print
+  `nearest valid:` with nothing) and never a value the command itself rejects.
+* `expose tailscale` no longer advises `tailscale serve reset` (it drops other services' routes on
+  the node): the printed undo is `tailscale serve --https=443 off`, and the `incident` fallback note
+  no longer offers `reset` either. A check scans the framework sources and the guide so no text
+  recommends it again.
+* Removed the unreachable "framework running natively on Windows, node invoked directly" scheduler
+  branch (`local` is refused on Windows, so only a WSL or SSH target exists there); the WSL
+  `schtasks` line and `--apply` are unchanged. `schtasks` rejects a `/tr` over 261 characters, so
+  `watch install`/`backup install` on WSL under Windows now refuse such an action with a message
+  (shorten the deployment path or app name) instead of printing a line or failing in `--apply`.
 * System-wide `clawforge` hands over to the checkout's gate from `APPS/<name>` on Windows too (the
   `apps` directory is matched by its real spelling), so the global package no longer loads the
   checkout's `app.ts` next to its own framework. An `app.ts` inside a checkout that the gate cannot

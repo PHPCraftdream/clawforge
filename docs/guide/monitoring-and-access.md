@@ -159,20 +159,21 @@ An operator finds out the instance stopped doing its job without polling by hand
     [Data, backups and state](data-and-backups.md#backup-and-restore) for `BACKUP_MISSING`/
     `BACKUP_STALE`, doctor's other new upkeep findings.
 * `./clawforge watch install` / `watch uninstall` — print (and, with `--apply`, install through
-  the transport) a crontab entry that runs `watch check` every `--interval` minutes (default
-  5): must divide 60 (`1,2,3,4,5,6,10,12,15,20,30`) to step cron's own minute field evenly, or
-  be a whole-hour step dividing a day (`60,120,180,240,360,480,720,1440` → `60` hourly, `120`
-  every 2 hours, `1440` daily at midnight) — any other value (e.g. `45`, `90`) would fire
-  unevenly and is refused, naming the nearest valid values, rather than silently degrading to
+  the transport) a crontab entry that runs `watch check` every `--interval` (default `5m`; a
+  bare number is minutes, or use `30m`/`6h`/`1d` — the same grammar as `backup install`):
+  minutes must divide 60 (`1,2,3,4,5,6,10,12,15,20,30`) to step cron's own minute field evenly,
+  hours must divide a day (`1,2,3,4,6,8,12,24`; `1h` hourly, `2h` every 2 hours, `1d` daily at
+  midnight) — any other value (e.g. `45m`, `90`) would fire unevenly and is refused, naming the
+  nearest valid values in the same spelling, rather than silently degrading to
   an uneven `*/N`. Marked so a re-run replaces only its own line and
   `uninstall` removes only it. Only where an unattended cron can be trusted to find this
   tooling's own node and checkout: a real SSH host (`./clawforge deploy` already mirrored the
-  checkout there) or a POSIX `local` target. A WSL target's Docker distro is not such a place,
-  and neither is Windows itself (no crontab/systemd) — there this prints, and on an actual
+  checkout there) or a POSIX `local` target. A WSL target's Docker distro is not such a place
+  (a `local` target is refused on Windows) — there this prints, and on an actual
   Windows host can also run with `--apply`, the equivalent `schtasks /create` command instead:
-  for a WSL target, the same `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- '<dir>'; exec './clawforge' …"` line a human would run (built from the
-  configured `OC_WSL_DISTRO`); for the framework running natively on Windows, node invoked
-  directly (there is no shell there to run the `./clawforge` bash shim through). `/f` replaces
+  the same `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- '<dir>'; exec './clawforge' …"` line a human would run (built from the
+  configured `OC_WSL_DISTRO`). schtasks accepts at most 261 characters for the action: a longer
+  one is refused (nothing is created) — shorten the deployment path or app name. `/f` replaces
   the same named task (`clawforge-<identity>-watch`) on a re-run, Task Scheduler's own
   counterpart to the crontab marker (`# clawforge-watch:<identity>`). Identity is a SHA-256
   of the canonical physical deployment root and execution location, not its human basename

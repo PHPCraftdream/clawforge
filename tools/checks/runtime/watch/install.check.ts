@@ -210,6 +210,19 @@ try {
     check("--interval 45 (would fire unevenly, */45) is refused", message.includes("no faithful encoding"), true);
   }
 
+  // the same grammar as `backup install`: 10m / 6h / 1d print like their bare-minute forms.
+  for (const [spelled, expected] of [["10m", "*/10 * * * *"], ["6h", "0 */6 * * *"], ["1d", "0 0 * * *"]] as const) {
+    const written: string[] = [];
+    await withOutputSink((chunk) => written.push(chunk), () => watchInstall(ctx, ["--interval", spelled]));
+    check(`--interval ${spelled} is accepted`, written.join("").includes(expected), true);
+  }
+  {
+    const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "45m"])));
+    check("--interval 45m names non-empty valid alternatives in its own spelling", message.includes("nearest valid: 30m, 1h"), true);
+    const malformed = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "soon"])));
+    check("a malformed --interval names both spellings", malformed.includes("number of minutes or look like 30m"), true);
+  }
+
   // uninstall --apply: removes only OUR marked line.
   await withOutputSink(() => {}, () => watchUninstall(ctx, ["--apply"]));
   const afterUninstall = crontab();
@@ -288,21 +301,16 @@ try {
       paths: { async toTarget(path: string): Promise<string> { return path; } },
       settings: {},
     } as unknown as Context;
-    const localRecorded: { command: string; args: string[] }[] = [];
-    await withOutputSink(() => {}, () =>
+    // `local` on Windows is refused by createTransport, so there is no native schtasks branch:
+    // were such a context ever built, --apply refuses instead of scheduling anything.
+    const localRecorded: string[][] = [];
+    const localMessage = await deathOf(() => withOutputSink(() => {}, () =>
       withScheduleRunner(
-        async (command, args) => {
-          localRecorded.push({ command, args: [...args] });
-          return { code: 0, stdout: "", stderr: "" };
-        },
+        async (_command, args) => { localRecorded.push([...args]); return { code: 0, stdout: "", stderr: "" }; },
         () => watchInstall(localCtx, ["--apply"]),
         "win32",
-      ));
-    check(
-      "a native Windows host (no WSL involved) runs node directly, not the bash shim",
-      localRecorded[0]?.args.some((arg) => arg.includes(process.execPath)) ?? false,
-      true,
-    );
+      )));
+    check("a local context on Windows refuses --apply and schedules nothing", [localMessage.includes("refusing --apply"), localRecorded.length], [true, 0]);
   }
   if (process.platform !== "win32") {
     const message = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--apply"])));

@@ -166,10 +166,10 @@ otherwise it is rotating a backlog nothing keeps adding to:
 ```
 
 `backup install` / `backup uninstall` wire a plain `./clawforge backup` onto a schedule —
-`--interval` takes a duration (default `1d`), not a bare minute count: minutes must divide 60
-(e.g. `30m`), hours must divide a day (e.g. `6h`), or `1d` — anything else (e.g. `45m`, `7h`)
-has no faithful cron encoding and is refused, naming the nearest valid values.
-Mirrors `watch install`/`watch uninstall` (see
+`--interval` takes a duration (default `1d`) in the same grammar as `watch install`: `30m`,
+`6h`, `1d`, or a bare number of minutes (`30` = `30m`); minutes must divide 60, hours must
+divide a day — anything else (e.g. `45m`, `7h`) has no faithful cron encoding and is refused,
+naming the nearest valid values (e.g. `6h, 8h`). Mirrors `watch install`/`watch uninstall` (see
 [Health monitoring](monitoring-and-access.md#health-monitoring-watch)) exactly, down to the
 shared crontab-marker convention and the Windows fallback: crontab where an unattended cron
 can be trusted to find this tooling (a real SSH host or a POSIX `local` target), otherwise a

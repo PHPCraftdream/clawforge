@@ -530,25 +530,26 @@ export const managementCommands: Record<string, AppCommand> = {
       "A failed ping is a warning in this cycle's output and in `watch status` (last " +
       "heartbeat error), never a level change or a non-zero exit by itself.\n" +
       "install / uninstall — print (and, with --apply, install through the transport) a " +
-      "crontab entry that runs `watch check` every --interval minutes (default 5; must divide " +
-      "60 — 1,2,3,4,5,6,10,12,15,20,30 — or be a whole-hour step dividing a day — 60,120,180," +
-      "240,360,480,720,1440 — anything else is refused, naming the nearest valid values, " +
-      "rather than silently misfiring),\n" +
+      "crontab entry that runs `watch check` every --interval (default 5m; a bare number is " +
+      "minutes, or 30m/6h/1d like `backup install`; minutes must divide 60 — 1,2,3,4,5,6,10,12," +
+      "15,20,30 — hours must divide a day — 1,2,3,4,6,8,12,24 — anything else is refused, " +
+      "naming the nearest valid values, rather than silently misfiring),\n" +
       "marked so a re-run replaces only its own line and uninstall removes only it.\n" +
       "Cron installation refuses % in the working directory, command, arguments or marker " +
       "before touching the scheduler, including a percent preceded by a backslash.\n" +
       "Only where this framework can actually trust an unattended cron to find this " +
       "tooling's own node and checkout: a real SSH host (deploy already mirrored the " +
       "checkout there) or a POSIX `local` target.\n" +
-      "A WSL target's Docker distro is not such a place, and neither is Windows itself (no " +
-      "crontab/systemd) — there this prints, instead of installing something that silently " +
+      "A WSL target's Docker distro is not such a place (a `local` target is refused on " +
+      "Windows) — there this prints, instead of installing something that silently " +
       "never runs, the exact command an operator-side scheduler would need to invoke, using " +
       "the transport's own clientInvocation().\n" +
       "On an actual Windows host it also prints a " +
-      "ready `schtasks /create` command (a WSL target's own `wsl.exe -d <distro> --exec bash -lc \"set -e; cd -- …; exec …\"` line, " +
-      "or, for the framework running natively, node invoked directly — no bash shim to run " +
-      "it through); `/f` replaces the same named task on a re-run, the Task Scheduler " +
-      "counterpart to the crontab marker.\n" +
+      "ready `schtasks /create` command (the WSL target's own `wsl.exe -d <distro> --exec bash -lc \"set -e; cd -- …; exec …\"` line); " +
+      "`/f` replaces the same named task on a re-run, the Task Scheduler " +
+      "counterpart to the crontab marker. schtasks accepts at most 261 characters for the " +
+      "action, so a longer one is refused — no schtasks line is printed and --apply creates " +
+      "nothing; shorten the deployment path or app name.\n" +
       "--apply on that same Windows host actually runs " +
       "it, through the same host-spawn helper every other bare-machine action uses; anywhere " +
       "else this only ever prints — it never touches a real crontab or scheduled task by " +

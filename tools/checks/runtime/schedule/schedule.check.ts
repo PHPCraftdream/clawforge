@@ -12,7 +12,6 @@ import {
   cronLine,
   cronSchedule,
   displayCommandLine,
-  installedEntryScript,
   jobMarker,
   parseIntervalToMinutes,
   posixTargetInvocation,
@@ -23,6 +22,7 @@ import {
   schtasksCreateCommand,
   schtasksDeleteCommand,
   schtasksSchedule,
+  SCHTASKS_RUN_LIMIT,
   withoutMarkedLine,
   withScheduleRunner,
 } from "#framework/commands/operate/schedule.ts";
@@ -110,10 +110,23 @@ check("30m -> 30 minutes", parseIntervalToMinutes("30m"), 30);
 check("6h -> 360 minutes", parseIntervalToMinutes("6h"), 360);
 check("12h -> 720 minutes", parseIntervalToMinutes("12h"), 720);
 check("1d -> 1440 minutes", parseIntervalToMinutes("1d"), 1440);
-check("a bare number with no unit is refused, named", (await deathOf(() => parseIntervalToMinutes("30"))).includes("--interval must look like"), true);
+check("a bare number is minutes (watch's historical form)", [parseIntervalToMinutes("30"), parseIntervalToMinutes("120"), parseIntervalToMinutes("1440")], [30, 120, 1440]);
+check("60m and 1h are the same interval", [parseIntervalToMinutes("60m"), parseIntervalToMinutes("1h")], [60, 60]);
+for (const malformed of ["", "abc", "1.5h", "-5", "5 m", "10mm"]) {
+  check(`"${malformed}" is refused, naming both spellings`, (await deathOf(() => parseIntervalToMinutes(malformed))).includes("number of minutes or look like 30m"), true);
+}
 check("5h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("5h"))).includes("no faithful encoding"), true);
 check("7h has no faithful cron encoding and is refused", (await deathOf(() => parseIntervalToMinutes("7h"))).includes("no faithful encoding"), true);
-check("the refusal names the nearest valid values", (await deathOf(() => parseIntervalToMinutes("7h"))).includes("nearest valid: 360, 480"), true);
+check("the refusal names the nearest valid values in the flag's own spelling", (await deathOf(() => parseIntervalToMinutes("7h"))).includes("nearest valid: 6h, 8h"), true);
+
+// Every refusal's "nearest valid" list is non-empty and each entry parses back through the
+// same parser — it never offers a value the command itself would reject.
+for (const refused of ["10h", "45m", "45", "90", "1441", "7", "0", "2d", "100d"]) {
+  const message = await deathOf(() => parseIntervalToMinutes(refused));
+  const offered = /nearest valid: (.*)$/.exec(message)?.[1]?.split(", ") ?? [];
+  check(`${refused}: a non-empty nearest list`, offered.length > 0, true);
+  for (const value of offered) check(`${refused}: suggested ${value} is accepted`, await deathOf(() => parseIntervalToMinutes(value)), "");
+}
 
 // --- schedulingSupport(): a property of the transport, checked against THIS platform's own
 // POSIX-ness for the "local" branch so the assertion holds on every CI runner ----------------
@@ -309,6 +322,38 @@ try {
     }
   }
 
+  // schtasks rejects a /tr over 261 characters: refuse with advice, print and create nothing.
+  {
+    const realWsl = new WslTransport("Ubuntu-24.04");
+    const longCtx = (entryPath: string): Context => ({
+      transport: { description: "wsl:Ubuntu-24.04", clientInvocation: realWsl.clientInvocation.bind(realWsl) },
+      paths: { async toTarget(): Promise<string> { return entryPath; } },
+      settings: {},
+    }) as unknown as Context;
+    for (const apply of [false, true]) {
+      const applied: string[][] = [];
+      const out: string[] = [];
+      const message = await deathOf(() => withOutputSink((chunk) => out.push(chunk), () =>
+        withScheduleRunner(
+          async (_command, args) => { applied.push([...args]); return { code: 0, stdout: "", stderr: "" }; },
+          () => printSchedulingInstructions(longCtx(`/mnt/d/${"x".repeat(200)}/clawforge`), "backup", name, 1440, ["backup"], apply),
+          "win32",
+        )));
+      check(`a /tr over 261 characters is refused (apply=${apply}), naming the limit and the fix`, [message.includes("261"), message.includes("shorten")], [true, true]);
+      check(`...and nothing is run or printed for schtasks (apply=${apply})`, [applied.length, out.join("").includes("schtasks /create")], [0, false]);
+    }
+    const fits = "x".repeat(40);
+    const okApplied: string[][] = [];
+    await withOutputSink(() => {}, () =>
+      withScheduleRunner(
+        async (_command, args) => { okApplied.push([...args]); return { code: 0, stdout: "", stderr: "" }; },
+        () => printSchedulingInstructions(longCtx(`/mnt/d/${fits}/clawforge`), "backup", name, 1440, ["backup"], true),
+        "win32",
+      ));
+    check("a /tr within the limit still applies", okApplied.length, 1);
+    check("the applied /tr is at most 261 characters", (okApplied[0]?.[okApplied[0].indexOf("/tr") + 1] ?? "").length <= SCHTASKS_RUN_LIMIT, true);
+  }
+
   const installedRoot = join(root, "installed project");
   const otherCwd = join(root, "other directory");
   await mkdir(installedRoot);
@@ -322,16 +367,6 @@ try {
     encoding: "utf8",
   });
   check("installed entry loads app.ts from the scheduled root outside its cwd", fromOtherCwd.status, 0);
-  // Global mode: no local package, so the job runs the running package's built entry.
-  const fakeRunning = join(root, "running", "bin.js");
-  await mkdir(join(root, "running"));
-  await writeFile(fakeRunning, "");
-  const localEntry = join(installedRoot, "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js");
-  check("global mode schedules the running package's entry, not a missing local one", installedEntryScript(installedRoot, fakeRunning), fakeRunning);
-  check("without a built running entry the local path is kept", installedEntryScript(installedRoot, join(root, "absent.js")), localEntry);
-  await mkdir(join(localEntry, ".."), { recursive: true });
-  await writeFile(localEntry, "");
-  check("a local package wins over the running one", installedEntryScript(installedRoot, fakeRunning), localEntry);
   const withoutRoot = spawnSync(process.execPath, ["--experimental-strip-types", entry, "status"], {
     cwd: otherCwd,
     encoding: "utf8",

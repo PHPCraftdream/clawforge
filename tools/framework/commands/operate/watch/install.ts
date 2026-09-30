@@ -4,14 +4,14 @@
 // crontab, not a systemd --user timer: a timer needs `loginctl enable-linger` and systemd as
 // PID 1, neither guaranteed on a minimal Docker host. Cron is the one mechanism every POSIX
 // target in scope already runs as a system service.
-// Schedule location depends on the TRANSPORT: ssh/local run a real crontab entry; wsl and
-// local-on-win32 have no POSIX scheduler, so ../schedule.ts prints (and with --apply, runs)
+// Schedule location depends on the TRANSPORT: ssh/local run a real crontab entry; wsl
+// (on a Windows host) has no POSIX scheduler, so ../schedule.ts prints (and with --apply, runs)
 // the equivalent `schtasks` entry instead.
 //
 // Crontab conventions and the Windows fallback are shared with `backup install` via
 // ../schedule.ts — this file supplies only watch's job name, invocation and interval.
 
-import { die, info, infoRaw, log, warn } from "../../../core/io/log.ts";
+import { info, infoRaw, log, warn } from "../../../core/io/log.ts";
 import { deploymentName } from "../../../runtime/deployment.ts";
 import { guarded } from "../../../runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "../../../runtime/runtime.ts";
@@ -22,6 +22,7 @@ import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../../interfac
 import {
   cronLine as sharedCronLine,
   cronSchedule,
+  parseIntervalToMinutes,
   displayCommandLine,
   jobMarker,
   posixTargetInvocation,
@@ -47,7 +48,7 @@ export const DEFAULT_WATCH_INTERVAL_MINUTES = 5;
 
 /** The slice of `watch`'s declaration `install`'s own argv actually uses. */
 export const WATCH_INSTALL_ARGUMENTS: CommandArgument[] = [
-  { name: "interval", description: "With install: minutes between checks (default 5); must divide 60 (1,2,3,4,5,6,10,12,15,20,30), or be a whole-hour step dividing a day (60,120,180,240,360,480,720,1440)", kind: "option", valueName: "minutes" },
+  { name: "interval", description: "With install: time between checks (default 5m) — a bare number is minutes, or 30m/6h/1d; minutes must divide 60 (1,2,3,4,5,6,10,12,15,20,30), hours must divide a day (1,2,3,4,6,8,12,24)", kind: "option", valueName: "interval" },
   { name: "apply", description: "With install/uninstall: mutate the target's crontab instead of only printing it", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
@@ -78,14 +79,7 @@ function parseInstallArgs(args: string[]): { interval: number; apply: boolean } 
   const parsed = parseDeclaredArgs(WATCH_INSTALL_ARGUMENTS, args);
   let interval = DEFAULT_WATCH_INTERVAL_MINUTES;
   if (parsed.interval !== undefined) {
-    const raw = parsed.interval === "" ? undefined : parsed.interval as string;
-    const numeric = raw === undefined ? Number.NaN : Number(raw);
-    try {
-      cronSchedule(numeric);
-    } catch (error) {
-      die((error as Error).message);
-    }
-    interval = numeric;
+    interval = parseIntervalToMinutes(parsed.interval as string);
   }
   return { interval, apply: parsed.apply === true };
 }

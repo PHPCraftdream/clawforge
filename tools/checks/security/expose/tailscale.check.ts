@@ -162,6 +162,14 @@ function jsonServeTransport(stdout: string, code = 0): Context["transport"] {
   check("present and logged in", probe, { present: true, loggedIn: true, detail: "tailscale is installed and logged in" });
 }
 
+// --- the printed undo removes one route, never the whole serve config -----------------------
+
+{
+  const printed = await run(ctxFor(noLockTransport({ present: true, state: "Running" }).transport), []);
+  checkTrue("the printed undo turns off only the https 443 route", printed.includes("undo with: tailscale serve --https=443 off"));
+  checkTrue("the printed undo never recommends `serve reset`", !printed.includes("serve reset"));
+}
+
 // --- funnel is refused outright, with or without --apply ---------------------------------------
 
 for (const args of [["--funnel"], ["funnel"], ["--apply", "--funnel"]]) {

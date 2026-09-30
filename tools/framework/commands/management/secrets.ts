@@ -6,7 +6,7 @@
 
 import { writeFile, readFile, access } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
-import { emit, isCaptured } from "#src/core/io/output.ts";
+import { emit, emitRaw, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine } from "#src/core/env.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
@@ -419,7 +419,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
   if (writeTemplate || printTemplate) {
     const content = template(await requirements(ctx));
     if (printTemplate) {
-      emit(content);
+      emitRaw(content);
       return;
     }
     await writeFile(secretsTemplateFile(), content, "utf8");

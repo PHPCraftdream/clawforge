@@ -57,7 +57,7 @@ try {
 
   const helpHelp = await runGate(["--app", deploymentName, "help", "--help"]);
   check("help --help exits cleanly", helpHelp.code, 0);
-  check("help --help falls back to the command list", helpHelp.stdout.includes("Usage: ./clawforge <command>"), true);
+  check("help --help falls back to the command list", helpHelp.stdout.includes(`Usage: ./clawforge --app ${deploymentName} <command>`), true);
 
   const newAppHelp = await runGate(["new-app", "--help"]);
   check("new-app --help exits cleanly", newAppHelp.code, 0);
@@ -72,7 +72,7 @@ try {
   check("help help exits cleanly", helpForHelp.code, 0);
   check("help help does not report itself as unknown", helpForHelp.stdout.includes("unknown command"), false);
   check("help help does not suggest itself", helpForHelp.stdout.includes("did you mean: help"), false);
-  check("help help falls back to the command list", helpForHelp.stdout.includes("Usage: ./clawforge <command>"), true);
+  check("help help falls back to the command list", helpForHelp.stdout.includes(`Usage: ./clawforge --app ${deploymentName} <command>`), true);
 
   // `new-app a b` used to read args[0] directly, so "b" vanished silently instead of being
   // refused — the shared declaration parser refuses any token past the one declared positional.

@@ -11,6 +11,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire, registerHooks } from "node:module";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
+import { INVOKED_AS_ENV, invocation } from "../core/io/invocation.ts";
 
 const PACKAGE = "@clawforge/framework";
 const DELEGATED = "CLAWFORGE_DELEGATED";
@@ -56,7 +57,7 @@ export function takeDelegationFlag(): boolean {
 function runInstead(entry: string, args: string[], flag: boolean): never {
   const result = spawnSync(process.execPath, ["--experimental-strip-types", entry, ...args], {
     stdio: "inherit",
-    env: flag ? { ...process.env, [DELEGATED]: "1" } : process.env,
+    env: { ...process.env, [INVOKED_AS_ENV]: invocation(), ...(flag ? { [DELEGATED]: "1" } : {}) },
   });
   if (result.error !== undefined) {
     process.stderr.write(`clawforge: cannot start ${entry}: ${result.error.message}\n`);

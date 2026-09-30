@@ -7,6 +7,8 @@
 // So there is a mode — a module-level sink, not a threaded parameter, because the thing
 // that must not write to stdout is arbitrarily deep: a command, a helper, a spawned process.
 
+import { localizeHints } from "./invocation.ts";
+
 type Sink = (chunk: string) => void;
 
 let sink: Sink | undefined;
@@ -48,6 +50,12 @@ export function shouldFollow(): boolean {
 /** Machine-readable output: JSON, a token, a path. Goes to stdout on a terminal so it can
  *  be piped, and into the sink when captured. */
 export function emit(text: string): void {
+  emitRaw(localizeHints(text));
+}
+
+/** emit() without hint rewriting: for data that must arrive byte for byte (a container's
+ *  stdout, a secret, a log, a shell completion script). */
+export function emitRaw(text: string): void {
   machineSink?.(text);
   if (sink !== undefined) sink(text);
   else process.stdout.write(text);

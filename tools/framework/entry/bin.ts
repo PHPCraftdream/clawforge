@@ -19,6 +19,7 @@ import { isAbsolute, resolve } from "node:path";
 import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, type GateCommand } from "../integration/gate.ts";
 import { reportError } from "../core/io/log.ts";
+import { INVOKED_AS_ENV, invocation, setInvocation, takeInvokedAs } from "../core/io/invocation.ts";
 import { useDeployment } from "../runtime/deployment.ts";
 import { initApp, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";
@@ -30,6 +31,8 @@ import type { AppDefinition } from "../core/app.ts";
 
 // First, before anything can spawn: the flag covers this hand-over only, not descendants.
 const handedOver = takeDelegationFlag();
+// The shim says `./clawforge`; a bare `clawforge` is the system-wide command.
+setInvocation(takeInvokedAs() ?? "clawforge");
 const rawArgv = process.argv.slice(2);
 const scheduled = rawArgv[0] === "--project-root";
 if (scheduled && (rawArgv[1] === undefined || !isAbsolute(rawArgv[1]))) {
@@ -105,7 +108,7 @@ function retryWithTypeStripping(): never {
   const result = spawnSync(
     process.execPath,
     ["--experimental-strip-types", fileURLToPath(import.meta.url), ...launchArgv],
-    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1", ...(handedOver ? { CLAWFORGE_DELEGATED: "1" } : {}) } },
+    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1", [INVOKED_AS_ENV]: invocation(), ...(handedOver ? { CLAWFORGE_DELEGATED: "1" } : {}) } },
   );
   process.exit(result.status ?? 1);
 }

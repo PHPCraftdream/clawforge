@@ -30,6 +30,7 @@ import {
 import { helpEntryLine } from "./framework/core/io/help-render.ts";
 import { reportError, info } from "./framework/core/io/log.ts";
 import { emit } from "./framework/core/io/output.ts";
+import { setInvocation, takeInvokedAs } from "./framework/core/io/invocation.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
 import { createApp } from "./framework/integration/deployment/scaffold.ts";
@@ -42,6 +43,9 @@ import { normalizeVersionAlias, versionGateCommand } from "./framework/integrati
 import { makeCompletionGateCommand } from "./framework/integration/completion.ts";
 import type { AppDefinition, CommandArgument } from "./framework/core/app.ts";
 
+// A hand-over from the system-wide command names itself; otherwise this is the ./clawforge gate.
+const invokedAs = takeInvokedAs();
+if (invokedAs !== undefined) setInvocation(invokedAs);
 const argv = normalizeVersionAlias(process.argv.slice(2));
 
 // --app wins over the environment, the environment over the default.
@@ -294,6 +298,9 @@ try {
     process.exit(1);
   }
 }
+
+// A non-default deployment is named in every hint, so it can be pasted as is.
+if (invokedAs === undefined && name !== "openclaw") setInvocation(`./clawforge --app ${name}`);
 
 // Set before anything reads configuration: every path below resolves against it.
 useDeployment(deploymentDir);

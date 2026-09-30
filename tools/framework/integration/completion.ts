@@ -9,7 +9,7 @@
 
 import { parseDeclaredArgs } from "../core/arguments.ts";
 import { reportError } from "../core/io/log.ts";
-import { emit } from "../core/io/output.ts";
+import { emitRaw } from "../core/io/output.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import type { CommandArgument } from "../core/app.ts";
 import type { GateCommand } from "./gate.ts";
@@ -251,7 +251,7 @@ export function makeCompletionGateCommand(siblingGateCommands: readonly GateComm
         return 1;
       }
       const model = buildCompletionModel(siblingGateCommands);
-      emit(renderCompletion(shell as CompletionShell, model, appFlag));
+      emitRaw(renderCompletion(shell as CompletionShell, model, appFlag));
       return 0;
     },
   };

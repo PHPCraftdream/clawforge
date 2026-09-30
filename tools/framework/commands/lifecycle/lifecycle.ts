@@ -5,7 +5,7 @@
 
 import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
-import { shouldFollow, emit, withOutputSink } from "#src/core/io/output.ts";
+import { shouldFollow, emit, emitRaw, withOutputSink } from "#src/core/io/output.ts";
 import { sleep, requireBootstrapped, NotBootstrapped } from "#src/runtime/runtime.ts";
 import { refreshContext, type Context } from "#src/core/context.ts";
 import { preflightSecrets } from "#src/commands/management/secrets.ts";
@@ -330,7 +330,7 @@ export async function logs(ctx: Context, args: string[]): Promise<void> {
   }
 
   const output = await ctx.runtime.readLogs(tail, rest);
-  emit(pattern === undefined ? output : filterLines(output, pattern));
+  emitRaw(pattern === undefined ? output : filterLines(output, pattern));
 }
 
 /** Takes a validated recipe action's tail binding without losing inline literal values. */

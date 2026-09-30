@@ -5,7 +5,7 @@
 // network namespace (a recipe's sidecar port, for instance).
 
 import { die, dieWithExitCode } from "#src/core/io/log.ts";
-import { isCaptured, emit } from "#src/core/io/output.ts";
+import { isCaptured, emitRaw } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { HelperNotRunning } from "#src/runtime/runtime.ts";
@@ -25,8 +25,8 @@ export async function exec(ctx: Context, args: string[]): Promise<void> {
 
   const report = (result: ExecResult): void => {
     if (captured) {
-      emit(result.stdout);
-      if (result.code !== 0) emit(result.stderr);
+      emitRaw(result.stdout);
+      if (result.code !== 0) emitRaw(result.stderr);
     }
     if (result.code !== 0) dieWithExitCode(`exec ${args.join(" ")} failed (exit ${result.code})`, result.code);
   };

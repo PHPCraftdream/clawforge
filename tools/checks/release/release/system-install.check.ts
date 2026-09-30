@@ -99,6 +99,8 @@ try {
   tail(helped);
   check("app.ts's @clawforge/framework imports resolve to the system-wide package", helped.code, 0);
   check("so the deployment's own commands are listed", helped.output.includes("bootstrap"), true);
+  check("the global command's help footer says clawforge help <command>", helped.output.includes("Run `clawforge help <command>` or `clawforge <command> --help`"), true);
+  check("and never advises ./clawforge, which does not run in every shell", helped.output.includes("Usage: ./clawforge") || helped.output.includes("`./clawforge help"), false);
 
   // A subfolder of the app: the deployment is found upward; init there is refused, not nested.
   const sub = join(fresh, "recipes", "sub");
@@ -130,6 +132,9 @@ try {
     const shimmed = await run(bash, ["./clawforge", "version"], fresh, { env });
     tail(shimmed);
     check("without a local package the ./clawforge shim hands over to the system-wide command", shimmed.output.trim(), `clawforge ${expected}`);
+    const shimHelp = await run(bash, ["./clawforge", "help"], fresh, { env });
+    tail(shimHelp);
+    check("through the shim the hints say ./clawforge, which is what runs there", shimHelp.output.includes("Run `./clawforge help <command>` or `./clawforge <command> --help`") && shimHelp.output.includes("Usage: ./clawforge <command>"), true);
 
     // A global `clawforge` on PATH that cannot run (npm's shim without node on PATH) must not
     // be exec'd: the shim runs the package next to it with the node it already found.
@@ -198,6 +203,7 @@ try {
   const inApp = await clawforge(["help"], resolve(appsDir, checkoutApp));
   tail(inApp);
   check("in apps/<name> of a checkout the checkout's own gate answers", inApp.code === 0 && inApp.output.includes("new-app"), true);
+  check("and its hints keep the name the user typed", inApp.output.includes("Run `clawforge help <command>`"), true);
   const checkoutInfo = lastJson(await clawforge(["version", "--json"], resolve(appsDir, checkoutApp)));
   check("version --json in a checkout app says checkout and the checkout root", [checkoutInfo.source, checkoutInfo.path], ["checkout", await realpath(monorepoRoot)]);
   const atRoot = await clawforge(["help"], monorepoRoot);

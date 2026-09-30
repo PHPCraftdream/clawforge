@@ -10,7 +10,7 @@
 // local. A probe that cannot answer refuses the command until explicit consent is given.
 
 import { die, dieWithExitCode, info } from "#src/core/io/log.ts";
-import { emit, shouldFollow } from "#src/core/io/output.ts";
+import { emitRaw, shouldFollow } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecOptions } from "#src/runtime/transport/transport.ts";
 import { probeHostIdentity, realHostEnvironment, resolveHostContext, type HostContextName, type HostEnvironment } from "./contexts.ts";
@@ -116,8 +116,8 @@ export async function host(ctx: Context, args: string[], environment: HostEnviro
   const result = await run(parsed.command[0], parsed.command.slice(1), options);
 
   if (!follow) {
-    emit(result.stdout);
-    if (result.code !== 0) emit(result.stderr);
+    emitRaw(result.stdout);
+    if (result.code !== 0) emitRaw(result.stderr);
   }
   if (result.code !== 0) {
     dieWithExitCode(`host ${parsed.context} ${parsed.command.join(" ")} failed (exit ${result.code})`, result.code);

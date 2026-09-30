@@ -59,6 +59,8 @@ const SHIM = `#!/usr/bin/env bash
 # Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works
 # without typing a package path or npx by hand.
 set -Eeuo pipefail
+# Hints in the CLI say "./clawforge" for this entry, "clawforge" for the system-wide command.
+export CLAWFORGE_INVOKED_AS=./clawforge
 DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 node_bin=""
 for candidate in node node.exe /usr/local/bin/node "/c/Program Files/nodejs/node.exe" "/mnt/c/Program Files/nodejs/node.exe"; do

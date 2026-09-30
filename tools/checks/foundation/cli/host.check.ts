@@ -498,7 +498,7 @@ check("host is declared destructive, so MCP requires a confirmation", openclawCo
   const missing = validate(openclawCommands.host, {});
   check("validate reports both required arguments", missing.includes("context is required") && missing.includes("args is required"), true);
   const hostDescription = toolDescription("host", openclawCommands.host);
-  check("the tool description shows the client the contexts", hostDescription.includes("target") && hostDescription.includes("engine") && hostDescription.includes("local"), true);
+  check("the schema shows the client the contexts; the description points to help for the rest", JSON.stringify(properties.context?.enum) === JSON.stringify(["target", "engine", "local"]) && hostDescription.includes("call help with command=host"), true);
   check("the schema exposes the root gate", (inputSchema(openclawCommands.host).properties as Record<string, unknown>)["confirm-root"] !== undefined, true);
 }
 

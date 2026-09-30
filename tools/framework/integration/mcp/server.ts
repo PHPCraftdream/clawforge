@@ -25,6 +25,7 @@ import { useApplicationRecipesDir } from "../../runtime/deployment.ts";
 import { ensureEnvironment } from "../provision.ts";
 import { preparesEnvironmentFor } from "../../core/arguments.ts";
 import { maskSecrets, UserError } from "../../core/io/log.ts";
+import { localizeHints } from "../../core/io/invocation.ts";
 import { withOutputSink } from "../../core/io/output.ts";
 import { maskStructuredOutput, maskStructuredResult, toolEnvelope, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../../commands/operate/recover-env/index.ts";
@@ -110,7 +111,7 @@ async function captureRun(
         return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined };
       } catch (error) {
         const failure = maskSecrets(error instanceof UserError || error instanceof Error
-          ? error.message
+          ? localizeHints(error.message)
           : String(error));
         return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined, failure };
       }
@@ -139,7 +140,7 @@ async function captureGateRun(
         return code === 0 ? { output } : { output, failure: `${command.name} failed (exit ${code})` };
       } catch (error) {
         const failure = maskSecrets(error instanceof UserError || error instanceof Error
-          ? error.message
+          ? localizeHints(error.message)
           : String(error));
         return { output: chunks.join("").trim(), failure };
       }
@@ -342,7 +343,7 @@ async function handleAppToolCall(
   } catch (error) {
     // Left for what captureRun cannot catch: a failure while building the sink itself.
     const message = maskSecrets(error instanceof UserError || error instanceof Error
-      ? error.message
+      ? localizeHints(error.message)
       : String(error));
     reply(id, { isError: true, content: [{ type: "text", text: message }] });
   }

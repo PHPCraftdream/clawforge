@@ -2,7 +2,7 @@
 // network namespace and data mounts.
 
 import { die, dieWithExitCode } from "#src/core/io/log.ts";
-import { isCaptured, emit } from "#src/core/io/output.ts";
+import { isCaptured, emitRaw } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { HelperNotRunning } from "#src/runtime/runtime.ts";
@@ -31,8 +31,8 @@ export async function cli(ctx: Context, args: string[]): Promise<void> {
    *  already reached the terminal by the time this runs. */
   const report = (result: ExecResult): void => {
     if (captured) {
-      emit(result.stdout);
-      if (result.code !== 0) emit(result.stderr);
+      emitRaw(result.stdout);
+      if (result.code !== 0) emitRaw(result.stderr);
     }
     if (result.code !== 0) dieWithExitCode(`openclaw ${passed.join(" ")} failed (exit ${result.code})`, result.code);
   };

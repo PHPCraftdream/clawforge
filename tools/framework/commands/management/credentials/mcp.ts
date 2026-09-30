@@ -7,7 +7,7 @@
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, die } from "#src/core/io/log.ts";
-import { emit, isCaptured } from "#src/core/io/output.ts";
+import { emit, emitRaw, isCaptured } from "#src/core/io/output.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
 import { HelperNotRunning, requireBootstrapped } from "#src/runtime/runtime.ts";
@@ -104,11 +104,11 @@ export async function mcpCreds(ctx: Context, args: string[]): Promise<void> {
   const token = ctx.settings.env.OPENCLAW_GATEWAY_TOKEN ?? "";
 
   if (tokenOnly) {
-    emit(`${token}\n`);
+    emitRaw(`${token}\n`);
     return;
   }
   if (jsonOnly) {
-    emit(await mcpConfig(ctx));
+    emitRaw(await mcpConfig(ctx));
     return;
   }
 

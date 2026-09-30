@@ -18,7 +18,7 @@ import {
 import { collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
 import { safeName } from "#src/core/names.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
-import { isCaptured, shouldFollow, emit } from "#src/core/io/output.ts";
+import { isCaptured, shouldFollow, emit, emitRaw } from "#src/core/io/output.ts";
 import { takeTail } from "#src/commands/lifecycle/lifecycle.ts";
 import { importHookModule } from "./hook-runtime.ts";
 
@@ -491,7 +491,7 @@ async function runLogsAction(ctx: Context, name: string, rest: string[]): Promis
   // Following runs until interrupted, which only an attended terminal can do. Same choice
   // as lifecycle.ts's logs.
   if (!shouldFollow()) {
-    emit(await stack.readLogs(takeTail(rest).tail ?? "100"));
+    emitRaw(await stack.readLogs(takeTail(rest).tail ?? "100"));
     return;
   }
   await stack.followLogs();

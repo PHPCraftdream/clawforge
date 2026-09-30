@@ -149,6 +149,13 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* Command hints (log lines, errors, `Usage:`, the `help` footer, `nextActions` in JSON and MCP
+  envelopes) now name the command the way it was invoked: `./clawforge` from the monorepo gate
+  (plus `--app <name>` for a non-default deployment) and from the committed shim, `clawforge` from
+  the system-wide command, where `./clawforge` does not run in cmd.exe or PowerShell. The shim
+  exports `CLAWFORGE_INVOKED_AS=./clawforge`; the entry reads and removes it, and a hand-over to
+  another copy passes it on explicitly. An already committed older shim does not set it, so hints
+  from the installed entry say `clawforge` until it is regenerated.
 * `help`: the per-line "(destructive for some actions)" suffix is replaced by a short marker
   (`*` for some actions, `!` for always) with one legend line; the gate and built-in commands
   sit under a "Framework:" heading and share the command column; long summaries (`recipe`,

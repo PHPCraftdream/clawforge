@@ -2,11 +2,13 @@
 // and anyone reading logs sees the same shape before and after the migration.
 
 import { outputSink } from "./output.ts";
+import { localizeHints } from "./invocation.ts";
 
 const useColour = process.stderr.isTTY === true;
 
 /** Diagnostics go to stderr, or to the capture sink when there is one. */
-function write(text: string): void {
+function write(raw: string): void {
+  const text = localizeHints(raw);
   const sink = outputSink();
   if (sink !== undefined) sink(text);
   else process.stderr.write(text);

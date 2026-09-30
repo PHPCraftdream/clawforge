@@ -16,6 +16,9 @@ export interface ExecOptions {
   input?: string | Uint8Array;
   /** Stream output live; capture it when input or an output sink requires pipes. */
   stream?: boolean;
+  /** Duplex process stdio, using safe pipes and exact bytes, without capturing stdout.
+   *  Mutually exclusive with finite input; stderr diagnostics are bounded. */
+  stdioProtocol?: boolean;
   env?: Record<string, string>;
   /** Remove these inherited names without putting their values in a command argument. */
   unsetEnv?: string[];
@@ -134,11 +137,15 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
   return new Promise((resolvePromise, rejectPromise) => {
     validateEnvNames(Object.keys(options.env ?? {}));
     validateEnvNames(options.unsetEnv ?? []);
+    if (options.stdioProtocol === true && options.input !== undefined) {
+      throw new Error("stdioProtocol cannot be combined with finite input");
+    }
+    const protocol = options.stdioProtocol === true;
     // Streaming means "watch it happen on a real terminal", not merely "no sink": a plain
     // pipe has no sink either, but inheriting stdio onto it wires wsl.exe straight to an MSYS
     // pipe on Windows — Node dies with exit 139 the moment the child writes.
     const sink = outputSink();
-    const streamToTerminal = options.stream === true && sink === undefined && options.input === undefined
+    const streamToTerminal = !protocol && options.stream === true && sink === undefined && options.input === undefined
       && process.stdout.isTTY === true && process.stderr.isTTY === true;
 
     const environment = { ...process.env, ...options.env };
@@ -156,29 +163,45 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     // OC_DEBUG=1 wants the undiluted byte stream. streamToTerminal inherits stdio directly,
     // so these "data" handlers never fire for it anyway.
     const debug = process.env.OC_DEBUG === "1";
-    const forwardStdout = debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stdout.write(text); });
-    const forwardStderr = debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stderr.write(text); });
+    const forwardStdout = protocol || debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stdout.write(text); });
+    const forwardStderr = protocol || debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stderr.write(text); });
 
-    // setEncoding keeps a multibyte character split across chunks whole.
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
+    if (protocol) {
+      // Never inherit Windows/MSYS pipe descriptors. Node relays with backpressure,
+      // without decoding, filtering, progress sinks, or accumulating protocol responses.
+      child.stdout?.pipe(process.stdout, { end: false });
+      child.stderr?.pipe(process.stderr, { end: false });
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString("utf8")).slice(-8192);
+      });
+    } else {
+      // setEncoding keeps a multibyte character split across chunks whole.
+      child.stdout?.setEncoding("utf8");
+      child.stderr?.setEncoding("utf8");
+      child.stdout?.on("data", (chunk: string) => {
+        stdout += chunk;
+        if (options.stream === true) {
+          if (forwardStdout !== undefined) forwardStdout.push(chunk);
+          else if (sink !== undefined) sink(chunk);
+          else process.stdout.write(chunk);
+        }
+      });
+      child.stderr?.on("data", (chunk: string) => {
+        stderr += chunk;
+        if (options.stream === true) {
+          if (forwardStderr !== undefined) forwardStderr.push(chunk);
+          else if (sink !== undefined) sink(chunk);
+          else process.stderr.write(chunk);
+        }
+      });
+    }
 
-    child.stdout?.on("data", (chunk: string) => {
-      stdout += chunk;
-      if (options.stream === true) {
-        if (forwardStdout !== undefined) forwardStdout.push(chunk);
-        else if (sink !== undefined) sink(chunk);
-        else process.stdout.write(chunk);
-      }
-    });
-    child.stderr?.on("data", (chunk: string) => {
-      stderr += chunk;
-      if (options.stream === true) {
-        if (forwardStderr !== undefined) forwardStderr.push(chunk);
-        else if (sink !== undefined) sink(chunk);
-        else process.stderr.write(chunk);
-      }
-    });
+    const stopInputRelay = () => {
+      if (!protocol || child.stdin === null) return;
+      process.stdin.unpipe(child.stdin);
+      process.stdin.pause();
+    };
+    child.stdin?.on("close", stopInputRelay);
 
     // SIGTERM first, SIGKILL after a grace period: a child that ignores SIGTERM would
     // otherwise outwait the very deadline this timer exists to enforce.
@@ -194,6 +217,10 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
 
     // Handle early stdin closure and wait for the complete child result.
     child.stdin?.on("error", (error) => {
+      if (protocol && (error as NodeJS.ErrnoException).code === "EPIPE") {
+        stopInputRelay();
+        return;
+      }
       inputError ??= error;
     });
 
@@ -202,6 +229,10 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     });
 
     child.on("close", (code) => {
+      stopInputRelay();
+      child.stdin?.removeListener("close", stopInputRelay);
+      child.stdout?.unpipe(process.stdout);
+      child.stderr?.unpipe(process.stderr);
       if (timer) clearTimeout(timer);
       if (escalate !== undefined) clearTimeout(escalate);
       forwardStdout?.flush();
@@ -230,7 +261,8 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     });
 
     try {
-      if (options.input !== undefined) child.stdin?.end(options.input);
+      if (protocol && child.stdin !== null) process.stdin.pipe(child.stdin);
+      else if (options.input !== undefined) child.stdin?.end(options.input);
       else child.stdin?.end();
     } catch (error) {
       inputError ??= error as Error;

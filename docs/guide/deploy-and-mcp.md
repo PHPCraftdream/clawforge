@@ -115,6 +115,33 @@ flag to work around it). The release `prepack` hook invokes
 Upgrading in the consumer is a plain `npm install` of a newer tarball;
 `app.ts`/`.env`/secrets are untouched.
 
+### Channel MCP stdio bridge
+
+`./clawforge mcp-serve` (the registered `clawforge` server) relays the client's
+live stdin to OpenClaw until client EOF or child closure. The helper path
+(`cli-start`) and the one-off fallback use the same duplex transport contract.
+Stdout is the child's exact protocol bytes, not captured command output: no
+Compose noise filtering or progress sink is applied, and stderr stays separate.
+The bridge uses backpressure-aware pipes even on Windows/WSL, not inherited
+MSYS pipe descriptors; neither Docker path allocates a protocol PTY.
+Only a bounded stderr diagnostic tail is retained. Explicit finite `input`,
+including an empty string, still closes child stdin immediately and captures
+the command result; it cannot be combined with duplex protocol mode.
+`control-mcp` remains a separate framework server and does not use this relay.
+
+The process regression (`tools/checks/runtime/transport/mcp-stdio.check.ts`)
+uses real client/child pipes through `mcpServe`, `DockerRuntime`, and the local
+spawn transport with an executable Docker shim, covering both Docker paths,
+responses before EOF, client EOF, early child closure, exact Unicode/CRLF
+bytes and separate diagnostics. It is not evidence of a real WSL distribution,
+Docker daemon, SSH host, or the upstream OpenClaw server being available.
+For a live Windows-to-WSL verification, run the configured `clawforge` launcher
+from a Windows Node process with piped stdio, first with `cli-start` and then
+after `cli-stop`; send `initialize` and a second request before closing stdin.
+Check that stdout contains only JSON-RPC and diagnostics appear only on stderr.
+This requires a running deployment, working WSL distribution and Docker;
+the controlled-process check alone cannot certify those external components.
+
 ### Control over MCP
 
 Besides the bridge to OpenClaw's channels (`./clawforge mcp-serve`), the framework offers **the

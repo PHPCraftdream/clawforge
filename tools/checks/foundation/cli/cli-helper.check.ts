@@ -3,7 +3,7 @@
 // run --rm`'s create/destroy cost on every call. Covers both layers:
 //   - DockerRuntime.startHelper/stopHelper/helperRunning/execInHelper against a stubbed
 //     transport (no docker, no network);
-//   - the command-level fallback: cli()/mcpServe() try execInHelper first and fall back to
+//   - command-level fallback: cli() tries execInHelper first and falls back to
 //     runOneOff only on HelperNotRunning, not on any other failure.
 
 import { resolve } from "node:path";
@@ -13,7 +13,6 @@ import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { cli } from "#framework/commands/interface/cli.ts";
 import { exec } from "#framework/commands/interface/exec.ts";
-import { mcpServe } from "#framework/commands/management/credentials/mcp.ts";
 import { cliStart, cliStop } from "#framework/commands/interface/cli-helper.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -481,43 +480,6 @@ check("cli is no longer kept out of MCP", openclawCommands.cli.consoleOnly, unde
 check("exec is declared destructive, so MCP requires a confirmation", openclawCommands.exec.destructive, true);
 check("exec is no longer kept out of MCP", openclawCommands.exec.consoleOnly, undefined);
 
-// --- mcpServe(): same fallback contract --------------------------------------------------
-
-{
-  let runOneOffCalled = false;
-  const ctx = {
-    runtime: runtimeStub({
-      execInHelper: async () => ({ code: 0, stdout: "", stderr: "" }),
-      runOneOff: async () => {
-        runOneOffCalled = true;
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    }),
-  } as unknown as Context;
-
-  await mcpServe(ctx, []);
-  check("mcpServe() does not fall back when the helper answers", runOneOffCalled, false);
-}
-
-{
-  let runOneOffArgs: string[] | undefined;
-  let readinessWait: number | undefined;
-  const ctx = {
-    runtime: runtimeStub({
-      waitForHealth: async (timeoutSeconds) => {
-        readinessWait = timeoutSeconds;
-      },
-      runOneOff: async (_service, args) => {
-        runOneOffArgs = args;
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    }),
-  } as unknown as Context;
-
-  await mcpServe(ctx, []);
-  check("mcpServe() falls back to runOneOff with mcp serve args", runOneOffArgs, ["mcp", "serve"]);
-  check("mcpServe() waits for gateway readiness before handing over stdio", readinessWait, 30);
-}
 
 // --- cliStart() / cliStop() ---------------------------------------------------------------
 

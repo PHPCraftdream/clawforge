@@ -277,7 +277,7 @@ export class ComposeOperations {
     if (options.profile !== undefined) prefix.push("--profile", options.profile);
 
     const runArgs = ["run", "--rm"];
-    if (process.stdout.isTTY !== true) runArgs.push("-T");
+    if (options.stdioProtocol === true || process.stdout.isTTY !== true) runArgs.push("-T");
     if (options.noDeps === true) runArgs.push("--no-deps");
     if (options.entrypoint !== undefined) runArgs.push("--entrypoint", options.entrypoint);
 
@@ -286,6 +286,7 @@ export class ComposeOperations {
       return this.#transport.exec("docker", [...base, ...prefix, ...runArgs, service, ...args], {
         stream: options.input === undefined,
         input: options.input,
+        stdioProtocol: options.stdioProtocol,
         allowFailure: options.allowFailure,
         unsetEnv: Object.keys(this.#getSettings().env),
       });

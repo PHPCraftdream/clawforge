@@ -48,8 +48,10 @@ export interface RunOneOffOptions {
   noDeps?: boolean;
   /** Override the entrypoint, e.g. to run `node dist/index.js …`. */
   entrypoint?: string;
-  /** Feed stdin instead of inheriting it; also switches output to captured mode. */
+  /** Feed finite stdin; output is captured and stdin closes immediately. */
   input?: string;
+  /** Relay live process stdio as an exact duplex protocol, without capturing stdout. */
+  stdioProtocol?: boolean;
   /** Return a non-zero exit as a normal ExecResult instead of throwing. Needed by callers
    *  that must inspect the *full* stdout/stderr — the thrown-error path truncates detail to
    *  a few lines. */
@@ -143,7 +145,7 @@ export interface Runtime {
   execInHelper(
     service: string,
     args: string[],
-    options?: { input?: string; allowFailure?: boolean; timeoutMs?: number },
+    options?: { input?: string; stdioProtocol?: boolean; allowFailure?: boolean; timeoutMs?: number },
   ): Promise<ExecResult>;
   /** The general form of execInHelper: any command, not just the app's own CLI entrypoint —
    *  for ad hoc diagnostics. Throws HelperNotRunning when not up. `options.timeoutMs` bounds
@@ -152,7 +154,7 @@ export interface Runtime {
     service: string,
     command: string,
     args: string[],
-    options?: { input?: string; allowFailure?: boolean; timeoutMs?: number },
+    options?: { input?: string; stdioProtocol?: boolean; allowFailure?: boolean; timeoutMs?: number },
   ): Promise<ExecResult>;
 
   /** Name of whatever already publishes `port` and does not belong to this deployment,

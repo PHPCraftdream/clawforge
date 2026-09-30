@@ -40,7 +40,7 @@ export class HelperContainer {
     service: string,
     command: string,
     args: string[],
-    options: { input?: string; allowFailure?: boolean; timeoutMs?: number },
+    options: { input?: string; stdioProtocol?: boolean; allowFailure?: boolean; timeoutMs?: number },
   ): Promise<ExecResult> {
     // Only a RUNNING container (all=false): about to exec into it.
     const id = await this.#containerId(service, false);
@@ -49,10 +49,11 @@ export class HelperContainer {
     }
 
     const execArgs = ["exec", "-i"];
-    if (process.stdout.isTTY === true) execArgs.push("-t");
+    if (options.stdioProtocol !== true && process.stdout.isTTY === true) execArgs.push("-t");
     return this.#transport.exec("docker", [...execArgs, id, command, ...args], {
       stream: options.input === undefined,
       input: options.input,
+      stdioProtocol: options.stdioProtocol,
       allowFailure: options.allowFailure,
       timeoutMs: options.timeoutMs,
     });
@@ -64,7 +65,7 @@ export class HelperContainer {
   async execInHelper(
     service: string,
     args: string[],
-    options: { input?: string; allowFailure?: boolean; timeoutMs?: number } = {},
+    options: { input?: string; stdioProtocol?: boolean; allowFailure?: boolean; timeoutMs?: number } = {},
   ): Promise<ExecResult> {
     return this.execInContainer(service, "node", ["dist/index.js", ...args], options);
   }
@@ -73,7 +74,7 @@ export class HelperContainer {
     service: string,
     command: string,
     args: string[],
-    options: { input?: string; allowFailure?: boolean; timeoutMs?: number } = {},
+    options: { input?: string; stdioProtocol?: boolean; allowFailure?: boolean; timeoutMs?: number } = {},
   ): Promise<ExecResult> {
     return this.execInContainer(service, command, args, options);
   }

@@ -37,11 +37,11 @@ export async function mcpConfigFilePath(_ctx: Context): Promise<string> {
 
 /** stdio bridge to the gateway's channel conversations. */
 export async function mcpServe(ctx: Context, args: string[]): Promise<void> {
-  // stdin/stdout/stderr inherited, so the client's JSON-RPC flows straight through; the
-  // gateway token reaches the CLI via the compose environment. Tried first, before the
-  // isRunning() preflight below: a successful exec already proves the gateway is reachable.
+  // Exact duplex stdio via transport pipes; never captured command output or a PTY.
+  // The gateway token reaches the CLI via the compose environment. A successful helper
+  // exec already proves reachability, before the fallback readiness preflight.
   try {
-    await ctx.runtime.execInHelper(CLI_HELPER_SERVICE, ["mcp", "serve", ...args]);
+    await ctx.runtime.execInHelper(CLI_HELPER_SERVICE, ["mcp", "serve", ...args], { stdioProtocol: true });
     return;
   } catch (error) {
     if (!(error instanceof HelperNotRunning)) throw error;
@@ -53,7 +53,7 @@ export async function mcpServe(ctx: Context, args: string[]): Promise<void> {
   // The container can be running while the gateway is still warming up; wait before handing
   // over stdio so the first JSON-RPC request can't race the service startup.
   await ctx.runtime.waitForHealth(30);
-  await ctx.runtime.runOneOff("cli", ["mcp", "serve", ...args], { profile: "cli" });
+  await ctx.runtime.runOneOff("cli", ["mcp", "serve", ...args], { profile: "cli", stdioProtocol: true });
 }
 
 interface McpServerEntry {

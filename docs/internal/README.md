@@ -8,7 +8,7 @@ unfixed findings; every other status is taken from the document's own summary.
 ## Current
 
 * [review-2026-09-30-round-26.md](review-2026-09-30-round-26.md) — round 26, after the system-wide
-  install. Findings R26-01…R26-17, being fixed.
+  install. Findings R26-01…R26-17, all fixed (the `worktrees/` leftovers of R26-17 are the owner's call).
 * [review-2026-09-30-xs-round-25.md](review-2026-09-30-xs-round-25.md) — XS round 25, evidence-based
   static review. No P0–P3 found; R24-01 confirmed closed.
 

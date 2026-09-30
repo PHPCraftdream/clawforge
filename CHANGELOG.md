@@ -157,6 +157,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* The documented offsite backup hook seals operator storage and creates binary archives
+  exclusively with verified private permissions before content is written, through the
+  installed `private-config` public entry. Plaintext shared Windows/WSL storage is explicitly
+  excluded; existing copies require separate permission auditing.
+* Windows private-directory DACL grants inherit only the trusted SID set, retaining the
+  owner's read/write access to existing inherited files when the directory is sealed.
 * Egress redaction handles structural URL userinfo normalization, whitespace-spanning
   diagnostic authorities, nested literal credential URLs and parser-ignored query-name
   controls without changing private probe input.

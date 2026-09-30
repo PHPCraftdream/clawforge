@@ -7,7 +7,7 @@
 // get, from the same functions.
 
 import { helpEntryLine } from "#framework/core/io/help-render.ts";
-import { runGateCommand, gateHelpLines, gateCommandHelp, type GateCommand } from "#framework/integration/gate.ts";
+import { runGateCommand, gateHelpLines, gateCommandHelp, helpWithoutDeployment, type GateCommand } from "#framework/integration/gate.ts";
 import { inputSchema, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { normalizeVersionAlias, versionGateCommand } from "#framework/integration/version.ts";
@@ -250,6 +250,36 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
     const text = renderCompletion(shell, model, false);
     check(`${shell}: installed gate: no --app and no list call`, [/--app/.test(text), text.includes("list --json")], [false, false]);
   }
+}
+
+// --- help where there is no deployment -------------------------------------------------------
+
+{
+  const gate = [sample({ name: "init", summary: "Initialise this directory" }), versionGateCommand];
+  const context = { deploymentCommands: Object.keys(openclawCommands) };
+  const help = async (argv: string[], extra: { checkout?: string } = {}): Promise<{ code: number | undefined; text: string }> => {
+    let text = "";
+    const code = await withOutputSink((chunk) => {
+      text += chunk;
+    }, async () => helpWithoutDeployment(gate, argv, { ...context, ...extra }));
+    return { code, text };
+  };
+
+  const bare = await help([]);
+  check("no arguments outside an app lists the gate commands and exits 0", bare.code === 0 && bare.text.includes("Initialise this directory"), true);
+  check("a command is no help request", helpWithoutDeployment(gate, ["status"], context), undefined);
+
+  const unknown = await help(["help", "int"]);
+  check("help <unknown> outside an app is an unknown command, exit 1", unknown.code === 1 && unknown.text.includes("unknown command: int") && !unknown.text.includes("deployment command"), true);
+  check("and suggests the nearest known name", unknown.text.includes("did you mean:"), true);
+  const deployment = await help(["help", "status"]);
+  check("a real deployment command still says it needs an app folder", deployment.code === 1 && deployment.text.includes("needs an app folder"), true);
+
+  const inCheckout = await help(["help"], { checkout: "/some/checkout" });
+  check("in a checkout the list does not offer init", inCheckout.code === 0 && !inCheckout.text.includes("Initialise this directory") && !inCheckout.text.includes("clawforge init"), true);
+  check("and says it is a checkout whose root lists the commands", inCheckout.text.includes("ClawForge checkout") && inCheckout.text.includes("./clawforge help"), true);
+  const checkoutCommand = await help(["help", "status"], { checkout: "/some/checkout" });
+  check("help <deployment command> in a checkout does not advise init", checkoutCommand.code === 1 && !checkoutCommand.text.includes("clawforge init"), true);
 }
 
 finish("gate-command");

@@ -18,10 +18,11 @@ import { spawnSync } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
 import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, helpWithoutDeployment, type GateCommand } from "../integration/gate.ts";
-import { reportError } from "../core/io/log.ts";
+import { info, reportError } from "../core/io/log.ts";
 import { INVOKED_AS_ENV, cli, invocation, setInvocation, takeInvokedAs } from "../core/io/invocation.ts";
 import { useDeployment } from "../runtime/deployment.ts";
-import { initApp, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
+import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
+import { openclawCommands } from "../commands/interface/index.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";
 import { normalizeVersionAlias, makeVersionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
@@ -47,7 +48,9 @@ const argv = normalizeVersionAlias(scheduled ? rawArgv.slice(2) : rawArgv);
 const cwd = process.cwd();
 const initializing = argv[0] === "init" && !argv.includes("--help") && !argv.includes("-h");
 const ancestor = scheduled ? undefined : findAppRoot(cwd);
-if (initializing && !scheduled && ancestor !== undefined && ancestor !== cwd) {
+// `init --local` writes nothing, so from a subfolder it only prints the editor-types line.
+const localTypesOnly = initializing && argv.includes("--local") && ancestor !== undefined;
+if (initializing && !scheduled && ancestor !== undefined && ancestor !== cwd && !localTypesOnly) {
   reportError(`${ancestor} already holds app.ts — this directory is inside that deployment; init here would nest a second one`);
   process.exit(1);
 }
@@ -79,10 +82,14 @@ const gateCommands: GateCommand[] = [
       "that delegates to this package's CLI. Project MCP settings for Claude Code and Codex " +
       "are created automatically, without changing global client settings.\n" +
       "The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
-      "Refuses if app.ts already exists — run this once, then ./clawforge bootstrap. `init --local` in an already\n" +
-      "initialised directory only prints the editor-types npm line and writes nothing.",
+      "Refuses if app.ts already exists — run this once, then ./clawforge bootstrap. " +
+      "`init --local` in an already initialised directory only prints the editor-types npm line and writes nothing.",
     arguments: INIT_ARGUMENTS,
     run: async (args) => {
+      if (localTypesOnly && ancestor !== cwd) {
+        for (const line of await localTypesLines()) info(line);
+        return 0;
+      }
       await initApp(appRoot, { local: parseDeclaredArgs(INIT_ARGUMENTS, args).local === true });
       return 0;
     },
@@ -100,7 +107,7 @@ const appFile = resolve(appRoot, "app.ts");
 try {
   await access(appFile);
 } catch {
-  const helpExit = helpWithoutDeployment(gateCommands, argv);
+  const helpExit = helpWithoutDeployment(gateCommands, argv, { deploymentCommands: Object.keys(openclawCommands), checkout });
   if (helpExit !== undefined) process.exit(helpExit);
   reportError(`no app.ts in ${appRoot}`);
   if (checkout !== undefined) reportError(`this is a ClawForge checkout (${checkout}) — './clawforge' in its root is the entry`);

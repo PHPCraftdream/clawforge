@@ -139,7 +139,8 @@ async function printDestroyPlan(ctx: Context, targets: DestroyTarget[], bootstra
     await ctx.runtime.showStatus();
   } else log(NEVER_BOOTSTRAPPED);
   for (const target of bootstrapped ? targets : targets.filter((entry) => entry.flag !== "data")) {
-    info(`would remove ${target.path} (${target.envName}, ${await sizeReport(ctx, target.path)})`);
+    const size = await sizeReport(ctx, target.path);
+    info(size === "absent" ? `${target.path} (${target.envName}) absent — nothing to remove` : `would remove ${target.path} (${target.envName}, ${size})`);
   }
   if (targets.length === 0 && bootstrapped) {
     info("no --data/--backups/--snapshots given — only the containers/network/volumes above would go");

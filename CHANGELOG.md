@@ -6,6 +6,18 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* System-wide `clawforge` hands over to the checkout's gate from `APPS/<name>` on Windows too (the
+  `apps` directory is matched by its real spelling), so the global package no longer loads the
+  checkout's `app.ts` next to its own framework. An `app.ts` inside a checkout that the gate cannot
+  take over is refused with the checkout entry named, instead of loading a second framework copy.
+* Help without an app: a bare `clawforge` lists the gate commands (exit 0); `help <unknown>` says
+  `unknown command: <x>` with a did-you-mean over the deployment and gate commands, while a real
+  deployment command keeps "needs an app folder"; inside a checkout the list no longer offers
+  `init` and says `./clawforge help` at the checkout root lists the commands. `init --local` from a
+  subfolder of an initialised app prints the editor-types line instead of refusing (it writes
+  nothing); plain `init` there still refuses.
+* `init` help no longer breaks a sentence mid-line. A dry-run `destroy` shows an absent directory as
+  `absent — nothing to remove` rather than `would remove … (absent)`.
 * A privileged command (backup, restore, secrets …) no longer asks for sudo on a path it can write
   when the target's existence probe fails once: `sudoFor` asks the probe up to three times before
   treating a refusal as a directory this user cannot enter. Seen as "needs root and sudo asks for

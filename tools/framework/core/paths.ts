@@ -12,6 +12,8 @@
 //
 // Rule for the rest of the codebase: no string surgery on paths outside this module.
 
+import { isAbsolute, relative, resolve } from "node:path";
+
 /** Where a path is meaningful. */
 export type PathSpace = "tool" | "target" | "container";
 
@@ -145,6 +147,12 @@ export function isUnder(child: string, parent: string): boolean {
   const c = normalisePosix(child);
   const p = normalisePosix(parent).replace(/\/+$/, "");
   return c === p || c.startsWith(`${p}/`);
+}
+
+/** Whether `dir` is `root` or inside it, as native tool paths. */
+export function isWithin(root: string, dir: string): boolean {
+  const within = relative(resolve(root), resolve(dir));
+  return within === "" || (!within.startsWith("..") && !isAbsolute(within));
 }
 
 // --- target ↔ container -------------------------------------------------------

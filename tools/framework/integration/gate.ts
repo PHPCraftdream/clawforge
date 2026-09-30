@@ -67,20 +67,30 @@ export async function runGateCommand(
   }
 }
 
-/** `help`/`--help`/`-h` where no deployment exists: the gate's own commands only. Returns the
- *  exit code, or undefined when argv is not a help request. */
-export function helpWithoutDeployment(commands: GateCommand[], argv: string[]): number | undefined {
+/** What the help without a deployment knows about its surroundings. */
+export interface HelpContext {
+  /** Names of the deployment's commands, known without an app.ts. */
+  readonly deploymentCommands: readonly string[];
+  /** The ClawForge checkout the directory is in, if any: `init` is refused there. */
+  readonly checkout?: string;
+}
+
+/** `help`/`--help`/`-h` (or no argument at all) where no deployment exists: the gate's own
+ *  commands only. Returns the exit code, or undefined when argv is not a help request. */
+export function helpWithoutDeployment(commands: GateCommand[], argv: string[], context: HelpContext = { deploymentCommands: [] }): number | undefined {
   const first = argv[0];
-  if (first !== "help" && first !== "--help" && first !== "-h") return undefined;
+  if (first !== undefined && first !== "help" && first !== "--help" && first !== "-h") return undefined;
   const target = first === "help" ? argv[1] : undefined;
+  const { checkout } = context;
   if (target === undefined || target === "--help" || target === "-h" || target === "help") {
     log("clawforge — manage self-hosted OpenClaw deployments");
     info("");
     info("Usage: ./clawforge <command> [options]");
     info("");
-    for (const line of gateHelpLines(commands)) info(line);
+    for (const line of gateHelpLines(checkout === undefined ? commands : commands.filter((entry) => entry.name !== "init"))) info(line);
     info("");
-    info("The full command list appears inside an initialised app folder (create one with: ./clawforge init).");
+    if (checkout === undefined) info("The full command list appears inside an initialised app folder (create one with: ./clawforge init).");
+    else info(`This is a ClawForge checkout (${checkout}): ./clawforge help at its root lists every command, apps/<name> holds the deployments.`);
     return 0;
   }
   const command = commands.find((entry) => entry.name === target);
@@ -88,7 +98,15 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[]): 
     gateCommandHelp(command);
     return 0;
   }
-  reportError(`"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — run: ./clawforge init`);
+  if (context.deploymentCommands.includes(target)) {
+    reportError(
+      checkout === undefined
+        ? `"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — run: ./clawforge init`
+        : `"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — this is a ClawForge checkout; run it from apps/<name> or with ./clawforge at the checkout root`,
+    );
+    return 1;
+  }
+  reportUnknownCommand(target, [...context.deploymentCommands, ...commands.map((entry) => entry.name), "help"]);
   return 1;
 }
 

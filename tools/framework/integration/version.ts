@@ -1,8 +1,9 @@
 // `--version`, `-v` and `version`: the framework version, answered before any deployment is resolved.
 
 import { existsSync, realpathSync } from "node:fs";
-import { basename, dirname, relative, resolve, isAbsolute } from "node:path";
-import { frameworkPackage } from "../commands/management/lock.ts";
+import { basename, dirname, resolve } from "node:path";
+import { isWithin } from "../core/paths.ts";
+import { frameworkPackage } from "../core/env.ts";
 import { emit } from "../core/io/output.ts";
 import { die } from "../core/io/log.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";
@@ -39,10 +40,7 @@ export function classifyCopy(packageDir: string, appRoot?: string): { source: Ve
   const dir = real(packageDir);
   const tools = dirname(dir);
   if (basename(tools) === "tools" && existsSync(resolve(tools, "clawforge.ts"))) return { source: "checkout", path: dirname(tools) };
-  if (appRoot !== undefined) {
-    const within = relative(real(appRoot), dir);
-    if (within !== "" && !within.startsWith("..") && !isAbsolute(within)) return { source: "local", path: dir };
-  }
+  if (appRoot !== undefined && dir !== real(appRoot) && isWithin(real(appRoot), dir)) return { source: "local", path: dir };
   return { source: "global", path: dir };
 }
 

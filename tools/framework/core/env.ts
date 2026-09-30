@@ -26,6 +26,20 @@ import { envFile } from "../runtime/deployment.ts";
 export const frameworkRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const monorepoRoot = resolve(frameworkRoot, "..", "..");
 
+/** The framework package this process runs: its version and directory (frameworkRoot in
+ *  source, its parent in dist/). */
+export async function frameworkPackage(): Promise<{ version: string | undefined; dir: string } | undefined> {
+  for (const dir of [frameworkRoot, resolve(frameworkRoot, "..")]) {
+    try {
+      const parsed = JSON.parse(await readFile(resolve(dir, "package.json"), "utf8")) as { name?: string; version?: string };
+      if (parsed.name === "@clawforge/framework") return { version: parsed.version, dir };
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return undefined;
+}
+
 /** Whether `root` is a ClawForge checkout — proven by the gate script every checkout is
  *  built around (tools/clawforge.ts), not assumed from this file's location. monorepoRoot
  *  is only a good guess in colocated mode: installed as a package, the same two climbed

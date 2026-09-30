@@ -98,6 +98,11 @@ try {
   const appHelp = await clawforge(["help", "status"], outside);
   check("outside any app help <app command> says it needs an app folder", appHelp.code === 1 && appHelp.output.includes("needs an app folder"), true);
 
+  const bareRun = await clawforge([], outside);
+  check("outside any app a bare clawforge lists the gate commands and exits 0", bareRun.code === 0 && bareRun.output.includes("init") && !bareRun.output.includes("no app.ts"), true);
+  const unknownHelp = await clawforge(["help", "int"], outside);
+  check("outside any app help <unknown> is an unknown command with a suggestion", unknownHelp.code === 1 && unknownHelp.output.includes("unknown command: int") && unknownHelp.output.includes("did you mean:"), true);
+
   // --- a fresh app folder with no framework of its own ----------------------------------------
   const fresh = join(outside, "cf-fresh");
   await mkdir(fresh);
@@ -128,6 +133,9 @@ try {
   check("init in a subfolder of an app is refused", subInit.code, 1);
   check("and says which ancestor holds app.ts", subInit.output.includes("already holds app.ts") && subInit.output.includes("cf-fresh"), true);
   check("and creates nothing there", existsSync(join(sub, "app.ts")), false);
+  const subLocal = await clawforge(["init", "--local"], sub);
+  check("init --local in a subfolder prints the editor-types line instead of refusing", subLocal.code === 0 && subLocal.output.includes("npm install --no-save "), true);
+  check("and still writes nothing there", existsSync(join(sub, "app.ts")) || existsSync(join(sub, "config")), false);
 
   // The committed MCP launcher, as a client starts it: no local package, so the system-wide
   // command serves the session over the same stdio.
@@ -245,8 +253,30 @@ try {
   const fromApp = await clawforge(["status"], appDir);
   check("from apps/<name> the cwd selects it, so hints stay plain", fromApp.output.includes("clawforge bootstrap") && !fromApp.output.includes("--app"), true);
 
+  // The file system may not tell apps from APPS; the hand-over must not depend on the spelling.
+  if (windows) {
+    const upper = join(monorepoRoot, "APPS", checkoutApp);
+    const upperInfo = lastJson(await clawforge(["version", "--json"], upper));
+    check("from APPS/<name> the hand-over to the checkout gate still happens", upperInfo.source, "checkout");
+    const upperStatus = await clawforge(["help"], upper);
+    check("and its gate answers there too", upperStatus.code === 0 && upperStatus.output.includes("new-app"), true);
+  }
+
+  // An app.ts in a checkout outside apps/<name> is not loaded as a second framework copy.
+  const strayDir = resolve(monorepoRoot, "docs", `${checkoutApp}-stray`);
+  await mkdir(strayDir, { recursive: true });
+  try {
+    await writeFile(join(strayDir, "app.ts"), "export default {};\n", "utf8");
+    const stray = await clawforge(["status"], strayDir);
+    check("an app.ts in a checkout that the gate cannot take over is refused", stray.code === 1 && stray.output.includes("inside the ClawForge checkout") && !stray.output.includes("cannot load"), true);
+  } finally {
+    await rm(strayDir, { recursive: true, force: true });
+  }
+
   // The global command inside a checkout never creates a deployment in the framework sources.
   const docs = resolve(monorepoRoot, "docs");
+  const docsHelp = await clawforge(["help"], docs);
+  check("help in a checkout folder does not offer init and names the checkout", docsHelp.code === 0 && docsHelp.output.includes("ClawForge checkout") && !docsHelp.output.includes("clawforge init"), true);
   const inDocs = await clawforge(["status"], docs);
   check("in a non-app subfolder of a checkout it names the checkout entry", inDocs.code === 1 && inDocs.output.includes("'./clawforge' in its root") && !inDocs.output.includes("clawforge init"), true);
   const freshApp = resolve(appsDir, `${checkoutApp}-new`);

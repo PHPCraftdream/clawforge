@@ -11,7 +11,7 @@
 
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
 import { resolve, basename, dirname, relative } from "node:path";
-import { frameworkRoot } from "../../core/env.ts";
+import { frameworkPackage, frameworkRoot } from "../../core/env.ts";
 import type { CommandArgument } from "../../core/app.ts";
 import { log, info, die } from "../../core/io/log.ts";
 import { safeName } from "../../core/names.ts";
@@ -249,25 +249,12 @@ export const INIT_ARGUMENTS: CommandArgument[] = [
   { name: "local", description: "Print the npm command for editor types (also in an already initialised directory)", kind: "flag" },
 ];
 
-/** The package directory this CLI runs from: frameworkRoot in source, its parent in dist/. */
-async function packageDirectory(): Promise<string | undefined> {
-  for (const candidate of [frameworkRoot, resolve(frameworkRoot, "..")]) {
-    try {
-      const parsed = JSON.parse(await readFile(resolve(candidate, "package.json"), "utf8")) as { name?: string };
-      if (parsed.name === "@clawforge/framework") return candidate;
-    } catch {
-      // Try the next candidate.
-    }
-  }
-  return undefined;
-}
-
 /** `--local`: editors resolve `@clawforge/framework` only from a node_modules the app has.
  *  The package is unpublished, so a registry spec would fail; the running copy's own directory
  *  works today. --no-save: `--save-dev <dir>` would commit a machine path (file:…) into
  *  package.json. Printed, never run — init does not run npm. */
-async function localTypesLines(): Promise<string[]> {
-  const directory = await packageDirectory();
+export async function localTypesLines(): Promise<string[]> {
+  const directory = (await frameworkPackage())?.dir;
   const spec = directory === undefined ? "@clawforge/framework" : `"${directory}"`;
   return [
     `editor types: run  npm install --no-save ${spec}`,

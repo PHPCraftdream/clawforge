@@ -15,7 +15,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, dieWithExitCode } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { frameworkRoot } from "#src/core/env.ts";
+import { frameworkPackage } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
 import { requirements } from "#src/service/secrets.ts";
 import { listRecipeDirectories } from "#src/service/recipe.ts";
@@ -85,19 +85,6 @@ export interface DeploymentLock {
 
 export function lockFile(): string {
   return resolve(deploymentDir(), "config", "deployment.lock.json");
-}
-
-/** The framework package this process runs: its version and directory. */
-export async function frameworkPackage(): Promise<{ version: string | undefined; dir: string } | undefined> {
-  for (const dir of [frameworkRoot, resolve(frameworkRoot, "..")]) {
-    try {
-      const parsed = JSON.parse(await readFile(resolve(dir, "package.json"), "utf8")) as { name?: string; version?: string };
-      if (parsed.name === "@clawforge/framework") return { version: parsed.version, dir };
-    } catch {
-      // Try the next candidate.
-    }
-  }
-  return undefined;
 }
 
 export async function frameworkVersion(): Promise<string | undefined> {

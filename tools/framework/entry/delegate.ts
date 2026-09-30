@@ -14,6 +14,7 @@ import { basename, dirname, resolve } from "node:path";
 import { INVOKED_AS_ENV, invocation } from "../core/io/invocation.ts";
 import { reportError } from "../core/io/log.ts";
 import { splitLeadingAppFlag } from "../integration/gate.ts";
+import { isWithin } from "../core/paths.ts";
 
 const PACKAGE = "@clawforge/framework";
 const DELEGATED = "CLAWFORGE_DELEGATED";
@@ -79,9 +80,49 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
 
   const inCheckout = checkoutGate(appRoot);
   if (inCheckout !== undefined) runInstead(inCheckout, argv, false);
-  const parent = dirname(appRoot);
-  const appGate = basename(parent) === "apps" && existsSync(resolve(appRoot, "app.ts")) ? checkoutGate(dirname(parent)) : undefined;
-  if (appGate !== undefined) runInstead(appGate, withApp(basename(appRoot), argv), false);
+  // The cwd keeps the case it was typed in; the file system may not (Windows: APPS/<name>).
+  const canonical = canonicalCase(appRoot);
+  const parent = dirname(canonical);
+  const hasApp = existsSync(resolve(appRoot, "app.ts"));
+  const appGate = isAppsDirectory(parent) && hasApp ? checkoutGate(dirname(parent)) : undefined;
+  if (appGate !== undefined) runInstead(appGate, withApp(basename(canonical), argv), false);
+
+  // No hand-over, yet the app sits in a checkout: its app.ts imports that checkout's framework,
+  // so this package would load a second copy of it next to its own.
+  const checkout = hasApp ? findCheckoutRoot(appRoot) : undefined;
+  if (checkout !== undefined && !isWithin(realOrSelf(checkout), realOrSelf(self))) {
+    reportError(`${appRoot} is inside the ClawForge checkout ${checkout} but is not one of its apps/<name> deployments — run it with the checkout's own entry: './clawforge' in ${checkout}`);
+    process.exit(1);
+  }
+}
+
+function realOrSelf(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/** The path as the file system spells it, where that differs from the typed one only by case. */
+function canonicalCase(path: string): string {
+  return process.platform === "win32" ? realOrSelf(path) : path;
+}
+
+function isAppsDirectory(dir: string): boolean {
+  const name = basename(dir);
+  return process.platform === "win32" ? name.toLowerCase() === "apps" : name === "apps";
+}
+
+/** The ClawForge checkout at or above `start` (the same test as the hand-over gate). */
+export function findCheckoutRoot(start: string): string | undefined {
+  let dir = resolve(start);
+  for (;;) {
+    if (checkoutGate(dir) !== undefined) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
 }
 
 /** `--app <name>` for the gate, once: a leading one in `argv` is kept when it names the same

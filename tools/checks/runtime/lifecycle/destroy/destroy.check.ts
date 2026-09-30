@@ -436,6 +436,7 @@ if (process.platform === "linux") {
   check("absent dry run needs no sudo and runs no target script", order, []);
   check("absent dry run reports the directories absent", text.includes(`${BACKUP_DIR}`) && text.includes("absent"), true);
   check("absent dry run says there is nothing to remove", text.includes("nothing to remove"), true);
+  check("absent directories are not listed as 'would remove'", text.includes("would remove"), false);
   check("absent dry run does not invite a real run", text.includes("--yes") || text.includes("for a real run"), false);
 }
 

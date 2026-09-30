@@ -140,6 +140,9 @@ const BATCH_MARKER = "__clawforge_cli_batch__";
 /** Slot failure when the batch could not run because the instance is not running. */
 export const BATCH_NOT_RUNNING = "instance not running";
 
+/** Slot failure when the batch could not run because the deployment was never bootstrapped. */
+export const BATCH_NOT_BOOTSTRAPPED = "instance never bootstrapped";
+
 /** Runs several OpenClaw CLI invocations in ONE throwaway container instead of one each —
  *  `docker compose run --rm` pays Compose's create/destroy cost again each time (~5-7s;
  *  gatherInspection's reads paid that four times over for one inspection, dominating its
@@ -179,9 +182,14 @@ export async function openclawCliBatch(ctx: Context, commands: readonly string[]
   } catch {
     // The container itself never ran (gateway unreachable, image missing, …): every command
     // inside it is equally unanswered, same gap a single failed runOneOff leaves.
-    // Never bootstrapped is not running too; any other probe failure keeps the transport reading.
-    const running = await ctx.runtime.isRunning().catch((error: unknown) => !(error instanceof NotBootstrapped));
-    return commands.map(() => ({ code: 1, stdout: "", failure: running ? "batch transport failed" : BATCH_NOT_RUNNING }));
+    // Never bootstrapped is its own reason (`up` refuses there); any other probe failure keeps the transport reading.
+    let failure = "batch transport failed";
+    try {
+      if (!(await ctx.runtime.isRunning())) failure = BATCH_NOT_RUNNING;
+    } catch (error) {
+      if (error instanceof NotBootstrapped) failure = BATCH_NOT_BOOTSTRAPPED;
+    }
+    return commands.map(() => ({ code: 1, stdout: "", failure }));
   }
 
   if (result.code !== 0) {

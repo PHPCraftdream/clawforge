@@ -25,6 +25,14 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `lock --check` on an instance that is not running separates "could not compare" (inventories not
   read) from real differences, and ends with a single summary line instead of printing it twice.
   The exit code and the `--json` output are unchanged.
+* `lock --check` (and the MCP `lock` tool, and `--json`) uses the same summary everywhere: unread
+  inventories are "could not compare", not "N difference(s)", and the text output opens with a `==>`
+  headline again. On a never-bootstrapped instance they are reported as `NOT_BOOTSTRAPPED` (not
+  `GATEWAY_DOWN`) with `bootstrap` as the next action, since `up` refuses there. The exit code and the
+  JSON document shape are unchanged.
+* Shell completion of `--app` values calls the command as typed (`clawforge` or `./clawforge`, from
+  any folder) with `list --json --no-status` — no per-Tab polling of every deployment's target — and
+  skips hidden directories; PowerShell completes `--app` values too.
 * Lines copied into another shell or host are printed verbatim, not rewritten to this terminal's
   invocation: the cron line of `backup install` / `watch install` (what is shown is what `--apply`
   installs), the Task Scheduler command lines, and the server bring-up hints of `deploy` (the

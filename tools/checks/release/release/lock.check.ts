@@ -387,7 +387,9 @@ check("and confirms secrets are already kept out of that new repository", initAd
         check(`${label}: writer preserves exact prior bytes`, await readFile(lockFile(), "utf8"), priorBytes);
         const { output, failure } = await runCheck();
         const report = JSON.parse(output) as { problems: Problem[] };
-        check(`${label}: check fails on unknown inventory`, failure.includes("difference(s) from the lock"), true);
+        check(`${label}: check fails on unknown inventory`, failure.includes("inventory read(s) could not be compared"), true);
+        check(`${label}: unknown inventories are not counted as differences`, failure,
+          `${report.problems.length > scenario.unknown.length ? `${report.problems.length - scenario.unknown.length} difference(s) from the lock; ` : ""}${scenario.unknown.length} inventory read(s) could not be compared (inventory not read)`);
         check(`${label}: check names only unknown inventories`,
           report.problems.filter((entry) => entry.code === "CLI_READ_FAILED").map((entry) =>
             entry.detail.includes("plugins list") ? "plugins" : "skills"), scenario.unknown);
@@ -426,10 +428,17 @@ check("and confirms secrets are already kept out of that new repository", initAd
       const isRunning = state === true;
       wholeBatch = "throw";
       const down = await runCheck();
-      const codes = (JSON.parse(down.output) as { problems: Problem[] }).problems.map((entry) => entry.code);
+      const doc = JSON.parse(down.output) as { problems: Problem[]; nextActions: string[] };
+      const codes = doc.problems.map((entry) => entry.code);
+      const unreadCode = state === "never" ? "NOT_BOOTSTRAPPED" : "GATEWAY_DOWN";
       check(`${name} instance with unreadable inventory fails the check`, down.failure !== "", true);
-      check(`${name} instance: unreadable inventory is classified`, codes, isRunning ? ["CLI_READ_FAILED", "CLI_READ_FAILED"] : ["GATEWAY_DOWN", "GATEWAY_DOWN"]);
-      check(`${name} instance: not-running detail`, down.output.includes("not running — start it or bootstrap first"), !isRunning);
+      check(`${name} instance: unreadable inventory is classified`, codes, isRunning ? ["CLI_READ_FAILED", "CLI_READ_FAILED"] : [unreadCode, unreadCode]);
+      check(`${name} instance: not-running detail`, down.output.includes("not running — start it or bootstrap first"), state === false);
+      check(`${name} instance: never-bootstrapped detail`, down.output.includes("has never been bootstrapped"), state === "never");
+      check(`${name} instance: nextActions`, doc.nextActions.includes("./clawforge bootstrap"), state === "never");
+      check(`${name} instance: nextActions never offer up for a never-bootstrapped one`, doc.nextActions.includes("./clawforge up"), state === false);
+      // Unread is not a difference, in json/MCP as in text: the lock is present here, so nothing differs.
+      check(`${name} instance: json failure wording`, down.failure, isRunning ? "2 inventory read(s) could not be compared (inventory not read)" : `2 inventory read(s) could not be compared (${state === "never" ? "instance never bootstrapped" : "instance is not running"})`);
     }
     // Human output (no sink: log/info go to stderr): unread inventories are not differences,
     // and the summary is printed once, by the failure.
@@ -446,13 +455,21 @@ check("and confirms secrets are already kept out of that new repository", initAd
     await rm(lockFile(), { force: true });
     const unread = await humanRun();
     check("not running: unread inventories are named as not compared", unread.text.includes("could not compare — instance is not running:"), true);
+    check("not running: a headline precedes the sections", unread.text.indexOf("==>") >= 0 && unread.text.indexOf("==>") < unread.text.indexOf("could not compare"), true);
     check("not running: both inventories listed", unread.text.match(/GATEWAY_DOWN/g)?.length, 2);
     check("not running: only the missing lock is a difference", unread.text.match(/LOCK_MISSING/g)?.length, 1);
     check("not running: the summary is the failure alone, not repeated in the output", unread.text.includes("difference(s) from the lock"), false);
-    check("not running: one summary counting differences and unread separately", unread.failure, "1 difference(s) from the lock; 2 inventory read(s) could not be compared");
+    check("not running: one summary counting differences and unread separately", unread.failure, "1 difference(s) from the lock; 2 inventory read(s) could not be compared (instance is not running)");
+    const jsonUnread = await runCheck();
+    check("not running: json/MCP summary matches the text summary", jsonUnread.failure, unread.failure);
     await writeFile(lockFile(), JSON.stringify(baseline));
     const onlyUnread = await humanRun();
-    check("only unread inventories: no difference count", onlyUnread.failure, "2 inventory read(s) could not be compared");
+    check("only unread inventories: no difference count", onlyUnread.failure, "2 inventory read(s) could not be compared (instance is not running)");
+    running = "never";
+    const neverRun = await humanRun();
+    check("never bootstrapped: text names it", neverRun.text.includes("could not compare — instance never bootstrapped:"), true);
+    check("never bootstrapped: failure names it", neverRun.failure, "2 inventory read(s) could not be compared (instance never bootstrapped)");
+    running = false;
     check("only unread inventories: no differences section", onlyUnread.text.includes("differences:"), false);
     running = true;
     wholeBatch = "ok";

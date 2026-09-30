@@ -3,9 +3,9 @@
 // positional (CommandArgument.choices) — its flags placed under the right action
 // (CommandArgument.actions), the same field help-render.ts and the MCP schema already read.
 //
-// bash/zsh call `./clawforge list --json` lazily, from inside the shell function, only once
-// a shell asks for `--app`'s value — never baked into the generated text. Output never
-// carries a machine path: only the invoked name, `clawforge` or `./clawforge`.
+// Every shell calls `<invoked name> list --json --no-status` lazily, from inside the completer,
+// only once a shell asks for `--app`'s value — never baked into the generated text, and via
+// whichever of `clawforge`/`./clawforge` was typed. Output never carries a machine path.
 
 import { parseDeclaredArgs } from "../core/arguments.ts";
 import { reportError } from "../core/io/log.ts";
@@ -75,7 +75,9 @@ export function buildCompletionModel(gateCommands: readonly GateCommand[]): read
   return [...gateSpecs, ...fixed, ...appSpecs].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-const LIST_NAMES_JSON = "$(./clawforge list --json 2>/dev/null | grep -o '\"name\":\"[^\"]*\"' | cut -d'\"' -f4)";
+// Hidden directories (.r28) are not deployments.
+const LIST_NAMES_JSON =
+  "$(\"${COMP_WORDS[0]}\" list --json --no-status 2>/dev/null | grep -o '\"name\":\"[^\"]*\"' | cut -d'\"' -f4 | grep -v '^[.]')";
 
 /** One `case "$cmd" in …` arm: a plain compgen for a single-action command, or a nested
  *  dispatch on the action word (still typing it vs. already past it) for one with an
@@ -182,6 +184,17 @@ function renderPwsh(commands: readonly CommandCompletionSpec[], appFlag: boolean
     .join("\n");
   const appLine = appFlag ? " + @('--app')" : "";
   const appSkip = appFlag ? "    if ($rest[$i] -eq '--app') { $i++; continue }\n" : "";
+  const appValues = appFlag
+    ? `  $afterApp = ($rest.Count -ge 1 -and $rest[-1] -eq '--app' -and -not $wordToComplete) -or ($rest.Count -ge 2 -and $rest[-2] -eq '--app' -and $wordToComplete)
+  if ($afterApp) {
+    $names = try { & $tokens[0] list --json --no-status 2>$null | ConvertFrom-Json | ForEach-Object { $_.name } | Where-Object { $_ -notlike '.*' } } catch { @() }
+    $names | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+      [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    }
+    return
+  }
+`
+    : "";
 
   return `# clawforge PowerShell completion — generated from the live command declarations.
 # Install: ${cli("completion pwsh")} | Out-String | Invoke-Expression
@@ -196,7 +209,7 @@ Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBl
   param($wordToComplete, $commandAst, $cursorPosition)
   $tokens = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
   $rest = if ($tokens.Count -gt 1) { $tokens[1..($tokens.Count - 1)] } else { @() }
-  $cmd = $null
+${appValues}  $cmd = $null
   $idx = -1
   for ($i = 0; $i -lt $rest.Count; $i++) {
 ${appSkip}    $cmd = $rest[$i]
@@ -241,7 +254,7 @@ export function makeCompletionGateCommand(siblingGateCommands: readonly GateComm
       "Install: source <(./clawforge completion bash); " +
       './clawforge completion zsh > "${fpath[1]}/_clawforge"; or ' +
       "./clawforge completion pwsh | Out-String | Invoke-Expression.\n" +
-      (appFlag ? "--app's own value completion calls `./clawforge list --json` lazily, only once a shell actually asks for it — never baked into the script.\n" : "") +
+      (appFlag ? "--app's own value completion calls `<the name you typed> list --json --no-status` lazily, only once a shell actually asks for it — never baked into the script.\n" : "") +
       "No deployment is resolved, no .env is read, no lock is touched.",
     arguments: COMPLETION_ARGUMENTS,
     run: async (args) => {

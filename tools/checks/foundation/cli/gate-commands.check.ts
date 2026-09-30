@@ -202,6 +202,18 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   check("bash: the install arm carries --interval", installLine?.includes("--interval"), true);
   check("bash: the list arm does not carry --interval", listLine?.includes("--interval"), false);
 
+  // --app's values: the command as typed (clawforge or ./clawforge, any cwd), never polling targets.
+  for (const shell of ["bash", "zsh"] as const) {
+    const text = renderCompletion(shell, model, true);
+    check(`${shell}: --app values come from the invoked name, without polling targets`,
+      text.includes('"${COMP_WORDS[0]}" list --json --no-status'), true);
+    check(`${shell}: no hard-wired ./clawforge list call`, text.includes("./clawforge list"), false);
+    check(`${shell}: hidden directories are filtered out`, text.includes("grep -v '^[.]'"), true);
+  }
+  const pwshApp = renderCompletion("pwsh", model, true);
+  check("pwsh: --app values come from the invoked name, without polling targets", pwshApp.includes("& $tokens[0] list --json --no-status"), true);
+  check("pwsh: no hard-wired ./clawforge list call", pwshApp.includes("./clawforge list"), false);
+
   const pwsh = renderCompletion("pwsh", model, true);
   const pwshInstallLine = pwsh.split("\n").find((line) => line.trim().startsWith('"install" = @('));
   const pwshListLine = pwsh.split("\n").find((line) => line.trim().startsWith('"list" = @('));
@@ -234,6 +246,10 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   // must not be mistaken for "--app".
   check("with no --app, the script never mentions it", /--app\b/.test(bash), false);
   check("and never calls `list --json` to complete its value", bash.includes("list --json"), false);
+  for (const shell of COMPLETION_SHELLS) {
+    const text = renderCompletion(shell, model, false);
+    check(`${shell}: installed gate: no --app and no list call`, [/--app/.test(text), text.includes("list --json")], [false, false]);
+  }
 }
 
 finish("gate-command");

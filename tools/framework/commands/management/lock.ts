@@ -295,6 +295,23 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
   return problems;
 }
 
+/** One summary for text, --json and MCP: an unread inventory is not a difference — nothing
+ *  could be compared — so the two are counted apart. */
+function summarizeCheck(problems: readonly Problem[], inventoryProblems: readonly Problem[]) {
+  const unread = problems.filter((entry) => inventoryProblems.includes(entry));
+  const differences = problems.filter((entry) => !inventoryProblems.includes(entry));
+  const reason = unread.length > 0 && unread.every((entry) => entry.code === "GATEWAY_DOWN")
+    ? "instance is not running"
+    : unread.length > 0 && unread.every((entry) => entry.code === "NOT_BOOTSTRAPPED")
+      ? "instance never bootstrapped"
+      : "inventory not read";
+  const parts = [
+    ...(differences.length > 0 ? [`${differences.length} difference(s) from the lock`] : []),
+    ...(unread.length > 0 ? [`${unread.length} inventory read(s) could not be compared (${reason})`] : []),
+  ];
+  return { unread, differences, reason, summary: parts.length > 0 ? parts.join("; ") : undefined };
+}
+
 export async function lock(ctx: Context, args: string[]): Promise<void> {
   const parsed = parseDeclaredArgs(LOCK_ARGUMENTS, args);
   const jsonOnly = parsed.json === true;
@@ -305,32 +322,26 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
 
   if (checkOnly) {
     const problems = [...inventoryProblems, ...compareLock(await readLock(), current)];
+    const report = summarizeCheck(problems, inventoryProblems);
     if (jsonOnly || isCaptured()) {
       emit(`${JSON.stringify({ deployment: current.deployment, problems, nextActions: nextActions(problems) }, null, 2)}\n`);
-      if (problems.length > 0) dieWithExitCode(`${problems.length} difference(s) from the lock`, 1);
+      if (report.summary !== undefined) dieWithExitCode(report.summary, 1);
       return;
     }
-    if (problems.length === 0) {
+    if (report.summary === undefined) {
       log("the instance matches config/deployment.lock.json");
       return;
     }
-    // Unread inventories are not differences: nothing could be compared. One summary line, via the exit.
-    const unread = problems.filter((entry) => inventoryProblems.includes(entry));
-    const differences = problems.filter((entry) => !inventoryProblems.includes(entry));
-    if (unread.length > 0) {
-      const notRunning = unread.every((entry) => entry.code === "GATEWAY_DOWN");
-      info(`could not compare — ${notRunning ? "instance is not running" : "inventory not read"}:`);
-      for (const entry of unread) info(`  ${entry.code}  ${entry.detail}`);
+    log("checking the instance against config/deployment.lock.json");
+    if (report.unread.length > 0) {
+      info(`could not compare — ${report.reason}:`);
+      for (const entry of report.unread) info(`  ${entry.code}  ${entry.detail}`);
     }
-    if (differences.length > 0) {
-      if (unread.length > 0) info("differences:");
-      for (const entry of differences) info(`  ${entry.code}  ${entry.detail}`);
+    if (report.differences.length > 0) {
+      if (report.unread.length > 0) info("differences:");
+      for (const entry of report.differences) info(`  ${entry.code}  ${entry.detail}`);
     }
-    const summary = [
-      ...(differences.length > 0 ? [`${differences.length} difference(s) from the lock`] : []),
-      ...(unread.length > 0 ? [`${unread.length} inventory read(s) could not be compared`] : []),
-    ];
-    dieWithExitCode(summary.join("; "), 1);
+    dieWithExitCode(report.summary, 1);
   }
   if (inventoryProblems.length > 0) {
     throw new Error(`lock not written: ${inventoryProblems.map((entry) => entry.detail).join("; ")}`);

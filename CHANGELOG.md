@@ -29,8 +29,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `init --local` in a checkout deployment (`apps/<name>` or a subfolder) prints that the editor types
   already resolve through the checkout and exits 0, instead of "unknown command: init" or an
   `npm install` line for the global package.
-* `--interval` is one grammar for `watch install` and `backup install`: a bare number is minutes,
-  or `30m`/`6h`/`1d` (existing values keep working). The refusal names nearest valid values in that
+* `--interval` is one grammar for `watch install` and `backup install`: `30m`/`6h`/`1d` (existing
+  values keep working), and a bare number is minutes for `watch install` only — `backup install`
+  requires the explicit unit (`--interval 6` is refused, naming `6m`/`6h`, instead of silently
+  scheduling a gateway-stopping backup every 6 minutes), and an empty value is refused for both
+  instead of silently defaulting (`backup install --interval ""` used to become `1d`). The refusal
+  names nearest valid values in that
   same spelling (`6h, 8h`), never an empty list (`watch install --interval 10m` used to print
   `nearest valid:` with nothing) and never a value the command itself rejects.
 * `expose tailscale` no longer advises `tailscale serve reset` (it drops other services' routes on

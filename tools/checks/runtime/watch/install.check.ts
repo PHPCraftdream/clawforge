@@ -221,6 +221,8 @@ try {
     check("--interval 45m names non-empty valid alternatives in its own spelling", message.includes("nearest valid: 30m, 1h"), true);
     const malformed = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", "soon"])));
     check("a malformed --interval names both spellings", malformed.includes("number of minutes or look like 30m"), true);
+    const empty = await deathOf(() => withOutputSink(() => {}, () => watchInstall(ctx, ["--interval", ""])));
+    check("an empty --interval is refused, as for backup install", empty.includes("number of minutes or look like 30m"), true);
   }
 
   // uninstall --apply: removes only OUR marked line.

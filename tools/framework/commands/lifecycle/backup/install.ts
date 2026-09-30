@@ -37,7 +37,7 @@ const DEFAULT_BACKUP_INTERVAL = "1d";
  *  shared BACKUP_APPLY_ARGUMENT (prune-replaced.ts), not a second declaration of the same
  *  name — see its own comment for why. */
 export const BACKUP_INSTALL_ARGUMENTS: CommandArgument[] = [
-  { name: "interval", description: "With install: how often (default 1d) — 30m, 6h, 1d or a bare number of minutes; minutes must divide 60, hours must divide a day", kind: "option", valueName: "interval" },
+  { name: "interval", description: "With install: how often (default 1d) — 30m, 6h or 1d, explicit unit required (a bare number is minutes only for watch install); minutes must divide 60, hours must divide a day", kind: "option", valueName: "interval" },
   BACKUP_APPLY_ARGUMENT,
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
@@ -54,8 +54,11 @@ export const BACKUP_UNINSTALL_ARGUMENTS: CommandArgument[] = [
 
 function parseInstallArgs(args: string[], scope?: ActionScope): { minutes: number; interval: string; apply: boolean } {
   const parsed = parseDeclaredArgs(BACKUP_INSTALL_ARGUMENTS, args, scope);
-  const raw = parsed.interval === undefined || parsed.interval === "" ? DEFAULT_BACKUP_INTERVAL : parsed.interval as string;
-  return { minutes: parseIntervalToMinutes(raw), interval: raw, apply: parsed.apply === true };
+  // An empty --interval is refused (not defaulted), and a bare number is refused: a backup
+  // cadence must always carry an explicit unit — "6" is probably a typo for "6h", and a
+  // gateway-stopping backup every 6 minutes would out-rotate OC_BACKUP_KEEP within an hour.
+  const raw = parsed.interval === undefined ? DEFAULT_BACKUP_INTERVAL : parsed.interval as string;
+  return { minutes: parseIntervalToMinutes(raw, { bareMinutes: false }), interval: raw, apply: parsed.apply === true };
 }
 
 function parseUninstallArgs(args: string[], scope?: ActionScope): boolean {

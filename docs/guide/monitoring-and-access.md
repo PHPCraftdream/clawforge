@@ -160,7 +160,8 @@ An operator finds out the instance stopped doing its job without polling by hand
     `BACKUP_STALE`, doctor's other new upkeep findings.
 * `./clawforge watch install` / `watch uninstall` — print (and, with `--apply`, install through
   the transport) a crontab entry that runs `watch check` every `--interval` (default `5m`; a
-  bare number is minutes, or use `30m`/`6h`/`1d` — the same grammar as `backup install`):
+  bare number is minutes, or use `30m`/`6h`/`1d` — `backup install` takes the same durations
+  but requires the explicit unit):
   minutes must divide 60 (`1,2,3,4,5,6,10,12,15,20,30`) to step cron's own minute field evenly,
   hours must divide a day (`1,2,3,4,6,8,12,24`; `1h` hourly, `2h` every 2 hours, `1d` daily at
   midnight) — any other value (e.g. `45m`, `90`) would fire unevenly and is refused, naming the

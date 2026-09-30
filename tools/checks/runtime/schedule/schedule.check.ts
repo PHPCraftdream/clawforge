@@ -112,6 +112,10 @@ check("12h -> 720 minutes", parseIntervalToMinutes("12h"), 720);
 check("1d -> 1440 minutes", parseIntervalToMinutes("1d"), 1440);
 check("a bare number is minutes (watch's historical form)", [parseIntervalToMinutes("30"), parseIntervalToMinutes("120"), parseIntervalToMinutes("1440")], [30, 120, 1440]);
 check("60m and 1h are the same interval", [parseIntervalToMinutes("60m"), parseIntervalToMinutes("1h")], [60, 60]);
+// backup install passes { bareMinutes: false }: a cadence that stops the gateway must carry a unit.
+check("a bare number is refused when bare minutes are disallowed, naming both unit spellings", (await deathOf(() => parseIntervalToMinutes("6", { bareMinutes: false }))).includes("6m for minutes or 6h for hours"), true);
+check("an explicit unit is still accepted when bare minutes are disallowed", [parseIntervalToMinutes("6m", { bareMinutes: false }), parseIntervalToMinutes("6h", { bareMinutes: false })], [6, 360]);
+check("an empty value is refused even when bare minutes are allowed", (await deathOf(() => parseIntervalToMinutes(""))).includes("look like 30m"), true);
 for (const malformed of ["", "abc", "1.5h", "-5", "5 m", "10mm"]) {
   check(`"${malformed}" is refused, naming both spellings`, (await deathOf(() => parseIntervalToMinutes(malformed))).includes("number of minutes or look like 30m"), true);
 }

@@ -100,19 +100,25 @@ export function cronSchedule(minutes: number): string {
   );
 }
 
-/** One `--interval` grammar for every scheduled job: "30m" / "6h" / "1d", or a bare number
- *  of minutes ("10" = "10m"). Range-checked through cronSchedule() so no job accepts an
- *  interval the cron line itself would then refuse. */
-export function parseIntervalToMinutes(raw: string): number {
+/** One `--interval` grammar for every scheduled job: "30m" / "6h" / "1d", or — unless
+ *  bareMinutes is false — a bare number of minutes ("10" = "10m", watch's historical form).
+ *  Range-checked through cronSchedule() so no job accepts an interval the cron line itself
+ *  would then refuse. An empty value is refused for every caller. */
+export function parseIntervalToMinutes(raw: string, options?: { bareMinutes?: boolean }): number {
+  const bareMinutes = options?.bareMinutes ?? true;
+  if (raw.trim() === "") die(`--interval must be a number of minutes or look like 30m, 6h or 1d (minutes, hours or days) — got "${raw}"`);
   const match = /^(\d+)([mhd]?)$/.exec(raw.trim());
   if (match === null) die(`--interval must be a number of minutes or look like 30m, 6h or 1d (minutes, hours or days) — got "${raw}"`);
   const value = Number(match[1]);
   const unit = match[2];
+  if (unit === "" && !bareMinutes) {
+    die(`--interval needs an explicit unit — ${value}m for minutes or ${value}h for hours; a bare number is minutes only for watch install — got "${raw}"`);
+  }
   const minutes = unit === "h" ? value * 60 : unit === "d" ? value * 1440 : value;
   try {
     cronSchedule(minutes);
   } catch (error) {
-    die(`--interval ${raw}: ${(error as Error).message}`);
+    die((error as Error).message); // cronSchedule's message already names the flag.
   }
   return minutes;
 }

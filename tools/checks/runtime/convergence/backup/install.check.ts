@@ -119,11 +119,14 @@ try {
     check("a malformed --interval is refused, named", message.includes("number of minutes or look like 30m"), true);
   }
   {
-    const written: string[] = [];
-    await withOutputSink((chunk) => written.push(chunk), () => backupInstall(ctx, ["--interval", "30"]));
-    check("a bare number is minutes, as in `watch install`", written.join("").includes("*/30 * * * *"), true);
-    const message = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "45m"])));
-    check("--interval 45m suggests only values backup itself accepts", message.includes("nearest valid: 30m, 1h"), true);
+    calls.length = 0;
+    const bare = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "30"])));
+    check("a bare number is refused — a backup cadence needs an explicit unit", bare.includes("30m for minutes or 30h for hours"), true);
+    check("...and never touches the crontab", calls.some((call) => call.command === "crontab"), false);
+    const empty = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", ""])));
+    check("an empty --interval is refused instead of silently defaulting to 1d", empty.includes("number of minutes or look like 30m"), true);
+    const nearest = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "45m"])));
+    check("--interval 45m suggests only values backup itself accepts", nearest.includes("nearest valid: 30m, 1h"), true);
   }
 
   // uninstall --apply: removes only OUR marked line.

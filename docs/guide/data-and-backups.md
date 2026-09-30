@@ -167,7 +167,8 @@ otherwise it is rotating a backlog nothing keeps adding to:
 
 `backup install` / `backup uninstall` wire a plain `./clawforge backup` onto a schedule —
 `--interval` takes a duration (default `1d`) in the same grammar as `watch install`: `30m`,
-`6h`, `1d`, or a bare number of minutes (`30` = `30m`); minutes must divide 60, hours must
+`6h`, `1d` — an explicit unit is always required (a bare number is minutes only for
+`watch install`); minutes must divide 60, hours must
 divide a day — anything else (e.g. `45m`, `7h`) has no faithful cron encoding and is refused,
 naming the nearest valid values (e.g. `6h, 8h`). Mirrors `watch install`/`watch uninstall` (see
 [Health monitoring](monitoring-and-access.md#health-monitoring-watch)) exactly, down to the

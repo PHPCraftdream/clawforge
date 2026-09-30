@@ -12,6 +12,8 @@ import { HelperNotRunning } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "./cli-helper.ts";
 
 export async function exec(ctx: Context, args: string[]): Promise<void> {
+  // The framework's leading grammar boundary is not the child executable.
+  args = args[0] === "--" ? args.slice(1) : args;
   if (args.length === 0) {
     die("usage: ./clawforge exec <command> [args...], e.g. ./clawforge exec cat /app/docs/channels/telegram.md");
   }

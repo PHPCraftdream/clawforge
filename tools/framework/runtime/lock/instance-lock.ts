@@ -225,8 +225,10 @@ export async function withLockUnlessHeld<T>(
  *  `breakForeignLockHost` on `LockOptions` (lock-claim.ts). Exported so the few direct
  *  `withLockUnlessHeld()`/`takeLock()` callers read it the same way `guarded()` does below. */
 export function parseBreakForeignLockHost(args: string[]): string | undefined {
-  const index = args.indexOf("--break-foreign-lock");
-  return index === -1 ? undefined : args[index + 1];
+  const boundary = args.indexOf("--");
+  const index = args.findIndex((arg, at) => (boundary === -1 || at < boundary) && (arg === "--break-foreign-lock" || arg.startsWith("--break-foreign-lock=")));
+  if (index === -1) return undefined;
+  return args[index] === "--break-foreign-lock" ? args[index + 1] : args[index].slice("--break-foreign-lock=".length);
 }
 
 /** What every mutating command wraps its work in: reads the takeover flags from argv so no

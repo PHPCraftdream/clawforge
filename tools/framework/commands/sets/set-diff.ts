@@ -13,6 +13,8 @@ import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import type { Context } from "#src/core/context.ts";
+import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import type { CommandArgument } from "#src/core/app.ts";
 
 export type SetDiffAction = "added" | "removed" | "changed";
 export type SetDiffKind =
@@ -301,30 +303,19 @@ async function desiredState(staging: string): Promise<unknown> {
   return readJson(resolve(staging, "config", "desired-state.json"));
 }
 
+const SET_DIFF_ARGUMENTS: CommandArgument[] = [
+  { name: "from", kind: "option", description: "Source artifact", valueName: "artifact" },
+  { name: "to", kind: "option", description: "Destination artifact", valueName: "artifact" },
+  { name: "json", kind: "flag", description: "Emit JSON" },
+  { name: "artifacts", kind: "variadic", description: "Two positional artifacts" },
+];
+
 function parseArgs(args: string[]): { from: string; to: string; json: boolean } {
-  const positional: string[] = [];
-  let from: string | undefined;
-  let to: string | undefined;
-  let json = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--json") { json = true; continue; }
-    if (arg === "--from" || arg === "--to") {
-      const value = args[index + 1];
-      if (value === undefined || value.startsWith("--")) die(`${arg} needs an artifact path`);
-      if (arg === "--from") {
-        if (from !== undefined) die("--from was provided more than once");
-        from = value;
-      } else {
-        if (to !== undefined) die("--to was provided more than once");
-        to = value;
-      }
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith("--")) die(`unknown argument: ${arg}`);
-    positional.push(arg);
-  }
+  const parsed = parseDeclaredArgs(SET_DIFF_ARGUMENTS, args);
+  const positional = (parsed.artifacts as string[] | undefined) ?? [];
+  const from = parsed.from as string | undefined;
+  const to = parsed.to as string | undefined;
+  const json = parsed.json === true;
   if (from !== undefined || to !== undefined) {
     if (positional.length > 0) die("set diff accepts either two positional artifacts or --from and --to, not both");
     if (from === undefined || to === undefined) die("set diff needs both --from and --to artifact paths");

@@ -74,8 +74,6 @@ async function mcpConfig(ctx: Context): Promise<string> {
 
 /** Refresh project-local client settings without replacing other servers or global config. */
 export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {
-  // Checked on the raw argv, ahead of the generic parser, which only keeps the last value.
-  if (args.filter((arg) => arg === "--client").length > 1) die("--client may only be given once");
   const parsed = parseDeclaredArgs(MCP_SETUP_ARGUMENTS, args);
   const json = parsed.json === true;
   let client: McpClient = "both";

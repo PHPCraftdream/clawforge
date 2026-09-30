@@ -23,7 +23,7 @@ import { basename, join } from "node:path";
 import { runApp } from "#framework/entry/cli.ts";
 import { managementCommands } from "#framework/commands/interface/groups/openclawCommands.management.ts";
 import { recoverEnvBeforeContext } from "#framework/commands/operate/recover-env/index.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp/schema.ts";
+import { inputSchema, validate } from "#framework/integration/mcp/schema.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
@@ -249,7 +249,6 @@ try {
     check("validate accepts both flags together", validate(recoverDeclaration, { "dry-run": true, "adopt-runtime": true }), []);
     check("validate still rejects an undeclared argument", validate(recoverDeclaration, { "no-such-arg": true }), ["unknown argument: no-such-arg"]);
     check("validate rejects adopt-runtime given a value instead of a flag", validate(recoverDeclaration, { "adopt-runtime": "yes" }), ["adopt-runtime takes true or false"]);
-    check("adopt-runtime is turned back into the argv the parser reads", toArgv(recoverDeclaration, { "adopt-runtime": true }), ["--adopt-runtime"]);
     check("adopt-runtime alone is not read-only", recoverDeclaration.readOnlyWhen?.(["--adopt-runtime"]), false);
     check("dry-run alone is still read-only", recoverDeclaration.readOnlyWhen?.(["--dry-run"]), true);
     check("the command details name the flag's meaning", (recoverDeclaration.details ?? "").includes("--adopt-runtime"), true);

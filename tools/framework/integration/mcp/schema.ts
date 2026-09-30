@@ -275,7 +275,7 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
 
 /** Turns tool arguments back into the argv the command already knows how to parse.
  *  Positionals come first, in declaration order, matching how the parsers read them;
- *  options keep their name so `--profile share` isn't mistaken for a bare file name. */
+ *  options use inline binding so even a value naming another option stays literal. */
 export function toArgv(command: Declared, args: Record<string, unknown>): string[] {
   const declared = command.arguments ?? [];
   const positional: string[] = [];
@@ -292,12 +292,12 @@ export function toArgv(command: Declared, args: Record<string, unknown>): string
       if (Array.isArray(value)) trailing.push(...value.map(String));
     } else if (argument.kind === "positional") positional.push(String(value));
     else if (argument.kind === "flag") named.push(`--${argument.name}`);
-    else named.push(`--${argument.name}`, String(value));
+    else named.push(`--${argument.name}=${String(value)}`);
   }
 
   if (command.forceOnConfirmation === true && args.confirm === true && declared.some((argument) => argument.name === "force")) {
     if (!named.includes("--force")) named.push("--force");
   }
 
-  return [...positional, ...named, ...trailing];
+  return [...positional, ...named, ...(trailing.length === 0 ? [] : ["--", ...trailing])];
 }

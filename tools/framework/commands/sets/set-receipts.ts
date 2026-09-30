@@ -14,29 +14,12 @@ export const SET_RECEIPTS_ARGUMENTS: CommandArgument[] = [
   { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
 ];
 
-/** Repetition and value-shape checks the generic parser leaves to the caller, so a repeated
- *  flag or a missing value refuses by name. Recognizes both `--flag value` and `--flag=value`
- *  since the generic parser accepts both for a declared option. */
-function value(args: string[], flag: string): string | undefined {
-  const prefix = `${flag}=`;
-  const plainCount = args.filter((arg) => arg === flag).length;
-  const inlineMatch = args.find((arg) => arg.startsWith(prefix));
-  const inlineCount = args.filter((arg) => arg.startsWith(prefix)).length;
-  if (plainCount + inlineCount === 0) return undefined;
-  if (plainCount + inlineCount > 1) die(`${flag} may be given only once`);
-  if (inlineMatch !== undefined) return inlineMatch.slice(prefix.length);
-  const index = args.indexOf(flag);
-  const result = args[index + 1];
-  if (result === undefined || result.startsWith("--")) die(`${flag} needs a value`);
-  return result;
-}
-
 function validateArgs(args: string[]): { setId?: string; receiptId?: string; json: boolean } {
-  parseDeclaredArgs(SET_RECEIPTS_ARGUMENTS, args);
-  const setId = value(args, "--set-id");
-  const receiptId = value(args, "--receipt");
+  const parsed = parseDeclaredArgs(SET_RECEIPTS_ARGUMENTS, args);
+  const setId = parsed["set-id"] as string | undefined;
+  const receiptId = parsed.receipt as string | undefined;
   if (receiptId !== undefined && setId === undefined) die("--receipt requires --set-id");
-  return { setId, receiptId, json: args.includes("--json") };
+  return { setId, receiptId, json: parsed.json === true };
 }
 
 function showLine(receipt: AcceptanceReceipt): void {

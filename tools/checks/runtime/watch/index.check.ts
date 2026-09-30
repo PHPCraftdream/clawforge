@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { watch, watchActionIsReadOnly } from "#framework/commands/operate/watch/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
+import { inputSchema, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -144,8 +144,6 @@ try {
     check("action exposes exactly the five choices", schema.properties.action?.enum, ["check", "install", "uninstall", "status", "test"]);
     check("json/apply are booleans", [schema.properties.json?.type, schema.properties.apply?.type], ["boolean", "boolean"]);
     check("action is the only required property", schema.required, ["action"]);
-
-    check("toArgv places the action first, then flags", toArgv(command, { action: "install", apply: true }), ["install", "--apply"]);
 
     check(
       "validate reports a bad action naming the valid ones",

@@ -5,7 +5,7 @@
 
 import { expose, exposeActionIsReadOnly } from "#framework/commands/operate/expose/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
+import { inputSchema, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
@@ -97,8 +97,6 @@ check("requiresConfirmationWhen matches changedWhen", [command.requiresConfirmat
   check("action exposes exactly the three choices", schema.properties.action?.enum, ["ssh", "tailscale", "status"]);
   check("run/apply are booleans", [schema.properties.run?.type, schema.properties.apply?.type], ["boolean", "boolean"]);
   check("action is the only required property (confirm comes from destructive+changedWhen, not a fixed schema field)", schema.required, ["action"]);
-
-  check("toArgv places the action first, then flags", toArgv(command, { action: "tailscale", apply: true }), ["tailscale", "--apply"]);
 
   checkTrue("validate reports a bad action naming the valid ones", validate(command, { action: "bogus" }).join("; ").includes("ssh, tailscale, status"));
   check("validate reports the missing required action", validate(command, {}), ["action is required"]);

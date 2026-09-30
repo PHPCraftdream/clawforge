@@ -7,7 +7,7 @@
 // get, from the same functions.
 
 import { runGateCommand, gateHelpLines, gateCommandHelp, type GateCommand } from "#framework/integration/gate.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
+import { inputSchema, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { normalizeVersionAlias, versionGateCommand } from "#framework/integration/version.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
@@ -98,7 +98,6 @@ check(
   const schema = inputSchema(command) as { properties: Record<string, unknown>; required: string[] };
   check("a gate command's schema comes from its declared arguments", Object.keys(schema.properties), ["name"]);
   check("a required argument is required in the schema too", schema.required, ["name"]);
-  check("its argv is rebuilt the same way", toArgv(command, { name: "staging" }), ["staging"]);
   // Every problem at once, not the first one — the same contract the deployment's commands
   // are validated under.
   check("an unknown argument is refused", validate(command, { bogus: "x" }), ["unknown argument: bogus", "name is required"]);

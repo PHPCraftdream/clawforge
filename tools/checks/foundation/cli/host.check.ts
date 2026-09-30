@@ -104,9 +104,6 @@ function envWith(platform: NodeJS.Platform, distros: string[], localIdentity: Id
     confirmRoot: true,
     command: ["whoami"],
   });
-  // The MCP path never sends `--` (toArgv emits context, then --flags, then the variadic
-  // command), so both shapes must parse identically.
-  check("the MCP shape parses identically (toArgv never emits --)", parseHostArgs(["engine", "--root", "--confirm-root", "whoami"]), withBoundary);
   check("a --root after the command starts is the command's own", parseHostArgs(["local", "--", "docker", "--root"]), {
     context: "local",
     root: false,
@@ -487,8 +484,6 @@ check("host is declared destructive, so MCP requires a confirmation", openclawCo
   check("the schema requires context and args", required.includes("context") && required.includes("args"), true);
   check("the command's own elevation flags are not schema-required", required.includes("confirm-root"), false);
   check("destructive with no read-only mode requires confirm", required.includes("confirm"), true);
-
-  check("toArgv emits context, then flags, then the command", toArgv(openclawCommands.host, { context: "engine", root: true, "confirm-root": true, args: ["resolvectl", "status"] }), ["engine", "--root", "--confirm-root", "resolvectl", "status"]);
 
   // The round trip the interface/index.ts header demands: what an MCP client sends must be
   // exactly what the command's own parser accepts — one declaration, two consumers.

@@ -56,8 +56,6 @@ export function parseHostArgs(args: string[]): HostInvocation {
     die("usage: ./clawforge host <target|engine|local> [--root --confirm-root] -- <command> [args...], e.g. ./clawforge host engine -- cat /etc/resolv.conf");
   }
 
-  // The MCP path never sends `--` (toArgv emits context, then --flags, then the variadic
-  // command args), so both shapes must parse identically.
   return { context: name, root, confirmRoot, command };
 }
 

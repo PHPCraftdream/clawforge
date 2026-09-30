@@ -628,11 +628,11 @@ export async function backup(ctx: Context, args: string[]): Promise<void> {
     const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
     if (shorthand !== undefined) {
       options.profile = shorthand;
-    } else if (arg === "--profile") {
-      const value = args[index + 1];
+    } else if (arg === "--profile" || arg.startsWith("--profile=")) {
+      const value = arg === "--profile" ? args[index + 1] : arg.slice("--profile=".length);
       if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");
       options.profile = value;
-      index += 1;
+      if (arg === "--profile") index += 1;
     }
   }
 

@@ -83,9 +83,6 @@ interface RollbackOptions {
 
 /** Parse every rollback argument before reading or changing instance state. */
 export function parseRollbackArgs(args: string[]): RollbackOptions {
-  // Checked on the raw argv, ahead of the generic parser: that only keeps the last of
-  // several --operation values, and a repeat is worth naming rather than silently resolving.
-  if (args.filter((arg) => arg === "--operation").length > 1) die("--operation may only be specified once");
   const parsed = parseDeclaredArgs(ROLLBACK_ARGUMENTS, args);
   const previousSet = parsed["previous-set"] === true;
   const jsonOnly = parsed.json === true;

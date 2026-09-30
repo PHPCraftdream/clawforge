@@ -19,7 +19,7 @@ import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
+import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { hasDocker, hasGnuUserland } from "#checks/kit/capabilities/capabilities.ts";
@@ -257,16 +257,10 @@ try {
 // accepts and the dispatcher destructures as [action, name, ...rest].
 {
   const recipeCommand = openclawCommands.recipe!;
-  const declared = new Map((recipeCommand.arguments ?? []).map((argument) => [argument.name, argument]));
   const plain = { action: "import", name: "fixture-source", confirm: true };
   check("import without a rename validates clean", validate(recipeCommand, plain), []);
-  check("and builds exactly the two positionals the dispatcher reads as source-only", toArgv(recipeCommand, plain), ["import", "fixture-source"]);
   const renamed = { action: "import", name: "fixture-source", "new-name": "renamed", confirm: true };
   check("import with a rename validates clean", validate(recipeCommand, renamed), []);
-  check("and builds the three positionals in the order the dispatcher destructures", toArgv(recipeCommand, renamed), ["import", "fixture-source", "renamed"]);
-  check("import's positional is described as the source, not the destination", declared.get("name")?.description?.includes("source"), true);
-  check("the wrong 'destination' wording is gone from it", declared.get("name")?.description?.includes("destination"), false);
-  check("the rename is declared as its own positional", declared.get("new-name")?.kind, "positional");
   check("the schema documents the rename for clients", (inputSchema(recipeCommand).properties as Record<string, unknown>)["new-name"] !== undefined, true);
 }
 

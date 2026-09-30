@@ -303,11 +303,11 @@ export async function pull(ctx: Context, args: string[], transaction: PullTransa
     const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
     if (arg === "--hot") hot = true;
     else if (shorthand !== undefined) profile = shorthand;
-    else if (arg === "--profile") {
-      const value = args[index + 1];
+    else if (arg === "--profile" || arg.startsWith("--profile=")) {
+      const value = arg === "--profile" ? args[index + 1] : arg.slice("--profile=".length);
       if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");
       profile = value;
-      index += 1;
+      if (arg === "--profile") index += 1;
     }
   }
 

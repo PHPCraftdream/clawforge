@@ -245,13 +245,12 @@ export async function apply(ctx: Context, args: string[]): Promise<void> {
  *  planning AND every step — so an install never reports the set's id while having
  *  mirrored uncommitted working-tree edits. */
 async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
-  const index = args.indexOf("--set");
-  if (index === -1) {
+  const artifact = parseDeclaredArgs(APPLY_ARGUMENTS, args).set as string | undefined;
+  if (artifact === undefined) {
     await applyFromSource(ctx, args);
     return;
   }
 
-  const artifact = args[index + 1] ?? die("--set needs an artifact path");
   await withUnpackedArtifact(artifact, (staging, verified) =>
     withSetSource(staging, () => applySetArtifact(ctx, args, artifact, verified)),
   );

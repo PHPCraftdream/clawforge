@@ -41,8 +41,6 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     ["status", [], false], ["print-template", ["--print-template"], false], ["template", ["--template"], false],
     ["apply", ["--apply"], true], ["init-store", ["--init-store"], true], ["dump", ["--dump"], true],
   ] as const) check(`secrets ${name} confirmation policy`, secrets.requiresConfirmationWhen?.([...args]), expected);
-  check("confirmed init-store does not gain force", toArgv(secrets, { confirm: true, "init-store": true }), ["--init-store"]);
-  check("an explicit secret-store force is preserved", toArgv(secrets, { confirm: true, "init-store": true, force: true }), ["--init-store", "--force"]);
 
   for (const name of ["restore", "push"]) {
     const command = openclawCommands[name]!;

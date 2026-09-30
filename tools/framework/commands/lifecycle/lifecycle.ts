@@ -320,17 +320,17 @@ export async function logs(ctx: Context, args: string[]): Promise<void> {
   emit(pattern === undefined ? output : filterLines(output, pattern));
 }
 
-/** Pulls `--tail <n>` out of the arguments, leaving the rest for the runtime. Declared as an
- *  option in commands/index.ts, so this is the parser side of that declaration. */
+/** Takes a validated recipe action's tail binding without losing inline literal values. */
 export function takeTail(args: string[]): { tail?: string; rest: string[] } {
-  const at = args.indexOf("--tail");
+  const boundary = args.indexOf("--");
+  const at = args.findIndex((arg, index) => (boundary === -1 || index < boundary) && (arg === "--tail" || arg.startsWith("--tail=")));
   if (at === -1) return { rest: args };
-
-  const value = args[at + 1];
-  if (value === undefined || value.startsWith("-")) die("--tail needs a number of lines");
+  const inline = args[at].startsWith("--tail=");
+  const value = inline ? args[at].slice("--tail=".length) : args[at + 1];
+  if (value === undefined || (!inline && value.startsWith("-"))) die("--tail needs a number of lines");
   if (!/^\d+$/.test(value)) die(`--tail takes a number of lines, not "${value}"`);
 
-  return { tail: value, rest: [...args.slice(0, at), ...args.slice(at + 2)] };
+  return { tail: value, rest: [...args.slice(0, at), ...args.slice(at + (inline ? 1 : 2))] };
 }
 
 // A Go-style duration (docker compose's own --since grammar): at least one of hours,

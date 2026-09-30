@@ -25,8 +25,13 @@ Every command's argv is parsed the same generic way, from the same declaration `
 the MCP schema come from: `--opt value` and `--opt=value` are both understood; an option
 given twice (`--tail 5 --tail 6`) is refused rather than silently keeping the last one; an
 option's value is never the next token when that token is itself one of the command's own
-`--flag`s (`--opt=-x` still takes a value that legitimately starts with `-`); a bare `--`
-ends option parsing, so everything after it is positional. `backup`'s own action-specific
+`--flag`s. Inline binding keeps the entire value literal, even when it names another option:
+`logs --grep=--tail` and `logs --grep=--tail=5` filter those strings, whereas
+`logs --grep --tail 5` refuses a missing grep value. MCP string options have the same
+literal binding, so `{"grep":"--tail"}` needs no shell quoting or regex workaround.
+A bare `--` ends option parsing, so everything after it is positional; `cli` and `exec`
+pass those subsequent tokens (including inline options) unchanged to the child program.
+`backup`'s own action-specific
 flags (`--keep`, `--interval`) are refused by name when given to the wrong action, e.g.
 `backup list --keep 3` names `prune-replaced` rather than calling `--keep` unknown.
 

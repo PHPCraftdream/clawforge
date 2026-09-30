@@ -36,18 +36,6 @@ export function requestsHelp(args: string[]): boolean {
   return (sep === -1 ? args : args.slice(0, sep)).includes("--help");
 }
 
-/** `--opt=value` for a declared option becomes `--opt value`, so every reader of argv — the
- *  declared parser and the few that scan it directly — sees one form. Commands that pass
- *  their argv through verbatim (a variadic argument) are left untouched. */
-export function splitInlineOptions(command: AppCommand, args: string[]): string[] {
-  const declared = command.arguments ?? [];
-  if (declared.some((argument) => argument.kind === "variadic")) return args;
-  const options = new Set(declared.filter((argument) => argument.kind === "option").map((argument) => argument.name));
-  return args.flatMap((arg) => {
-    const match = /^--([^=]+)=(.*)$/s.exec(arg);
-    return match !== null && options.has(match[1]) ? [`--${match[1]}`, match[2]] : [arg];
-  });
-}
 
 /** Entry point: dispatches argv against an application definition. `gateHelp` is the
  *  gate-specific footer (see DEFAULT_GATE_HELP) — omit it from a monorepo-style gate, or
@@ -118,12 +106,10 @@ export async function runApp(
     return 0;
   }
 
-  const runArgs = splitInlineOptions(command, args);
-
   // Before the context: it parses .env and builds the runtime around it, so a command
   // meant to create that file cannot run after it exists. Only a mutating call prepares it.
   try {
-    if (preparesEnvironmentFor(command, runArgs)) await ensureEnvironment();
+    if (preparesEnvironmentFor(command, args)) await ensureEnvironment();
   } catch (error) {
     if (error instanceof UnknownArgumentError) {
       reportUnknownArgument(name, error);
@@ -143,7 +129,7 @@ export async function runApp(
   });
 
   try {
-    await command.run(ctx, runArgs);
+    await command.run(ctx, args);
   } catch (error) {
     if (error instanceof UnknownArgumentError) {
       reportUnknownArgument(name, error);

@@ -157,6 +157,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* Egress redaction handles structural URL userinfo normalization, whitespace-spanning
+  diagnostic authorities, nested literal credential URLs and parser-ignored query-name
+  controls without changing private probe input.
+* Upgrade confirms predecessor and deployment settings under the instance lock before
+  backup or an execute no-op; a changed, stopped or unreadable predecessor refuses
+  without recreating or pinning a stale image.
 * Recipe project identity hashes a serialized gateway-namespace/recipe-name pair,
   preserving component boundaries even when either name contains `-recipe-`.
   Both predecessor naming schemes require verified explicit cutover.

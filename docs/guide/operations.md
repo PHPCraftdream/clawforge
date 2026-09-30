@@ -53,6 +53,9 @@ be normalized; the private probe input remains byte-for-byte unchanged. Malforme
 authorities use conservative masking instead of publishing raw credentials on a parse
 error. Embedded diagnostic URLs follow the same policy, even when they are not the
 original configured endpoint and credentials cross whitespace boundaries.
+An `error:`/diagnostic prefix is not itself a URI and cannot swallow the following
+credential URL. Nested literal URL authorities and query names containing parser-ignored
+controls are masked too; malformed standalone config URLs do not escape query masking.
 
 The deployment folder itself — the operator side — is part of the same comparison. Three
 findings cover it, each naming the command that reads that part back from the instance: a

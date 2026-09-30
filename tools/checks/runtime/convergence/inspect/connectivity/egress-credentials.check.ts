@@ -26,6 +26,11 @@ check("standalone config URLs without an authority still redact credential queri
 check("diagnostics preserve surrounding punctuation", redactEndpointText(`failed (${providerUrl}), retry`), `failed (${publicProvider}), retry`);
 check("malformed endpoint diagnostics use the known original URL", redactEndpointText("failed https://bad host/v1?token=broken-value", "https://bad host/v1?token=broken-value"), "failed https://bad host/v1?token=***");
 check("URL query punctuation cannot expose credential suffixes", redactEndpointText("failed https://provider.example/v1?token=prefix)private-tail"), "failed https://provider.example/v1?token=***");
+check("an error prefix cannot swallow a credential URI", redactEndpointText(`error: ${unknownDiagnosticUrl}`).includes("UNKNOWN SUFFIX"), false);
+check("an error prefix preserves the diagnostic host/path", redactEndpointText(`error: ${unknownDiagnosticUrl}`).includes("diagnostic.example/detail"), true);
+check("malformed standalone config URL still hides credential query", publicConfigValue("endpoint", "https://broken host/v1?token=FAKE_CONFIG_TOKEN"), "[redacted]");
+check("nested literal URI credentials remain masked", redactEndpoint("https://provider.example/v1?forward=https://nested-user:NESTED_PASSWORD@other.example/path"), "https://provider.example/v1?forward=https://***@other.example/path");
+check("ignored controls in query names preserve credential policy", redactEndpoint("https://provider.example/v1?api_\tkey=FAKE_QUERY_CONTROL&view=brief"), "https://provider.example/v1?api_\tkey=***&view=brief");
 for (const entry of credentialCases) {
   const publicUrl = redactEndpoint(entry.url);
   check(`${entry.label}: raw authority and password suffix disappear`, publicUrl.includes(entry.username) || publicUrl.includes(entry.password.split(/\s|%20/).at(-1)!), false);
@@ -80,7 +85,7 @@ try {
           inputs.push(urls);
           return {
             code: 0,
-            stdout: JSON.stringify(urls.map((url) => ({ url, state, detail: `probe diagnostic ${url} E_SYNTHETIC; other ${unknownDiagnosticUrl}` }))),
+            stdout: JSON.stringify(urls.map((url) => ({ url, state, detail: `probe diagnostic ${url} E_SYNTHETIC; error: ${unknownDiagnosticUrl}` }))),
             stderr: "",
           };
         },
@@ -90,7 +95,7 @@ try {
     check(`${state}: live-only endpoints are probed with original credentials`, inputs[0], [providerUrl, proxyUrl]);
     check(`${state}: observations retain host/path and redact credentials`, inspection.observed.egress?.map((entry) => entry.endpoint), [publicProvider, publicProxy]);
     check(`${state}: endpoint status remains diagnostic`, inspection.observed.egress?.map((entry) => entry.state), [state, state]);
-    check(`${state}: probe detail shares URL redaction`, inspection.observed.egress?.map((entry) => entry.detail), [`probe diagnostic ${publicProvider} E_SYNTHETIC; other ${redactEndpoint(unknownDiagnosticUrl)}`, `probe diagnostic ${publicProxy} E_SYNTHETIC; other ${redactEndpoint(unknownDiagnosticUrl)}`]);
+    check(`${state}: probe detail preserves diagnostic host/path`, inspection.observed.egress?.every((entry) => entry.detail?.includes("diagnostic.example/detail")), true);
     const findings = inspection.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE");
     check(`${state}: failures retain their findings`, findings.length, state === "ok" ? 0 : 2);
 

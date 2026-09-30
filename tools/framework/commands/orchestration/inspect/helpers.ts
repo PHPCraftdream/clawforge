@@ -304,6 +304,12 @@ export function egressEndpoints(liveConfig: unknown): EgressEndpoint[] {
 }
 
 const SECRET_CONFIG_KEY = /(?:password|passwd|secret|token|credential|authorization|(?:api|private|client|access|auth|encryption|signing)[_-]?key|^auth$|^key$|^signature$|^sig$)/i;
+const SPECIAL_URL_SCHEME = ["http", "https", "ftp", "ws", "wss", "file"]
+  .map((scheme) => [...scheme].join(String.raw`[\t\r\n]*`) + String.raw`[\t\r\n]*`).join("|");
+const SPECIAL_URL_PREFIX = String.raw`(?:${SPECIAL_URL_SCHEME}):[ /\\\t\r\n]*`;
+const OTHER_URL_PREFIX = String.raw`(?!(?:${SPECIAL_URL_SCHEME}):)[a-z][a-z\d+.\-\t\r\n]*:[\t\r\n]*\/[\t\r\n]*\/`;
+const URL_USERINFO = new RegExp(String.raw`\b(${SPECIAL_URL_PREFIX})[^/\\?#]*@|\b(${OTHER_URL_PREFIX})[^/?#]*@`, "gi");
+const DIAGNOSTIC_URL = new RegExp(String.raw`\b(?:${SPECIAL_URL_PREFIX}(?:[^/\\?#<>"]*@[^/\\?#<>"]*)?[^\s<>"]*|${OTHER_URL_PREFIX}(?:[^/?#<>"]*@[^/?#<>"]*)?[^\s<>"]*)`, "gi");
 
 /** Removes URL credentials while preserving diagnostic host/path and ordinary query values.
  *  Use the probe's WHATWG parser before publishing credentials: special schemes accept
@@ -311,28 +317,29 @@ const SECRET_CONFIG_KEY = /(?:password|passwd|secret|token|credential|authorizat
  *  Invalid authorities still need conservative masking, not a parser-error escape hatch. */
 export function redactEndpoint(url: string): string {
   let withoutUserinfo = url;
-  try {
-    const parsed = new URL(url);
-    if (parsed.username !== "" || parsed.password !== "") {
-      parsed.username = "***";
-      parsed.password = "";
-      withoutUserinfo = parsed.href;
+  if (url.includes("@")) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.username !== "" || parsed.password !== "") {
+        parsed.username = "***";
+        parsed.password = "";
+        withoutUserinfo = parsed.href;
+      }
+    } catch {
+      const raw = url.replace(/[\t\n\r]/g, "");
+      const special = /^(?:https?|ftp|wss?|file):/i.test(raw.trimStart());
+      const authority = special
+        ? /^(\s*[a-z][a-z\d+.-]*:[ /\\]*)([^/\\?#]*@)/i
+        : /^(\s*[a-z][a-z\d+.-]*:\/\/)([^/?#]*@)/i;
+      withoutUserinfo = raw.replace(authority, "$1***@");
     }
-  } catch {
-    // Normalize only the parser's ignored controls and special-scheme separators.
-    // Whitespace is NOT an authority boundary: it may be part of the credentials.
-    const raw = url.replace(/[\t\n\r]/g, "");
-    const special = /^(?:https?|ftp|wss?|file):/i.test(raw.trimStart());
-    const authority = special
-      ? /^(\s*[a-z][a-z\d+.-]*:[ /\\]*)([^/\\?#]*@)/i
-      : /^(\s*[a-z][a-z\d+.-]*:\/\/)([^/?#]*@)/i;
-    withoutUserinfo = raw.replace(authority, "$1***@");
+    withoutUserinfo = withoutUserinfo.replace(URL_USERINFO, (_match, specialPrefix, otherPrefix) => `${specialPrefix ?? otherPrefix}***@`);
   }
   const fragment = withoutUserinfo.indexOf("#");
   const base = fragment < 0 ? withoutUserinfo : withoutUserinfo.slice(0, fragment);
   const query = base.indexOf("?");
   const redacted = query < 0 ? base : `${base.slice(0, query + 1)}${base.slice(query + 1).split("&").map((parameter) => {
-    const key = new URLSearchParams(parameter).keys().next().value ?? "";
+    const key = new URLSearchParams(parameter.replace(/[\t\n\r]/g, "")).keys().next().value ?? "";
     return SECRET_CONFIG_KEY.test(key) ? `${parameter.split("=", 1)[0]}=***` : parameter;
   }).join("&")}`;
   // Fragments can carry either named credentials or opaque bearer values.
@@ -345,7 +352,7 @@ export function redactEndpoint(url: string): string {
  *  Conservative over-masking of an ambiguous malformed authority is intentional. */
 export function redactEndpointText(text: string, endpoint?: string): string {
   const known = endpoint === undefined || endpoint === "" ? text : text.split(endpoint).join(redactEndpoint(endpoint));
-  return known.replace(/\b[a-z][a-z\d+.\-\t\r\n]*:[ /\\\t\r\n]*(?:[^/\\?#<>"]*@)?[^\s<>"]*/gi, (url) => {
+  return known.replace(DIAGNOSTIC_URL, (url) => {
     const suffix = /[),.;]+$/.exec(url)?.[0] ?? "";
     return `${redactEndpoint(url.slice(0, url.length - suffix.length))}${suffix}`;
   });
@@ -363,12 +370,8 @@ export function publicConfigValue(path: string, value: unknown): unknown {
 
 function redactConfigValue(value: unknown): unknown {
   if (typeof value === "string") {
+    if (/^\s*[a-z][a-z\d+.\-\t\r\n]*:/i.test(value) && redactEndpoint(value) !== value) return "[redacted]";
     if (redactEndpointText(value) !== value) return "[redacted]";
-    try {
-      // Config values can also be standalone URLs without an authority (no "://").
-      const url = new URL(value);
-      if (redactEndpoint(url.href) !== url.href) return "[redacted]";
-    } catch { /* Ordinary strings are not URLs. */ }
     return value;
   }
   if (Array.isArray(value)) return value.map(redactConfigValue);

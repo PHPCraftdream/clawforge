@@ -398,13 +398,13 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
     async writeFile(path, content) { files.set(path, typeof content === "string" ? content : Buffer.from(content).toString("utf8")); },
     async exists(path) { return files.has(path); },
     async mkdirp(path) { files.set(path, ""); },
-    async remove(path) { files.delete(path); },
+    async remove(path) { for (const entry of files.keys()) if (entry === path || entry.startsWith(`${path}/`)) files.delete(entry); },
     async listFiles() { return []; },
     clientInvocation(entryPath, args) { return { command: "node", args: [entryPath, ...args] }; },
     async exec(command, args) {
       if (command === "curl") return ok(stopped ? "000" : "200");
       if (command === "docker") {
-        if (args[0] === "ps") return ok(unknown ? "" : "gateway-container");
+        if (args[0] === "ps") return ok(unknown || (stopped && !args.includes("--all")) ? "" : "gateway-container");
         if (args[0] === "inspect") {
           if (unreadable) throw new Error("current container read unavailable");
           if (args.includes("{{.State.ExitCode}}")) return ok(stopped && running === d2 ? "78" : "0");
@@ -427,7 +427,7 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
             return ok();
           }
           if (args.includes("stop") || args.includes("down")) { stopped = true; return ok(); }
-          if (args.includes("ps")) return ok(unknown ? "" : "gateway-container");
+          if (args.includes("ps")) return ok(unknown || stopped ? "" : "gateway-container");
           if (args.includes("run")) {
             if (args.includes("backup") && args.includes("create")) {
               snapshots.push({ image, running, data });
@@ -453,6 +453,12 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
       }
       if (command === "readlink") return ok(args.at(-1));
       if (command === "stat") return ok("1000:1000");
+      if (command === "ln") {
+        const [source, destination] = args;
+        if (!files.has(source) || files.has(destination)) return { code: 1, stdout: "", stderr: "link refused" };
+        files.set(destination, files.get(source)!);
+        return ok();
+      }
       if (command === "mkdir") {
         const path = args.at(-1)!;
         if (args.length === 1 && files.has(path)) return { code: 1, stdout: "", stderr: "exists" };
@@ -463,7 +469,8 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
       if (command === "mv") {
         const source = args.at(-2)!;
         const destination = args.at(-1)!;
-        for (const [path, value] of [...files]) {
+        if (!files.has(source) || source === destination || destination.startsWith(`${source}/`)) return { code: 1, stdout: "", stderr: "move refused" };
+        for (const [path, value] of files) {
           if (path === source || path.startsWith(`${source}/`)) {
             files.delete(path);
             files.set(`${destination}${path.slice(source.length)}`, value);
@@ -474,6 +481,7 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
       }
       if (command === "rm" || command === "rmdir") {
         const root = args.at(-1)!;
+        if (command === "rmdir" && [...files.keys()].some((path) => path.startsWith(`${root}/`))) return { code: 1, stdout: "", stderr: "directory not empty" };
         for (const path of files.keys()) if (path === root || path.startsWith(`${root}/`)) files.delete(path);
         return ok();
       }
@@ -498,6 +506,7 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
       }
       // POSIX metadata/read-only discovery: no recipe stacks, no extra live files.
       if (command === "id") return ok("1000");
+      if (command === "du") return ok(`4K\t${args.at(-1)}`);
       if (["find", "chmod", "chown"].includes(command)) return ok();
       throw new Error(`unmodelled target command: ${command} ${args.join(" ")}`);
     },

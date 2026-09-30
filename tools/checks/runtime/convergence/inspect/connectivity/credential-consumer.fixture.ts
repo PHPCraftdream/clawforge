@@ -59,7 +59,7 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(
           const input = options.input ?? "[]";
           const urls = JSON.parse(typeof input === "string" ? input : Buffer.from(input).toString("utf8")) as string[];
           if (JSON.stringify(urls) !== JSON.stringify(endpoints)) throw new Error("original private probe input changed");
-          return { code: 0, stdout: JSON.stringify(urls.map((url) => ({ url, state: "dns", detail: `failed ${url}; other ${unknownDiagnosticUrl} E_SYNTHETIC` }))), stderr: "" };
+          return { code: 0, stdout: JSON.stringify(urls.map((url) => ({ url, state: "dns", detail: `failed ${url}; error: ${unknownDiagnosticUrl} E_SYNTHETIC` }))), stderr: "" };
         },
       });
       return ctx;

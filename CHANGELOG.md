@@ -6,6 +6,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* `set validate` on a working tree whose image is not pinned yet builds the manifest with the
+  tag in `requires.image` and reports `SET_IMAGE_UNPINNED` as a blocking finding together with
+  everything else it found — in `--json` too — instead of dying inside the manifest build with
+  no findings at all. Its advice now names `./clawforge bootstrap` (which resolves and pins the
+  digest) rather than `./clawforge lock`, which refuses before the first bootstrap. The hard
+  refusal stays on `set build`.
 * A live lock/compose-env owner is no longer called dead under load: its recorded start comes
   from `process.uptime()` (counted after Node's own boot) while the OS probe has 1 s resolution,
   so the same process could differ by more than the 2 s reuse tolerance. The tolerance is now

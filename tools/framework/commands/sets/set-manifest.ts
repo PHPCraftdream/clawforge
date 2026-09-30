@@ -63,11 +63,12 @@ async function desiredSecretNames(desiredState: unknown): Promise<string[]> {
  *
  *  A recorded digest answers only for the reference it was proven under: a lock left over
  *  from a previous OPENCLAW_IMAGE must not pin this build to the wrong digest. */
-async function requiredImage(image: string): Promise<string> {
+async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<string> {
   if (image.includes("@sha256:")) return image;
   const lock = await readLock();
   if (lock?.image.digest !== undefined) {
     if (lock.image.reference !== image) {
+      if (tolerateUnpinned) return image;
       die(
         `the lock's digest does not belong to ${image} — it was recorded for ${lock.image.reference}, ` +
           "and pinning it here would put the previous image's runtime under a declaration that no longer names it.\n" +
@@ -76,6 +77,9 @@ async function requiredImage(image: string): Promise<string> {
     }
     return lock.image.digest;
   }
+  // validate keeps going with the tag in requires.image, so checkImagePinned can report
+  // SET_IMAGE_UNPINNED alongside everything else; only build refuses outright.
+  if (tolerateUnpinned) return image;
   die(
     `no image digest to pin the set to — ${image} is a tag, and a set that names a tag ` +
       "would install whatever that tag means on the day it is installed.\n" +
@@ -124,7 +128,7 @@ export async function buildSet(ctx: Context, setName: string): Promise<SetBuild>
 
 /** The manifest a build would write, without writing anything. Split out so `validate` asks
  *  exactly the question `build` answers, rather than risking two collectors drifting apart. */
-export async function collectManifest(ctx: Context, setName: string): Promise<{
+export async function collectManifest(ctx: Context, setName: string, options: { tolerateUnpinnedImage?: boolean } = {}): Promise<{
   root: string;
   recipeRoot: string;
   desiredStateSource: string;
@@ -187,7 +191,7 @@ export async function collectManifest(ctx: Context, setName: string): Promise<{
 
   const manifest = buildSetManifest({
     name: setName,
-    requires: { framework, image: await requiredImage(ctx.settings.image) },
+    requires: { framework, image: await requiredImage(ctx.settings.image, options.tolerateUnpinnedImage === true) },
     files,
     recipes,
     // Names only; buildSetManifest sorts and deduplicates, so readdir order cannot reach the id.

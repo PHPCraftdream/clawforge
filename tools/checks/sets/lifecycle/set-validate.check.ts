@@ -6,9 +6,11 @@
 // is worse than no finding.
 
 import { validateSet, cronProblem } from "#framework/set/ownership/validate.ts";
-import { defaultSetName } from "#framework/commands/sets/set.ts";
+import { defaultSetName, collectManifest } from "#framework/commands/sets/set.ts";
+import { problem } from "#framework/service/inspection.ts";
 import { buildSetManifest } from "#framework/set/artifacts/model.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
+import { createBuildDeployment, removeBuildDeployment, ctx as buildCtx } from "#checks/sets/artifact/set-build/fixture.ts";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -266,6 +268,42 @@ check("leading digits and punctuation are stripped rather than smuggled through"
   // Better to ask for a name than to invent one: the name is part of the manifest, so it is
   // part of the id, and a set called something arbitrary is a set nobody can ask for again.
   check("a name with nothing valid left asks for one instead", refused, true);
+}
+
+// --- an unpinned image still validates: the gap is a finding, not a refusal -------------------
+//
+// Found by running `set validate` on a tree whose image was still a tag with no lock: the
+// manifest build died in requiredImage() before validateSet ran, so SET_IMAGE_UNPINNED — the
+// validator's own check for exactly this — was unreachable, --json returned nothing, and the
+// advice ("run clawforge lock") pointed at a command that refuses before the first bootstrap.
+
+{
+  const deployment = await createBuildDeployment();
+  try {
+    await rm(resolve(deployment, "config", "deployment.lock.json"), { force: true });
+
+    // validate: the tag travels into requires.image and the validator reports it.
+    const { manifest } = await collectManifest(buildCtx, "demo", { tolerateUnpinnedImage: true });
+    check("validate builds the manifest despite an unpinned image", Object.keys(manifest.recipes).length > 0, true);
+    check("the unpinned tag is kept in requires.image", manifest.requires.image.includes(":extended-stable"), true);
+    const problems = await validateSet(manifest, { checkFiles: true });
+    check("an unpinned image is reported as a finding, not a refusal", codes(problems).includes("SET_IMAGE_UNPINNED"), true);
+    const pinned = problem("SET_IMAGE_UNPINNED", "");
+    check("the finding is blocking like the inspection table says", pinned.severity, "blocking");
+    check("the advice names a step possible before the first bootstrap", pinned.nextAction.includes("bootstrap"), true);
+    check("the advice no longer sends the reader to lock", pinned.nextAction.includes("./clawforge lock"), false);
+
+    // build: the hard refusal stays — only validate tolerates the gap.
+    let refused = false;
+    try {
+      await collectManifest(buildCtx, "demo");
+    } catch {
+      refused = true;
+    }
+    check("build still refuses to pin a tag", refused, true);
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
 }
 
 await rm(baseDeployment, { recursive: true, force: true });

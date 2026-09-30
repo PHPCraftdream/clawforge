@@ -85,7 +85,9 @@ async function validateAction(
   }
   const manifest = fromArtifact
     ? await readManifestFromArtifact(options.artifact!)
-    : (await collectManifest(ctx, options.name ?? defaultSetName(deploymentName()))).manifest;
+    // The tag is kept in requires.image rather than dying here: validate reports the gap
+    // itself (SET_IMAGE_UNPINNED) together with everything else it found.
+    : (await collectManifest(ctx, options.name ?? defaultSetName(deploymentName()), { tolerateUnpinnedImage: true })).manifest;
 
   const problems = await validateSet(manifest, { checkFiles: !fromArtifact });
   const blocking = problems.filter((entry) => entry.severity === "blocking");

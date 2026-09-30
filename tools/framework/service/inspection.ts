@@ -290,7 +290,9 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   SET_IMAGE_UNPINNED: {
     severity: "blocking",
     summary: "the set pins an image tag rather than a digest, so what it installs depends on the day",
-    nextAction: "./clawforge lock",
+    // `lock` refuses before the first bootstrap (no inventory to read yet); bootstrap
+    // itself resolves and pins the digest.
+    nextAction: "./clawforge bootstrap",
   },
   SET_OBJECT_ORPHANED: {
     severity: "warning",

@@ -32,6 +32,7 @@ import { shellQuote } from "#framework/core/io/shell.ts";
 import { WslTransport } from "#framework/runtime/transport/wsl.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
+import { cmdExeArgv } from "#checks/runtime/schedule/fixture.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
@@ -159,9 +160,10 @@ check("schtasksDeleteCommand names the task and forces it", schtasksDeleteComman
     command: "wsl.exe",
     args: [
       "-d", "test-distro", "--exec", "bash", "-lc",
-      `cd -- ${shellQuote("/mnt/c/team's app")} && ${[shellQuote("./clawforge"), ...args.map(shellQuote)].join(" ")}`,
+      `set -e; cd -- ${shellQuote("/mnt/c/team's app")}; exec ${[shellQuote("./clawforge"), ...args.map(shellQuote)].join(" ")}`,
     ],
   });
+  check("...with no cmd.exe operator outside its quotes", invocation.args.at(-1)?.includes("&"), false);
 }
 
 // Read failures may only become an empty table when cron explicitly says there is none.
@@ -277,6 +279,34 @@ try {
   } else {
     const message = await deathOf(() => withOutputSink(() => {}, () => printSchedulingInstructions(wslCtx, "backup", name, 1440, ["backup"], true)));
     check("--apply on a non-Windows host refuses outright — no scheduler here to drive", message.includes("refusing --apply"), true);
+  }
+
+  // The printed schtasks line, parsed the way cmd.exe + CommandLineToArgvW would, is exactly
+  // what --apply passes as argv — on any host (the platform is forced).
+  for (const [entryPath, pasteable] of [["/mnt/d/team's app/clawforge", true], ["/mnt/d/50%/clawforge", false], ["/mnt/d/a&b/clawforge", false]] as const) {
+    const realWsl = new WslTransport("Ubuntu-24.04");
+    const realCtx = {
+      transport: { description: "wsl:Ubuntu-24.04", clientInvocation: realWsl.clientInvocation.bind(realWsl) },
+      paths: { async toTarget(): Promise<string> { return entryPath; } },
+      settings: {},
+    } as unknown as Context;
+    const applied: string[][] = [];
+    const out: string[] = [];
+    await withOutputSink((chunk) => out.push(chunk), () =>
+      withScheduleRunner(
+        async (_command, args) => { applied.push([...args]); return { code: 0, stdout: "", stderr: "" }; },
+        () => printSchedulingInstructions(realCtx, "backup", name, 1440, ["backup"], true),
+        "win32",
+      ));
+    const line = out.join("").split("\n").find((row) => row.trimStart().startsWith("schtasks "));
+    check(`${entryPath}: --apply still runs schtasks`, applied.length, 1);
+    if (pasteable) {
+      check(`${entryPath}: the /tr is bash with no && or cmd.exe operator`, applied[0]?.[applied[0].indexOf("/tr") + 1]?.includes("&"), false);
+      check(`${entryPath}: the printed line, parsed by cmd.exe, is the --apply argv`, cmdExeArgv(line?.trim() ?? ""), ["schtasks", ...(applied[0] ?? [])]);
+      check(`${entryPath}: the line is labelled for cmd.exe`, out.join("").includes("cmd.exe only"), true);
+    } else {
+      check(`${entryPath}: a path cmd.exe cannot carry gets no pasteable line, only --apply`, [line, out.join("").includes("use --apply")], [undefined, true]);
+    }
   }
 
   const installedRoot = join(root, "installed project");

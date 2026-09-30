@@ -139,10 +139,12 @@ async function run(ctx: Context): Promise<string> {
   //
   // A directory we cannot even look into answers the question sudoFor asks.
   const calls: { command: string; args: string[] }[] = [];
+  let existsCalls = 0;
   const ctx = {
     settings: { dataDir: "/srv/clawforge" },
     transport: {
       async exists(path: string): Promise<boolean> {
+        existsCalls += 1;
         throw new Error(`could not check whether ${path} exists: /srv/clawforge cannot be searched by the target user`);
       },
       async exec(command: string, args: string[]): Promise<ExecResult> {
@@ -161,6 +163,7 @@ async function run(ctx: Context): Promise<string> {
   }
 
   check("a directory that cannot be looked into is escalated to, not aborted on", prefix, ["sudo", "-n"]);
+  check("three refusals in a row end the climb: exactly three exists calls, none for an ancestor", existsCalls, 3);
   check(
     "and writability is asked about that path, not about an ancestor",
     calls.find((call) => call.command === "test")?.args,

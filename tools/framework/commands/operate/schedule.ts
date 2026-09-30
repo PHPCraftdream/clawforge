@@ -276,6 +276,19 @@ export function displayCommandLine(command: string, args: readonly string[]): st
   return [command, ...args].map(quote).join(" ");
 }
 
+/** `displayCommandLine` as cmd.exe would run it, or undefined when it cannot be pasted there
+ *  safely: `%` expands even inside quotes, and `& | < > ^` outside them split or redirect. */
+export function cmdExeLine(command: string, args: readonly string[]): string | undefined {
+  const line = displayCommandLine(command, args);
+  if (line.includes("%")) return undefined;
+  let quoted = false; // cmd.exe toggles on every `"`, backslash or not.
+  for (const char of line) {
+    if (char === '"') quoted = !quoted;
+    else if (!quoted && "&|<>^".includes(char)) return undefined;
+  }
+  return line;
+}
+
 export async function installedShimExists(root: string): Promise<boolean> {
   return access(resolve(root, "clawforge")).then(
     () => true,
@@ -417,8 +430,13 @@ export async function printSchedulingInstructions(
   const action = await windowsScheduledAction(ctx, jobArgs, invocation);
   const taskName = scheduledTaskName(job, await schedulerIdentity(ctx));
   const create = schtasksCreateCommand(taskName, minutes, action);
-  info("on Windows, Task Scheduler can run this instead (`/f` replaces the same named task on a re-run):");
-  infoRaw(`  ${displayCommandLine(create.command, create.args)}`);
+  const pasteable = cmdExeLine(create.command, create.args);
+  if (pasteable === undefined) {
+    info("on Windows, Task Scheduler can run this instead, but a path here has a character (% & | < > ^) that cannot be pasted into cmd.exe; use --apply");
+  } else {
+    info("on Windows, Task Scheduler can run this instead — paste it into cmd.exe only (not PowerShell or Git Bash; use --apply there). `/f` replaces the same named task on a re-run:");
+    infoRaw(`  ${pasteable}`);
+  }
   if (!apply) {
     info("run it yourself, or re-run with --apply to have this command run it for you");
     return false;

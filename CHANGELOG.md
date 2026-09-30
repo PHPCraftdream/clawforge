@@ -18,6 +18,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   nothing); plain `init` there still refuses.
 * `init` help no longer breaks a sentence mid-line. A dry-run `destroy` shows an absent directory as
   `absent — nothing to remove` rather than `would remove … (absent)`.
+* `backup install` / `watch install` on a WSL target under Windows print a `schtasks /create` line
+  that cmd.exe now runs as a whole: the WSL command inside `/tr` is `set -e; cd -- '…'; exec …`
+  instead of `cd … && …` (cmd.exe split the old line at `&&` and created a task that only did
+  `cd`). The line is labelled for cmd.exe (other shells: `--apply`) and withheld when a path has
+  `%` or `& | < > ^`; `--apply` passes the same `/tr` as before. Checks now parse the printed
+  line by cmd.exe and `CommandLineToArgvW` rules and compare it with the `--apply` argv, run the
+  install and deploy hints under a non-default invocation, and count `sudoFor`'s three probe
+  attempts on an unenterable parent.
 * A privileged command (backup, restore, secrets …) no longer asks for sudo on a path it can write
   when the target's existence probe fails once: `sudoFor` asks the probe up to three times before
   treating a refusal as a directory this user cannot enter. Seen as "needs root and sudo asks for

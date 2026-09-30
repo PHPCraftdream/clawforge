@@ -123,7 +123,8 @@ export class WslTransport implements Transport {
     const cut = entryPath.lastIndexOf("/");
     const directory = cut < 0 ? "." : entryPath.slice(0, cut) || "/";
     const entry = entryPath.slice(cut + 1);
-    const inner = `cd -- ${shellQuote(directory)} && ${[shellQuote(`./${entry}`), ...args.map(shellQuote)].join(" ")}`;
+    // No `&&`: a Windows scheduler line nests this in quotes cmd.exe does not see through.
+    const inner = `set -e; cd -- ${shellQuote(directory)}; exec ${[shellQuote(`./${entry}`), ...args.map(shellQuote)].join(" ")}`;
     return { command: "wsl.exe", args: ["-d", this.#distro, "--exec", "bash", "-lc", inner] };
   }
 }

@@ -9,7 +9,14 @@ import { INVOKED_AS_ENV, cli, invocation, localizeHints, setInvocation, takeInvo
 import { reportError, info, infoRaw } from "#framework/core/io/log.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
 import { structuredResult } from "#framework/integration/mcp/server.ts";
-import { cronLine } from "#framework/commands/operate/schedule.ts";
+import { cronLine, displayCommandLine, posixTargetInvocation, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
+import { backupInstall } from "#framework/commands/lifecycle/backup/install.ts";
+import { watchInstall } from "#framework/commands/operate/watch/install.ts";
+import { deploy } from "#framework/commands/management/deploy/index.ts";
+import { bootstrapAndReport } from "#framework/commands/management/deploy/sync.ts";
+import { deploymentName } from "#framework/runtime/deployment.ts";
+import { cmdExeArgv } from "#checks/runtime/schedule/fixture.ts";
+import type { Context } from "#framework/core/context.ts";
 import { doctor } from "#framework/commands/orchestration/inspect/gather.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runtime/convergence/inspect/fixture.ts";
@@ -75,6 +82,63 @@ try {
     }
     check(`info would rewrite the cron line under "${prefix}"`, await capture(() => info(cron)).then((text) => text.includes(cron)), false);
   }
+  // --- the call sites: what they print is what they install or pass on -----------------------
+  // A bare `./clawforge` in a stubbed command would be rewritten by info(), so reverting any
+  // infoRaw call site to info() turns one of these red under a non-default prefix.
+
+  const ok = { code: 0, stdout: "", stderr: "" };
+  const REMOTE = "/mnt/x/clawforge";
+  const sshCtx = {
+    transport: {
+      description: "ssh:user@host",
+      async exec(_command: string, args: string[]) { return { ...ok, stdout: `${args[3]}\n` }; },
+    },
+    settings: { remotePath: "/opt/openclaw" },
+  } as unknown as Context;
+  const wslTransport = {
+    description: "wsl:Ubuntu-24.04",
+    clientInvocation: (entry: string, args: string[]) => ({ command: "./clawforge", args: [entry, ...args] }),
+  };
+  const wslCtx = { transport: wslTransport, paths: { async toTarget() { return REMOTE; } }, settings: {} } as unknown as Context;
+  const deployCtx = {
+    transport: { description: "local", async exec() { return ok; } },
+    runtime: { requiredTools: [] },
+    settings: { remotePath: "/opt/openclaw", gatewayPort: 18789 },
+  } as unknown as Context;
+  const jobs = [
+    { label: "backup install", run: (ctx: Context, args: string[]) => backupInstall(ctx, args), job: "backup", jobArgs: ["backup"], minutes: 1440 },
+    { label: "watch install", run: (ctx: Context, args: string[]) => watchInstall(ctx, args), job: "watch", jobArgs: ["watch", "check"], minutes: 5 },
+  ];
+
+  for (const prefix of ["clawforge", "./clawforge --app x"]) {
+    setInvocation(prefix);
+    const at = `under "${prefix}"`;
+    for (const { label, run, job, jobArgs, minutes } of jobs) {
+      const crontab = cronLine(minutes, await posixTargetInvocation(sshCtx, jobArgs), job, await schedulerIdentity(sshCtx));
+      check(`${label} prints the crontab line it would install ${at}`, (await capture(() => run(sshCtx, []))).includes(crontab), true);
+
+      // Windows, unsupported transport: the printed lines are the transport's and schtasks' own.
+      const applied: string[][] = [];
+      const recorder = async (_command: string, args: readonly string[]) => { applied.push([...args]); return ok; };
+      const printed = await capture(() => withScheduleRunner(recorder, () => run(wslCtx, []), "win32"));
+      await capture(() => withScheduleRunner(recorder, () => run(wslCtx, ["--apply"]), "win32"));
+      const manual = wslTransport.clientInvocation(REMOTE, ["--app", deploymentName(), ...jobArgs]);
+      const rows = printed.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "").split("\n").map((row) => row.trim());
+      check(`${label} prints the transport's own command line ${at}`, rows.includes(displayCommandLine(manual.command, manual.args)), true);
+      const schtasks = rows.find((row) => row.startsWith("schtasks "));
+      check(`${label}: the printed schtasks line, parsed by cmd.exe, is what --apply passes ${at}`, cmdExeArgv(schtasks ?? ""), ["schtasks", ...(applied[0] ?? [])]);
+    }
+
+    const name = deploymentName();
+    const bootstrap = `cd /opt/openclaw && ./clawforge --app ${name} bootstrap`;
+    const dry = await capture(() => deploy(deployCtx, ["user@host", "--dry-run"]));
+    check(`deploy --dry-run prints the remote bootstrap line verbatim ${at}`, dry.includes(`would bootstrap remotely afterwards: ${bootstrap}`), true);
+    const skipped = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/opt/openclaw", name, false, undefined));
+    check(`deploy's manual bootstrap hint is verbatim ${at}`, skipped.includes(`bring it up there with: ${bootstrap}`), true);
+    const done = await capture(() => bootstrapAndReport(deployCtx, "user@host", "/opt/openclaw", name, true, undefined));
+    check(`deploy's provider-keys hint is verbatim ${at}`, done.includes(`provider keys are not copied — install them there: ./clawforge --app ${name} secrets --apply`), true);
+  }
+
   setInvocation("");
   check("blank falls back to the monorepo prefix", invocation(), HINT);
 

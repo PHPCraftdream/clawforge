@@ -41,6 +41,7 @@ import {
 } from "#src/security/privacy/private-paths-ledger.ts";
 import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
 import type { CommandArgument } from "#src/core/app.ts";
+import type { Recipe } from "#src/service/recipe.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
@@ -286,6 +287,8 @@ export interface PreparedRestore {
   nativeManifestVerified: boolean;
   nativeManifestPresent: boolean | null;
   archiveValidationDeferred: boolean;
+  /** Confirmed before replacement; reporting must not introduce a late policy refusal. */
+  runningRecipes: Recipe[];
 }
 
 /** Validate an archive; preview defers hooks and native verification that may write. */
@@ -299,15 +302,19 @@ export async function prepareRestore(
   const name = dataDirName(dataDir);
   const parent = dataDirParent(dataDir);
 
+  // Execute callers hold the instance lock. Preview makes the same read-only policy
+  // checks, but execution always repeats them under that lock before any restore work.
+  // Unknown inventory and ownership refusals propagate; neither means "no recipes".
+  const runningRecipes = await runningRecipeStacks(ctx);
   // A hook may fetch or decrypt another archive. Preview must defer its validation.
   if (mode === "preview" && options.internal !== true && ctx.applicationBeforeRestore !== undefined) {
     await verifyDataDirAncestry(ctx, dataDir);
-    return { archive, entries: [], name, dataDir, parent, nativeManifestVerified: false, nativeManifestPresent: null, archiveValidationDeferred: true };
+    return { archive, entries: [], name, dataDir, parent, nativeManifestVerified: false, nativeManifestPresent: null, archiveValidationDeferred: true, runningRecipes };
   }
 
-  // Before anything else — nothing is validated, stopped or moved yet. A hook can decrypt
-  // or fetch the real archive and hand back the path to use instead; a failure here means
-  // the restore never started, so there is nothing to compensate.
+  // The ownership policy is confirmed, but no archive has been validated or data moved.
+  // A hook can decrypt or fetch the real archive and hand back the path to use instead;
+  // a failure here means the restore never started, so there is nothing to compensate.
   if (options.internal !== true && ctx.applicationBeforeRestore !== undefined) {
     try {
       const prepared = await ctx.applicationBeforeRestore({ archive });
@@ -348,7 +355,7 @@ export async function prepareRestore(
 
   await verifyDataDirAncestry(ctx, dataDir);
 
-  return { archive, entries, name, dataDir, parent, nativeManifestVerified: nativeManifestPresent && mode === "execute", nativeManifestPresent, archiveValidationDeferred: false };
+  return { archive, entries, name, dataDir, parent, nativeManifestVerified: nativeManifestPresent && mode === "execute", nativeManifestPresent, archiveValidationDeferred: false, runningRecipes };
 }
 
 /** State performRestore's try block accumulates, needed by rollbackRestore if it fails. */
@@ -495,17 +502,18 @@ async function performRestore(ctx: Context, prepared: PreparedRestore, options: 
 /** Verify/report phase: warns about sidecars still bound to the previous data, then starts
  *  the gateway back up (or explains why it was left stopped). Runs only once performRestore
  *  has succeeded. */
-async function reportRestoreOutcome(ctx: Context, archive: string, aside: string | undefined, options: RestoreOptions): Promise<RestoreOutcome> {
+async function reportRestoreOutcome(ctx: Context, archive: string, aside: string | undefined, options: RestoreOptions, sidecars: PreparedRestore["runningRecipes"]): Promise<RestoreOutcome> {
   // The gateway was stopped; recipe stacks are not and cannot be — they are separate
   // Compose projects, and re-resolving another project's bind mounts is not this
   // command's to do. A sidecar mounting a file or directory under the data directory
   // therefore still holds the previous data: the moved-aside tree when one was moved,
   // the replaced file's old content otherwise. Named here so the gap is the operator's
   // decision, not a silent one.
-  const sidecars = await runningRecipeStacks(ctx);
+  // Reuse the preflight observation: discovery is a mandatory policy check, not a
+  // fallible reporting read after replacement. We do not mutate/recreate these stacks.
   if (sidecars.length > 0) {
     warn(
-      `recipe stack(s) still running, not recreated after this restore: ${sidecars.map((recipe) => recipe.name).join(", ")} — ` +
+      `recipe stack(s) running at preflight, not recreated after this restore: ${sidecars.map((recipe) => recipe.name).join(", ")} — ` +
         "their containers may still bind-mount the previous data rather than the restored tree" +
         (aside !== undefined ? ` (kept at ${aside})` : ""),
     );
@@ -560,7 +568,7 @@ export async function restoreArchive(
     if (!(await confirm("Type 'yes' to continue: "))) die("aborted");
   }
   const aside = await performRestore(ctx, prepared, options);
-  return reportRestoreOutcome(ctx, prepared.archive, aside, options);
+  return reportRestoreOutcome(ctx, prepared.archive, aside, options, prepared.runningRecipes);
 }
 
 /** `--dry-run`: report read-only checks and those deferred until execution. */

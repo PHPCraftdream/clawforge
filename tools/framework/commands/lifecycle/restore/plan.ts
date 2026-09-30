@@ -26,6 +26,7 @@ export interface RestorePlan {
  *  with index.ts's performRestore()/reportRestoreOutcome() by hand. */
 function restorePlanSteps(options: RestoreOptions): string[] {
   const steps = [
+    "confirm recipe ownership and running-stack inventory under the instance lock (refuse unknown or pending cutover)",
     "stop the gateway, if it is running",
     "move the current data directory aside",
     "unpack the archive into place",
@@ -46,6 +47,7 @@ export async function buildRestorePlan(ctx: Context, prepared: PreparedRestore, 
   const checksDeferred = [];
   if (archiveValidationDeferred) checksDeferred.push("beforeRestore hook and validation of its resulting archive");
   if (nativeManifestPresent !== false) checksDeferred.push("embedded native manifest verification, if present");
+  checksDeferred.push("repeat recipe ownership and running-stack inventory under the instance lock");
   return {
     archive,
     archiveName: archive.slice(archive.lastIndexOf("/") + 1),

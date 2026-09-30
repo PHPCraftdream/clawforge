@@ -195,7 +195,7 @@ check("the gateway is never started when a required secret is missing", startCal
       await withOutputSink((line) => { output += line; }, () =>
         restoreArchive(ctxWithStack(true), "/srv/openclaw/backups/openclaw-x.tar.gz", { force: true }),
       );
-      check("a restore with a running recipe stack names it", output.includes("recipe stack(s) still running") && output.includes("vault"), true);
+      check("a restore with a running recipe stack names it", output.includes("recipe stack(s) running at preflight") && output.includes("vault"), true);
       check("the warning says the stack was not recreated", output.includes("not recreated"), true);
       check("the warning points at the moved-aside data", output.includes("kept at /srv/openclaw/data.replaced-"), true);
       check("the remediation names the framework commands", output.includes("./clawforge recipe remove vault") && output.includes("./clawforge recipe install vault"), true);

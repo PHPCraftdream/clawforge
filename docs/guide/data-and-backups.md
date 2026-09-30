@@ -118,6 +118,16 @@ accepts for the whole data directory, but narrowed here to log tails rather than
 database. `backup` reports how many such files it added. `restore` does not delete the
 current data — it renames the directory to `<data>.replaced-<timestamp>`.
 
+Before stopping the gateway, moving data or extracting the archive, `restore` confirms
+recipe ownership and discovers running recipe stacks under the instance lock. A pending
+[recipe namespace cutover](recipes.md) (including stopped legacy containers), foreign
+Compose ownership or an unknown inventory refuses the restore with the current data and
+gateway running state unchanged. This policy also applies to `restore --no-start` and
+`push`: snapshot secrets are not installed on refusal. After an explicit operator cutover,
+retry the command. Reporting uses the confirmed preflight inventory rather than introducing
+another ownership check after replacement; any running recipes are left untouched and the
+warning identifies their preflight state and possible mounts of the previous data tree.
+
 `restore --dry-run` selects the archive and checks its structure and links when no
 `beforeRestore` hook is configured. A hook may fetch or decrypt a different archive, so
 the preview does not run it or inspect its input as a tar archive; archive size, date and
@@ -128,6 +138,10 @@ No lock is taken, and nothing is stopped, moved, written or extracted. The plan 
 reports the data directory, the `<data>.replaced-<stamp>` pattern and the ordered restore
 steps. For archives inspected in the preview, a missing or structurally invalid archive
 is refused. `--force` has no effect on a preview, which never asks for confirmation.
+Recipe ownership/discovery uses the same read-only policy checks in preview, including when
+archive validation is deferred to a hook. Refusal is not reported as an empty inventory.
+The plan explicitly repeats these checks under the instance lock during execution, since a
+lock-free preview cannot guarantee that the inventory remains unchanged until then.
 
 `restore --json` reports `restored: true` after data restoration and sets `started: true`
 only after gateway startup and its health wait succeed. A successful restore can leave the
@@ -275,8 +289,8 @@ is not called for it at all. A hook that throws never causes the archive to be d
 hidden: the command reports `backup published at <path>, afterBackup hook failed: …` with a
 non-zero exit, and the archive stays exactly where it landed.
 
-`beforeRestore(info)` runs first, before the archive is even validated — nothing on the
-target has been stopped or touched. Returning a string path makes `restore` use that path for
+`beforeRestore(info)` runs after the read-only recipe ownership/discovery preflight, but
+before archive validation, gateway stop or data replacement. Returning a string path makes `restore` use that path for
 everything that follows; returning nothing keeps `archive` as given. A hook that throws stops
 the restore before it starts: nothing is stopped, nothing is moved, and the failure names the
 hook's own error. Internal restores (smoke's own round-trip check, into a throwaway scratch

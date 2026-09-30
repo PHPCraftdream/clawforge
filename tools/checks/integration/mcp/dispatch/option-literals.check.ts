@@ -1,7 +1,6 @@
 /// <reference lib="es2024.promise" />
 // Real CLI dispatch and control-mcp stdio; only the external Docker executable is replaced.
 // The fixture reads bounded logs from disk and executes a child option consumer, not argv echoes.
-import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +10,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { LocalTransport, spawnLocal, hostPlatform, type ExecOptions } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runProcess } from "#checks/kit/spawn.ts";
 
 const self = fileURLToPath(import.meta.url);
 if (process.argv[2] === "--dispatch") {
@@ -48,20 +48,12 @@ else if (args[0] === 'compose' && args.includes('logs')) {
   process.stdout.write('child help: two words=--tail\\n');
 } else process.exit(93);
 `);
-  function run(argv: string[], input = ""): Promise<{ code: number | null; stdout: string; stderr: string }> {
-    const { promise, resolve, reject } = Promise.withResolvers<{ code: number | null; stdout: string; stderr: string }>();
-    const child = spawn(process.execPath, ["--experimental-strip-types", self, "--dispatch", root, shim, ...argv], {
-      stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, OC_DEBUG: "0" },
+  async function run(argv: string[], input = ""): Promise<{ code: number | null; stdout: string; stderr: string }> {
+    const result = await runProcess(process.execPath, ["--experimental-strip-types", self, "--dispatch", root, shim, ...argv], {
+      env: { ...process.env, OC_DEBUG: "0" }, input, timeoutMs: 15000,
     });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", chunk => { stdout += String(chunk); });
-    child.stderr.on("data", chunk => { stderr += String(chunk); });
-    const timeout = setTimeout(() => child.kill(), 15000);
-    child.once("error", error => { clearTimeout(timeout); reject(error); });
-    child.once("close", code => { clearTimeout(timeout); resolve({ code, stdout, stderr }); });
-    child.stdin.end(input);
-    return promise;
+    if (result.error !== undefined) throw result.error;
+    return result;
   }
   try {
     for (const pattern of ["--tail", "--tail=5"]) {

@@ -535,6 +535,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   usable), probed once per context, so a sudo-escalated private publication no longer spawns the
   `command -v sudo` / `sudo -n true` probes twice (each a `wsl.exe` spawn on WSL). Transport
   failures still throw and are never cached. Refusal messages are unchanged.
+* checks: `runProcess` in `tools/checks/kit/spawn.ts` is the one child-process helper (cwd, env,
+  stdin input or an open pipe, timeout with SIGKILL and `timedOut`, stdout/stderr apart and
+  interleaved, Windows `.cmd` through a shell). The per-file spawn helpers in nine check files use
+  it; `system-install.check.ts` picks the control MCP entry by `CLAWFORGE_CONTROL_MCP_NAME`, not by
+  position.
 
 ## 0.1.0
 

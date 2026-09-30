@@ -16,7 +16,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA, inputSchema, structuredResult, toolDescription, validate } from "#framework/integration/mcp/server.ts";
@@ -24,6 +23,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { hasDocker, hasGnuUserland } from "#checks/kit/capabilities/capabilities.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runProcess, type ProcessResult } from "#checks/kit/spawn.ts";
 
 useLinuxHost();
 
@@ -46,48 +46,20 @@ const lines = [
   '{"jsonrpc":"2.0","id":10,"method":"tools/list"}',
 ];
 
-function runServer(name: string, input: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolvePromise) => {
-    const proc = spawn(
-      process.execPath,
-      ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "--app", name, "control-mcp"],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    proc.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    proc.on("close", (code) => resolvePromise({ code, stdout, stderr }));
-    proc.stdin.end(`${input}\n`);
-  });
+function runServer(name: string, input: string): Promise<ProcessResult> {
+  return runProcess(
+    process.execPath,
+    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "--app", name, "control-mcp"],
+    { input: `${input}\n` },
+  );
 }
 
 /** The same stdio exchange, against a script that builds its own app in-process (the
  *  mcp-structured-progress check's harness): for a sweep that needs a command declaration
  *  whose stack-bound actions cannot run here. The declaration under test is real; only the
  *  bytes the command emits are stood in for. */
-function runScript(script: string, input: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolvePromise) => {
-    const proc = spawn(
-      process.execPath,
-      ["--input-type=module", "-e", script],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    proc.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    proc.on("close", (code) => resolvePromise({ code, stdout, stderr }));
-    proc.stdin.end(`${input}\n`);
-  });
+function runScript(script: string, input: string): Promise<ProcessResult> {
+  return runProcess(process.execPath, ["--input-type=module", "-e", script], { input: `${input}\n` });
 }
 
 const deploymentName = `mcp-check-${randomBytes(4).toString("hex")}`;

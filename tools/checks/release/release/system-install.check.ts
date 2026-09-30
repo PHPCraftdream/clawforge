@@ -6,7 +6,6 @@
 // (the ./clawforge shim and the MCP launcher), which must reach the system-wide command when
 // the deployment has no local package.
 
-import { spawn } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -14,8 +13,9 @@ import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
-import { projectMcpEntries } from "#framework/integration/mcp/project.ts";
+import { CLAWFORGE_CONTROL_MCP_NAME, projectMcpEntries } from "#framework/integration/mcp/project.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runProcess } from "#checks/kit/spawn.ts";
 
 const windows = process.platform === "win32";
 
@@ -24,20 +24,11 @@ interface Run {
   output: string;
 }
 
-function run(command: string, args: string[], cwd: string, options: { env?: NodeJS.ProcessEnv; input?: string; shell?: boolean; timeoutMs?: number } = {}): Promise<Run> {
-  return new Promise((settle) => {
-    const child = spawn(command, args, { cwd, env: options.env ?? process.env, shell: options.shell ?? false, stdio: ["pipe", "pipe", "pipe"] });
-    let output = "";
-    child.stdout.on("data", (chunk) => { output += String(chunk); });
-    child.stderr.on("data", (chunk) => { output += String(chunk); });
-    const timer = setTimeout(() => child.kill("SIGKILL"), options.timeoutMs ?? 90_000);
-    child.on("error", (error) => { output += error.message; });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      settle({ code, output });
-    });
-    child.stdin.end(options.input ?? "");
+async function run(command: string, args: string[], cwd: string, options: { env?: NodeJS.ProcessEnv; input?: string; shell?: boolean; timeoutMs?: number } = {}): Promise<Run> {
+  const { code, output } = await runProcess(command, args, {
+    cwd, env: options.env, shell: options.shell ?? false, input: options.input ?? "", timeoutMs: options.timeoutMs ?? 90_000,
   });
+  return { code, output };
 }
 
 /** This environment with `directory` first on PATH, under the key the platform already uses. */
@@ -122,7 +113,7 @@ try {
 
   // The committed MCP launcher, as a client starts it: no local package, so the system-wide
   // command serves the session over the same stdio.
-  const control = Object.values(projectMcpEntries())[1] as { args: string[] };
+  const control = projectMcpEntries()[CLAWFORGE_CONTROL_MCP_NAME] as { args: string[] };
   const mcp = await run(process.execPath, control.args, fresh, {
     env,
     input: `${JSON.stringify({ jsonrpc: "2.0", id: 7, method: "ping" })}\n`,

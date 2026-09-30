@@ -13,39 +13,21 @@
 import { rm, readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { spawn } from "node:child_process";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runProcess } from "#checks/kit/spawn.ts";
 
 /** Runs the real gate with a hard deadline. stdin stays an open, never-written pipe: a server
  *  wrongly started by --help would block on it, whereas /dev/null's EOF would let it exit and hide
  *  the hang. The deadline is generous — a cold start under a loaded machine is slow, a hang is forever. */
-function runGate(args: string[], timeoutMs = 45_000): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
-  return new Promise((resolvePromise) => {
-    const proc = spawn(
-      process.execPath,
-      ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill("SIGKILL");
-    }, timeoutMs);
-    proc.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    proc.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      resolvePromise({ code, stdout: stdout + stderr, timedOut });
-    });
-  });
+async function runGate(args: string[], timeoutMs = 45_000): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
+  const { code, output, timedOut } = await runProcess(
+    process.execPath,
+    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
+    { keepStdinOpen: true, timeoutMs },
+  );
+  return { code, stdout: output, timedOut };
 }
 
 const deploymentName = `cli-help-check-${randomBytes(4).toString("hex")}`;

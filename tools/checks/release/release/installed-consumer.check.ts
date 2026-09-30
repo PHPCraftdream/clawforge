@@ -14,11 +14,11 @@
 // and a check that needs the registry cannot run on a machine without one.
 
 import { mkdtemp, mkdir, readdir, readFile, writeFile, rm, cp, access } from "node:fs/promises";
-import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runProcess } from "#checks/kit/spawn.ts";
 
 interface Run {
   code: number;
@@ -26,29 +26,10 @@ interface Run {
 }
 
 /** spawnLocal has no cwd, and every step here is about which directory it runs in. */
-function run(command: string, args: string[], cwd: string): Promise<Run> {
-  return new Promise((resolvePromise) => {
-    // npm is a .cmd on Windows, and Node refuses to spawn one without a shell. The command
-    // itself must stay unquoted — npm.cmd locates its own installation from %~dp0, and a
-    // quoted invocation sends it looking for npm-prefix.js beside the working directory.
-    const useShell = process.platform === "win32" && command.endsWith(".cmd");
-    const quoted = args.map((arg) => (useShell && arg.includes(" ") ? `"${arg}"` : arg));
-    const child = spawn(command, quoted, {
-      cwd,
-      shell: useShell,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let output = "";
-    child.stdout.on("data", (chunk) => {
-      output += String(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      output += String(chunk);
-    });
-    child.on("error", (error) => resolvePromise({ code: -1, output: `${output}${(error as Error).message}` }));
-    child.on("close", (code) => resolvePromise({ code: code ?? -1, output }));
-  });
+async function run(command: string, args: string[], cwd: string): Promise<Run> {
+  // runProcess runs npm.cmd through a shell on Windows, the command itself unquoted.
+  const result = await runProcess(command, args, { cwd });
+  return { code: result.error === undefined ? (result.code ?? -1) : -1, output: result.output };
 }
 
 // What `npm init -y` writes, verbatim in shape — including the "main" naming a file it does

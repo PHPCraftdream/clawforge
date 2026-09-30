@@ -22,7 +22,6 @@ import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
 import { monorepoRoot } from "#framework/core/env.ts";
 import {
   splitLeadingAppFlag,
@@ -36,38 +35,22 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { selectChecks } from "#checks/kit/discover.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runProcess } from "#checks/kit/spawn.ts";
 
 /** Runs the real gate with a hard deadline, same as cli-help.check.ts: a hang and a slow
  *  success must not look the same to this check. `cwd` defaults to this process's own —
  *  pass an empty directory to prove a command needs nothing this checkout happens to have
  *  lying around. */
-function runGate(
+async function runGate(
   args: string[],
   { timeoutMs = 8000, cwd }: { timeoutMs?: number; cwd?: string } = {},
 ): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
-  return new Promise((resolvePromise) => {
-    const proc = spawn(
-      process.execPath,
-      ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
-      { stdio: ["ignore", "pipe", "pipe"], cwd },
-    );
-    let stdout = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      proc.kill("SIGKILL");
-    }, timeoutMs);
-    proc.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    proc.stderr.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      resolvePromise({ code, stdout, timedOut });
-    });
-  });
+  const { code, output, timedOut } = await runProcess(
+    process.execPath,
+    ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
+    { cwd, timeoutMs },
+  );
+  return { code, stdout: output, timedOut };
 }
 
 // --- splitLeadingAppFlag(): the pure boundary --------------------------------------------

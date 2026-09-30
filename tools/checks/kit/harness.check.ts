@@ -4,12 +4,12 @@
 // "#checks/..." package scope, so the harness is imported by an absolute file URL — proving
 // it works the way a script outside this repo's own subpath-import map would use it.
 
-import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { check, finish } from "./harness.ts";
+import { runProcess } from "./spawn.ts";
 
 const harnessUrl = pathToFileURL(resolve(import.meta.dirname, "harness.ts")).href;
 
@@ -21,13 +21,8 @@ interface Ran {
 async function runScript(dir: string, source: string): Promise<Ran> {
   const file = join(dir, `${Math.random().toString(36).slice(2)}.ts`);
   await writeFile(file, `import { check, checkTrue, finish } from "${harnessUrl}";\n${source}`);
-  return new Promise((resolvePromise) => {
-    const child = spawn(process.execPath, ["--experimental-strip-types", file], { stdio: ["ignore", "pipe", "pipe"] });
-    const chunks: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.on("close", (code) => resolvePromise({ code, output: Buffer.concat(chunks).toString("utf8") }));
-  });
+  const { code, output } = await runProcess(process.execPath, ["--experimental-strip-types", file]);
+  return { code, output };
 }
 
 const dir = await mkdtemp(join(tmpdir(), "clawforge-harness-check-"));

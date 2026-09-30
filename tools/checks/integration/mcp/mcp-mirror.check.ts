@@ -14,31 +14,15 @@
 import { rm } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
-import { spawn } from "node:child_process";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { MCP_EXEMPTIONS, STRUCTURED_OUTPUT_SCHEMA } from "#framework/integration/mcp/server.ts";
 import { STRUCTURED_ENVELOPE_HELP } from "#framework/core/io/help-render.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runProcess } from "#checks/kit/spawn.ts";
 
 function run(args: string[], input = ""): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolvePromise) => {
-    const proc = spawn(
-      process.execPath,
-      ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    proc.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    proc.on("close", () => resolvePromise({ stdout, stderr }));
-    proc.stdin.end(input);
-  });
+  return runProcess(process.execPath, ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), ...args], { input });
 }
 
 /** Command names as the help screen lists them: the deployment's own, indented six spaces,

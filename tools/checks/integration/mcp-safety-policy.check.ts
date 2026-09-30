@@ -4,25 +4,17 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import { inputSchema, toArgv, toolEnvelope } from "#framework/integration/mcp/schema.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runProcess } from "#checks/kit/spawn.ts";
 
 useLinuxHost();
 
 function runServer(script: string, input: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["--experimental-strip-types", "-e", script], { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += String(chunk); });
-    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-    child.on("close", (code) => resolve({ code, stdout, stderr }));
-    child.stdin.end(`${input}\n`);
-  });
+  return runProcess(process.execPath, ["--experimental-strip-types", "-e", script], { input: `${input}\n` });
 }
 
 // MCP confirmation does not silently change a command's own force flags.

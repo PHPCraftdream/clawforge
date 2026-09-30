@@ -10,7 +10,7 @@ unfixed findings; every other status is taken from the document's own summary.
 * [review-2026-09-30-round-28.md](review-2026-09-30-round-28.md) — round 28, first review of the
   round-27 fixes. Open: R28-01…R28-10 (P0: 0, P1: 0, P2: 2, P3: 8).
 * [review-2026-09-30-round-27.md](review-2026-09-30-round-27.md) — round 27, first review of the
-  round-26 fixes. Open: R27-01…R27-09 (P2: 4, P3: 5).
+  round-26 fixes. R27-01…R27-09 all fixed (8637571…5a7576c); follow-ups in round 28.
 * [review-2026-09-30-round-26.md](review-2026-09-30-round-26.md) — round 26, after the system-wide
   install. Findings R26-01…R26-17, all fixed (the `worktrees/` leftovers of R26-17 are the owner's call).
 * [review-2026-09-30-xs-round-25.md](review-2026-09-30-xs-round-25.md) — XS round 25, evidence-based

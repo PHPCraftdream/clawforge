@@ -278,12 +278,12 @@ try {
   const docsHelp = await clawforge(["help"], docs);
   check("help in a checkout folder does not offer init and names the checkout", docsHelp.code === 0 && docsHelp.output.includes("ClawForge checkout") && !docsHelp.output.includes("clawforge init"), true);
   const inDocs = await clawforge(["status"], docs);
-  check("in a non-app subfolder of a checkout it names the checkout entry", inDocs.code === 1 && inDocs.output.includes("'./clawforge' in its root") && !inDocs.output.includes("clawforge init"), true);
+  check("in a non-app subfolder of a checkout it names the checkout entry", inDocs.code === 1 && inDocs.output.includes("from its root") && !inDocs.output.includes("clawforge init"), true);
   const freshApp = resolve(appsDir, `${checkoutApp}-new`);
   await mkdir(freshApp, { recursive: true });
   try {
     const initInCheckout = await clawforge(["init"], freshApp);
-    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes("'./clawforge' new-app <name>"), true);
+    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes("clawforge new-app <name>") && !initInCheckout.output.includes("'./clawforge'") && initInCheckout.output.includes("empty directory"), true);
     check("and writes nothing", existsSync(join(freshApp, "app.ts")), false);
   } finally {
     await rm(freshApp, { recursive: true, force: true });

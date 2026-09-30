@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile, rename, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { CLAWFORGE_CONTROL_MCP_NAME, MCP_LAUNCHER_FILENAME, mcpLauncherContent, mergeClaudeConfig, mergeCodexConfig, projectMcpEntries, setupProjectMcp } from "#framework/integration/mcp/project.ts";
 import { initApp } from "#framework/integration/deployment/init.ts";
 import { createApp, appsDir, deploymentEnv } from "#framework/integration/deployment/scaffold.ts";
@@ -100,7 +100,10 @@ try {
   // deployment.
   const name = `mcp-auto-check-${randomBytes(5).toString("hex")}`;
   monorepoApp = resolve(appsDir,name);
+  // An empty directory left by a refused `init` is accepted; a non-empty one is not.
+  await mkdir(monorepoApp,{recursive:true});
   await withOutputSink(()=>{},()=>createApp(name));
+  await assert.rejects(withOutputSink(()=>{},()=>createApp(name)),/already exists/,"new-app refuses a non-empty directory");
   // Same rule as init.check.ts: no template key the published image rejects.
   const desiredState = JSON.parse(await readFile(resolve(monorepoApp, "config", "desired-state.json"), "utf8")) as { path: string; value: unknown }[];
   assert.ok(!desiredState.some((entry) => entry.path.startsWith("telemetry")), "new-app declares no telemetry key the published image rejects");
@@ -111,6 +114,12 @@ try {
     mcpLauncherContent("monorepo"),
     "new-app writes the monorepo-mode launcher",
   );
+  assert.ok(mcpLauncherContent("monorepo").includes('CLAWFORGE_INVOKED_AS = "../../clawforge --app "'), "the checkout launcher makes hints resolve from apps/<name>");
+  const previousLauncher = mcpLauncherContent("monorepo").split("\n").filter((line) => !/^\/\/ Hints must|CLAWFORGE_INVOKED_AS/.test(line)).join("\n");
+  assert.equal(createHash("sha256").update(previousLauncher).digest("hex"), "184fdbb3149ce05cd8b6c970538c93bc162dc0049b2d730cb927802dbb992431", "the retired launcher text is the one shipped before");
+  await writeFile(join(monorepoApp, MCP_LAUNCHER_FILENAME), previousLauncher, "utf8");
+  await setupProjectMcp(monorepoApp, "monorepo");
+  assert.equal(await readFile(join(monorepoApp, MCP_LAUNCHER_FILENAME), "utf8"), mcpLauncherContent("monorepo"), "mcp-setup rewrites the previous checkout launcher");
   const candidateName = `mcp-auto-check-${randomBytes(5).toString("hex")}`;
   claimedSibling = resolve(appsDir, `claim-check-${randomBytes(5).toString("hex")}`);
   await mkdir(claimedSibling, { recursive: true });

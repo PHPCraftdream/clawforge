@@ -11,7 +11,7 @@
 // tools/ — monorepo-only, should stay that way. The installed-as-dependency init command
 // has its own template (init.ts), importing the package specifier instead.
 
-import { mkdir, writeFile, access } from "node:fs/promises";
+import { mkdir, writeFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, die } from "../../core/io/log.ts";
 import { monorepoRoot, parseEnv } from "../../core/env.ts";
@@ -87,11 +87,12 @@ export async function createApp(name: string): Promise<void> {
 
   // Existence is checked before anything is written: overwriting would destroy a filled-in
   // .env, and its keys with it.
-  const exists = await access(directory).then(
-    () => true,
-    () => false,
+  // An existing empty directory is fine: `init` inside a checkout refuses and leaves one behind.
+  const existing = await readdir(directory).then(
+    (items) => items.length,
+    (error: NodeJS.ErrnoException) => (error.code === "ENOENT" ? 0 : 1),
   );
-  if (exists) die(`${directory} already exists`);
+  if (existing > 0) die(`${directory} already exists`);
 
   await mkdir(resolve(directory, "config"), { recursive: true });
   await mkdir(resolve(directory, "secrets"), { recursive: true });

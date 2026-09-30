@@ -26,6 +26,17 @@ All notable changes to `@clawforge/framework` will be documented here.
   line by cmd.exe and `CommandLineToArgvW` rules and compare it with the `--apply` argv, run the
   install and deploy hints under a non-default invocation, and count `sudoFor`'s three probe
   attempts on an unenterable parent.
+* Only a subdirectory of `apps/` with `app.ts` and a valid name is a deployment, for the gate, the
+  sole-deployment fallback, `list` and completion: an empty `apps/<name>` (left by a refused `init`)
+  no longer breaks `./clawforge help`/`status`, and a hidden `apps/.x` is ignored. `list` shows
+  other visible folders as `not a deployment: no app.ts`. `new-app` accepts an existing empty
+  directory (a non-empty one is still refused).
+* The MCP launcher of a checkout deployment (`apps/<name>/mcp-launch.mjs`) sets the invocation to
+  `../../clawforge --app <name>`, so hints resolve from `apps/<name>`; `mcp-setup` rewrites the
+  previous launcher.
+* `init` refused inside a checkout advises `clawforge new-app <name>` from the checkout root
+  (`./clawforge` as the bash form) instead of a quoted `'./clawforge'` that fails in cmd and
+  PowerShell, and says an empty folder can be reused by `new-app`.
 * A privileged command (backup, restore, secrets …) no longer asks for sudo on a path it can write
   when the target's existence probe fails once: `sudoFor` asks the probe up to three times before
   treating a refusal as a directory this user cannot enter. Seen as "needs root and sudo asks for

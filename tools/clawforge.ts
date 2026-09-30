@@ -15,7 +15,7 @@
 // under apps/ uses it automatically.
 
 import { resolve } from "node:path";
-import { access, readdir } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { main } from "./framework/entry/cli.ts";
 import { isWithin } from "./framework/entry/root.ts";
 import {
@@ -37,6 +37,7 @@ import { useDeployment } from "./framework/runtime/deployment.ts";
 import { createApp } from "./framework/integration/deployment/scaffold.ts";
 import { removeApp } from "./framework/integration/deployment/remove.ts";
 import { listDeployments, printDeploymentList } from "./framework/integration/list.ts";
+import { deploymentNames } from "./framework/integration/deployment/names.ts";
 import { safeName } from "./framework/core/names.ts";
 import { parseDeclaredArgs } from "./framework/core/arguments.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
@@ -201,7 +202,7 @@ const gateCommands: GateCommand[] = [
         reportError(`unknown argument: ${unknown}`);
         return 1;
       }
-      const summaries = await listDeployments({ checkStatus: !args.includes("--no-status") });
+      const summaries = await listDeployments({ checkStatus: !args.includes("--no-status"), includeOthers: !args.includes("--json") });
       if (args.includes("--json")) emit(`${JSON.stringify(summaries)}\n`);
       else printDeploymentList(summaries);
       return 0;
@@ -257,13 +258,10 @@ try {
 
 let deploymentDir = resolve(monorepoRoot, "apps", name);
 try {
-  await access(deploymentDir);
+  await access(resolve(deploymentDir, "app.ts"));
 } catch {
   // Other deployments may exist under another name: name them instead of claiming none.
-  const available = (await readdir(resolve(monorepoRoot, "apps"), { withFileTypes: true }).catch(() => []))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
+  const available = await deploymentNames(resolve(monorepoRoot, "apps"));
 
   const sole = soleDeploymentFallback(appExplicit, available);
   if (sole !== undefined) {

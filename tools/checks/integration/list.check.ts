@@ -8,6 +8,8 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join, basename } from "node:path";
 import { listDeployments } from "#framework/integration/list.ts";
+import { deploymentNames } from "#framework/integration/deployment/names.ts";
+import { soleDeploymentFallback } from "#framework/integration/gate.ts";
 import { useDeployment, selectedDeployment } from "#framework/runtime/deployment.ts";
 import { NotBootstrapped } from "#framework/runtime/runtime.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -58,7 +60,10 @@ await writeDeployment(
     "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable\n",
   'throw new Error("fixture: intentionally broken");\n',
 );
-await mkdir(resolve(root, "no-env"), { recursive: true }); // a directory with no .env at all
+await writeDeployment("no-env", undefined); // app.ts but no .env at all
+await mkdir(resolve(root, "empty-dir"), { recursive: true });
+await mkdir(resolve(root, ".hidden"), { recursive: true });
+await writeDeployment("Bad_Name", undefined);
 
 function stubContext(isRunning: () => Promise<boolean>, transportDescription: string): Context {
   return { runtime: { isRunning }, transport: { description: transportDescription } } as unknown as Context;
@@ -204,6 +209,28 @@ check(
     state: "unchecked",
   },
 );
+
+// --- only directories with app.ts and a valid name are deployments ------------------------
+
+check("an empty, a hidden and an invalid-name directory are not deployments", await deploymentNames(root), [
+  "auto-target", "broken-app", "conn-error", "healthy", "no-env", "not-bootstrapped", "unpinned",
+]);
+const withOthers = await listDeployments({ appsRoot: root, checkStatus: false, includeOthers: true });
+check(
+  "list can show the others, one line each",
+  withOthers.filter((entry) => entry.state === "error" && entry.reason?.startsWith("not a deployment")).map((entry) => [entry.name, entry.reason]),
+  [
+    ["Bad_Name", "not a deployment: invalid deployment name \"Bad_Name\" — use lowercase letters, digits and dashes, starting with a letter"],
+    ["empty-dir", "not a deployment: no app.ts"],
+  ],
+);
+const soleRoot = resolve(root, "sole-root");
+await mkdir(resolve(soleRoot, "x"), { recursive: true });
+await mkdir(resolve(soleRoot, ".x"), { recursive: true });
+check("empty and hidden directories alone leave no sole deployment", soleDeploymentFallback(false, await deploymentNames(soleRoot)), undefined);
+await mkdir(resolve(soleRoot, "real"), { recursive: true });
+await writeFile(resolve(soleRoot, "real", "app.ts"), FIXTURE_APP, "utf8");
+check("beside them the one real deployment is still the sole one", soleDeploymentFallback(false, await deploymentNames(soleRoot)), "real");
 
 // --- an apps/ directory that does not exist at all: an empty list, not a crash -------------
 

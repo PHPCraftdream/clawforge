@@ -31,6 +31,8 @@ if (!["mcp-serve", "control-mcp"].includes(action)) throw new Error("invalid MCP
 
 const entry = resolve(root, "../../tools/clawforge.ts");
 process.chdir(root);
+// Hints must resolve from this directory: the shim is two levels up.
+process.env.CLAWFORGE_INVOKED_AS = "../../clawforge --app " + basename(root);
 process.argv = [process.argv[0], entry, "--app", basename(root), action];
 await import(pathToFileURL(entry).href);
 `;
@@ -73,7 +75,10 @@ if (entry === undefined) {
 `;
 
 /** Earlier canonical launcher texts, by sha256: still ours to rewrite, not a local edit. */
-const RETIRED_LAUNCHERS = new Set(["47775c0b66345861419a080594347e2d1e2dcc6a0658c1bf90ae8e3d6ecb7129"]);
+const RETIRED_LAUNCHERS = new Set([
+  "47775c0b66345861419a080594347e2d1e2dcc6a0658c1bf90ae8e3d6ecb7129",
+  "184fdbb3149ce05cd8b6c970538c93bc162dc0049b2d730cb927802dbb992431",
+]);
 
 /** The launcher content for `mode` — the only place either variant is defined. */
 export function mcpLauncherContent(mode: DeploymentMode): string {

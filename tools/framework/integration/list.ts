@@ -2,8 +2,7 @@
 // creating a deployment is that file's job, reading what several of them add up to is this
 // one's.
 
-import { readdir, readFile } from "node:fs/promises";
-import type { Dirent } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { log, info, maskSecrets } from "../core/io/log.ts";
@@ -13,6 +12,7 @@ import { useDeployment, selectedDeployment } from "../runtime/deployment.ts";
 import { NotBootstrapped } from "../runtime/runtime.ts";
 import type { AppDefinition } from "../core/app.ts";
 import { appsDir } from "./deployment/scaffold.ts";
+import { scanApps } from "./deployment/names.ts";
 
 /** "running"/"stopped" answer isRunning(); "not-bootstrapped" is NotBootstrapped (the data
  *  directory was never created); "unchecked" means --no-status skipped the target entirely;
@@ -38,6 +38,8 @@ export interface ListDeploymentsOptions {
    *  stub instead of a real transport and Docker; production always loads the deployment's
    *  own app.ts, the same as every other command run against it. */
   buildContext?: (app: AppDefinition, directory: string) => Promise<Context>;
+  /** Also return one error row per visible directory that is not a deployment. */
+  includeOthers?: boolean;
 }
 
 async function defaultBuildContext(app: AppDefinition, directory: string): Promise<Context> {
@@ -126,19 +128,17 @@ export async function listDeployments(options: ListDeploymentsOptions = {}): Pro
   const checkStatus = options.checkStatus ?? true;
   const buildContext = options.buildContext ?? defaultBuildContext;
 
-  let entries: Dirent[];
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const names = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+  const { names, others } = await scanApps(root);
 
   const restore = selectedDeployment();
   try {
     const summaries: DeploymentSummary[] = [];
     for (const name of names) {
       summaries.push(await summarizeDeployment(name, resolve(root, name), checkStatus, buildContext));
+    }
+    if (options.includeOthers === true) {
+      for (const other of others) summaries.push({ name: other.name, state: "error", reason: other.reason });
+      summaries.sort((a, b) => (a.name < b.name ? -1 : 1));
     }
     return summaries;
   } finally {

@@ -13,6 +13,7 @@
 // npm-linked bin would fail before a single line of this ran.
 
 import { access } from "node:fs/promises";
+import { readdirSync } from "node:fs";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
@@ -56,7 +57,12 @@ if (initializing && !scheduled && ancestor !== undefined && ancestor !== cwd && 
 }
 const checkout = scheduled ? undefined : findCheckoutRoot(cwd);
 if (initializing && ancestor === undefined && checkout !== undefined) {
-  reportError(`${checkout} is a ClawForge checkout — init would write an installed-style deployment it cannot load; create one from its root with: './clawforge' new-app <name>`);
+  const empty = readdirSync(cwd).length === 0;
+  reportError(
+    `${checkout} is a ClawForge checkout — init would write an installed-style deployment it cannot load; ` +
+      `from its root run: ${cli("new-app <name>")} (in bash also ./clawforge new-app <name>)` +
+      (empty ? "; new-app accepts an existing empty directory, so this one can be reused by name or removed" : ""),
+  );
   process.exit(1);
 }
 const appRoot = scheduled ? resolve(rawArgv[1]) : initializing ? cwd : (ancestor ?? cwd);
@@ -110,7 +116,7 @@ try {
   const helpExit = helpWithoutDeployment(gateCommands, argv, { deploymentCommands: Object.keys(openclawCommands), checkout });
   if (helpExit !== undefined) process.exit(helpExit);
   reportError(`no app.ts in ${appRoot}`);
-  if (checkout !== undefined) reportError(`this is a ClawForge checkout (${checkout}) — './clawforge' in its root is the entry`);
+  if (checkout !== undefined) reportError(`this is a ClawForge checkout (${checkout}) — run ${invocation()} from its root (in bash also ./clawforge)`);
   else reportError(`this directory has not been initialised as an OpenClaw deployment yet — run: ${cli("init")}`);
   process.exit(1);
 }

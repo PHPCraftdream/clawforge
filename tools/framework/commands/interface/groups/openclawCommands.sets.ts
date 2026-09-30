@@ -9,7 +9,7 @@ import { BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
 
 export const setsCommands: Record<string, AppCommand> = {
   set: {
-    summary: "Build or validate the set: everything a deployment installs, one artifact, one content id",
+    summary: "Build or validate the set: what a deployment installs, as one artifact",
     group: "change",
     run: set,
     readOnlyWhen: (args) => ["diff", "receipts", "validate"].includes(args[0] ?? ""),

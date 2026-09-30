@@ -27,6 +27,7 @@ import {
   missingDeploymentReport,
   type GateCommand,
 } from "./framework/integration/gate.ts";
+import { helpEntryLine } from "./framework/core/io/help-render.ts";
 import { reportError, info } from "./framework/core/io/log.ts";
 import { emit } from "./framework/core/io/output.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
@@ -227,7 +228,7 @@ if (gateExit !== undefined) process.exit(gateExit);
 // not a command at all.
 const monorepoGateHelp = [
   ...gateHelpLines(gateCommands),
-  "  --app <name>      pick another deployment, before the command (default: the OC_APP one)",
+  helpEntryLine("--app <name>", "pick another deployment, before the command (default: the OC_APP one)"),
 ];
 
 // Every name this gate can dispatch without a loaded app.ts — a deployment's own app.ts

@@ -181,7 +181,7 @@ try {
 
     const recipeTool = (((byId.get(4)?.result as { tools?: Array<{ name: string; description?: string; inputSchema?: { properties?: Record<string, unknown>; required?: string[] } }> } | undefined)?.tools ?? [])
       .find((tool) => tool.name === "recipe"));
-    check("recipe MCP schema leaves conditional confirmation optional", recipeTool?.inputSchema?.required?.includes("confirm"), false);
+    check("recipe MCP schema leaves conditional confirmation optional", (recipeTool?.inputSchema?.required ?? []).includes("confirm"), false);
     check("recipe MCP schema exposes confirmation", recipeTool?.inputSchema?.properties?.confirm !== undefined, true);
     check("recipe MCP description explains conditional confirmation", recipeTool?.description?.includes("(destructive for some actions)"), true);
     check("declaration and generated description agree", toolDescription("recipe", openclawCommands.recipe!).includes("(destructive for some actions)"), true);

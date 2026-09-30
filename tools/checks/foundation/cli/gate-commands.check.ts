@@ -6,6 +6,7 @@
 // buys — dispatch, help, and the same schema/argv derivation the deployment's own commands
 // get, from the same functions.
 
+import { helpEntryLine } from "#framework/core/io/help-render.ts";
 import { runGateCommand, gateHelpLines, gateCommandHelp, type GateCommand } from "#framework/integration/gate.ts";
 import { inputSchema, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -88,7 +89,7 @@ check("no gate commands means no extra lines in the help screen", gateHelpLines(
 check(
   "each gate command gets one aligned line",
   gateHelpLines([sample(), sample({ name: "check", summary: "Run the framework's own checks" })]),
-  ["  new-app  Create a deployment under apps/", "  check    Run the framework's own checks"],
+  [helpEntryLine("new-app", "Create a deployment under apps/"), helpEntryLine("check", "Run the framework's own checks")],
 );
 
 // --- the same derivation the deployment's commands get -----------------------------------------

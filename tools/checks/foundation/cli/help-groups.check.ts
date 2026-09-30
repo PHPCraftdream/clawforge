@@ -1,6 +1,6 @@
 // Checks the grouped top-level --help listing: every real command declares a group,
 // GROUP_HEADINGS covers exactly the CommandGroup union, --help prints the sections in that
-// fixed order with every command present exactly once, and the "(destructive)" marker
+// fixed order with every command present exactly once, and the destructive symbol
 // reflects readOnlyWhen instead of being flatly true for a command that is only sometimes
 // destructive.
 //
@@ -11,7 +11,7 @@
 
 import { defineApp } from "#framework/core/app.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { runApp, GROUP_HEADINGS, GROUP_ORDER, destructiveMarker } from "#framework/entry/cli.ts";
+import { runApp, GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol } from "#framework/entry/cli.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -75,12 +75,27 @@ for (const name of Object.keys(openclawCommands)) {
 // derives for it from `destructive`/`readOnlyWhen` — never a hard-coded per-command string.
 for (const [name, command] of Object.entries(openclawCommands)) {
   const { line } = commandLine(name);
-  const expected = destructiveMarker(command);
+  const expected = destructiveSymbol(command);
   check(
-    `${name}'s --help line carries its exact destructive marker`,
-    expected === "" ? line?.includes("(destructive") === false : (line?.trimEnd().endsWith(expected) ?? false),
+    `${name}'s --help line carries its exact destructive symbol`,
+    expected === "" ? !/ [!*]$/.test(line?.trimEnd() ?? "") : (line?.trimEnd().endsWith(`${command.summary}${expected}`) ?? false),
     true,
   );
+}
+
+// Layout: the wording lives in one legend line, not repeated per command; one name column
+// for commands, gate and built-in lines; no line long enough to wrap in a normal terminal.
+check("no listing line repeats the destructive wording", lines.filter((line) => line.includes("(destructive")), []);
+check("the legend explains both symbols once", lines.filter((line) => line.includes("! destructive") && line.includes("* destructive for some actions")).length, 1);
+check("the framework block has its own heading, once", lines.filter((line) => line.trim() === "Framework:").length, 1);
+check("no help line is longer than 100 characters", lines.filter((line) => line.length > 100), []);
+{
+  const columns = new Set(Object.entries(openclawCommands).map(([name, command]) => commandLine(name).line?.indexOf(command.summary)));
+  const controlMcp = lines.find((line) => /^\s*control-mcp\s/.test(line));
+  const helpAlias = lines.find((line) => /^\s*help <command>\s/.test(line));
+  columns.add(controlMcp?.indexOf("expose "));
+  columns.add(helpAlias?.indexOf("same as"));
+  check("every list line, framework block included, starts its summary in one column", columns.size, 1);
 }
 // Spot-check the two concrete cases the task calls out: an unconditionally destructive
 // command still reads "(destructive)" plainly, a conditionally destructive one does not.

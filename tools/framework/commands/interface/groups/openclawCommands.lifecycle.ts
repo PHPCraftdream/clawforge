@@ -115,7 +115,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     arguments: LOGS_ARGUMENTS,
   },
   backup: {
-    summary: "Snapshot the data directory (list, prune-replaced, install, uninstall)",
+    summary: "Snapshot the data directory; list, prune, schedule",
     group: "save-move",
     run: backup,
     readOnlyWhen: backupActionIsReadOnly,

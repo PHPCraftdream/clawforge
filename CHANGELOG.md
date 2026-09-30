@@ -149,6 +149,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* `help`: the per-line "(destructive for some actions)" suffix is replaced by a short marker
+  (`*` for some actions, `!` for always) with one legend line; the gate and built-in commands
+  sit under a "Framework:" heading and share the command column; long summaries (`recipe`,
+  `expose`, `incident`, `set`, `host`, `backup`, `plan`, `provision-agent`, `cli-start`) are
+  shortened so no line exceeds 100 characters. `help <command>` and `--help` keep the full text.
 * Internal refactor, no behavior change: `instance-mutation-guard.ts`'s `claim()` and
   `instance-lock.ts`'s `takeLockClaim()` — each ~150 lines with the same marker-cleanup line
   repeated on nearly every failure branch — are now split into small named steps (fresh vs.
@@ -531,6 +536,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Internal
 
+* MCP `tools/list` budget headroom: 80 bytes to about 1.6 KB free (32688 to 31166 of 32768)
+  without raising the budget. Shorter shared argument descriptions (`break-lock`,
+  `break-foreign-lock`, `confirm`), an empty `required` is not sent, and shorter command
+  summaries; the full text stays reachable through the `help` tool and `./clawforge help <command>`.
 * checks: new `gnu-userland` capability (GNU-compatible `mkdir`/`mv` and GNU `tar` on this
   process's PATH). Checks that drive the local transport skip on macOS and on a Windows runner
   without them, instead of failing on BSD `tar`/`mv` or a missing `mkdir`; the Linux CI job

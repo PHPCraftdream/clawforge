@@ -115,7 +115,7 @@ export const managementCommands: Record<string, AppCommand> = {
     ],
   },
   host: {
-    summary: "Run one command on the operator's own machine — the target's transport, the engine's VM, or bare local",
+    summary: "Run one command on the operator's own machine, not in a container",
     group: "low-level",
     run: host,
     details:
@@ -161,7 +161,7 @@ export const managementCommands: Record<string, AppCommand> = {
     ],
   },
   "cli-start": {
-    summary: "Start the persistent CLI helper (removes cli/mcp-serve container overhead)",
+    summary: "Start the persistent CLI helper (no per-call container overhead)",
     group: "low-level",
     run: cliStart,
     details:
@@ -261,7 +261,7 @@ export const managementCommands: Record<string, AppCommand> = {
     readOnlyWhen: (args) => args.includes("--dry-run"),
   },
   recipe: {
-    summary: "Deploy services next to the instance (list, import, new, install, remove, status, logs, verify, onboard, diagnose)",
+    summary: "Deploy services next to the instance: install, verify, list, and more",
     group: "change",
     run: recipe,
     // Only lifecycle changes need confirmation; the read-only set is defined once, beside
@@ -343,7 +343,7 @@ export const managementCommands: Record<string, AppCommand> = {
     ],
   },
   "provision-agent": {
-    summary: "Wire a recipe's MCP server to a dedicated OpenClaw agent, with optional cron",
+    summary: "Wire a recipe's MCP server to its own OpenClaw agent, with optional cron",
     group: "change",
     run: provisionAgent,
     details:
@@ -424,7 +424,7 @@ export const managementCommands: Record<string, AppCommand> = {
     structured: true,
   },
   expose: {
-    summary: "Reach a loopback-bound gateway from outside this host: SSH tunnel, tailscale serve, or a status report",
+    summary: "Reach a loopback-bound gateway from outside: SSH tunnel or tailscale",
     group: "security-access",
     run: expose,
     destructive: true,
@@ -586,7 +586,7 @@ export const managementCommands: Record<string, AppCommand> = {
     ],
   },
   incident: {
-    summary: "Incident response: contain exposure, preserve evidence, rotate the gateway token, audit, collect",
+    summary: "Incident response: contain, preserve evidence, rotate the token, audit",
     group: "security-access",
     run: incident,
     destructive: true,

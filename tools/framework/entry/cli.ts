@@ -13,19 +13,19 @@ import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "../integration/provision.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
 import { knownCommandNames, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
-import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
+import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, helpEntryLine, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
 import type { AppDefinition } from "../core/app.ts";
 
 // Re-exported for tools/checks/foundation/cli/help-groups.check.ts, which asserts the console
 // listing against the real grouping and wording rather than a copy that could drift from it.
-export { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker };
+export { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol };
 
 /** Lines shown between the command list and the closing "Run ./clawforge help ..." hint —
  *  gate-specific (monorepo: --app/new-app; installed: init), not something an AppDefinition
  *  could know. tools/clawforge.ts and bin.ts each pass their own; this default is tools/clawforge.ts's. */
 const DEFAULT_GATE_HELP = [
-  "  --app <name>      pick another deployment, before the command (default: the OC_APP one)",
-  "  new-app <name>    create a deployment under apps/",
+  helpEntryLine("--app <name>", "pick another deployment, before the command (default: the OC_APP one)"),
+  helpEntryLine("new-app <name>", "create a deployment under apps/"),
 ];
 
 /** Whether argv asks for this command's own `--help`, scanning only tokens before the

@@ -81,7 +81,7 @@ export const orchestrationCommands: Record<string, AppCommand> = {
     readOnly: true,
   },
   plan: {
-    summary: "The ordered actions the declaration implies, without performing any of them",
+    summary: "The ordered actions the declaration implies, without performing them",
     group: "change",
     run: plan,
     details:

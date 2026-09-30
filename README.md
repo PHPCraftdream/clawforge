@@ -130,7 +130,7 @@ Start & stop:
   up                   Start the service and wait until it serves
   restart              Restart the instance so it re-reads its configuration
   down                 Stop and remove the containers (data is kept)
-  destroy              Remove what bootstrap created
+  destroy              Remove what bootstrap created *
   logs                 Follow the service log, or read a bounded tail of it
   status               Show containers, image, health probes and data usage
 
@@ -140,32 +140,32 @@ Check:
   doctor               Say whether anything is wrong and what to run about it
   accept               Run the acceptance checks this deployment's recipes declare
   operations           What mutating runs did to this instance, and what they left behind
-  watch                Health monitoring with a webhook alert on state change
+  watch                Health monitoring with a webhook alert on state change *
 
 Change:
-  upgrade              Update the image by digest, with automatic rollback on failure
-  plan                 The ordered actions the declaration implies, without performing any of them
-  apply                Run the plan, then confirm what the instance actually is
-  rollback             Put back the configuration an operation replaced
+  upgrade              Update the image by digest, with automatic rollback on failure *
+  plan                 The ordered actions the declaration implies, without performing them
+  apply                Run the plan, then confirm what the instance actually is *
+  rollback             Put back the configuration an operation replaced *
   apply-config         Apply the deployment's desired-state.json
   configure-provider   Configure model providers from target-side environment variables
-  secrets              Show required secrets and whether they are in place
-  recipe               Deploy services next to the instance (list, import, install, remove, status, logs, verify, onboard, diagnose)
-  provision-agent      Wire a recipe's MCP server to a dedicated OpenClaw agent, with optional cron
-  set                  Build or validate the set: everything a deployment installs, one artifact, one content id
+  secrets              Show required secrets and whether they are in place *
+  recipe               Deploy services next to the instance: install, verify, list, and more *
+  provision-agent      Wire a recipe's MCP server to its own OpenClaw agent, with optional cron
+  set                  Build or validate the set: what a deployment installs, as one artifact *
 
 Save & move:
-  backup               Snapshot the data directory (list, prune-replaced)
-  restore              Restore an archive over the current state
+  backup               Snapshot the data directory; list, prune, schedule *
+  restore              Restore an archive over the current state *
   pull                 Snapshot the instance state into the snapshot directory
-  push                 Push a snapshot back onto the instance
+  push                 Push a snapshot back onto the instance *
   verify               Check a snapshot for credentials before sharing it
   lock                 Pin what this instance is made of, or check it still matches
-  deploy               Deploy to a server over SSH and bootstrap it there
+  deploy               Deploy to a server over SSH and bootstrap it there *
 
 Security & access:
-  expose               Reach a loopback-bound gateway from outside this host: SSH tunnel, tailscale serve, or a status report
-  incident              Incident response: contain exposure, preserve evidence, rotate the gateway token, audit, collect
+  expose               Reach a loopback-bound gateway from outside: SSH tunnel or tailscale *
+  incident             Incident response: contain, preserve evidence, rotate the token, audit *
 
 Integrations & recovery:
   recover-env          Repair .env's connection facts from the running instance
@@ -174,16 +174,24 @@ Integrations & recovery:
   mcp-creds            Print service URL, token and MCP client config for both servers
 
 Low-level:
-  cli                  Run the OpenClaw CLI in a throwaway container
-  exec                 Run an arbitrary command in the same sidecar as ./clawforge cli
-  host                 Run one command on the operator's own machine — the target's transport, the engine's VM, or bare local
-  cli-start            Start the persistent CLI helper (removes cli/mcp-serve container overhead)
+  cli                  Run the OpenClaw CLI in a throwaway container !
+  exec                 Run an arbitrary command in the same sidecar as ./clawforge cli !
+  host                 Run one command on the operator's own machine, not in a container !
+  cli-start            Start the persistent CLI helper (no per-call container overhead)
   cli-stop             Stop the persistent CLI helper
 
-  check       Run the framework's own checks (no instance needed)
-  new-app     Create a deployment under apps/
-  remove-app  Delete apps/<name>
-  list        Overview of every deployment under apps/
+Framework:
+  check                Run the framework's own checks (no instance needed)
+  new-app              Create a deployment under apps/
+  remove-app           Delete apps/<name>
+  list                 Overview of every deployment under apps/
+  version              Print clawforge's own version (also: --version, -v)
+  completion           Print a shell completion script (bash, zsh or pwsh) to stdout
+  --app <name>         pick another deployment, before the command (default: the OC_APP one)
+  control-mcp          expose clawforge's commands as MCP tools, for agents
+  help <command>       same as: <command> --help
+
+  ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)
 ```
 
 ## Documentation

@@ -79,15 +79,31 @@ export function destructiveMarker(command: {
   return command.readOnlyWhen === undefined ? " (destructive)" : " (destructive for some actions)";
 }
 
+/** Short list marker: `!` destructive, `*` destructive for some actions; renderUsage's
+ *  legend line explains both. Empty for a command that is not destructive. */
+export function destructiveSymbol(command: {
+  readonly destructive?: boolean;
+  readonly readOnlyWhen?: (args: string[]) => boolean;
+}): string {
+  if (command.destructive !== true) return "";
+  return command.readOnlyWhen === undefined ? " !" : " *";
+}
+
+/** Name column of every entry in the command list (commands, gate and built-in lines alike). */
+export const HELP_NAME_WIDTH = 20;
+
+/** One aligned line of the command list. */
+export function helpEntryLine(name: string, summary: string): string {
+  return `  ${name.padEnd(HELP_NAME_WIDTH)} ${summary}`;
+}
+
 /** The two framework-owned lines every gate's `--help` footer carries beside its own
  *  (check/new-app/list, or init): `control-mcp`, and `help`, the dispatcher's own alias. */
 function builtinHelpLines(appName: string): string[] {
-  const entries: Array<[string, string]> = [
-    ["control-mcp", `expose ${appName}'s commands as MCP tools — the entry point for agents`],
-    ["help <command>", "same as: <command> --help"],
+  return [
+    helpEntryLine("control-mcp", `expose ${appName}'s commands as MCP tools, for agents`),
+    helpEntryLine("help <command>", "same as: <command> --help"),
   ];
-  const width = Math.max(...entries.map(([name]) => name.length)) + 2;
-  return entries.map(([name, summary]) => `  ${name.padEnd(width)}${summary}`);
 }
 
 /** The top-level `--help` screen, shared by the console and the MCP `help` tool. */
@@ -97,7 +113,6 @@ export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
   info("Usage: ./clawforge <command> [options]");
   info("");
 
-  const width = Math.max(...Object.keys(app.commands).map((name) => name.length)) + 2;
   const byGroup = new Map<CommandGroup, [string, AppCommand][]>();
   // Belt and suspenders: help-groups.check.ts fails the build before an ungrouped command
   // ships, but one that reaches here is still listed rather than silently dropped.
@@ -116,7 +131,7 @@ export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
   const printGroup = (heading: string, entries: [string, AppCommand][]): void => {
     info(`${heading}:`);
     for (const [name, command] of entries) {
-      info(`  ${name.padEnd(width)} ${command.summary}${destructiveMarker(command)}`);
+      info(helpEntryLine(name, `${command.summary}${destructiveSymbol(command)}`));
     }
     info("");
   };
@@ -126,8 +141,11 @@ export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
   }
   if (unknown.length > 0) printGroup("Other", unknown);
 
+  info("Framework:");
   for (const line of gateHelp) info(line);
   for (const line of builtinHelpLines(app.name)) info(line);
+  info("");
+  info("  ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)");
   info("");
   info("Run `./clawforge help <command>` or `./clawforge <command> --help` for its full description.");
 }

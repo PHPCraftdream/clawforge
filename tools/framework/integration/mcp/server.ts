@@ -176,13 +176,20 @@ async function handleInitialize(id: number | string | undefined, app: AppDefinit
   });
 }
 
+/** The schema as sent in tools/list: an empty `required` is the JSON Schema default, so it is
+ *  not spelled out (saves bytes on every tool without a required argument). */
+function wireSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const { required, ...rest } = schema;
+  return Array.isArray(required) && required.length === 0 ? rest : schema;
+}
+
 function handleToolsList(id: number | string | undefined, tools: [string, AppCommand][], gateTools: GateCommand[]): void {
   reply(id, {
     tools: [
       ...tools.map(([name, command]) => ({
         name,
         description: toolDescription(name, command),
-        inputSchema: inputSchema(command),
+        inputSchema: wireSchema(inputSchema(command)),
         // Declared from the command's own metadata alone — a structured tool answers every
         // action in the envelope, so one honest schema covers all of them.
         ...(command.structured === true ? { outputSchema: STRUCTURED_OUTPUT_SCHEMA } : {}),
@@ -190,12 +197,12 @@ function handleToolsList(id: number | string | undefined, tools: [string, AppCom
       ...gateTools.map((command) => ({
         name: command.name,
         description: toolDescription(command.name, command),
-        inputSchema: inputSchema(command),
+        inputSchema: wireSchema(inputSchema(command)),
       })),
       {
         name: "help",
         description: HELP_TOOL.summary,
-        inputSchema: inputSchema(HELP_TOOL),
+        inputSchema: wireSchema(inputSchema(HELP_TOOL)),
       },
     ],
   });

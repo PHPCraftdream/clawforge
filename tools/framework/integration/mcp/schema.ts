@@ -181,7 +181,7 @@ function shortenDescription(description: string): string {
 /** Arguments repeated on many tools: one terse schema line each (`help` keeps the full text). */
 const SHARED_SCHEMA_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "break-lock": "Take over a held instance lock",
-  "break-foreign-lock": "Take over an orphaned lock owned by this host id",
+  "break-foreign-lock": "Host id of an orphaned lock to take over",
 };
 
 /** The argument description in the MCP schema; `--help` and `help` keep it whole. */
@@ -222,7 +222,7 @@ export function inputSchema(command: Declared): Record<string, unknown> {
       type: "boolean",
       description: command.readOnlyWhen === undefined
         ? "Must be true: destroys state"
-        : "Must be true for a destructive action",
+        : "Confirm a destructive action",
     };
     if (command.readOnlyWhen === undefined && command.requiresConfirmationWhen === undefined) required.push("confirm");
   }

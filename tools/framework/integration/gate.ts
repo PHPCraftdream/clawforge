@@ -13,7 +13,7 @@
 
 import { info, reportError } from "../core/io/log.ts";
 import { closestCommand } from "../core/arguments.ts";
-import { renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
+import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
 import type { AppDefinition, CommandArgument } from "../core/app.ts";
 
 export { closestCommand } from "../core/arguments.ts";
@@ -40,8 +40,7 @@ export function gateCommandHelp(command: GateCommand): void {
 /** Lines for the command list in `./clawforge help`, so a gate command appears beside the rest. */
 export function gateHelpLines(commands: GateCommand[]): string[] {
   if (commands.length === 0) return [];
-  const width = Math.max(...commands.map((command) => command.name.length)) + 2;
-  return commands.map((command) => `  ${command.name.padEnd(width)}${command.summary}`);
+  return commands.map((command) => helpEntryLine(command.name, command.summary));
 }
 
 /** Dispatches argv against the gate's own commands. Returns the exit code when one of them

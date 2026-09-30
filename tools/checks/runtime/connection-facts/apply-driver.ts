@@ -1,6 +1,6 @@
 // The harness the apply checks drive the REAL apply()/runSteps with: a real createContext(),
 // with the transport and docker answers stubbed — the seam a hand-built Context cannot reach.
-// Shared by convergence/apply.check.ts and connection-facts/operator-edit.check.ts.
+// Shared by convergence/apply/apply-refresh.check.ts and connection-facts/operator-edit.check.ts.
 //
 // Everything here is check-side scaffolding, not framework code: it lives under tools/checks/
 // because both of its consumers do. The stubbed `config set --batch-file` payload goes out

@@ -566,6 +566,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   interleaved, Windows `.cmd` through a shell). The per-file spawn helpers in nine check files use
   it; `system-install.check.ts` picks the control MCP entry by `CLAWFORGE_CONTROL_MCP_NAME`, not by
   position.
+* checks: the nine check files at 675-700 lines (`runtime-image-identity`, `watch/check`,
+  `backup`, `recipe-hook-freshness`, `checkout-policy`, `inspect/drift`, `set-build`, `state`,
+  `apply`) are split along their scenario seams into files of 100-375 lines, most of them in a
+  new subdirectory named after the subject (shared stubs in a sibling `fixture.ts` /
+  `mutation-guard.ts`). No assertion added, removed or weakened; each part keeps its own
+  `check:exclusive` marker where it needs one.
 
 ## 0.1.0
 

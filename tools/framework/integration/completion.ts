@@ -9,6 +9,7 @@
 
 import { parseDeclaredArgs } from "../core/arguments.ts";
 import { reportError } from "../core/io/log.ts";
+import { cli } from "../core/io/invocation.ts";
 import { emitRaw } from "../core/io/output.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import type { CommandArgument } from "../core/app.ts";
@@ -139,7 +140,7 @@ function bashFunctionBody(commands: readonly CommandCompletionSpec[], appFlag: b
 function renderBash(commands: readonly CommandCompletionSpec[], appFlag: boolean): string {
   return (
     "# clawforge bash completion — generated from the live command declarations.\n" +
-    "# Install: source <(./clawforge completion bash)\n" +
+    `# Install: source <(${cli("completion bash")})\n` +
     `${bashFunctionBody(commands, appFlag)}` +
     "complete -F _clawforge_complete clawforge\n" +
     "complete -F _clawforge_complete ./clawforge\n"
@@ -151,8 +152,8 @@ function renderZsh(commands: readonly CommandCompletionSpec[], appFlag: boolean)
     "#compdef clawforge ./clawforge\n" +
     "# clawforge zsh completion — generated from the live command declarations, via bash's\n" +
     "# completion protocol (bashcompinit), so this cannot drift from the bash script's own\n" +
-    "# grammar. Install: ./clawforge completion zsh > \"${fpath[1]}/_clawforge\" (new shell), or\n" +
-    "# source <(./clawforge completion zsh) in the current one.\n" +
+    `# grammar. Install: ${cli("completion zsh")} > "\${fpath[1]}/_clawforge" (new shell), or\n` +
+    `# source <(${cli("completion zsh")}) in the current one.\n` +
     "autoload -Uz bashcompinit\n" +
     "bashcompinit\n" +
     `${bashFunctionBody(commands, appFlag)}` +
@@ -183,7 +184,7 @@ function renderPwsh(commands: readonly CommandCompletionSpec[], appFlag: boolean
   const appSkip = appFlag ? "    if ($rest[$i] -eq '--app') { $i++; continue }\n" : "";
 
   return `# clawforge PowerShell completion — generated from the live command declarations.
-# Install: ./clawforge completion pwsh | Out-String | Invoke-Expression
+# Install: ${cli("completion pwsh")} | Out-String | Invoke-Expression
 $clawforgeCommands = @(${names})
 $clawforgeFlags = @{
 ${flagTable}

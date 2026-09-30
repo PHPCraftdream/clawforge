@@ -87,7 +87,7 @@ export function nextStepsLines(envFile: string, dataDir: string, bootstrapComman
   if (isUnderSrv(dataDir)) {
     lines.push(
       `     it is under /srv, usually root-owned on a fresh host — ${bootstrapCommand} --check reports ` +
-        "exactly what it needs, including the sudo install -d line if one is",
+        "exactly what it needs, including the sudo install -d line if one is needed",
     );
   }
   lines.push(`  2. ${bootstrapCommand} --check   (read-only: docker, compose v2, this directory, the gateway port, disk space)`);

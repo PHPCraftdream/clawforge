@@ -7,8 +7,8 @@ import { localizeHints } from "./invocation.ts";
 const useColour = process.stderr.isTTY === true;
 
 /** Diagnostics go to stderr, or to the capture sink when there is one. */
-function write(raw: string): void {
-  const text = localizeHints(raw);
+function write(raw: string, verbatim = false): void {
+  const text = verbatim ? raw : localizeHints(raw);
   const sink = outputSink();
   if (sink !== undefined) sink(text);
   else process.stderr.write(text);
@@ -80,6 +80,12 @@ export function log(message: string): void {
 /** Secondary detail, indented under the preceding log line. */
 export function info(message: string): void {
   write(`${C.dim}    ${message}${C.off}\n`);
+}
+
+/** info() for a line copied into another shell, host or scheduler: printed verbatim, its
+ *  `./clawforge` never rewritten to this terminal's invocation. */
+export function infoRaw(message: string): void {
+  write(`${C.dim}    ${message}${C.off}\n`, true);
 }
 
 export function warn(message: string): void {

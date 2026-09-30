@@ -21,6 +21,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `lock --check` on an instance that is not running separates "could not compare" (inventories not
   read) from real differences, and ends with a single summary line instead of printing it twice.
   The exit code and the `--json` output are unchanged.
+* Lines copied into another shell or host are printed verbatim, not rewritten to this terminal's
+  invocation: the cron line of `backup install` / `watch install` (what is shown is what `--apply`
+  installs), the Task Scheduler command lines, and the server bring-up hints of `deploy` (the
+  server's mirrored checkout runs `./clawforge`). Fixed the cut-off sentence in the `init`
+  next-steps text ("…if one is needed"); the `Install:` comments of the generated completion
+  scripts name the real invocation, script bodies unchanged.
 * System-wide `clawforge` in a subfolder of an app (e.g. `<app>/recipes`) now finds the deployment
   by walking up to the nearest `app.ts` instead of reporting `no app.ts` and advising `init`; the
   found root is what delegation uses. `init` still initialises the current directory only and

@@ -4,7 +4,7 @@
 // snapshots stay here — the server generates its own token, so a leaked local one cannot
 // unlock it.
 
-import { log, info, die } from "#src/core/io/log.ts";
+import { log, info, infoRaw, die } from "#src/core/io/log.ts";
 import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";
 import {
   EXCLUDES, FRAMEWORK_EXCLUDES, MARKER_FILE, directoryGuardScript, directoryPrepareScript,
@@ -138,7 +138,7 @@ export async function bootstrapAndReport(
 ): Promise<void> {
   if (!runBootstrap) {
     log(`files synced to ${target}:${remotePath} (bootstrap skipped)`);
-    info(`bring it up there with: cd ${remotePath} && ./clawforge --app ${name} bootstrap`);
+    infoRaw(`bring it up there with: cd ${remotePath} && ./clawforge --app ${name} bootstrap`);
     if (remotePathNote !== undefined) info(remotePathNote);
     return;
   }
@@ -154,6 +154,6 @@ export async function bootstrapAndReport(
   log("deployed");
   info("the gateway listens on the remote loopback only. Open a tunnel from here:");
   info(`  ssh -N -L ${ctx.settings.gatewayPort}:127.0.0.1:${ctx.settings.gatewayPort} ${target}`);
-  info(`provider keys are not copied — install them there: ./clawforge --app ${name} secrets --apply`);
+  infoRaw(`provider keys are not copied — install them there: ./clawforge --app ${name} secrets --apply`);
   if (remotePathNote !== undefined) info(remotePathNote);
 }

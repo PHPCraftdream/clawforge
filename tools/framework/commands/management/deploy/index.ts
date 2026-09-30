@@ -13,7 +13,7 @@
 // frameworkSourceRoot below): installed as a package, monorepoRoot would resolve to an
 // unrelated directory and mirroring it with --delete would be dangerous.
 
-import { log, info } from "#src/core/io/log.ts";
+import { log, info, infoRaw } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { DeployPlan } from "./arguments.ts";
@@ -63,9 +63,8 @@ async function deployDryRun(ctx: Context, sourceRoot: string, plan: DeployPlan):
   info("connection and remote dependencies: checked, OK");
   info("framework mirror: --delete, credentials excluded (.env, apps/, data/, snapshots/, secrets/)");
   info(`deployment mirror: declaration, desired state, recipes -> ${plan.remoteApp}`);
-  info(plan.runBootstrap
-    ? `would bootstrap remotely afterwards: cd ${plan.remotePath} && ./clawforge --app ${plan.name} bootstrap`
-    : "bootstrap skipped (--no-bootstrap)");
+  if (plan.runBootstrap) infoRaw(`would bootstrap remotely afterwards: cd ${plan.remotePath} && ./clawforge --app ${plan.name} bootstrap`);
+  else info("bootstrap skipped (--no-bootstrap)");
   if (plan.remotePathNote !== undefined) info(plan.remotePathNote);
   info(
     "does not cover: whether the remote root is safe for --delete (proving that writes a marker there) " +

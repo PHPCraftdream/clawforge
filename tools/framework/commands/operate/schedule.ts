@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { die, info } from "../../core/io/log.ts";
+import { die, info, infoRaw } from "../../core/io/log.ts";
 import { monorepoRoot } from "../../core/env.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
 import { spawnLocal, SshTransport } from "../../runtime/transport/transport.ts";
@@ -406,7 +406,7 @@ export async function printSchedulingInstructions(
   const entryTarget = await ctx.paths.toTarget(entryHost);
   const invocation = ctx.transport.clientInvocation(entryTarget, posixArgs);
   info("no unattended install exists for this target from here. Run this yourself, on a scheduler that can reach it:");
-  info(`  ${displayCommandLine(invocation.command, invocation.args)}`);
+  infoRaw(`  ${displayCommandLine(invocation.command, invocation.args)}`);
 
   if (schedulerPlatform !== "win32") {
     info("on Windows that means wiring it into Task Scheduler by hand — this command never creates or touches one.");
@@ -418,7 +418,7 @@ export async function printSchedulingInstructions(
   const taskName = scheduledTaskName(job, await schedulerIdentity(ctx));
   const create = schtasksCreateCommand(taskName, minutes, action);
   info("on Windows, Task Scheduler can run this instead (`/f` replaces the same named task on a re-run):");
-  info(`  ${displayCommandLine(create.command, create.args)}`);
+  infoRaw(`  ${displayCommandLine(create.command, create.args)}`);
   if (!apply) {
     info("run it yourself, or re-run with --apply to have this command run it for you");
     return false;

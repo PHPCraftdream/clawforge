@@ -9,7 +9,7 @@
 // parsed by parseIntervalToMinutes into the same minutes cronSchedule() validates, so the two
 // commands' intervals can never encode differently for the same duration.
 
-import { info, log, warn } from "#src/core/io/log.ts";
+import { info, infoRaw, log, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
@@ -80,7 +80,7 @@ export async function backupInstall(ctx: Context, args: string[], scope?: Action
   const line = cronLine(minutes, invocation, JOB, identity);
 
   log(`crontab entry (every ${interval}, runs on ${ctx.transport.description})`);
-  info(line);
+  infoRaw(line);
   info(`marked "${jobMarker(JOB, identity)}" — re-running this replaces only that line; backup uninstall removes only it`);
   if (ctx.transport.description.startsWith("ssh:")) {
     info(`assumes this deployment was mirrored to ${ctx.settings.remotePath} by ./clawforge deploy (set OC_REMOTE_PATH if --path differed)`);

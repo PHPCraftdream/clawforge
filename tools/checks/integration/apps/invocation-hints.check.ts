@@ -6,9 +6,10 @@
 
 import { renderUsage, renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import { INVOKED_AS_ENV, cli, invocation, localizeHints, setInvocation, takeInvokedAs } from "#framework/core/io/invocation.ts";
-import { reportError, info } from "#framework/core/io/log.ts";
+import { reportError, info, infoRaw } from "#framework/core/io/log.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
 import { structuredResult } from "#framework/integration/mcp/server.ts";
+import { cronLine } from "#framework/commands/operate/schedule.ts";
 import { doctor } from "#framework/commands/orchestration/inspect/gather.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runtime/convergence/inspect/fixture.ts";
@@ -59,6 +60,21 @@ try {
   check("emitRaw never rewrites data", await capture(() => emitRaw("./clawforge up\n")), "./clawforge up\n");
   check("emit rewrites machine output", await capture(() => emit("./clawforge up\n")), "./clawforge --app staging up\n");
   check("info rewrites diagnostics", await capture(() => info("./clawforge up")).then((text) => text.includes("./clawforge --app staging up")), true);
+  // Lines copied into another shell or host are printed verbatim under any prefix.
+  const cron = cronLine(60, { cwd: "/srv/app1", command: "./clawforge", args: ["--app", "app1", "backup"] }, "backup", "app1");
+  const remote = [
+    `would bootstrap remotely afterwards: cd /opt/oc && ./clawforge --app staging bootstrap`,
+    `bring it up there with: cd /opt/oc && ./clawforge --app staging bootstrap`,
+    `provider keys are not copied — install them there: ./clawforge --app staging secrets --apply`,
+    `  bash -lc "cd /srv/app1 && ./clawforge backup"`,
+  ];
+  for (const prefix of ["clawforge", "./clawforge --app x"]) {
+    setInvocation(prefix);
+    for (const line of [cron, ...remote]) {
+      check(`infoRaw keeps the line verbatim under "${prefix}"`, await capture(() => infoRaw(line)).then((text) => text.includes(line)), true);
+    }
+    check(`info would rewrite the cron line under "${prefix}"`, await capture(() => info(cron)).then((text) => text.includes(cron)), false);
+  }
   setInvocation("");
   check("blank falls back to the monorepo prefix", invocation(), HINT);
 

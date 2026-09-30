@@ -14,13 +14,14 @@ import { pull } from "#framework/commands/lifecycle/state.ts";
 import { clearRecipesDir, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { useDeployment } from "#framework/runtime/deployment.ts";
+import { useDeployment, useComposeProjectOverride } from "#framework/runtime/deployment.ts";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
+useComposeProjectOverride("example-app");
 
 // The migrate publish check consults installedRecipePrivatePaths(), which reads the real
 // recipes root — so the declaration has to exist on disk. A one-shot root declaring

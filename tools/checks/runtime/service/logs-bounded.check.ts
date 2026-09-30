@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { logs, takeTail } from "#framework/commands/lifecycle/lifecycle.ts";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
-import { useDeployment } from "#framework/runtime/deployment.ts";
+import { useDeployment, useComposeProjectOverride } from "#framework/runtime/deployment.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink, outputSink } from "#framework/core/io/output.ts";
@@ -19,6 +19,7 @@ import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
+useComposeProjectOverride("example-app");
 
 // "On a terminal" below means shouldFollow()'s actual terminal case: not captured AND a real
 // TTY. This check process itself has no TTY (it runs under the check runner), so that has to

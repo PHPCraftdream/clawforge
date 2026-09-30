@@ -1,7 +1,6 @@
 // check:requires linux-host
 // Direct invocation on Windows uses WSL rather than an unsupported local target.
 // OC_RESTORE_DOCKER_SMOKE=1 selects real Docker containers and an HTTP/data gateway.
-// OC_RESTORE_EXPECT_LATE=1 records the pre-fix consumer failure before asserting it.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -23,6 +22,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 
 const id = randomBytes(8).toString("hex");
 const local = await mkdtemp(resolve(tmpdir(), "restore-ownership-"));
+const deployment = resolve(local, `app-${id}`);
 const previousRoot = selectedDeployment();
 const previousOverride = composeProjectOverride();
 const base: Transport = process.platform === "win32" ? new WslTransport(process.env.OC_WSL_DISTRO ?? "Ubuntu-24.04") : new LocalTransport();
@@ -33,7 +33,6 @@ const envFile = `${target}/empty.env`;
 const recipeFile = `${target}/recipes/cache/compose.yml`;
 const foreignFile = `${target}/foreign/compose.yml`;
 const docker = process.env.OC_RESTORE_DOCKER_SMOKE === "1";
-const expectLate = process.env.OC_RESTORE_EXPECT_LATE === "1";
 const gateway = `cf-restore-gateway-${id}`;
 const events: string[] = [];
 const records = new Map<string, { file: string; running: boolean }>();
@@ -94,7 +93,7 @@ const runtime = {
     if (docker) await base.exec("docker", ["exec", gateway, "node", "-e", "const end=Date.now()+10000;(async()=>{while(Date.now()<end){try{if(await (await fetch('http://127.0.0.1:8080')).text()==='B')return}catch{}await require('node:timers/promises').setTimeout(100)}process.exit(1)})()"], { timeoutMs: 15000 });
     else assert.equal(await base.readFile(`${data}/workspace/value`), "B");
   },
-  stack(project: string, definition: string, ownership?: { verifyOwnership: boolean; legacyProject?: string }) {
+  stack(project: string, definition: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[] }) {
     return buildStack(transport, paths, () => settings, (action) => action(envFile), project, definition, ownership);
   },
 };
@@ -115,7 +114,8 @@ async function clearPolicy() {
   if (docker) for (const project of projects) await compose(project, project === recipeProjectName("cache") ? foreignFile : recipeFile, ["down"]);
 }
 try {
-  useDeployment(local); useComposeProjectOverride(`cf-${id}`); useRecipesDir(resolve(local, "recipes"));
+  await mkdir(deployment, { recursive: true });
+  useDeployment(deployment); useComposeProjectOverride(`cf-${id}`); useRecipesDir(resolve(local, "recipes"));
   await mkdir(resolve(local, "recipes", "cache"), { recursive: true });
   await writeFile(resolve(local, "recipes", "cache", "recipe.json"), JSON.stringify({ description: "restore ownership data fixture" }));
   await writeFile(resolve(local, "recipes", "cache", "compose.yml"), "services: {}\n");
@@ -149,47 +149,46 @@ try {
       assert.match(String(failure), policy === "legacy" ? /cutover required/ : policy === "foreign" ? /not verifiably linked/ : /inventory unavailable/);
       const observation = { policy, command, bytes: await base.readFile(`${data}/workspace/value`), running: await runtime.isRunning(), events: [...events], secrets: await base.readFile(`${data}/config/.env`).catch(() => "absent") };
       console.log(JSON.stringify(observation));
-      if (expectLate) { assert.equal(observation.bytes, "B"); assert.equal(observation.running, false); assert.deepEqual(events.slice(0, 3), ["stop", "mv", "tar"]); }
-      else { assert.equal(observation.bytes, "A"); assert.equal(observation.running, true); assert.deepEqual(events, []); assert.equal(observation.secrets, "SENTINEL=original\n"); }
+      assert.equal(observation.bytes, "A");
+      assert.equal(observation.running, true);
+      assert.deepEqual(events, []);
+      assert.equal(observation.secrets, "SENTINEL=original\n");
       if (docker && !unknown) { const state = await base.exec("docker", ["ps", "--all", "--quiet", "--filter", `label=com.docker.compose.project=${project}`]); assert.notEqual(state.stdout.trim(), ""); }
     }
-    if (!expectLate) {
-      preview = true;
-      for (const command of [restore, push]) {
-        await resetA();
-        await assert.rejects(() => withOutputSink(() => {}, () => command(ctx, [archive, "--dry-run"])),
-          policy === "legacy" ? /cutover required/ : policy === "foreign" ? /not verifiably linked/ : /inventory unavailable/);
-        assert.equal(await base.readFile(`${data}/workspace/value`), "A");
-        assert.equal(await runtime.isRunning(), true);
-        assert.deepEqual(events, []);
-      }
-      preview = false;
+    preview = true;
+    for (const command of [restore, push]) {
+      await resetA();
+      await assert.rejects(() => withOutputSink(() => {}, () => command(ctx, [archive, "--dry-run"])),
+        policy === "legacy" ? /cutover required/ : policy === "foreign" ? /not verifiably linked/ : /inventory unavailable/);
+      assert.equal(await base.readFile(`${data}/workspace/value`), "A");
+      assert.equal(await runtime.isRunning(), true);
+      assert.deepEqual(events, []);
     }
+    preview = false;
     unknown = false; await clearPolicy();
   }
-  if (!expectLate) {
-    await resetA();
-    await withOutputSink(() => {}, () => restore(ctx, [archive, "--force"]));
-    assert.equal(await base.readFile(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), true); assert.equal(healthWaits, 1);
-    await resetA();
-    let outcome;
-    // restoreArchive shares the public command's lock via the exported lock helper.
-    await withOutputSink(() => {}, async () => { outcome = await guarded(ctx, "restore", [], () => restoreArchive(ctx, archive, { force: true, noStart: true })); });
-    assert.deepEqual(outcome, { restored: true, started: false, reason: "no-start", nextAction: "./clawforge up" });
-    assert.equal(await base.readFile(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), false); assert.equal(healthWaits, 1);
-    await resetA();
-    await withOutputSink(() => {}, () => push(ctx, [archive, "--force"]));
-    assert.equal(await base.readFile(`${data}/workspace/value`), "B");
-    assert.equal(await base.readFile(`${data}/config/.env`), "SNAPSHOT_ONLY=must-not-install\n");
-    assert.equal(await runtime.isRunning(), true);
-    assert.equal(healthWaits, 2);
-  }
+  await resetA();
+  await withOutputSink(() => {}, () => restore(ctx, [archive, "--force"]));
+  assert.equal(await base.readFile(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), true); assert.equal(healthWaits, 1);
+  await resetA();
+  let outcome;
+  // The direct API uses the same execution lock as public restore.
+  await withOutputSink(() => {}, async () => { outcome = await guarded(ctx, "restore", [], () => restoreArchive(ctx, archive, { force: true, noStart: true })); });
+  assert.deepEqual(outcome, { restored: true, started: false, reason: "no-start", nextAction: "./clawforge up" });
+  assert.equal(await base.readFile(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), false); assert.equal(healthWaits, 1);
+  await resetA();
+  await withOutputSink(() => {}, () => push(ctx, [archive, "--force"]));
+  assert.equal(await base.readFile(`${data}/workspace/value`), "B");
+  assert.equal(await base.readFile(`${data}/config/.env`), "SNAPSHOT_ONLY=must-not-install\n");
+  assert.equal(await runtime.isRunning(), true);
+  assert.equal(healthWaits, 2);
   check("public restore/no-start/push ownership refusal preserves bytes, gateway and secrets; cutover restores and starts", true, true);
 } finally {
   unknown = false;
   if (docker) { await clearPolicy().catch(() => {}); await base.exec("docker", ["rm", "--force", gateway], { allowFailure: true }); }
   await base.exec("rm", ["-rf", target]);
-  clearRecipesDir(); useComposeProjectOverride(previousOverride); useDeployment(previousRoot);
+  clearRecipesDir(); useComposeProjectOverride(previousOverride);
+  if (previousRoot !== undefined) useDeployment(previousRoot);
   await rm(local, { recursive: true, force: true });
 }
 finish("restore-ownership");

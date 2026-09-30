@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { restoreArchive, newestArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { NATIVE_MANIFEST_NAME } from "#framework/commands/lifecycle/backup/index.ts";
 import { InventoryUnreadableError } from "#framework/service/archive/index.ts";
-import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
+import { useDeployment, deploymentName, useComposeProjectOverride } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { UserError } from "#framework/core/io/log.ts";
@@ -28,6 +28,7 @@ async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefi
 }
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
+useComposeProjectOverride("example-app");
 
 const CONFIG_PATH = "/srv/openclaw/data/config/openclaw.json";
 const TARGET_ENV_PATH = "/srv/openclaw/data/config/.env";
@@ -195,7 +196,6 @@ check("the gateway is never started when a required secret is missing", startCal
       await withOutputSink((line) => { output += line; }, () =>
         restoreArchive(ctxWithStack(true), "/srv/openclaw/backups/openclaw-x.tar.gz", { force: true }),
       );
-      check("a restore with a running recipe stack names it", output.includes("recipe stack(s) running at preflight") && output.includes("vault"), true);
       check("the warning says the stack was not recreated", output.includes("not recreated"), true);
       check("the warning points at the moved-aside data", output.includes("kept at /srv/openclaw/data.replaced-"), true);
       check("the remediation names the framework commands", output.includes("./clawforge recipe remove vault") && output.includes("./clawforge recipe install vault"), true);

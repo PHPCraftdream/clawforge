@@ -16,12 +16,13 @@ import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
 import type { BackupOptions } from "#framework/commands/lifecycle/backup/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { useDeployment } from "#framework/runtime/deployment.ts";
+import { useDeployment, useComposeProjectOverride } from "#framework/runtime/deployment.ts";
 import { clearRecipesDir, useRecipesDir } from "#framework/service/recipe.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
+useComposeProjectOverride("example-app");
 
 const HOOK_LOG = "__clawforgeRecipeLifecycleEvents";
 const dataDir = "/srv/clawforge/data";

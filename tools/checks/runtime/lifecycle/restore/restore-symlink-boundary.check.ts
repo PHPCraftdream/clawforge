@@ -18,6 +18,11 @@
 // is ever asked to start.
 
 import { randomBytes } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import { useDeployment, useComposeProjectOverride } from "#framework/runtime/deployment.ts";
+import { useRecipesDir, clearRecipesDir } from "#framework/service/recipe.ts";
 import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { inspectArchive, listArchive, listArchiveLinks } from "#framework/service/archive/index.ts";
 import { UserError } from "#framework/core/io/log.ts";
@@ -100,6 +105,11 @@ async function writeTree(transport: Transport, files: string[]): Promise<void> {
   }
 }
 
+const fixtureDeployment = await mkdtemp(resolve(tmpdir(), "restore-boundary-"));
+useDeployment(fixtureDeployment);
+useComposeProjectOverride("restore-boundary");
+useRecipesDir(resolve(fixtureDeployment, "recipes"));
+try {
 const transport = await realPosixTransport();
 if (transport === undefined) {
   check("restore symlink-boundary checks (skipped: no local POSIX filesystem and no WSL distribution with a shell)", "skip", "skip");
@@ -384,6 +394,10 @@ if (transport === undefined) {
       await transport.remove(root).catch(() => {});
     }
   }
+}
+} finally {
+  clearRecipesDir();
+  await rm(fixtureDeployment, { recursive: true, force: true });
 }
 
 finish("restore symlink-boundary");

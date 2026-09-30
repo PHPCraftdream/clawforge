@@ -157,6 +157,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* Recipe project identity hashes a serialized gateway-namespace/recipe-name pair,
+  preserving component boundaries even when either name contains `-recipe-`.
+  Both predecessor naming schemes require verified explicit cutover.
+* Restore/push performs recipe ownership and inventory checks before gateway stop or
+  data replacement, including `--no-start` and preview; reporting reuses the confirmed
+  inventory instead of introducing a late policy refusal after mutation.
 * Recipe stacks use the deployment's gateway Compose namespace, including
   `OC_COMPOSE_PROJECT`, and verify existing container ownership before lifecycle or
   backup discovery. Ambiguous legacy stacks require explicit operator cutover.

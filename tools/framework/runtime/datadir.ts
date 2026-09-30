@@ -52,15 +52,18 @@ async function sudoAvailability(ctx: Context): Promise<SudoAvailability> {
 export async function sudoFor(ctx: Context, path: string, options: { force?: boolean } = {}): Promise<string[]> {
   let probe = path;
   while (probe !== "/" && probe !== "") {
-    let present: boolean;
-    try {
-      present = await ctx.transport.exists(probe);
-    } catch {
-      // The transport refuses to answer — almost always a parent this user may not enter,
-      // which already answers "can I write there without escalating": no.
-      break;
+    let present: boolean | undefined;
+    // A refusal that repeats means a parent this user may not enter, which already answers
+    // "can I write there without escalating": no. One that does not repeat was the transport
+    // hiccuping (a wsl.exe/ssh call under load), and must not read as "needs root".
+    for (let attempt = 0; attempt < 3 && present === undefined; attempt += 1) {
+      try {
+        present = await ctx.transport.exists(probe);
+      } catch {
+        // Ask again.
+      }
     }
-    if (present) break;
+    if (present === undefined || present) break;
     probe = probe.slice(0, Math.max(probe.lastIndexOf("/"), 1));
   }
 

@@ -6,6 +6,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* A privileged command (backup, restore, secrets …) no longer asks for sudo on a path it can write
+  when the target's existence probe fails once: `sudoFor` asks the probe up to three times before
+  treating a refusal as a directory this user cannot enter. Seen as "needs root and sudo asks for
+  a password" on a `/tmp` backup under load.
 * System-wide `clawforge` in `apps/<name>` of a checkout no longer doubles `--app`: the same name is
   passed on once, another one is a clear error. On a hand-over, hints for a non-default deployment
   now read `<invoked-as> --app <name>` (`clawforge --app foo bootstrap` from the checkout root),

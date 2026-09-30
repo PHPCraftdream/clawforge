@@ -168,6 +168,35 @@ async function run(ctx: Context): Promise<string> {
   );
 }
 
+// --- a probe that failed once and then answers -------------------------------------------------
+
+{
+  // A transport hiccup (wsl.exe/ssh under load) makes exists() throw once. That is not a
+  // directory this user cannot enter: read as one, a writable path is sent to sudo, and a
+  // host without passwordless sudo then refuses a backup it could have made.
+  let asked = 0;
+  const calls: { command: string; args: string[] }[] = [];
+  const ctx = {
+    settings: { dataDir: "/srv/clawforge" },
+    transport: {
+      async exists(path: string): Promise<boolean> {
+        asked += 1;
+        if (asked === 1) throw new Error(`could not check whether ${path} exists (exit 255): connection reset`);
+        return path === "/srv/clawforge";
+      },
+      async exec(command: string, args: string[]): Promise<ExecResult> {
+        calls.push({ command, args });
+        // Only the directory that exists is writable; test -w on an absent path answers 1.
+        if (command === "test" && args[0] === "-w") return { code: args[1] === "/srv/clawforge" ? 0 : 1, stdout: "", stderr: "" };
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    },
+  } as unknown as Context;
+
+  check("a probe that throws once and then answers is asked again", await sudoFor(ctx, "/srv/clawforge/data"), []);
+  check("and writability is judged on the nearest existing ancestor", calls.find((call) => call.command === "test")?.args, ["-w", "/srv/clawforge"]);
+}
+
 // --- the "no passwordless sudo" refusal advises the whole family, not just one path ----------
 //
 // The bug: bootstrap refused on the lock home alone ("sudo install -d ... data-locks"), and

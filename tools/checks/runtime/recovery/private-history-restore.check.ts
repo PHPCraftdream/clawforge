@@ -484,8 +484,7 @@ try {
       await withOutputSink(() => {}, () => restoreArchive(restoreCtx, fullBackup, { force: true }));
     } catch (error) {
       idempotentThrew = true;
-      process.stderr.write(`    second restore message: ${(error as Error).message}
-`);
+      process.stderr.write(`    second restore message: ${(error as Error).message}\n`);
     }
     check("a second restore of the same backup succeeds", idempotentThrew, false);
     check(

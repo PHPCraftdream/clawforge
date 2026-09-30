@@ -18,6 +18,13 @@ All notable changes to `@clawforge/framework` will be documented here.
   loader and the checkout gate map the exports onto the checkout's own framework sources, while an
   installed deployment still resolves the recipe's own package first. The guide's example hook no
   longer uses the unloadable `#framework/...` spelling.
+* Checkout commands answer clearly outside a deployment again: `list`/`new-app`/`remove-app`/`check`
+  from a checkout subfolder say to run them from the checkout root instead of "unknown command"
+  (a regression of the R29-01 fix); at the checkout root `<command> --help` works with several or
+  no deployments, the same way `help <command>` always has; `version` answers in a folder holding
+  a stray checkout-style `app.ts`; the "new-app takes over this empty directory" advice only
+  names folders new-app accepts, and an existing empty `apps/<name>` is offered to `new-app`
+  rather than told to gain an `app.ts` by hand.
 * A live lock/compose-env owner is no longer called dead under load: its recorded start comes
   from `process.uptime()` (counted after Node's own boot) while the OS probe has 1 s resolution,
   so the same process could differ by more than the 2 s reuse tolerance. The tolerance is now

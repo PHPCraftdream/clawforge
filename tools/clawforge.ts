@@ -26,6 +26,7 @@ import {
   misplacedAppFlag,
   soleDeploymentFallback,
   missingDeploymentReport,
+  isDeploymentHelpRequest,
   type GateCommand,
 } from "./framework/integration/gate.ts";
 import { helpEntryLine } from "./framework/core/io/help-render.ts";
@@ -277,10 +278,11 @@ try {
     if (!argv.includes("--json") && process.stderr.isTTY === true) {
       info(`using the only deployment: ${name}`);
     }
-  } else if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
+  } else if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h" || isDeploymentHelpRequest(argv, Object.keys(openclawCommands))) {
     // help/--help/-h must work in a completely fresh checkout, before any deployment
-    // exists. Built from openclawCommands directly (there's no app.ts yet): every
-    // deployment's own declaration just re-exports this set unless it adds commands of its own.
+    // exists — and so must `<deployment command> --help`, the second form the general
+    // help itself promises. Built from openclawCommands directly (there's no app.ts yet):
+    // every deployment's own declaration just re-exports this set unless it adds commands of its own.
     const pick = available.length === 0
       ? "this checkout has no deployments yet"
       : `no deployment "${name}" — available: ${available.join(", ")} (pick one with --app <name> or OC_APP)`;

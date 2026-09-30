@@ -118,6 +118,26 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   return 1;
 }
 
+/** The monorepo gate's own commands, which are real in any folder of a checkout — just run
+ *  from its root. A subfolder's help must not call them unknown. */
+export const CHECKOUT_GATE_COMMANDS: readonly string[] = ["check", "list", "new-app", "remove-app"];
+
+/** Report lines for a checkout gate command typed from a checkout subfolder: the command is
+ *  real there too, it just runs at the root — not an unknown command. */
+export function checkoutSubfolderReport(first: string, checkout: string): string[] | undefined {
+  if (!CHECKOUT_GATE_COMMANDS.includes(first)) return undefined;
+  return [
+    `${first} is a checkout command — run it from the checkout root:`,
+    `    cd ${checkout}`,
+  ];
+}
+
+/** `<command> --help` for a deployment command: help must answer without a deployment. Only
+ *  --help, matching entry/cli.ts's requestsHelp, which `-h` after a command does not satisfy. */
+export function isDeploymentHelpRequest(argv: readonly string[], deploymentCommands: readonly string[]): boolean {
+  return argv.length === 2 && argv[1] === "--help" && deploymentCommands.includes(argv[0]);
+}
+
 /** What a leading `--app <name>` or `--app=<name>` split off argv, if either was there. */
 export interface AppFlagSplit {
   /** The name after --app/--app=, absent when --app did not lead argv at all. */
@@ -216,7 +236,10 @@ export function missingDeploymentReport(
     return [`several deployments (${available.join(", ")}) — pick one with --app <name> or OC_APP`];
   }
   if (directoryExists) {
-    return [`${deploymentDir} exists but holds no app.ts — add one there, or pick another name${available.length === 0 ? "" : ` (available: ${available.join(", ")})`}`];
+    return [
+      `${deploymentDir} exists but holds no app.ts — if the directory is empty, ./clawforge new-app ${name} takes it over`,
+      `otherwise remove it or pick another name${available.length === 0 ? "" : ` (available: ${available.join(", ")})`}`,
+    ];
   }
   return [
     `deployment "${name}" not found at ${deploymentDir}`,

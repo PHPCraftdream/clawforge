@@ -7,7 +7,7 @@
 // get, from the same functions.
 
 import { helpEntryLine } from "#framework/core/io/help-render.ts";
-import { runGateCommand, gateHelpLines, gateCommandHelp, helpWithoutDeployment, type GateCommand } from "#framework/integration/gate.ts";
+import { runGateCommand, gateHelpLines, gateCommandHelp, helpWithoutDeployment, checkoutSubfolderReport, isDeploymentHelpRequest, missingDeploymentReport, type GateCommand } from "#framework/integration/gate.ts";
 import { inputSchema, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { normalizeVersionAlias, versionGateCommand } from "#framework/integration/version.ts";
@@ -286,6 +286,28 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   check("a gate command is left to the caller", helpWithoutDeployment(gate, ["version"], context), undefined);
   const checkoutCommand = await help(["help", "status"], { checkout: "/some/checkout" });
   check("help <deployment command> in a checkout does not advise init", checkoutCommand.code === 1 && !checkoutCommand.text.includes("clawforge init"), true);
+}
+
+// --- checkout subfolders and help without a resolvable deployment -----------------------------
+
+{
+  const checkout = "/some/checkout";
+  for (const command of ["list", "new-app", "remove-app", "check"]) {
+    const report = checkoutSubfolderReport(command, checkout);
+    check(`${command} from a checkout subfolder is answered as a checkout command, not unknown`, report !== undefined && report.join("\n").includes("checkout root") && report.join("\n").includes(checkout), true);
+  }
+  check("an unknown word gets no checkout-subfolder report", checkoutSubfolderReport("stauts", checkout), undefined);
+  check("neither does a deployment command", checkoutSubfolderReport("status", checkout), undefined);
+
+  const deployment = Object.keys(openclawCommands)[0];
+  check("a deployment command's --help is a help request without a deployment", isDeploymentHelpRequest([deployment, "--help"], Object.keys(openclawCommands)), true);
+  check("a bare command is not", isDeploymentHelpRequest([deployment], Object.keys(openclawCommands)), false);
+  check("nor -h, which entry/cli.ts does not treat as help after a command", isDeploymentHelpRequest([deployment, "-h"], Object.keys(openclawCommands)), false);
+  check("nor an unknown command's --help", isDeploymentHelpRequest(["stauts", "--help"], Object.keys(openclawCommands)), false);
+  check("nor extra arguments", isDeploymentHelpRequest([deployment, "--help", "x"], Object.keys(openclawCommands)), false);
+
+  const empty = missingDeploymentReport(true, "emptyx", "/some/checkout/apps/emptyx", [], true);
+  check("an existing directory without app.ts is offered to new-app, not told to gain an app.ts by hand", empty.join(" ").includes("new-app emptyx takes it over") && !empty.join(" ").includes("add one there"), true);
 }
 
 finish("gate-command");

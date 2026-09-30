@@ -235,6 +235,22 @@ try {
 
   // --- this checkout: apps/<name> and the root hand over to the checkout's own gate -------------
   await createApp(checkoutApp);
+  // A second deployment makes the root's deployment ambiguous, which `<command> --help` must survive.
+  await createApp(`${checkoutApp}-b`);
+  const ambiguousHelp = await clawforge(["watch", "--help"], monorepoRoot);
+  tail(ambiguousHelp);
+  check("watch --help at the checkout root answers even with several deployments", ambiguousHelp.code === 0 && ambiguousHelp.output.includes("watch"), true);
+  const statusHelp = await clawforge(["status", "--help"], monorepoRoot);
+  check("status -h works the same way", statusHelp.code === 0 && statusHelp.output.includes("status"), true);
+  // An existing but empty apps/<name>: new-app would take it over, so the answer says so.
+  const emptyApp = resolve(appsDir, `${checkoutApp}-empty`);
+  await mkdir(emptyApp, { recursive: true });
+  try {
+    const emptyStatus = await clawforge(["--app", `${checkoutApp}-empty`, "status"], monorepoRoot);
+    check("--app at an empty apps/<name> offers new-app to take it over", emptyStatus.code === 1 && emptyStatus.output.includes(`new-app ${checkoutApp}-empty takes it over`) && !emptyStatus.output.includes("add one there"), true);
+  } finally {
+    await rm(emptyApp, { recursive: true, force: true });
+  }
   const inApp = await clawforge(["help"], resolve(appsDir, checkoutApp));
   tail(inApp);
   check("in apps/<name> of a checkout the checkout's own gate answers", inApp.code === 0 && inApp.output.includes("new-app"), true);
@@ -269,6 +285,8 @@ try {
     await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "../../../tools/framework/core/app.ts";\nexport default defineApp({});\n', "utf8");
     const stray = await clawforge(["status"], strayDir);
     check("a checkout-style app.ts that the gate cannot take over is refused", stray.code === 1 && stray.output.includes("imports the framework sources") && !stray.output.includes("cannot load"), true);
+    const strayVersion = await clawforge(["version"], strayDir);
+    check("version answers there anyway — it does not need the app", strayVersion.code === 0 && strayVersion.output.includes("clawforge"), true);
     // Decided by content: the package specifier needs no second copy of the sources.
     await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "@clawforge/framework/app";\nexport default defineApp({});\n', "utf8");
     const installedStyle = await clawforge(["version", "--json"], strayDir);
@@ -287,6 +305,11 @@ try {
   check("help in a checkout folder does not offer init and names the checkout", docsHelp.code === 0 && docsHelp.output.includes("ClawForge checkout") && !docsHelp.output.includes("clawforge init"), true);
   const inDocs = await clawforge(["status"], docs);
   check("in a non-app subfolder of a checkout it names the checkout entry", inDocs.code === 1 && inDocs.output.includes("from its root") && !inDocs.output.includes("clawforge init"), true);
+  // The checkout's own gate commands are real from any folder of the checkout — they just run at the root.
+  for (const args of [["list"], ["new-app", "x"], ["check"], ["remove-app", "x"]]) {
+    const subfolder = await clawforge(args, docs);
+    check(`clawforge ${args.join(" ")} from a checkout subfolder says to run it from the root, not unknown`, subfolder.code === 1 && subfolder.output.includes("checkout root") && !subfolder.output.includes("unknown command"), true);
+  }
   const typo = await clawforge(["stauts"], docs);
   check("a typo outside an app is an unknown command with a suggestion, not a missing app.ts", typo.code === 1 && typo.output.includes("unknown command: stauts") && typo.output.includes("did you mean: status") && !typo.output.includes("no app.ts"), true);
   const helpTypo = await clawforge(["help", "int"], docs);
@@ -308,6 +331,17 @@ try {
   } finally {
     await rm(freshApp, { recursive: true, force: true });
   }
+  // The reuse advice only names folders new-app would accept: not hidden, not unsafe names.
+  for (const folder of [`.${checkoutApp}-hid`, "Bad Name"]) {
+    const unusable = resolve(appsDir, folder);
+    await mkdir(unusable, { recursive: true });
+    try {
+      const refused = await clawforge(["init"], unusable);
+      check(`init in empty apps/${folder} withholds the take-over advice`, refused.code === 1 && !refused.output.includes("takes over") && refused.output.includes("new-app <name>"), true);
+    } finally {
+      await rm(unusable, { recursive: true, force: true });
+    }
+  }
 
   // init --local in a checkout deployment: the checkout already resolves the editor types.
   await mkdir(resolve(appDir, "recipes"), { recursive: true });
@@ -321,6 +355,7 @@ try {
   check("and at the checkout root too", atRoot.code === 0 && atRoot.output.includes("new-app"), true);
 } finally {
   await rm(resolve(appsDir, checkoutApp), { recursive: true, force: true });
+  await rm(resolve(appsDir, `${checkoutApp}-b`), { recursive: true, force: true });
   await rm(outside, { recursive: true, force: true });
   await rm(prefix, { recursive: true, force: true });
 }

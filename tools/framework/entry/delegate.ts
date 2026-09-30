@@ -88,10 +88,14 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
   const hasApp = existsSync(resolve(appRoot, "app.ts"));
   const appGate = isAppsDirectory(parent) && hasApp ? checkoutGate(dirname(parent)) : undefined;
   if (appGate !== undefined) runInstead(appGate, withApp(basename(canonical), argv), false);
+}
 
-  // No hand-over, yet its app.ts imports a checkout's framework sources: this package would
-  // load a second copy next to its own. An installed-style app.ts (the package specifier) is fine.
-  const checkout = hasApp && importsCheckoutSources(appRoot) ? findCheckoutRoot(appRoot) : undefined;
+// No hand-over, yet its app.ts imports a checkout's framework sources: this package would
+// load a second copy next to its own. An installed-style app.ts (the package specifier) is fine.
+// Called after the gate commands have had their turn, so `version` etc. still answer here.
+export function refuseStrayCheckoutApp(self: string, appRoot: string): void {
+  if (!existsSync(resolve(appRoot, "app.ts")) || !importsCheckoutSources(appRoot)) return;
+  const checkout = findCheckoutRoot(appRoot);
   if (checkout !== undefined && !isWithin(realOrSelf(checkout), realOrSelf(self))) {
     reportError(`${appRoot} imports the framework sources of the ClawForge checkout ${checkout} but is not one of its apps/<name> deployments — move it into apps/<name> (new-app), or switch its imports to @clawforge/framework`);
     process.exit(1);

@@ -18,16 +18,17 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { main } from "./cli.ts";
-import { runGateCommand, gateHelpLines, helpWithoutDeployment, type GateCommand } from "../integration/gate.ts";
+import { runGateCommand, gateHelpLines, helpWithoutDeployment, checkoutSubfolderReport, type GateCommand } from "../integration/gate.ts";
 import { info, reportError, reportErrorVerbatim } from "../core/io/log.ts";
 import { INVOKED_AS_ENV, cli, invocation, setInvocation, takeInvokedAs } from "../core/io/invocation.ts";
 import { useDeployment } from "../runtime/deployment.ts";
+import { safeName } from "../core/names.ts";
 import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";
 import { normalizeVersionAlias, makeVersionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
-import { delegateToOwnFramework, findCheckoutRoot, importsCheckoutSources, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
+import { delegateToOwnFramework, findCheckoutRoot, importsCheckoutSources, refuseStrayCheckoutApp, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
 import { defaultInvocation, findAppRoot } from "./root.ts";
 import type { AppDefinition } from "../core/app.ts";
 
@@ -62,8 +63,19 @@ if (localTypesOnly && ancestor !== undefined && importsCheckoutSources(ancestor)
 }
 const checkout = scheduled ? undefined : findCheckoutRoot(cwd);
 if (initializing && ancestor === undefined && checkout !== undefined) {
-  // new-app only takes over an empty apps/<name> directly under the checkout.
-  const reusable = readdirSync(cwd).length === 0 && sameDirectory(dirname(cwd), resolve(checkout, "apps"));
+  // new-app only takes over an empty apps/<name> directly under the checkout — and only a
+  // name new-app would accept; hidden or invalid names get the plain advice instead.
+  const reusable =
+    readdirSync(cwd).length === 0 &&
+    sameDirectory(dirname(cwd), resolve(checkout, "apps")) &&
+    (() => {
+      try {
+        safeName("deployment", basename(cwd));
+        return true;
+      } catch {
+        return false;
+      }
+    })();
   // Verbatim: the bash form must stay `./clawforge`, not be localized to this invocation.
   reportErrorVerbatim(
     `${checkout} is a ClawForge checkout — init would write an installed-style deployment it cannot load; ` +
@@ -118,11 +130,19 @@ gateCommands.push(makeCompletionGateCommand(gateCommands, false));
 
 const gateExit = await runGateCommand(gateCommands, argv);
 if (gateExit !== undefined) process.exit(gateExit);
+// Only after the gate commands: `version` answers without needing the app to be one of apps/<name>.
+refuseStrayCheckoutApp(fileURLToPath(import.meta.url), appRoot);
 
 const appFile = resolve(appRoot, "app.ts");
 try {
   await access(appFile);
 } catch {
+  const subfolder = checkout !== undefined ? checkoutSubfolderReport(argv[0] ?? "", checkout) : undefined;
+  if (subfolder !== undefined) {
+    reportError(`no app.ts in ${appRoot}`);
+    for (const line of subfolder) reportErrorVerbatim(line);
+    process.exit(1);
+  }
   const helpExit = helpWithoutDeployment(gateCommands, argv, { deploymentCommands: Object.keys(openclawCommands), checkout });
   if (helpExit !== undefined) process.exit(helpExit);
   reportError(`no app.ts in ${appRoot}`);

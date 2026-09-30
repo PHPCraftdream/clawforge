@@ -14,7 +14,7 @@ import { ensureEnvironment } from "../integration/provision.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
 import { knownCommandNames, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
 import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
-import type { AppCommand, AppDefinition } from "../core/app.ts";
+import type { AppDefinition } from "../core/app.ts";
 
 // Re-exported for tools/checks/foundation/cli/help-groups.check.ts, which asserts the console
 // listing against the real grouping and wording rather than a copy that could drift from it.

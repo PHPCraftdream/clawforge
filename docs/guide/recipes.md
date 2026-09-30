@@ -125,6 +125,11 @@ diagnose`, and skips `afterStart` — a hook never runs against a stack that is 
 up. A malformed declaration (an empty service list, a non-positive `timeoutMs`) is refused
 when the manifest loads, not discovered at install time.
 
+The observation window's end is the earliest acceptance time, not a shorter deadline
+for a state query already in progress. That query can finish after the window while
+the readiness timeout still has budget; it must return a ready verdict before install
+can succeed. Slow WSL/SSH queries do not fail merely because they began near the window's end.
+
 ## Private files: `privatePaths` and `privateFiles`
 
 A recipe that generates credentials declares — in the same `recipe.json` — where they live.

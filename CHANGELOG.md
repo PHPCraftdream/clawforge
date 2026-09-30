@@ -157,6 +157,13 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* Recipe stacks use the deployment's gateway Compose namespace, including
+  `OC_COMPOSE_PROJECT`, and verify existing container ownership before lifecycle or
+  backup discovery. Ambiguous legacy stacks require explicit operator cutover.
+* CLI and MCP preserve literal option bindings such as `logs --grep=--tail`; raw
+  readers honor inline values and passthrough boundaries without weakening missing-value checks.
+* Recipe readiness state probes retain the available timeout budget near the end of
+  the observation window instead of failing an otherwise ready WSL/SSH stack prematurely.
 * `mcp-serve` uses an explicit duplex stdio relay through safe pipes, preserving live
   client input, exact protocol stdout, separate stderr and finite-input command behavior.
 * Backup/watch scheduler ownership hashes the canonical execution root instead of its

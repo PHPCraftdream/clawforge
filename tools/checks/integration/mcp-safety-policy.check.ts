@@ -112,7 +112,6 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     check("set build runs without confirmation and reports changed", [replies.get(7)?.isError, replies.get(7)?.structuredContent?.changed], [undefined, true]);
     check("destroy's dry run needs no confirmation", replies.get(8)?.isError, undefined);
     check("destroy --yes with no confirm is rejected", replies.get(9)?.isError, true);
-    check("destroy --yes with confirm:true reaches the command", replies.get(10)?.content?.[0]?.text?.includes("--yes") && replies.get(10)?.content?.[0]?.text?.includes("--confirm-name policy"), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

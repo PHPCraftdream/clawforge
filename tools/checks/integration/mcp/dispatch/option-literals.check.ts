@@ -1,3 +1,4 @@
+/// <reference lib="es2024.promise" />
 // Real CLI dispatch and control-mcp stdio; only the external Docker executable is replaced.
 // The fixture reads bounded logs from disk and executes a child option consumer, not argv echoes.
 import { spawn } from "node:child_process";
@@ -8,13 +9,14 @@ import { fileURLToPath } from "node:url";
 import { main } from "#framework/entry/cli.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
-import { LocalTransport, spawnLocal, type ExecOptions } from "#framework/runtime/transport/transport.ts";
+import { LocalTransport, spawnLocal, hostPlatform, type ExecOptions } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 const self = fileURLToPath(import.meta.url);
 if (process.argv[2] === "--dispatch") {
   const [root, shim, ...argv] = process.argv.slice(3);
   useDeployment(root);
+  hostPlatform.current = "linux"; // Controlled executable, not a real local target.
   LocalTransport.prototype.exec = function (command: string, args: string[], options: ExecOptions = {}) {
     return spawnLocal(process.execPath, [shim, root, command, ...args], options);
   };
@@ -30,7 +32,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 const [root, command, ...args] = process.argv.slice(2);
 if (command === 'mkdir') mkdirSync(args.at(-1), { mode: 0o700 });
 else if (command !== 'docker') process.exit(90);
-else if (args[0] === 'ps') process.stdout.write('fixture-container\\n');
+else if (args[0] === 'ps' || (args[0] === 'compose' && args.includes('ps'))) process.stdout.write('fixture-container\\n');
 else if (args[0] === 'inspect') process.stdout.write('true healthy\\n');
 else if (args[0] === 'compose' && args.includes('logs')) {
   const tail = Number(args[args.indexOf('--tail') + 1]);
@@ -94,5 +96,5 @@ else if (args[0] === 'compose' && args.includes('logs')) {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-  finish();
+  finish("literal options");
 }

@@ -45,9 +45,11 @@ const transport = {
   },
 } as unknown as Transport;
 const settings = toSettings({ OC_DATA_DIR: "/tmp/recipe-identity-check-data" });
+const paths = new LocalPathBridge([]);
+paths.toTarget = async (path: string) => path.replaceAll("\\", "/");
 const ctx = { runtime: {
   stack(project: string, definition: string, ownership?: { verifyOwnership: boolean; legacyProject?: string }) {
-    return buildStack(transport, new LocalPathBridge([]), () => settings, (action) => action("/tmp/check.env"), project, definition, ownership);
+    return buildStack(transport, paths, () => settings, (action) => action("/tmp/check.env"), project, definition, ownership);
   },
 } } as unknown as Context;
 try {

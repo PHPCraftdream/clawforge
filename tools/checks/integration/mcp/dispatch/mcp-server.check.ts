@@ -502,7 +502,7 @@ function conforms(
   const actionChoices = ((inputSchema(recipeCommand).properties as Record<string, { enum?: string[] } | undefined>)?.action?.enum ?? []) as string[];
   check("the declaration enumerates the actions to sweep", actionChoices.length, 10);
 
-  const moduleUrl = (name: string): string => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
+  const moduleUrl = (name: string): string => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
   const sweepRoot = await mkdtemp(join(tmpdir(), "clawforge-mcp-sweep-"));
   await writeFile(join(sweepRoot, ".env"), `OC_DATA_DIR=${join(sweepRoot, "data")}\nOC_TARGET_LOCATION=local\n`, "utf8");
   const script = `
@@ -602,7 +602,7 @@ function conforms(
   // Compose project name, so one is pinned explicitly here the same way other real-docker
   // fixtures already do (deployment-names.check.ts, env.check.ts, apply.check.ts, …).
   await writeFile(join(redactionRoot, ".env"), `OC_DATA_DIR=${join(redactionRoot, "data")}\nOC_TARGET_LOCATION=local\nOC_COMPOSE_PROJECT=clawforge-mcp-redaction\nOPENCLAW_GATEWAY_TOKEN=${secret}\n`, "utf8");
-  const moduleUrl = (name: string): string => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
+  const moduleUrl = (name: string): string => new URL(`../../../../framework/${name}.ts`, import.meta.url).href;
   const script = `
     const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
     const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});

@@ -149,7 +149,8 @@ async function waitForRecipeReadiness(stack: Stack, readiness: RecipeReadiness |
     const phaseEnd = graceEndsAt ?? deadline;
     let services: Record<string, StackServiceState>;
     try {
-      services = await bounded(stack.serviceStates(), phaseEnd - Date.now(), "the service state probe");
+      // Grace end is the earliest acceptance time, not an earlier probe deadline.
+      services = await bounded(stack.serviceStates(), Math.max(deadline, phaseEnd) - Date.now(), "the service state probe");
     } catch (error) {
       return { status: "unknown", detail: `could not read service state: ${error instanceof Error ? error.message : String(error)}`, services: lastServices };
     }

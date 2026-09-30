@@ -37,7 +37,7 @@ const DEFAULT_BACKUP_INTERVAL = "1d";
  *  shared BACKUP_APPLY_ARGUMENT (prune-replaced.ts), not a second declaration of the same
  *  name — see its own comment for why. */
 export const BACKUP_INSTALL_ARGUMENTS: CommandArgument[] = [
-  { name: "interval", description: "With install: how often (default 1d) — 30m, 6h, 1d or a bare number of minutes; minutes must divide 60, hours must divide a day", kind: "option", valueName: "interval", actions: ["install"] },
+  { name: "interval", description: "With install: how often (default 1d) — 30m, 6h, 1d or a bare number of minutes; minutes must divide 60, hours must divide a day", kind: "option", valueName: "interval" },
   BACKUP_APPLY_ARGUMENT,
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,

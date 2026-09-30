@@ -303,9 +303,9 @@ async function desiredState(staging: string): Promise<unknown> {
   return readJson(resolve(staging, "config", "desired-state.json"));
 }
 
-const SET_DIFF_ARGUMENTS: CommandArgument[] = [
-  { name: "from", kind: "option", description: "Source artifact", valueName: "artifact" },
-  { name: "to", kind: "option", description: "Destination artifact", valueName: "artifact" },
+export const SET_DIFF_ARGUMENTS: CommandArgument[] = [
+  { name: "from", kind: "option", description: "With diff: original artifact", valueName: "artifact" },
+  { name: "to", kind: "option", description: "With diff: replacement artifact", valueName: "artifact" },
   { name: "json", kind: "flag", description: "Emit JSON" },
   { name: "artifacts", kind: "variadic", description: "Two positional artifacts" },
 ];

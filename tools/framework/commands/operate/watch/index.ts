@@ -6,13 +6,26 @@
 
 import { die } from "../../../core/io/log.ts";
 import type { Context } from "../../../core/context.ts";
-import { dieUnknownAction } from "../../../core/arguments.ts";
-import { watchCheck, watchTest } from "./check.ts";
-import { watchInstall, watchUninstall } from "./install.ts";
+import type { CommandArgument } from "../../../core/app.ts";
+import { dieUnknownAction, scopeByAction } from "../../../core/arguments.ts";
+import { watchCheck, watchTest, WATCH_CHECK_ARGUMENTS } from "./check.ts";
+import { watchInstall, watchUninstall, WATCH_INSTALL_ARGUMENTS, WATCH_UNINSTALL_ARGUMENTS } from "./install.ts";
 import { watchStatus } from "./status.ts";
 
 /** The action words the dispatcher below and its bare-usage/unknown-action refusals share. */
 const WATCH_ACTIONS = ["check", "install", "uninstall", "status", "test"] as const;
+
+/** What each action's own parser accepts (status and test read --json like check);
+ *  WATCH_FLAG_ARGUMENTS is derived from it. */
+export const WATCH_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = {
+  check: WATCH_CHECK_ARGUMENTS,
+  install: WATCH_INSTALL_ARGUMENTS,
+  uninstall: WATCH_UNINSTALL_ARGUMENTS,
+  status: WATCH_CHECK_ARGUMENTS,
+  test: WATCH_CHECK_ARGUMENTS,
+};
+
+export const WATCH_FLAG_ARGUMENTS: CommandArgument[] = scopeByAction(WATCH_ACTION_ARGUMENTS);
 
 export { watchLevel, runWatchCycle, resolveWatchOutcome } from "./check.ts";
 export type { WatchLevel, WatchReason, WatchState } from "./state.ts";

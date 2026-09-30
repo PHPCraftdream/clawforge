@@ -7,29 +7,28 @@
 
 import { die } from "#src/core/io/log.ts";
 import type { CommandArgument } from "#src/core/app.ts";
+import { scopeByAction } from "#src/core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
-/** Every flag/option recipe declares, across every action — spread into recipe's own entry
- *  in openclawCommands.management.ts, so a flag known there and one an action's own grammar
- *  below reads cannot silently drift apart. */
-export const RECIPE_FLAG_ARGUMENTS: CommandArgument[] = [
+/** Every flag/option recipe knows; which action takes which is RECIPE_ACTION_GRAMMAR's. */
+const RECIPE_FLAG_DECLARATIONS: CommandArgument[] = [
   { name: "json", description: "With list: emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON", kind: "flag" },
   { name: "volumes", description: "With remove: delete its volumes too", kind: "flag" },
   { name: "tail", description: "With logs/diagnose: lines to return per service", kind: "option", valueName: "n" },
   { name: "force-disabled", description: "With install: build a recipe marked disabled", kind: "flag" },
   { name: "with-hooks", description: "With new: add commented prepare.ts/verify.ts stubs", kind: "flag" },
-  { name: "dry-run", description: "With install/remove: show what would happen", kind: "flag", actions: ["install", "remove"] },
+  { name: "dry-run", description: "With install/remove: show what would happen", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
 const RECIPE_OPTION_FLAG_NAMES = new Set(
-  RECIPE_FLAG_ARGUMENTS.filter((argument) => argument.kind === "option").map((argument) => argument.name),
+  RECIPE_FLAG_DECLARATIONS.filter((argument) => argument.kind === "option").map((argument) => argument.name),
 );
 
 /** How many bare positionals beyond the action word each action takes, and which of
- *  RECIPE_FLAG_ARGUMENTS' names it reads. validateRecipeArgs checks every argv token against this. */
-const RECIPE_ACTION_GRAMMAR: Record<string, { positionals: number; flags: readonly string[] }> = {
+ *  RECIPE_FLAG_DECLARATIONS' names it reads. validateRecipeArgs checks every argv token against this. */
+export const RECIPE_ACTION_GRAMMAR: Record<string, { positionals: number; flags: readonly string[] }> = {
   list: { positionals: 0, flags: ["json"] },
   import: { positionals: 2, flags: [] },
   new: { positionals: 1, flags: ["with-hooks"] },
@@ -41,6 +40,18 @@ const RECIPE_ACTION_GRAMMAR: Record<string, { positionals: number; flags: readon
   status: { positionals: 1, flags: [] },
   logs: { positionals: 1, flags: ["tail"] },
 };
+
+/** Each action's flags, as declared — what validateRecipeArgs accepts for it. */
+export const RECIPE_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = Object.fromEntries(
+  Object.entries(RECIPE_ACTION_GRAMMAR).map(([action, grammar]) => [
+    action,
+    grammar.flags.map((name) => RECIPE_FLAG_DECLARATIONS.find((argument) => argument.name === name)!),
+  ]),
+);
+
+/** Every flag/option recipe declares, scoped per action — spread into recipe's own entry in
+ *  openclawCommands.management.ts. */
+export const RECIPE_FLAG_ARGUMENTS: CommandArgument[] = scopeByAction(RECIPE_ACTION_ARGUMENTS);
 
 /** Rejects a token the given action does not use: an undeclared flag, "=value" on a flag
  *  that carries none, or a bare token beyond the positionals the action takes. An

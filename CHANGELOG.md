@@ -31,6 +31,13 @@ All notable changes to `@clawforge/framework` will be documented here.
   `schtasks` line and `--apply` are unchanged. `schtasks` rejects a `/tr` over 261 characters, so
   `watch install`/`backup install` on WSL under Windows now refuse such an action with a message
   (shorten the deployment path or app name) instead of printing a line or failing in `--apply`.
+* Completion, `--help` and the MCP schema of `backup`, `recipe`, `watch`, `expose` and `set` show
+  under each action only the flags that action accepts (`backup list --hot`, `watch status
+  --interval`, `expose status --local-port`, `set receipts --to` were offered and then refused).
+  Each action's flags are declared once, from its own parser's argument list (`backup`'s bare
+  create counts as an action), and a check drives every parser with every flag of its command, so
+  a new flag cannot drift. A `backup` create flag under another action is refused as "applies to
+  create", not "unknown argument".
 * System-wide `clawforge` hands over to the checkout's gate from `APPS/<name>` on Windows too (the
   `apps` directory is matched by its real spelling), so the global package no longer loads the
   checkout's `app.ts` next to its own framework. An `app.ts` inside a checkout that the gate cannot

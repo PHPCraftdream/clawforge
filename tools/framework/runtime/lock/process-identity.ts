@@ -76,6 +76,12 @@ export interface LocalProcessRecord {
   readonly startedAt?: string;
 }
 
+/** The recorded start comes from process.uptime(), which counts from after Node's own boot, and
+ *  the OS probe has 1 s resolution: under load the two differ by seconds for the SAME process.
+ *  Wide on purpose — a live owner called dead loses its state, a reused pid called alive only
+ *  keeps a lock a human can break; a reused pid starts minutes, not seconds, after the original. */
+const START_TIME_TOLERANCE_MS = 15_000;
+
 /** "unknown" means: do not assume anything — a different machine's pid can't be signalled
  *  from here, and a probe error other than "no such process" proves nothing either way. A
  *  caller must never treat "unknown" as "dead"; only a human breaking the lock decides that. */
@@ -99,7 +105,7 @@ export async function localLiveness(record: LocalProcessRecord): Promise<Livenes
   const actual = await platformProbes.processStartedAt(record.pid);
   if (actual === undefined) return "alive";
   const drift = Math.abs(Date.parse(actual) - Date.parse(record.startedAt));
-  return Number.isNaN(drift) || drift <= 2000 ? "alive" : "dead";
+  return Number.isNaN(drift) || drift <= START_TIME_TOLERANCE_MS ? "alive" : "dead";
 }
 
 /** Removes only an empty directory; another owner's contents must survive. Shared by the

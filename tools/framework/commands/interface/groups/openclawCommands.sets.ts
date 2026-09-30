@@ -2,10 +2,24 @@
 // from. Split out of index.ts, which merges every group's fragment into one
 // openclawCommands.
 
-import type { AppCommand } from "#src/core/app.ts";
+import type { AppCommand, CommandArgument } from "#src/core/app.ts";
+import { scopeByAction } from "#src/core/arguments.ts";
 
-import { set } from "#src/commands/sets/set.ts";
-import { BREAK_FOREIGN_LOCK_ARGUMENT } from "./shared-arguments.ts";
+import { set, SET_MAIN_ARGUMENTS } from "#src/commands/sets/set.ts";
+import { SET_DIFF_ARGUMENTS } from "#src/commands/sets/set-diff.ts";
+import { SET_RECEIPTS_ARGUMENTS } from "#src/commands/sets/set-receipts.ts";
+import { SET_TRY_ARGUMENTS } from "#src/commands/sets/set-try.ts";
+
+/** What each action's own parser accepts (build, validate and forget share one);
+ *  the declaration below is derived from it. */
+export const SET_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = {
+  build: SET_MAIN_ARGUMENTS,
+  validate: SET_MAIN_ARGUMENTS,
+  diff: SET_DIFF_ARGUMENTS,
+  receipts: SET_RECEIPTS_ARGUMENTS,
+  try: SET_TRY_ARGUMENTS,
+  forget: SET_MAIN_ARGUMENTS,
+};
 
 export const setsCommands: Record<string, AppCommand> = {
   set: {
@@ -42,18 +56,7 @@ export const setsCommands: Record<string, AppCommand> = {
       "prunes its workspace and memory.",
     arguments: [
       { name: "action", description: "What to do with sets", kind: "positional", choices: ["build", "validate", "diff", "receipts", "try", "forget"] },
-      { name: "from", description: "With diff: original artifact", kind: "option", valueName: "artifact" },
-      { name: "to", description: "With diff: replacement artifact", kind: "option", valueName: "artifact" },
-      { name: "set-id", description: "With receipts: filter by immutable set id", kind: "option", valueName: "id" },
-      { name: "receipt", description: "With receipts: show this receipt; requires --set-id", kind: "option", valueName: "id" },
-      { name: "name", description: "Set name (default: the deployment's name); with forget, the object's name", kind: "option", valueName: "name" },
-      { name: "set", description: "Artifact to validate or try, instead of the working tree", kind: "option", valueName: "artifact" },
-      { name: "kind", description: "With forget: agent, mcp-server, or cron-job", kind: "option", valueName: "kind", choices: ["agent", "mcp-server", "cron-job"] },
-      { name: "with-model", description: "With try: include acceptance checks that call the model", kind: "flag" },
-      { name: "keep", description: "With try: leave the throwaway instance running instead of tearing it down", kind: "flag" },
-      { name: "break-lock", description: "With forget: take over the instance lock held by another operation", kind: "flag" },
-      BREAK_FOREIGN_LOCK_ARGUMENT,
-      { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
+      ...scopeByAction(SET_ACTION_ARGUMENTS),
     ],
     // Not readOnly: true for the group as a whole, even though build and validate are —
     // try brings up a real throwaway instance and forget deletes a real object, and one

@@ -17,10 +17,8 @@ import { secrets, SECRETS_ARGUMENTS } from "#src/commands/management/secrets.ts"
 import { recoverEnv, RECOVER_ENV_ARGUMENTS } from "#src/commands/operate/recover-env/index.ts";
 import { recipe, recipeActionIsReadOnly, RECIPE_FLAG_ARGUMENTS } from "#src/commands/management/recipe/index.ts";
 import { provisionAgent, PROVISION_AGENT_ARGUMENTS } from "#src/commands/management/provision-agent/index.ts";
-import { expose, exposeActionIsReadOnly, EXPOSE_SSH_ARGUMENTS, EXPOSE_TAILSCALE_ARGUMENTS, EXPOSE_STATUS_ARGUMENTS } from "#src/commands/operate/expose/index.ts";
-import { watch, watchActionIsReadOnly } from "#src/commands/operate/watch/index.ts";
-import { WATCH_CHECK_ARGUMENTS } from "#src/commands/operate/watch/check.ts";
-import { WATCH_INSTALL_ARGUMENTS } from "#src/commands/operate/watch/install.ts";
+import { expose, exposeActionIsReadOnly, EXPOSE_FLAG_ARGUMENTS } from "#src/commands/operate/expose/index.ts";
+import { watch, watchActionIsReadOnly, WATCH_FLAG_ARGUMENTS } from "#src/commands/operate/watch/index.ts";
 import { incident, INCIDENT_ARGUMENTS } from "#src/commands/operate/incident/index.ts";
 
 function secretsWrites(args: string[]): boolean {
@@ -451,9 +449,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.",
     arguments: [
       { name: "action", description: "ssh, tailscale or status", kind: "positional", required: true, choices: ["ssh", "tailscale", "status"] },
-      ...EXPOSE_SSH_ARGUMENTS,
-      ...EXPOSE_TAILSCALE_ARGUMENTS,
-      ...EXPOSE_STATUS_ARGUMENTS,
+      ...EXPOSE_FLAG_ARGUMENTS,
     ],
   },
   watch: {
@@ -582,8 +578,7 @@ export const managementCommands: Record<string, AppCommand> = {
         required: true,
         choices: ["check", "install", "uninstall", "status", "test"],
       },
-      ...WATCH_CHECK_ARGUMENTS,
-      ...WATCH_INSTALL_ARGUMENTS,
+      ...WATCH_FLAG_ARGUMENTS,
     ],
   },
   incident: {

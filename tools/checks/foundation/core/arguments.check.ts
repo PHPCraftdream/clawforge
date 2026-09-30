@@ -5,7 +5,13 @@
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
-import { parseDeclaredArgs, UnknownArgumentError, UnknownActionError, dieUnknownAction } from "#framework/core/arguments.ts";
+import { parseDeclaredArgs, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION } from "#framework/core/arguments.ts";
+import { BACKUP_ACTION_ARGUMENTS } from "#framework/commands/lifecycle/backup/index.ts";
+import { RECIPE_ACTION_ARGUMENTS, validateRecipeArgs } from "#framework/commands/management/recipe/arguments.ts";
+import { EXPOSE_ACTION_ARGUMENTS } from "#framework/commands/operate/expose/index.ts";
+import { WATCH_ACTION_ARGUMENTS } from "#framework/commands/operate/watch/index.ts";
+import { SET_ACTION_ARGUMENTS } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
+import { buildCompletionModel } from "#framework/integration/completion.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
@@ -406,5 +412,79 @@ check(
   ])),
   "unknown action: bogus (expected check, install, uninstall, status or test)",
 );
+
+// --- multi-action commands: declared per-action flags equal what each parser accepts -------
+// R29-04: `watch status --interval`, `backup list --hot` were offered by completion/--help/the MCP
+// schema and then refused. Each command registers the argument slice every action parses with;
+// its declaration is derived from that (scopeByAction), and this drives the real parsers.
+
+{
+  type Slices = Readonly<Record<string, readonly CommandArgument[]>>;
+
+  // A new multi-action command must register here, or this check fails for it.
+  const REGISTRY: Readonly<Record<string, Slices>> = {
+    backup: BACKUP_ACTION_ARGUMENTS,
+    recipe: RECIPE_ACTION_ARGUMENTS,
+    expose: EXPOSE_ACTION_ARGUMENTS,
+    watch: WATCH_ACTION_ARGUMENTS,
+    set: SET_ACTION_ARGUMENTS,
+  };
+
+  const isNamed = (argument: CommandArgument): boolean => argument.kind === "flag" || argument.kind === "option";
+
+  function tokens(argument: CommandArgument): string[] {
+    return argument.kind === "option" ? [`--${argument.name}`, "x"] : [`--${argument.name}`];
+  }
+
+  /** Whether the real parser for `action` takes `argument` (syntactically). */
+  function accepts(command: string, action: string, slice: readonly CommandArgument[], argument: CommandArgument): boolean {
+    try {
+      if (command === "recipe") validateRecipeArgs(action, tokens(argument));
+      else parseDeclaredArgs(slice, tokens(argument));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  const completion = new Map(buildCompletionModel([]).map((spec) => [spec.name, spec]));
+
+  for (const [name, command] of Object.entries(openclawCommands)) {
+    const actionArgument = (command.arguments ?? []).find((argument) => argument.kind === "positional" && argument.name === "action");
+    if (actionArgument?.choices === undefined) continue;
+    const slices = REGISTRY[name];
+    check(`${name} has actions and registers what each action's parser accepts`, slices !== undefined, true);
+    if (slices === undefined) continue;
+
+    const choices = [...actionArgument.choices];
+    const registered = Object.keys(slices).filter((action) => action !== NO_ACTION);
+    check(`${name}: registered actions equal the action choices`, [...registered].sort(), [...choices].sort());
+
+    const declared = (command.arguments ?? []).filter(isNamed);
+    const known = new Map<string, CommandArgument>();
+    for (const slice of Object.values(slices)) for (const argument of slice.filter(isNamed)) known.set(argument.name, argument);
+    check(`${name}: every declared flag is taken by some action`, declared.filter((argument) => !known.has(argument.name)).map((argument) => argument.name), []);
+
+    for (const action of Object.keys(slices)) {
+      const slice = slices[action];
+      const label = `${name} ${action === NO_ACTION ? "(no action)" : action}`;
+      const shown = declared
+        .filter((argument) => argument.actions === undefined || argument.actions.includes(action))
+        .map((argument) => argument.name)
+        .sort();
+      const parsed = [...known.values()].filter((argument) => accepts(name, action, slice, argument)).map((argument) => argument.name).sort();
+      check(`${label}: declared flags equal what its parser accepts`, shown, parsed);
+
+      const offered = completion.get(name)?.action?.flags[action];
+      if (action !== NO_ACTION) {
+        check(
+          `${label}: completion offers exactly those flags`,
+          (offered ?? []).filter((flag) => flag !== "--help").sort(),
+          shown.map((flag) => `--${flag}`),
+        );
+      }
+    }
+  }
+}
 
 finish("argument");

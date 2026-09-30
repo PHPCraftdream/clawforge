@@ -29,12 +29,12 @@ import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/managemen
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "#src/commands/lifecycle/verify.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, scopeByAction, NO_ACTION, type ActionScope } from "#src/core/arguments.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
-import { backupPruneReplaced, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
-import { backupInstall, backupUninstall, BACKUP_INSTALL_ARGUMENTS } from "./install.ts";
+import { backupPruneReplaced, PRUNE_PARSE_ARGUMENTS } from "./prune-replaced.ts";
+import { backupInstall, backupUninstall, BACKUP_INSTALL_ARGUMENTS, BACKUP_UNINSTALL_ARGUMENTS } from "./install.ts";
 import { buildBackupPlan, printBackupPlan } from "./plan.ts";
 
 export { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
@@ -72,33 +72,24 @@ export const BACKUP_ARGUMENTS: CommandArgument[] = [
   { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag" },
 ];
 
-/** Keeps the first declaration of each argument name — `--apply`/`--break-lock`/
- *  `--break-foreign-lock` are shared across prune-replaced/install/uninstall, and a flat
- *  concatenation would otherwise list each one more than once (a duplicate --help line, and
- *  a later description silently overwriting an earlier one in the MCP schema — see
- *  BACKUP_APPLY_ARGUMENT's own comment in prune-replaced.ts for why they are literally the
- *  same object rather than three that happen to agree today). */
-function dedupeByName(args: readonly CommandArgument[]): CommandArgument[] {
-  const seen = new Set<string>();
-  return args.filter((argument) => {
-    if (seen.has(argument.name)) return false;
-    seen.add(argument.name);
-    return true;
-  });
-}
+/** What each action's own parser accepts (NO_ACTION: the bare create); the merged declaration
+ *  below, and so completion, --help and the MCP schema, is derived from it. `uninstall` has no
+ *  --interval, since there is no schedule to set. */
+export const BACKUP_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = {
+  [NO_ACTION]: BACKUP_ARGUMENTS,
+  list: BACKUP_LIST_ARGUMENTS,
+  "prune-replaced": PRUNE_PARSE_ARGUMENTS,
+  install: BACKUP_INSTALL_ARGUMENTS,
+  uninstall: BACKUP_UNINSTALL_ARGUMENTS,
+};
 
 /** The merged declaration for openclawCommands — one optional `action` positional ahead of
  *  every sub-action's own flags, so `./clawforge backup` with none of them still creates an
- *  archive exactly as it always has. `uninstall`'s own arguments are a strict subset of
- *  install's (no --interval) and are not merged in separately, same convention as watch's own
- *  WATCH_UNINSTALL_ARGUMENTS. */
-export const BACKUP_ALL_ARGUMENTS: CommandArgument[] = dedupeByName([
+ *  archive exactly as it always has. */
+export const BACKUP_ALL_ARGUMENTS: CommandArgument[] = [
   { name: "action", description: "list, prune-replaced, install or uninstall instead of creating a backup", kind: "positional", choices: [...BACKUP_ACTIONS] },
-  ...BACKUP_ARGUMENTS,
-  ...BACKUP_LIST_ARGUMENTS,
-  ...BACKUP_PRUNE_ARGUMENTS,
-  ...BACKUP_INSTALL_ARGUMENTS,
-]);
+  ...scopeByAction(BACKUP_ACTION_ARGUMENTS),
+];
 
 export interface BackupOptions {
   hot?: boolean;

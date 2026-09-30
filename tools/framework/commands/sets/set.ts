@@ -32,8 +32,8 @@ const SET_ACTIONS = ["build", "validate", "diff", "receipts", "try", "forget"] a
  *  (set-try.ts), `diff`/`receipts` parse theirs (set-diff.ts/set-receipts.ts). */
 export const SET_MAIN_ARGUMENTS: CommandArgument[] = [
   { name: "name", description: "Set name (default: the deployment's name); with forget, the object's name", kind: "option", valueName: "name" },
-  { name: "set", description: "Artifact to validate or try, instead of the working tree", kind: "option", valueName: "artifact" },
-  { name: "kind", description: "With forget: agent, mcp-server, or cron-job", kind: "option", valueName: "kind" },
+  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
+  { name: "kind", description: "With forget: agent, mcp-server, or cron-job", kind: "option", valueName: "kind", choices: ["agent", "mcp-server", "cron-job"] },
   { name: "break-lock", description: "With forget: take over the instance lock held by another operation", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },

@@ -8,10 +8,11 @@
 
 import { die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
-import { dieUnknownAction } from "#src/core/arguments.ts";
-import { exposeSsh } from "./ssh.ts";
-import { exposeTailscale } from "./tailscale.ts";
-import { exposeStatus } from "./status.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import { dieUnknownAction, scopeByAction } from "#src/core/arguments.ts";
+import { exposeSsh, EXPOSE_SSH_ARGUMENTS } from "./ssh.ts";
+import { exposeTailscale, EXPOSE_TAILSCALE_ARGUMENTS } from "./tailscale.ts";
+import { exposeStatus, EXPOSE_STATUS_ARGUMENTS } from "./status.ts";
 
 /** The action words the dispatcher below and its bare-usage/unknown-action refusals share. */
 const EXPOSE_ACTIONS = ["ssh", "tailscale", "status"] as const;
@@ -20,6 +21,15 @@ export { summarizeExposure, exposureOneLiner, EXPOSE_STATUS_ARGUMENTS } from "./
 export type { ExposureSummary } from "./status.ts";
 export { EXPOSE_SSH_ARGUMENTS } from "./ssh.ts";
 export { EXPOSE_TAILSCALE_ARGUMENTS } from "./tailscale.ts";
+
+/** What each action's own parser accepts; EXPOSE_FLAG_ARGUMENTS is derived from it. */
+export const EXPOSE_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = {
+  ssh: EXPOSE_SSH_ARGUMENTS,
+  tailscale: EXPOSE_TAILSCALE_ARGUMENTS,
+  status: EXPOSE_STATUS_ARGUMENTS,
+};
+
+export const EXPOSE_FLAG_ARGUMENTS: CommandArgument[] = scopeByAction(EXPOSE_ACTION_ARGUMENTS);
 
 /** Only `tailscale --apply` mutates anything (runs `tailscale serve` on the target); ssh and
  *  status only read and print. One predicate for the MCP gate's readOnlyWhen/changedWhen/

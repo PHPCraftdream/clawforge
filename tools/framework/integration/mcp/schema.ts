@@ -4,6 +4,7 @@
 // module, so external importers keep importing from "./server.ts" unchanged.
 
 import type { CommandArgument } from "../../core/app.ts";
+import { actionLabel, NO_ACTION } from "../../core/arguments.ts";
 import { maskSecrets } from "../../core/io/log.ts";
 import { destructiveMarker } from "../../core/io/help-render.ts";
 
@@ -191,8 +192,11 @@ export function schemaArgumentDescription(argument: CommandArgument): string | u
   if (shared !== undefined) return shared;
   const short = shortenDescription(argument.description);
   // Which action(s) of a multi-action command this argument belongs to — same wording
-  // help-render.ts prints, so tools/list and --help agree.
-  const scoped = argument.actions === undefined ? short : `${short} (${argument.actions.join(", ")})`;
+  // help-render.ts prints; it replaces a "With x:" lead-in. Create-only (no action word) is the
+  // default and stays unmarked here to save bytes.
+  const scoped = argument.actions === undefined || (argument.actions.length === 1 && argument.actions[0] === NO_ACTION)
+    ? short
+    : `${short.replace(/^With [\w/-]+: /, "")} (${argument.actions.map(actionLabel).join(", ")})`;
   return argument.kind === "option" && argument.valueName !== undefined
     ? `${scoped} (value: <${argument.valueName}>)`
     : scoped;

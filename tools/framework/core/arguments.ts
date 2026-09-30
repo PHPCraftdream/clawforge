@@ -78,8 +78,34 @@ export interface ActionScope {
   readonly siblings: readonly CommandArgument[];
 }
 
+/** The `actions` entry for "no action word" (backup's bare create). */
+export const NO_ACTION = "";
+
+/** Human label for an `actions` entry. */
+export function actionLabel(action: string): string {
+  return action === NO_ACTION ? "create" : action;
+}
+
 function formatActions(actions: readonly string[]): string {
-  return actions.map((name) => `\`${name}\``).join(", ");
+  return actions.map((name) => `\`${actionLabel(name)}\``).join(", ");
+}
+
+/** One multi-action command's flags/options from what each action's own parser accepts:
+ *  `actions` is derived (absent when every action takes it), so completion, --help and the MCP
+ *  schema cannot offer a flag the chosen action rejects. First declaration of a name wins;
+ *  slices must not set `actions` themselves. Positionals/variadics are not scoped, so skipped. */
+export function scopeByAction(slices: Readonly<Record<string, readonly CommandArgument[]>>): CommandArgument[] {
+  const all = Object.keys(slices);
+  const merged = new Map<string, { argument: CommandArgument; actions: string[] }>();
+  for (const action of all) {
+    for (const argument of slices[action]) {
+      if (argument.kind !== "flag" && argument.kind !== "option") continue;
+      const entry = merged.get(argument.name);
+      if (entry === undefined) merged.set(argument.name, { argument, actions: [action] });
+      else if (!entry.actions.includes(action)) entry.actions.push(action);
+    }
+  }
+  return [...merged.values()].map(({ argument, actions }) => (actions.length === all.length ? argument : { ...argument, actions }));
 }
 
 /** One value per declared argument, keyed by its name (not its `--flag` spelling):

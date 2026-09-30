@@ -42,7 +42,7 @@ export * from "./set-try-env.ts";
 
 /** The slice of `set`'s declaration `try`'s own argv actually uses. */
 export const SET_TRY_ARGUMENTS: CommandArgument[] = [
-  { name: "set", description: "Artifact to validate or try, instead of the working tree", kind: "option", valueName: "artifact" },
+  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
   { name: "with-model", description: "With try: include acceptance checks that call the model", kind: "flag" },
   { name: "keep", description: "With try: leave the throwaway instance running instead of tearing it down", kind: "flag" },
   { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },

@@ -27,21 +27,20 @@ export const BACKUP_APPLY_ARGUMENT: CommandArgument = {
   name: "apply",
   description: "Actually apply the action (delete, or install/uninstall the schedule) instead of only previewing/printing it",
   kind: "flag",
-  actions: ["prune-replaced", "install", "uninstall"],
 };
 
 /** The declared, help/MCP-visible shape — `--json` is declared once, in list.ts, and
  *  reused here (not redeclared) so the merged `backup` command never lists it twice. */
 export const BACKUP_PRUNE_ARGUMENTS: CommandArgument[] = [
   BACKUP_APPLY_ARGUMENT,
-  { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n", actions: ["prune-replaced"] },
+  { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
 /** What this command's own parser actually accepts — BACKUP_PRUNE_ARGUMENTS plus the shared
  *  --json, kept out of the declared array above so openclawCommands' merged list has it once. */
-const PRUNE_PARSE_ARGUMENTS: CommandArgument[] = [...BACKUP_PRUNE_ARGUMENTS, JSON_ARGUMENT];
+export const PRUNE_PARSE_ARGUMENTS: CommandArgument[] = [...BACKUP_PRUNE_ARGUMENTS, JSON_ARGUMENT];
 
 function parseKeep(raw: string | undefined): number {
   if (raw === undefined) return 0;

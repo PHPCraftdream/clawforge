@@ -11,7 +11,9 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire, registerHooks } from "node:module";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { INVOKED_AS_ENV, invocation } from "../core/io/invocation.ts";
+import { checkoutFrameworkSource } from "../commands/management/recipe/hook-graph.ts";
 import { reportError } from "../core/io/log.ts";
 import { splitLeadingAppFlag } from "../integration/gate.ts";
 import { isWithin } from "../core/paths.ts";
@@ -164,6 +166,25 @@ export function resolveFrameworkFromSelf(): void {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ERR_MODULE_NOT_FOUND") throw error;
         return nextResolve(specifier, { ...context, parentURL: import.meta.url });
+      }
+    },
+  });
+}
+
+/** The checkout gate: the package has no dist build here, so a deployment's app.ts importing
+ *  `@clawforge/framework/<export>` resolves onto the sibling sources (the recipe hook loader
+ *  maps the same table for hook imports on its own loader thread). */
+export function resolveFrameworkFromSources(): void {
+  registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (specifier !== PACKAGE && !specifier.startsWith(`${PACKAGE}/`)) return nextResolve(specifier, context);
+      try {
+        return nextResolve(specifier, context);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ERR_MODULE_NOT_FOUND") throw error;
+        const source = checkoutFrameworkSource(specifier);
+        if (source === undefined) throw error;
+        return { url: pathToFileURL(source).href, shortCircuit: true };
       }
     },
   });

@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** Hash a hook and every relative or package-internal (`#specifier`) module it statically
  *  reaches. */
@@ -240,6 +242,30 @@ async function boundaryFor(fromFile: string, recipeDirectory: string): Promise<s
     // Unreadable: the lexical boundary stands and the check below refuses.
   }
   return recipeDirectory;
+}
+
+/** The package's public exports, mapped onto this checkout's sources: a hook (or a
+ *  deployment's app.ts) importing `@clawforge/framework/<export>` in a checkout has no
+ *  dist build and no install to resolve against, so the loaders fall back to this table —
+ *  keyed off this module's own location, which in an installed package points inside it
+ *  and matches no source file, leaving normal resolution in charge. */
+const FRAMEWORK_PACKAGE = "@clawforge/framework";
+const FRAMEWORK_EXPORT_SOURCES: Record<string, string> = {
+  "./app": "core/app.ts",
+  "./mounts": "runtime/mounts.ts",
+  "./commands": "commands/interface/index.ts",
+  "./private-config": "security/privacy/private-config.ts",
+};
+
+/** The checkout source file a `@clawforge/framework` specifier maps to, or undefined when
+ *  this code does not run from the checkout sources or the specifier is not a public export. */
+export function checkoutFrameworkSource(specifier: string): string | undefined {
+  if (specifier !== FRAMEWORK_PACKAGE && !specifier.startsWith(`${FRAMEWORK_PACKAGE}/`)) return undefined;
+  const sub = specifier === FRAMEWORK_PACKAGE ? "./" : `./${specifier.slice(FRAMEWORK_PACKAGE.length + 1).split(/[?#]/, 1)[0]}`;
+  const source = FRAMEWORK_EXPORT_SOURCES[sub];
+  if (source === undefined) return undefined;
+  const target = resolve(fileURLToPath(new URL("../../..", import.meta.url)), source);
+  return existsSync(target) ? target : undefined;
 }
 
 export interface PackageImportResolution {

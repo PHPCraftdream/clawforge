@@ -12,7 +12,7 @@
 // recomputes the target fresh off disk via hook-graph.ts's resolvePackageImport and
 // short-circuits to its versioned URL. Bare installed packages resolve normally.
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { resolvePackageImport } from "./hook-graph.ts";
+import { checkoutFrameworkSource, resolvePackageImport } from "./hook-graph.ts";
 
 const VERSION_PARAM = "g";
 /** The recipe directory a versioned hook graph is bounded to, carried alongside the
@@ -49,6 +49,18 @@ export async function resolve(specifier: string, context: ResolveContext, nextRe
   }
 
   if (!specifier.startsWith("./") && !specifier.startsWith("../") && !specifier.startsWith("#")) {
+    if (specifier.startsWith("@clawforge/framework")) {
+      try {
+        return await nextResolve(specifier, context);
+      } catch (error) {
+        // No install of the package answers (a checkout deployment): fall back to the
+        // checkout's own sources for the package's public exports.
+        if ((error as NodeJS.ErrnoException).code !== "ERR_MODULE_NOT_FOUND") throw error;
+        const source = checkoutFrameworkSource(specifier);
+        if (source === undefined) throw error;
+        return { url: pathToFileURL(source).href, shortCircuit: true };
+      }
+    }
     return nextResolve(specifier, context);
   }
   const resolved = await nextResolve(specifier, context);

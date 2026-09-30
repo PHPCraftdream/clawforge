@@ -44,6 +44,11 @@ import { openclawCommands } from "./framework/commands/interface/index.ts";
 import { normalizeVersionAlias, versionGateCommand } from "./framework/integration/version.ts";
 import { makeCompletionGateCommand } from "./framework/integration/completion.ts";
 import type { AppDefinition, CommandArgument } from "./framework/core/app.ts";
+import { resolveFrameworkFromSources } from "./framework/entry/delegate.ts";
+
+// A deployment's app.ts importing @clawforge/framework resolves onto this checkout's
+// sources — there is no dist build here (recipe hooks map the same table in the hook loader).
+resolveFrameworkFromSources();
 
 // A hand-over from the system-wide command names itself; otherwise this is the ./clawforge gate.
 const invokedAs = takeInvokedAs();

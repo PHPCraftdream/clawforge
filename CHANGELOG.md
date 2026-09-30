@@ -12,6 +12,12 @@ All notable changes to `@clawforge/framework` will be documented here.
   no findings at all. Its advice now names `./clawforge bootstrap` (which resolves and pins the
   digest) rather than `./clawforge lock`, which refuses before the first bootstrap. The hard
   refusal stays on `set build`.
+* Recipe hooks and a checkout deployment's `app.ts` can import `@clawforge/framework/private-config`
+  (and the package's other public exports) the way the guide and the `--with-hooks` stub say: in a
+  checkout there is no dist build and no install to resolve the specifier against, so the hook
+  loader and the checkout gate map the exports onto the checkout's own framework sources, while an
+  installed deployment still resolves the recipe's own package first. The guide's example hook no
+  longer uses the unloadable `#framework/...` spelling.
 * A live lock/compose-env owner is no longer called dead under load: its recorded start comes
   from `process.uptime()` (counted after Node's own boot) while the OS probe has 1 s resolution,
   so the same process could differ by more than the 2 s reuse tolerance. The tolerance is now

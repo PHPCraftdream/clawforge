@@ -103,7 +103,9 @@ effect on the next call of a long-lived MCP session — while bare imports resol
 recipe's own `node_modules` and `import.meta.url` and neighbouring files keep pointing at the
 real recipe directory. Use the public
 `@clawforge/framework/private-config` helpers for generated credentials, atomic owner-only files,
-env updates and checksums; the framework never prints the values. A secret is never a
+env updates and checksums; the framework never prints the values. The specifier works in both
+kinds of deployment: an installed one resolves it from the framework package, a checkout
+deployment (`./clawforge new-app`) resolves it against the checkout's own framework sources. A secret is never a
 command-line argument — use `execWithSecrets` (or the private-file helpers) instead of putting
 a credential in `args`.
 `execWithSecrets` creates the temporary target directory and file with owner-only access:
@@ -177,7 +179,7 @@ rejected at load instead of silently excluding nothing:
   `<data>/sidecar-credentials/../escape.env` is refused even though the string carries a
   declared prefix, and `//` and `.` fold away before the comparison.
 
-The helpers in `#framework/security/privacy/private-config.ts` enforce the same declaration from the
+The `@clawforge/framework/private-config` helpers enforce the same declaration from the
 writing side: `ensurePrivateTargetDirectory` and `replacePrivateTargetFile` only proceed inside
 a declared path, files land mode 600 and directories 700, and a symlink between the data
 directory and the declared root is refused (the data root itself may be a link, and a link at
@@ -186,11 +188,9 @@ author's path-assembly mistake, not isolation from hostile code — the hook alr
 full context. A prepare hook that uses them:
 
 ```ts
-import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "#framework/security/privacy/private-config.ts";
-import type { Context } from "#framework/core/context.ts";
-import type { Recipe } from "#framework/service/recipe.ts";
+import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "@clawforge/framework/private-config";
 
-export async function prepare(ctx: Context, recipe: Recipe): Promise<void> {
+export async function prepare(ctx, recipe): Promise<void> {
   const dataDir = ctx.settings.dataDir;
   await ensurePrivateTargetDirectory(ctx, `${dataDir}/sidecar-credentials`);
   await replacePrivateTargetFile(

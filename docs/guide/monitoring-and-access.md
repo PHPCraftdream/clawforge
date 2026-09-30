@@ -170,7 +170,7 @@ An operator finds out the instance stopped doing its job without polling by hand
   checkout there) or a POSIX `local` target. A WSL target's Docker distro is not such a place,
   and neither is Windows itself (no crontab/systemd) — there this prints, and on an actual
   Windows host can also run with `--apply`, the equivalent `schtasks /create` command instead:
-  for a WSL target, the same `wsl.exe -d <distro> -- …` line a human would run (built from the
+  for a WSL target, the same `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- '<dir>'; exec './clawforge' …"` line a human would run (built from the
   configured `OC_WSL_DISTRO`); for the framework running natively on Windows, node invoked
   directly (there is no shell there to run the `./clawforge` bash shim through). `/f` replaces
   the same named task (`clawforge-<identity>-watch`) on a re-run, Task Scheduler's own

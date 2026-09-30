@@ -387,7 +387,7 @@ export async function withScheduleRunner<T>(substitute: ScheduleRunner, body: ()
 }
 
 /** The command a Windows Task Scheduler entry needs for `job` on the current deployment —
- *  wsl: the same `wsl.exe -d <distro> -- …` line a human would run (WslTransport's own
+ *  wsl: the same `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- …; exec …"` line a human would run (WslTransport's own
  *  clientInvocation, already built from the configured OC_WSL_DISTRO); a native Windows host
  *  (`local` transport): node invoked directly, since there is no shell here to run the bash
  *  shim through. */

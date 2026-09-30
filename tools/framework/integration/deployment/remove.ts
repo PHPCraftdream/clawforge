@@ -9,6 +9,7 @@ import { readdir, rm, lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die } from "../../core/io/log.ts";
 import { safeName } from "../../core/names.ts";
+import { humanSize } from "../../core/io/size.ts";
 import { listDeployments, type ListDeploymentsOptions } from "../list.ts";
 import { appsDir } from "./scaffold.ts";
 
@@ -38,18 +39,6 @@ async function directorySizeBytes(directory: string): Promise<number> {
     }
   }
   return total;
-}
-
-function humanSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KiB", "MiB", "GiB", "TiB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(1)} ${units[unit]}`;
 }
 
 /** Refuses everything that is not a plain, existing, non-symlink apps/<name> directory —

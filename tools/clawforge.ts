@@ -17,7 +17,7 @@
 import { resolve } from "node:path";
 import { access } from "node:fs/promises";
 import { main } from "./framework/entry/cli.ts";
-import { isWithin } from "./framework/entry/root.ts";
+import { isWithin } from "./framework/core/paths.ts";
 import {
   runGateCommand,
   gateHelpLines,
@@ -140,7 +140,7 @@ const gateCommands: GateCommand[] = [
       "The port avoids readable sibling .env files; it is not a host availability check. " +
       "Bootstrap checks active Docker deployments AND raw listening sockets (ss/netstat) on the target " +
       "before preparing data or pulling an image.\n" +
-      "Refuses if the directory already exists — run this once per deployment, then " +
+      "Refuses an existing directory unless it is empty — run this once per deployment, then " +
       "./clawforge --app <name> bootstrap.",
     arguments: NEW_APP_ARGUMENTS,
     run: async (args) => {

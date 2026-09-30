@@ -2,7 +2,7 @@
 
 import { log, info } from "#src/core/io/log.ts";
 import { archiveIncludesIdentity, fileStat } from "#src/service/archive/index.ts";
-import { humanSize } from "#src/commands/lifecycle/backup/list.ts";
+import { humanSize } from "#src/core/io/size.ts";
 import type { Context } from "#src/core/context.ts";
 import type { PreparedRestore, RestoreOptions } from "./index.ts";
 

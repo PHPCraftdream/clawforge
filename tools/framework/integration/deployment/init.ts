@@ -319,7 +319,7 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
   info("next:");
   for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", "./clawforge bootstrap")) info(line);
   info("Claude Code and Codex project MCP settings are ready; trust the project and reconnect the clients.");
-  info("secrets and snapshots stay inside this directory; commit ./clawforge, mcp-launch.mjs, app.ts,");
+  info("secrets stay inside this directory (snapshots go to the data directory on the target); commit ./clawforge, mcp-launch.mjs, app.ts,");
   info("package.json, config/ and recipes/ — .gitignore keeps .env, secrets/, state/ and sets/ out");
   // Types resolve already when this CLI runs from the app's own node_modules.
   const ownInstall = frameworkRoot.startsWith(resolve(root, "node_modules"));

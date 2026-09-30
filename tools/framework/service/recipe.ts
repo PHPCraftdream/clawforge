@@ -58,6 +58,15 @@ export async function listRecipeDirectories(root: string): Promise<Dirent[]> {
   }
 }
 
+/** Recipe directory names, sorted: readdir order differs between machines and a digest over
+ *  them must not notice. */
+export async function recipeNames(root: string = recipesDir()): Promise<string[]> {
+  return (await listRecipeDirectories(root))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
 export interface RecipePort {
   /** Port inside the container. */
   readonly container: number;

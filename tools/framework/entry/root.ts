@@ -19,9 +19,6 @@ export function findAppRoot(start: string): string | undefined {
   }
 }
 
-export { findCheckoutRoot } from "./delegate.ts";
-export { isWithin } from "../core/paths.ts";
-
 /** Hint prefix when no entry named itself: `clawforge` only for the system-wide copy; the
  *  app's own dependency (MCP launcher, npx, node_modules/.bin) has no global command behind
  *  it, but init always commits the ./clawforge shim. */

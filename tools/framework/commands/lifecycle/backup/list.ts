@@ -10,6 +10,7 @@
 
 import { log, info, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
+import { humanSize } from "#src/core/io/size.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { unreachableProblem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
@@ -24,19 +25,6 @@ import {
 export const JSON_ARGUMENT: CommandArgument = { name: "json", description: "Emit archives and replaced copies as JSON instead of text", kind: "flag" };
 
 export const BACKUP_LIST_ARGUMENTS: CommandArgument[] = [JSON_ARGUMENT];
-
-/** Exported for restore's --dry-run plan, which reports an archive's size the same way. */
-export function humanSize(bytes: number | undefined): string {
-  if (bytes === undefined || !Number.isFinite(bytes)) return "unknown size";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return unit === 0 ? `${value} ${units[unit]}` : `${value.toFixed(1)} ${units[unit]}`;
-}
 
 function archiveLine(entry: BackupArchiveInfo, isDefault: boolean): string {
   return `${entry.name}  ${humanSize(entry.sizeBytes)}  ${entry.modifiedAt}  ${entry.profile}${isDefault ? "  (default for restore)" : ""}`;

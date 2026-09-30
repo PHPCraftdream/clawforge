@@ -102,6 +102,19 @@ All notable changes to `@clawforge/framework` will be documented here.
   entry clears it at startup, and a checkout gate is never given it, so a `clawforge` run by a hook
   or `host` command in another app delegates to that app's own framework. A hand-over target that
   cannot be started now prints the error instead of exiting silently.
+* Stale texts: `docs/guide/commands.md` now lists `backup install|uninstall` and `--interval`,
+  `mcp-setup --rewrite-launcher`, `check --jobs/--require`, `init --local` and `version`, and the
+  completion section names the real `list --json --no-status` call; the WSL scheduler line reads
+  `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- …; exec …"` in docs and `watch` help;
+  `new-app` help says an empty existing directory is accepted; `init`/`new-app` no longer claim
+  snapshots stay inside the deployment directory (they go to the data directory on the target).
+  A new check keeps the command table in step with the declarations (every command, action and
+  flag, with an explicit allowlist).
+* `lock --check` with no lock file says `no lock file to compare against` instead of counting it as
+  a difference from the lock (exit code and JSON unchanged). `backup list` labels sizes KiB/MiB like
+  `remove-app`, from one shared helper; the recipe-name listing is one helper shared by `lock` and
+  `set`; the system-install check no longer writes into the tracked `docs/` folder; the entry's
+  re-exports that only the gate used are gone.
 
 ### Added
 

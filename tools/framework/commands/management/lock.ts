@@ -18,7 +18,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { frameworkPackage } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
 import { requirements } from "#src/service/secrets.ts";
-import { listRecipeDirectories } from "#src/service/recipe.ts";
+import { recipeNames } from "#src/service/recipe.ts";
 import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { openclawCliBatch } from "#src/service/openclaw-cli.ts";
 import { nextActions, problem } from "#src/service/inspection.ts";
@@ -89,13 +89,6 @@ export function lockFile(): string {
 
 export async function frameworkVersion(): Promise<string | undefined> {
   return (await frameworkPackage())?.version;
-}
-
-async function recipeNames(): Promise<string[]> {
-  return (await listRecipeDirectories(recipesDir()))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
 }
 
 /** What the lock would say if written now. Exported so `plan` and the checks can ask for it
@@ -283,20 +276,23 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
 }
 
 /** One summary for text, --json and MCP: an unread inventory is not a difference — nothing
- *  could be compared — so the two are counted apart. */
+ *  could be compared — so the two are counted apart; a missing lock is neither. */
 function summarizeCheck(problems: readonly Problem[], inventoryProblems: readonly Problem[]) {
   const unread = problems.filter((entry) => inventoryProblems.includes(entry));
-  const differences = problems.filter((entry) => !inventoryProblems.includes(entry));
+  const others = problems.filter((entry) => !inventoryProblems.includes(entry));
+  const missing = others.some((entry) => entry.code === "LOCK_MISSING");
+  const differences = others.filter((entry) => entry.code !== "LOCK_MISSING");
   const reason = unread.length > 0 && unread.every((entry) => entry.code === "GATEWAY_DOWN")
     ? "instance is not running"
     : unread.length > 0 && unread.every((entry) => entry.code === "NOT_BOOTSTRAPPED")
       ? "instance never bootstrapped"
       : "inventory not read";
   const parts = [
+    ...(missing ? ["no lock file to compare against"] : []),
     ...(differences.length > 0 ? [`${differences.length} difference(s) from the lock`] : []),
     ...(unread.length > 0 ? [`${unread.length} inventory read(s) could not be compared (${reason})`] : []),
   ];
-  return { unread, differences, reason, summary: parts.length > 0 ? parts.join("; ") : undefined };
+  return { unread, differences: others, reason, summary: parts.length > 0 ? parts.join("; ") : undefined };
 }
 
 export async function lock(ctx: Context, args: string[]): Promise<void> {

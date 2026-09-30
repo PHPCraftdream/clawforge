@@ -263,10 +263,10 @@ try {
   }
 
   // An app.ts importing a checkout's framework sources outside apps/<name> is not loaded as a second copy.
-  const strayDir = resolve(monorepoRoot, "docs", `${checkoutApp}-stray`);
+  const strayDir = resolve(appsDir, `.${checkoutApp}-stray`, "nested");
   await mkdir(strayDir, { recursive: true });
   try {
-    await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "../../tools/framework/core/app.ts";\nexport default defineApp({});\n', "utf8");
+    await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "../../../tools/framework/core/app.ts";\nexport default defineApp({});\n', "utf8");
     const stray = await clawforge(["status"], strayDir);
     check("a checkout-style app.ts that the gate cannot take over is refused", stray.code === 1 && stray.output.includes("imports the framework sources") && !stray.output.includes("cannot load"), true);
     // Decided by content: the package specifier needs no second copy of the sources.
@@ -278,7 +278,7 @@ try {
     const installedStatus = await clawforge(["status"], strayDir);
     check("and its commands are not refused for their location", installedStatus.output.includes("imports the framework sources"), false);
   } finally {
-    await rm(strayDir, { recursive: true, force: true });
+    await rm(resolve(appsDir, `.${checkoutApp}-stray`), { recursive: true, force: true });
   }
 
   // The global command inside a checkout never creates a deployment in the framework sources.

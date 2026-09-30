@@ -27,8 +27,8 @@ import { openclawCommands } from "../commands/interface/index.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";
 import { normalizeVersionAlias, makeVersionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
-import { delegateToOwnFramework, importsCheckoutSources, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
-import { defaultInvocation, findAppRoot, findCheckoutRoot } from "./root.ts";
+import { delegateToOwnFramework, findCheckoutRoot, importsCheckoutSources, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
+import { defaultInvocation, findAppRoot } from "./root.ts";
 import type { AppDefinition } from "../core/app.ts";
 
 // First, before anything can spawn: the flag covers this hand-over only, not descendants.

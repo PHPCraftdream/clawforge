@@ -17,7 +17,7 @@ import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentDir, desiredStateFile, recipesDir, secretsTemplateFile } from "#src/runtime/deployment.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
-import { listRecipeDirectories } from "#src/service/recipe.ts";
+import { recipeNames } from "#src/service/recipe.ts";
 import { desiredStateShapeError } from "#src/set/ownership/validate.ts";
 import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { frameworkVersion, readLock } from "#src/commands/management/lock.ts";
@@ -93,15 +93,6 @@ async function agentDeclaration(recipe: string): Promise<AgentConfig> {
     die(`recipe "${recipe}" has an agent/ bundle without agent/config.json — provision-agent requires it`);
   }
   return parseAgentConfig(JSON.parse(raw));
-}
-
-/** Recipe directory names, sorted: readdir order differs between machines and the id must
- *  not notice. Same rule as the lock's recipeNames. */
-async function recipeNames(): Promise<string[]> {
-  return (await listRecipeDirectories(recipesDir()))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
 }
 
 /** True only for a genuinely absent recipes directory. Any other errno means a source that

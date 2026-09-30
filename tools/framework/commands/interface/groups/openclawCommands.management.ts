@@ -545,7 +545,7 @@ export const managementCommands: Record<string, AppCommand> = {
       "never runs, the exact command an operator-side scheduler would need to invoke, using " +
       "the transport's own clientInvocation().\n" +
       "On an actual Windows host it also prints a " +
-      "ready `schtasks /create` command (a WSL target's own `wsl.exe -d <distro> -- …` line, " +
+      "ready `schtasks /create` command (a WSL target's own `wsl.exe -d <distro> --exec bash -lc \"set -e; cd -- …; exec …\"` line, " +
       "or, for the framework running natively, node invoked directly — no bash shim to run " +
       "it through); `/f` replaces the same named task on a re-run, the Task Scheduler " +
       "counterpart to the crontab marker.\n" +

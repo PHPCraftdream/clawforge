@@ -211,7 +211,7 @@ export class DockerRuntime implements Runtime {
   }
 
   /** A side stack: separate compose project, separate lifecycle. */
-  stack(project: string, definitionPath: string, ownership?: { verifyOwnership: boolean; legacyProject?: string }): Stack {
+  stack(project: string, definitionPath: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[] }): Stack {
     return buildStack(
       this.#transport,
       this.#paths,

@@ -20,21 +20,30 @@ Every recipe is its **own compose project**, not a service in our file. That is 
 `up`/`down`/`status` keep dealing with the gateway alone, a broken recipe cannot drag it
 down, and state snapshots never pick up a recipe's images or volumes.
 
-The project is `<gateway-compose-namespace>-recipe-<name>`: the validated
-`OC_COMPOSE_PROJECT` when set, otherwise the deployment directory basename. Distinct
-deployments with the same basename must use distinct `OC_COMPOSE_PROJECT` values for
-both gateway and recipe isolation. All lifecycle commands, diagnostics and backup
-discovery use that same namespace, even when a recipe manifest is broken.
+The project is `clawforge-recipe-<sha256>`, where the full SHA-256 digest is computed
+over JSON serialization of `[validated gateway namespace, validated recipe name]`.
+The gateway namespace is `OC_COMPOSE_PROJECT` when set, otherwise the deployment
+directory basename. Component boundaries are preserved even for names containing
+`-recipe-`. Distinct deployments with the same basename must still use distinct
+`OC_COMPOSE_PROJECT` values for both gateway and recipe isolation. All lifecycle
+commands, diagnostics and backup discovery use the same builder, even when a recipe
+manifest is broken. To get the exact project, run `./clawforge recipe status <name>`;
+Compose prints its container names. On the Docker target, inspect a listed container
+with `docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' <container>`.
+Framework callers can use `recipeProjectName(name)` after selecting the deployment
+and its Compose override; do not reconstruct the identity with string concatenation.
 
 ### Existing-stack cutover
 
-Older releases used `<deployment-basename>-recipe-<name>` even with an override.
-The framework never aliases the new namespace to that old project. If the old project
-still has any containers (including stopped ones), operations and backups refuse
-instead of adopting or stopping a possibly foreign stack. When the name is unchanged,
-existing containers must have Compose `project.working_dir` and `project.config_files`
-labels exactly matching this recipe's target directory and definition; a moved checkout,
-missing labels or another root requires operator cutover too.
+Earlier releases used `<gateway-compose-namespace>-recipe-<name>`; the original
+scheme used `<deployment-basename>-recipe-<name>` even with an override. Both old
+projects are checked, deduplicated when equal. The framework never aliases the derived
+namespace to either old project. If either still has any containers (including stopped
+ones), operations and backups refuse instead of adopting or stopping a possibly foreign
+stack, including default deployments. The refusal reports the exact old and new names.
+Containers in the new project must have Compose `project.working_dir` and
+`project.config_files` labels exactly matching this recipe's target directory and
+definition; a moved checkout, missing labels or another root requires operator cutover too.
 
 On the Docker target, inspect the specific old project, verify **every** container's
 labels and mounts against the intended root/data, and take an application-consistent

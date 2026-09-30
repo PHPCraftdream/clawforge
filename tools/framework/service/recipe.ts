@@ -7,7 +7,7 @@
 // app-owned hook touches), and an optional multi-stage Dockerfile (cloning/compiling stay
 // in the build stage, never reaching the host or final image).
 //
-// Each recipe is its OWN compose project (<docker-namespace>-recipe-<name>), not a service inside the
+// Each recipe is its OWN compose project (a digest of the gateway namespace / recipe pair), not a service inside the
 // application's own definition: up/down/status stay on the managed service alone, a broken
 // recipe cannot take it down, and state snapshots don't pick up recipe images/volumes.
 //
@@ -16,6 +16,7 @@
 import { readdir, readFile, access } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { monorepoRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { die } from "../core/io/log.ts";
@@ -82,7 +83,7 @@ export interface RecipeReadiness {
 }
 
 export interface Recipe {
-  /** Directory name, also the compose project suffix. */
+  /** Validated recipe directory name, part of its Compose project identity. */
   readonly name: string;
   readonly description: string;
   /** Upstream the Dockerfile builds from, recorded so it is visible without reading it. */
@@ -114,18 +115,28 @@ export interface Recipe {
   readonly disabledReason?: string;
 }
 
-/** The same validated Docker namespace as the gateway, with a separate recipe suffix. */
+/** One stable identity for the validated pair, never a delimiter-based concatenation. */
 export function recipeProjectName(recipe: string): string {
-  return `${composeProjectName()}-recipe-${safeName("recipe", recipe)}`;
+  const namespace = composeProjectName();
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(namespace)) {
+    throw new Error(`invalid gateway Compose namespace "${namespace}"`);
+  }
+  const pair = JSON.stringify([namespace, safeName("recipe", recipe)]);
+  return `clawforge-recipe-${createHash("sha256").update(pair).digest("hex")}`;
 }
 
-/** One builder for lifecycle and backup probes, including malformed manifests. */
+/** One builder for lifecycle and backup probes, including malformed manifests.
+ *  Both earlier identity schemes require explicit verified operator cutover. */
 export function recipeStack(ctx: Context, name: string, definitionPath: string): Stack {
   const project = recipeProjectName(name);
-  const legacyProject = `${deploymentName()}-recipe-${name}`;
+  const compositeProject = `${composeProjectName()}-recipe-${name}`;
+  const basenameProject = `${deploymentName()}-recipe-${name}`;
+  const legacyProjects = compositeProject === basenameProject
+    ? [compositeProject]
+    : [compositeProject, basenameProject];
   return ctx.runtime.stack(project, definitionPath, {
     verifyOwnership: true,
-    legacyProject: legacyProject === project ? undefined : legacyProject,
+    legacyProjects,
   });
 }
 

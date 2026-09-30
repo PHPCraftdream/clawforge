@@ -168,7 +168,7 @@ export interface Runtime {
 
   /** Operates a side stack — deployed next to the instance but isolated, with its own
    *  project name. Used for recipes, so a third-party service can't take the gateway down. */
-  stack(project: string, definitionPath: string, ownership?: { verifyOwnership: boolean; legacyProject?: string }): Stack;
+  stack(project: string, definitionPath: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[] }): Stack;
 }
 
 /** One compose service's state, as `serviceStates()` reports it. */

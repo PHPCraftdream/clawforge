@@ -57,7 +57,7 @@ export function buildStack(
   withEnvFile: <T>(action: (path: string) => Promise<T>, settings?: Settings) => Promise<T>,
   project: string,
   definitionPath: string,
-  ownership?: { verifyOwnership: boolean; legacyProject?: string },
+  ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[] },
 ): Stack {
   // Compose labels are deployment evidence, not merely a basename/project-name match.
   // Check stopped containers too: `up` can recreate them and `down` can remove them.
@@ -69,8 +69,10 @@ export function buildStack(
       ]);
       return result.stdout.trim().split(/\s+/).filter(Boolean);
     };
-    if (ownership.legacyProject !== undefined && (await containers(ownership.legacyProject)).length > 0) {
-      throw new Error(`recipe namespace cutover required: legacy project "${ownership.legacyProject}" still has containers; ownership is ambiguous, so no stack was stopped or adopted. Inspect its Compose labels and mounts, back up its data, then explicitly run docker compose --project-name "${ownership.legacyProject}" --file <verified-old-compose-file> down (without --volumes). See docs/guide/recipes.md before reinstalling into "${project}".`);
+    for (const legacyProject of ownership.legacyProjects ?? []) {
+      if ((await containers(legacyProject)).length > 0) {
+        throw new Error(`recipe namespace cutover required: legacy project "${legacyProject}" still has containers; ownership is ambiguous, so no stack was stopped or adopted. Inspect its Compose labels and mounts, back up its data, then explicitly run docker compose --project-name "${legacyProject}" --file <verified-old-compose-file> down (without --volumes). See docs/guide/recipes.md before reinstalling into "${project}".`);
+      }
     }
     const ids = await containers(project);
     if (ids.length === 0) return;

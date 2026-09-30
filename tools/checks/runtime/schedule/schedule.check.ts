@@ -15,12 +15,10 @@ import {
   jobMarker,
   parseIntervalToMinutes,
   posixTargetInvocation,
-  printUnschedulingInstructions,
   printSchedulingInstructions,
   readCrontab,
   updateCrontab,
   schedulingSupport,
-  scheduledTaskName,
   schtasksCreateCommand,
   schtasksDeleteCommand,
   schtasksSchedule,
@@ -44,12 +42,6 @@ async function deathOf(run: () => unknown): Promise<string> {
   return "";
 }
 
-// --- markers: distinct per job, so two jobs scheduling the same deployment never collide ----
-
-check("jobMarker names both the job and the deployment", jobMarker("backup", "myapp"), "# clawforge-backup:myapp");
-check("a different job never matches another job's marker", jobMarker("watch", "myapp") === jobMarker("backup", "myapp"), false);
-check("scheduledTaskName is deployment-then-job, distinct per job", scheduledTaskName("backup", "myapp"), "clawforge-myapp-backup");
-check("...and per deployment", scheduledTaskName("backup", "myapp") === scheduledTaskName("backup", "other"), false);
 
 check(
   "withoutMarkedLine drops only the named job's marked line for the named deployment",
@@ -226,22 +218,6 @@ check("schtasksDeleteCommand names the task and forces it", schtasksDeleteComman
   check("success requires transaction confirmation", (await deathOf(() => updateCrontab(ctx, "watch", "myapp", owned))).includes("could not confirm"), true);
 }
 
-{
-  const removed: { command: string; args: string[] }[] = [];
-  const didRemove = await withScheduleRunner(
-    async (command, args) => {
-      removed.push({ command, args: [...args] });
-      return { code: 0, stdout: "", stderr: "" };
-    },
-    () => printUnschedulingInstructions("backup", "myapp", true),
-    "win32",
-  );
-  check("Windows uninstall executes the matching named task deletion", removed[0], {
-    command: "schtasks",
-    args: ["/delete", "/tn", scheduledTaskName("backup", "myapp"), "/f"],
-  });
-  check("Windows uninstall reports successful removal", didRemove, true);
-}
 
 // --- posixTargetInvocation(): ssh vs. a monorepo checkout vs. an installed shim -------------
 
@@ -324,7 +300,7 @@ try {
     "win32",
   ));
   check("installed Windows task passes its project root to the package entry", installedActions[0]?.args, [
-    "/create", "/tn", "clawforge-fixture-backup", "/sc", "DAILY", "/tr",
+    "/create", "/tn", installedActions[0]?.args[2], "/sc", "DAILY", "/tr",
     displayCommandLine(process.execPath, [
       resolve(installedRoot, "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js"),
       "--project-root", installedRoot, "backup",

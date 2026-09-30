@@ -160,9 +160,15 @@ Mirrors `watch install`/`watch uninstall` (see
 shared crontab-marker convention and the Windows fallback: crontab where an unattended cron
 can be trusted to find this tooling (a real SSH host or a POSIX `local` target), otherwise a
 printed — and, with `--apply` on an actual Windows host, applied — `schtasks /create`
-command. Its own marker (`clawforge-backup:<deployment>`) is distinct from `watch install`'s
-(`clawforge-watch:<deployment>`), so installing one never disturbs the other, even for the
-same deployment.
+command. Its own marker (`clawforge-backup:<identity>`) is distinct from `watch install`'s
+(`clawforge-watch:<identity>`), so installing one never disturbs the other, even for the
+same deployment. Identity hashes the canonical deployment root and execution location,
+not the basename or Compose name; same-basename projects can keep independent schedules.
+Reinstall/uninstall changes only that identity. Previous basename cron entries are only
+cut over when the full invocation matches this root; other roots and manual rows survive.
+Ambiguous old Windows task names are never overwritten or deleted automatically: verify
+their action/root and remove your own old task before installing the keyed task to avoid
+duplicate execution. See the monitoring guide above for SSH identity and lock details.
 
 `./clawforge doctor`/`inspect` now notice when that schedule silently stopped: `BACKUP_MISSING`
 (no full archive in `OC_BACKUP_DIR` at all — a `migrate`/`share`-only directory counts as

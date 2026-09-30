@@ -25,6 +25,7 @@ import {
   printSchedulingInstructions,
   printUnschedulingInstructions,
   schedulingSupport,
+  schedulerIdentity,
   updateCrontab,
 } from "#src/commands/operate/schedule.ts";
 import { BACKUP_APPLY_ARGUMENT } from "./prune-replaced.ts";
@@ -73,11 +74,13 @@ export async function backupInstall(ctx: Context, args: string[], scope?: Action
   }
 
   const invocation = await posixTargetInvocation(ctx, [JOB]);
-  const line = cronLine(minutes, invocation, JOB, name);
+  cronLine(minutes, invocation, JOB, name); // Validate cron syntax before querying the target.
+  const identity = await schedulerIdentity(ctx);
+  const line = cronLine(minutes, invocation, JOB, identity);
 
   log(`crontab entry (every ${interval}, runs on ${ctx.transport.description})`);
   info(line);
-  info(`marked "${jobMarker(JOB, name)}" — re-running this replaces only that line; backup uninstall removes only it`);
+  info(`marked "${jobMarker(JOB, identity)}" — re-running this replaces only that line; backup uninstall removes only it`);
   if (ctx.transport.description.startsWith("ssh:")) {
     info(`assumes this deployment was mirrored to ${ctx.settings.remotePath} by ./clawforge deploy (set OC_REMOTE_PATH if --path differed)`);
   }
@@ -89,7 +92,7 @@ export async function backupInstall(ctx: Context, args: string[], scope?: Action
 
   await requireBootstrapped(ctx);
   await guarded(ctx, "backup install --apply", args, async () => {
-    await updateCrontab(ctx, JOB, name, line);
+    await updateCrontab(ctx, JOB, identity, line, { name, invocation });
     log("installed");
   });
 }
@@ -101,17 +104,20 @@ export async function backupUninstall(ctx: Context, args: string[], scope?: Acti
 
   if (!support.supported) {
     warn(`no unattended schedule could have been installed on ${ctx.transport.description} in the first place: ${support.reason}`);
-    await printUnschedulingInstructions(JOB, name, apply);
+    await printUnschedulingInstructions(ctx, JOB, apply);
     return;
   }
 
+  const identity = await schedulerIdentity(ctx);
+  const invocation = await posixTargetInvocation(ctx, [JOB]);
+
   if (!apply) {
-    info(`would remove the crontab entry marked "${jobMarker(JOB, name)}" on ${ctx.transport.description}; re-run with --apply`);
+    info(`would remove the crontab entry marked "${jobMarker(JOB, identity)}" on ${ctx.transport.description}; re-run with --apply`);
     return;
   }
 
   await guarded(ctx, "backup uninstall --apply", args, async () => {
-    if (!await updateCrontab(ctx, JOB, name)) {
+    if (!await updateCrontab(ctx, JOB, identity, undefined, { name, invocation })) {
       info("no backup schedule was installed for this deployment — nothing to remove");
       return;
     }

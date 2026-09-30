@@ -173,8 +173,20 @@ An operator finds out the instance stopped doing its job without polling by hand
   for a WSL target, the same `wsl.exe -d <distro> -- …` line a human would run (built from the
   configured `OC_WSL_DISTRO`); for the framework running natively on Windows, node invoked
   directly (there is no shell there to run the `./clawforge` bash shim through). `/f` replaces
-  the same named task (`clawforge-<deployment>-watch`) on a re-run, Task Scheduler's own
-  counterpart to the crontab marker. This machinery (crontab conventions and the Windows
+  the same named task (`clawforge-<identity>-watch`) on a re-run, Task Scheduler's own
+  counterpart to the crontab marker (`# clawforge-watch:<identity>`). Identity is a SHA-256
+  of the canonical physical deployment root and execution location, not its human basename
+  or Compose project name: `/srv/team-a/deployment` and `/srv/team-b/deployment` coexist.
+  SSH resolves `<remotePath>/apps/<deployment>` on the target, so operator and target-local
+  commands use the same identity; a failed resolution leaves the scheduler unchanged.
+  Windows/WSL uses the operator root and transport location, while the task action keeps
+  the correct installed entry/project root. Old basename cron markers are migrated or
+  removed only when their entire invocation matches this root's generated invocation.
+  Other-root and manual rows stay untouched. Old basename Windows tasks are deliberately
+  left alone because their name is ambiguous: inspect their action and remove only a task
+  you have verified belongs to this deployment before installing the new keyed task, to
+  avoid duplicate execution. No compatibility alias is installed.
+  This machinery (crontab conventions and the Windows
   fallback alike) is shared with `backup install`/`backup uninstall` — see
   [Backup and restore](data-and-backups.md#backup-and-restore) — through
   `commands/operate/schedule.ts`, so the two jobs cannot drift into two different

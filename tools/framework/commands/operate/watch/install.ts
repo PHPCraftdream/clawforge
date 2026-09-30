@@ -28,6 +28,7 @@ import {
   printSchedulingInstructions,
   printUnschedulingInstructions,
   schedulingSupport,
+  schedulerIdentity,
   withoutMarkedLine as sharedWithoutMarkedLine,
   updateCrontab,
   type ScheduledInvocation,
@@ -107,11 +108,13 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
   }
 
   const invocation = await posixTargetInvocation(ctx, [JOB, "check"]);
-  const line = cronLine(interval, invocation, name);
+  cronLine(interval, invocation, name); // Validate cron syntax before querying the target.
+  const identity = await schedulerIdentity(ctx);
+  const line = cronLine(interval, invocation, identity);
 
   log(`crontab entry (every ${interval} minute(s), runs on ${ctx.transport.description})`);
   info(line);
-  info(`marked "${watchMarker(name)}" — re-running this replaces only that line; watch uninstall removes only it`);
+  info(`marked "${watchMarker(identity)}" — re-running this replaces only that line; watch uninstall removes only it`);
   if (ctx.transport.description.startsWith("ssh:")) {
     info(`assumes this deployment was mirrored to ${ctx.settings.remotePath} by ./clawforge deploy (set OC_REMOTE_PATH if --path differed)`);
   }
@@ -123,7 +126,7 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
 
   await requireBootstrapped(ctx);
   await guarded(ctx, "watch install --apply", args, async () => {
-    await updateCrontab(ctx, JOB, name, line);
+    await updateCrontab(ctx, JOB, identity, line, { name, invocation });
     await recordWatchSchedule(ctx, interval);
     log("installed");
   });
@@ -136,18 +139,21 @@ export async function watchUninstall(ctx: Context, args: string[]): Promise<void
 
   if (!support.supported) {
     warn(`no unattended schedule could have been installed on ${ctx.transport.description} in the first place: ${support.reason}`);
-    const removed = await printUnschedulingInstructions(JOB, name, apply);
+    const removed = await printUnschedulingInstructions(ctx, JOB, apply);
     if (removed) await recordWatchSchedule(ctx, undefined);
     return;
   }
 
+  const identity = await schedulerIdentity(ctx);
+  const invocation = await posixTargetInvocation(ctx, [JOB, "check"]);
+
   if (!apply) {
-    info(`would remove the crontab entry marked "${watchMarker(name)}" on ${ctx.transport.description}; re-run with --apply`);
+    info(`would remove the crontab entry marked "${watchMarker(identity)}" on ${ctx.transport.description}; re-run with --apply`);
     return;
   }
 
   await guarded(ctx, "watch uninstall --apply", args, async () => {
-    if (!await updateCrontab(ctx, JOB, name)) {
+    if (!await updateCrontab(ctx, JOB, identity, undefined, { name, invocation })) {
       await recordWatchSchedule(ctx, undefined);
       info("no watch schedule was installed for this deployment — nothing to remove");
       return;

@@ -3,8 +3,8 @@
 // (marker, merge, print, apply) and the Windows fallback, so the two jobs cannot drift.
 // Target-side account flock protects the whole table across different instance locks.
 //
-// A job (e.g. "watch", "backup") owns its own marker — jobMarker(job, name) — so re-running
-// one job's install only ever replaces that job's own crontab line, never another job's.
+// A job (e.g. "watch", "backup") owns a marker keyed by canonical execution-root identity,
+// not the human basename, so same-basename deployments cannot replace one another.
 //
 // Windows has no crontab/systemd: schedulingSupport() says so, and the caller falls back to
 // printSchedulingInstructions(), which prints a real `schtasks /create …` line on a Windows
@@ -13,8 +13,9 @@
 // uses — swappable (withScheduleRunner) so a check can prove the wiring without touching a
 // real scheduled task.
 
-import { access } from "node:fs/promises";
-import { resolve } from "node:path";
+import { access, realpath } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { posix, resolve } from "node:path";
 import { die, info } from "../../core/io/log.ts";
 import { monorepoRoot } from "../../core/env.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
@@ -27,15 +28,44 @@ export interface ScheduledInvocation {
   readonly args: string[];
 }
 
+/** The namespace is the scheduler account itself, not the operator's SSH hostname alias.
+ * SSH and target-local commands hash the same physical deployment directory. */
+export async function schedulerIdentity(ctx: Context): Promise<string> {
+  const name = deploymentName();
+  let root: string;
+  let location = "posix";
+  if (ctx.transport.description.startsWith("ssh:")) {
+    const result = await ctx.transport.exec("sh", [
+      "-c", 'cd -- "$1" && pwd -P', "clawforge-scheduler-root", posix.join(ctx.settings.remotePath, "apps", name),
+    ], { allowFailure: true });
+    root = result.stdout.replace(/\n$/, "");
+    if (result.code !== 0 || !root.startsWith("/") || /[\r\n]/.test(root)) {
+      die("could not resolve the scheduled deployment root on target; scheduler unchanged");
+    }
+  } else {
+    root = await realpath(deploymentDir());
+    if (schedulerPlatform === "win32") {
+      root = root.toLowerCase();
+      location = `windows:${ctx.transport.description}`;
+    }
+  }
+  return createHash("sha256").update(JSON.stringify([location, root])).digest("hex");
+}
+
+export interface PriorSchedule {
+  readonly name: string;
+  readonly invocation: ScheduledInvocation;
+}
+
 /** One crontab line's trailing marker, and a Task Scheduler task's own name — both identify
  *  "this job, this deployment" so a re-run replaces exactly one entry, never another job's or
  *  another deployment's. */
-export function jobMarker(job: string, name: string): string {
-  return `# clawforge-${job}:${name}`;
+export function jobMarker(job: string, identity: string): string {
+  return `# clawforge-${job}:${identity}`;
 }
 
-export function scheduledTaskName(job: string, name: string): string {
-  return `clawforge-${name}-${job}`;
+export function scheduledTaskName(job: string, identity: string): string {
+  return `clawforge-${identity}-${job}`;
 }
 
 /** Cron steps fire evenly only when they divide 60 (minutes) or 24 (hours); other steps are
@@ -89,8 +119,8 @@ export function cronLine(minutes: number, invocation: ScheduledInvocation, job: 
   return `${cronSchedule(minutes)} cd ${SshTransport.quote(invocation.cwd)} && ${invocation.command} ${args} >/dev/null 2>&1 ${jobMarker(job, name)}`;
 }
 
-export function withoutMarkedLine(text: string, job: string, name: string): string[] {
-  return crontabLines(text).filter((line) => !ownedCronLine(line.endsWith("\r") ? line.slice(0, -1) : line, job, name));
+export function withoutMarkedLine(text: string, job: string, name: string, prior?: PriorSchedule): string[] {
+  return crontabLines(text).filter((line) => !new RegExp(ownedCronPattern(job, name, prior)).test(line));
 }
 
 export function crontabLines(text: string): string[] {
@@ -100,14 +130,22 @@ export function crontabLines(text: string): string[] {
 }
 
 /** Shared JS/POSIX ERE ownership predicate for local previews and locked target edits. */
-function ownedCronPattern(job: string, name: string): string {
+function ownedCronPattern(job: string, name: string, prior?: PriorSchedule): string {
   const jobArgs = job === "watch" ? ["watch", "check"] : job === "backup" ? ["backup"] : undefined;
   if (jobArgs === undefined || /[%\r\n]/.test(name)) return "^$.";
   const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const quoted = (args: string[]): string => args.map(SshTransport.quote).join(" ");
+  const quoted = (args: readonly string[]): string => args.map(SshTransport.quote).join(" ");
   const schedules = VALID_INTERVAL_MINUTES.map((minutes) => literal(cronSchedule(minutes))).join("|");
-  const args = [quoted(jobArgs), quoted(["--app", name, ...jobArgs])].map(literal).join("|");
-  return `^(${schedules}) cd ('([^'%]|'\\\\'')*') && \\./clawforge (${args}) >/dev/null 2>&1 ${literal(jobMarker(job, name))}\r?$`;
+  const args = `(${literal(quoted(jobArgs))}|'--app' '[^'%]+' ${literal(quoted(jobArgs))})`;
+  const current = `(${schedules}) cd ('([^'%]|'\\\\'')*') && \\./clawforge ${args} >/dev/null 2>&1 ${literal(jobMarker(job, name))}`;
+  // Old basename markers are not ownership evidence. Only the exact invocation
+  // produced for this root can be migrated; manual/other-root rows stay untouched.
+  const invocation = prior?.invocation;
+  const legacy = prior !== undefined && invocation !== undefined &&
+    ![prior.name, invocation.cwd, invocation.command, ...invocation.args].some((part) => /[%\r\n]/.test(part))
+    ? `|(${schedules}) ${literal(`cd ${SshTransport.quote(invocation.cwd)} && ${invocation.command} ${quoted(invocation.args)} >/dev/null 2>&1 ${jobMarker(job, prior.name)}`)}`
+    : "";
+  return `^(${current}${legacy})\r?$`;
 }
 
 function ownedCronLine(line: string, job: string, name: string): boolean {
@@ -189,11 +227,11 @@ printf 'updated\\n'
 `;
 
 /** Updates one owned job under a target-account flock, independent of instance data paths. */
-export async function updateCrontab(ctx: Context, job: string, name: string, line?: string): Promise<boolean> {
+export async function updateCrontab(ctx: Context, job: string, name: string, line?: string, prior?: PriorSchedule): Promise<boolean> {
   if (line !== undefined && /[\r\n]/.test(line)) die("a scheduled crontab entry must be exactly one line");
   if (line !== undefined && !ownedCronLine(line, job, name)) die("a scheduled crontab entry must match its job and deployment");
   const result = await ctx.transport.exec("sh", [
-    "-c", CRONTAB_TRANSACTION, "clawforge-crontab-update", ownedCronPattern(job, name), line ?? "", line === undefined ? "uninstall" : "install",
+    "-c", CRONTAB_TRANSACTION, "clawforge-crontab-update", ownedCronPattern(job, name, prior), line ?? "", line === undefined ? "uninstall" : "install",
   ], { allowFailure: true });
   if (result.code !== 0) {
     const reason = CRONTAB_FAILURES[result.code] ?? "target scheduler transaction failed";
@@ -364,7 +402,7 @@ export async function printSchedulingInstructions(
   }
 
   const action = await windowsScheduledAction(ctx, jobArgs, invocation);
-  const taskName = scheduledTaskName(job, name);
+  const taskName = scheduledTaskName(job, await schedulerIdentity(ctx));
   const create = schtasksCreateCommand(taskName, minutes, action);
   info("on Windows, Task Scheduler can run this instead (`/f` replaces the same named task on a re-run):");
   info(`  ${displayCommandLine(create.command, create.args)}`);
@@ -379,14 +417,14 @@ export async function printSchedulingInstructions(
 }
 
 /** Prints or removes this job's deterministic Task Scheduler entry on Windows. */
-export async function printUnschedulingInstructions(job: string, name: string, apply: boolean): Promise<boolean> {
+export async function printUnschedulingInstructions(ctx: Context, job: string, apply: boolean): Promise<boolean> {
   if (schedulerPlatform !== "win32") {
-    info(`remove any entry you wired in yourself (e.g. Windows Task Scheduler): ${scheduledTaskName(job, name)}`);
+    info(`remove any entry you wired in yourself (e.g. Windows Task Scheduler): ${scheduledTaskName(job, await schedulerIdentity(ctx))}`);
     if (apply) die("refusing --apply: no correct unattended uninstall exists for this target");
     return false;
   }
 
-  const taskName = scheduledTaskName(job, name);
+  const taskName = scheduledTaskName(job, await schedulerIdentity(ctx));
   const remove = schtasksDeleteCommand(taskName);
   info(`Task Scheduler removal: ${displayCommandLine(remove.command, remove.args)}`);
   if (!apply) {

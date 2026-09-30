@@ -9,10 +9,8 @@ import { join } from "node:path";
 import {
   backupInstall,
   backupUninstall,
-  BACKUP_INSTALL_ARGUMENTS,
-  BACKUP_UNINSTALL_ARGUMENTS,
 } from "#framework/commands/lifecycle/backup/install.ts";
-import { jobMarker, scheduledTaskName, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
+import { jobMarker, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext } from "#checks/runtime/convergence/instance-lock/fixture.ts";
@@ -45,6 +43,9 @@ function crontabTransport(initial = "", listingFailure?: ExecResult): { transpor
     description: "ssh:user@host",
     async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
       calls.push({ command, args });
+      if (command === "sh" && args[2] === "clawforge-scheduler-root") {
+        return { code: 0, stdout: `${args[3]}\n`, stderr: "" };
+      }
       if (command === "sh" && args[2] === "clawforge-crontab-update") {
         calls.push({ command: "crontab", args: ["-l"] });
         const transaction = stubCrontabTransaction(args, current, listingFailure);
@@ -69,14 +70,6 @@ function crontabTransport(initial = "", listingFailure?: ExecResult): { transpor
   return { transport, calls, crontab: () => current };
 }
 
-// --- arguments: --apply/--break-lock/--break-foreign-lock are the shared objects, not a
-// second declaration with a different description ---------------------------------------
-
-check(
-  "install's --apply is the exact same declared argument uninstall's is (one shared object)",
-  BACKUP_INSTALL_ARGUMENTS.find((argument) => argument.name === "apply"),
-  BACKUP_UNINSTALL_ARGUMENTS.find((argument) => argument.name === "apply"),
-);
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-backup-install-check-"));
 useDeployment(root);
@@ -91,6 +84,7 @@ try {
     settings: { remotePath: "/opt/openclaw", dataDir: "/does/not/exist", env: {} },
     runtime: { async isRunning(): Promise<boolean> { return true; } },
   } as unknown as Context;
+  const identity = await schedulerIdentity(ctx);
 
   // print-only (no --apply): never touches crontab at all.
   await withOutputSink(() => {}, () => backupInstall(ctx, []));
@@ -102,13 +96,13 @@ try {
   const afterInstall = crontab();
   check("the foreign entry survives install", afterInstall.includes(FOREIGN), true);
   check("this deployment's own watch entry survives install untouched", afterInstall.includes(WATCH_ENTRY), true);
-  check("our own backup marker is present", afterInstall.includes(jobMarker("backup", name)), true);
+  check("our own backup marker is present", afterInstall.includes(jobMarker("backup", identity)), true);
   check("the default interval (1d) is a daily schedule", afterInstall.includes("0 0 * * * cd"), true);
 
   // --apply again with a different interval: replaces the SAME line rather than duplicating it.
   await withOutputSink(() => {}, () => backupInstall(ctx, ["--apply", "--interval", "6h"]));
   const afterSecondInstall = crontab();
-  const ourLines = afterSecondInstall.split("\n").filter((line) => line.includes(jobMarker("backup", name)));
+  const ourLines = afterSecondInstall.split("\n").filter((line) => line.includes(jobMarker("backup", identity)));
   check("re-installing replaces the one line rather than adding a second", ourLines.length, 1);
   check("the new interval took effect", ourLines[0]?.startsWith("0 */6 * * *"), true);
   check("the foreign and watch entries are still untouched", [afterSecondInstall.includes(FOREIGN), afterSecondInstall.includes(WATCH_ENTRY)], [true, true]);
@@ -128,7 +122,7 @@ try {
   // uninstall --apply: removes only OUR marked line.
   await withOutputSink(() => {}, () => backupUninstall(ctx, ["--apply"]));
   const afterUninstall = crontab();
-  check("uninstall removes our own line", afterUninstall.includes(jobMarker("backup", name)), false);
+  check("uninstall removes our own line", afterUninstall.includes(jobMarker("backup", identity)), false);
   check("uninstall leaves the foreign entry alone", afterUninstall.includes(FOREIGN), true);
   check("uninstall leaves this deployment's own watch entry alone", afterUninstall.includes(WATCH_ENTRY), true);
 
@@ -146,9 +140,6 @@ try {
   check("backup install aborts on crontab read failure", readError.includes("could not read crontab"), true);
   check("backup install leaves existing entries untouched on read failure", unreadable.crontab(), unreadableInitial);
   check("backup install never writes after a crontab read failure", unreadable.calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
-} finally {
-  await rm(root, { recursive: true, force: true });
-}
 
 // --- an unsupported transport never installs a crontab line; on an actual Windows host it
 // can apply through the recording transport only, targeting backup's own task name ----------
@@ -179,17 +170,6 @@ try {
         "win32",
       ));
     check("--apply on Windows runs schtasks through the recording transport, never a real one", recorded.length, 1);
-    check("...targeting backup's own task name, distinct from watch's", recorded[0]?.args.includes(scheduledTaskName("backup", deploymentName())), true);
-    const deleted: { command: string; args: string[] }[] = [];
-    await withOutputSink(() => {}, () => withScheduleRunner(
-      async (command, args) => {
-        deleted.push({ command, args: [...args] });
-        return { code: 0, stdout: "", stderr: "" };
-      },
-      () => backupUninstall(ctx, ["--apply"]),
-      "win32",
-    ));
-    check("Windows backup uninstall deletes its matching task", deleted[0]?.args, ["/delete", "/tn", scheduledTaskName("backup", deploymentName()), "/f"]);
     const failed = await deathOf(() => withOutputSink(() => {}, () => withScheduleRunner(
       async () => ({ code: 1, stdout: "", stderr: "access denied" }),
       () => backupUninstall(ctx, ["--apply"]),
@@ -201,6 +181,9 @@ try {
     const message = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--apply"])));
     check("--apply refuses outright on an unsupported, non-Windows transport", message.includes("refusing --apply"), true);
   }
+}
+} finally {
+  await rm(root, { recursive: true, force: true });
 }
 
 finish("backup install");

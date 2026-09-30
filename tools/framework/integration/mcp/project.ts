@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, rm, lstat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { renameOverPrivateFile } from "../../security/privacy/private-file.ts";
 import { warn } from "../../core/io/log.ts";
 
@@ -35,11 +35,13 @@ process.argv = [process.argv[0], entry, "--app", basename(root), action];
 await import(pathToFileURL(entry).href);
 `;
 
-/** Runs the installed @clawforge/framework package's own CLI entry. */
-const INSTALLED_LAUNCHER = `// ClawForge MCP launcher: committed next to app.ts. Runs the installed
-// @clawforge/framework package's CLI (invariant: resolved through node's own package
-// resolution, never a hardcoded path). Written by init / mcp-setup; the bootstrap in the
-// client config finds this file and sets CLAWFORGE_DEPLOYMENT_ROOT before importing it.
+/** Runs the deployment's own @clawforge/framework package, else the system-wide command. */
+const INSTALLED_LAUNCHER = `// ClawForge MCP launcher: committed next to app.ts. Runs this deployment's own
+// @clawforge/framework package (invariant: resolved through node's own package resolution,
+// never a hardcoded path), or the system-wide clawforge command when it has none. Written by
+// init / mcp-setup; the bootstrap in the client config finds this file and sets
+// CLAWFORGE_DEPLOYMENT_ROOT before importing it.
+import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -49,11 +51,29 @@ const action = process.argv.at(-1);
 if (root === undefined) throw new Error("CLAWFORGE_DEPLOYMENT_ROOT not set");
 if (!["mcp-serve", "control-mcp"].includes(action)) throw new Error("invalid MCP action");
 
-const entry = resolve(dirname(createRequire(resolve(root, "package.json")).resolve("@clawforge/framework/app")), "..", "entry", "bin.js");
+let entry;
+try {
+  entry = resolve(dirname(createRequire(resolve(root, "package.json")).resolve("@clawforge/framework/app")), "..", "entry", "bin.js");
+} catch {
+  entry = undefined;
+}
 process.chdir(root);
-process.argv = [process.argv[0], entry, action];
-await import(pathToFileURL(entry).href);
+if (entry === undefined) {
+  // Same stdio, so the MCP session runs straight through the system-wide command.
+  const child = spawn("clawforge", [action], { stdio: "inherit", shell: process.platform === "win32" });
+  child.on("error", (error) => {
+    process.stderr.write("clawforge: " + error.message + " — install it system-wide or add @clawforge/framework to this deployment\\n");
+    process.exit(1);
+  });
+  child.on("exit", (code) => process.exit(code ?? 1));
+} else {
+  process.argv = [process.argv[0], entry, action];
+  await import(pathToFileURL(entry).href);
+}
 `;
+
+/** Earlier canonical launcher texts, by sha256: still ours to rewrite, not a local edit. */
+const RETIRED_LAUNCHERS = new Set(["47775c0b66345861419a080594347e2d1e2dcc6a0658c1bf90ae8e3d6ecb7129"]);
 
 /** The launcher content for `mode` — the only place either variant is defined. */
 export function mcpLauncherContent(mode: DeploymentMode): string {
@@ -280,7 +300,8 @@ export async function setupProjectMcp(root: string, mode: DeploymentMode, client
   const launcherPath = resolve(root, MCP_LAUNCHER_FILENAME);
   const launcherPrevious = await existingFile(launcherPath);
   const launcherContent = mcpLauncherContent(mode);
-  const launcherIsCanonical = launcherPrevious === undefined || launcherPrevious === MONOREPO_LAUNCHER || launcherPrevious === INSTALLED_LAUNCHER;
+  const launcherIsCanonical = launcherPrevious === undefined || launcherPrevious === MONOREPO_LAUNCHER || launcherPrevious === INSTALLED_LAUNCHER ||
+    RETIRED_LAUNCHERS.has(createHash("sha256").update(launcherPrevious).digest("hex"));
   if (launcherIsCanonical || options.rewriteLauncher === true) {
     updates.push({ path: launcherPath, previous: launcherPrevious, content: launcherContent });
   } else {

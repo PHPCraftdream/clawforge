@@ -22,6 +22,10 @@ declaration it writes is ESM, so the directory's `package.json` has to say `"typ
 "module"` — init sets it, and refuses rather than changing it when the directory already
 holds CommonJS of its own.
 
+Installed globally instead (`npm install -g`), `clawforge` works in any app folder: `clawforge
+init` there, then `clawforge <command>`. A folder with its own local `@clawforge/framework`
+still runs that one — the global command hands over to it — so a version pin per app keeps working.
+
 The gateway image, Docker, WSL, SSH, and provider credentials belong to the deployment. The
 framework does not bundle OpenClaw or any provider key. Read the repository documentation
 for transport requirements, archive profiles, set artifacts, and the security model.

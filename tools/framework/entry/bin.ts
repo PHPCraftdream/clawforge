@@ -23,6 +23,7 @@ import { useDeployment } from "../runtime/deployment.ts";
 import { initApp } from "../integration/deployment/init.ts";
 import { normalizeVersionAlias, versionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
+import { delegateToOwnFramework, resolveFrameworkFromSelf } from "./delegate.ts";
 import type { AppDefinition } from "../core/app.ts";
 
 const launchArgv = process.argv.slice(2);
@@ -33,6 +34,10 @@ if (scheduled && (launchArgv[1] === undefined || !isAbsolute(launchArgv[1]))) {
 }
 const appRoot = scheduled ? resolve(launchArgv[1]) : process.cwd();
 const argv = normalizeVersionAlias(scheduled ? launchArgv.slice(2) : launchArgv);
+
+// Installed system-wide, this may not be the framework this deployment runs on.
+delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv);
+resolveFrameworkFromSelf();
 
 // Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
 // consumer repo. `check` is absent: it needs this repository's own test suite, unshipped.

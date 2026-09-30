@@ -65,6 +65,25 @@ still knows which tag to check for something newer; a deployment already pinned 
 left alone by `bootstrap`, and `./clawforge upgrade` is the way to move it from there (see
 [Upgrading the image](docs/guide/data-and-backups.md#upgrading-the-image-upgrade)).
 
+## Installing `clawforge` system-wide
+
+From this checkout, once `npm install` has run:
+
+```bash
+npm run install:system        # packs tools/framework and installs it with npm install -g
+cd ~/my-openclaw              # any app folder
+clawforge init                # app.ts, config/, .env, ./clawforge — nothing installed into the folder
+clawforge bootstrap --check
+clawforge status
+```
+
+The installed command is a copy, not a link to this working tree: run `npm run install:system`
+again to take later changes. It uses the deployment's own framework whenever there is one — a
+local `@clawforge/framework` dependency (the app's version pin), or, inside this checkout,
+`apps/<name>` and the root go to the checkout's own gate — and runs on itself only in a folder
+with neither. The `./clawforge` script and the MCP launcher that `init` writes fall back to it
+the same way. Remove it with `npm uninstall -g @clawforge/framework`.
+
 ## I want to…
 
 | I want to… | Run | Notes |

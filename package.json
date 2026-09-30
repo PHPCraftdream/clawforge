@@ -15,6 +15,7 @@
     "check:linux": "node --experimental-strip-types tools/dev/check-linux.ts",
     "test": "npm run check",
     "build": "node --experimental-strip-types tools/build-framework-package.ts",
+    "install:system": "node --experimental-strip-types tools/dev/install-system.ts",
     "typecheck": "tsgo --noEmit",
     "lint": "oxlint tools --deny-warnings",
     "format:check": "npm run typecheck && npm run lint",

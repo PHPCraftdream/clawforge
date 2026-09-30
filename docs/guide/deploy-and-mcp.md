@@ -100,6 +100,11 @@ node_modules/.bin/clawforge init             # app.ts, config/, .env, .gitignore
 ./clawforge bootstrap
 ```
 
+Or with no dependency in the repository at all: a system-wide `clawforge` (`npm install -g
+@clawforge/framework`, or `npm run install:system` from a ClawForge checkout) runs `clawforge
+init` and every later command there, and both `./clawforge` and the MCP launcher fall back to it.
+A local dependency, when present, always wins over the system-wide command.
+
 What lands in the consumer's repository (and is the only thing worth committing): `app.ts`,
 `config/desired-state.json`, `.gitignore`, and `clawforge` — a thin committed script delegating to
 `node_modules/.bin/clawforge`, so that `./clawforge <command>` works without `npx` and without a full

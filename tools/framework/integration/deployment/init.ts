@@ -51,7 +51,8 @@ const DESIRED_STATE = `[
 // The only framework-adjacent file committed to a consumer repo — invokes the installed
 // package directly so Git Bash under WSL works even when only `node.exe` is on PATH.
 // Bash-only, same as this monorepo's own ./clawforge; Windows users can use npm's
-// generated node_modules/.bin/clawforge.cmd or .ps1 instead.
+// generated node_modules/.bin/clawforge.cmd or .ps1 instead. Without a local install it
+// hands over to a system-wide `clawforge`.
 const SHIM = `#!/usr/bin/env bash
 # Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works
 # without typing a package path or npx by hand.
@@ -70,7 +71,11 @@ if [[ -z "$node_bin" ]]; then
 fi
 script_path="$DIR/node_modules/@clawforge/framework/dist/entry/bin.js"
 if [[ ! -f "$script_path" ]]; then
-  echo "error: $script_path not found — run npm install first" >&2
+  # No install of its own: the system-wide clawforge command, never this file again.
+  if global="$(command -v clawforge)" && [[ "$(cd "$(dirname "$global")" && pwd)" != "$DIR" ]]; then
+    exec "$global" "$@"
+  fi
+  echo "error: $script_path not found — run npm install, or install clawforge system-wide" >&2
   exit 1
 fi
 node_platform="$("$node_bin" -e 'process.stdout.write(process.platform)' 2>/dev/null || echo unknown)"

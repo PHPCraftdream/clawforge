@@ -61,6 +61,22 @@ jobs:
           OC_CHECK_SSH_HOST: localhost
         run: npm test
 
+      # The system-wide install a user runs, then the command from PATH in a fresh app folder:
+      # the check suite drives the installer into a scratch prefix, this is the real one.
+      - name: Install system-wide and use it in an app folder
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run install:system
+          app="$RUNNER_TEMP/cf-system-smoke"
+          mkdir -p "$app"
+          cd "$app"
+          clawforge version
+          clawforge init
+          help="$(clawforge help 2>&1)"
+          grep -q bootstrap <<<"$help"
+          ./clawforge version
+
       - name: Typecheck and lint
         run: npm run format:check
 
@@ -120,6 +136,22 @@ jobs:
           OC_CHECK_SSH_HOST: localhost
         run: npm run check
 
+      # The system-wide install a user runs, then the command from PATH in a fresh app folder:
+      # the check suite drives the installer into a scratch prefix, this is the real one.
+      - name: Install system-wide and use it in an app folder
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run install:system
+          app="$RUNNER_TEMP/cf-system-smoke"
+          mkdir -p "$app"
+          cd "$app"
+          clawforge version
+          clawforge init
+          help="$(clawforge help 2>&1)"
+          grep -q bootstrap <<<"$help"
+          ./clawforge version
+
       - name: Typecheck and lint
         run: npm run format:check
 
@@ -153,6 +185,34 @@ jobs:
 
       - name: Run checks
         run: npm run check
+
+      # The system-wide install a user runs, then the command from PATH in a fresh app folder:
+      # the check suite drives the installer into a scratch prefix, this is the real one.
+      - name: Install system-wide and use it in an app folder
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run install:system
+          app="$RUNNER_TEMP/cf-system-smoke"
+          mkdir -p "$app"
+          cd "$app"
+          clawforge version
+          clawforge init
+          help="$(clawforge help 2>&1)"
+          grep -q bootstrap <<<"$help"
+          ./clawforge version
+
+      - name: The system-wide command from PowerShell
+        shell: pwsh
+        run: |
+          # help is written to stderr; Actions runs pwsh with Stop, which 2>&1 must not trip.
+          $ErrorActionPreference = 'Continue'
+          Set-Location (Join-Path $env:RUNNER_TEMP 'cf-system-smoke')
+          $version = clawforge version
+          if ($LASTEXITCODE -ne 0) { throw 'clawforge version failed' }
+          $help = clawforge help 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0 -or -not ($help -match 'bootstrap')) { throw 'clawforge help did not list the deployment commands' }
+          $version
 
       - name: Typecheck and lint
         run: npm run format:check

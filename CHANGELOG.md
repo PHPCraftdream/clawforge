@@ -6,6 +6,15 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Added
 
+* System-wide install: `npm run install:system` packs `tools/framework` and installs it with
+  `npm install -g` (`-- --prefix <dir>` for another prefix), then runs the installed command and
+  says when its directory is not on PATH. The global `clawforge` works in any app folder: a local
+  `@clawforge/framework` dependency still wins (the global command hands over to it), `apps/<name>`
+  and the root of a ClawForge checkout go to that checkout's gate, and a folder with neither runs on
+  the global package, whose `@clawforge/framework` imports then resolve to it. The `./clawforge`
+  script and the MCP launcher `init` writes fall back to the global command; an unchanged launcher
+  from before is still rewritten, not reported as a local edit. Covered by `system-install.check.ts`
+  on every CI platform, plus a real global install used from PATH (bash, and PowerShell on Windows).
 * `doctor`/`inspect`: `BACKUP_MISSING` (no full backup archive in `OC_BACKUP_DIR`) and
   `BACKUP_STALE` (the newest one older than `OC_BACKUP_MAX_AGE`, default 2d) so a silently
   stopped backup schedule is a warning, not a surprise at restore time; `DISK_LOW` (free

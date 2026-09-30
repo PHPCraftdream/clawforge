@@ -47,8 +47,9 @@ public entry exports `protectPrivateDirectory(path)` and
 binary file exclusively: existing destinations refuse rather than being overwritten.
 Protection is POSIX `0700`/`0600` or a verified Windows owner-only DACL before content is
 written. Windows DACL protection does not isolate other Linux users accessing a DrvFs
-mount; follow the emitted boundary guidance. These are operator files, not target
-recipe writes, and do not use the target `privatePaths` ledger.
+mount: do not write plaintext credentials there; use protected Linux storage or encrypt
+before transfer. These are operator files, not target recipe writes, and do not use the
+target `privatePaths` ledger.
 
 ## MCP
 

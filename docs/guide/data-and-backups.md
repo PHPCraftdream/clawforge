@@ -228,6 +228,12 @@ once and called from `backup`/`restore` wherever that Context is (not just the c
 command — `pull`, `push`, `upgrade`'s pre-upgrade backup and its rollback all go through the
 same two functions).
 
+The plaintext copy below requires operator storage private to every user/domain that
+can reach it. Do not run it on a Windows drive readable by other WSL/DrvFs users:
+use protected Linux operator storage, or encrypt on the target **before** transferring
+any bytes. A Windows owner-only DACL is not cross-WSL isolation; post-copy encryption
+cannot undo plaintext exposure.
+
 ```ts
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -255,8 +261,6 @@ export default defineApp({
     if (destinationHash !== source.stdout.trim().split(/\s+/)[0]) {
       throw new Error(`offsite SHA-256 mismatch: ${destination}`);
     }
-    // Encryption is not the framework's job either — shell out to an external tool if you
-    // want the copy encrypted, e.g. `age -r <recipient> -o ${archive}.age ${archive}`.
   },
   async beforeRestore({ ctx, archive }) {
     // Called before anything is stopped or moved. Decrypt/fetch the real archive and

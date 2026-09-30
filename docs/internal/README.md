@@ -7,6 +7,8 @@ unfixed findings; every other status is taken from the document's own summary.
 
 ## Current
 
+* [review-2026-09-30-round-28.md](review-2026-09-30-round-28.md) — round 28, first review of the
+  round-27 fixes. Open: R28-01…R28-10 (P0: 0, P1: 0, P2: 2, P3: 8).
 * [review-2026-09-30-round-27.md](review-2026-09-30-round-27.md) — round 27, first review of the
   round-26 fixes. Open: R27-01…R27-09 (P2: 4, P3: 5).
 * [review-2026-09-30-round-26.md](review-2026-09-30-round-26.md) — round 26, after the system-wide

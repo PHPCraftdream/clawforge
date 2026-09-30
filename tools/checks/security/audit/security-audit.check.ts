@@ -2,13 +2,13 @@
 // real JSON shapes captured against the pinned image (2026.6.34), suppressions, the two
 // host-side checks (public bind, DOCKER-USER/UFW bypass), and secret-file permissions.
 
-import { mkdir, mkdtemp, rm, writeFile, chmod } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, readFile, chmod } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { privateFileProblems, runSecurityAudit } from "#framework/security/audit.ts";
 import { blockingProblems } from "#framework/service/inspection.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
-import { createPrivateFile, protectPrivateDirectory } from "#framework/security/privacy/private-file.ts";
+import { createPrivateFile, protectPrivateDirectory, protectPrivateFile } from "#framework/security/privacy/private-file.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
@@ -395,6 +395,21 @@ await withDeployment(async (dir) => {
   const ctx = stubContext({ running: false });
   const report = await runSecurityAudit(ctx);
   check("owner-only .env and secrets/*: no PRIVATE_FILE_INSECURE finding", report.problems.some((p) => p.code === "PRIVATE_FILE_INSECURE"), false);
+});
+
+await withDeployment(async (dir) => {
+  const output = resolve(dir, "operator-copies");
+  const prior = resolve(output, "prior.dat");
+  await mkdir(output);
+  await writeFile(prior, "prior owned bytes");
+  try {
+    await protectPrivateDirectory(output);
+    check("sealing a directory retains owner access to inherited files", await readFile(prior, "utf8"), "prior owned bytes");
+    await writeFile(prior, "updated owned bytes");
+    check("owner can update an inherited file after directory sealing", await readFile(prior, "utf8"), "updated owned bytes");
+  } finally {
+    await protectPrivateFile(prior, { boundary: false });
+  }
 });
 
 await withDeployment(async (dir) => {

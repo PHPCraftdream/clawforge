@@ -231,7 +231,7 @@ same two functions).
 ```ts
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { protectPrivateDirectory, createPrivateBinaryFile } from "@clawforge/framework/private-config";
 
 export default defineApp({
@@ -247,8 +247,9 @@ export default defineApp({
       "-c", 'base64 < "$1"', "afterBackup", archive,
     ]);
     const bytes = Buffer.from(encoded.stdout, "base64"); // ASCII across local/WSL/SSH
-    const destination = join("./offsite-backups", basename(archive));
-    await protectPrivateDirectory("./offsite-backups");
+    const directory = resolve("./offsite-backups");
+    const destination = join(directory, basename(archive));
+    await protectPrivateDirectory(directory);
     await createPrivateBinaryFile(destination, bytes); // Operator-side, exclusive owner-only creation.
     const destinationHash = createHash("sha256").update(await readFile(destination)).digest("hex");
     if (destinationHash !== source.stdout.trim().split(/\s+/)[0]) {
@@ -283,6 +284,8 @@ explicit removal/retry. POSIX protection is directory `0700` and file `0600` reg
 of a permissive umask; Windows uses a verified owner-only DACL before writing content.
 That Windows DACL alone does not isolate WSL/DrvFs users: heed the boundary warning
 and use separate protected Linux storage or encryption where that boundary is shared.
+Sealing the directory does not certify explicit permissions on older copies; audit and
+harden those files separately before relying on their confidentiality.
 
 The example buffers the base64 output and decoded archive in memory. For large backups,
 use a binary-safe `scp`/`rsync` transfer instead, still comparing target and destination

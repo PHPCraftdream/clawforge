@@ -88,7 +88,7 @@ async function windowsOwnerSid(file: string): Promise<string> {
  *  foreign trustee, grant the closed SID set. No /reset in front — it would restore the
  *  parent's inheritable access onto a file that already held its secret. Every step here can
  *  only narrow, so a failure leaves the file no wider than it arrived. */
-async function grantWindowsAcl(file: string): Promise<string> {
+async function grantWindowsAcl(file: string, directory = false): Promise<string> {
   const owner = await windowsOwnerSid(file);
   const foreign = new Set(
     (await savedAces(file)).aces
@@ -96,6 +96,7 @@ async function grantWindowsAcl(file: string): Promise<string> {
       .map((ace) => ace.trustee)
       .filter((trustee) => ![owner, SYSTEM_SID, ADMINISTRATORS_SID].includes(resolvedTrustee(trustee, owner))),
   );
+  const rights = directory ? "(OI)(CI)F" : "F";
   const grant = await runTool(
     systemTool("icacls.exe"),
     [
@@ -103,9 +104,9 @@ async function grantWindowsAcl(file: string): Promise<string> {
       "/inheritance:r",
       ...[...foreign].flatMap((trustee) => ["/remove", `*${trustee}`]),
       "/grant:r",
-      `*${owner}:F`,
-      `*${SYSTEM_SID}:F`,
-      `*${ADMINISTRATORS_SID}:F`,
+      `*${owner}:${rights}`,
+      `*${SYSTEM_SID}:${rights}`,
+      `*${ADMINISTRATORS_SID}:${rights}`,
     ],
     15_000,
   );
@@ -383,7 +384,7 @@ export async function protectPrivateFile(file: string, options: { boundary?: boo
 export async function protectPrivateDirectory(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true, mode: DIRECTORY_MODE });
   if (process.platform === "win32") {
-    const owner = await grantWindowsAcl(dir);
+    const owner = await grantWindowsAcl(dir, true);
     await assertDaclOwnerOnly(dir, owner);
     return;
   }

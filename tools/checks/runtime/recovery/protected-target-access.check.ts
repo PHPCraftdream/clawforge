@@ -24,10 +24,11 @@ interface Scenario {
   readonly existing: boolean;
 }
 
-async function run(scenario: Scenario): Promise<{ error?: string; files: Map<string, { owner: string; content: string }> }> {
+async function run(scenario: Scenario): Promise<{ error?: string; files: Map<string, { owner: string; content: string }>; sudoProbes: number }> {
   const directory = "/srv/app/data/config";
   const path = `${directory}/openclaw.json`;
   const files = new Map<string, { owner: string; content: string }>();
+  let sudoProbes = 0;
   if (scenario.existing) files.set(path, { owner: "1000", content: "before" });
   const ok = (stdout = ""): ExecResult => ({ code: 0, stdout, stderr: "" });
   const denied = (what: string): ExecResult => ({ code: 1, stdout: "", stderr: `${what}: Permission denied` });
@@ -77,6 +78,7 @@ async function run(scenario: Scenario): Promise<{ error?: string; files: Map<str
     description: "modelled",
     async exists(target: string) { return target === directory || posix.dirname(target) === "/" || directory.startsWith(`${target}/`) || files.has(target); },
     async exec(command: string, args: string[], options: { input?: string; allowFailure?: boolean } = {}) {
+      if ((command === "sh" && args[1] === "command -v sudo") || (command === "sudo" && args[1] === "true")) sudoProbes += 1;
       const result = execAs(scenario.operator, command, args, options.input);
       if (result.code !== 0 && options.allowFailure !== true) throw new Error(`${command} failed: ${result.stderr}`);
       return result;
@@ -84,9 +86,9 @@ async function run(scenario: Scenario): Promise<{ error?: string; files: Map<str
   } as unknown as Transport;
   try {
     await publishPrivateTargetFile({ transport } as Context, path, "after");
-    return { files };
+    return { files, sudoProbes };
   } catch (error) {
-    return { error: (error as Error).message, files };
+    return { error: (error as Error).message, files, sudoProbes };
   }
 }
 
@@ -98,10 +100,12 @@ const scenarios: Scenario[] = [
 ];
 
 for (const scenario of scenarios) {
-  const { error, files } = await run(scenario);
+  const { error, files, sudoProbes } = await run(scenario);
   check(`${scenario.name}: publication succeeds`, error, undefined);
   check(`${scenario.name}: the file holds the new content, owned by the runtime`, files.get("/srv/app/data/config/openclaw.json"), { owner: "1000", content: "after" });
   check(`${scenario.name}: no staging copy is left behind`, [...files.keys()], ["/srv/app/data/config/openclaw.json"]);
+  // Escalated runs probe `command -v sudo` + `sudo -n true` once (2 execs); unescalated ones not at all.
+  check(`${scenario.name}: sudo availability is probed at most once per context`, sudoProbes <= 2, true);
 }
 
 // --- reading a protected target .env ------------------------------------------------------

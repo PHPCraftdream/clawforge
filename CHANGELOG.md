@@ -507,6 +507,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Comments condensed to the invariant; imports of one style per file.
 * `docs/internal/README.md`: an index of the review, session-task, plan and audit documents,
   grouped by series, newest first, with status notes.
+* `sudoFor` and `sudoForRead` share one sudo-availability answer (absent / asks for a password /
+  usable), probed once per context, so a sudo-escalated private publication no longer spawns the
+  `command -v sudo` / `sudo -n true` probes twice (each a `wsl.exe` spawn on WSL). Transport
+  failures still throw and are never cached. Refusal messages are unchanged.
 
 ## 0.1.0
 

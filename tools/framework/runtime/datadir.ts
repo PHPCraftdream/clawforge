@@ -28,6 +28,23 @@ const DATA_DIR_MARKER_CONTENT =
   "Written by ensureDataDirs; its presence is what keeps ownership maintenance narrow:\n" +
   "a tree without it was not set up by this framework and is never re-owned automatically.\n";
 
+type SudoAvailability = "absent" | "password" | "usable";
+const sudoAnswers = new WeakMap<Context, SudoAvailability>();
+
+/** Whether passwordless sudo works on the target, probed once per context. Both probes go
+ *  through answeredProbe: a transport hiccup throws and is never cached as "no sudo".
+ *  -n always: a password prompt has nowhere to appear over wsl.exe/ssh pipes and would hang. */
+async function sudoAvailability(ctx: Context): Promise<SudoAvailability> {
+  const known = sudoAnswers.get(ctx);
+  if (known !== undefined) return known;
+  let answer: SudoAvailability = "absent";
+  if ((await answeredProbe(ctx, "sh", ["-c", "command -v sudo"], [0, 1, 127])).code === 0) {
+    answer = (await answeredProbe(ctx, "sudo", ["-n", "true"], [0, 1])).code === 0 ? "usable" : "password";
+  }
+  sudoAnswers.set(ctx, answer);
+  return answer;
+}
+
 /** "sudo" when the path is not writable by the current user, "" otherwise. `force: true`
  *  skips the writability shortcut: writable never implies a chown to some OTHER owner will
  *  succeed, so a caller that knows the target owner differs forces the sudo-availability
@@ -52,14 +69,9 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
     if (writable.code === 0) return [];
   }
 
-  // Both probes go through answeredProbe: a transport hiccup is not "no sudo" or "needs a password".
-  const hasSudo = await answeredProbe(ctx, "sh", ["-c", "command -v sudo"], [0, 1, 127]);
-  if (hasSudo.code !== 0) die(`${probe} is not writable and sudo is not available on the target`);
-
-  // -n always: a password prompt has nowhere to appear over wsl.exe/ssh pipes and would hang
-  // forever instead of failing. Better to say plainly what to do.
-  const passwordless = await answeredProbe(ctx, "sudo", ["-n", "true"], [0, 1]);
-  if (passwordless.code !== 0) {
+  const availability = await sudoAvailability(ctx);
+  if (availability === "absent") die(`${probe} is not writable and sudo is not available on the target`);
+  if (availability === "password") {
     const advice = await prepareFamilyAdvice(ctx);
     die(
       `${probe} needs root and sudo asks for a password, which cannot be typed here.\n` +
@@ -76,10 +88,9 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
 export async function sudoForRead(ctx: Context, path: string): Promise<string[]> {
   const readable = await answeredProbe(ctx, "test", ["-r", path], [0, 1]);
   if (readable.code === 0) return [];
-  const hasSudo = await answeredProbe(ctx, "sh", ["-c", "command -v sudo"], [0, 1, 127]);
-  const passwordless = hasSudo.code === 0 ? await answeredProbe(ctx, "sudo", ["-n", "true"], [0, 1]) : hasSudo;
-  if (passwordless.code !== 0) {
-    const why = hasSudo.code === 0 ? "sudo asks for a password, which cannot be typed here" : "sudo is not available on the target";
+  const availability = await sudoAvailability(ctx);
+  if (availability !== "usable") {
+    const why = availability === "password" ? "sudo asks for a password, which cannot be typed here" : "sudo is not available on the target";
     die(`${path} is not readable by this user and ${why} — run as its owner (uid 1000) or allow passwordless sudo`);
   }
   return ["sudo", "-n"];

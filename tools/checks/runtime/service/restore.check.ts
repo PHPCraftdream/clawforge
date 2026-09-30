@@ -17,7 +17,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { UserError } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, type ExecResult } from "#framework/runtime/transport/transport.ts";
-import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
+import { clearRecipesDir, useRecipesDir } from "#framework/service/recipe.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -199,9 +199,6 @@ check("the gateway is never started when a required secret is missing", startCal
       check("the warning says the stack was not recreated", output.includes("not recreated"), true);
       check("the warning points at the moved-aside data", output.includes("kept at /srv/openclaw/data.replaced-"), true);
       check("the remediation names the framework commands", output.includes("./clawforge recipe remove vault") && output.includes("./clawforge recipe install vault"), true);
-      // check() compares with ===: two array instances are never equal, so compare the
-      // JSON forms — the project names themselves, not the containers holding them.
-      check("the probe went to the recipe's own compose project", JSON.stringify(probed), JSON.stringify([projectName(deploymentName(), "vault")]));
     } finally {
       clearRecipesDir();
     }

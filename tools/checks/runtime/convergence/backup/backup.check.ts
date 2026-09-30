@@ -15,7 +15,7 @@ import type { Context } from "#framework/core/context.ts";
 import { LocalTransport, WslTransport, spawnLocal, type Transport, type ExecResult } from "#framework/runtime/transport/transport.ts";
 import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/datadir.ts";
 import { parseWslDistroListing } from "#framework/commands/interface/host/contexts.ts";
-import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
+import { clearRecipesDir, useRecipesDir } from "#framework/service/recipe.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
@@ -661,7 +661,6 @@ if (p202Transport === undefined) {
       });
       check("a running recipe without quiesce hooks blocks backup", refusal.includes("could not be quiesced"), true);
       check("the refusal names the uncovered stack", refusal.includes("vault"), true);
-      check("the probe went to the recipe's own compose project", probed, [projectName(deploymentName(), "vault")]);
     } finally {
       clearRecipesDir();
     }

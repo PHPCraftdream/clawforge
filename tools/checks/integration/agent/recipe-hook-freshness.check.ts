@@ -166,7 +166,7 @@ const freshRoot = resolve(tmpdir(), `clawforge-recipe-hook-fresh-${Date.now()}`)
 // pointing at the scratch root this file deletes from under it.
 const outerRecipes = resolve(freshRoot, "outer-recipes");
 
-// deploymentName() backs every stack name the dispatcher builds, so it must resolve
+// The Docker namespace needs an active deployment even without an explicit override, so it must resolve
 // whatever ran before this file in the shared runner process — this file cannot rely on
 // another check file having selected a deployment for it. Hoisted above both probe blocks:
 // whichever runs first needs it.

@@ -20,6 +20,47 @@ Every recipe is its **own compose project**, not a service in our file. That is 
 `up`/`down`/`status` keep dealing with the gateway alone, a broken recipe cannot drag it
 down, and state snapshots never pick up a recipe's images or volumes.
 
+The project is `<gateway-compose-namespace>-recipe-<name>`: the validated
+`OC_COMPOSE_PROJECT` when set, otherwise the deployment directory basename. Distinct
+deployments with the same basename must use distinct `OC_COMPOSE_PROJECT` values for
+both gateway and recipe isolation. All lifecycle commands, diagnostics and backup
+discovery use that same namespace, even when a recipe manifest is broken.
+
+### Existing-stack cutover
+
+Older releases used `<deployment-basename>-recipe-<name>` even with an override.
+The framework never aliases the new namespace to that old project. If the old project
+still has any containers (including stopped ones), operations and backups refuse
+instead of adopting or stopping a possibly foreign stack. When the name is unchanged,
+existing containers must have Compose `project.working_dir` and `project.config_files`
+labels exactly matching this recipe's target directory and definition; a moved checkout,
+missing labels or another root requires operator cutover too.
+
+On the Docker target, inspect the specific old project, verify **every** container's
+labels and mounts against the intended root/data, and take an application-consistent
+backup before stopping anything:
+
+```bash
+old='deployment-recipe-cache' # replace with the exact project reported by the refusal
+docker ps -a --filter "label=com.docker.compose.project=$old"
+ids=$(docker ps -aq --filter "label=com.docker.compose.project=$old")
+test -z "$ids" || docker inspect $ids
+# ONLY after verifying ownership, with the old definition and its private environment:
+docker compose --env-file /verified/old/root/.env --project-name "$old" \
+  --file /verified/old/root/recipes/cache/compose.yml \
+  --project-directory /verified/old/root/recipes/cache down
+# From the intended deployment root, install into its new namespace:
+./clawforge recipe install cache
+```
+
+Do not use `--volumes` for cutover. Bind data stays at its declared path. Compose-managed
+volumes do **not** migrate just because the project name changed: copy/restore each old
+volume into the new project volume while the service is stopped, using its application's
+restore procedure, then install/start. Retain old volumes until the new stack's data is
+verified. External volumes or manually fixed container/volume names remain application
+owned and must themselves be unique. If ownership cannot be verified, leave the old
+project untouched and resolve it with its operator; never run a broad project sweep.
+
 Builds are multi-stage: cloning and compilation happen in the build stage, so neither git
 nor toolchains reach the host or the final image. Everything is built **on the target**, so
 a first install on a server takes as long as the build.

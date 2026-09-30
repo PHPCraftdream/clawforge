@@ -11,7 +11,6 @@ import {
   listAgentBundleRecipes,
   loadRecipe,
   listRecipes,
-  projectName,
   recipesDirectory,
   useRecipesDir,
 } from "#framework/service/recipe.ts";
@@ -301,13 +300,6 @@ try {
     }
   }
 
-  // --- projectName ---------------------------------------------------------------------
-
-  check(
-    "projectName composes <app>-recipe-<name>",
-    projectName("openclaw", "with-extras"),
-    "openclaw-recipe-with-extras",
-  );
 
   // --- install: disabled without --force-disabled never reaches the stack ------------
 

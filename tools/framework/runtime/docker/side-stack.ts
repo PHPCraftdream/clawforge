@@ -57,8 +57,38 @@ export function buildStack(
   withEnvFile: <T>(action: (path: string) => Promise<T>, settings?: Settings) => Promise<T>,
   project: string,
   definitionPath: string,
+  ownership?: { verifyOwnership: boolean; legacyProject?: string },
 ): Stack {
+  // Compose labels are deployment evidence, not merely a basename/project-name match.
+  // Check stopped containers too: `up` can recreate them and `down` can remove them.
+  const verifyOwnership = async (): Promise<void> => {
+    if (ownership?.verifyOwnership !== true) return;
+    const containers = async (namespace: string): Promise<string[]> => {
+      const result = await transport.exec("docker", [
+        "ps", "--all", "--quiet", "--filter", `label=com.docker.compose.project=${namespace}`,
+      ]);
+      return result.stdout.trim().split(/\s+/).filter(Boolean);
+    };
+    if (ownership.legacyProject !== undefined && (await containers(ownership.legacyProject)).length > 0) {
+      throw new Error(`recipe namespace cutover required: legacy project "${ownership.legacyProject}" still has containers; ownership is ambiguous, so no stack was stopped or adopted. Inspect its Compose labels and mounts, back up its data, then explicitly run docker compose --project-name "${ownership.legacyProject}" --file <verified-old-compose-file> down (without --volumes). See docs/guide/recipes.md before reinstalling into "${project}".`);
+    }
+    const ids = await containers(project);
+    if (ids.length === 0) return;
+    const file = await paths.toTarget(definitionPath);
+    const directory = file.slice(0, file.lastIndexOf("/"));
+    const inspected = await transport.exec("docker", ["inspect", ...ids]);
+    const records: Array<{ Config?: { Labels?: Record<string, string> } }> = JSON.parse(inspected.stdout);
+    if (records.length !== ids.length || records.some((record) => {
+      const labels = record.Config?.Labels;
+      return labels?.["com.docker.compose.project"] !== project
+        || labels["com.docker.compose.project.working_dir"] !== directory
+        || labels["com.docker.compose.project.config_files"] !== file;
+    })) {
+      throw new Error(`recipe project "${project}" has containers not verifiably linked to "${file}"; refusing to read, adopt, stop or remove them. Inspect Compose labels and mounts and follow the operator cutover in docs/guide/recipes.md.`);
+    }
+  };
   const compose = async (args: string[], stream = true): Promise<ExecResult> => {
+    await verifyOwnership();
     // The definition lives in our checkout; compose runs on the target.
     return withEnvFile(async (envFile) => {
       const file = await paths.toTarget(definitionPath);
@@ -90,6 +120,7 @@ export function buildStack(
     followLogs: () => voidly(["logs", "--follow", "--tail", "100"]),
     readLogs: async (tail: string) => (await compose(["logs", "--tail", tail], false)).stdout,
     isRunning: async () => {
+      await verifyOwnership();
       const result = await transport.exec(
         "docker",
         ["ps", "--quiet", "--filter", `label=com.docker.compose.project=${project}`],
@@ -101,6 +132,7 @@ export function buildStack(
       return result.stdout.trim() !== "";
     },
     serviceStates: async () => {
+      await verifyOwnership();
       // --all: without it compose lists only running containers, and the recipe installer
       // derives the required set from this very response when a recipe declares none — a
       // crashed service absent from the listing would shrink the requirement set to

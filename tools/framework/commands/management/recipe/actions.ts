@@ -9,14 +9,13 @@ import { dieUnknownAction } from "#src/core/arguments.ts";
 import type { Context } from "#src/core/context.ts";
 import {
   loadRecipe,
-  projectName,
+  recipeStack,
   recipesDirectory,
   type Recipe,
   type RecipeReadiness,
 } from "#src/service/recipe.ts";
 import { collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
 import { safeName } from "#src/core/names.ts";
-import { deploymentName } from "#src/runtime/deployment.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit } from "#src/core/io/output.ts";
 import { takeTail } from "#src/commands/lifecycle/lifecycle.ts";
@@ -29,7 +28,7 @@ export const RECIPE_ACTIONS: readonly string[] = ["list", "import", "new", "veri
 
 async function stackFor(ctx: Context, name: string) {
   const recipe = await loadRecipe(name);
-  return { recipe, stack: ctx.runtime.stack(projectName(deploymentName(), name), recipe.definitionPath) };
+  return { recipe, stack: recipeStack(ctx, name, recipe.definitionPath) };
 }
 
 /** Loads app-owned hooks without teaching the framework what the recipe means. */
@@ -429,6 +428,9 @@ async function runInstallAction(ctx: Context, name: string, rest: string[]): Pro
     }
     die(`add the missing variable(s) to .env, then run this again`);
   }
+
+  // Refuse ambiguous legacy or foreign stacks before app-owned prepare hooks can mutate.
+  await stack.isRunning();
 
   const hooks = await prepareRecipe(ctx, spec);
 

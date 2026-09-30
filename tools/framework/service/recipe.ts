@@ -7,7 +7,7 @@
 // app-owned hook touches), and an optional multi-stage Dockerfile (cloning/compiling stay
 // in the build stage, never reaching the host or final image).
 //
-// Each recipe is its OWN compose project (<app>-recipe-<name>), not a service inside the
+// Each recipe is its OWN compose project (<docker-namespace>-recipe-<name>), not a service inside the
 // application's own definition: up/down/status stay on the managed service alone, a broken
 // recipe cannot take it down, and state snapshots don't pick up recipe images/volumes.
 //
@@ -19,7 +19,9 @@ import { resolve } from "node:path";
 import { monorepoRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { die } from "../core/io/log.ts";
-import { recipesDir, selectedDeployment } from "../runtime/deployment.ts";
+import { composeProjectName, deploymentName, recipesDir, selectedDeployment } from "../runtime/deployment.ts";
+import type { Context } from "../core/context.ts";
+import type { Stack } from "../runtime/runtime.ts";
 import { setSourceDir } from "../set/artifacts/source.ts";
 import { persistedPrivatePaths } from "../security/privacy/private-paths-ledger.ts";
 
@@ -112,10 +114,19 @@ export interface Recipe {
   readonly disabledReason?: string;
 }
 
-/** Isolation happens per project name; the application supplies its own prefix so the
- *  framework does not hardcode anyone's brand. */
-export function projectName(appName: string, recipe: string): string {
-  return `${appName}-recipe-${recipe}`;
+/** The same validated Docker namespace as the gateway, with a separate recipe suffix. */
+export function recipeProjectName(recipe: string): string {
+  return `${composeProjectName()}-recipe-${safeName("recipe", recipe)}`;
+}
+
+/** One builder for lifecycle and backup probes, including malformed manifests. */
+export function recipeStack(ctx: Context, name: string, definitionPath: string): Stack {
+  const project = recipeProjectName(name);
+  const legacyProject = `${deploymentName()}-recipe-${name}`;
+  return ctx.runtime.stack(project, definitionPath, {
+    verifyOwnership: true,
+    legacyProject: legacyProject === project ? undefined : legacyProject,
+  });
 }
 
 function assertShape(value: unknown, name: string): asserts value is Partial<Recipe> {

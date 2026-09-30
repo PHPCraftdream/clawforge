@@ -77,8 +77,8 @@ export function composeProjectOverride(): string | undefined {
 }
 
 /** What Docker actually calls this deployment's containers, networks and volumes — the
- *  directory's own name unless OC_COMPOSE_PROJECT overrides it. Meant only for
- *  runtime-docker.ts; everywhere else wants deploymentName() instead. */
+ *  directory's own name unless OC_COMPOSE_PROJECT overrides it. Recipe projects derive
+ *  from this namespace too; non-Docker deployment identities use deploymentName(). */
 export function composeProjectName(): string {
   return composeOverride ?? deploymentName();
 }

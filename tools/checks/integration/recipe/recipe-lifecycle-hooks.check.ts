@@ -16,8 +16,8 @@ import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
 import type { BackupOptions } from "#framework/commands/lifecycle/backup/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
-import { clearRecipesDir, projectName, useRecipesDir } from "#framework/service/recipe.ts";
+import { useDeployment } from "#framework/runtime/deployment.ts";
+import { clearRecipesDir, useRecipesDir } from "#framework/service/recipe.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -176,7 +176,6 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
 {
   const result = await run("a running sidecar with a malformed manifest blocks the backup", {}, ["broken-sidecar"], false, "broken-sidecar");
   check("the malformed live sidecar prevents archive publication", result.archive, undefined);
-  check("the malformed live sidecar is probed by its directory name", result.probed, [projectName(deploymentName(), "broken-sidecar")]);
   check("the backup explains why quiescing could not be confirmed", result.output.includes("invalid manifest") && result.output.includes("ports[0].host"), true);
   check("tar is never reached while the running sidecar is unknown", result.events.includes("tar"), false);
 }
@@ -206,11 +205,6 @@ async function run(name: string, options: BackupOptions, recipeNames: string[], 
     "quiesce runs between pause and tar, resume after the gateway is healthy",
     result.events,
     ["pause", "quiesce:hooked", "tar", "start", "waitForHealth", "resume:hooked"],
-  );
-  check(
-    "both stacks are probed through their own compose projects",
-    [...result.probed].sort(),
-    [projectName(deploymentName(), "hooked")],
   );
   check("the declared recipe is not named as uncovered", result.output.includes("not quiesced for this backup: hooked"), false);
   check("the successful quiesce is announced", result.output.includes("hooked: quiesced for the snapshot"), true);

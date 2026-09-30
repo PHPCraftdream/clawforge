@@ -15,11 +15,10 @@ import {
   listRecipeDirectories,
   listRecipes,
   loadRecipe,
-  projectName,
+  recipeStack,
   recipesDirectory,
   type Recipe,
 } from "#src/service/recipe.ts";
-import { deploymentName } from "#src/runtime/deployment.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { isCaptured, emit } from "#src/core/io/output.ts";
 import { validateRecipeArgs } from "./arguments.ts";
@@ -85,10 +84,7 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
     } catch (error) {
       // A broken declaration can't supply hooks, but its directory still names the compose
       // project — fail closed before backup archives it unsafely if that project is live.
-      const stack = ctx.runtime.stack(
-        projectName(deploymentName(), entry.name),
-        resolve(directory, "compose.yml"),
-      );
+      const stack = recipeStack(ctx, entry.name, resolve(directory, "compose.yml"));
       if (await stack.isRunning()) {
         const detail = error instanceof Error ? error.message : String(error);
         throw new Error(`running recipe "${entry.name}" has an invalid manifest; backup cannot confirm it is quiesced: ${detail}`);
@@ -96,7 +92,7 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
       continue;
     }
 
-    const stack = ctx.runtime.stack(projectName(deploymentName(), recipe.name), recipe.definitionPath);
+    const stack = recipeStack(ctx, recipe.name, recipe.definitionPath);
     if (await stack.isRunning()) running.push(recipe);
   }
   return running;

@@ -36,10 +36,19 @@ when the provider uses a custom variable name; URLs, adapters and model catalogu
 A recipe's `recipe.json` can declare two private-file fields, in two different coordinate
 systems. `privatePaths` lists data-relative paths where the recipe keeps generated
 credentials on the target: `migrate` and `share` snapshots exclude them, `full` keeps them,
-and the `@clawforge/framework/private-config` helpers refuse private writes anywhere else.
+and the `@clawforge/framework/private-config` target-write helpers refuse writes anywhere else.
 `privateFiles` lists recipe-relative files that `recipe import` leaves out of the copy — a
 filter over file names, not a guarantee. Both are literal paths, validated strictly. The
 repository's `docs/guide/recipes.md` documents both contracts, including their limits.
+
+For operator-side files created by app hooks (for example offsite full backups), the same
+public entry exports `protectPrivateDirectory(path)` and
+`createPrivateBinaryFile(path, bytes)`. Seal the output directory first, then create the
+binary file exclusively: existing destinations refuse rather than being overwritten.
+Protection is POSIX `0700`/`0600` or a verified Windows owner-only DACL before content is
+written. Windows DACL protection does not isolate other Linux users accessing a DrvFs
+mount; follow the emitted boundary guidance. These are operator files, not target
+recipe writes, and do not use the target `privatePaths` ledger.
 
 ## MCP
 

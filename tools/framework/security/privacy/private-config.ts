@@ -1,4 +1,4 @@
-// Generic private target configuration helpers for application-owned recipes.
+// Private target configuration and operator-file helpers for application-owned hooks.
 
 import { randomBytes } from "node:crypto";
 import { checksumOf } from "../../service/checksums.ts";
@@ -9,6 +9,8 @@ import type { Context } from "../../core/context.ts";
 import { registerSecret } from "../../core/io/log.ts";
 import { shellQuote } from "../../core/io/shell.ts";
 import { PRIVATE_STAGING_MARKER, type ExecResult } from "../../runtime/transport/transport.ts";
+
+export { protectPrivateDirectory, createPrivateBinaryFile } from "./private-file.ts";
 
 export interface PrivateFileResult {
   readonly path: string;

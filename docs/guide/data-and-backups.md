@@ -230,8 +230,9 @@ same two functions).
 
 ```ts
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { protectPrivateDirectory, createPrivateBinaryFile } from "@clawforge/framework/private-config";
 
 export default defineApp({
   // ...
@@ -247,8 +248,8 @@ export default defineApp({
     ]);
     const bytes = Buffer.from(encoded.stdout, "base64"); // ASCII across local/WSL/SSH
     const destination = join("./offsite-backups", basename(archive));
-    await mkdir("./offsite-backups", { recursive: true });
-    await writeFile(destination, bytes); // node:fs writes on the operator, not the target
+    await protectPrivateDirectory("./offsite-backups");
+    await createPrivateBinaryFile(destination, bytes); // Operator-side, exclusive owner-only creation.
     const destinationHash = createHash("sha256").update(await readFile(destination)).digest("hex");
     if (destinationHash !== source.stdout.trim().split(/\s+/)[0]) {
       throw new Error(`offsite SHA-256 mismatch: ${destination}`);
@@ -274,6 +275,14 @@ reporting a verified copy. `ctx.transport.readFile()` is **UTF-8 text-only**: ne
 for `.tar.gz`, encrypted archives or other binary files; decoding already loses bytes,
 and `Buffer.from()` afterwards cannot recover them. `exec()` also captures UTF-8 text,
 so encode binary output on the target **before** it crosses the transport.
+
+The directory is sealed and verified before any credential byte is written, including
+when it already exists. Binary creation is exclusive: an existing destination is refused,
+not overwritten with inherited/public permissions. Verify any existing copy before an
+explicit removal/retry. POSIX protection is directory `0700` and file `0600` regardless
+of a permissive umask; Windows uses a verified owner-only DACL before writing content.
+That Windows DACL alone does not isolate WSL/DrvFs users: heed the boundary warning
+and use separate protected Linux storage or encryption where that boundary is shared.
 
 The example buffers the base64 output and decoded archive in memory. For large backups,
 use a binary-safe `scp`/`rsync` transfer instead, still comparing target and destination

@@ -11,7 +11,7 @@ import JSON5 from "json5";
 import type { Context } from "../core/context.ts";
 import type { AppSecret } from "../core/app.ts";
 import { parseEnv } from "../core/env.ts";
-import { answeredProbe, sudoFor } from "../runtime/datadir.ts";
+import { sudoForRead } from "../runtime/datadir.ts";
 
 /** Where a variable is expected to be defined. */
 export type SecretLocation = "repo-env" | "target-env";
@@ -306,9 +306,9 @@ async function readTargetSecrets(ctx: Context, path: string): Promise<string> {
   try {
     return await ctx.transport.readFile(path);
   } catch (error) {
-    const readable = await answeredProbe(ctx, "test", ["-r", path], [0, 1]);
-    if (readable.code === 0) throw error;
-    const prefix = await sudoFor(ctx, path, { force: true });
+    // Readable yet unread: a real failure, not a permission to escalate past.
+    const prefix = await sudoForRead(ctx, path);
+    if (prefix.length === 0) throw error;
     const [head, ...rest] = [...prefix, "cat", path];
     return (await ctx.transport.exec(head, rest)).stdout;
   }

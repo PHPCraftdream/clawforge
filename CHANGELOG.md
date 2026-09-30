@@ -157,6 +157,12 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* Private target publication decides escalation once, on the destination directory, and uses it
+  for staging, rename and cleanup alike. An operator who is the runtime owner (uid 1000) writing
+  into a root-only directory used to stage through sudo and then rename and clean up without it:
+  the publication failed and the staging copy of the secret stayed behind.
+* The secrets preflight refuses a protected target `.env` it cannot escalate to read in terms of
+  the read ("is not readable by this user and sudo …"), not as a directory that is "not writable".
 * Private target publication checks destination access before staging secret bytes and uses
   noninteractive sudo when required. `push` can install snapshot keys into restored
   UID-1000 data from a different operator account without relaxing private file modes.

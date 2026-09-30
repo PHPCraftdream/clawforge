@@ -71,6 +71,20 @@ export async function sudoFor(ctx: Context, path: string, options: { force?: boo
   return ["sudo", "-n"];
 }
 
+/** `sudo -n` for reading a file this user may not read, [] when it may. Refuses in terms of the
+ *  read: sudoFor's advice is about preparing directories to write. */
+export async function sudoForRead(ctx: Context, path: string): Promise<string[]> {
+  const readable = await answeredProbe(ctx, "test", ["-r", path], [0, 1]);
+  if (readable.code === 0) return [];
+  const hasSudo = await answeredProbe(ctx, "sh", ["-c", "command -v sudo"], [0, 1, 127]);
+  const passwordless = hasSudo.code === 0 ? await answeredProbe(ctx, "sudo", ["-n", "true"], [0, 1]) : hasSudo;
+  if (passwordless.code !== 0) {
+    const why = hasSudo.code === 0 ? "sudo asks for a password, which cannot be typed here" : "sudo is not available on the target";
+    die(`${path} is not readable by this user and ${why} — run as its owner (uid 1000) or allow passwordless sudo`);
+  }
+  return ["sudo", "-n"];
+}
+
 /** Runs a command, escalating only if the given path requires it. */
 export async function runMaybePrivileged(
   ctx: Context,

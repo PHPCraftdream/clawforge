@@ -3,7 +3,7 @@
 // (same directory) when the combined file passed the source layout's 700-line limit — see
 // fixture.ts for why this is a sibling directory rather than a sibling file.
 
-import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFile } from "node:child_process";
@@ -379,7 +379,7 @@ function skip(name: string): void {
   } else {
     const root = await mkdtemp(join(tmpdir(), "clawforge-deploy-probe-shell-"));
     try {
-      const forwardRoot = root.replaceAll("\\", "/");
+      const forwardRoot = (await realpath(root)).replaceAll("\\", "/");
       const inShellTerms = await spawnLocal(
         "sh",
         ["-c", 'cd -- "$1" && pwd -P', "sh", forwardRoot],

@@ -27,6 +27,16 @@ const previousRoot = selectedDeployment();
 const previousOverride = composeProjectOverride();
 const base: Transport = process.platform === "win32" ? new WslTransport(process.env.OC_WSL_DISTRO ?? "Ubuntu-24.04") : new LocalTransport();
 const target = (await base.exec("mktemp", ["-d", `/tmp/clawforge-restore-${id}-XXXXXX`])).stdout.trim();
+const operator = (await base.exec("id", ["-u"])).stdout.trim();
+const group = (await base.exec("id", ["-g"])).stdout.trim();
+const fixturePrefix = operator === "0" || operator === "1000" ? [] : ["sudo", "-n"];
+async function fixtureExec(command: string, args: string[]) {
+  const [head, ...rest] = [...fixturePrefix, command, ...args];
+  return base.exec(head, rest);
+}
+async function readData(path: string) {
+  return (await fixtureExec("cat", [path])).stdout;
+}
 const data = `${target}/data`;
 const archive = `${target}/snapshot.tar.gz`;
 const envFile = `${target}/empty.env`;
@@ -91,7 +101,7 @@ const runtime = {
   async waitForHealth() {
     healthWaits++;
     if (docker) await base.exec("docker", ["exec", gateway, "node", "-e", "const end=Date.now()+10000;(async()=>{while(Date.now()<end){try{if(await (await fetch('http://127.0.0.1:8080')).text()==='B')return}catch{}await require('node:timers/promises').setTimeout(100)}process.exit(1)})()"], { timeoutMs: 15000 });
-    else assert.equal(await base.readFile(`${data}/workspace/value`), "B");
+    else assert.equal(await readData(`${data}/workspace/value`), "B");
   },
   stack(project: string, definition: string, ownership?: { verifyOwnership: boolean; legacyProjects?: readonly string[] }) {
     return buildStack(transport, paths, () => settings, (action) => action(envFile), project, definition, ownership);
@@ -99,6 +109,7 @@ const runtime = {
 };
 ctx = { settings, transport, runtime, paths } as unknown as Context;
 async function resetA() {
+  if (fixturePrefix.length > 0 && await base.exists(data)) await fixtureExec("chown", ["-R", `${operator}:${group}`, data]);
   await base.mkdirp(`${data}/workspace`);
   await base.mkdirp(`${data}/config`);
   await base.writeFile(`${data}/workspace/value`, "A");
@@ -169,24 +180,24 @@ try {
   }
   await resetA();
   await withOutputSink(() => {}, () => restore(ctx, [archive, "--force"]));
-  assert.equal(await base.readFile(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), true); assert.equal(healthWaits, 1);
+  assert.equal(await readData(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), true); assert.equal(healthWaits, 1);
   await resetA();
   let outcome;
   // The direct API uses the same execution lock as public restore.
   await withOutputSink(() => {}, async () => { outcome = await guarded(ctx, "restore", [], () => restoreArchive(ctx, archive, { force: true, noStart: true })); });
   assert.deepEqual(outcome, { restored: true, started: false, reason: "no-start", nextAction: "./clawforge up" });
-  assert.equal(await base.readFile(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), false); assert.equal(healthWaits, 1);
+  assert.equal(await readData(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), false); assert.equal(healthWaits, 1);
   await resetA();
   await withOutputSink(() => {}, () => push(ctx, [archive, "--force"]));
-  assert.equal(await base.readFile(`${data}/workspace/value`), "B");
-  assert.equal(await base.readFile(`${data}/config/.env`), "SNAPSHOT_ONLY=must-not-install\n");
+  assert.equal(await readData(`${data}/workspace/value`), "B");
+  assert.equal(await readData(`${data}/config/.env`), "SNAPSHOT_ONLY=must-not-install\n");
   assert.equal(await runtime.isRunning(), true);
   assert.equal(healthWaits, 2);
   check("public restore/no-start/push ownership refusal preserves bytes, gateway and secrets; cutover restores and starts", true, true);
 } finally {
   unknown = false;
   if (docker) { await clearPolicy().catch(() => {}); await base.exec("docker", ["rm", "--force", gateway], { allowFailure: true }); }
-  await base.exec("rm", ["-rf", target]);
+  await fixtureExec("rm", ["-rf", target]);
   clearRecipesDir(); useComposeProjectOverride(previousOverride);
   if (previousRoot !== undefined) useDeployment(previousRoot);
   await rm(local, { recursive: true, force: true });

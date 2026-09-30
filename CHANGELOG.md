@@ -157,6 +157,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* Restore/deploy checks use canonical macOS marker paths, gate the GNU-only local archive
+  scenario on actual userland support, and handle UID-1000 restored data from a different
+  Linux operator account without losing health assertions or fixture cleanup.
 * The documented offsite backup hook seals operator storage and creates binary archives
   exclusively with verified private permissions before content is written, through the
   installed `private-config` public entry. Plaintext shared Windows/WSL storage is explicitly

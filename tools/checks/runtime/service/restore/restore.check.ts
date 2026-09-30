@@ -21,6 +21,7 @@ import { clearRecipesDir, useRecipesDir } from "#framework/service/recipe.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { hasGnuUserland } from "#checks/kit/capabilities/capabilities.ts";
 
 async function rejectionOf(run: () => Promise<unknown>): Promise<string | undefined> {
   try { await run(); } catch (error) { return (error as Error).message; }
@@ -291,7 +292,7 @@ const NAME = deploymentName();
 // The automatic restore selector uses the same target-side glob as backup rotation. Keep the
 // literal path quoted through a real POSIX shell so spaces, quotes and shell metacharacters stay
 // data and cannot change which archive is selected.
-if (process.platform !== "win32") {
+if (process.platform !== "win32" && await hasGnuUserland()) {
   const root = await mkdtemp(`${tmpdir()}/clawforge-restore-quote-check-`);
   const marker = `${root}/shell-injected`;
   const directory = `${root}/backup files '$(touch ${marker})' ; echo hacked`;
@@ -311,6 +312,8 @@ if (process.platform !== "win32") {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+} else {
+  process.stderr.write("  skip archive path quoting needs a GNU-userland local target\n");
 }
 
 // --- the restored layout is verified with the

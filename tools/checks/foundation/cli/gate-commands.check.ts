@@ -148,7 +148,9 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
     runGateCommand([versionGateCommand], ["version", "--json"]));
   const expected = await frameworkVersion();
   check("version --json exits 0", code, 0);
-  check("version --json emits { name, version }", written.join("").trim(), JSON.stringify({ name: "clawforge", version: expected }));
+  const info = JSON.parse(written.join("")) as Record<string, unknown>;
+  check("version --json emits name, version, source and path", Object.keys(info), ["name", "version", "source", "path"]);
+  check("naming this copy", [info.name, info.version, info.source], ["clawforge", expected, "checkout"]);
 }
 
 {

@@ -15,6 +15,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveOnPath, shadowMessage } from "./resolve-on-path.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packageDir = resolve(repoRoot, "tools", "framework");
@@ -109,6 +110,9 @@ try {
   } else {
     process.stderr.write(`    ${bin} is not on PATH — add it to use \`clawforge\` from any folder\n`);
   }
+  // Only for npm's own global prefix: a scratch --prefix is never expected to be on PATH.
+  const shadow = requestedPrefix === undefined ? shadowMessage(shim, resolveOnPath("clawforge")) : undefined;
+  if (shadow !== undefined) process.stderr.write(`${shadow}\n`);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

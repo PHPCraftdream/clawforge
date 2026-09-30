@@ -1,0 +1,72 @@
+// The system-wide command's small pieces, without installing anything: the upward search for
+// app.ts, the one-shot delegation flag, the version source classification and the installer's
+// PATH-shadow detection. The installed end-to-end runs are in system-install.check.ts.
+
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+import { findAppRoot } from "#framework/entry/root.ts";
+import { takeDelegationFlag } from "#framework/entry/delegate.ts";
+import { classifyCopy } from "#framework/integration/version.ts";
+import { resolveOnPath, shadowMessage } from "#tools/dev/resolve-on-path.ts";
+import { check, finish } from "#checks/kit/harness.ts";
+
+const scratch = mkdtempSync(join(tmpdir(), "clawforge-system-units-"));
+try {
+  // --- upward search ------------------------------------------------------------------------
+  const app = join(scratch, "app");
+  const deep = join(app, "recipes", "one");
+  mkdirSync(deep, { recursive: true });
+  check("no app.ts anywhere above: nothing found", findAppRoot(deep), undefined);
+  writeFileSync(join(app, "app.ts"), "");
+  check("an ancestor's bare app.ts (some other project's) is not a deployment", findAppRoot(deep), undefined);
+  mkdirSync(join(app, "config"));
+  writeFileSync(join(app, "config", "desired-state.json"), "[]");
+  check("a subfolder finds the nearest ancestor deployment", findAppRoot(deep), app);
+  check("the app folder itself is its own root", findAppRoot(app), app);
+  writeFileSync(join(app, "recipes", "app.ts"), "");
+  check("a bare app.ts in between is skipped", findAppRoot(deep), app);
+  mkdirSync(join(app, "recipes", "config"));
+  writeFileSync(join(app, "recipes", "config", "desired-state.json"), "[]");
+  check("the nearest deployment wins", findAppRoot(deep), join(app, "recipes"));
+  check("the start itself counts with app.ts alone", findAppRoot(join(app, "recipes")), join(app, "recipes"));
+
+  // --- the delegation flag covers one hand-over only --------------------------------------------
+  process.env.CLAWFORGE_DELEGATED = "1";
+  check("the receiver reads the flag", takeDelegationFlag(), true);
+  check("and clears it, so its descendants never inherit it", process.env.CLAWFORGE_DELEGATED, undefined);
+  check("without the flag nothing is handed over", takeDelegationFlag(), false);
+
+  // --- which copy runs ------------------------------------------------------------------------
+  const checkout = join(scratch, "checkout");
+  mkdirSync(join(checkout, "tools", "framework"), { recursive: true });
+  writeFileSync(join(checkout, "tools", "clawforge.ts"), "");
+  check("a checkout's tools/framework is a checkout copy, path = the checkout root", classifyCopy(join(checkout, "tools", "framework")), { source: "checkout", path: checkout });
+  const local = join(app, "node_modules", "@clawforge", "framework");
+  mkdirSync(local, { recursive: true });
+  check("a package inside the app is local", classifyCopy(local, app).source, "local");
+  check("the same package seen from another app is global", classifyCopy(local, join(scratch, "other")).source, "global");
+  check("without an app root it is global", classifyCopy(local).source, "global");
+
+  // --- the installer's PATH resolution ------------------------------------------------------
+  const first = join(scratch, "first");
+  const second = join(scratch, "second");
+  mkdirSync(first);
+  mkdirSync(second);
+  writeFileSync(join(first, "clawforge.cmd"), "");
+  writeFileSync(join(second, "clawforge"), "");
+  chmodSync(join(second, "clawforge"), 0o755);
+  const path = `${first}${delimiter}${second}`;
+  check("Windows: PATHEXT extensions are tried", resolveOnPath("clawforge", { Path: path, PATHEXT: ".exe;.cmd" }, true), join(first, "clawforge.cmd"));
+  check("POSIX: the bare name is found in the first directory holding it", resolveOnPath("clawforge", { PATH: path }, false), join(second, "clawforge"));
+  check("a missing command resolves to nothing", resolveOnPath("clawforge-nope", { PATH: path }, false), undefined);
+  const shim = join(scratch, "prefix", "clawforge");
+  check("the installed shim itself is not a shadow", shadowMessage(shim, shim, false), undefined);
+  check("no clawforge on PATH is not a shadow", shadowMessage(shim, undefined, false), undefined);
+  const shadow = shadowMessage(shim, join(second, "clawforge"), false) ?? "";
+  check("another clawforge on PATH is reported with both paths", shadow.includes(join(second, "clawforge")) && shadow.includes(shim), true);
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
+}
+
+finish("system command units");

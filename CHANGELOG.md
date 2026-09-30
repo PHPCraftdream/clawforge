@@ -4,7 +4,24 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ## Unreleased
 
+### Fixed
+
+* System-wide `clawforge` in a subfolder of an app (e.g. `<app>/recipes`) now finds the deployment
+  by walking up to the nearest `app.ts` instead of reporting `no app.ts` and advising `init`; the
+  found root is what delegation uses. `init` still initialises the current directory only and
+  refuses, naming the ancestor, when an ancestor already holds `app.ts`. Outside any app the
+  `run: clawforge init` advice is unchanged; `--project-root <abs>` never walks.
+* The hand-over flag (`CLAWFORGE_DELEGATED`) now covers only the immediate hand-over: the receiving
+  entry clears it at startup, and a checkout gate is never given it, so a `clawforge` run by a hook
+  or `host` command in another app delegates to that app's own framework. A hand-over target that
+  cannot be started now prints the error instead of exiting silently.
+
 ### Added
+
+* `version --verbose` prints which copy runs and where; `version --json` gains `source`
+  (`global` | `local` | `checkout`) and `path` (package directory, checkout root for a checkout).
+  Plain `clawforge <version>` is unchanged. `npm run install:system` (npm's global prefix) now
+  warns, with both paths, when the `clawforge` PATH resolves to is not the shim it just installed.
 
 * System-wide install: `npm run install:system` packs `tools/framework` and installs it with
   `npm install -g` (`-- --prefix <dir>` for another prefix), then runs the installed command and

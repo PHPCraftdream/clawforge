@@ -87,16 +87,21 @@ export function lockFile(): string {
   return resolve(deploymentDir(), "config", "deployment.lock.json");
 }
 
-export async function frameworkVersion(): Promise<string | undefined> {
-  for (const candidate of [resolve(frameworkRoot, "package.json"), resolve(frameworkRoot, "..", "package.json")]) {
+/** The framework package this process runs: its version and directory. */
+export async function frameworkPackage(): Promise<{ version: string | undefined; dir: string } | undefined> {
+  for (const dir of [frameworkRoot, resolve(frameworkRoot, "..")]) {
     try {
-      const parsed = JSON.parse(await readFile(candidate, "utf8")) as { name?: string; version?: string };
-      if (parsed.name === "@clawforge/framework") return parsed.version;
+      const parsed = JSON.parse(await readFile(resolve(dir, "package.json"), "utf8")) as { name?: string; version?: string };
+      if (parsed.name === "@clawforge/framework") return { version: parsed.version, dir };
     } catch {
       // Try the next candidate.
     }
   }
   return undefined;
+}
+
+export async function frameworkVersion(): Promise<string | undefined> {
+  return (await frameworkPackage())?.version;
 }
 
 async function recipeNames(): Promise<string[]> {

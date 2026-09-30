@@ -22,22 +22,37 @@ import { reportError } from "../core/io/log.ts";
 import { useDeployment } from "../runtime/deployment.ts";
 import { initApp, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";
-import { normalizeVersionAlias, versionGateCommand } from "../integration/version.ts";
+import { normalizeVersionAlias, makeVersionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
-import { delegateToOwnFramework, resolveFrameworkFromSelf } from "./delegate.ts";
+import { delegateToOwnFramework, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
+import { findAppRoot } from "./root.ts";
 import type { AppDefinition } from "../core/app.ts";
 
-const launchArgv = process.argv.slice(2);
-const scheduled = launchArgv[0] === "--project-root";
-if (scheduled && (launchArgv[1] === undefined || !isAbsolute(launchArgv[1]))) {
+// First, before anything can spawn: the flag covers this hand-over only, not descendants.
+const handedOver = takeDelegationFlag();
+const rawArgv = process.argv.slice(2);
+const scheduled = rawArgv[0] === "--project-root";
+if (scheduled && (rawArgv[1] === undefined || !isAbsolute(rawArgv[1]))) {
   reportError("--project-root requires an absolute directory");
   process.exit(1);
 }
-const appRoot = scheduled ? resolve(launchArgv[1]) : process.cwd();
-const argv = normalizeVersionAlias(scheduled ? launchArgv.slice(2) : launchArgv);
+const argv = normalizeVersionAlias(scheduled ? rawArgv.slice(2) : rawArgv);
+
+// Without --project-root the deployment is the nearest app.ts at or above the cwd. `init` is
+// the exception: it always initialises the cwd itself, and refuses under an existing deployment.
+const cwd = process.cwd();
+const initializing = argv[0] === "init" && !argv.includes("--help") && !argv.includes("-h");
+const ancestor = scheduled ? undefined : findAppRoot(cwd);
+if (initializing && !scheduled && ancestor !== undefined && ancestor !== cwd) {
+  reportError(`${ancestor} already holds app.ts — this directory is inside that deployment; init here would nest a second one`);
+  process.exit(1);
+}
+const appRoot = scheduled ? resolve(rawArgv[1]) : initializing ? cwd : (ancestor ?? cwd);
+// A hand-over target may predate the walk, so the found root is passed explicitly.
+const launchArgv = scheduled || appRoot === cwd ? rawArgv : ["--project-root", appRoot, ...rawArgv];
 
 // Installed system-wide, this may not be the framework this deployment runs on.
-delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv);
+delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver);
 resolveFrameworkFromSelf();
 
 // Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
@@ -60,7 +75,7 @@ const gateCommands: GateCommand[] = [
       return 0;
     },
   },
-  versionGateCommand,
+  makeVersionGateCommand(appRoot),
 ];
 // Pushed after the literal above so the closure sees the finished array, itself included —
 // see completion.ts. No --app here: an installed deployment is always the current directory.
@@ -90,7 +105,7 @@ function retryWithTypeStripping(): never {
   const result = spawnSync(
     process.execPath,
     ["--experimental-strip-types", fileURLToPath(import.meta.url), ...launchArgv],
-    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1" } },
+    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1", ...(handedOver ? { CLAWFORGE_DELEGATED: "1" } : {}) } },
   );
   process.exit(result.status ?? 1);
 }

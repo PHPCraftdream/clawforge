@@ -44,28 +44,41 @@ function sameFile(a: string, b: string): boolean {
   }
 }
 
-function runInstead(entry: string, args: string[]): never {
+/** Reads and clears the hand-over flag. Called first thing in the receiving bin.ts, so the
+ *  flag covers only this one hand-over and never reaches hooks or other clawforge runs it spawns. */
+export function takeDelegationFlag(): boolean {
+  const handedOver = process.env[DELEGATED] === "1";
+  delete process.env[DELEGATED];
+  return handedOver;
+}
+
+/** `flag`: only a package entry (bin.js) reads it; a checkout gate never would, so it would leak. */
+function runInstead(entry: string, args: string[], flag: boolean): never {
   const result = spawnSync(process.execPath, ["--experimental-strip-types", entry, ...args], {
     stdio: "inherit",
-    env: { ...process.env, [DELEGATED]: "1" },
+    env: flag ? { ...process.env, [DELEGATED]: "1" } : process.env,
   });
+  if (result.error !== undefined) {
+    process.stderr.write(`clawforge: cannot start ${entry}: ${result.error.message}\n`);
+    process.exit(1);
+  }
   process.exit(result.status ?? 1);
 }
 
 /** Hands the whole invocation to the deployment's own framework when it has one; returns
  *  only when this package is the one to run. `launchArgv` is passed on untouched to a local
  *  install (same entry point), `argv` (without --project-root) to a checkout gate. */
-export function delegateToOwnFramework(self: string, appRoot: string, launchArgv: string[], argv: string[]): void {
-  if (process.env[DELEGATED] === "1") return;
+export function delegateToOwnFramework(self: string, appRoot: string, launchArgv: string[], argv: string[], handedOver: boolean): void {
+  if (handedOver) return;
 
   const local = localEntry(appRoot);
-  if (local !== undefined && existsSync(local) && !sameFile(local, self)) runInstead(local, launchArgv);
+  if (local !== undefined && existsSync(local) && !sameFile(local, self)) runInstead(local, launchArgv, true);
 
   const inCheckout = checkoutGate(appRoot);
-  if (inCheckout !== undefined) runInstead(inCheckout, argv);
+  if (inCheckout !== undefined) runInstead(inCheckout, argv, false);
   const parent = dirname(appRoot);
   const appGate = basename(parent) === "apps" && existsSync(resolve(appRoot, "app.ts")) ? checkoutGate(dirname(parent)) : undefined;
-  if (appGate !== undefined) runInstead(appGate, ["--app", basename(appRoot), ...argv]);
+  if (appGate !== undefined) runInstead(appGate, ["--app", basename(appRoot), ...argv], false);
 }
 
 /** Lets the deployment's app.ts import @clawforge/framework from this very package when it

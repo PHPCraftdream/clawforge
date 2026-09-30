@@ -7,7 +7,7 @@
 // the deployment has no local package.
 
 import { spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,6 +56,12 @@ const outside = await mkdtemp(join(tmpdir(), "clawforge-system-apps-"));
 const checkoutApp = `sys-install-check-${randomBytes(4).toString("hex")}`;
 const bin = windows ? prefix : join(prefix, "bin");
 const env = withOnPath(bin);
+const globalPackage = join(prefix, ...(windows ? [] : ["lib"]), "node_modules", "@clawforge", "framework");
+
+/** The last line of a run's output, parsed as JSON. */
+function lastJson(result: Run): Record<string, unknown> {
+  return JSON.parse(result.output.trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
+}
 
 /** The installed command, as a shell starts it. Arguments here are plain words. */
 function clawforge(args: string[], cwd: string): Promise<Run> {
@@ -82,6 +88,14 @@ try {
   tail(version);
   check("the installed command runs outside any app and reports this checkout's version", version.output.trim(), `clawforge ${expected}`);
 
+  const globalInfo = lastJson(await clawforge(["version", "--json"], outside));
+  check("version --json names the global copy and its package directory", [globalInfo.source, globalInfo.path], ["global", await realpath(globalPackage)]);
+  check("version --json keeps name and version", [globalInfo.name, globalInfo.version], ["clawforge", expected]);
+  const verbose = await clawforge(["version", "--verbose"], outside);
+  check("version --verbose adds the source and path lines", verbose.output.trim().split("\n").map((line) => line.trim()), [`clawforge ${expected}`, "source: global", `path: ${await realpath(globalPackage)}`]);
+  const outsideStatus = await clawforge(["status"], outside);
+  check("outside any app the advice stays: run clawforge init", outsideStatus.code === 1 && outsideStatus.output.includes("run: clawforge init"), true);
+
   // --- a fresh app folder with no framework of its own ----------------------------------------
   const fresh = join(outside, "cf-fresh");
   await mkdir(fresh);
@@ -94,6 +108,17 @@ try {
   tail(helped);
   check("app.ts's @clawforge/framework imports resolve to the system-wide package", helped.code, 0);
   check("so the deployment's own commands are listed", helped.output.includes("bootstrap"), true);
+
+  // A subfolder of the app: the deployment is found upward; init there is refused, not nested.
+  const sub = join(fresh, "recipes", "sub");
+  await mkdir(sub, { recursive: true });
+  const subHelp = await clawforge(["help"], sub);
+  tail(subHelp);
+  check("in a subfolder of the app the deployment is found upward", subHelp.code === 0 && subHelp.output.includes("bootstrap"), true);
+  const subInit = await clawforge(["init"], sub);
+  check("init in a subfolder of an app is refused", subInit.code, 1);
+  check("and says which ancestor holds app.ts", subInit.output.includes("already holds app.ts") && subInit.output.includes("cf-fresh"), true);
+  check("and creates nothing there", existsSync(join(sub, "app.ts")), false);
 
   // The committed MCP launcher, as a client starts it: no local package, so the system-wide
   // command serves the session over the same stdio.
@@ -136,7 +161,6 @@ try {
   const pinned = join(outside, "cf-pinned");
   await mkdir(pinned);
   check("init in a second folder succeeds", (await clawforge(["init"], pinned)).code, 0);
-  const globalPackage = join(prefix, ...(windows ? [] : ["lib"]), "node_modules", "@clawforge", "framework");
   const localPackage = join(pinned, "node_modules", "@clawforge", "framework");
   await cp(globalPackage, localPackage, { recursive: true });
   const manifestPath = join(localPackage, "package.json");
@@ -149,11 +173,42 @@ try {
   tail(localHelp);
   check("and runs the deployment's commands", localHelp.code === 0 && localHelp.output.includes("bootstrap"), true);
 
+  const pinnedSub = join(pinned, "recipes");
+  const localInfo = lastJson(await clawforge(["version", "--json"], pinnedSub));
+  check("version --json from a subfolder of an app with its own package says local", [localInfo.source, localInfo.path, localInfo.version], ["local", await realpath(localPackage), `${expected}-local`]);
+
+  // The delegation flag covers one hand-over: a clawforge run by a command of this app, in
+  // another app with its own package, must still hand over to that package.
+  const other = join(outside, "cf-other");
+  await mkdir(other);
+  check("init in a third folder succeeds", (await clawforge(["init"], other)).code, 0);
+  const otherPackage = join(other, "node_modules", "@clawforge", "framework");
+  await cp(globalPackage, otherPackage, { recursive: true });
+  await writeFile(join(otherPackage, "package.json"), JSON.stringify({ ...manifest, version: `${expected}-other` }), "utf8");
+  const probeApp = [
+    `import { defineApp } from "@clawforge/framework/app";`,
+    `import { mountPoints } from "@clawforge/framework/mounts";`,
+    `import { spawnSync } from "node:child_process";`,
+    `const run = async () => {`,
+    `  const result = spawnSync(process.execPath, [${JSON.stringify(join(globalPackage, "dist", "entry", "bin.js"))}, "version"], { cwd: ${JSON.stringify(other)}, encoding: "utf8", env: process.env });`,
+    "  process.stdout.write(`child:${result.stdout.trim()}|flag:${process.env.CLAWFORGE_DELEGATED ?? \"unset\"}\\n`);",
+    `};`,
+    `export default defineApp({ name: "openclaw", description: "probe", service: { name: "gateway", logTail: "100" }, mounts: mountPoints, commands: { probe: { summary: "probe", run } } });`,
+    "",
+  ].join("\n");
+  await writeFile(join(pinned, "app.ts"), probeApp, "utf8");
+  const probe = await clawforge(["probe"], pinned);
+  tail(probe);
+  check("a descendant does not inherit the hand-over flag", probe.output.includes("flag:unset"), true);
+  check("so a clawforge run in another app still hands over to that app's own package", probe.output.includes(`child:clawforge ${expected}-other|`), true);
+
   // --- this checkout: apps/<name> and the root hand over to the checkout's own gate -------------
   await createApp(checkoutApp);
   const inApp = await clawforge(["help"], resolve(appsDir, checkoutApp));
   tail(inApp);
   check("in apps/<name> of a checkout the checkout's own gate answers", inApp.code === 0 && inApp.output.includes("new-app"), true);
+  const checkoutInfo = lastJson(await clawforge(["version", "--json"], resolve(appsDir, checkoutApp)));
+  check("version --json in a checkout app says checkout and the checkout root", [checkoutInfo.source, checkoutInfo.path], ["checkout", await realpath(monorepoRoot)]);
   const atRoot = await clawforge(["help"], monorepoRoot);
   tail(atRoot);
   check("and at the checkout root too", atRoot.code === 0 && atRoot.output.includes("new-app"), true);

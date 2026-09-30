@@ -13,7 +13,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentName, deploymentDir } from "#src/runtime/deployment.ts";
 import { Journal, readOperation, latestRollbackable, newOperationId } from "#src/service/operations.ts";
-import { restart } from "#src/commands/lifecycle/lifecycle.ts";
+import { restart } from "#src/commands/lifecycle/instance/control.ts";
 import { runOwning, takeLock, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { readInstalledSet, withUnpackedArtifact, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
 import type { InstalledSet, PreviousSet, VerifiedArtifact } from "#src/set/artifacts/install.ts";

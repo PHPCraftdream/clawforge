@@ -1,7 +1,7 @@
 // Removing a deployment directory under apps/ — the inverse of scaffold.ts's createApp().
 //
 // Repository-side only: apps/<name>/ itself (.env, config/, secrets/, recipes/, app.ts,
-// client configs) — never the target (lifecycle.ts's destroy is bootstrap's inverse; this
+// client configs) — never the target (instance/destroy.ts's destroy is bootstrap's inverse; this
 // is new-app's). Monorepo mode only, like list/new-app/check: this gate command exists
 // only in tools/clawforge.ts, never in entry/bin.ts's installed-mode gate.
 

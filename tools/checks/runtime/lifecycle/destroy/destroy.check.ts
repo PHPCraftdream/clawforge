@@ -5,7 +5,7 @@
 // backup/prune-replaced.check.ts layers its own domain exec handling over, not a stand-in
 // for the lock.
 
-import { destroy, SAFE_DESTROY_SCRIPT } from "#framework/commands/lifecycle/lifecycle.ts";
+import { destroy, SAFE_DESTROY_SCRIPT } from "#framework/commands/lifecycle/instance/destroy.ts";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

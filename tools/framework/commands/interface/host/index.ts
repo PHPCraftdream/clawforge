@@ -100,7 +100,7 @@ export async function host(ctx: Context, args: string[], environment: HostEnviro
     );
   }
 
-  // One capability, two shapes, chosen the way lifecycle.ts's and recipe.ts's logs choose it
+  // One capability, two shapes, chosen the way instance/logs.ts's and recipe.ts's logs choose it
   // (shouldFollow): a real terminal streams the child's output live; under a sink or a plain
   // pipe the output is captured and handed back, because a tool call owes its caller one result.
   // allowFailure either way: a non-zero exit is reported below with the command's own code

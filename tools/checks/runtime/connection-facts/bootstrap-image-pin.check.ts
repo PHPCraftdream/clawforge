@@ -3,7 +3,7 @@
 // silently moves a shared tag for its neighbours on the same Docker daemon. `upgrade` already resolves
 // by digest and pins on success (upgrade.check.ts, this same directory); this is bootstrap's
 // own version of that, on the FIRST pull rather than on an explicit, later upgrade — reusing
-// upgrade's own pinImageReference() (lifecycle.ts) for the write.
+// upgrade's own pinImageReference() (instance/upgrade.ts) for the write.
 //
 // The pin keeps the tag alongside the digest (`repo:tag@sha256:…`), on both the paths that
 // write one — the registry-resolved pin before the pull, and the local-inspect fallback after

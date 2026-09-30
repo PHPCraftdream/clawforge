@@ -20,7 +20,8 @@ import { ensureDataDirs, ensureSecretsFile, ensureLockHome } from "#src/runtime/
 import { ensureBaselineConfig, configureProvider } from "#src/commands/management/credentials/provider.ts";
 import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { preflightSecrets } from "#src/commands/management/secrets.ts";
-import { preflightPort, pinImageReference } from "#src/commands/lifecycle/lifecycle.ts";
+import { preflightPort } from "#src/commands/lifecycle/bootstrap/prereqs.ts";
+import { pinImageReference } from "#src/commands/lifecycle/instance/upgrade.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
 import { imageChannel } from "#src/runtime/docker/image-digest.ts";

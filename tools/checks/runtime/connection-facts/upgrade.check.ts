@@ -10,7 +10,7 @@
 import { mkdtemp, writeFile, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upgrade } from "#framework/commands/lifecycle/lifecycle.ts";
+import { upgrade } from "#framework/commands/lifecycle/instance/upgrade.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -22,7 +22,7 @@ import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { toSettings, parseEnv } from "#framework/core/env.ts";
 import type { Transport, ExecOptions } from "#framework/runtime/transport/transport.ts";
 
-// pinImageReference (lifecycle.ts) writes the deployment's OWN .env on success — a real
+// pinImageReference (instance/upgrade.ts) writes the deployment's OWN .env on success — a real
 // repo-side file, not one ctx.transport can stand in for — so a real temporary deployment
 // directory backs this file's checks, cleaned up at the end.
 const deploymentDir = await mkdtemp(join(tmpdir(), "clawforge-upgrade-check-"));

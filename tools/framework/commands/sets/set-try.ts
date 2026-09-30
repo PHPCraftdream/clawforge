@@ -25,7 +25,7 @@ import { ensureDataDirs, ensureSecretsFile, secretsFileOnTarget, runMaybePrivile
 import { ensureBaselineConfig, configureProvider } from "#src/commands/management/credentials/provider.ts";
 import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { preflightSecrets } from "#src/commands/management/secrets.ts";
-import { down } from "#src/commands/lifecycle/lifecycle.ts";
+import { down } from "#src/commands/lifecycle/instance/control.ts";
 import { loadSecrets } from "#src/commands/lifecycle/state.ts";
 import { createPrivateFile, protectPrivateDirectory } from "#src/security/privacy/private-file.ts";
 import { provisionAgent } from "#src/commands/management/provision-agent/index.ts";

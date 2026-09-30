@@ -15,7 +15,7 @@ import { currentComposition, declarationChecksum, frameworkVersion } from "#src/
 import { isHealthy, nextActions, PROBLEM_CODES } from "#src/service/inspection.ts";
 import { applyConfig } from "./config.ts";
 import { secrets } from "#src/commands/management/secrets.ts";
-import { up, restart } from "#src/commands/lifecycle/lifecycle.ts";
+import { up, restart } from "#src/commands/lifecycle/instance/control.ts";
 import { provisionAgent, removeOwnedObject } from "#src/commands/management/provision-agent/index.ts";
 import { recoverEnv } from "#src/commands/operate/recover-env/index.ts";
 import { readLedgerStrict } from "#src/set/ownership/ledger.ts";

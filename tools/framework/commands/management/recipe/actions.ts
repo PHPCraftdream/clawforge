@@ -19,7 +19,7 @@ import { collectPortableRecipeFiles } from "#src/security/privacy/recipe-portabl
 import { safeName } from "#src/core/names.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit, emitRaw } from "#src/core/io/output.ts";
-import { takeTail } from "#src/commands/lifecycle/lifecycle.ts";
+import { takeTail } from "#src/commands/lifecycle/instance/logs.ts";
 import { importHookModule } from "./hook-runtime.ts";
 
 /** Every action the dispatcher knows, in the order the usage message names them. Checked
@@ -489,7 +489,7 @@ async function runStatusAction(ctx: Context, name: string): Promise<void> {
 async function runLogsAction(ctx: Context, name: string, rest: string[]): Promise<void> {
   const { stack } = await stackFor(ctx, name);
   // Following runs until interrupted, which only an attended terminal can do. Same choice
-  // as lifecycle.ts's logs.
+  // as instance/logs.ts's logs.
   if (!shouldFollow()) {
     emitRaw(await stack.readLogs(takeTail(rest).tail ?? "100"));
     return;

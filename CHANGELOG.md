@@ -543,6 +543,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Internal
 
+* `commands/lifecycle/lifecycle.ts` (700 lines, at the per-file limit) is split by command into
+  `commands/lifecycle/instance/`: `control.ts` (up/restart/down), `logs.ts`, `destroy.ts`,
+  `upgrade.ts` (each 78-330 lines). No behaviour change; public exports unaffected.
 * MCP `tools/list` budget headroom: 80 bytes to about 1.6 KB free (32688 to 31166 of 32768)
   without raising the budget. Shorter shared argument descriptions (`break-lock`,
   `break-foreign-lock`, `confirm`), an empty `required` is not sent, and shorter command

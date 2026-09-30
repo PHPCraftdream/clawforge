@@ -3,7 +3,10 @@
 
 import type { AppCommand } from "#src/core/app.ts";
 
-import { up, down, destroy, logs, restart, upgrade, UPGRADE_ARGUMENTS, LOCK_ARGUMENTS, LOGS_ARGUMENTS, DESTROY_ARGUMENTS } from "#src/commands/lifecycle/lifecycle.ts";
+import { up, down, restart, LOCK_ARGUMENTS } from "#src/commands/lifecycle/instance/control.ts";
+import { destroy, DESTROY_ARGUMENTS } from "#src/commands/lifecycle/instance/destroy.ts";
+import { logs, LOGS_ARGUMENTS } from "#src/commands/lifecycle/instance/logs.ts";
+import { upgrade, UPGRADE_ARGUMENTS } from "#src/commands/lifecycle/instance/upgrade.ts";
 import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap/index.ts";
 import { backup, BACKUP_ALL_ARGUMENTS, backupActionIsReadOnly } from "#src/commands/lifecycle/backup/index.ts";
 import { restore, RESTORE_ARGUMENTS, isRestoreDryRun } from "#src/commands/lifecycle/restore/index.ts";

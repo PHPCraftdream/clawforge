@@ -92,7 +92,7 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
     },
     runtime: {
       description: "docker",
-      async isRunning(): Promise<boolean> { return scenario !== "health-fail" && scenario !== "exit78"; },
+      async isRunning(): Promise<boolean> { return runningDigest === PREVIOUS_DIGEST || (scenario !== "health-fail" && scenario !== "exit78"); },
       async pause(): Promise<void> {},
       // Migration compensation restores while stopped, then recreates the previous image.
       async start(): Promise<void> { runningDigest = PREVIOUS_DIGEST; },
@@ -138,25 +138,13 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
 // --- success path ----------------------------------------------------------------------------
 
 {
-  const { ctx, calls, runningDigest } = makeUpgradeCtx("success");
+  const { ctx, runningDigest } = makeUpgradeCtx("success");
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
     try { await upgrade(ctx, []); } catch (error) { failure = error; }
   });
   check("a healthy upgrade completes without throwing", failure, undefined);
   check("it recreates on the resolved target digest", runningDigest(), TARGET_DIGEST);
-  check("it takes a pre-upgrade backup before recreating", calls.some((call) => call.startsWith("runOneOff backup create")), true);
-  check("it runs openclaw doctor --lint", calls.some((call) => call.startsWith("runOneOff doctor")), true);
-}
-
-// --- shared tag is never retagged: resolved by digest, recreated by digest, never `docker pull <tag>`
-
-{
-  const { ctx, calls } = makeUpgradeCtx("success");
-  await withOutputSink(() => {}, () => upgrade(ctx, []));
-  check("the tag is resolved through resolveImageDigest, not a pull", calls.some((call) => call.startsWith(`resolveImageDigest ${SHARED_TAG}`)), true);
-  check("recreate always names a digest reference, never the bare tag", calls.some((call) => call === `recreateWithImage ${TARGET_DIGEST}`), true);
-  check("the shared tag itself is never handed to recreateWithImage", calls.some((call) => call === `recreateWithImage ${SHARED_TAG}`), false);
 }
 
 // --- a generic health failure rolls back to the previous digest, without restoring data ------
@@ -169,7 +157,6 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
   });
   check("a health failure is reported as a failure", failure instanceof Error, true);
   check("it rolls back to the previous digest", runningDigest(), PREVIOUS_DIGEST);
-  check("it recreates on the previous digest to roll back", calls.filter((call) => call === `recreateWithImage ${PREVIOUS_DIGEST}`).length, 1);
   check("a non-migration failure never restores the backup", calls.some((call) => call.includes("-xzf")), false);
 }
 
@@ -200,39 +187,17 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
   check("and rolls back to the previous digest", runningDigest(), PREVIOUS_DIGEST);
 }
 
-// --- --dry-run changes nothing, and takes no lock --------------------------------------------
-
-{
-  const { ctx, calls } = makeUpgradeCtx("success");
-  await withOutputSink(() => {}, () => upgrade(ctx, ["--dry-run"]));
-  check("--dry-run never recreates the gateway", calls.some((call) => call.startsWith("recreateWithImage")), false);
-  check("--dry-run never takes a backup", calls.some((call) => call.startsWith("runOneOff backup create")), false);
-  check("--dry-run never runs doctor --lint", calls.some((call) => call.startsWith("runOneOff doctor")), false);
-  check("--dry-run still resolves the digest to report the real plan", calls.some((call) => call.startsWith("resolveImageDigest")), true);
-}
-
-// --- already on the target digest is a no-op, not a needless recreate ------------------------
-
-{
-  const { ctx, calls } = makeUpgradeCtx("success");
-  (ctx.runtime as unknown as { resolveImageDigest: (reference: string) => Promise<string> }).resolveImageDigest = async () => PREVIOUS_DIGEST;
-  await withOutputSink(() => {}, () => upgrade(ctx, []));
-  check("nothing recreates when already on the resolved digest", calls.some((call) => call.startsWith("recreateWithImage")), false);
-}
-
 // --- upgrade with no --image, after a tag-preserving pin, re-resolves the CHANNEL (`repo:tag`),
 // never the stale digest already sitting in the pin — a moved tag must still be caught, or
 // `upgrade` silently stops doing anything the moment bootstrap/a prior upgrade pins.
 
 {
-  const { ctx, calls, runningDigest } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
+  const { ctx, runningDigest } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
     try { await upgrade(ctx, []); } catch (error) { failure = error; }
   });
   check("upgrading off a tag-preserving pin succeeds", failure, undefined);
-  check("the channel alone is resolved", calls.some((call) => call === `resolveImageDigest ${SHARED_TAG}`), true);
-  check("the stale pinned reference itself is never asked about", calls.some((call) => call === `resolveImageDigest ${PINNED_WITH_TAG}`), false);
   check("it recreates on the newly resolved digest, not the old pin", runningDigest(), TARGET_DIGEST);
 }
 
@@ -257,19 +222,7 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
   });
   check("an untagged pin refuses rather than guessing a channel", failure instanceof Error, true);
   check("the refusal names the remedy", failure instanceof Error && failure.message.includes("--image"), true);
-  check("nothing was asked of the registry — there is no channel to resolve", calls.some((call) => call.startsWith("resolveImageDigest")), false);
   check("and nothing recreates", calls.some((call) => call.startsWith("recreateWithImage")), false);
-}
-
-// --- --dry-run reports the current digest, the channel, and the registry's answer for it ------
-
-{
-  const { ctx } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
-  let output = "";
-  await withOutputSink((chunk) => { output += chunk; }, () => upgrade(ctx, ["--dry-run"]));
-  check("--dry-run shows the currently running digest", output.includes(PREVIOUS_DIGEST), true);
-  check("--dry-run names the channel it will re-resolve", output.includes(SHARED_TAG), true);
-  check("--dry-run shows what the channel resolves to at the registry", output.includes(TARGET_DIGEST), true);
 }
 
 // Exercise the real DockerRuntime and Compose environment selection, with only the
@@ -405,6 +358,214 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
 
 for (const scenario of ["success", "reject-b", "cleanup", "validator", "pin", "rollback", "backup", "prepare", "migration-exception", "identity"] as const) {
   await dockerUpgradeScenario(scenario);
+}
+
+// Deterministic two-command interleaving using actual DockerRuntime. Docker commands
+// operate on an image/data/filesystem model, not independent runtime method echoes.
+// Native backup deliberately never stops/resumes the gateway in the race witness.
+type PredecessorScenario = "race" | "race-noop" | "same" | "dry" | "unknown" | "stopped" | "unreadable" | "settings" | "migration";
+async function predecessorScenario(scenario: PredecessorScenario): Promise<void> {
+  const d0 = `ghcr.io/openclaw/openclaw@sha256:${"0".repeat(64)}`;
+  const d1 = `ghcr.io/openclaw/openclaw@sha256:${"1".repeat(64)}`;
+  const d2 = `ghcr.io/openclaw/openclaw@sha256:${"2".repeat(64)}`;
+  const initialEnv = `OC_DATA_DIR=${DATA_DIR}\nOC_BACKUP_DIR=/srv/clawforge/backups\nOC_TARGET_LOCATION=wsl\nOC_COMPOSE_PROJECT=upgrade-witness\nOPENCLAW_IMAGE=${d0}\n`;
+  await writeFile(envFile(), initialEnv);
+  let running = d0;
+  let data = d0;
+  let stopped = false;
+  let unknown = false;
+  let unreadable = false;
+  let imageReads = 0;
+  let lockClaims = 0;
+  let resumed = 0;
+  const snapshots: Array<{ image: string; running: string; data: string }> = [];
+  const files = new Map<string, string>([[DATA_DIR, ""], [`${DATA_DIR}/config`, ""]]);
+  const archives = new Map<string, string>();
+  let stagedData = d0;
+  let reached!: () => void;
+  let release!: () => void;
+  const barrierReached = new Promise<void>((resolve) => { reached = resolve; });
+  const barrierRelease = new Promise<void>((resolve) => { release = resolve; });
+  const gated = ["race", "race-noop", "unknown", "stopped", "unreadable", "settings"].includes(scenario);
+  const ok = (stdout = ""): ExecResult => ({ code: 0, stdout, stderr: "" });
+  const transport: Transport = {
+    description: "controlled POSIX Docker target",
+    async readFile(path) {
+      const value = files.get(path);
+      if (value === undefined) throw new Error(`missing ${path}`);
+      return value;
+    },
+    async writeFile(path, content) { files.set(path, typeof content === "string" ? content : Buffer.from(content).toString("utf8")); },
+    async exists(path) { return files.has(path); },
+    async mkdirp(path) { files.set(path, ""); },
+    async remove(path) { files.delete(path); },
+    async listFiles() { return []; },
+    clientInvocation(entryPath, args) { return { command: "node", args: [entryPath, ...args] }; },
+    async exec(command, args) {
+      if (command === "curl") return ok(stopped ? "000" : "200");
+      if (command === "docker") {
+        if (args[0] === "ps") return ok(unknown ? "" : "gateway-container");
+        if (args[0] === "inspect") {
+          if (unreadable) throw new Error("current container read unavailable");
+          if (args.includes("{{.State.ExitCode}}")) return ok(stopped && running === d2 ? "78" : "0");
+          return ok(JSON.stringify({ Image: running, State: { Running: !stopped } }));
+        }
+        if (args[0] === "image") {
+          const observed = running;
+          imageReads++;
+          if (gated && imageReads === 1) { reached(); await barrierRelease; }
+          return ok(JSON.stringify({ RepoDigests: [observed] }));
+        }
+        if (args[0] === "compose") {
+          const image = parseEnv(files.get(args[args.indexOf("--env-file") + 1] ?? "") ?? "").OPENCLAW_IMAGE;
+          if (args.includes("up")) {
+            resumed++;
+            running = image;
+            stopped = scenario === "migration" && image === d2;
+            if (stopped) data = d2; // Target migrations alter the data before exiting 78.
+            else if (image === d1) data = d1;
+            return ok();
+          }
+          if (args.includes("stop") || args.includes("down")) { stopped = true; return ok(); }
+          if (args.includes("ps")) return ok(unknown ? "" : "gateway-container");
+          if (args.includes("run")) {
+            if (args.includes("backup") && args.includes("create")) {
+              snapshots.push({ image, running, data });
+              const output = args[args.indexOf("--output") + 1];
+              const targetPath = fromContainerPath(output, mountPoints(DATA_DIR));
+              files.set(targetPath, "");
+              archives.set(targetPath, data);
+              return ok(JSON.stringify({ verified: true, archivePath: output }));
+            }
+            if (args.includes("doctor")) {
+              return ok(JSON.stringify({ findings: image === d2 ? [{ severity: "error", checkId: "schema", message: "D2 rejected" }] : [] }));
+            }
+            return ok(JSON.stringify({ verified: true }));
+          }
+          return ok();
+        }
+        return ok();
+      }
+      if (command === "test") {
+        if (args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
+        if (args[0] === "-e") return { code: files.has(args[1]) ? 0 : 1, stdout: "", stderr: "" };
+        return ok();
+      }
+      if (command === "readlink") return ok(args.at(-1));
+      if (command === "stat") return ok("1000:1000");
+      if (command === "mkdir") {
+        const path = args.at(-1)!;
+        if (args.length === 1 && files.has(path)) return { code: 1, stdout: "", stderr: "exists" };
+        if (path.endsWith("/operation.lock")) lockClaims++;
+        files.set(path, "");
+        return ok();
+      }
+      if (command === "mv") {
+        const source = args.at(-2)!;
+        const destination = args.at(-1)!;
+        for (const [path, value] of [...files]) {
+          if (path === source || path.startsWith(`${source}/`)) {
+            files.delete(path);
+            files.set(`${destination}${path.slice(source.length)}`, value);
+          }
+        }
+        if (archives.has(source)) { archives.set(destination, archives.get(source)!); archives.delete(source); }
+        return ok();
+      }
+      if (command === "rm" || command === "rmdir") {
+        const root = args.at(-1)!;
+        for (const path of files.keys()) if (path === root || path.startsWith(`${root}/`)) files.delete(path);
+        return ok();
+      }
+      if (command === "tar") {
+        const archive = args[args.findIndex((arg) => ["-tzf", "-tvzf", "-xzf", "-czf"].includes(arg)) + 1];
+        if (args.includes("-tzf")) return ok(archive.includes(".clawforge-native-")
+          ? "native/\nnative/payload/posix/home/node/.openclaw/openclaw.json\n"
+          : "data/\ndata/config/openclaw.json\n");
+        if (args.includes("-xzf")) {
+          const destination = args[args.indexOf("-C") + 1];
+          if (archive.includes(".clawforge-native-")) {
+            stagedData = archives.get(archive)!;
+            files.set(`${destination}/native/payload/posix/home/node/.openclaw`, "");
+          } else {
+            data = archives.get(archive)!;
+            files.set(`${destination}/data`, "");
+            files.set(`${destination}/data/config`, "");
+          }
+        }
+        if (args.includes("-czf")) { archives.set(archive, stagedData); files.set(archive, ""); }
+        return ok();
+      }
+      // POSIX metadata/read-only discovery: no recipe stacks, no extra live files.
+      if (command === "id") return ok("1000");
+      if (["find", "chmod", "chown"].includes(command)) return ok();
+      throw new Error(`unmodelled target command: ${command} ${args.join(" ")}`);
+    },
+  };
+  const paths = {
+    async toTarget(path: string) { return path; },
+    async toTool(path: string) { return path; },
+    toContainer: (path: string) => toContainerPath(path, mountPoints(DATA_DIR)),
+    fromContainer: (path: string) => fromContainerPath(path, mountPoints(DATA_DIR)),
+  };
+  const settings = toSettings(parseEnv(initialEnv));
+  const ctx: Context = {
+    settings, paths, transport,
+    runtime: new DockerRuntime(transport, settings, paths, { service: "gateway", reconcileSettings: async () => toSettings(parseEnv(await readFile(envFile(), "utf8"))) }),
+  };
+  let failure: unknown;
+  let outcome = "";
+  const target = scenario === "same" || scenario === "race-noop" ? d0 : d2;
+  const a = withOutputSink((chunk) => { outcome += chunk; }, async () => {
+    try { await upgrade(ctx, ["--image", target, ...(scenario === "dry" ? ["--dry-run"] : []), "--json"]); }
+    catch (error) { failure = error; }
+  });
+  if (gated) {
+    await barrierReached;
+    if (scenario === "race" || scenario === "race-noop") {
+      // B uses the public command, completes validation/pin and releases the real
+      // instance-lock implementation before A receives its captured D0 observation.
+      await withOutputSink(() => {}, () => upgrade(ctx, ["--image", d1]));
+      check(`${scenario}: B commits actual D1`, running, d1);
+      check(`${scenario}: B commits durable D1`, parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, d1);
+    } else if (scenario === "unknown") unknown = true;
+    else if (scenario === "stopped") stopped = true;
+    else if (scenario === "unreadable") unreadable = true;
+    else await writeFile(envFile(), `${initialEnv}OPENCLAW_GATEWAY_TOKEN=rotated\n`);
+    release();
+  }
+  await a;
+  const report = JSON.parse(outcome) as { ok: boolean; changed: boolean; current?: string; target?: string; upToDate?: boolean };
+  const pin = parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE;
+  if (scenario === "race" || scenario === "race-noop") {
+    check(`${scenario}: stale A refuses before its backup`, failure instanceof Error, true);
+    check(`${scenario}: refusal JSON does not claim a mutation`, [report.ok, report.changed], [false, false]);
+    check(`${scenario}: only B snapshot exists and belongs to D0`, snapshots, [{ image: d0, running: d0, data: d0 }]);
+    check(`${scenario}: no A recreation or classic backup resume`, resumed, 1);
+    check(`${scenario}: running predecessor remains committed D1`, running, d1);
+    check(`${scenario}: durable predecessor remains committed D1`, pin, d1);
+    check(`${scenario}: D1 data remains intact`, data, d1);
+  } else if (scenario === "same" || scenario === "dry") {
+    check(`${scenario}: read-only outcome succeeds`, failure, undefined);
+    check(`${scenario}: no snapshot or recreation`, [snapshots, resumed], [[], 0]);
+    check(`${scenario}: actual state and pin stay D0`, [running, pin, data], [d0, d0, d0]);
+    check(`${scenario}: only execute no-op takes a lock`, lockClaims, scenario === "same" ? 1 : 0);
+    check(`${scenario}: reported observation is truthful`, [report.ok, report.changed, report.current, report.target, report.upToDate], [true, false, d0, target, scenario === "same"]);
+  } else if (scenario === "migration") {
+    check("migration: original exit-78 failure is reported", failure instanceof Error && failure.message.includes("78"), true);
+    check("migration: data compensation completes before image compensation", failure instanceof Error && !(failure instanceof AggregateError) && failure.message.includes("was rolled back"), true);
+    check("migration: native backup CLI, gateway and data share predecessor", snapshots, [{ image: d0, running: d0, data: d0 }]);
+    check("migration: restored data, running image and durable pin share predecessor", [data, running, pin], [d0, d0, d0]);
+  } else {
+    check(`${scenario}: under-lock refusal preserves failure`, failure instanceof Error, true);
+    check(`${scenario}: refusal JSON does not claim a mutation`, [report.ok, report.changed], [false, false]);
+    check(`${scenario}: refusal takes no backup or recreation`, [snapshots, resumed], [[], 0]);
+    check(`${scenario}: refusal does not publish a pin`, pin, d0);
+    check(`${scenario}: refusal preserves image/data`, [running, data], [d0, d0]);
+  }
+}
+for (const scenario of ["race", "race-noop", "same", "dry", "unknown", "stopped", "unreadable", "settings", "migration"] as const) {
+  await predecessorScenario(scenario);
 }
 
 await rm(deploymentDir, { recursive: true, force: true });

@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { shouldFollow, emit, withOutputSink } from "#src/core/io/output.ts";
 import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
-import type { Context } from "#src/core/context.ts";
+import { refreshContext, type Context } from "#src/core/context.ts";
 import { preflightSecrets } from "#src/commands/management/secrets.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { envFile, deploymentName, composeProjectName } from "#src/runtime/deployment.ts";
@@ -602,6 +602,7 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
   const recreateWithImage = ctx.runtime.recreateWithImage.bind(ctx.runtime);
 
   const target = await resolveUpgradeTarget(ctx, options.image, resolveImageDigest);
+  const preparedEnv = await readFile(envFile(), "utf8");
 
   const identity = await ctx.runtime.runningImageIdentity?.();
   if (identity === undefined || identity.digests.length === 0) {
@@ -638,32 +639,49 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
-  if (upToDate) {
-    if (options.jsonOnly) {
-      emit(`${JSON.stringify({ ok: true, changed: false, current: previousDigest, target: target.targetDigest, upToDate: true }, null, 2)}\n`);
+  let changed = false;
+  const execute = () => guarded(ctx, "upgrade", args, async () => {
+    // Preparation is only an observation. Never let a completed competing upgrade
+    // supply the backup while the old Context supplies its CLI/image or rollback.
+    const current = await ctx.runtime.runningImageIdentity?.();
+    if (!(await ctx.runtime.isRunning()) || current === undefined || current.digests.length === 0) {
+      die("could not determine the currently running image digest under the instance lock — refusing to upgrade with no rollback target");
+    }
+    if (digestHash(current.digests[0]) !== digestHash(previousDigest)) {
+      die("the running image changed while preparing upgrade — refusing before backup or recreation; retry the command");
+    }
+    const refreshed = await refreshContext(ctx);
+    if (await readFile(envFile(), "utf8") !== preparedEnv || (refreshed !== undefined && (refreshed.changed.length > 0 || refreshed.targetChanges.length > 0))) {
+      die("deployment settings changed while preparing upgrade — refusing before backup or recreation; retry the command");
+    }
+    // Even a no-op must be decided against the authoritative predecessor.
+    if (digestHash(target.targetDigest) === digestHash(current.digests[0])) {
+      log(target.channel === undefined ? `already running ${current.digests[0]} — nothing to upgrade` : `already on the latest ${target.channel} (${current.digests[0]}) — nothing to upgrade`);
       return;
     }
-    log(target.channel === undefined ? `already running ${previousDigest} — nothing to upgrade` : `already on the latest ${target.channel} (${previousDigest}) — nothing to upgrade`);
-    return;
-  }
+    changed = true;
+    await upgradeLocked(ctx, current.digests[0], target.targetDigest, recreateWithImage);
+  });
 
   if (options.jsonOnly) {
     let caught: unknown;
     await withOutputSink(() => {}, async () => {
       try {
-        await guarded(ctx, "upgrade", args, () => upgradeLocked(ctx, previousDigest, target.targetDigest, recreateWithImage));
+        await execute();
       } catch (error) {
         caught = error;
       }
     });
     if (caught !== undefined) {
       const message = caught instanceof Error ? caught.message : String(caught);
-      emit(`${JSON.stringify({ ok: false, changed: true, from: previousDigest, to: target.targetDigest, problems: [message] }, null, 2)}\n`);
+      emit(`${JSON.stringify({ ok: false, changed, from: previousDigest, to: target.targetDigest, problems: [message] }, null, 2)}\n`);
       throw caught;
     }
-    emit(`${JSON.stringify({ ok: true, changed: true, from: previousDigest, to: target.targetDigest, pinnedImage: target.targetDigest }, null, 2)}\n`);
+    emit(`${JSON.stringify(changed
+      ? { ok: true, changed: true, from: previousDigest, to: target.targetDigest, pinnedImage: target.targetDigest }
+      : { ok: true, changed: false, current: previousDigest, target: target.targetDigest, upToDate: true }, null, 2)}\n`);
     return;
   }
 
-  await guarded(ctx, "upgrade", args, () => upgradeLocked(ctx, previousDigest, target.targetDigest, recreateWithImage));
+  await execute();
 }

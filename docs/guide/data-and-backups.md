@@ -317,6 +317,16 @@ kept the tag (`repo@sha256:…`, no tag alongside the digest) has no channel to 
 guessing, so a plain `upgrade` against one refuses and asks for `--image <repo:tag>` once,
 explicitly.
 
+Execute takes the instance lock before deciding that the target is already running or
+taking a backup. The running predecessor is read again under that lock. If it changed
+since preparation (for example, another upgrade completed first), or the deployment
+settings changed, the command refuses before backup, recreation or pinning; rerun it with
+a fresh context. An unknown, stopped or unreadable gateway under the lock also refuses:
+the earlier observation is never used as a fallback rollback target. This keeps the
+backup's data and CLI/settings, rollback image and durable pin in the same predecessor
+transaction, including when native backup is unavailable and a stopped full backup would
+otherwise resume the gateway using stale settings.
+
 A pre-upgrade backup is taken (the native path above when the image supports it, else a
 stopped full backup), the gateway is recreated on the new digest, and `/startupz`/`/readyz`
 plus `openclaw doctor --lint` from that same new digest decide whether it stuck. Validation

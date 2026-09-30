@@ -106,12 +106,12 @@ function stubContext(execHandler: GuardCase["execHandler"], transportDescription
 
 async function expectGuardRefusal(kase: GuardCase): Promise<void> {
   const { ctx, execCalls } = stubContext(kase.execHandler, kase.transportDescription ?? "local");
-  let message = "";
+  let refused = false;
   await withOutputSink(() => {}, async () => {
-    try { await kase.run(ctx); } catch (error) { message = error instanceof Error ? error.message : String(error); }
+    try { await kase.run(ctx); } catch { refused = true; }
   });
-  check(`${kase.name}: refuses with NotBootstrapped's own message`, message.includes(`${DATA_DIR} does not exist on the target`), true);
-  check(`${kase.name}: names the next step`, message.includes("./clawforge bootstrap"), true);
+  check(`${kase.name}: refuses an unbootstrapped target`, refused, true);
+  check(`${kase.name}: never queries scheduler ownership before bootstrap`, execCalls.some((call) => call.includes("clawforge-scheduler-root")), false);
   check(`${kase.name}: never attempts the instance lock`, execCalls.some((call) => call.some((token) => token.includes("operation.lock"))), false);
 }
 

@@ -109,6 +109,7 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
 
   const invocation = await posixTargetInvocation(ctx, [JOB, "check"]);
   cronLine(interval, invocation, name); // Validate cron syntax before querying the target.
+  if (apply) await requireBootstrapped(ctx);
   const identity = await schedulerIdentity(ctx);
   const line = cronLine(interval, invocation, identity);
 
@@ -124,7 +125,6 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
     return;
   }
 
-  await requireBootstrapped(ctx);
   await guarded(ctx, "watch install --apply", args, async () => {
     await updateCrontab(ctx, JOB, identity, line, { name, invocation });
     await recordWatchSchedule(ctx, interval);

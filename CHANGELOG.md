@@ -157,6 +157,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* `mcp-serve` uses an explicit duplex stdio relay through safe pipes, preserving live
+  client input, exact protocol stdout, separate stderr and finite-input command behavior.
+* Backup/watch scheduler ownership hashes the canonical execution root instead of its
+  basename, preventing same-named projects from replacing or uninstalling one another.
+  Legacy cron entries migrate only when their full invocation belongs to the current root.
 * Upgrade validates with the target digest's CLI and confirms gateway identity before
   pinning; exceptions after recreation begins attempt rollback and report both causes
   when compensation fails.

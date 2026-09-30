@@ -12,7 +12,6 @@ import { mcpServe } from "#framework/commands/management/credentials/mcp.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot, type Settings } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import type { Context } from "#framework/core/context.ts";
 import type { PathBridge } from "#framework/core/paths.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -27,16 +26,18 @@ if (mode === "--bridge") {
     }
   }
   const transport = new ShimTransport();
-  const runtime = new DockerRuntime(transport, {
+  const settings = {
     env: {}, dataDir: join(root, "data"), serviceUrl: "http://shim",
-  } as Settings, { toTarget: async (path: string) => path } as PathBridge, { service: "gateway" });
+  } as Settings;
+  const paths = { toTarget: async (path: string) => path } as PathBridge;
+  const runtime = new DockerRuntime(transport, settings, paths, { service: "gateway" });
   // A progress sink must not intercept protocol bytes or merge stderr into stdout.
   await withOutputSink(() => { throw new Error("protocol reached progress sink"); }, async () => {
     if (branch === "finite") {
       const result = await transport.exec("finite", [], { input: "" });
       assert.deepEqual(result, { code: 0, stdout: "finite-eof", stderr: "" });
     } else {
-      await mcpServe({ runtime } as Context, []);
+      await mcpServe({ runtime, settings, transport, paths }, []);
     }
   });
 } else {
@@ -138,5 +139,5 @@ else if (args[0] === 'exec' || args.includes('run')) {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-  finish();
+  finish("MCP stdio");
 }

@@ -75,6 +75,7 @@ export async function backupInstall(ctx: Context, args: string[], scope?: Action
 
   const invocation = await posixTargetInvocation(ctx, [JOB]);
   cronLine(minutes, invocation, JOB, name); // Validate cron syntax before querying the target.
+  if (apply) await requireBootstrapped(ctx);
   const identity = await schedulerIdentity(ctx);
   const line = cronLine(minutes, invocation, JOB, identity);
 
@@ -90,7 +91,6 @@ export async function backupInstall(ctx: Context, args: string[], scope?: Action
     return;
   }
 
-  await requireBootstrapped(ctx);
   await guarded(ctx, "backup install --apply", args, async () => {
     await updateCrontab(ctx, JOB, identity, line, { name, invocation });
     log("installed");

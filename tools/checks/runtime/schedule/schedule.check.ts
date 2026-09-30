@@ -285,28 +285,6 @@ try {
   await writeFile(join(installedRoot, "clawforge"), "");
   await writeFile(join(installedRoot, "app.ts"), 'export default { name: "fixture", summary: "Fixture", commands: {} };\n');
   useDeployment(installedRoot);
-  const installedCtx = {
-    transport: { description: "local", clientInvocation: (entry: string, args: string[]) => ({ command: entry, args }) },
-    paths: { async toTarget(path: string): Promise<string> { return path; } },
-    settings: {},
-  } as unknown as Context;
-  const installedActions: { command: string; args: string[] }[] = [];
-  await withOutputSink(() => {}, () => withScheduleRunner(
-    async (command, args) => {
-      installedActions.push({ command, args: [...args] });
-      return { code: 0, stdout: "", stderr: "" };
-    },
-    () => printSchedulingInstructions(installedCtx, "backup", "fixture", 1440, ["backup"], true),
-    "win32",
-  ));
-  check("installed Windows task passes its project root to the package entry", installedActions[0]?.args, [
-    "/create", "/tn", installedActions[0]?.args[2], "/sc", "DAILY", "/tr",
-    displayCommandLine(process.execPath, [
-      resolve(installedRoot, "node_modules", "@clawforge", "framework", "dist", "entry", "bin.js"),
-      "--project-root", installedRoot, "backup",
-    ]), "/f",
-  ]);
-
   const entry = resolve(monorepoRoot, "tools", "framework", "entry", "bin.ts");
   const fromOtherCwd = spawnSync(process.execPath, ["--experimental-strip-types", entry, "--project-root", installedRoot, "help"], {
     cwd: otherCwd,

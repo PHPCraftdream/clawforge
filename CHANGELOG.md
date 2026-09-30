@@ -6,6 +6,11 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* A live lock/compose-env owner is no longer called dead under load: its recorded start comes
+  from `process.uptime()` (counted after Node's own boot) while the OS probe has 1 s resolution,
+  so the same process could differ by more than the 2 s reuse tolerance. The tolerance is now
+  15 s — a reused pid starts minutes after the original, and calling a live owner dead loses its
+  state. Seen as a flake in `compose-sweep.check.ts`.
 * The global command refuses an `app.ts` inside a checkout by what it imports, not where it sits:
   only a relative import of the checkout's `tools/framework/` (the `new-app` declaration) outside
   `apps/<name>` is refused; an installed-style `app.ts` (`@clawforge/framework`) under a checkout

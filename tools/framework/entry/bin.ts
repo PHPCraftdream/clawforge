@@ -16,10 +16,10 @@ import { access } from "node:fs/promises";
 import { readdirSync } from "node:fs";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, helpWithoutDeployment, type GateCommand } from "../integration/gate.ts";
-import { info, reportError } from "../core/io/log.ts";
+import { info, reportError, reportErrorVerbatim } from "../core/io/log.ts";
 import { INVOKED_AS_ENV, cli, invocation, setInvocation, takeInvokedAs } from "../core/io/invocation.ts";
 import { useDeployment } from "../runtime/deployment.ts";
 import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
@@ -27,7 +27,7 @@ import { openclawCommands } from "../commands/interface/index.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";
 import { normalizeVersionAlias, makeVersionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
-import { delegateToOwnFramework, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
+import { delegateToOwnFramework, importsCheckoutSources, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
 import { defaultInvocation, findAppRoot, findCheckoutRoot } from "./root.ts";
 import type { AppDefinition } from "../core/app.ts";
 
@@ -55,15 +55,25 @@ if (initializing && !scheduled && ancestor !== undefined && ancestor !== cwd && 
   reportError(`${ancestor} already holds app.ts — this directory is inside that deployment; init here would nest a second one`);
   process.exit(1);
 }
+// A checkout deployment reads the framework from the checkout's sources: nothing to install.
+if (localTypesOnly && ancestor !== undefined && importsCheckoutSources(ancestor)) {
+  info("editor types: this deployment imports the framework from its ClawForge checkout, so they already resolve there — nothing to install (npm ci in the checkout root is enough)");
+  process.exit(0);
+}
 const checkout = scheduled ? undefined : findCheckoutRoot(cwd);
 if (initializing && ancestor === undefined && checkout !== undefined) {
-  const empty = readdirSync(cwd).length === 0;
-  reportError(
+  // new-app only takes over an empty apps/<name> directly under the checkout.
+  const reusable = readdirSync(cwd).length === 0 && sameDirectory(dirname(cwd), resolve(checkout, "apps"));
+  // Verbatim: the bash form must stay `./clawforge`, not be localized to this invocation.
+  reportErrorVerbatim(
     `${checkout} is a ClawForge checkout — init would write an installed-style deployment it cannot load; ` +
       `from its root run: ${cli("new-app <name>")} (in bash also ./clawforge new-app <name>)` +
-      (empty ? "; new-app accepts an existing empty directory, so this one can be reused by name or removed" : ""),
+      (reusable ? `; new-app ${basename(cwd)} takes over this empty directory, or remove it` : ""),
   );
   process.exit(1);
+}
+function sameDirectory(a: string, b: string): boolean {
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 const appRoot = scheduled ? resolve(rawArgv[1]) : initializing ? cwd : (ancestor ?? cwd);
 // A hand-over target may predate the walk, so the found root is passed explicitly.
@@ -116,7 +126,7 @@ try {
   const helpExit = helpWithoutDeployment(gateCommands, argv, { deploymentCommands: Object.keys(openclawCommands), checkout });
   if (helpExit !== undefined) process.exit(helpExit);
   reportError(`no app.ts in ${appRoot}`);
-  if (checkout !== undefined) reportError(`this is a ClawForge checkout (${checkout}) — run ${invocation()} from its root (in bash also ./clawforge)`);
+  if (checkout !== undefined) reportErrorVerbatim(`this is a ClawForge checkout (${checkout}) — run ${invocation()} from its root (in bash also ./clawforge)`);
   else reportError(`this directory has not been initialised as an OpenClaw deployment yet — run: ${cli("init")}`);
   process.exit(1);
 }

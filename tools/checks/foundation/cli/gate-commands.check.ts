@@ -278,6 +278,12 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const inCheckout = await help(["help"], { checkout: "/some/checkout" });
   check("in a checkout the list does not offer init", inCheckout.code === 0 && !inCheckout.text.includes("Initialise this directory") && !inCheckout.text.includes("clawforge init"), true);
   check("and says it is a checkout whose root lists the commands", inCheckout.text.includes("ClawForge checkout") && inCheckout.text.includes("./clawforge help"), true);
+  const checkoutTypo = await help(["help", "int"], { checkout: "/some/checkout" });
+  check("help <typo> in a checkout never suggests init", checkoutTypo.code === 1 && checkoutTypo.text.includes("unknown command: int") && !checkoutTypo.text.includes("did you mean: init"), true);
+  const typo = await help(["stauts"]);
+  check("a mistyped command outside an app is unknown, with a suggestion", typo.code === 1 && typo.text.includes("unknown command: stauts") && typo.text.includes("did you mean: status"), true);
+  check("an option is left to the caller", helpWithoutDeployment(gate, ["--json"], context), undefined);
+  check("a gate command is left to the caller", helpWithoutDeployment(gate, ["version"], context), undefined);
   const checkoutCommand = await help(["help", "status"], { checkout: "/some/checkout" });
   check("help <deployment command> in a checkout does not advise init", checkoutCommand.code === 1 && !checkoutCommand.text.includes("clawforge init"), true);
 }

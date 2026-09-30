@@ -262,13 +262,21 @@ try {
     check("and its gate answers there too", upperStatus.code === 0 && upperStatus.output.includes("new-app"), true);
   }
 
-  // An app.ts in a checkout outside apps/<name> is not loaded as a second framework copy.
+  // An app.ts importing a checkout's framework sources outside apps/<name> is not loaded as a second copy.
   const strayDir = resolve(monorepoRoot, "docs", `${checkoutApp}-stray`);
   await mkdir(strayDir, { recursive: true });
   try {
-    await writeFile(join(strayDir, "app.ts"), "export default {};\n", "utf8");
+    await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "../../tools/framework/core/app.ts";\nexport default defineApp({});\n', "utf8");
     const stray = await clawforge(["status"], strayDir);
-    check("an app.ts in a checkout that the gate cannot take over is refused", stray.code === 1 && stray.output.includes("inside the ClawForge checkout") && !stray.output.includes("cannot load"), true);
+    check("a checkout-style app.ts that the gate cannot take over is refused", stray.code === 1 && stray.output.includes("imports the framework sources") && !stray.output.includes("cannot load"), true);
+    // Decided by content: the package specifier needs no second copy of the sources.
+    await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "@clawforge/framework/app";\nexport default defineApp({});\n', "utf8");
+    const installedStyle = await clawforge(["version", "--json"], strayDir);
+    check("an installed-style app.ts inside a checkout still runs under the global command", installedStyle.code === 0, true);
+    const scheduledStyle = await clawforge(["--project-root", strayDir, "version"], strayDir);
+    check("also with --project-root", scheduledStyle.code === 0, true);
+    const installedStatus = await clawforge(["status"], strayDir);
+    check("and its commands are not refused for their location", installedStatus.output.includes("imports the framework sources"), false);
   } finally {
     await rm(strayDir, { recursive: true, force: true });
   }
@@ -279,14 +287,33 @@ try {
   check("help in a checkout folder does not offer init and names the checkout", docsHelp.code === 0 && docsHelp.output.includes("ClawForge checkout") && !docsHelp.output.includes("clawforge init"), true);
   const inDocs = await clawforge(["status"], docs);
   check("in a non-app subfolder of a checkout it names the checkout entry", inDocs.code === 1 && inDocs.output.includes("from its root") && !inDocs.output.includes("clawforge init"), true);
+  const typo = await clawforge(["stauts"], docs);
+  check("a typo outside an app is an unknown command with a suggestion, not a missing app.ts", typo.code === 1 && typo.output.includes("unknown command: stauts") && typo.output.includes("did you mean: status") && !typo.output.includes("no app.ts"), true);
+  const helpTypo = await clawforge(["help", "int"], docs);
+  check("help <typo> in a checkout never suggests init", helpTypo.code === 1 && helpTypo.output.includes("unknown command: int") && !helpTypo.output.includes("init"), true);
+  const emptyDocs = resolve(docs, `${checkoutApp}-empty`);
+  await mkdir(emptyDocs, { recursive: true });
+  try {
+    const nested = await clawforge(["init"], emptyDocs);
+    check("an empty folder that is not apps/<name> is not offered for reuse", nested.code === 1 && nested.output.includes("(in bash also ./clawforge new-app <name>)") && !nested.output.includes("takes over"), true);
+  } finally {
+    await rm(emptyDocs, { recursive: true, force: true });
+  }
   const freshApp = resolve(appsDir, `${checkoutApp}-new`);
   await mkdir(freshApp, { recursive: true });
   try {
     const initInCheckout = await clawforge(["init"], freshApp);
-    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes("clawforge new-app <name>") && !initInCheckout.output.includes("'./clawforge'") && initInCheckout.output.includes("empty directory"), true);
+    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes("clawforge new-app <name>") && initInCheckout.output.includes("(in bash also ./clawforge new-app <name>)") && initInCheckout.output.includes(`new-app ${checkoutApp}-new takes over`), true);
     check("and writes nothing", existsSync(join(freshApp, "app.ts")), false);
   } finally {
     await rm(freshApp, { recursive: true, force: true });
+  }
+
+  // init --local in a checkout deployment: the checkout already resolves the editor types.
+  await mkdir(resolve(appDir, "recipes"), { recursive: true });
+  for (const where of [appDir, resolve(appDir, "recipes")]) {
+    const local = await clawforge(["init", "--local"], where);
+    check("init --local in a checkout deployment says nothing needs installing", local.code === 0 && local.output.includes("nothing to install") && !local.output.includes("npm install") && !local.output.includes("unknown command"), true);
   }
 
   const atRoot = await clawforge(["help"], monorepoRoot);

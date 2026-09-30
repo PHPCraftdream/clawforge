@@ -6,6 +6,18 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* The global command refuses an `app.ts` inside a checkout by what it imports, not where it sits:
+  only a relative import of the checkout's `tools/framework/` (the `new-app` declaration) outside
+  `apps/<name>` is refused; an installed-style `app.ts` (`@clawforge/framework`) under a checkout
+  path runs as before, including `version` and `--project-root`.
+* Checkout advice: the `(in bash also ./clawforge new-app <name>)` form is printed literally instead
+  of being localized away; "new-app <name> takes over this empty directory" is said only for an
+  empty `apps/<name>`; `help <typo>` in a checkout never suggests `init`; a mistyped command
+  outside an app is `unknown command` with a did-you-mean, not "no app.ts"; `--app <name>` on an
+  `apps/<name>` without `app.ts` says the directory exists and holds no `app.ts`.
+* `init --local` in a checkout deployment (`apps/<name>` or a subfolder) prints that the editor types
+  already resolve through the checkout and exits 0, instead of "unknown command: init" or an
+  `npm install` line for the global package.
 * System-wide `clawforge` hands over to the checkout's gate from `APPS/<name>` on Windows too (the
   `apps` directory is matched by its real spelling), so the global package no longer loads the
   checkout's `app.ts` next to its own framework. An `app.ts` inside a checkout that the gate cannot

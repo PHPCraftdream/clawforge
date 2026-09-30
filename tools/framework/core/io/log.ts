@@ -128,3 +128,9 @@ export function reportError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   write(`${C.red}error:${C.off} ${maskSecrets(message)}\n`);
 }
+
+/** reportError() for a message that names a literal `./clawforge` (another shell's form)
+ *  next to the localized one: printed verbatim, nothing rewritten. */
+export function reportErrorVerbatim(message: string): void {
+  write(`${C.red}error:${C.off} ${maskSecrets(message)}\n`, true);
+}

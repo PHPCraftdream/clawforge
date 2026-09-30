@@ -87,12 +87,24 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
   const appGate = isAppsDirectory(parent) && hasApp ? checkoutGate(dirname(parent)) : undefined;
   if (appGate !== undefined) runInstead(appGate, withApp(basename(canonical), argv), false);
 
-  // No hand-over, yet the app sits in a checkout: its app.ts imports that checkout's framework,
-  // so this package would load a second copy of it next to its own.
-  const checkout = hasApp ? findCheckoutRoot(appRoot) : undefined;
+  // No hand-over, yet its app.ts imports a checkout's framework sources: this package would
+  // load a second copy next to its own. An installed-style app.ts (the package specifier) is fine.
+  const checkout = hasApp && importsCheckoutSources(appRoot) ? findCheckoutRoot(appRoot) : undefined;
   if (checkout !== undefined && !isWithin(realOrSelf(checkout), realOrSelf(self))) {
-    reportError(`${appRoot} is inside the ClawForge checkout ${checkout} but is not one of its apps/<name> deployments — run it with the checkout's own entry: './clawforge' in ${checkout}`);
+    reportError(`${appRoot} imports the framework sources of the ClawForge checkout ${checkout} but is not one of its apps/<name> deployments — move it into apps/<name> (new-app), or switch its imports to @clawforge/framework`);
     process.exit(1);
+  }
+}
+
+// The monorepo-style declaration new-app writes: a relative import into tools/framework/.
+const CHECKOUT_IMPORT = /(?:from|import)\s*\(?\s*["'](?:\.\.?\/)+(?:[^"']*\/)?tools\/framework\//;
+
+/** True when `appRoot/app.ts` loads the framework from a checkout's sources rather than the package. */
+export function importsCheckoutSources(appRoot: string): boolean {
+  try {
+    return CHECKOUT_IMPORT.test(readFileSync(resolve(appRoot, "app.ts"), "utf8"));
+  } catch {
+    return false;
   }
 }
 

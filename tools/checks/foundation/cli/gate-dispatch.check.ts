@@ -276,4 +276,10 @@ check(
   ['deployment "openclaw" not found at /apps/openclaw', "create one with: ./clawforge new-app <name>"],
 );
 
+check(
+  "a directory without app.ts is not reported as missing, and new-app is not advised for it",
+  missingDeploymentReport(true, "x", "/apps/x", ["a"], true),
+  ["/apps/x exists but holds no app.ts — add one there, or pick another name (available: a)"],
+);
+
 finish("gate-dispatch");

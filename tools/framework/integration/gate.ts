@@ -79,15 +79,23 @@ export interface HelpContext {
  *  commands only. Returns the exit code, or undefined when argv is not a help request. */
 export function helpWithoutDeployment(commands: GateCommand[], argv: string[], context: HelpContext = { deploymentCommands: [] }): number | undefined {
   const first = argv[0];
-  if (first !== undefined && first !== "help" && first !== "--help" && first !== "-h") return undefined;
-  const target = first === "help" ? argv[1] : undefined;
   const { checkout } = context;
+  // `init` is refused in a checkout, so it is no suggestion there either.
+  const offered = checkout === undefined ? commands : commands.filter((entry) => entry.name !== "init");
+  const candidates = [...context.deploymentCommands, ...offered.map((entry) => entry.name), "help"];
+  if (first !== undefined && first !== "help" && first !== "--help" && first !== "-h") {
+    // A word nothing declares is a typo, not a missing app.ts; options are left to the caller.
+    if (first.startsWith("-") || first === "control-mcp" || candidates.includes(first) || commands.some((entry) => entry.name === first)) return undefined;
+    reportUnknownCommand(first, candidates);
+    return 1;
+  }
+  const target = first === "help" ? argv[1] : undefined;
   if (target === undefined || target === "--help" || target === "-h" || target === "help") {
     log("clawforge — manage self-hosted OpenClaw deployments");
     info("");
     info("Usage: ./clawforge <command> [options]");
     info("");
-    for (const line of gateHelpLines(checkout === undefined ? commands : commands.filter((entry) => entry.name !== "init"))) info(line);
+    for (const line of gateHelpLines(offered)) info(line);
     info("");
     if (checkout === undefined) info("The full command list appears inside an initialised app folder (create one with: ./clawforge init).");
     else info(`This is a ClawForge checkout (${checkout}): ./clawforge help at its root lists every command, apps/<name> holds the deployments.`);
@@ -106,7 +114,7 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
     );
     return 1;
   }
-  reportUnknownCommand(target, [...context.deploymentCommands, ...commands.map((entry) => entry.name), "help"]);
+  reportUnknownCommand(target, candidates);
   return 1;
 }
 
@@ -201,9 +209,14 @@ export function missingDeploymentReport(
   name: string,
   deploymentDir: string,
   available: readonly string[],
+  /** The directory is there but holds no app.ts: new-app would refuse it as non-empty. */
+  directoryExists = false,
 ): string[] {
   if (!explicit && available.length > 1) {
     return [`several deployments (${available.join(", ")}) — pick one with --app <name> or OC_APP`];
+  }
+  if (directoryExists) {
+    return [`${deploymentDir} exists but holds no app.ts — add one there, or pick another name${available.length === 0 ? "" : ` (available: ${available.join(", ")})`}`];
   }
   return [
     `deployment "${name}" not found at ${deploymentDir}`,

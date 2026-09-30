@@ -293,7 +293,7 @@ try {
     reportUnknownCommand(argv[0], baseCommandNames);
     process.exit(1);
   } else {
-    for (const line of missingDeploymentReport(appExplicit, name, deploymentDir, available)) reportError(line);
+    for (const line of missingDeploymentReport(appExplicit, name, deploymentDir, available, await access(deploymentDir).then(() => true, () => false))) reportError(line);
     process.exit(1);
   }
 }

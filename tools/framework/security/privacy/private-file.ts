@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { spawnLocal } from "../../runtime/transport/transport.ts";
 import { createPathBridge } from "../../core/paths.ts";
 import { info, warn } from "../../core/io/log.ts";
+import { docsUrl } from "../../core/io/docs-url.ts";
 
 const PRIVATE_MODE = 0o600;
 // A private directory, unlike a file, needs the owner's execute bit to stay enterable.
@@ -330,6 +331,8 @@ async function reportWslBoundary(file: string): Promise<void> {
   }
 }
 
+const WSL_BOUNDARY_DOC = docsUrl("guide/requirements.md#windows-acl-and-the-wsl-boundary");
+
 /** The condensed form: one line plus a pointer to the full explanation, instead of the two
  *  warning/info pairs above. For new-app/init, which suppress reportWslBoundary at
  *  file-creation time and call this once their own "next:" block is already on screen. */
@@ -337,10 +340,10 @@ export async function wslBoundaryNote(file: string): Promise<string | undefined>
   const findings = await findWslBoundary(file);
   if (findings === undefined) return undefined;
   if (findings.exposed.length > 0) {
-    return `${file} is reachable by another Linux user under WSL — a Windows ACL does not stop that; see docs/guide/requirements.md#windows-acl-and-the-wsl-boundary`;
+    return `${file} is reachable by another Linux user under WSL — a Windows ACL does not stop that; see ${WSL_BOUNDARY_DOC}`;
   }
   if (findings.unverified.length > 0) {
-    return `${file}'s exposure across the WSL boundary could not be fully verified; see docs/guide/requirements.md#windows-acl-and-the-wsl-boundary`;
+    return `${file}'s exposure across the WSL boundary could not be fully verified; see ${WSL_BOUNDARY_DOC}`;
   }
   return undefined;
 }

@@ -20,7 +20,8 @@ import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, type GateCommand } from "../integration/gate.ts";
 import { reportError } from "../core/io/log.ts";
 import { useDeployment } from "../runtime/deployment.ts";
-import { initApp } from "../integration/deployment/init.ts";
+import { initApp, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
+import { parseDeclaredArgs } from "../core/arguments.ts";
 import { normalizeVersionAlias, versionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
 import { delegateToOwnFramework, resolveFrameworkFromSelf } from "./delegate.ts";
@@ -53,8 +54,9 @@ const gateCommands: GateCommand[] = [
       "are created automatically, without changing global client settings.\n" +
       "The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
       "Refuses if app.ts already exists — run this once, then ./clawforge bootstrap.",
-    run: async () => {
-      await initApp(appRoot);
+    arguments: INIT_ARGUMENTS,
+    run: async (args) => {
+      await initApp(appRoot, { local: parseDeclaredArgs(INIT_ARGUMENTS, args).local === true });
       return 0;
     },
   },

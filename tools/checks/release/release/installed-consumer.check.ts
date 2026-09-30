@@ -99,6 +99,7 @@ try {
     // --- init, then a command, both through the installed entry point -----------------------
     const initialised = await run(process.execPath, ["--experimental-strip-types", entry, "init"], consumer);
     check("init succeeds in a default consumer directory", initialised.code, 0);
+    check("init's commit advice names mcp-launch.mjs, not a single file", initialised.output.includes("mcp-launch.mjs") && !initialised.output.includes("only framework-adjacent"), true);
 
     const consumerPackage = JSON.parse(await readFile(resolve(consumer, "package.json"), "utf8")) as { type?: string };
     check("and leaves the directory loadable as ESM", consumerPackage.type, "module");

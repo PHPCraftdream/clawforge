@@ -3,6 +3,7 @@
 // plumbing ComposeOperations.withEnvFile already owns. Split out of runtime-docker.ts to keep
 // that file orchestration-only.
 
+import { docsUrl } from "../../core/io/docs-url.ts";
 import type { Settings } from "../../core/env.ts";
 import type { PathBridge } from "../../core/paths.ts";
 import type { ExecResult, Transport } from "../transport/transport.ts";
@@ -71,7 +72,7 @@ export function buildStack(
     };
     for (const legacyProject of ownership.legacyProjects ?? []) {
       if ((await containers(legacyProject)).length > 0) {
-        throw new Error(`recipe namespace cutover required: legacy project "${legacyProject}" still has containers; ownership is ambiguous, so no stack was stopped or adopted. Inspect its Compose labels and mounts, back up its data, then explicitly run docker compose --project-name "${legacyProject}" --file <verified-old-compose-file> down (without --volumes). See docs/guide/recipes.md before reinstalling into "${project}".`);
+        throw new Error(`recipe namespace cutover required: legacy project "${legacyProject}" still has containers; ownership is ambiguous, so no stack was stopped or adopted. Inspect its Compose labels and mounts, back up its data, then explicitly run docker compose --project-name "${legacyProject}" --file <verified-old-compose-file> down (without --volumes). See ${docsUrl("guide/recipes.md")} before reinstalling into "${project}".`);
       }
     }
     const ids = await containers(project);
@@ -86,7 +87,7 @@ export function buildStack(
         || labels["com.docker.compose.project.working_dir"] !== directory
         || labels["com.docker.compose.project.config_files"] !== file;
     })) {
-      throw new Error(`recipe project "${project}" has containers not verifiably linked to "${file}"; refusing to read, adopt, stop or remove them. Inspect Compose labels and mounts and follow the operator cutover in docs/guide/recipes.md.`);
+      throw new Error(`recipe project "${project}" has containers not verifiably linked to "${file}"; refusing to read, adopt, stop or remove them. Inspect Compose labels and mounts and follow the operator cutover in ${docsUrl("guide/recipes.md")}.`);
     }
   };
   const compose = async (args: string[], stream = true): Promise<ExecResult> => {

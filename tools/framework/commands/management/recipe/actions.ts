@@ -5,6 +5,7 @@
 import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { docsUrl } from "#src/core/io/docs-url.ts";
 import { dieUnknownAction } from "#src/core/arguments.ts";
 import type { Context } from "#src/core/context.ts";
 import {
@@ -233,7 +234,7 @@ async function runImportAction(name: string, rest: string[]): Promise<void> {
 
 /** compose.yml skeleton `recipe new` writes: one placeholder service, restart policy already
  *  right (docs/guide/recipes.md) — the operator fills in the real image/build. */
-const NEW_RECIPE_COMPOSE = `# One compose project per recipe (docs/guide/recipes.md) — replace the placeholder
+const NEW_RECIPE_COMPOSE = `# One compose project per recipe (${docsUrl("guide/recipes.md")}) — replace the placeholder
 # image with a real service before \`recipe install\`.
 services:
   app:
@@ -249,7 +250,7 @@ function newRecipePrepareStub(): string {
   return `// Runs before build and after start (afterStart). ${NEW_RECIPE_HOOK_NOTE}
 //
 // Uncomment to write private target files — see recipe.json's privatePaths and
-// docs/guide/recipes.md ("Private files: privatePaths and privateFiles").
+// ${docsUrl("guide/recipes.md")} ("Private files: privatePaths and privateFiles").
 //
 // import { ensurePrivateTargetDirectory, replacePrivateTargetFile, generatePrivateSecret } from "@clawforge/framework/private-config";
 //

@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { locksDir } from "../core/env.ts";
 import type { Context } from "../core/context.ts";
 import type { ExecResult } from "../runtime/transport/transport.ts";
+import { docsUrl } from "../core/io/docs-url.ts";
 import { machineName, removeEmptyDirectory } from "../runtime/lock/process-identity.ts";
 
 interface MutationOwner {
@@ -106,7 +107,7 @@ function busy(path: string, owner?: MutationOwner): Error {
       ? "wait for it to finish"
       // A remote pid's liveness can't be checked from here — names the exact flag/host to use.
       : `check whether it is still running on ${owner.machine}; if that process is gone, rerun with ` +
-        `--break-foreign-lock ${owner.machine} (see docs/architecture.md, instance lock)`;
+        `--break-foreign-lock ${owner.machine} (see ${docsUrl("architecture.md")}, instance lock)`;
   return new Error(`another instance-lock change is in progress at ${path} (${identity}); ${advice}`);
 }
 

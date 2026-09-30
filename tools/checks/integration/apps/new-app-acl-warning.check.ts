@@ -40,7 +40,7 @@ try {
 
   const createdIndex = output.indexOf(`created ${resolve(appsDir, name)}`);
   const nextIndex = output.indexOf("next:");
-  const boundaryIndex = output.indexOf("docs/guide/requirements.md#windows-acl-and-the-wsl-boundary");
+  const boundaryIndex = output.indexOf("https://github.com/PHPCraftdream/clawforge/blob/main/docs/guide/requirements.md#windows-acl-and-the-wsl-boundary");
 
   check("new-app's output names what it created", createdIndex !== -1, true);
   check("...and prints a next: block", nextIndex !== -1, true);

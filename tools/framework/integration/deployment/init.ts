@@ -11,6 +11,8 @@
 
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
 import { resolve, basename, dirname, relative } from "node:path";
+import { frameworkRoot } from "../../core/env.ts";
+import type { CommandArgument } from "../../core/app.ts";
 import { log, info, die } from "../../core/io/log.ts";
 import { safeName } from "../../core/names.ts";
 import { parseEnv } from "../../core/env.ts";
@@ -48,7 +50,7 @@ const DESIRED_STATE = `[
 ]
 `;
 
-// The only framework-adjacent file committed to a consumer repo — invokes the installed
+// The committed ./clawforge — invokes the installed
 // package directly so Git Bash under WSL works even when only `node.exe` is on PATH.
 // Bash-only, same as this monorepo's own ./clawforge; Windows users can use npm's
 // generated node_modules/.bin/clawforge.cmd or .ps1 instead. Without a local install it
@@ -239,7 +241,37 @@ async function applyModuleType(root: string, action: ModuleTypeAction): Promise<
   }
 }
 
-export async function initApp(root: string): Promise<void> {
+export const INIT_ARGUMENTS: CommandArgument[] = [
+  { name: "local", description: "Print the npm command for editor types", kind: "flag" },
+];
+
+/** The package directory this CLI runs from: frameworkRoot in source, its parent in dist/. */
+async function packageDirectory(): Promise<string | undefined> {
+  for (const candidate of [frameworkRoot, resolve(frameworkRoot, "..")]) {
+    try {
+      const parsed = JSON.parse(await readFile(resolve(candidate, "package.json"), "utf8")) as { name?: string };
+      if (parsed.name === "@clawforge/framework") return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return undefined;
+}
+
+/** `--local`: editors resolve `@clawforge/framework` only from a node_modules the app has.
+ *  The package is unpublished, so a registry spec would fail; the running copy's own directory
+ *  works today. --no-save: `--save-dev <dir>` would commit a machine path (file:…) into
+ *  package.json. Printed, never run — init does not run npm. */
+async function localTypesLines(): Promise<string[]> {
+  const directory = await packageDirectory();
+  const spec = directory === undefined ? "@clawforge/framework" : `"${directory}"`;
+  return [
+    `editor types: run  npm install --no-save ${spec}`,
+    "  (not on the registry yet; once it is: npm install --save-dev @clawforge/framework)",
+  ];
+}
+
+export async function initApp(root: string, options: { local?: boolean } = {}): Promise<void> {
   // The directory's own name becomes the compose project name (deploymentDir()'s basename
   // — see deployment.ts) — checked first, since there's no argument to fall back to here.
   const base = basename(root);
@@ -291,8 +323,12 @@ export async function initApp(root: string): Promise<void> {
   info("next:");
   for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", "./clawforge bootstrap")) info(line);
   info("Claude Code and Codex project MCP settings are ready; trust the project and reconnect the clients.");
-  info("secrets and snapshots stay inside this directory; ./clawforge is the only framework-adjacent");
-  info("file meant to be committed — commit it, .gitignore already excludes the rest");
+  info("secrets and snapshots stay inside this directory; commit ./clawforge, mcp-launch.mjs, app.ts,");
+  info("package.json, config/ and recipes/ — .gitignore keeps .env, secrets/, state/ and sets/ out");
+  // Types resolve already when this CLI runs from the app's own node_modules.
+  const ownInstall = frameworkRoot.startsWith(resolve(root, "node_modules"));
+  if (!ownInstall && options.local === true) for (const line of await localTypesLines()) info(line);
+  else if (!ownInstall) info("editors cannot resolve @clawforge/framework types without a local install: clawforge init --local");
 
   const boundaryNote = await wslBoundaryNote(envFile);
   if (boundaryNote !== undefined) info(boundaryNote);

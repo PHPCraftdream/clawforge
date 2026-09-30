@@ -184,6 +184,13 @@ All notable changes to `@clawforge/framework` will be documented here.
   found instead of exec'ing npm's shim (which failed with `exec: node: not found` under WSL and
   cron), and the Windows Task Scheduler line records the running package's entry instead of a
   non-existent `node_modules/@clawforge/framework/...` path.
+* `init` names what is meant to be committed accurately (`./clawforge`, `mcp-launch.mjs`, `app.ts`,
+  `package.json`, `config/`, `recipes/`), the `.env` header is true for both `new-app` and `init`,
+  and messages that pointed at repository-relative `docs/...` paths (WSL boundary, instance lock,
+  recipe cutover) now print absolute GitHub URLs from one helper (`core/io/docs-url.ts`).
+* `clawforge init --local` (system-wide install: `app.ts` was unresolved in editors) prints the
+  `npm install --save-dev` command that gives the app its own `@clawforge/framework` for types; init
+  does not run npm. Without the flag, init hints at it.
 * Private target publication decides escalation once, on the destination directory, and uses it
   for staging, rename and cleanup alike. An operator who is the runtime owner (uid 1000) writing
   into a root-only directory used to stage through sudo and then rename and clean up without it:

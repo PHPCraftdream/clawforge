@@ -170,6 +170,10 @@ All notable changes to `@clawforge/framework` will be documented here.
   bootstrapped — run `./clawforge bootstrap`": it reports there is nothing to destroy and exits
   0 (dry run and `--yes --confirm-name` alike), takes no lock and creates no directory. Present
   `--backups`/`--snapshots` directories are still removed; a bootstrapped deployment is unchanged.
+* Docs no longer send users to an unpublished package: the npm install sections in
+  `README.md`, `docs/guide/deploy-and-mcp.md` and `tools/framework/README.md` say the package is
+  not on the registry until the first release and give the working path (`npm run install:system`,
+  or `npm pack` + `npm install <tgz>`); the registry commands are marked "after the first release".
 * Private target publication decides escalation once, on the destination directory, and uses it
   for staging, rename and cleanup alike. An operator who is the runtime owner (uid 1000) writing
   into a root-only directory used to stage through sudo and then rename and clean up without it:
@@ -491,6 +495,8 @@ All notable changes to `@clawforge/framework` will be documented here.
   without them, instead of failing on BSD `tar`/`mv` or a missing `mkdir`; the Linux CI job
   requires it. The nine "real POSIX filesystem" checks no longer treat every non-Windows host as Linux.
 * Comments condensed to the invariant; imports of one style per file.
+* `docs/internal/README.md`: an index of the review, session-task, plan and audit documents,
+  grouped by series, newest first, with status notes.
 
 ## 0.1.0
 

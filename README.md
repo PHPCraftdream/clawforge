@@ -84,6 +84,11 @@ local `@clawforge/framework` dependency (the app's version pin), or, inside this
 with neither. The `./clawforge` script and the MCP launcher that `init` writes fall back to it
 the same way. Remove it with `npm uninstall -g @clawforge/framework`.
 
+The package is not on the npm registry yet (first release: [RELEASE.md](RELEASE.md)), so
+`npm run install:system` from a clone is the only way to get the system-wide command for now; for
+a per-project dependency, run `npm pack` in `tools/framework` and `npm install <path-to-tgz>` in
+the app. After the first release `npm install -g @clawforge/framework` does the same without a clone.
+
 ## I want to…
 
 | I want to… | Run | Notes |

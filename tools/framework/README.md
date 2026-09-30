@@ -12,6 +12,11 @@ npx clawforge init
 ./clawforge bootstrap
 ```
 
+If `npm install` answers 404, the first release has not been published yet: build the tarball
+from a clone of the repository (`npm pack` in `tools/framework`) and `npm install
+<path-to-tgz>` in the app instead, or run `npm run install:system` in the clone for a
+system-wide command. The steps after the install are the same.
+
 The package requires Node.js 24 or newer. `clawforge init` writes an application
 declaration, host-specific environment template, a `clawforge` launcher, and project-local
 MCP configuration for Claude Code and Codex. It never edits global client settings.

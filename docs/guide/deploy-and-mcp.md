@@ -89,21 +89,35 @@ the service starts if the host refuses the bind.
 ### Installing in a separate repository (npm)
 
 The second way to get the framework: instead of cloning this repository, install the
-published `@clawforge/framework` package in your own project. The consumer's repository
+`@clawforge/framework` package in your own project. The consumer's repository
 holds only application configuration, while the framework itself lives in `node_modules/`
 and is never committed.
 
+**The package is not published to npm yet** (`npm view @clawforge/framework` → 404; the first
+release is described in [RELEASE.md](../../RELEASE.md)). Until then, take it from a clone of this
+repository: pack it once and install the tarball in the app.
+
 ```bash
-npm install @clawforge/framework
+# in a clone of this repository
+cd tools/framework && npm pack               # writes clawforge-framework-<version>.tgz here
+# in your own project
+npm install <path-to-clawforge-framework-tgz>
+```
+
+After the first release the tarball step is replaced by `npm install @clawforge/framework`.
+Either way the rest is the same:
+
+```bash
 node_modules/.bin/clawforge init             # app.ts, config/, .env, .gitignore, ./clawforge — into this repo
 ./clawforge bootstrap --check                # read-only: docker, compose v2, this directory, the port, disk space
 ./clawforge bootstrap
 ```
 
-Or with no dependency in the repository at all: a system-wide `clawforge` (`npm install -g
-@clawforge/framework`, or `npm run install:system` from a ClawForge checkout) runs `clawforge
+Or with no dependency in the repository at all: a system-wide `clawforge` runs `clawforge
 init` and every later command there, and both `./clawforge` and the MCP launcher fall back to it.
-A local dependency, when present, always wins over the system-wide command.
+Until the first release, install it with `npm run install:system` from a ClawForge checkout; after
+it, `npm install -g @clawforge/framework` works too. A local dependency, when present, always wins
+over the system-wide command.
 
 What lands in the consumer's repository (and is the only thing worth committing): `app.ts`,
 `config/desired-state.json`, `.gitignore`, and `clawforge` — a thin committed script delegating to

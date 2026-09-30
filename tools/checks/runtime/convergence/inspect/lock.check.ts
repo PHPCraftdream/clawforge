@@ -118,12 +118,18 @@ try {
     // cannot disagree about what to do next for the same drift. The old code hardcoded
     // ["./clawforge lock"], regardless of what each problem said.
     let output = "";
-    await withOutputSink(
-      (chunk) => {
-        output += chunk;
-      },
-      () => lock(stubContext({ targetEnv: "ZAI_API_KEY=k\n" }), ["--check", "--json"]),
-    );
+    let failure = "";
+    try {
+      await withOutputSink(
+        (chunk) => {
+          output += chunk;
+        },
+        () => lock(stubContext({ targetEnv: "ZAI_API_KEY=k\n" }), ["--check", "--json"]),
+      );
+    } catch (error) {
+      failure = (error as Error).message;
+    }
+    check("lock --check fails when it reports drift", failure, "1 difference(s) from the lock");
     const payload = JSON.parse(output) as { problems: Problem[]; nextActions: string[] };
     check("lock --check reports the drift the inspection saw", payload.problems.map((entry) => entry.code), ["LOCK_DRIFT"]);
     check("its next actions are the problems' own remedies", payload.nextActions, nextActions(payload.problems));

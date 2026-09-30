@@ -174,6 +174,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   `README.md`, `docs/guide/deploy-and-mcp.md` and `tools/framework/README.md` say the package is
   not on the registry until the first release and give the working path (`npm run install:system`,
   or `npm pack` + `npm install <tgz>`); the registry commands are marked "after the first release".
+* `lock --check` now exits non-zero when it lists any difference or cannot read live state (the
+  JSON/MCP path still emits the report, then fails), so it can gate CI. On an instance that is not
+  running the plugin/skill inventory is reported as `GATEWAY_DOWN` ("not running — start it or
+  bootstrap first") instead of `CLI_READ_FAILED` "batch transport failed"; a running instance whose
+  read failed keeps `CLI_READ_FAILED`.
 * Private target publication decides escalation once, on the destination directory, and uses it
   for staging, rename and cleanup alike. An operator who is the runtime owner (uid 1000) writing
   into a root-only directory used to stage through sudo and then rename and clean up without it:

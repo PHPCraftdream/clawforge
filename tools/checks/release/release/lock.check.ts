@@ -20,6 +20,7 @@ import type { Context } from "#framework/core/context.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Problem } from "#framework/service/inspection.ts";
 import type { BatchedCliResult } from "#framework/service/openclaw-cli.ts";
+import { NotBootstrapped } from "#framework/runtime/runtime.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 const files = { "server.ts": "a".repeat(64), "data/page.md": "b".repeat(64) };
@@ -327,11 +328,16 @@ check("and confirms secrets are already kept out of that new repository", initAd
   const skills = success("skills", [skill]);
   let slots = [plugins, skills];
   let wholeBatch: "ok" | "throw" | "exit" | "incomplete" = "ok";
+  let running: boolean | "never" = true;
   const ctx = {
     settings: { image: "fixture@sha256:aaa", dataDir: "/fixture/data" },
     transport: { exists: async () => true, readFile: async () => "{}" },
     runtime: {
       imageReference: async () => "fixture@sha256:aaa",
+      isRunning: async () => {
+        if (running === "never") throw new NotBootstrapped("/fixture/data");
+        return running;
+      },
       runOneOff: async () => {
         if (wholeBatch === "throw") throw new Error("transport unavailable");
         if (wholeBatch === "exit") return { code: 1, stdout: "", stderr: "" };
@@ -356,6 +362,14 @@ check("and confirms secrets are already kept out of that new repository", initAd
     { name: "invalid plugin entry", slots: [success("plugins", [plugin, { id: "broken" }]), skills], unknown: ["plugins"] },
     { name: "invalid skill entry", slots: [plugins, success("skills", [skill, null])], unknown: ["skills"] },
   ];
+  // `lock --check` output plus how it ended: a difference throws after emitting its report.
+  const runCheck = async (): Promise<{ output: string; failure: string }> => {
+    let output = "";
+    let failure = "";
+    try { await withOutputSink((chunk) => { output += chunk; }, () => lock(ctx, ["--check", "--json"])); }
+    catch (error) { failure = (error as Error).message; }
+    return { output, failure };
+  };
   try {
     const baseline = await currentComposition(ctx, { includeExtensions: true });
     for (const priorPins of [true, false]) {
@@ -371,9 +385,9 @@ check("and confirms secrets are already kept out of that new repository", initAd
         catch (error) { refusal = (error as Error).message; }
         check(`${label}: writer refuses unknown inventory`, refusal.includes("lock not written") && scenario.unknown.every((key) => refusal.includes(`${key} list`)), true);
         check(`${label}: writer preserves exact prior bytes`, await readFile(lockFile(), "utf8"), priorBytes);
-        let output = "";
-        await withOutputSink((chunk) => { output += chunk; }, () => lock(ctx, ["--check", "--json"]));
+        const { output, failure } = await runCheck();
         const report = JSON.parse(output) as { problems: Problem[] };
+        check(`${label}: check fails on unknown inventory`, failure.includes("difference(s) from the lock"), true);
         check(`${label}: check names only unknown inventories`,
           report.problems.filter((entry) => entry.code === "CLI_READ_FAILED").map((entry) =>
             entry.detail.includes("plugins list") ? "plugins" : "skills"), scenario.unknown);
@@ -385,9 +399,8 @@ check("and confirms secrets are already kept out of that new repository", initAd
     wholeBatch = "ok";
     slots = [{ code: 1, stdout: "" }, success("skills", [])];
     await writeFile(lockFile(), JSON.stringify(baseline));
-    let partialOutput = "";
-    await withOutputSink((chunk) => { partialOutput += chunk; }, () => lock(ctx, ["--check", "--json"]));
-    const partial = JSON.parse(partialOutput) as { problems: Problem[] };
+    const partialRun = await runCheck();
+    const partial = JSON.parse(partialRun.output) as { problems: Problem[] };
     check("confirmed skill removal remains visible when plugins are unknown",
       partial.problems.map((entry) => entry.code), ["CLI_READ_FAILED", "SKILL_DRIFT"]);
     let compositionRefusal = "";
@@ -397,14 +410,29 @@ check("and confirms secrets are already kept out of that new repository", initAd
       compositionRefusal.includes("plugins list") && compositionRefusal.includes("unknown"), true);
     slots = [success("plugins", []), success("skills", [])];
     await writeFile(lockFile(), JSON.stringify(baseline));
-    let output = "";
-    await withOutputSink((chunk) => { output += chunk; }, () => lock(ctx, ["--check", "--json"]));
-    const removed = JSON.parse(output) as { problems: Problem[] };
+    const removedRun = await runCheck();
+    check("differences make lock --check exit non-zero", removedRun.failure, "2 difference(s) from the lock");
+    const removed = JSON.parse(removedRun.output) as { problems: Problem[] };
     check("confirmed empty inventories prove both removals", removed.problems.map((entry) => entry.code), ["PLUGIN_DRIFT", "SKILL_DRIFT"]);
     await withOutputSink(() => {}, () => lock(ctx, ["--json"]));
     const repinned = JSON.parse(await readFile(lockFile(), "utf8")) as DeploymentLock;
     check("confirmed empty inventory can explicitly remove prior pins", [repinned.plugins, repinned.skills], [[], []]);
     slots = [plugins, skills];
+    await writeFile(lockFile(), JSON.stringify(baseline));
+    const matching = await runCheck();
+    check("a matching instance exits zero", [matching.failure, (JSON.parse(matching.output) as { problems: Problem[] }).problems], ["", []]);
+    for (const [name, state] of [["never bootstrapped", "never"], ["stopped", false], ["running", true]] as const) {
+      running = state;
+      const isRunning = state === true;
+      wholeBatch = "throw";
+      const down = await runCheck();
+      const codes = (JSON.parse(down.output) as { problems: Problem[] }).problems.map((entry) => entry.code);
+      check(`${name} instance with unreadable inventory fails the check`, down.failure !== "", true);
+      check(`${name} instance: unreadable inventory is classified`, codes, isRunning ? ["CLI_READ_FAILED", "CLI_READ_FAILED"] : ["GATEWAY_DOWN", "GATEWAY_DOWN"]);
+      check(`${name} instance: not-running detail`, down.output.includes("not running — start it or bootstrap first"), !isRunning);
+    }
+    running = true;
+    wholeBatch = "ok";
     await withOutputSink(() => {}, () => lock(ctx, ["--json"]));
     const restored = JSON.parse(await readFile(lockFile(), "utf8")) as DeploymentLock;
     check("successful inventory retains plugin identity and version", restored.plugins, baseline.plugins);

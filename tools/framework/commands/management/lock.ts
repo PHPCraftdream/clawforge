@@ -13,7 +13,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info } from "#src/core/io/log.ts";
+import { log, info, dieWithExitCode } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { frameworkRoot } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, desiredStateFile, recipesDir } from "#src/runtime/deployment.ts";
@@ -302,6 +302,7 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
     const problems = [...inventoryProblems, ...compareLock(await readLock(), current)];
     if (jsonOnly || isCaptured()) {
       emit(`${JSON.stringify({ deployment: current.deployment, problems, nextActions: nextActions(problems) }, null, 2)}\n`);
+      if (problems.length > 0) dieWithExitCode(`${problems.length} difference(s) from the lock`, 1);
       return;
     }
     if (problems.length === 0) {
@@ -310,7 +311,7 @@ export async function lock(ctx: Context, args: string[]): Promise<void> {
     }
     log(`${problems.length} difference(s) from the lock`);
     for (const entry of problems) info(`${entry.code}  ${entry.detail}`);
-    return;
+    dieWithExitCode(`${problems.length} difference(s) from the lock`, 1);
   }
   if (inventoryProblems.length > 0) {
     throw new Error(`lock not written: ${inventoryProblems.map((entry) => entry.detail).join("; ")}`);

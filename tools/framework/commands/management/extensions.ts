@@ -13,6 +13,7 @@
 // skill's install version lives only in a per-skill call not part of the batched read this
 // module shares with doctor, so skill drift here is add/remove only, never version.
 
+import { BATCH_NOT_RUNNING } from "#src/service/openclaw-cli.ts";
 import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
@@ -64,6 +65,10 @@ function inventoryEntries(result: BatchedCliResult, key: "plugins" | "skills", p
     } catch {
       reason = "invalid JSON response";
     }
+  }
+  if (reason === BATCH_NOT_RUNNING) {
+    problems.push(problem("GATEWAY_DOWN", `openclaw ${key} list not read: instance is not running — start it or bootstrap first`));
+    return undefined;
   }
   problems.push(problem("CLI_READ_FAILED", `openclaw ${key} list could not be read (${reason}); live state is unknown`));
   return undefined;

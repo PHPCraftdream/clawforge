@@ -7,8 +7,11 @@ unfixed findings; every other status is taken from the document's own summary.
 
 ## Current
 
+* [review-2026-10-01-round-31.md](review-2026-10-01-round-31.md) — round 31, first review of the
+  round-30 fixes. Open: R31-01…R31-09 (P0: 0, P1: 0, P2: 1, P3: 8).
 * [review-2026-10-01-round-30.md](review-2026-10-01-round-30.md) — round 30, first review of the
-  round-29 fixes. Open: R30-01…R30-08 (P0: 0, P1: 0, P2: 1, P3: 7).
+  round-29 fixes. R30-01…R30-08 all fixed (7480bda, 573e6a1, 42ecba6, 141212b, 23b5ae0, 88c1f6b
+  and 6c43b01); follow-ups in round 31.
 * [review-2026-09-30-round-29.md](review-2026-09-30-round-29.md) — round 29, first review of the
   round-28 fixes. R29-01…R29-09 all fixed (1f79381, abae3fa, 85e22b1, 2aafab3 and 650edf9);
   follow-ups in round 30.

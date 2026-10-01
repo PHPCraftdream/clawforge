@@ -14,7 +14,8 @@
 import { mkdtemp, writeFile, rm, readFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { buildSet, set, assertNoSecretValues } from "#framework/commands/sets/set.ts";
+import { buildSet, assertNoSecretValues } from "#framework/commands/sets/set.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { DESIRED_STATE_PATH, setManifestId, canonicalJson } from "#framework/set/artifacts/model.ts";
 import type { SetManifest } from "#framework/set/artifacts/model.ts";
 import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
@@ -22,6 +23,8 @@ import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { ctx, DIGEST, STORE_KEY, TOKEN, createBuildDeployment, removeBuildDeployment, stringsOf, tarList } from "#checks/sets/artifact/set-build/fixture.ts";
+
+const set = (ctx: Parameters<NonNullable<typeof openclawCommands.set.run>>[0], argv: string[]): Promise<void> => openclawCommands.set.run!(ctx, argv);
 
 // The archive checks, the recipe-source scenarios (recipes-source.check.ts) and the refusals
 // (refusals.check.ts) each run against a fresh copy of the same deployment.

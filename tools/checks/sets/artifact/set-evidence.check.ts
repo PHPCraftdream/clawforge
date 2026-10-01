@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSet } from "#framework/commands/sets/set.ts";
 import { accept } from "#framework/commands/orchestration/accept.ts";
-import { setReceipts } from "#framework/commands/sets/set-receipts.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { listReceipts, readReceipt } from "#framework/set/artifacts/receipt.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -128,7 +128,7 @@ try {
   assert.equal(blockedReceipt.coverage,"complete");
   assert.deepEqual(blockedReceipt.security,{blocking:1,reasons:["GATEWAY_PUBLICLY_BOUND"]});
   let storedJson="";
-  await withOutputSink(()=>{},()=>setReceipts(ctx,["--set-id",built.id,"--receipt",blockedReceipt.receiptId,"--json"]),chunk=>{storedJson+=chunk;});
+  await withOutputSink(()=>{},()=>openclawCommands.set.run!(ctx,["receipts","--set-id",built.id,"--receipt",blockedReceipt.receiptId,"--json"]),chunk=>{storedJson+=chunk;});
   assert.equal(JSON.parse(storedJson).verdict,"not-verified","set receipts must report the persisted gate refusal");
   assert.deepEqual(JSON.parse(storedJson).security,blockedReceipt.security);
 

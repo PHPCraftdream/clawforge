@@ -1,25 +1,21 @@
 // `./clawforge set receipts` — inspect durable acceptance evidence written for a set.
 
-import { die, info, log } from "#src/core/io/log.ts";
+import { info, log } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/artifacts/receipt.ts";
 import type { Context } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
+import { ArgumentError, defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
-/** The slice of `set`'s declaration `receipts`'s own argv actually uses. */
-export const SET_RECEIPTS_ARGUMENTS: CommandArgument[] = [
+export const SET_RECEIPTS_ARGUMENTS = [
   { name: "set-id", description: "With receipts: filter by immutable set id", kind: "option", valueName: "id" },
   { name: "receipt", description: "With receipts: show this receipt; requires --set-id", kind: "option", valueName: "id" },
-  { name: "json", description: "Emit the receipts as JSON", kind: "flag" },
-];
+  { name: "json", summary: "Emit the receipts as JSON", description: "Emit the receipts as JSON", kind: "flag" },
+] as const satisfies readonly ArgumentSpec[];
 
-function validateArgs(args: string[], scope?: ActionScope): { setId?: string; receiptId?: string; json: boolean } {
-  const parsed = parseDeclaredArgs(SET_RECEIPTS_ARGUMENTS, args, scope);
-  const setId = parsed["set-id"] as string | undefined;
-  const receiptId = parsed.receipt as string | undefined;
-  if (receiptId !== undefined && setId === undefined) die("--receipt requires --set-id");
-  return { setId, receiptId, json: parsed.json === true };
+function receiptsPlan(values: Values<typeof SET_RECEIPTS_ARGUMENTS>): { setId?: string; receiptId?: string; json: boolean } {
+  const { "set-id": setId, receipt: receiptId, json } = values;
+  if (receiptId !== undefined && setId === undefined) throw new ArgumentError("--receipt requires --set-id", "receipt");
+  return { setId, receiptId, json };
 }
 
 function showLine(receipt: AcceptanceReceipt): void {
@@ -48,8 +44,7 @@ function securitySummary(receipt: AcceptanceReceipt): string {
 
 /** The persistence root is deploymentDir(), while the optional root in the persistence API
  *  keeps that API independently testable. This command intentionally has no runtime calls. */
-export async function setReceipts(_ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
-  const { setId, receiptId, json } = validateArgs(args, scope);
+async function runSetReceipts(_ctx: Context, { setId, receiptId, json }: { setId?: string; receiptId?: string; json: boolean }): Promise<void> {
   if (receiptId !== undefined && setId !== undefined) {
     const receipt = await readReceipt(setId, receiptId);
     if (json || isCaptured()) emit(`${JSON.stringify(receipt, null, 2)}\n`);
@@ -69,3 +64,11 @@ export async function setReceipts(_ctx: Context, args: string[], scope?: ActionS
     log(`${receipt.verdict.padEnd(12)} ${receipt.receiptId}  ${receipt.finishedAt}  ${receipt.setName}  (security: ${securitySummary(receipt)})`);
   }
 }
+
+export const SET_RECEIPTS = defineAction({
+  summary: "List saved acceptance receipts",
+  effect: "read",
+  arguments: SET_RECEIPTS_ARGUMENTS,
+  prepare: ({ values }) => receiptsPlan(values),
+  run: runSetReceipts,
+});

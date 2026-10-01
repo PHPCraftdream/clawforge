@@ -70,7 +70,7 @@
       "tools/framework/commands/sets/set-receipts.ts": 1,
       "tools/framework/commands/sets/set-try-env.ts": 1,
       "tools/framework/commands/sets/set-try.ts": 2,
-      "tools/framework/commands/sets/set.ts": 7,
+      "tools/framework/commands/sets/set.ts": 5,
       "tools/framework/core/app.ts": 1,
       "tools/framework/core/env.ts": 1,
       "tools/framework/core/io/help-render.ts": 4,
@@ -106,7 +106,7 @@
       "tools/framework/entry/resolve.ts": 3,
       "tools/framework/entry/checkout-gate.ts": 7
     },
-    "total": 450
+    "total": 448
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
@@ -116,17 +116,17 @@
   },
   "rawArgvPredicates": {
     "comment": "stage 3 (CommandSpec effect): confirmation comes from declared effect, not raw argv",
-    "readOnlyWhen": 1,
-    "changedWhen": 1,
-    "requiresConfirmationWhen": 1
+    "readOnlyWhen": 0,
+    "changedWhen": 0,
+    "requiresConfirmationWhen": 0
   },
   "legacyCommands": {
     "comment": "stage 3 (CommandSpec): openclawCommands entries whose specOf is undefined — each migration turns one into a declared body",
-    "total": 1
+    "total": 0
   },
   "unsummarizedDescriptions": {
     "comment": "stage 3 (CommandArgument summary): MCP stops shortening heuristically when all summaries are declared; arguments of the derived `arguments` view with a description longer than 60 and no summary",
-    "total": 3
+    "total": 0
   },
   "declaredArguments": {
     "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",

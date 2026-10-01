@@ -48,6 +48,18 @@ All notable changes to `@clawforge/framework` will be documented here.
   archive is refused that way on the console too, instead of a usage line. `backup create
   --dry-run` now reports itself as a read on every surface, and `upgrade --image`'s schema
   description is the full phrase instead of a cut one.
+* `set` declares its six actions (build, validate, diff, receipts, try, forget) and their effects
+  in one command spec, parsed by the shared parser. The action word is required — bare
+  `set` and an unknown action answer in the shared unknown/missing-action words, and the
+  usage line and the MCP schema now mark `action` required (it already was at run time);
+  a flag that belongs to another action is refused naming that action, also for
+  `set diff`. `set forget` without `--kind` or `--name` answers `set forget needs --kind
+  <kind>` (and `--name`), and a `--kind` outside agent, mcp-server, cron-job lists the
+  choices. Refusals that depend only on the arguments (`set diff` artifact rules,
+  `set receipts --receipt` without `--set-id`, `set try` without `--set`) land before any
+  contact with the target, and an empty option value (`--name`, `--set`) is refused
+  uniformly as needing a value. Effects are unchanged (validate, diff and receipts read,
+  build changes, try and forget destroy).
 * A deployment command that is destructive and declares `requiresConfirmationWhen` without
   `readOnlyWhen` — confirmation is owed only for some calls — now reads as "destructive for
   some actions" on every surface (` *` in the command list, the tool description, the

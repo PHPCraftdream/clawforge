@@ -18,6 +18,7 @@ export const EXEC_ARGUMENTS = [
     summary: "Command and arguments to run",
     description: "Command and arguments to run, e.g. [\"curl\", \"-fsS\", \"http://127.0.0.1:18789/healthz\"]",
     kind: "variadic",
+    verbatim: true,
     required: true,
   },
 ] as const;

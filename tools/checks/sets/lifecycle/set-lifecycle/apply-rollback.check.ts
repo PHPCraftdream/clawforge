@@ -142,7 +142,7 @@ try {
     const storedArtifact = join(root, "sets", `lifecycle-${next.id}.tar.gz`);
     await access(storedArtifact);
     // Backed up and restored rather than corrupted in place: this file (or one identical to
-    // it) is also `next.artifact`, which later set-try-flow.check.ts's own setTry() calls
+    // it) is also `next.artifact`, which later set-try-flow.check.ts's own runSetTry() calls
     // still need (a fresh build there, but from the same content, same id).
     const backup = join(root, "sets", `lifecycle-${next.id}.tar.gz.backup`);
     await copyFile(storedArtifact, backup);

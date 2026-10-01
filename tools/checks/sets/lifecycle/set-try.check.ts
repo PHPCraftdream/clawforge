@@ -7,7 +7,8 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { extname, relative, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem, parseSetTryArgs, setTryModuleUrl } from "#framework/commands/sets/set-try.ts";
+import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, teardownTry, tryTargetProblem, setTryModuleUrl } from "#framework/commands/sets/set-try.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { frameworkRoot } from "#framework/core/env.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -98,7 +99,7 @@ check(
 // refuses to swallow a declared flag and names --set instead.
 let missingSetValue: unknown;
 try {
-  parseSetTryArgs(["--set", "--with-model", "--json"]);
+  await openclawCommands.set.run!({} as Parameters<NonNullable<typeof openclawCommands.set.run>>[0], ["try", "--set", "--with-model", "--json"]);
 } catch (error) {
   missingSetValue = error;
 }

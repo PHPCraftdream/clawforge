@@ -6,7 +6,8 @@
 import { mkdtemp, mkdir, readdir, writeFile, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { absentRecipesSource, buildSet, set } from "#framework/commands/sets/set.ts";
+import { absentRecipesSource, buildSet } from "#framework/commands/sets/set.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { withSetSource } from "#framework/set/artifacts/source.ts";
 import { DESIRED_STATE_PATH } from "#framework/set/artifacts/model.ts";
@@ -15,6 +16,8 @@ import { useApplicationRecipesDir, useDeployment } from "#framework/runtime/depl
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { ctx, DIGEST, createBuildDeployment, removeBuildDeployment } from "#checks/sets/artifact/set-build/fixture.ts";
+
+const set = (ctx: Parameters<NonNullable<typeof openclawCommands.set.run>>[0], argv: string[]): Promise<void> => openclawCommands.set.run!(ctx, argv);
 
 const deployment = await createBuildDeployment();
 

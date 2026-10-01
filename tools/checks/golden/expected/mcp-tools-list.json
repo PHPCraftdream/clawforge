@@ -1646,7 +1646,10 @@
             "type": "boolean",
             "description": "Confirm a destructive action"
           }
-        }
+        },
+        "required": [
+          "action"
+        ]
       },
       "outputSchema": {
         "type": "object",

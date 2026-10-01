@@ -14,7 +14,8 @@ import { mkdtemp, mkdir, access, rm, writeFile, readFile, copyFile } from "node:
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { loadSet, validateLoadedSet, collectManifest, ArtifactIntegrityError } from "#framework/set/load.ts";
-import { buildSet, set } from "#framework/commands/sets/set.ts";
+import { buildSet } from "#framework/commands/sets/set.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withArtifactInspected, unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { DESIRED_STATE_PATH, setManifestId } from "#framework/set/artifacts/model.ts";
@@ -24,6 +25,8 @@ import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { ctx as buildCtx, createBuildDeployment, removeBuildDeployment } from "#checks/sets/artifact/set-build/fixture.ts";
 import type { Problem } from "#framework/service/inspection.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+
+const set = (ctx: Parameters<NonNullable<typeof openclawCommands.set.run>>[0], argv: string[]): Promise<void> => openclawCommands.set.run!(ctx, argv);
 
 const IMAGE = buildCtx.settings.image;
 

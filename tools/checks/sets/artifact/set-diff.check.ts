@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checksumOf, checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { SetManifest } from "#framework/set/artifacts/model.ts";
-import { setDiff } from "#framework/commands/sets/set-diff.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { diffManifests } from "#framework/set/artifacts/diff.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
@@ -96,19 +96,20 @@ async function makeArtifact(root: string, suffix: string, page: string, prompt: 
 
 const root = await mkdtemp(join(tmpdir(), "clawforge-set-diff-check-"));
 const ctx = {} as Context;
+const set = (ctx: Context, argv: string[]): Promise<void> => openclawCommands.set.run!(ctx, argv);
 try {
   const first = await makeArtifact(root, "first", "old page\n", "# old prompt\n", "17 3 * * *");
   const second = await makeArtifact(root, "second", "new page\n", "# new prompt\n", "18 3 * * *");
 
   let machine = "";
-  await withOutputSink(() => {}, () => setDiff(ctx, [first, first, "--json"]), (chunk) => { machine += chunk; });
+  await withOutputSink(() => {}, () => set(ctx, ["diff", first, first, "--json"]), (chunk) => { machine += chunk; });
   const same = JSON.parse(machine) as { noChanges: boolean; changed: boolean; changes: unknown[] };
   check("unchanged verified artifacts report no semantic changes", same.noChanges, true);
   check("unchanged verified artifacts report changed false", same.changed, false);
   check("unchanged verified artifacts have no changes", same.changes.length, 0);
 
   machine = "";
-  await withOutputSink(() => {}, () => setDiff(ctx, ["--from", first, "--to", second, "--json"]), (chunk) => { machine += chunk; });
+  await withOutputSink(() => {}, () => set(ctx, ["diff", "--from", first, "--to", second, "--json"]), (chunk) => { machine += chunk; });
   const changed = JSON.parse(machine) as { from: { id: string }; to: { id: string }; changes: { kind: string; field?: string }[] };
   check("JSON identifies both immutable artifact ids", changed.from.id !== changed.to.id, true);
   check("changed prompt is reported", changed.changes.some((entry) => entry.kind === "prompt" && entry.field === "agent/AGENTS.md"), true);
@@ -132,7 +133,7 @@ try {
   check("removed agent carries an explicit memory deletion advisory", removal.changes.some((entry) => entry.kind === "recipe" && entry.advisory?.includes("memory") === true), true);
 
   let missingOptionRefused = false;
-  try { await setDiff(ctx, ["--from", first, "--json"]); } catch { missingOptionRefused = true; }
+  try { await set(ctx, ["diff", "--from", first, "--json"]); } catch { missingOptionRefused = true; }
   check("MCP option form rejects a missing --to artifact", missingOptionRefused, true);
 
   // Alter a byte after writing the manifest: the command must refuse before it can produce a
@@ -142,7 +143,7 @@ try {
   const tampered = join(root, "tampered.tar.gz");
   await tar(tamperedSource, tampered);
   let refused = false;
-  try { await setDiff(ctx, [first, tampered, "--json"]); } catch { refused = true; }
+  try { await set(ctx, ["diff", first, tampered, "--json"]); } catch { refused = true; }
   check("tampered artifact is refused", refused, true);
 } finally {
   await rm(root, { recursive: true, force: true });

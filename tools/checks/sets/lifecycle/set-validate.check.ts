@@ -6,20 +6,22 @@
 // is worse than no finding.
 
 import { validateSet, cronProblem } from "#framework/set/ownership/validate.ts";
-import { defaultSetName, collectManifest, buildSet, set } from "#framework/commands/sets/set.ts";
+import { defaultSetName, collectManifest, buildSet } from "#framework/commands/sets/set.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { problem } from "#framework/service/inspection.ts";
 import { buildSetManifest } from "#framework/set/artifacts/model.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { toolEnvelope } from "#framework/integration/mcp/server.ts";
-import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { createBuildDeployment, removeBuildDeployment, ctx as buildCtx } from "#checks/sets/artifact/set-build/fixture.ts";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { SetManifest } from "#framework/set/artifacts/model.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+
+const set = (ctx: Parameters<NonNullable<typeof openclawCommands.set.run>>[0], argv: string[]): Promise<void> => openclawCommands.set.run!(ctx, argv);
 
 const HASH = "a".repeat(64);
 

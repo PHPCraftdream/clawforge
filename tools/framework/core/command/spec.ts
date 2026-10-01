@@ -50,6 +50,9 @@ export interface ValueSpec<K extends "option" | "positional", N extends string =
 export interface VariadicSpec<N extends string = string> extends ArgumentBase<N> {
   readonly kind: "variadic";
   readonly required?: boolean;
+  /** Pass-through commands (cli, exec, host): the first free token starts the variadic and the rest is literal.
+   *  Absent: free tokens are collected while flags and options are still recognized anywhere. */
+  readonly verbatim?: true;
 }
 
 export type ArgumentSpec = FlagSpec | ValueSpec<"option"> | ValueSpec<"positional"> | VariadicSpec;

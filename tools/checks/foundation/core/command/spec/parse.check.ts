@@ -9,7 +9,6 @@ import {
   parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION, specOf, specShape, type CallShape,
 } from "#framework/core/command/index.ts";
 import { countValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
-import { SET_ACTION_ARGUMENTS } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import { buildCompletionModel } from "#framework/integration/completion.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
@@ -434,7 +433,6 @@ check(
   // declaration, and the group's own checks prove declared = accepted (backup:
   // state/backup/backup.check.ts).
   const REGISTRY: Readonly<Record<string, Slices>> = {
-    set: SET_ACTION_ARGUMENTS,
   };
 
   const isNamed = (argument: CommandArgument): boolean => argument.kind === "flag" || argument.kind === "option";
@@ -609,7 +607,7 @@ const VARIADIC: CallShape = {
   arguments: [
     { name: "context", kind: "positional", description: "d", required: true },
     { name: "root", kind: "flag", description: "d" },
-    { name: "args", kind: "variadic", description: "d", required: true },
+    { name: "args", kind: "variadic", verbatim: true, description: "d", required: true },
   ],
 };
 check("a variadic starts at the first undeclared token", parseCall(VARIADIC, ["target", "--root", "ls", "-la"]).values, { context: "target", root: true, args: ["ls", "-la"] });
@@ -617,9 +615,22 @@ check("after it everything is literal, declared flags too", parseCall(VARIADIC, 
 check("an undeclared flag starts the variadic", parseCall(VARIADIC, ["target", "--version"]).values.args, ["--version"]);
 check("everything after -- is the variadic", parseCall(VARIADIC, ["target", "--", "--root"]).values, { context: "target", root: false, args: ["--root"] });
 check("a -- after the variadic started is literal", parseCall(VARIADIC, ["target", "ls", "--", "x"]).values.args, ["ls", "--", "x"]);
-check("a variadic alone takes a leading flag-looking token", parseCall({ arguments: [{ name: "args", kind: "variadic", description: "d" }] }, ["--foo", "bar"]).values.args, ["--foo", "bar"]);
+check("a variadic alone takes a leading flag-looking token", parseCall({ arguments: [{ name: "args", kind: "variadic", verbatim: true, description: "d" }] }, ["--foo", "bar"]).values.args, ["--foo", "bar"]);
 check("an absent variadic is []", parseCall({ arguments: [{ name: "args", kind: "variadic", description: "d" }] }, []).values.args, []);
 check("a required variadic must be given", argumentOf(refusal(() => parseCall(VARIADIC, ["target"]))), "args");
+
+// Without `verbatim` a variadic only collects free tokens: flags and options stay recognized anywhere.
+const COLLECTING: CallShape = {
+  arguments: [
+    { name: "from", kind: "option", valueName: "x", description: "d" },
+    { name: "json", kind: "flag", description: "d" },
+    { name: "files", kind: "variadic", description: "d" },
+  ],
+};
+check("a collecting variadic reads a flag after its tokens", parseCall(COLLECTING, ["a", "b", "--json"]).values, { json: true, files: ["a", "b"] });
+check("a collecting variadic reads an option between its tokens", parseCall(COLLECTING, ["a", "--from", "x", "b"]).values, { from: "x", json: false, files: ["a", "b"] });
+check("a collecting variadic still refuses an undeclared flag", refusal(() => parseCall(COLLECTING, ["a", "--nope"])) instanceof UnknownArgumentError, true);
+check("a collecting variadic ends options at --", parseCall(COLLECTING, ["a", "--", "--json"]).values, { json: false, files: ["a", "--json"] });
 check("parseDeclaredArgs keeps refusing an undeclared flag before a variadic", refusal(() => parseDeclaredArgs(VARIADIC.arguments as CommandArgument[], ["target", "--version"])) instanceof UnknownArgumentError, true);
 
 // --- refuse: exact tokens refused with their own reason, ahead of tokenizing ----------------------

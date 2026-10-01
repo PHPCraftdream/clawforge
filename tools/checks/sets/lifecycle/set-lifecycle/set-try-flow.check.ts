@@ -1,4 +1,4 @@
-// setTry() driven from a real built artifact: success, a pull failure, a teardown failure
+// runSetTry() driven from a real built artifact: success, a pull failure, a teardown failure
 // and --keep, each leaving its own acceptance-evidence receipt. Split out of
 // set-lifecycle.check.ts; see fixture.ts for the shared transport/context. Self-contained —
 // builds its own artifact rather than reusing another file's, since none of these scenarios
@@ -9,7 +9,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildSet } from "#framework/commands/sets/set.ts";
-import { setTry } from "#framework/commands/sets/set-try.ts";
+import { runSetTry } from "#framework/commands/sets/set-try.ts";
 import { deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { setSourceDir } from "#framework/set/artifacts/source.ts";
 import { listReceipts } from "#framework/set/artifacts/receipt.ts";
@@ -21,7 +21,7 @@ const { root, sourceData, files, events, writeContents, ctx } = fixture;
 const { report } = fixture;
 
 // A set that declares one secret name, and its value on "this machine" — the real
-// target's config/.env in the model, which is the live half of the merge setTry() feeds
+// target's config/.env in the model, which is the live half of the merge runSetTry() feeds
 // from. The name travels in the artifact; the value must never.
 const secretValue = `  alpha #beta "quoted" 'literal'  `;
 const localValue = `  local #value "quoted"  `;
@@ -55,7 +55,7 @@ try {
     },
   };
   fixture.state.running = false;
-  const tried = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
+  const tried = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
   assert.equal(tried.error, undefined, tried.error?.message);
   assert.equal(report(tried.output).torndown, true);
   assert.equal(report(tried.output).healthy, false, "no acceptance checks is not a verified deployment");
@@ -99,7 +99,7 @@ try {
       if (path === liveSecretsPath) throw Object.assign(new Error(`synthetic read failure: ${secretValue}`), { code });
       return originalReadFile(path);
     };
-    const refused = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
+    const refused = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
     assert.match(refused.error?.message ?? "", /cannot read live secrets/);
     assert.equal(refused.error?.message.includes(secretValue), false);
     assert.equal(privateDirectories.length, protectedBefore, "read failure cannot create a trial");
@@ -112,7 +112,7 @@ try {
     if (path === liveSecretsPath) throw new Error(`synthetic probe failure: ${secretValue}`);
     return originalExists(path);
   };
-  const unknownPresence = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
+  const unknownPresence = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
   assert.match(unknownPresence.error?.message ?? "", /cannot read live secrets/);
   assert.equal(unknownPresence.error?.message.includes(secretValue), false);
   assert.equal(privateDirectories.length, protectedBeforeProbe, "an inconclusive presence probe cannot create a trial");
@@ -122,20 +122,20 @@ try {
   files.set(liveSecretsPath, "WIKI_TOKEN='first\rsecond'\n");
   const protectedBeforeMultiline = privateDirectories.length;
   const eventsBeforeMultiline = events.length;
-  const invalidValue = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
+  const invalidValue = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
   assert.match(invalidValue.error?.message ?? "", /environment value for WIKI_TOKEN contains a newline or carriage return/);
   assert.equal(privateDirectories.length, protectedBeforeMultiline, "an unsupported value is refused before trial creation");
   assert.equal(events.length, eventsBeforeMultiline, "an unsupported value cannot mutate target state");
   files.delete(liveSecretsPath);
   fixture.state.failPull = true;
-  const failedTry = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
+  const failedTry = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
   assert.match(failedTry.error?.message ?? "", /pull failed/);
   assert.equal(report(failedTry.output).torndown, true);
   assert.equal(report(failedTry.output).healthy, false);
   assert.equal(deploymentDir(), root);
   fixture.state.failPull = false;
   fixture.state.failStop = true;
-  const incomplete = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json"], dependencies));
+  const incomplete = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: false, jsonOnly: true }, dependencies));
   assert.match(incomplete.error?.message ?? "", /cleanup failed/);
   assert.equal(report(incomplete.output).torndown, false);
   await access(fixture.state.lastTryDir);
@@ -143,7 +143,7 @@ try {
   assert.equal(files.get(`${sourceData}/workspace/MEMORY.md`), "keep me");
   assert.equal(setSourceDir(), undefined);
   fixture.state.failStop = false;
-  const kept = await fixture.captured(() => setTry(ctx, ["--set", built.artifact, "--json", "--keep"], dependencies));
+  const kept = await fixture.captured(() => runSetTry(ctx, { artifact: built.artifact, withModel: false, keep: true, jsonOnly: true }, dependencies));
   assert.equal(kept.error, undefined, kept.error?.message);
   assert.ok(
     [...writeContents].some(([, content]) => parseEnv(content).WIKI_TOKEN === staleValue),

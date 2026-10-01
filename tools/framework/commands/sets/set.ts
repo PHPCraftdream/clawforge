@@ -1,8 +1,9 @@
-// `./clawforge set` — the group dispatcher: build, validate, diff, receipts, try, forget.
+// `./clawforge set` — the command body: build, validate, diff, receipts, try, forget.
 //
 // Split for organisation only: set-secrets-guard.ts (value scan before a build writes
-// anything), set-manifest.ts (collectManifest/writeArtifact/buildSet). This file keeps
-// validateAction/forgetAction/the dispatcher and re-exports the other two, so every
+// anything), set-manifest.ts (collectManifest/writeArtifact/buildSet), set-diff.ts,
+// set-receipts.ts and set-try.ts (their own actions). This file keeps build/validate/forget
+// and assembles the body, and re-exports the guard and manifest modules, so every
 // external importer keeps using "./set.ts".
 
 import { die, log, info } from "#src/core/io/log.ts";
@@ -13,53 +14,35 @@ import { validateLoadedSet, loadSet } from "#src/set/load.ts";
 import { printProblem } from "#src/commands/orchestration/inspect/gather.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import { removeOwnedObject } from "#src/commands/management/provision-agent/index.ts";
-import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
+import { withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
-import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
-import { setTry } from "./set-try.ts";
-import { setDiff } from "./set-diff.ts";
-import { setReceipts } from "./set-receipts.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
+import { SET_TRY } from "./set-try.ts";
+import { SET_DIFF_ARGUMENTS, planSetDiff, runSetDiff } from "./set-diff.ts";
+import { SET_RECEIPTS } from "./set-receipts.ts";
 import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, defaultSetName } from "./set-manifest.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, dieUnknownAction, scopeByAction, type ActionScope } from "#src/core/command/index.ts";
-import { SET_DIFF_ARGUMENTS } from "./set-diff.ts";
-import { SET_RECEIPTS_ARGUMENTS } from "./set-receipts.ts";
-import { SET_TRY_ARGUMENTS } from "./set-try.ts";
+import { defineAction, multiActionBody, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
-/** The action words `set`'s dispatcher accepts, in the order its usage messages name them. */
-const SET_ACTIONS = ["build", "validate", "diff", "receipts", "try", "forget"] as const;
+const SET_NAME_SUMMARY = "Set name";
 
-/** Each action's own slice — the parser below takes it from this table, and the merged
- *  declaration (openclawCommands.sets.ts, derived via scopeByAction) from the same one, so
- *  completion/--help/MCP cannot offer a flag the chosen action refuses. */
-export const SET_BUILD_ARGUMENTS: CommandArgument[] = [
-  { name: "name", description: "Set name (default: the deployment's name)", kind: "option", valueName: "name" },
-  { name: "json", description: "Emit the manifest and its id as JSON", kind: "flag" },
-];
+export const SET_BUILD_ARGUMENTS = [
+  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name" },
+  { name: "json", summary: "Emit the manifest and its id as JSON", description: "Emit the manifest and its id as JSON", kind: "flag" },
+] as const satisfies readonly ArgumentSpec[];
 
-export const SET_VALIDATE_ARGUMENTS: CommandArgument[] = [
-  { name: "name", description: "Set name (default: the deployment's name)", kind: "option", valueName: "name" },
+export const SET_VALIDATE_ARGUMENTS = [
+  { name: "name", summary: SET_NAME_SUMMARY, description: "Set name (default: the deployment's name)", kind: "option", valueName: "name" },
   { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
-  { name: "json", description: "Emit the findings as JSON", kind: "flag" },
-];
+  { name: "json", summary: "Emit the findings as JSON", description: "Emit the findings as JSON", kind: "flag" },
+] as const satisfies readonly ArgumentSpec[];
 
-export const SET_FORGET_ARGUMENTS: CommandArgument[] = [
-  { name: "kind", description: "agent, mcp-server, or cron-job", kind: "option", valueName: "kind", choices: ["agent", "mcp-server", "cron-job"] },
-  { name: "name", description: "Object name", kind: "option", valueName: "name" },
-  { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-];
-
-export const SET_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = {
-  build: SET_BUILD_ARGUMENTS,
-  validate: SET_VALIDATE_ARGUMENTS,
-  diff: SET_DIFF_ARGUMENTS,
-  receipts: SET_RECEIPTS_ARGUMENTS,
-  try: SET_TRY_ARGUMENTS,
-  forget: SET_FORGET_ARGUMENTS,
-};
+export const SET_FORGET_ARGUMENTS = [
+  { name: "kind", description: "agent, mcp-server, or cron-job", kind: "option", valueName: "kind", required: true, choices: ["agent", "mcp-server", "cron-job"] },
+  { name: "name", summary: "Object name", description: "Object name", kind: "option", valueName: "name", required: true },
+  ...LOCK_TAKEOVER_ARGUMENTS,
+] as const satisfies readonly ArgumentSpec[];
 
 export * from "./set-secrets-guard.ts";
 export * from "./set-manifest.ts";
@@ -136,69 +119,20 @@ async function validateAction(
  *  created and stops tracking it. `apply` does this on its own for an orphaned MCP server
  *  or cron job; exposed by hand for an orphaned agent, whose removal prunes a workspace and
  *  memory — a decision for whoever runs this, not something a plan does automatically. */
-async function forgetAction(
-  ctx: Context,
-  kindRaw: string | undefined,
-  name: string | undefined,
-  breakLock: boolean,
-  breakForeignLockHost: string | undefined,
-): Promise<void> {
-  if (kindRaw === undefined || name === undefined) die("usage: ./clawforge set forget --kind <agent|mcp-server|cron-job> --name <name>");
-  if (kindRaw !== "agent" && kindRaw !== "mcp-server" && kindRaw !== "cron-job") {
-    die(`unknown kind "${kindRaw}" (expected agent, mcp-server, or cron-job)`);
-  }
+async function forgetAction(ctx: Context, values: Values<typeof SET_FORGET_ARGUMENTS>): Promise<void> {
+  const { kind, name } = values;
   if (!(await ctx.runtime.isRunning())) die("the gateway is not running. Start it with ./clawforge up");
 
   // `apply` calls this indirectly while already holding the lock; nested, the second acquire
   // would refuse the run its own caller started. Taken only when this is invoked directly.
-  await withLockUnlessHeld(ctx, `set forget ${kindRaw} ${name}`, newOperationId("set-forget"), { breakLock, breakForeignLockHost }, async () => {
-    await removeOwnedObject(ctx, kindRaw, name);
+  await withLockUnlessHeld(ctx, `set forget ${kind} ${name}`, newOperationId("set-forget"), takeoverOf(values), async () => {
+    await removeOwnedObject(ctx, kind, name);
   });
-  log(`${kindRaw} "${name}" removed and no longer tracked as owned`);
+  log(`${kind} "${name}" removed and no longer tracked as owned`);
 }
 
-export async function set(ctx: Context, args: string[]): Promise<void> {
-  const [action, ...rest] = args;
-  if (action === undefined) die(`usage: ./clawforge set <${SET_ACTIONS.join("|")}> [options] (see ./clawforge set --help)`);
-  if (action !== "build" && action !== "validate" && action !== "diff" && action !== "receipts" && action !== "try" && action !== "forget") {
-    dieUnknownAction(action, `unknown action: ${action} (expected build, validate, diff, receipts, try, or forget)`, SET_ACTIONS);
-  }
-
-  // The merged declaration as scope, for every action: a flag belonging to another action is
-  // refused naming that action, not "unknown" (try/diff/receipts parse their own slices, but
-  // with the same scope — R31-03).
-  const scope: ActionScope = { action, siblings: scopeByAction(SET_ACTION_ARGUMENTS) };
-
-  if (action === "diff") return setDiff(ctx, rest, scope);
-  if (action === "receipts") return setReceipts(ctx, rest, scope);
-
-  // try has its own argument shape (--with-model, --keep) that the flags shared by the
-  // other actions below do not carry — parsed there, not folded into the loop that follows.
-  if (action === "try") {
-    await setTry(ctx, rest, {}, scope);
-    return;
-  }
-
-  // Each action parses its own slice of the declaration (openclawCommands.sets.ts's table,
-  // the same one completion/--help/MCP derive from).
-  const parsed = parseDeclaredArgs(SET_ACTION_ARGUMENTS[action], rest, scope);
-
-  if (action === "forget") {
-    const kind = parsed.kind === "" ? die("--kind needs a value") : parsed.kind as string | undefined;
-    const name = parsed.name === "" ? die("--name needs a value") : parsed.name as string | undefined;
-    await forgetAction(ctx, kind, name, parsed["break-lock"] === true, parseBreakForeignLockHost(rest));
-    return;
-  }
-
-  const name = parsed.name === "" ? die("--name needs a value") : parsed.name as string | undefined;
-  const jsonOnly = parsed.json === true;
-
-  if (action === "validate") {
-    const artifact = parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string | undefined;
-    await validateAction(ctx, { name, artifact, jsonOnly });
-    return;
-  }
-
+/** `./clawforge set build`: the artifact, and an inventory of what went into it. */
+async function buildAction(ctx: Context, { name, json: jsonOnly }: Values<typeof SET_BUILD_ARGUMENTS>): Promise<void> {
   const built = await buildSet(ctx, name ?? defaultSetName(deploymentName()));
 
   // Same split as lock: --json or a captured caller gets the machine-readable answer;
@@ -235,3 +169,36 @@ export async function set(ctx: Context, args: string[]): Promise<void> {
   info(`secrets   ${built.manifest.secrets.length === 0 ? "(none)" : built.manifest.secrets.join(", ")}`);
   info("names only — values stay on the machine that has them");
 }
+
+export const SET = multiActionBody({
+  effect: "change",
+  action: { description: "What to do with sets" },
+  actions: {
+    build: defineAction({
+      summary: "Build the set artifact from the working tree",
+      arguments: SET_BUILD_ARGUMENTS,
+      run: buildAction,
+    }),
+    validate: defineAction({
+      summary: "Check a set without a running instance",
+      effect: "read",
+      arguments: SET_VALIDATE_ARGUMENTS,
+      run: (ctx, { name, set: artifact, json: jsonOnly }) => validateAction(ctx, { name, artifact, jsonOnly }),
+    }),
+    diff: defineAction({
+      summary: "Compare two verified artifacts",
+      effect: "read",
+      arguments: SET_DIFF_ARGUMENTS,
+      prepare: ({ values }) => planSetDiff(values),
+      run: runSetDiff,
+    }),
+    receipts: SET_RECEIPTS,
+    try: SET_TRY,
+    forget: defineAction({
+      summary: "Remove an object this framework created",
+      effect: "destroy",
+      arguments: SET_FORGET_ARGUMENTS,
+      run: forgetAction,
+    }),
+  },
+});

@@ -15,6 +15,7 @@ export const CLI_ARGUMENTS = [
     summary: "Arguments passed to OpenClaw's CLI verbatim",
     description: "Arguments passed to OpenClaw's CLI verbatim, e.g. [\"config\", \"get\", \"gateway.mode\"]",
     kind: "variadic",
+    verbatim: true,
     required: true,
   },
 ] as const;

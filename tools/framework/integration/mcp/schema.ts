@@ -176,7 +176,9 @@ export function schemaArgumentDescription(argument: CommandArgument): string | u
   // to — same wording help-render.ts prints. `create` is backup's default (no action word
   // needed) and is labelled as such, so a client knows `hot` without an `action` still means
   // a create.
-  const scoped = parts === undefined && argument.actions !== undefined
+  // A composed summary ("X (build, validate); Y (forget)") already carries its action lists.
+  const composed = parts !== undefined || (summary !== undefined && splitActionScoped(summary, argument.actions) !== undefined);
+  const scoped = !composed && argument.actions !== undefined
     ? `${short} (${argument.actions.join(", ")})`
     : short;
   return argument.kind === "option" && argument.valueName !== undefined

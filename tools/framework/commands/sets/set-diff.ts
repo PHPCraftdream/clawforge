@@ -13,8 +13,7 @@ import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import type { Context } from "#src/core/context.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
-import type { CommandArgument } from "#src/core/app.ts";
+import { ArgumentError, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
 export type SetDiffAction = "added" | "removed" | "changed";
 export type SetDiffKind =
@@ -303,25 +302,22 @@ async function desiredState(staging: string): Promise<unknown> {
   return readJson(resolve(staging, "config", "desired-state.json"));
 }
 
-export const SET_DIFF_ARGUMENTS: CommandArgument[] = [
+export const SET_DIFF_ARGUMENTS = [
   { name: "from", kind: "option", description: "With diff: original artifact", valueName: "artifact" },
   { name: "to", kind: "option", description: "With diff: replacement artifact", valueName: "artifact" },
-  { name: "json", kind: "flag", description: "Emit JSON" },
+  { name: "json", summary: "Emit JSON", kind: "flag", description: "Emit JSON" },
   { name: "artifacts", kind: "variadic", description: "Two positional artifacts" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
-function parseArgs(args: string[], scope?: ActionScope): { from: string; to: string; json: boolean } {
-  const parsed = parseDeclaredArgs(SET_DIFF_ARGUMENTS, args, scope);
-  const positional = (parsed.artifacts as string[] | undefined) ?? [];
-  const from = parsed.from as string | undefined;
-  const to = parsed.to as string | undefined;
-  const json = parsed.json === true;
+export interface SetDiffPlan { readonly from: string; readonly to: string; readonly json: boolean }
+
+export function planSetDiff({ from, to, json, artifacts: positional }: Values<typeof SET_DIFF_ARGUMENTS>): SetDiffPlan {
   if (from !== undefined || to !== undefined) {
-    if (positional.length > 0) die("set diff accepts either two positional artifacts or --from and --to, not both");
-    if (from === undefined || to === undefined) die("set diff needs both --from and --to artifact paths");
+    if (positional.length > 0) throw new ArgumentError("set diff accepts either two positional artifacts or --from and --to, not both", "artifacts");
+    if (from === undefined || to === undefined) throw new ArgumentError("set diff needs both --from and --to artifact paths", from === undefined ? "from" : "to");
     return { from, to, json };
   }
-  if (positional.length !== 2) die("usage: ./clawforge set diff <from.tar.gz> <to.tar.gz> [--json]");
+  if (positional.length !== 2) throw new ArgumentError("usage: ./clawforge set diff <from.tar.gz> <to.tar.gz> [--json]", "artifacts");
   return { from: positional[0], to: positional[1], json };
 }
 
@@ -344,8 +340,7 @@ function humanChange(change: SetDiffChange): string {
  *  Read-only, so the verification gate's semantic findings are ignored here — a diff between a
  *  broken and a good build is exactly what a reader may want to ask (R32-05); the integrity
  *  checks still refuse a corrupt archive. */
-export async function setDiff(_ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
-  const parsed = parseArgs(args, scope);
+export async function runSetDiff(_ctx: Context, parsed: SetDiffPlan): Promise<void> {
   await withArtifactInspected(parsed.from, async (fromStaging, fromVerified) => {
     await withArtifactInspected(parsed.to, async (toStaging, toVerified) => {
       const result = diffManifests(

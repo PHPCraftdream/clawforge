@@ -255,6 +255,11 @@ export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context:
   return values;
 }
 
+/** Whether the declared variadic is a pass-through one (`verbatim: true`). */
+function isVerbatim(declared: readonly ArgumentSpec[]): boolean {
+  return declared.some((argument) => argument.kind === "variadic" && argument.verbatim === true);
+}
+
 /** The parse-relevant part of a command: its arguments, or per-action arguments. */
 export interface CallShape {
   readonly arguments?: readonly ArgumentSpec[];
@@ -281,7 +286,7 @@ export function parseCall(shape: CallShape, argv: readonly string[], command = "
   if (shape.actions === undefined) {
     const declared = shape.arguments ?? [];
     refuseTokens(shape.refuse, argv);
-    const tokens = tokenize(declared, argv, undefined, declared.some((argument) => argument.kind === "variadic"));
+    const tokens = tokenize(declared, argv, undefined, isVerbatim(declared));
     return { values: bind(declared, tokens, { command }), given: tokens.given };
   }
   const actions = shape.actions;
@@ -302,6 +307,6 @@ export function parseCall(shape: CallShape, argv: readonly string[], command = "
   const declared = actions[action].arguments ?? [];
   refuseTokens(actions[action].refuse, rest);
   const siblings = scopeByAction(Object.fromEntries(names.map((name) => [name, actions[name].arguments ?? []])));
-  const tokens = tokenize(declared, rest, { action, siblings }, declared.some((argument) => argument.kind === "variadic"));
+  const tokens = tokenize(declared, rest, { action, siblings }, isVerbatim(declared));
   return { values: bind(declared, tokens, { command, action }), action, given: tokens.given };
 }

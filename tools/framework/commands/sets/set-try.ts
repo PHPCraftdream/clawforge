@@ -36,18 +36,21 @@ import type { AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
+import { ArgumentError, defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 
 export * from "./set-try-env.ts";
 
-/** The slice of `set`'s declaration `try`'s own argv actually uses. */
-export const SET_TRY_ARGUMENTS: CommandArgument[] = [
+export const SET_TRY_ARGUMENTS = [
   { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
   { name: "with-model", description: "With try: include acceptance checks that call the model", kind: "flag" },
-  { name: "keep", description: "With try: keep the throwaway instance running instead of removing it", kind: "flag" },
-  { name: "json", description: "Emit the trial report as JSON", kind: "flag" },
-];
+  {
+    name: "keep",
+    summary: "keep the throwaway instance running instead of removing it",
+    description: "With try: keep the throwaway instance running instead of removing it",
+    kind: "flag",
+  },
+  { name: "json", summary: "Emit the trial report as JSON", description: "Emit the trial report as JSON", kind: "flag" },
+] as const satisfies readonly ArgumentSpec[];
 
 const SCAFFOLD_MODULES: Record<string, string> = {
   app: "core/app",
@@ -93,12 +96,11 @@ export interface SetTryOptions {
   readonly jsonOnly: boolean;
 }
 
-/** Parses the artifact and explicit execution options. */
-export function parseSetTryArgs(args: string[], scope?: ActionScope): SetTryOptions {
-  const parsed = parseDeclaredArgs(SET_TRY_ARGUMENTS, args, scope);
-  const artifact = parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string | undefined;
-  if (artifact === undefined) die("usage: ./clawforge set try --set <artifact> [--with-model] [--keep] [--json]");
-  return { artifact, withModel: parsed["with-model"] === true, keep: parsed.keep === true, jsonOnly: parsed.json === true };
+/** The artifact and explicit execution options. */
+function tryPlan(values: Values<typeof SET_TRY_ARGUMENTS>): SetTryOptions {
+  const artifact = values.set;
+  if (artifact === undefined) throw new ArgumentError("usage: ./clawforge set try --set <artifact> [--with-model] [--keep] [--json]", "set");
+  return { artifact, withModel: values["with-model"], keep: values.keep, jsonOnly: values.json };
 }
 
 /** Stops and removes only the resources owned by a try. Callbacks are injectable so the
@@ -140,13 +142,13 @@ export async function teardownTry(
   return { torndown: error === undefined, running, ...(error === undefined ? {} : { error }) };
 }
 
-export async function setTry(ctx: Context, args: string[], dependencies: {
+/** `set try`'s run; `dependencies` lets the checks drive it without Docker. */
+export async function runSetTry(ctx: Context, options: SetTryOptions, dependencies: {
   createContext?: typeof createContext;
   findFreePort?: typeof findFreePort;
   protectPrivateDirectory?: typeof protectPrivateDirectory;
   createPrivateFile?: typeof createPrivateFile;
-} = {}, scope?: ActionScope): Promise<void> {
-  const options = parseSetTryArgs(args, scope);
+} = {}): Promise<void> {
   return withModelApproval(options.withModel, () => setTryInScope(ctx, options, dependencies));
 }
 
@@ -474,3 +476,11 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
     throw new Error(`${report.acceptance.failed + report.acceptance.couldNotCheck} acceptance check(s) did not pass on the throwaway instance`);
   }
 }
+
+export const SET_TRY = defineAction({
+  summary: "Try a set in a throwaway instance",
+  effect: "destroy",
+  arguments: SET_TRY_ARGUMENTS,
+  prepare: ({ values }) => tryPlan(values),
+  run: (ctx, options) => runSetTry(ctx, options),
+});

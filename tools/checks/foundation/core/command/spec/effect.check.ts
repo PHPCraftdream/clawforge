@@ -95,6 +95,8 @@ const REFUSED: readonly (readonly [name: string, argv: readonly string[]])[] = [
   ["verify", []],
   ["provision-agent", []],
   ["recipe", ["verify", "--dry-run"]],
+  ["set", []],
+  ["set", ["forget"]],
 ];
 const refusedKey = (name: string, argv: readonly string[]): string => `${name} ${argv.join(" ")}`;
 const REFUSED_KEYS = new Set(REFUSED.map(([name, argv]) => refusedKey(name, argv)));

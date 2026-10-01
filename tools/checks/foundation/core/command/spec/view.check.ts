@@ -43,8 +43,8 @@ import { check, finish } from "#checks/kit/harness.ts";
     true,
   );
   check(
-    "set forget parses its own slice — dies on the missing --kind, not on parsing",
-    (await outcome(["forget"])).includes("usage: ./clawforge set forget"),
+    "set forget parses its own slice — refuses the missing --kind as a required argument",
+    (await outcome(["forget"])).includes("set forget needs --kind <kind>"),
     true,
   );
   check("a mistyped set action still gets the did-you-mean", (await outcome(["bild"])).includes("did you mean build?"), true);

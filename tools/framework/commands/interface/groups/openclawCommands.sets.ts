@@ -3,22 +3,13 @@
 // openclawCommands.
 
 import type { AppCommand } from "#src/core/app.ts";
-import { materializeCommands, scopeByAction } from "#src/core/command/index.ts";
-
-// The per-action argument table lives in set.ts next to the dispatcher that parses from
-// it; re-exported here so completion/--help/MCP checks keep importing it from this group.
-export { SET_ACTION_ARGUMENTS } from "#src/commands/sets/set.ts";
-import { SET_ACTION_ARGUMENTS } from "#src/commands/sets/set.ts";
-import { set } from "#src/commands/sets/set.ts";
+import { materializeCommands } from "#src/core/command/index.ts";
+import { SET } from "#src/commands/sets/set.ts";
 
 export const setsCommands: Record<string, AppCommand> = materializeCommands({
   set: {
     summary: "Build or validate the set: what a deployment installs, as one artifact",
     group: "change",
-    run: set,
-    readOnlyWhen: (args) => ["diff", "receipts", "validate"].includes(args[0] ?? ""),
-    changedWhen: (args) => ["build", "try", "forget"].includes(args[0] ?? ""),
-    requiresConfirmationWhen: (args) => ["try", "forget"].includes(args[0] ?? ""),
     details:
       "Collects every recipe (served content and agent bundle, each file checksummed), " +
       "config/desired-state.json, the required framework version and image digest, and the " +
@@ -44,16 +35,7 @@ export const setsCommands: Record<string, AppCommand> = materializeCommands({
       "stops tracking it — what ./clawforge plan proposes on its own for an orphaned MCP server or " +
       "cron job, and what a coder runs by hand for an orphaned agent, since deleting one also " +
       "prunes its workspace and memory.",
-    arguments: [
-      { name: "action", description: "What to do with sets", kind: "positional", choices: ["build", "validate", "diff", "receipts", "try", "forget"] },
-      ...scopeByAction(SET_ACTION_ARGUMENTS),
-    ],
-    // Not readOnly: true for the group as a whole, even though build and validate are —
-    // try brings up a real throwaway instance and forget deletes a real object, and one
-    // flag on this entry cannot tell those two actions from the other two. Declaring the
-    // whole command destructive is the safe direction to be wrong in: build and validate
-    // ask for a confirmation they do not need, rather than try and forget skipping one they do.
     structured: true,
-    destructive: true,
+    ...SET,
   },
 });

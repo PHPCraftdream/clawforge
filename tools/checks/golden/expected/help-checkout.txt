@@ -836,8 +836,8 @@
 
 === set --help ===
 ==> set — Build or validate the set: what a deployment installs, as one artifact
-    Usage: ./clawforge set [<action>] [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]
-      <action>               What to do with sets [build|validate|diff|receipts|try|forget]
+    Usage: ./clawforge set <action> [--name <name>] [--json] [--set <artifact>] [--from <artifact>] [--to <artifact>] [--set-id <id>] [--receipt <id>] [--with-model] [--keep] [--kind <kind>] [--break-lock] [--break-foreign-lock <hostId>]
+      <action>               What to do with sets [build|validate|diff|receipts|try|forget] (required)
       --name <name>          Set name (default: the deployment's name) (build, validate); Object name (forget)
       --json                 Emit the manifest and its id as JSON (build); Emit the findings as JSON (validate); Emit JSON (diff); Emit the receipts as JSON (receipts); Emit the trial report as JSON (try)
       --set <artifact>       Artifact instead of the working tree (validate, try)

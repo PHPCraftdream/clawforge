@@ -4,7 +4,7 @@
 
 import { log, die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 export const CLI_HELPER_SERVICE = "cli-helper";
 export const CLI_PROFILE = "cli";

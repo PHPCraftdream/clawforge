@@ -23,7 +23,7 @@ import { buildRestorePlan, printRestorePlan } from "./restore/plan.ts";
 import { forbiddenViolations, verifySnapshot } from "./verify.ts";
 import { preflightSecrets, MissingSecretsError } from "#src/commands/management/secrets.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 const SECRETS_SUFFIX = ".secrets.env";

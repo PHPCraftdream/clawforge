@@ -7,7 +7,7 @@
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
-import { dieUnknownAction } from "#src/core/arguments.ts";
+import { dieUnknownAction } from "#src/core/command/index.ts";
 import type { Context } from "#src/core/context.ts";
 import {
   listAgentBundleRecipes,

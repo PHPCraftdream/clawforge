@@ -501,6 +501,117 @@
     The flags are validated against the mode before anything is read or written: --dry-run cannot be combined with --dump — a dump has no dry-run form, it either writes the recovered declaration or does nothing — --break-lock and --break-foreign-lock apply only where an instance lock is taken (the real apply), and --force only applies to --dump.
     Kept separate from `apply`: its --dry-run really validates against the target (lockless, even before the instance is healthy), and --dump --force deliberately overwrites an existing declaration — `apply` does neither.
 
+=== expose --help ===
+==> expose — Reach a loopback-bound gateway from outside: SSH tunnel or tailscale
+    Usage: ./clawforge expose <action> [--local-port <port>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>] [--json]
+      <action>               ssh, tailscale or status [ssh|tailscale|status] (required)
+      --local-port <port>    local port to bind (defaults to the gateway's own port) (ssh)
+      --run                  open the tunnel in the foreground until Ctrl+C; needs a real terminal (ssh)
+      --apply                run the printed `tailscale serve` command on the target instead of only printing it (tailscale)
+      --break-lock           Take over the instance lock held by another operation (tailscale)
+      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (tailscale)
+      --json                 Emit the exposure and tailscale report as JSON (status)
+    
+    Three actions, narrowest scope first.
+    ssh — for OC_TARGET_LOCATION=ssh deployments, prints the exact `ssh -N -L <local>:127.0.0.1:<gatewayPort> <OC_SSH_HOST>` tunnel and the http://127.0.0.1:<local> URL it opens; --run runs it in the foreground through the local ssh client (needs a real terminal — refused under MCP or a plain pipe) until Ctrl+C.
+    wsl/local targets are told no tunnel is needed: Docker Desktop's WSL2 integration already forwards the published port to this machine's own loopback.
+    tailscale — probes, on the target, whether `tailscale` exists and is logged in (`tailscale status --json`), then prints the exact `tailscale serve --bg http://127.0.0.1:<gatewayPort>` command — tailnet-only HTTPS, never `tailscale funnel` (refused outright, with the reason, whether or not --apply is given).
+    --apply runs it on the target through the transport — mutating, so it needs MCP confirmation and the instance lock (guarded()), same as every other mutating command.
+    status — the published bind address/port read back from the RUNNING container (never just .env, which can be stale the moment OC_BIND_ADDRESS is edited without a recreate), whether that is loopback-only, and — if tailscale is present — a summary of `tailscale serve status`. Warns loudly when the bind address is 0.0.0.0 or ::.
+    The same one-line summary appears in `./clawforge status`. --json emits the same facts structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.
+    
+    This command can replace or destroy state, depending on the action given.
+
+=== watch --help ===
+==> watch — Health monitoring with a webhook alert on state change
+    Usage: ./clawforge watch <action> [--json] [--interval <interval>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]
+      <action>               check, install, uninstall, status or test [check|install|uninstall|status|test] (required)
+      --json                 Emit JSON instead of text (check, status, test)
+      --interval <interval>  time between checks (default 5m) — a bare number is minutes, or 30m/6h/1d; minutes must divide 60 (1,2,3,4,5,6,10,12,15,20,30), hours must divide a day (1,2,3,4,6,8,12,24) (install)
+      --apply                mutate the target's crontab instead of only printing it (install, uninstall)
+      --break-lock           Take over the instance lock held by another operation (install, uninstall)
+      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (install, uninstall)
+    
+    Five actions.
+    check — one probe cycle, reusing exactly the findings `inspect`/`doctor` already compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE — never PROVIDER_MISSING, whose detection is unreliable enough that it would page degraded forever on an instance answering fine, nor CONFIG_DRIFT or the rest, which are real but not about whether the instance is serving),
+    then layers on two findings of its own: CHANNEL_UNHEALTHY (degraded) for a configured, enabled channel account that `openclaw channels status --json` reports not running, erroring or not connected
+    A requested channel read that fails or returns malformed or incomplete telemetry produces CHANNEL_UNKNOWN (degraded), preventing healthy recovery and heartbeat pings; an unrequested read adds no finding.
+    (skipped while the gateway itself is down — nothing to exec a CLI call into; verified on OpenClaw 2026.6.34 — that CLI has no dead-letter/delivery-failure signal, only connection/auth trouble, so that is all this reports),
+    and DISK_LOW/DISK_UNKNOWN for the data directory's free space against OC_WATCH_DISK_MIN_MB (default 1024 MB; degraded below it, down below 10% of it or 100 MB, whichever is higher; DISK_UNKNOWN — always degraded, never a silent ok — when `df` itself fails or cannot be parsed).
+    All of this collapses into ok / degraded / down.
+    If gathering the base findings itself fails outright — the Docker daemon down, an SSH host refusing the connection, wsl.exe never answering — that reads as down too, reason TARGET_UNREACHABLE, rather than dying before a cycle can alert or record anything (channel/disk are skipped in that case, and also while NOT_BOOTSTRAPPED — no data directory yet to measure).
+    Compared against this machine's deployment history (atomic write), serialized across processes through delivery and persistence; a busy cycle reports contention. SSH operator cycles use separate state/watch-operator.json, not the remote scheduled history.
+    A webhook POST (OC_WATCH_WEBHOOK in this deployment's .env, https only unless it is localhost) fires only on a TRANSITION, so an unchanged state never pages anyone twice.
+    A failed POST leaves the persisted level at its old value on purpose, so the same unreported transition is retried next cycle instead of being silently accepted as normal — but the failure itself, and when it happened, is now recorded (`watch status`'s lastError/alertPending), so a broken webhook does not fail forever without a trace between cycles.
+    A configuration error (a bad OC_WATCH_WEBHOOK/OC_WATCH_WEBHOOK_FORMAT/OC_WATCH_TELEGRAM_CHAT_ID/OC_WATCH_HEARTBEAT_URL) is recorded the same way, before a probe cycle ever runs.
+    The exit code reflects the CURRENT state on every cycle, alert or not — 0 while ok, non-zero otherwise — for a scheduler to branch on without reading the text.
+    The webhook URL is never printed, anywhere, including on failure.
+    The webhook payload shape follows OC_WATCH_WEBHOOK_FORMAT (generic/slack/discord/telegram), or autodetects from the URL host when unset (hooks.slack.com, discord.com/discordapp.com with /api/webhooks/, api.telegram.org).
+    generic keeps the original {deployment, from, to, reasons, at} JSON; slack/discord/telegram instead get a one-two line human message (deployment, from → to, reason codes with a short detail each, and the time), truncated to fit that format's own documented limit (Slack 40000, Discord's `content` 2000, Telegram's `text` 4096).
+    telegram additionally needs OC_WATCH_TELEGRAM_CHAT_ID — refused as a configuration error, the same way a bad URL is, before any probe cycle runs — and treats a 2xx response carrying `ok:false` as an undelivered alert exactly like a failed POST (state kept, retried next cycle).
+    OC_WATCH_HEARTBEAT_URL adds a dead-man's switch: a plain GET, fired every cycle whose OWN level reads ok (never on degraded/down, and never affecting level or exit code on its own) — https only unless it is localhost, a secret registered the same way the webhook is.
+    Works with healthchecks.io, Uptime Kuma's push monitor and Better Stack's heartbeat monitor, all three of which accept a bare GET.
+    When the instance, or the scheduler running `watch check` itself, stops entirely, the pings simply stop and that external service raises its own alert — the one failure mode a webhook fired FROM here can never report.
+    A failed ping is a warning in this cycle's output and in `watch status` (last heartbeat error), never a level change or a non-zero exit by itself.
+    install / uninstall — print (and, with --apply, install through the transport) a crontab entry that runs `watch check` every --interval (default 5m; a bare number is minutes, or 30m/6h/1d like `backup install`; minutes must divide 60 — 1,2,3,4,5,6,10,12,15,20,30 — hours must divide a day — 1,2,3,4,6,8,12,24 — anything else is refused, naming the nearest valid values, rather than silently misfiring),
+    marked so a re-run replaces only its own line and uninstall removes only it.
+    Cron installation refuses % in the working directory, command, arguments or marker before touching the scheduler, including a percent preceded by a backslash.
+    Only where this framework can actually trust an unattended cron to find this tooling's own node and checkout: a real SSH host (deploy already mirrored the checkout there) or a POSIX `local` target.
+    A WSL target's Docker distro is not such a place (a `local` target is refused on Windows) — there this prints, instead of installing something that silently never runs, the exact command an operator-side scheduler would need to invoke, using the transport's own clientInvocation().
+    On an actual Windows host it also prints a ready `schtasks /create` command (the WSL target's own `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- …; exec …"` line); `/f` replaces the same named task on a re-run, the Task Scheduler counterpart to the crontab marker. schtasks accepts at most 261 characters for the action, so a longer one is refused — no schtasks line is printed and --apply creates nothing; shorten the deployment path or app name.
+    --apply on that same Windows host actually runs it, through the same host-spawn helper every other bare-machine action uses; anywhere else this only ever prints — it never touches a real crontab or scheduled task by itself.
+    status — the persisted last state, when it last changed, and whether a webhook/heartbeat is configured (plus the heartbeat's own last successful ping time, and its last failure if the most recent ping did not succeed) — never either URL itself.
+    SSH status reads target-side scheduled history through transport, never local ad-hoc cycles; unavailable history is unknown. Local/WSL scheduled history is operator-side. Install stores location/interval in state/watch-schedule.json beside that history.
+    Also reports when `watch check` last ran at all (a config error or a failed delivery still counts), the most recent config/delivery error, an alert still waiting to be delivered (since when, and what transition), and warns when that last run is stale —
+    more than 3x the interval `watch install --apply` recorded, or 3x the default (5 minutes) when no interval was ever recorded (a state file from before this field, or a schedule wired up by hand outside `watch install`).
+    test — sends one webhook message (clearly marked as a test, never shaped like a real transition) and one heartbeat ping through whichever of OC_WATCH_WEBHOOK/OC_WATCH_HEARTBEAT_URL is configured, so delivery can be proven before a real outage is the first time it is tried.
+    Reports success or failure per target and exits non-zero if a configured one failed; says so plainly when neither is configured.
+    Never touches level/reasons or a pending alert — only the heartbeat's own last-ping fields move, the same way a real cycle's heartbeat ping does.
+    
+    This command can replace or destroy state, depending on the action given.
+
+=== incident --help ===
+==> incident — Incident response: contain, preserve evidence, rotate the token, audit
+    Usage: ./clawforge incident [--dry-run] [--keep-exposure] [--tail <n>] [--json] [--break-lock] [--break-foreign-lock <hostId>]
+      --dry-run              Print the plan without changing anything
+      --keep-exposure        Proceed with the gateway published on every interface
+      --tail <n>             Lines of log to collect (default 500)
+      --json                 Emit the report as JSON
+      --break-lock           Take over the instance lock held by another operation
+      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
+    
+    OpenClaw's own incident runbook, in order: contain — turns off, on the target, only the `tailscale serve` route(s) that proxy to THIS gateway (never `tailscale serve reset`, which would also drop every other service's own route on that host);
+    when the route shape cannot be parsed reliably, nothing is turned off and the exact manual command is printed instead.
+    Refuses the whole run outright while the gateway is published on every interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and ./clawforge up, or pass --keep-exposure if that is already handled elsewhere.
+    A contain failure (most commonly, this account is not the tailscale operator on the target — the report names the fix) is noted, never fatal: rotate still runs.
+    preserve — before rotate can recreate the container, a log tail and a raw `docker inspect` of the container running right now are written into this run's own evidence directory;
+    compose removes the old container once the new one is up, and its json-file log goes with it, so this has to happen first.
+    rotate — a fresh OPENCLAW_GATEWAY_TOKEN, written to .env and recreated into the running container so it actually takes effect (a repo-env value like this one is fixed at container-creation time);
+    every MCP client paired against the old token needs ./clawforge mcp-creds again.
+    audit — the same security gate `./clawforge doctor`/`./clawforge accept` run, plus `openclaw doctor --lint`, both reported here rather than gating the run.
+    collect — a bounded log tail of whatever is running by then, both audit outputs and a short status summary, joined with preserve's own files into one manifest, into a private, owner-only apps/<name>/incidents/<timestamp>/ directory — never inside the repository's tracked tree (apps/ is gitignored wholesale);
+    every file is masked for known secrets before it is written.
+    preserve and collect run and write unconditionally, even when rotate or audit fails: the report still shows where the evidence landed, and the original failure still reaches you afterwards as a non-zero exit.
+    Mutating (rotate recreates the gateway) — takes the instance lock. --dry-run prints the plan and performs none of it, not even taking the lock.
+    
+    This command can replace or destroy state, depending on the flags given.
+    
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+
+=== recover-env --help ===
+==> recover-env — Repair .env's connection facts from the running instance
+    Usage: ./clawforge recover-env [--dry-run] [--adopt-runtime] [--json]
+      --dry-run              Print what would change without writing
+      --adopt-runtime        Take the running container as authoritative: merge its facts over the file's existing values too, not just fill the names it is missing
+      --json                 Emit the outcome as JSON
+    
+    OC_DATA_DIR, OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT and OPENCLAW_IMAGE are plumbing, not secrets, and compose resolved them from this same .env at container-creation time, so one docker inspect of the running container reads the answers back.
+    Each recovered value is merged into the existing .env — already-correct values are untouched, and a fact Docker's answer does not carry is named and left as it is, never guessed.
+    For a stale or half-filled .env — a wholly absent one is not repairable here, because reaching the target to inspect anything already requires the .env that names the target and its transport (bootstrap creates it).
+    The file is rewritten with the same owner-only protection secrets --apply uses, because OPENCLAW_GATEWAY_TOKEN lives beside these lines and protection is per-file; unrelated lines pass through untouched.
+    A plain recover-env fills only the fact names the file is missing entirely and reports the ones both sides carry differently without writing over them; --adopt-runtime is the container-authoritative direction that also merges those over the file's existing values.
+    --dry-run prints what would change and writes nothing.
+
 === status --help ===
 ==> status — Show containers, image, health probes and data usage
     Usage: ./clawforge status [--json]
@@ -620,20 +731,6 @@
     
     This command can replace or destroy state, depending on the flags given.
 
-=== recover-env --help ===
-==> recover-env — Repair .env's connection facts from the running instance
-    Usage: ./clawforge recover-env [--dry-run] [--adopt-runtime] [--json]
-      --dry-run              Print what would change without writing
-      --adopt-runtime        Take the running container as authoritative: merge its facts over the file's existing values too, not just fill the names it is missing
-      --json                 Emit the outcome as JSON
-    
-    OC_DATA_DIR, OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT and OPENCLAW_IMAGE are plumbing, not secrets, and compose resolved them from this same .env at container-creation time, so one docker inspect of the running container reads the answers back.
-    Each recovered value is merged into the existing .env — already-correct values are untouched, and a fact Docker's answer does not carry is named and left as it is, never guessed.
-    For a stale or half-filled .env — a wholly absent one is not repairable here, because reaching the target to inspect anything already requires the .env that names the target and its transport (bootstrap creates it).
-    The file is rewritten with the same owner-only protection secrets --apply uses, because OPENCLAW_GATEWAY_TOKEN lives beside these lines and protection is per-file; unrelated lines pass through untouched.
-    A plain recover-env fills only the fact names the file is missing entirely and reports the ones both sides carry differently without writing over them; --adopt-runtime is the container-authoritative direction that also merges those over the file's existing values.
-    --dry-run prints what would change and writes nothing.
-
 === recipe --help ===
 ==> recipe — Deploy services next to the instance: install, verify, list, and more
     Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes]
@@ -725,103 +822,6 @@
     control-mcp, this deployment's own commands as tools (status, backup, secrets, and the rest), so they don't have to be typed by hand.
     Writes project .mcp.json for Claude Code and .codex/config.toml for Codex. Other servers and settings are preserved; invalid or ambiguous configuration is refused.
     init and new-app do this automatically. Use --client claude or --client codex to update only one client. Launch paths are resolved inside the project, without absolute host paths. The client may still require project trust or server approval; reconnect it after setup.
-    
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
-
-=== expose --help ===
-==> expose — Reach a loopback-bound gateway from outside: SSH tunnel or tailscale
-    Usage: ./clawforge expose <action> [--local-port <port>] [--run] [--apply] [--break-lock] [--break-foreign-lock <hostId>] [--json]
-      <action>               ssh, tailscale or status [ssh|tailscale|status] (required)
-      --local-port <port>    local port to bind (defaults to the gateway's own port) (ssh)
-      --run                  open the tunnel in the foreground until Ctrl+C; needs a real terminal (ssh)
-      --apply                run the printed `tailscale serve` command on the target instead of only printing it (tailscale)
-      --break-lock           Take over the instance lock held by another operation (tailscale)
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (tailscale)
-      --json                 Emit the exposure and tailscale report as JSON (status)
-    
-    Three actions, narrowest scope first.
-    ssh — for OC_TARGET_LOCATION=ssh deployments, prints the exact `ssh -N -L <local>:127.0.0.1:<gatewayPort> <OC_SSH_HOST>` tunnel and the http://127.0.0.1:<local> URL it opens; --run runs it in the foreground through the local ssh client (needs a real terminal — refused under MCP or a plain pipe) until Ctrl+C.
-    wsl/local targets are told no tunnel is needed: Docker Desktop's WSL2 integration already forwards the published port to this machine's own loopback.
-    tailscale — probes, on the target, whether `tailscale` exists and is logged in (`tailscale status --json`), then prints the exact `tailscale serve --bg http://127.0.0.1:<gatewayPort>` command — tailnet-only HTTPS, never `tailscale funnel` (refused outright, with the reason, whether or not --apply is given).
-    --apply runs it on the target through the transport — mutating, so it needs MCP confirmation and the instance lock (guarded()), same as every other mutating command.
-    status — the published bind address/port read back from the RUNNING container (never just .env, which can be stale the moment OC_BIND_ADDRESS is edited without a recreate), whether that is loopback-only, and — if tailscale is present — a summary of `tailscale serve status`. Warns loudly when the bind address is 0.0.0.0 or ::.
-    The same one-line summary appears in `./clawforge status`. --json emits the same facts structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.
-    
-    This command can replace or destroy state, depending on the action given.
-
-=== watch --help ===
-==> watch — Health monitoring with a webhook alert on state change
-    Usage: ./clawforge watch <action> [--json] [--interval <interval>] [--apply] [--break-lock] [--break-foreign-lock <hostId>]
-      <action>               check, install, uninstall, status or test [check|install|uninstall|status|test] (required)
-      --json                 Emit JSON instead of text (check, status, test)
-      --interval <interval>  time between checks (default 5m) — a bare number is minutes, or 30m/6h/1d; minutes must divide 60 (1,2,3,4,5,6,10,12,15,20,30), hours must divide a day (1,2,3,4,6,8,12,24) (install)
-      --apply                mutate the target's crontab instead of only printing it (install, uninstall)
-      --break-lock           Take over the instance lock held by another operation (install, uninstall)
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over (install, uninstall)
-    
-    Five actions.
-    check — one probe cycle, reusing exactly the findings `inspect`/`doctor` already compute (GATEWAY_DOWN, GATEWAY_UNHEALTHY, NOT_BOOTSTRAPPED, EGRESS_UNREACHABLE — never PROVIDER_MISSING, whose detection is unreliable enough that it would page degraded forever on an instance answering fine, nor CONFIG_DRIFT or the rest, which are real but not about whether the instance is serving),
-    then layers on two findings of its own: CHANNEL_UNHEALTHY (degraded) for a configured, enabled channel account that `openclaw channels status --json` reports not running, erroring or not connected
-    A requested channel read that fails or returns malformed or incomplete telemetry produces CHANNEL_UNKNOWN (degraded), preventing healthy recovery and heartbeat pings; an unrequested read adds no finding.
-    (skipped while the gateway itself is down — nothing to exec a CLI call into; verified on OpenClaw 2026.6.34 — that CLI has no dead-letter/delivery-failure signal, only connection/auth trouble, so that is all this reports),
-    and DISK_LOW/DISK_UNKNOWN for the data directory's free space against OC_WATCH_DISK_MIN_MB (default 1024 MB; degraded below it, down below 10% of it or 100 MB, whichever is higher; DISK_UNKNOWN — always degraded, never a silent ok — when `df` itself fails or cannot be parsed).
-    All of this collapses into ok / degraded / down.
-    If gathering the base findings itself fails outright — the Docker daemon down, an SSH host refusing the connection, wsl.exe never answering — that reads as down too, reason TARGET_UNREACHABLE, rather than dying before a cycle can alert or record anything (channel/disk are skipped in that case, and also while NOT_BOOTSTRAPPED — no data directory yet to measure).
-    Compared against this machine's deployment history (atomic write), serialized across processes through delivery and persistence; a busy cycle reports contention. SSH operator cycles use separate state/watch-operator.json, not the remote scheduled history.
-    A webhook POST (OC_WATCH_WEBHOOK in this deployment's .env, https only unless it is localhost) fires only on a TRANSITION, so an unchanged state never pages anyone twice.
-    A failed POST leaves the persisted level at its old value on purpose, so the same unreported transition is retried next cycle instead of being silently accepted as normal — but the failure itself, and when it happened, is now recorded (`watch status`'s lastError/alertPending), so a broken webhook does not fail forever without a trace between cycles.
-    A configuration error (a bad OC_WATCH_WEBHOOK/OC_WATCH_WEBHOOK_FORMAT/OC_WATCH_TELEGRAM_CHAT_ID/OC_WATCH_HEARTBEAT_URL) is recorded the same way, before a probe cycle ever runs.
-    The exit code reflects the CURRENT state on every cycle, alert or not — 0 while ok, non-zero otherwise — for a scheduler to branch on without reading the text.
-    The webhook URL is never printed, anywhere, including on failure.
-    The webhook payload shape follows OC_WATCH_WEBHOOK_FORMAT (generic/slack/discord/telegram), or autodetects from the URL host when unset (hooks.slack.com, discord.com/discordapp.com with /api/webhooks/, api.telegram.org).
-    generic keeps the original {deployment, from, to, reasons, at} JSON; slack/discord/telegram instead get a one-two line human message (deployment, from → to, reason codes with a short detail each, and the time), truncated to fit that format's own documented limit (Slack 40000, Discord's `content` 2000, Telegram's `text` 4096).
-    telegram additionally needs OC_WATCH_TELEGRAM_CHAT_ID — refused as a configuration error, the same way a bad URL is, before any probe cycle runs — and treats a 2xx response carrying `ok:false` as an undelivered alert exactly like a failed POST (state kept, retried next cycle).
-    OC_WATCH_HEARTBEAT_URL adds a dead-man's switch: a plain GET, fired every cycle whose OWN level reads ok (never on degraded/down, and never affecting level or exit code on its own) — https only unless it is localhost, a secret registered the same way the webhook is.
-    Works with healthchecks.io, Uptime Kuma's push monitor and Better Stack's heartbeat monitor, all three of which accept a bare GET.
-    When the instance, or the scheduler running `watch check` itself, stops entirely, the pings simply stop and that external service raises its own alert — the one failure mode a webhook fired FROM here can never report.
-    A failed ping is a warning in this cycle's output and in `watch status` (last heartbeat error), never a level change or a non-zero exit by itself.
-    install / uninstall — print (and, with --apply, install through the transport) a crontab entry that runs `watch check` every --interval (default 5m; a bare number is minutes, or 30m/6h/1d like `backup install`; minutes must divide 60 — 1,2,3,4,5,6,10,12,15,20,30 — hours must divide a day — 1,2,3,4,6,8,12,24 — anything else is refused, naming the nearest valid values, rather than silently misfiring),
-    marked so a re-run replaces only its own line and uninstall removes only it.
-    Cron installation refuses % in the working directory, command, arguments or marker before touching the scheduler, including a percent preceded by a backslash.
-    Only where this framework can actually trust an unattended cron to find this tooling's own node and checkout: a real SSH host (deploy already mirrored the checkout there) or a POSIX `local` target.
-    A WSL target's Docker distro is not such a place (a `local` target is refused on Windows) — there this prints, instead of installing something that silently never runs, the exact command an operator-side scheduler would need to invoke, using the transport's own clientInvocation().
-    On an actual Windows host it also prints a ready `schtasks /create` command (the WSL target's own `wsl.exe -d <distro> --exec bash -lc "set -e; cd -- …; exec …"` line); `/f` replaces the same named task on a re-run, the Task Scheduler counterpart to the crontab marker. schtasks accepts at most 261 characters for the action, so a longer one is refused — no schtasks line is printed and --apply creates nothing; shorten the deployment path or app name.
-    --apply on that same Windows host actually runs it, through the same host-spawn helper every other bare-machine action uses; anywhere else this only ever prints — it never touches a real crontab or scheduled task by itself.
-    status — the persisted last state, when it last changed, and whether a webhook/heartbeat is configured (plus the heartbeat's own last successful ping time, and its last failure if the most recent ping did not succeed) — never either URL itself.
-    SSH status reads target-side scheduled history through transport, never local ad-hoc cycles; unavailable history is unknown. Local/WSL scheduled history is operator-side. Install stores location/interval in state/watch-schedule.json beside that history.
-    Also reports when `watch check` last ran at all (a config error or a failed delivery still counts), the most recent config/delivery error, an alert still waiting to be delivered (since when, and what transition), and warns when that last run is stale —
-    more than 3x the interval `watch install --apply` recorded, or 3x the default (5 minutes) when no interval was ever recorded (a state file from before this field, or a schedule wired up by hand outside `watch install`).
-    test — sends one webhook message (clearly marked as a test, never shaped like a real transition) and one heartbeat ping through whichever of OC_WATCH_WEBHOOK/OC_WATCH_HEARTBEAT_URL is configured, so delivery can be proven before a real outage is the first time it is tried.
-    Reports success or failure per target and exits non-zero if a configured one failed; says so plainly when neither is configured.
-    Never touches level/reasons or a pending alert — only the heartbeat's own last-ping fields move, the same way a real cycle's heartbeat ping does.
-    
-    This command can replace or destroy state, depending on the action given.
-
-=== incident --help ===
-==> incident — Incident response: contain, preserve evidence, rotate the token, audit
-    Usage: ./clawforge incident [--dry-run] [--keep-exposure] [--tail <n>] [--json] [--break-lock] [--break-foreign-lock <hostId>]
-      --dry-run              Print the plan without changing anything
-      --keep-exposure        Proceed with the gateway published on every interface
-      --tail <n>             Lines of log to collect (default 500)
-      --json                 Emit the report as JSON
-      --break-lock           Take over the instance lock held by another operation
-      --break-foreign-lock <hostId> Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over
-    
-    OpenClaw's own incident runbook, in order: contain — turns off, on the target, only the `tailscale serve` route(s) that proxy to THIS gateway (never `tailscale serve reset`, which would also drop every other service's own route on that host);
-    when the route shape cannot be parsed reliably, nothing is turned off and the exact manual command is printed instead.
-    Refuses the whole run outright while the gateway is published on every interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and ./clawforge up, or pass --keep-exposure if that is already handled elsewhere.
-    A contain failure (most commonly, this account is not the tailscale operator on the target — the report names the fix) is noted, never fatal: rotate still runs.
-    preserve — before rotate can recreate the container, a log tail and a raw `docker inspect` of the container running right now are written into this run's own evidence directory;
-    compose removes the old container once the new one is up, and its json-file log goes with it, so this has to happen first.
-    rotate — a fresh OPENCLAW_GATEWAY_TOKEN, written to .env and recreated into the running container so it actually takes effect (a repo-env value like this one is fixed at container-creation time);
-    every MCP client paired against the old token needs ./clawforge mcp-creds again.
-    audit — the same security gate `./clawforge doctor`/`./clawforge accept` run, plus `openclaw doctor --lint`, both reported here rather than gating the run.
-    collect — a bounded log tail of whatever is running by then, both audit outputs and a short status summary, joined with preserve's own files into one manifest, into a private, owner-only apps/<name>/incidents/<timestamp>/ directory — never inside the repository's tracked tree (apps/ is gitignored wholesale);
-    every file is masked for known secrets before it is written.
-    preserve and collect run and write unconditionally, even when rotate or audit fails: the report still shows where the evidence landed, and the original failure still reaches you afterwards as a non-zero exit.
-    Mutating (rotate recreates the gateway) — takes the instance lock. --dry-run prints the plan and performs none of it, not even taking the lock.
-    
-    This command can replace or destroy state, depending on the flags given.
     
     Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
 

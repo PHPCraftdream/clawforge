@@ -580,7 +580,7 @@ that is `bootstrap`) get their preparation earlier: the framework creates `.env`
 template with this deployment's paths and port, generates a token if there is none, and
 only then builds the context. The MCP server uses the same path.
 
-Preparation only runs for a call that will actually mutate: `core/arguments.ts`'s
+Preparation only runs for a call that will actually mutate: `core/command/parse.ts`'s
 `preparesEnvironmentFor(command, args)` is false for a read-only call (the same
 `readOnlyWhen` predicate MCP's own change-reporting uses, e.g. `bootstrap --check`) and
 false for argv the command's own parser would refuse — an invalid flag creates nothing
@@ -637,8 +637,8 @@ more of them than fit here:
 | `release/release/installed-consumer.check.ts` | the published tarball, installed into a directory `npm init -y` made: `init` there, then a command through the installed entry point |
 | `foundation/core/paths.check.ts` | 48 translations between the four coordinate systems |
 | `foundation/core/archive.check.ts` | absolute paths, `..`, links pointing outside (symlink and hard link), consistency of the `share` profile |
-| `foundation/core/arguments/arguments.check.ts` | argument declarations, MCP schemas, the reverse mapping back to argv |
-| `foundation/core/arguments/action-arguments.check.ts` | per-action slices of multi-action commands, schema descriptions as complete phrases |
+| `foundation/core/command/spec/parse.check.ts` | argument declarations, MCP schemas, the reverse mapping back to argv |
+| `foundation/core/command/spec/view.check.ts` | per-action slices of multi-action commands, schema descriptions as complete phrases |
 | `runtime/service/deploy.check.ts` | what a server delivery contains: what travels and what stays, and that it refuses to mirror a tree that is not a checkout |
 | `integration/mcp/transport-listing.check.ts` | `listFiles`: a real local tree (no separator leaks into a target path, directories are not files) and what the remote implementations make of `find` output |
 | `secrets.check.ts` | masking of secrets in diagnostics, including a failing child process |

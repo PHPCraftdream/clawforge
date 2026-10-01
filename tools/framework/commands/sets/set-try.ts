@@ -37,7 +37,7 @@ import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
 
 export * from "./set-try-env.ts";
 

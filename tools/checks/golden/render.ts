@@ -46,7 +46,7 @@ import { runApp } from "#framework/entry/cli.ts";
 import { renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
-import { UnknownArgumentError } from "#framework/core/arguments.ts";
+import { UnknownArgumentError } from "#framework/core/command/index.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 const GATE_SCRIPT = resolve(monorepoRoot, "tools", "clawforge.ts");

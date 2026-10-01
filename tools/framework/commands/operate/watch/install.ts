@@ -17,7 +17,7 @@ import { guarded } from "../../../runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "../../../runtime/runtime.ts";
 import type { Context } from "../../../core/context.ts";
 import type { CommandArgument } from "../../../core/app.ts";
-import { parseDeclaredArgs } from "../../../core/arguments.ts";
+import { parseDeclaredArgs } from "../../../core/command/index.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../../interface/groups/shared-arguments.ts";
 import {
   cronLine as sharedCronLine,

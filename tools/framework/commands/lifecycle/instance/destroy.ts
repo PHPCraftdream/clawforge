@@ -8,7 +8,7 @@ import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { deploymentName, composeProjectName } from "#src/runtime/deployment.ts";
 import { answeredProbe, sudoFor, sudoForRead } from "#src/runtime/datadir.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both destroy's own parser and its openclawCommands declaration. --data/--backups/

@@ -23,15 +23,17 @@ import { createContext } from "../../core/context.ts";
 import { clearRecipesDir } from "../../service/recipe.ts";
 import { useApplicationRecipesDir } from "../../runtime/deployment.ts";
 import { ensureEnvironment } from "../provision.ts";
-import { preparesEnvironmentFor } from "../../core/arguments.ts";
+import { preparesEnvironmentFor } from "../../core/command/index.ts";
 import { maskSecrets, UserError } from "../../core/io/log.ts";
 import { localizeHints } from "../../core/io/invocation/index.ts";
 import { withOutputSink } from "../../core/io/output.ts";
-import { maskStructuredOutput, maskStructuredResult, toolEnvelope, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
+import { toolDescription, inputSchema, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
+import { maskStructuredOutput, maskStructuredResult, toolEnvelope, validate, toArgv } from "./call.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../../commands/operate/recover-env/index.ts";
 import { frameworkVersion } from "../../commands/management/lock.ts";
 
 export * from "./schema.ts";
+export * from "./call.ts";
 
 const PROTOCOL_VERSION = "2025-06-18";
 

@@ -5,7 +5,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/artifacts/receipt.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
 
 /** The slice of `set`'s declaration `receipts`'s own argv actually uses. */
 export const SET_RECEIPTS_ARGUMENTS: CommandArgument[] = [

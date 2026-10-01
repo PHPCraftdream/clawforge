@@ -15,7 +15,7 @@ import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { unreachableProblem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
 import {
   listBackupArchives, listReplacedCopies, defaultRestoreArchive,
   InventoryUnreadableError,

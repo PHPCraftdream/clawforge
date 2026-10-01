@@ -15,7 +15,7 @@ import { CLI_HELPER_SERVICE } from "#src/commands/interface/cli-helper.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, MCP_LAUNCHER_FILENAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
 import type { McpClient } from "#src/integration/mcp/project.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 /** Drives both mcp-setup's own parser and its openclawCommands declaration. */
 export const MCP_SETUP_ARGUMENTS: CommandArgument[] = [

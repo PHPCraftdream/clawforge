@@ -7,7 +7,7 @@
 
 import { die } from "#src/core/io/log.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { scopeByAction } from "#src/core/arguments.ts";
+import { scopeByAction } from "#src/core/command/index.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Every flag/option recipe knows; which action takes which is RECIPE_ACTION_GRAMMAR's. */

@@ -14,7 +14,7 @@ import { createBackup, NativeBackupUnsupportedError } from "#src/commands/lifecy
 import { restoreArchive } from "#src/commands/lifecycle/restore/index.ts";
 import { parse, tryParse, channel, format, repositoryOf, withDigest, sameContent, digestOf, type ImageRef } from "#src/runtime/docker/image-ref.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both upgrade's own parser and its openclawCommands declaration. */

@@ -880,6 +880,195 @@
       }
     },
     {
+      "name": "expose",
+      "description": "Reach a loopback-bound gateway from outside: SSH tunnel or tailscale (destructive for some actions)\n\nFull text: call help with command=expose.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "ssh, tailscale or status",
+            "enum": [
+              "ssh",
+              "tailscale",
+              "status"
+            ]
+          },
+          "local-port": {
+            "type": "string",
+            "description": "local port to bind (ssh) (value: <port>)"
+          },
+          "run": {
+            "type": "boolean",
+            "description": "open the tunnel in the foreground until Ctrl+C (ssh)"
+          },
+          "apply": {
+            "type": "boolean",
+            "description": "run the printed `tailscale serve` command on the target… (tailscale)"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the exposure and tailscale report as JSON (status)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "watch",
+      "description": "Health monitoring with a webhook alert on state change (destructive for some actions)\n\nFull text: call help with command=watch.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "check, install, uninstall, status or test",
+            "enum": [
+              "check",
+              "install",
+              "uninstall",
+              "status",
+              "test"
+            ]
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit JSON instead of text (check, status, test)"
+          },
+          "interval": {
+            "type": "string",
+            "description": "time between checks — a bare number is minutes (install) (value: <interval>)"
+          },
+          "apply": {
+            "type": "boolean",
+            "description": "mutate the target's crontab instead of only printing it (install, uninstall)"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "incident",
+      "description": "Incident response: contain, preserve evidence, rotate the token, audit (destructive for some actions)\n\nFull text: call help with command=incident.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dry-run": {
+            "type": "boolean",
+            "description": "Print the plan without changing anything"
+          },
+          "keep-exposure": {
+            "type": "boolean",
+            "description": "Proceed with the gateway published on every interface"
+          },
+          "tail": {
+            "type": "string",
+            "description": "Lines of log to collect (value: <n>)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the report as JSON"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "recover-env",
+      "description": "Repair .env's connection facts from the running instance\n\nFull text: call help with command=recover-env.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dry-run": {
+            "type": "boolean",
+            "description": "Print what would change without writing"
+          },
+          "adopt-runtime": {
+            "type": "boolean",
+            "description": "Take the running container as authoritative"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          }
+        }
+      }
+    },
+    {
       "name": "status",
       "description": "Show containers, image, health probes and data usage\n\nFull text: call help with command=status.",
       "inputSchema": {
@@ -1133,27 +1322,6 @@
       }
     },
     {
-      "name": "recover-env",
-      "description": "Repair .env's connection facts from the running instance\n\nFull text: call help with command=recover-env.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "dry-run": {
-            "type": "boolean",
-            "description": "Print what would change without writing"
-          },
-          "adopt-runtime": {
-            "type": "boolean",
-            "description": "Take the running container as authoritative"
-          },
-          "json": {
-            "type": "boolean",
-            "description": "Emit the outcome as JSON"
-          }
-        }
-      }
-    },
-    {
       "name": "recipe",
       "description": "Deploy services next to the instance: install, verify, list, and more (destructive for some actions)\n\nFull text: call help with command=recipe.",
       "inputSchema": {
@@ -1347,174 +1515,6 @@
           "rewrite-launcher": {
             "type": "boolean",
             "description": "Overwrite a locally edited mcp-launch.mjs"
-          }
-        }
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "operationId": {
-            "type": "string"
-          },
-          "changed": {
-            "type": "boolean"
-          },
-          "healthy": {
-            "type": "boolean"
-          },
-          "problems": {
-            "type": "array"
-          },
-          "warnings": {
-            "type": "array"
-          },
-          "nextActions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "result": {}
-        },
-        "required": [
-          "operationId",
-          "changed",
-          "problems",
-          "warnings",
-          "nextActions",
-          "result"
-        ]
-      }
-    },
-    {
-      "name": "expose",
-      "description": "Reach a loopback-bound gateway from outside: SSH tunnel or tailscale (destructive for some actions)\n\nFull text: call help with command=expose.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string",
-            "description": "ssh, tailscale or status",
-            "enum": [
-              "ssh",
-              "tailscale",
-              "status"
-            ]
-          },
-          "local-port": {
-            "type": "string",
-            "description": "local port to bind (ssh) (value: <port>)"
-          },
-          "run": {
-            "type": "boolean",
-            "description": "open the tunnel in the foreground until Ctrl+C (ssh)"
-          },
-          "apply": {
-            "type": "boolean",
-            "description": "run the printed `tailscale serve` command on the target… (tailscale)"
-          },
-          "break-lock": {
-            "type": "boolean",
-            "description": "Take over a held instance lock"
-          },
-          "break-foreign-lock": {
-            "type": "string",
-            "description": "Host id of an orphaned lock to take over"
-          },
-          "json": {
-            "type": "boolean",
-            "description": "Emit the exposure and tailscale report as JSON (status)"
-          },
-          "confirm": {
-            "type": "boolean",
-            "description": "Confirm a destructive action"
-          }
-        },
-        "required": [
-          "action"
-        ]
-      }
-    },
-    {
-      "name": "watch",
-      "description": "Health monitoring with a webhook alert on state change (destructive for some actions)\n\nFull text: call help with command=watch.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string",
-            "description": "check, install, uninstall, status or test",
-            "enum": [
-              "check",
-              "install",
-              "uninstall",
-              "status",
-              "test"
-            ]
-          },
-          "json": {
-            "type": "boolean",
-            "description": "Emit JSON instead of text (check, status, test)"
-          },
-          "interval": {
-            "type": "string",
-            "description": "time between checks — a bare number is minutes (install) (value: <interval>)"
-          },
-          "apply": {
-            "type": "boolean",
-            "description": "mutate the target's crontab instead of only printing it (install, uninstall)"
-          },
-          "break-lock": {
-            "type": "boolean",
-            "description": "Take over a held instance lock"
-          },
-          "break-foreign-lock": {
-            "type": "string",
-            "description": "Host id of an orphaned lock to take over"
-          },
-          "confirm": {
-            "type": "boolean",
-            "description": "Confirm a destructive action"
-          }
-        },
-        "required": [
-          "action"
-        ]
-      }
-    },
-    {
-      "name": "incident",
-      "description": "Incident response: contain, preserve evidence, rotate the token, audit (destructive for some actions)\n\nFull text: call help with command=incident.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "dry-run": {
-            "type": "boolean",
-            "description": "Print the plan without changing anything"
-          },
-          "keep-exposure": {
-            "type": "boolean",
-            "description": "Proceed with the gateway published on every interface"
-          },
-          "tail": {
-            "type": "string",
-            "description": "Lines of log to collect (value: <n>)"
-          },
-          "json": {
-            "type": "boolean",
-            "description": "Emit the report as JSON"
-          },
-          "break-lock": {
-            "type": "boolean",
-            "description": "Take over a held instance lock"
-          },
-          "break-foreign-lock": {
-            "type": "string",
-            "description": "Host id of an orphaned lock to take over"
-          },
-          "confirm": {
-            "type": "boolean",
-            "description": "Confirm a destructive action"
           }
         }
       },

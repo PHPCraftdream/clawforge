@@ -12,7 +12,7 @@
 import { info, infoRaw, log, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";

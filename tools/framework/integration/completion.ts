@@ -7,7 +7,7 @@
 // only once a shell asks for `--app`'s value — never baked into the generated text, and via
 // whichever of `clawforge`/`./clawforge` was typed. Output never carries a machine path.
 
-import { parseDeclaredArgs, NO_ACTION } from "../core/arguments.ts";
+import { parseDeclaredArgs, NO_ACTION } from "../core/command/index.ts";
 import { reportError } from "../core/io/log.ts";
 import { cli } from "../core/io/invocation/index.ts";
 import { emitRaw } from "../core/io/output.ts";

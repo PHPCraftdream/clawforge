@@ -9,7 +9,7 @@ import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import { shouldFollow } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 const PORT = /^[1-9][0-9]*$/;
 

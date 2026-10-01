@@ -8,7 +8,7 @@ import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
 import type { Context } from "#src/core/context.ts";
 import { isAbsolute, relative, sep, win32 } from "node:path";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 /** Drives both deploy's own parser and its openclawCommands declaration. */
 export const DEPLOY_ARGUMENTS: CommandArgument[] = [

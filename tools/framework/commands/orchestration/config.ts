@@ -14,7 +14,7 @@ import { guarded, parseBreakForeignLockHost } from "#src/runtime/lock/instance-l
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both apply-config's own parser and its openclawCommands declaration. */

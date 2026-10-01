@@ -22,7 +22,7 @@ import { apply } from "./apply.ts";
 import type { OperationRecord } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { publishPrivateTargetFile } from "#src/security/privacy/private-target-file.ts";
 

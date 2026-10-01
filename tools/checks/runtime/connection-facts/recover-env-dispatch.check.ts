@@ -21,9 +21,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { runApp } from "#framework/entry/cli.ts";
-import { managementCommands } from "#framework/commands/interface/groups/openclawCommands.management.ts";
+import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
 import { recoverEnvBeforeContext } from "#framework/commands/operate/recover-env/index.ts";
-import { inputSchema, validate } from "#framework/integration/mcp/schema.ts";
+import { inputSchema } from "#framework/integration/mcp/schema.ts";
+import { validate } from "#framework/integration/mcp/call.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
@@ -104,7 +105,7 @@ const previous = (() => {
 const deployDir = await mkdtemp(join(tmpdir(), "clawforge-recover-env-dispatch-"));
 useDeployment(deployDir);
 
-const recoverDeclaration = managementCommands["recover-env"];
+const recoverDeclaration = operateCommands["recover-env"];
 const recoverApp: AppDefinition = {
   name: "dispatch-fixture",
   description: "dispatcher fixture",
@@ -260,13 +261,13 @@ try {
     const moduleUrl = (name: string) => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
     const mcpScript = `
       const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
-      const { managementCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.management"))});
+      const { operateCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.operate"))});
       const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
       useDeployment(${JSON.stringify(deployDir)});
       await serveMcp({
         name: "recover-fixture",
         description: "MCP fixture",
-        commands: { "recover-env": managementCommands["recover-env"] },
+        commands: { "recover-env": operateCommands["recover-env"] },
       });
     `;
     await writeFile(

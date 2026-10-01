@@ -31,7 +31,7 @@ import {
 import type { WatchWebhookTarget } from "./webhook.ts";
 import { channelFindings, diskFindings, mergeFindings } from "./health.ts";
 import type { CommandArgument } from "../../../core/app.ts";
-import { parseDeclaredArgs } from "../../../core/arguments.ts";
+import { parseDeclaredArgs } from "../../../core/command/index.ts";
 
 /** Drives both watch check's own parser and its slice of watch's openclawCommands declaration. */
 export const WATCH_CHECK_ARGUMENTS: CommandArgument[] = [

@@ -9,7 +9,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { listOperations, readOperation, operationsDir } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 const DEFAULT_LIMIT = 10;
 

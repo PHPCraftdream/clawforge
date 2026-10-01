@@ -1,13 +1,13 @@
 // The per-action slices of multi-action commands (set, backup): each action parses its own
 // slice, the declaration shown in --help/completion/MCP is derived from the same table, and every
-// schema description is a complete phrase. Split from arguments.check.ts (700-line limit).
+// schema description is a complete phrase. Split from parse.check.ts (700-line limit).
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
-import { NO_ACTION } from "#framework/core/arguments.ts";
+import { NO_ACTION } from "#framework/core/command/index.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import { buildCompletionModel, renderCompletion } from "#framework/integration/completion.ts";
-import { splitActionScoped } from "#framework/core/arguments.ts";
+import { splitActionScoped } from "#framework/core/command/index.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- R30-04: set's actions each parse their own slice of the declaration --------------------

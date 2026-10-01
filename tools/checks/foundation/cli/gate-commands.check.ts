@@ -15,7 +15,7 @@ import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { buildCompletionModel, renderCompletion, makeCompletionGateCommand, COMPLETION_SHELLS } from "#framework/integration/completion.ts";
 import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
-import { parseDeclaredArgs, UnknownArgumentError } from "#framework/core/arguments.ts";
+import { parseDeclaredArgs, UnknownArgumentError } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -158,7 +158,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
 }
 
 {
-  // The same refusal shape any declared command's argv gets — see core/arguments.ts.
+  // The same refusal shape any declared command's argv gets — see core/command/parse.ts.
   const written: string[] = [];
   const code = await withOutputSink((chunk) => written.push(chunk), async () =>
     runGateCommand([versionGateCommand], ["version", "extra-arg"]));

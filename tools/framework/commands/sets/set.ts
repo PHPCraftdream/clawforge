@@ -23,7 +23,7 @@ import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, defaultSetName } from "./set-manifest.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, dieUnknownAction, scopeByAction, type ActionScope } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, dieUnknownAction, scopeByAction, type ActionScope } from "#src/core/command/index.ts";
 import { SET_DIFF_ARGUMENTS } from "./set-diff.ts";
 import { SET_RECEIPTS_ARGUMENTS } from "./set-receipts.ts";
 import { SET_TRY_ARGUMENTS } from "./set-try.ts";

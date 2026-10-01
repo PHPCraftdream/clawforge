@@ -5,7 +5,7 @@
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
-import { parseDeclaredArgs, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION } from "#framework/core/arguments.ts";
+import { parseDeclaredArgs, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION } from "#framework/core/command/index.ts";
 import { BACKUP_ACTION_ARGUMENTS } from "#framework/commands/lifecycle/backup/index.ts";
 import { RECIPE_ACTION_ARGUMENTS, validateRecipeArgs } from "#framework/commands/management/recipe/arguments.ts";
 import { EXPOSE_ACTION_ARGUMENTS } from "#framework/commands/operate/expose/index.ts";

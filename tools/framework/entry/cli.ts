@@ -5,7 +5,7 @@
 // file in framework/ — that is the property this module exists to guarantee.
 
 import { reportError, UserError, CommandFailedError, info, maskSecrets } from "../core/io/log.ts";
-import { UnknownArgumentError, preparesEnvironmentFor } from "../core/arguments.ts";
+import { UnknownArgumentError, preparesEnvironmentFor } from "../core/command/index.ts";
 import { emit, machineWritesCount, stdoutBytesWritten } from "../core/io/output.ts";
 import { createContext } from "../core/context.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../commands/operate/recover-env/index.ts";

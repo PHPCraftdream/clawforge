@@ -13,7 +13,7 @@ import { unreachableProblem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { summarizeExposure, exposureOneLiner } from "#src/commands/operate/expose/index.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 /** Drives both status's own parser and its openclawCommands declaration. */
 export const STATUS_ARGUMENTS: CommandArgument[] = [

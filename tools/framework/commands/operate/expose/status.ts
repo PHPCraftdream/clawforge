@@ -12,7 +12,7 @@ import { log, info, warn } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 import { probeTailscale } from "./tailscale.ts";
 
 /** The slice of `expose`'s declaration this action's own argv actually uses. */

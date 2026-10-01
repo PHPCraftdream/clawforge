@@ -7,7 +7,7 @@
 import { die } from "../../../core/io/log.ts";
 import type { Context } from "../../../core/context.ts";
 import type { CommandArgument } from "../../../core/app.ts";
-import { dieUnknownAction, scopeByAction } from "../../../core/arguments.ts";
+import { dieUnknownAction, scopeByAction } from "../../../core/command/index.ts";
 import { watchCheck, watchTest, WATCH_CHECK_ARGUMENTS } from "./check.ts";
 import { watchInstall, watchUninstall, WATCH_INSTALL_ARGUMENTS, WATCH_UNINSTALL_ARGUMENTS } from "./install.ts";
 import { watchStatus } from "./status.ts";

@@ -29,7 +29,7 @@ import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/managemen
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "#src/commands/lifecycle/verify.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
-import { parseDeclaredArgs, scopeByAction, NO_ACTION, dieUnknownAction, type ActionScope } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, scopeByAction, NO_ACTION, dieUnknownAction, type ActionScope } from "#src/core/command/index.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";

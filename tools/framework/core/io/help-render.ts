@@ -4,7 +4,7 @@
 
 import { log, info } from "./log.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
-import { splitActionScoped } from "../arguments.ts";
+import { splitActionScoped } from "../command/index.ts";
 
 /** What renderCommandHelp needs from a command — the shape AppCommand and GateCommand both
  *  satisfy, without importing either (they live in entry/ and integration/, downstream of

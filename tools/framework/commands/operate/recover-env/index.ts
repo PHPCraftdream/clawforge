@@ -24,7 +24,7 @@ import { CONNECTION_FACTS, connectionFactDiffs, unrecoverableConnectionFacts } f
 import type { ConnectionFactDiff, ConnectionFacts } from "./facts.ts";
 import { createRecoveryTransport, runningConnectionFactsWithoutContext } from "./bootstrap.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 /** Drives both recover-env's own parser and its openclawCommands declaration. */
 export const RECOVER_ENV_ARGUMENTS: CommandArgument[] = [

@@ -15,12 +15,14 @@
 import type { AppCommand } from "#src/core/app.ts";
 import { lifecycleCommands } from "./groups/openclawCommands.lifecycle.ts";
 import { orchestrationCommands } from "./groups/openclawCommands.orchestration.ts";
+import { operateCommands } from "./groups/openclawCommands.operate.ts";
 import { managementCommands } from "./groups/openclawCommands.management.ts";
 import { setsCommands } from "./groups/openclawCommands.sets.ts";
 
 export const openclawCommands: Record<string, AppCommand> = {
   ...lifecycleCommands,
   ...orchestrationCommands,
+  ...operateCommands,
   ...managementCommands,
   ...setsCommands,
 };

@@ -26,7 +26,7 @@ import { INVOCATION_ENV, invocation, serializeInvocation, setInvocation, takeInv
 import { useDeployment } from "../runtime/deployment.ts";
 import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
-import { parseDeclaredArgs } from "../core/arguments.ts";
+import { parseDeclaredArgs } from "../core/command/index.ts";
 import { renderFullCommandHelp } from "../core/io/help-render.ts";
 import { makeVersionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";

@@ -36,7 +36,7 @@ import { observeLive } from "./live.ts";
 import { observeBackupHealth, observeDiskSpace } from "./upkeep.ts";
 import { runSecurityAudit } from "#src/security/audit.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 /** Shared by inspect and doctor: both take only --json. */
 export const JSON_ONLY_ARGUMENTS: CommandArgument[] = [

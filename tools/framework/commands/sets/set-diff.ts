@@ -13,7 +13,7 @@ import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import type { Context } from "#src/core/context.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 
 export type SetDiffAction = "added" | "removed" | "changed";

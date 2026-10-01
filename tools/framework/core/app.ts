@@ -44,7 +44,7 @@ export interface CommandArgument {
   readonly choices?: readonly string[];
   /** What an option's value is — `hostId`, `n`, `artifact` — printed as `--name <valueName>`
    *  by the shared help renderer and folded into the MCP tool description. Applies to
-   *  `option` only. foundation/core/arguments.check.ts fails if a declared option omits it. */
+   *  `option` only. foundation/core/command/spec/parse.check.ts fails if a declared option omits it. */
   readonly valueName?: string;
   /** For a multi-action command (backup's `action` positional): which action(s) this
    *  argument belongs to. Absent for a single-action command or a shared argument. Read by

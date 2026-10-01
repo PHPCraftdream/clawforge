@@ -4,7 +4,7 @@
 // declarations. version/completion stay wired in the gate script itself: completion's
 // declaration closes over the finished command array (see completion.ts).
 
-import { parseDeclaredArgs, type UnknownArgumentError } from "../core/arguments.ts";
+import { parseDeclaredArgs, type UnknownArgumentError } from "../core/command/index.ts";
 import { reportError } from "../core/io/log.ts";
 import { emit } from "../core/io/output.ts";
 import { createApp } from "../integration/deployment/scaffold.ts";

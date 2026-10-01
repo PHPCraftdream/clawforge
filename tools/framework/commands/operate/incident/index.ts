@@ -28,7 +28,7 @@ import { safeConnectionFacts, requireBootstrapped } from "../../../runtime/runti
 import { runSecurityAudit, type SecurityAuditReport } from "../../../security/audit.ts";
 import { blockingProblems } from "../../../service/inspection.ts";
 import type { CommandArgument } from "../../../core/app.ts";
-import { parseDeclaredArgs } from "../../../core/arguments.ts";
+import { parseDeclaredArgs } from "../../../core/command/index.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../../interface/groups/shared-arguments.ts";
 
 /** Drives both incident's own parser and its openclawCommands declaration. */

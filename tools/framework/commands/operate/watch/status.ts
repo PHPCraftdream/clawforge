@@ -11,7 +11,7 @@ import { readScheduledWatchState } from "./state.ts";
 import { codeDiff, describeTransition, watchHeartbeatUrlRaw, watchWebhookRaw } from "./webhook.ts";
 import { WATCH_CHECK_ARGUMENTS } from "./check.ts";
 import { DEFAULT_WATCH_INTERVAL_MINUTES } from "./install.ts";
-import { parseDeclaredArgs } from "../../../core/arguments.ts";
+import { parseDeclaredArgs } from "../../../core/command/index.ts";
 
 // How many missed intervals before "stale" fires — one alone could just be a slow cycle or
 // scheduler jitter; three in a row means the scheduled check itself likely stopped running.

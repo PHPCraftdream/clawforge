@@ -23,7 +23,7 @@ import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { noProviderConfigured } from "#src/service/secrets.ts";
 import { valueAt } from "#src/commands/orchestration/inspect/helpers.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 import { reach, expect, describeError, evaluate, type Check, type SmokeResult } from "./verdict.ts";
 import { REJECTS_SECRETS_ENTRY, ACCEPTS_SHARE_ENTRY, ROUND_TRIP_ENTRY, ROUND_TRIP_CHECK, ARCHIVE_CHECK_NAMES, runArchiveChecks } from "./round-trip.ts";
 

@@ -42,7 +42,7 @@ import {
 import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import type { Recipe } from "#src/service/recipe.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 import { FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
 /** Drives both restore's own parser and its openclawCommands declaration. */

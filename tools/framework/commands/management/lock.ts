@@ -35,7 +35,7 @@ import {
 } from "./extensions.ts";
 import type { LockPlugin, LockSkill } from "./extensions.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 export const LOCK_VERSION = 1;
 

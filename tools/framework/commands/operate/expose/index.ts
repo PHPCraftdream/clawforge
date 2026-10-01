@@ -9,7 +9,7 @@
 import { die } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { dieUnknownAction, scopeByAction } from "#src/core/arguments.ts";
+import { dieUnknownAction, scopeByAction } from "#src/core/command/index.ts";
 import { exposeSsh, EXPOSE_SSH_ARGUMENTS } from "./ssh.ts";
 import { exposeTailscale, EXPOSE_TAILSCALE_ARGUMENTS } from "./tailscale.ts";
 import { exposeStatus, EXPOSE_STATUS_ARGUMENTS } from "./status.ts";

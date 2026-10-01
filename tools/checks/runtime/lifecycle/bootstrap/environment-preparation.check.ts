@@ -5,7 +5,7 @@
 // U1: entry/cli.ts and integration/mcp/server.ts used to call ensureEnvironment() for every
 // preparesEnvironment command before its own argv was even parsed — `bootstrap --check` and a
 // typo'd flag both wrote .env and a token before either dispatcher branch (--check, "unknown
-// argument") ever ran. core/arguments.ts's preparesEnvironmentFor(command, args) is the fix:
+// argument") ever ran. core/command/parse.ts's preparesEnvironmentFor(command, args) is the fix:
 // false for a read-only call (readOnlyWhen) and false for argv the command's own parser would
 // refuse, checked by both dispatchers before ensureEnvironment() runs.
 //
@@ -24,7 +24,7 @@ import { mkdtemp, readFile, rm, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { ensureEnvironment } from "#framework/integration/provision.ts";
-import { preparesEnvironmentFor } from "#framework/core/arguments.ts";
+import { preparesEnvironmentFor } from "#framework/core/command/index.ts";
 import { runApp } from "#framework/entry/cli.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { lifecycleCommands } from "#framework/commands/interface/groups/openclawCommands.lifecycle.ts";

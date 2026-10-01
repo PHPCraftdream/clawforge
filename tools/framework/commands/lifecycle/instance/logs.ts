@@ -6,7 +6,7 @@ import { shouldFollow, emitRaw, withOutputSink } from "#src/core/io/output.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 /** Drives logs's own parser and its openclawCommands declaration. */
 export const LOGS_ARGUMENTS: CommandArgument[] = [

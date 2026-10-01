@@ -30,7 +30,7 @@ import { gatherInspection } from "./inspect/gather.ts";
 import { isHealthy, blockingProblems } from "#src/service/inspection.ts";
 import { runSecurityAudit, type SecurityFinding, type SecurityAuditReport } from "#src/security/audit.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs } from "#src/core/command/index.ts";
 
 /** Drives both accept's own parser and its openclawCommands declaration. */
 export const ACCEPT_ARGUMENTS: CommandArgument[] = [

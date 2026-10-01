@@ -12,11 +12,11 @@
 // repository's own test suite, which the npm package doesn't ship. Each gate builds its own list.
 
 import { info, log, reportError } from "../core/io/log.ts";
-import { closestCommand } from "../core/arguments.ts";
+import { closestCommand } from "../core/command/index.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
 import type { AppDefinition, CommandArgument } from "../core/app.ts";
 
-export { closestCommand } from "../core/arguments.ts";
+export { closestCommand } from "../core/command/index.ts";
 
 export interface GateCommand {
   readonly name: string;

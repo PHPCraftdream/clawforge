@@ -19,7 +19,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main, runApp } from "#framework/entry/cli.ts";
-import { managementCommands } from "#framework/commands/interface/groups/openclawCommands.management.ts";
+import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
 import { logs } from "#framework/commands/lifecycle/instance/logs.ts";
 import { smoke } from "#framework/commands/lifecycle/smoke/index.ts";
 import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
@@ -117,7 +117,7 @@ for (const kase of [
   const app: AppDefinition = {
     name: "argsfirst-fixture",
     description: "fixture",
-    commands: { "recover-env": managementCommands["recover-env"] },
+    commands: { "recover-env": operateCommands["recover-env"] },
   };
   const { output } = await capture(() => runApp(app, ["recover-env", "--zzz"]));
   checkTrue("recover-env --zzz is reported as an unknown argument", output.includes("unknown argument: --zzz"));

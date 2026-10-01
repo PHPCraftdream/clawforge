@@ -6,7 +6,7 @@ import { isWithin } from "../core/paths.ts";
 import { frameworkPackage } from "../core/env.ts";
 import { emit } from "../core/io/output.ts";
 import { die } from "../core/io/log.ts";
-import { parseDeclaredArgs } from "../core/arguments.ts";
+import { parseDeclaredArgs } from "../core/command/index.ts";
 import type { GateCommand } from "./gate.ts";
 import type { CommandArgument } from "../core/app.ts";
 

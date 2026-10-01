@@ -96,7 +96,11 @@ try {
   const gateInitHelp = await clawforge(["help", "init"], outside);
   check("outside any app help init prints init's help", gateInitHelp.code === 0 && gateInitHelp.output.includes("Refuses if app.ts already exists"), true);
   const appHelp = await clawforge(["help", "status"], outside);
-  check("outside any app help <app command> says it needs an app folder", appHelp.code === 1 && appHelp.output.includes("needs an app folder"), true);
+  check(
+    "outside any app help <app command> prints the command's help and says where it runs (R32-09)",
+    appHelp.code === 0 && /Usage: (\.\/)?clawforge status/.test(appHelp.output) && appHelp.output.includes("runs inside an app folder"),
+    true,
+  );
 
   const bareRun = await clawforge([], outside);
   check("outside any app a bare clawforge lists the gate commands and exits 0", bareRun.code === 0 && bareRun.output.includes("init") && !bareRun.output.includes("no app.ts"), true);

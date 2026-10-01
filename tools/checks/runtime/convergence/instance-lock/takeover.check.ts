@@ -8,8 +8,9 @@
 
 import { hostname } from "node:os";
 import { machineName, localLiveness } from "#framework/runtime/lock/process-identity.ts";
-import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, STALE_AFTER_MS } from "#framework/runtime/lock/instance-lock.ts";
+import { takeLock, withInstanceLock, readLockHolder, isStale, lockPath, guarded, guardedWith, STALE_AFTER_MS } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "./fixture.ts";
+import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- stale locks are described, not stolen ------------------------------------------------------
@@ -340,6 +341,36 @@ import { check, finish } from "#checks/kit/harness.ts";
   const otherScope = `${host}:${process.platform === "win32" ? "linux-4026531836" : "win32"}`;
   check("a same-host record from another pid space is unknown, not dead", await localLiveness({ pid: 99999999, machine: otherScope }), "unknown");
   check("an own-scope record with a gone pid is dead", await localLiveness({ pid: 99999999, machine: machineName() }), "dead");
+}
+
+// --- guardedWith is guarded with the takeover already bound -----------------------------------
+
+{
+  /** The outcome of one guard over a stale lock: the refusal text, or what happened to the holder. */
+  async function outcome(run: (ctx: Context) => Promise<void>): Promise<string> {
+    const { ctx, files, dirs } = stubContext();
+    const old = new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString();
+    dirs.add(lockPath(ctx));
+    files.set(`${lockPath(ctx)}/holder.json`, JSON.stringify({ operationId: "op-dead", what: "apply", by: "someone", takenAt: old }));
+    const refusal = await refused(() => run(ctx));
+    return refusal !== "" ? refusal : `ran, holder: ${(await readLockHolder(ctx))?.operationId}`;
+  }
+  const body = async (): Promise<void> => {};
+
+  check("no takeover: the same refusal", await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: false }, body)), await outcome((ctx) => guarded(ctx, "apply", [], body)));
+  check("no takeover: it does refuse", (await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: false }, body))).includes("--break-lock"), true);
+  check("break-lock: takes the stale lock, same as the flag", await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: true }, body)), await outcome((ctx) => guarded(ctx, "apply", ["--break-lock"], body)));
+  check("break-lock: it does run", (await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: true }, body))).startsWith("ran"), true);
+  check(
+    "breakLockSupported: false reads the same",
+    await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: false }, body, { breakLockSupported: false })),
+    await outcome((ctx) => guarded(ctx, "apply", [], body, { breakLockSupported: false })),
+  );
+  check(
+    "a foreign host id reaches the claim the same way",
+    await outcome((ctx) => guardedWith(ctx, "apply", { breakLock: false, breakForeignLockHost: "other" }, body)),
+    await outcome((ctx) => guarded(ctx, "apply", ["--break-foreign-lock", "other"], body)),
+  );
 }
 
 finish("instance lock takeover");

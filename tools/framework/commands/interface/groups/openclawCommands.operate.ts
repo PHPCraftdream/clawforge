@@ -3,13 +3,14 @@
 // fragment into one openclawCommands.
 
 import type { AppCommand } from "#src/core/app.ts";
+import { materializeCommands } from "#src/core/command/index.ts";
 
 import { recoverEnv, RECOVER_ENV_ARGUMENTS } from "#src/commands/operate/recover-env/index.ts";
 import { expose, exposeActionIsReadOnly, EXPOSE_FLAG_ARGUMENTS } from "#src/commands/operate/expose/index.ts";
 import { watch, watchActionIsReadOnly, WATCH_FLAG_ARGUMENTS } from "#src/commands/operate/watch/index.ts";
 import { incident, INCIDENT_ARGUMENTS } from "#src/commands/operate/incident/index.ts";
 
-export const operateCommands: Record<string, AppCommand> = {
+export const operateCommands: Record<string, AppCommand> = materializeCommands({
   expose: {
     summary: "Reach a loopback-bound gateway from outside: SSH tunnel or tailscale",
     group: "security-access",
@@ -239,4 +240,4 @@ export const operateCommands: Record<string, AppCommand> = {
     arguments: RECOVER_ENV_ARGUMENTS,
     readOnlyWhen: (args) => args.includes("--dry-run"),
   },
-};
+});

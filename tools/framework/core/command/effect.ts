@@ -5,7 +5,8 @@
 // read it; a spec shape (effect on the body, an action or a flag) by the rules of the model.
 
 import type { AppCommand } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/parse.ts";
+import { parseCall, parseDeclaredArgs } from "#src/core/command/parse.ts";
+import { specOf, specShape } from "#src/core/command/spec.ts";
 import type { ArgumentSpec, Effect } from "#src/core/command/spec.ts";
 
 /** `changed` is only what a command's own `changedWhen` says; absent otherwise. */
@@ -27,9 +28,12 @@ function strongest(effects: readonly Effect[]): Effect {
   return effects.reduce((a, b) => (RANK[b] > RANK[a] ? b : a));
 }
 
-/** A legacy command's facts for `argv`: `read` when it is readOnly or readOnlyWhen says so;
- *  `destroy` when it is destructive and requiresConfirmationWhen (else: not read) says so. */
+/** One entry point for the surfaces. A spec command: its argv is parsed (a refusal throws) and
+ *  the model's rules apply. A legacy command: `read` when it is readOnly or readOnlyWhen says
+ *  so; `destroy` when it is destructive and requiresConfirmationWhen (else: not read) says so. */
 export function callFactsFor(command: AppCommand, argv: readonly string[]): CallFacts {
+  const entry = specOf(command);
+  if (entry !== undefined) return callFacts(specShape(entry), parseCall(specShape(entry), argv));
   const args = [...argv];
   const read = command.readOnly === true || command.readOnlyWhen?.(args) === true;
   const destroy = command.destructive === true && (command.requiresConfirmationWhen?.(args) ?? !read);
@@ -38,8 +42,10 @@ export function callFactsFor(command: AppCommand, argv: readonly string[]): Call
   return changed === undefined ? { effect } : { effect, changed };
 }
 
-/** A legacy command's static profile, as the list markers, the `--help` note and the `confirm` schema field read it. */
+/** The static profile, as the list markers, the `--help` note and the `confirm` schema field read it. */
 export function effectProfile(command: AppCommand): EffectProfile {
+  const entry = specOf(command);
+  if (entry !== undefined) return shapeProfile(specShape(entry));
   const destructive = command.destructive === true;
   return {
     destructive,

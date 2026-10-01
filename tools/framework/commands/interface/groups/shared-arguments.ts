@@ -3,6 +3,7 @@
 // definition instead of drifting into slightly different copies.
 
 import { PROFILES } from "#src/service/archive/index.ts";
+import type { LockTakeover } from "#src/runtime/lock/instance-lock.ts";
 
 export const PROFILE_ARGUMENT = {
   name: "profile",
@@ -34,3 +35,11 @@ export const BREAK_FOREIGN_LOCK_ARGUMENT = {
   kind: "option",
   valueName: "hostId",
 } as const;
+
+/** The two lock-takeover arguments, as every locking command declares them. */
+export const LOCK_TAKEOVER_ARGUMENTS = [BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT] as const;
+
+/** The takeover a call asked for, from its bound values. */
+export function takeoverOf(values: { readonly "break-lock"?: boolean; readonly "break-foreign-lock"?: string }): LockTakeover {
+  return { breakLock: values["break-lock"] === true, breakForeignLockHost: values["break-foreign-lock"] };
+}

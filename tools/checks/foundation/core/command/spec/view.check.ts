@@ -4,7 +4,7 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
-import { NO_ACTION } from "#framework/core/command/index.ts";
+import { NO_ACTION, argumentsView, defineAction, multiActionBody, commandBody, scopeByAction, type ArgumentSpec } from "#framework/core/command/index.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import { buildCompletionModel, renderCompletion } from "#framework/integration/completion.ts";
 import { splitActionScoped } from "#framework/core/command/index.ts";
@@ -348,6 +348,79 @@ import { check, finish } from "#checks/kit/harness.ts";
       }
     }
   }
+}
+
+// --- argumentsView: the derived declaration of a multi-action body -----------------------------------
+
+{
+  const run = async (): Promise<void> => {};
+  const flag = (name: string, description = "d", extra: object = {}): ArgumentSpec => ({ name, kind: "flag", description, ...extra }) as ArgumentSpec;
+  const option = (name: string, description = "d", extra: object = {}): ArgumentSpec => ({ name, kind: "option", valueName: "v", description, ...extra }) as ArgumentSpec;
+  const positional = (name: string, extra: object = {}): ArgumentSpec => ({ name, kind: "positional", description: "d", ...extra }) as ArgumentSpec;
+
+  // Declared: list, forget, create (the default, last). The view orders flags: create, list, forget.
+  const SLICES: Record<string, readonly ArgumentSpec[]> = {
+    list: [flag("json"), positional("target", { required: true }), option("limit", "d", { required: true })],
+    forget: [option("kind", "d", { required: true }), positional("target", { required: true }), option("limit", "d", { required: true }), flag("json")],
+    create: [flag("dry-run"), flag("json"), positional("target", { required: true }), option("limit", "d", { required: true }), option("name", "the set", { summary: "set" })],
+  };
+  const body = multiActionBody({
+    effect: "change",
+    action: { description: "Omit to create", summary: "Omit to create" },
+    defaultAction: "create",
+    actions: Object.fromEntries(Object.entries(SLICES).map(([name, args]) => [name, defineAction({ summary: name, arguments: args, run })])),
+  });
+  const view = argumentsView(body);
+  const named = (name: string) => view.find((argument) => argument.name === name);
+
+  check("the first argument is the action word", [view[0].name, view[0].kind], ["action", "positional"]);
+  check("its choices are the actions in declaration order", view[0].choices, ["list", "forget", "create"]);
+  check("with a default action the word is optional", view[0].required, undefined);
+  check("its summary comes from the body", view[0].summary, "Omit to create");
+  check(
+    "without a default action the word is required",
+    argumentsView(multiActionBody({ effect: "read", action: { description: "x" }, actions: { a: defineAction({ summary: "a", run }) } }))[0].required,
+    true,
+  );
+
+  const strip = (argument: object): object => {
+    const { required: _required, summary: _summary, ...rest } = argument as Record<string, unknown>;
+    return rest;
+  };
+  const scoped = scopeByAction({ create: SLICES.create, list: SLICES.list, forget: SLICES.forget });
+  check(
+    "flags and options are scopeByAction's, default action first",
+    view.filter((argument) => argument.kind === "flag" || argument.kind === "option").map(strip),
+    scoped.map(strip),
+  );
+  check("a flag of every action carries no actions list", named("json")?.actions, undefined);
+  check("a flag of one action is scoped to it, in view order", [named("dry-run")?.actions, named("kind")?.actions], [["create"], ["forget"]]);
+  check("an option required in every action stays required", named("limit")?.required, true);
+  check("an option required in one action only is not required", named("kind")?.required, undefined);
+  check("a positional declared by every action is required, unscoped", [named("target")?.required, named("target")?.actions], [true, undefined]);
+  check("a positional is merged once", view.filter((argument) => argument.name === "target").length, 1);
+  check("a positional missing from some action is not required", argumentsView(multiActionBody({
+    effect: "change", action: { description: "x" }, defaultAction: "a",
+    actions: { a: defineAction({ summary: "a", arguments: [positional("p", { required: true })], run }), b: defineAction({ summary: "b", run }) },
+  })).find((argument) => argument.name === "p")?.required, undefined);
+  const kinds = view.map((argument) => argument.kind);
+  check("positionals come before flags and options", kinds.lastIndexOf("positional") < kinds.findIndex((kind) => kind !== "positional"), true);
+  check("a summary declared once, with one description, is kept", named("name")?.summary, "set");
+
+  // The composed summary: described differently by the actions, declared by every part.
+  const described = (summaries: readonly (string | undefined)[], descriptions: readonly string[]) => argumentsView(multiActionBody({
+    effect: "change", action: { description: "x" }, defaultAction: "a",
+    actions: Object.fromEntries(summaries.map((summary, index) => [["a", "b", "c"][index], defineAction({
+      summary: "s", arguments: [option("name", descriptions[index], summary === undefined ? {} : { summary })], run,
+    })])),
+  })).find((argument) => argument.name === "name");
+  check("differing descriptions with every summary compose a summary", described(["s1", "s1", "s2"], ["D1", "D1", "D2"])?.summary, "s1 (a, b); s2 (c)");
+  check("and the description composes the same way", described(["s1", "s1", "s2"], ["D1", "D1", "D2"])?.description, "D1 (a, b); D2 (c)");
+  check("one part without a summary: no composed summary", described(["s1", "s1", undefined], ["D1", "D1", "D2"])?.summary, undefined);
+  check("the same description everywhere keeps its summary", described(["s1", "s1", "s1"], ["D1", "D1", "D1"])?.summary, "s1");
+
+  const single = [flag("json")] as const satisfies readonly ArgumentSpec[];
+  check("a single body shows its arguments as declared", argumentsView(commandBody({ effect: "read", arguments: single, run })), single);
 }
 
 finish("action arguments");

@@ -3,6 +3,7 @@
 // fragment into one openclawCommands.
 
 import type { AppCommand } from "#src/core/app.ts";
+import { materializeCommands } from "#src/core/command/index.ts";
 
 import { applyConfig, APPLY_CONFIG_ARGUMENTS } from "#src/commands/orchestration/config.ts";
 import { inspect, doctor } from "#src/commands/orchestration/inspect/gather.ts";
@@ -12,7 +13,7 @@ import { operations, OPERATIONS_ARGUMENTS } from "#src/commands/orchestration/op
 import { rollback, ROLLBACK_ARGUMENTS, isRollbackDryRun } from "#src/commands/orchestration/rollback.ts";
 import { accept, ACCEPT_ARGUMENTS } from "#src/commands/orchestration/accept.ts";
 
-export const orchestrationCommands: Record<string, AppCommand> = {
+export const orchestrationCommands: Record<string, AppCommand> = materializeCommands({
   inspect: {
     summary: "What is declared, what is actually running, and where they disagree",
     group: "check",
@@ -244,4 +245,4 @@ export const orchestrationCommands: Record<string, AppCommand> = {
       "existing declaration — `apply` does neither.",
     arguments: APPLY_CONFIG_ARGUMENTS,
   },
-};
+});

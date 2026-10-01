@@ -3,7 +3,7 @@
 // openclawCommands.
 
 import type { AppCommand } from "#src/core/app.ts";
-import { scopeByAction } from "#src/core/command/index.ts";
+import { materializeCommands, scopeByAction } from "#src/core/command/index.ts";
 
 // The per-action argument table lives in set.ts next to the dispatcher that parses from
 // it; re-exported here so completion/--help/MCP checks keep importing it from this group.
@@ -11,7 +11,7 @@ export { SET_ACTION_ARGUMENTS } from "#src/commands/sets/set.ts";
 import { SET_ACTION_ARGUMENTS } from "#src/commands/sets/set.ts";
 import { set } from "#src/commands/sets/set.ts";
 
-export const setsCommands: Record<string, AppCommand> = {
+export const setsCommands: Record<string, AppCommand> = materializeCommands({
   set: {
     summary: "Build or validate the set: what a deployment installs, as one artifact",
     group: "change",
@@ -56,4 +56,4 @@ export const setsCommands: Record<string, AppCommand> = {
     structured: true,
     destructive: true,
   },
-};
+});

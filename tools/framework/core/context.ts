@@ -122,6 +122,11 @@ export async function createContext(options: ContextOptions = {}): Promise<Conte
   return context;
 }
 
+/** The service name a context was created with ("app" when none was given). */
+export function serviceOf(ctx: Context): string {
+  return creationRecords.get(ctx)?.service.name ?? "app";
+}
+
 /** Which derived Settings fields constitute "a different deployment target" — the
  *  coordinates a lock is taken for and a plan is computed against. Values that merely
  *  carry secrets do not belong here: rotating one changes what runs, not what is run. */

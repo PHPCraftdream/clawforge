@@ -3,6 +3,7 @@
 // openclawCommands.
 
 import type { AppCommand } from "#src/core/app.ts";
+import { materializeCommands } from "#src/core/command/index.ts";
 
 import { status, STATUS_ARGUMENTS } from "#src/commands/interface/status.ts";
 import { cli } from "#src/commands/interface/cli.ts";
@@ -22,7 +23,7 @@ function secretsWrites(args: string[]): boolean {
   return args.includes("--template") && !args.includes("--print-template");
 }
 
-export const managementCommands: Record<string, AppCommand> = {
+export const managementCommands: Record<string, AppCommand> = materializeCommands({
   status: {
     summary: "Show containers, image, health probes and data usage",
     group: "start-stop",
@@ -409,4 +410,4 @@ export const managementCommands: Record<string, AppCommand> = {
       "useful for pasting into a client by hand or checking what --json/--token would produce.",
     arguments: MCP_CREDS_ARGUMENTS,
   },
-};
+});

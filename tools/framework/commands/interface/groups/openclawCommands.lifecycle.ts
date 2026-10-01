@@ -2,6 +2,7 @@
 // Split out of index.ts, which merges every group's fragment into one openclawCommands.
 
 import type { AppCommand } from "#src/core/app.ts";
+import { materializeCommands } from "#src/core/command/index.ts";
 
 import { up, down, restart, LOCK_ARGUMENTS } from "#src/commands/lifecycle/instance/control.ts";
 import { destroy, DESTROY_ARGUMENTS } from "#src/commands/lifecycle/instance/destroy.ts";
@@ -14,7 +15,7 @@ import { verify, VERIFY_ARGUMENTS } from "#src/commands/lifecycle/verify.ts";
 import { pull, push, PULL_ARGUMENTS, PUSH_ARGUMENTS, isPushDryRun } from "#src/commands/lifecycle/state.ts";
 import { smoke, SMOKE_ARGUMENTS } from "#src/commands/lifecycle/smoke/index.ts";
 
-export const lifecycleCommands: Record<string, AppCommand> = {
+export const lifecycleCommands: Record<string, AppCommand> = materializeCommands({
   bootstrap: {
     summary: "Bring the instance up from nothing (idempotent)",
     group: "start-stop",
@@ -338,4 +339,4 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "window with the two snapshot checks it does not skip.",
     arguments: SMOKE_ARGUMENTS,
   },
-};
+});

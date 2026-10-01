@@ -231,14 +231,19 @@ export function parseBreakForeignLockHost(args: string[]): string | undefined {
   return args[index] === "--break-foreign-lock" ? args[index + 1] : args[index].slice("--break-foreign-lock=".length);
 }
 
-/** What every mutating command wraps its work in: reads the takeover flags from argv so no
- *  caller has to pass them on. Nested calls are a no-op. `options.breakLockSupported` is the
- *  one thing a call site still states explicitly, for a command whose parser refuses
- *  --break-lock. */
-export async function guarded<T>(
+/** The takeover a call asked for: `--break-lock`, and the host id of `--break-foreign-lock`. */
+export interface LockTakeover {
+  readonly breakLock: boolean;
+  readonly breakForeignLockHost?: string;
+}
+
+/** What every mutating command wraps its work in, with the takeover already bound. Nested calls
+ *  are a no-op. `options.breakLockSupported` is the one thing a call site still states
+ *  explicitly, for a command whose parser refuses --break-lock. */
+export async function guardedWith<T>(
   ctx: Context,
   what: string,
-  args: string[],
+  takeover: LockTakeover,
   body: () => Promise<T>,
   options: { breakLockSupported?: boolean } = {},
 ): Promise<T> {
@@ -247,10 +252,21 @@ export async function guarded<T>(
     what,
     newOperationId(what),
     {
-      breakLock: args.includes("--break-lock"),
+      breakLock: takeover.breakLock,
       breakLockSupported: options.breakLockSupported,
-      breakForeignLockHost: parseBreakForeignLockHost(args),
+      breakForeignLockHost: takeover.breakForeignLockHost,
     },
     body,
   );
+}
+
+/** guardedWith for a command that still reads its takeover flags from argv. */
+export async function guarded<T>(
+  ctx: Context,
+  what: string,
+  args: string[],
+  body: () => Promise<T>,
+  options: { breakLockSupported?: boolean } = {},
+): Promise<T> {
+  return guardedWith(ctx, what, { breakLock: args.includes("--break-lock"), breakForeignLockHost: parseBreakForeignLockHost(args) }, body, options);
 }

@@ -69,30 +69,32 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     const { setsCommands } = await import(${JSON.stringify(url("commands/interface/groups/openclawCommands.sets"))});
     const { log } = await import(${JSON.stringify(url("core/io/log"))});
     await useDeployment(${JSON.stringify(root)});
-    const { commandBody, specData, materializeCommands } = await import(${JSON.stringify(url("core/command/spec"))});
+    const { commandBody, defineAction, multiActionBody, specData, materializeCommands } = await import(${JSON.stringify(url("core/command/spec"))});
     const { RESTORE } = await import(${JSON.stringify(url("commands/lifecycle/restore/index"))});
     const { PUSH } = await import(${JSON.stringify(url("commands/lifecycle/state"))});
     const { DESTROY } = await import(${JSON.stringify(url("commands/lifecycle/instance/destroy"))});
-    const spy = async (_ctx, args) => { log(args.join(" ") || "status"); };
-    // A spec command keeps its effects, arguments and phases; only its run is stubbed, to echo the plan's set flags.
-    const planSpy = async (_ctx, plan) => { log(Object.keys(plan).filter((key) => plan[key] === true).map((key) => "--" + key).join(" ") || "status"); };
-    const stubbed = (name, body) => materializeCommands({ [name]: { summary: lifecycleCommands[name].summary, group: lifecycleCommands[name].group, ...commandBody({ ...specData(body), run: planSpy }) } })[name];
+    const { SECRETS } = await import(${JSON.stringify(url("commands/management/secrets"))});
+    const { SET } = await import(${JSON.stringify(url("commands/sets/set"))});
+    // A body keeps its effects, arguments and phases (prepare included); only its run is stubbed,
+    // to echo the plan's set flags and selected action. A multi-action body is stubbed per action.
+    const planSpy = async (_ctx, plan) => {
+      const flags = Object.keys(plan).filter((key) => plan[key] === true).map((key) => "--" + key);
+      if (typeof plan.action === "string" && plan.action !== "report") flags.push("--" + plan.action);
+      log(flags.join(" ") || "status");
+    };
+    const stubbed = (command, body) => {
+      const data = specData(body);
+      const stub = data.kind === "multi"
+        ? multiActionBody({ ...data, actions: Object.fromEntries(Object.entries(data.actions).map(([action, spec]) => [action, defineAction({ ...spec, run: planSpy })])) })
+        : commandBody({ ...data, run: planSpy });
+      return materializeCommands({ stubbed: { summary: command.summary, group: command.group, details: command.details, structured: command.structured, exportsSecrets: command.exportsSecrets, ...stub } }).stubbed;
+    };
     await serveMcp({ name: "policy", commands: {
-      // A replaced run reads as a legacy command, whose classification comes from its own
-      // predicates — so the stub declares the ones the real command now derives from its
-      // spec: the report (and --print-template) read, the store/template writes change,
-      // and only --init-store/--apply/--dump are confirmed.
-      secrets: { ...managementCommands.secrets, run: spy,
-        readOnlyWhen: (args) => !["--init-store", "--apply", "--dump", "--template"].some((flag) => args.includes(flag)),
-        requiresConfirmationWhen: (args) => ["--init-store", "--apply", "--dump"].some((flag) => args.includes(flag)) },
-      restore: stubbed("restore", RESTORE),
-      push: stubbed("push", PUSH),
-      destroy: stubbed("destroy", DESTROY),
-      // Same for set: the spec's per-action effects, as the predicates a replaced run reads.
-      set: { ...setsCommands.set, run: spy,
-        readOnlyWhen: (args) => ["diff", "receipts", "validate"].includes(args[0] ?? ""),
-        changedWhen: (args) => ["build", "try", "forget"].includes(args[0] ?? ""),
-        requiresConfirmationWhen: (args) => ["try", "forget"].includes(args[0] ?? "") },
+      secrets: stubbed(managementCommands.secrets, SECRETS),
+      restore: stubbed(lifecycleCommands.restore, RESTORE),
+      push: stubbed(lifecycleCommands.push, PUSH),
+      destroy: stubbed(lifecycleCommands.destroy, DESTROY),
+      set: stubbed(setsCommands.set, SET),
     }});
   `;
   const requests = [
@@ -106,6 +108,8 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     { id: 8, name: "destroy", arguments: {} },
     { id: 9, name: "destroy", arguments: { yes: true } },
     { id: 10, name: "destroy", arguments: { yes: true, "confirm-name": "policy", confirm: true } },
+    { id: 11, name: "set", arguments: { action: "forget", kind: "agent", name: "x" } },
+    { id: 12, name: "set", arguments: { action: "forget", kind: "agent", name: "x", confirm: true } },
   ].map(({ id, name, arguments: args }) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }));
   try {
     const run = await runServer(script, requests.map((request) => JSON.stringify(request)).join("\n"));
@@ -123,6 +127,8 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     check("set build runs without confirmation and reports changed", [replies.get(7)?.isError, replies.get(7)?.structuredContent?.changed], [undefined, true]);
     check("destroy's dry run needs no confirmation", replies.get(8)?.isError, undefined);
     check("destroy --yes with no confirm is rejected", replies.get(9)?.isError, true);
+    check("set forget with no confirm is rejected", replies.get(11)?.isError, true);
+    check("confirmed set forget reaches the command", [replies.get(12)?.isError, replies.get(12)?.structuredContent?.changed], [undefined, true]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

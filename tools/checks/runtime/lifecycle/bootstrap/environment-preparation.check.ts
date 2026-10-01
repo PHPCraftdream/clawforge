@@ -5,7 +5,7 @@
 // U1: entry/cli.ts and integration/mcp/server.ts used to call ensureEnvironment() for every
 // preparesEnvironment command before its own argv was even parsed — `bootstrap --check` and a
 // typo'd flag both wrote .env and a token before either dispatcher branch (--check, "unknown
-// argument") ever ran. core/command/effect.ts's preparesEnvironmentFor(command, args) is the fix:
+// argument") ever ran. core/command/effect.ts's legacyPreparesEnvironment(command, args) is the fix:
 // false for a read-only call (readOnlyWhen) and false for argv the command's own parser would
 // refuse, checked by both dispatchers before ensureEnvironment() runs.
 //
@@ -24,7 +24,7 @@ import { mkdtemp, readFile, rm, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { ensureEnvironment } from "#framework/integration/provision.ts";
-import { callFactsFor, preparesEnvironmentFor } from "#framework/core/command/index.ts";
+import { callFactsFor, legacyPreparesEnvironment } from "#framework/core/command/index.ts";
 import { runApp } from "#framework/entry/cli.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { lifecycleCommands } from "#framework/commands/interface/groups/openclawCommands.lifecycle.ts";
@@ -50,7 +50,7 @@ async function exists(path: string): Promise<boolean> {
   return access(path).then(() => true, () => false);
 }
 
-// --- preparesEnvironmentFor: the predicate both dispatchers gate ensureEnvironment on --------
+// --- legacyPreparesEnvironment: the predicate both dispatchers gate ensureEnvironment on --------
 
 const fixtureCommand: AppCommand = {
   summary: "fixture",
@@ -60,11 +60,11 @@ const fixtureCommand: AppCommand = {
   arguments: [{ name: "check", description: "read-only", kind: "flag" }],
 };
 
-check("a read-only call (--check) never prepares", preparesEnvironmentFor(fixtureCommand, ["--check"]), false);
-check("a normal, valid call does prepare", preparesEnvironmentFor(fixtureCommand, []), true);
+check("a read-only call (--check) never prepares", legacyPreparesEnvironment(fixtureCommand, ["--check"]), false);
+check("a normal, valid call does prepare", legacyPreparesEnvironment(fixtureCommand, []), true);
 function refusal(command: AppCommand, argv: string[]): string {
   try {
-    preparesEnvironmentFor(command, argv);
+    legacyPreparesEnvironment(command, argv);
     return "prepared";
   } catch (error) {
     return (error as Error).name;
@@ -74,12 +74,12 @@ function refusal(command: AppCommand, argv: string[]): string {
 check("argv the command's own parser would refuse is reported before preparing", refusal(fixtureCommand, ["--bogus"]), "UnknownArgumentError");
 check(
   "a command that never declared preparesEnvironment never prepares",
-  preparesEnvironmentFor({ ...fixtureCommand, preparesEnvironment: undefined }, []),
+  legacyPreparesEnvironment({ ...fixtureCommand, preparesEnvironment: undefined }, []),
   false,
 );
 checkTrue(
   "a command with no readOnlyWhen still prepares for valid argv",
-  preparesEnvironmentFor({ ...fixtureCommand, readOnlyWhen: undefined }, []),
+  legacyPreparesEnvironment({ ...fixtureCommand, readOnlyWhen: undefined }, []),
 );
 
 // bootstrap's own real declaration, not a stand-in — proves the gate reaches the actual

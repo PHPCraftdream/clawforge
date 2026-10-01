@@ -259,6 +259,12 @@
 эталонов справки и `tools/list` ограничен перечисленным в коммитах.
 Объём: 6–8 коммитов — самый крупный этап. Параллельно с этапом 4 не вести.
 
+**Статус: выполнен.** Все 41 команда — объявленные тела (проектное решение: `refactor-stage3-design.md`; к модели
+добавлены `refuse` и `verbatim`). Проверка-свойство — `tools/checks/foundation/core/command/pipeline/property.check.ts`.
+Итоговые храповики (`tools/checks/architecture/baseline.json`): `rawArgvPredicates.readOnlyWhen` 0,
+`changedWhen` 0, `requiresConfirmationWhen` 0, `legacyCommands` 0, `unsummarizedDescriptions` 0 — остаются
+сторожами; `declaredArguments` 183 (без изменений); `prosePins` 854; `dotClawforgeLiterals` 448 (этап 4).
+
 ### Этап 4. Советы как данные (класс A)
 
 1. **`Advice`:** `{ kind: "clawforge"; argv; note? }` | `{ kind: "shell"; shell: "posix" |

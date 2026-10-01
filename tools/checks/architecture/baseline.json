@@ -115,17 +115,17 @@
     "localizeHints": 5
   },
   "rawArgvPredicates": {
-    "comment": "stage 3 (CommandSpec effect): confirmation comes from declared effect, not raw argv",
+    "comment": "stage 3 done, guard at 0: confirmation comes from declared effect, not raw argv; the AppCommand predicates stay only for commands an application declares",
     "readOnlyWhen": 0,
     "changedWhen": 0,
     "requiresConfirmationWhen": 0
   },
   "legacyCommands": {
-    "comment": "stage 3 (CommandSpec): openclawCommands entries whose specOf is undefined — each migration turns one into a declared body",
+    "comment": "stage 3 done, guard at 0: openclawCommands entries whose specOf is undefined — every framework command is a declared body",
     "total": 0
   },
   "unsummarizedDescriptions": {
-    "comment": "stage 3 (CommandArgument summary): MCP stops shortening heuristically when all summaries are declared; arguments of the derived `arguments` view with a description longer than 60 and no summary",
+    "comment": "stage 3 done, guard at 0: arguments of the derived `arguments` view with a description longer than 60 and no summary",
     "total": 0
   },
   "declaredArguments": {

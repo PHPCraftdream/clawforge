@@ -199,6 +199,79 @@ call — `logs` follows on a terminal and returns a bounded tail under a sink. W
 tool at all is listed in `MCP_EXEMPTIONS` with its reason, and `mcp-mirror.check.ts` fails
 on anything that is neither mirrored nor listed. The promise is checked, not asserted.
 
+## The command spec: one body, one parser, one pipeline
+
+Declaring arguments once was the first step; the rule it left open was *who keeps the
+declaration and the parser in agreement*. Each command used to carry a hand-written parser,
+a handful of predicates over raw argv (`readOnlyWhen`, `changedWhen`,
+`requiresConfirmationWhen`) that told confirmation and change-reporting what the call would
+do, and a second copy of its flags per action — all kept equal by call-site discipline, and
+each pair drifted sooner or later. Now every command of the framework is a *body* plus a
+line of prose, and what used to be separate copies is derived.
+
+**Body and entry.** The implementation module exports a body (`commandBody` for one action,
+`multiActionBody` with `defineAction` per action, in `core/command/spec.ts`): the arguments
+with their value rules, the effect, optional `prepare` and `run`. The group file
+(`commands/interface/groups/`) holds the prose beside it — `{ summary, group, details,
+...BODY }` — and `materializeCommands` turns each entry into the ordinary `AppCommand` every
+surface already reads: `arguments` is a view derived from the body, `run(ctx, argv)` parses
+and runs it on a context the caller holds. The body helpers are internal; the public
+`AppCommand` shape, with its three predicates, stays for the commands an application
+declares itself, and those still run on a legacy path through the same pipeline.
+
+**One parser.** `core/command/parse.ts` tokenizes and binds. The action word selects the action
+(`defaultAction` when there is none or the first token is a flag; otherwise an unknown or
+missing action is refused with the choices and a guess). `--opt value` and `--opt=value` (taken
+literally), a repeated option, a missing value, `--flag=…` and an unknown flag are refused
+in fixed words; a flag declared by another action is refused naming that action; a bare `--`
+ends the options. A value is typed by its declaration: `choices` is a closed list, `parse`
+is a value parser (`core/values`: counts, ports, durations, intervals, image references —
+each with an `example` and an `invalidExample`), and with neither the value must be non-empty.
+Values are bound in typing order, so the first bad one is the one reported, then the missing
+required ones. Two additions: `refuse` on a body or an action lists exact tokens refused with
+a declared reason before anything is tokenized (`expose tailscale --funnel` — a refusal, not
+an argument, so absent from help and the schema); `verbatim: true` on a variadic makes the
+tail literal from its first token (`host target --root ls -la`) and is declared only by `cli`,
+`exec` and `host` — every other variadic keeps recognizing flags anywhere. A refusal is an
+`ArgumentError` carrying the declared name of the argument, so callers read structure, not
+prose; the console and MCP show the same words.
+
+**Effect.** A body, an action or a flag declares `read`, `change` or `destroy`. A call's effect
+is the action's (or the body's), raised by the effect of the flags given, and lowered to
+`read` by a flag that declares it (`--dry-run`, `--check`). Everything that used to be a
+predicate derives from it (`core/command/effect.ts`): MCP's confirmation (`destroy` without
+`confirm: true` is refused), the `changed` flag of the result envelope, the `confirm` field and
+the markers in the tool schema and the command list, the note in `--help`, and whether the
+environment is prepared. A flag marked `setByConfirm` (`restore`, `push`: `--force`) is set by
+an MCP `confirm: true` rather than by the caller. A `needs: "deployment"` body runs without a
+`Context` (`recover-env`, which repairs the facts a context is built from).
+
+**The pipeline.** `executeCommand` (`core/command/execute.ts`) runs a call on either surface through
+fixed stages, returning — never throwing — where it stopped:
+
+1. `parse` — tokenize and bind; nothing is read.
+2. `confirm` — on MCP, a `destroy` call without `confirm: true` stops here.
+3. `prepare` — the body's refusals that need only the arguments and local files, through a
+   `LocalScope` that has no `Context`, transport or runtime in its type.
+4. `environment` — `.env` is created for a mutating call of a `preparesEnvironment` body.
+5. `context` — the context (or deployment scope) is built.
+6. `run`.
+
+So an argument error never reaches a target, a lock or a `.env` write, on any host. On the
+terminal, a failure of an action that declares a `json` flag, called with `--json`, prints the
+`{"error":…}` document unless the call already printed something or the error was an unknown
+argument. `runApp` and the MCP dispatcher are thin callers of it.
+
+**The property check.** `foundation/core/command/pipeline/property.check.ts` does not list
+commands. For every command and action of `openclawCommands` and every argument that declares
+`choices` or `parse`, it builds an argv from the declarations alone — the action word, an
+example for each preceding positional, the argument with its `invalidExample` (an empty value
+for an option without a parser) — and runs it through `executeCommand` with a recording
+transport, once as the terminal and once as MCP (through `toArgv`). It expects the `parse`
+stage, an `ArgumentError` naming that argument, no transport contact, and the `--json`
+document only where the action declares `json`. A new command or value rule is covered the
+moment it is declared; one that is not declared has no parser to forget.
+
 ## Problem codes are a public contract
 
 `framework/service/inspection.ts` holds a table of codes — `CONFIG_DRIFT`, `SECRET_MISSING`,
@@ -580,12 +653,10 @@ that is `bootstrap`) get their preparation earlier: the framework creates `.env`
 template with this deployment's paths and port, generates a token if there is none, and
 only then builds the context. The MCP server uses the same path.
 
-Preparation only runs for a call that will actually mutate: `core/command/effect.ts`'s
-`preparesEnvironmentFor(command, args)` is false for a read-only call (the same
-`readOnlyWhen` predicate MCP's own change-reporting uses, e.g. `bootstrap --check`) and
-false for argv the command's own parser would refuse — an invalid flag creates nothing
-before the command's own run reports why. Both dispatchers check this before calling
-`ensureEnvironment()`.
+Preparation only runs for a call that will actually mutate: the `environment` stage of
+`executeCommand` skips a call whose effect is `read` (e.g. `bootstrap --check`) and never
+reaches it with argv the parser refuses — an invalid flag creates nothing before the
+parse stage reports why. Both surfaces go through that one stage.
 
 `bootstrap` also fixes an ordering that matters for configuration: the deployment's
 `desired-state.json` is applied first, and `configure-provider` runs after it. A brand-new
@@ -638,6 +709,7 @@ more of them than fit here:
 | `foundation/core/paths.check.ts` | 48 translations between the four coordinate systems |
 | `foundation/core/archive.check.ts` | absolute paths, `..`, links pointing outside (symlink and hard link), consistency of the `share` profile |
 | `foundation/core/command/spec/parse.check.ts` | argument declarations, MCP schemas, the reverse mapping back to argv |
+| `foundation/core/command/pipeline/property.check.ts` | every declared `choices`/`parse` rule, given a value it must refuse, is refused at the parse stage on the terminal and on MCP — naming the argument, with no transport contact, and a `--json` document only where `json` is declared |
 | `foundation/core/command/spec/view.check.ts` | per-action slices of multi-action commands, schema descriptions as complete phrases |
 | `runtime/service/deploy.check.ts` | what a server delivery contains: what travels and what stays, and that it refuses to mirror a tree that is not a checkout |
 | `integration/mcp/transport-listing.check.ts` | `listFiles`: a real local tree (no separator leaks into a target path, directories are not files) and what the remote implementations make of `find` output |

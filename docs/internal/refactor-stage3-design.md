@@ -32,7 +32,10 @@ export interface ValueSpec<K extends "option" | "positional", N extends string =
   readonly choices?: readonly string[];   // взаимоисключающе с parse
   readonly parse?: ValueParser<T>;        // нет ни parse, ни choices — непустая строка
 }
-export interface VariadicSpec<N extends string = string> extends ArgumentBase<N> { readonly kind: "variadic"; readonly required?: boolean }
+export interface VariadicSpec<N extends string = string> extends ArgumentBase<N> {
+  readonly kind: "variadic"; readonly required?: boolean;
+  readonly verbatim?: true;   // добавление при переносах (1.5, п. 3): хвост буквальный; только cli/exec/host
+}
 export type ArgumentSpec = FlagSpec | ValueSpec<"option"> | ValueSpec<"positional"> | VariadicSpec;
 
 type ValueOf<A> = A extends { kind: "flag" } ? boolean          // false, если флага нет
@@ -52,6 +55,12 @@ export interface ValueParser<T> {     // expected: "a number of lines"; example/
 }
 ```
 
+* `refuse` (добавление, сделанное при переносах; operate): точные токены argv (до голого `--`), которые тело или
+  действие отклоняет с объявленной причиной до токенизации — `expose tailscale --funnel`. Это не аргумент: в
+  справке, схеме MCP и производном `arguments` его нет, отказ — `ArgumentError` на стадии `parse`.
+* `verbatim: true` у `VariadicSpec` (добавление, сделанное при переносах; management/sets): буквальный хвост
+  (1.5, п. 3) объявляют только `cli`, `exec`, `host`; остальные variadic (`set diff A B --json`) продолжают
+  распознавать флаги и опции.
 * Публичный `CommandArgument` (`core/app.ts`, экспорт `./app`) получает только `summary?: string`. `ArgumentSpec`
   структурно с ним совместим: производное `arguments` идёт в нынешние рендереры без изменений; `actions` в
   `ArgumentSpec` не пишут, его выводит представление (1.2). Variadic — одна, последняя, сквозная (1.5, п. 3).
@@ -78,10 +87,12 @@ interface Phases<V, P, N extends Needs> {
 }
 export interface SingleBody<A extends readonly ArgumentSpec[], P, N extends Needs> extends Phases<Values<A>, P, N> {
   readonly effect: Effect; readonly needs?: N /* умолчание "target" */; readonly arguments: A;
+  readonly refuse?: Readonly<Record<string, string>>;   // добавление при переносах (1.5, п. 5)
   readonly preparesEnvironment?: N extends "target" ? true : never;
 }
 export interface ActionSpec<A extends readonly ArgumentSpec[], P> extends Phases<Values<A>, P, "target"> {
   readonly summary: string /* ≤ 60, выводится с этапа 5 */; readonly effect?: Effect /* нет — эффект тела */; readonly arguments?: A;
+  readonly refuse?: Readonly<Record<string, string>>;   // добавление при переносах (1.5, п. 5)
 }
 export interface MultiBody {
   readonly effect: Effect; readonly action: { readonly description: string; readonly summary?: string };   // позиционный action
@@ -176,10 +187,13 @@ export interface DeploymentScope extends LocalScope {
 2. Токены — нынешний `parseDeclaredArgs`: `--opt value`, `--opt=value` (буквально), отказы на `--flag=…`, повтор
    опции и отсутствие значения с прежними текстами; голый `--` заканчивает опции. Неизвестный `--x`, объявленный
    другим действием, → ``--x applies to `a`, not `b` ``; иначе «did you mean». `given` — все вхождения по порядку.
-3. Variadic (`cli`, `exec`, `host`): первый токен, который не объявленный флаг или опция и не занимает свободный
+3. Variadic с `verbatim: true` (`cli`, `exec`, `host`; у прочих variadic флаги распознаются по всему argv,
+   добавление, сделанное при переносах): первый токен, который не объявленный флаг или опция и не занимает свободный
    позиционный слот, либо всё после `--`, начинает variadic; дальше всё буквально (`host target --root ls -la`).
 4. `bind`: данные значения в порядке набора (пустое без `parse` → `--x needs a value`; `choices` → `--x takes one of
    a, b, not "y"`; `parse`), затем недостающие обязательные (`set forget needs --kind <kind>`).
+5. (Добавление, сделанное при переносах.) `refuse`: до токенизации argv (до голого `--`) сверяется с точными
+   токенами из `refuse` тела или выбранного действия; совпадение — `ArgumentError` с объявленной причиной.
 
 ## 2. `executeCommand`
 

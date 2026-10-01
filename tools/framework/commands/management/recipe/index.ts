@@ -61,7 +61,7 @@ function describe(recipe: Recipe): void {
 
 /** `recipe list` (also the default action): the catalog of service recipes, agent/MCP
  *  bundles and broken manifests, as text or --json. */
-export async function runRecipeList(ctx: Context, jsonOnly: boolean): Promise<void> {
+async function runRecipeList(ctx: Context, jsonOnly: boolean): Promise<void> {
   const recipes = await listRecipes();
   // A recipe directory can also be an agent/MCP bundle — no recipe.json, so listRecipes
   // drops it; shown here so "no recipes yet" doesn't contradict what inspect reports.
@@ -120,7 +120,7 @@ export async function runRecipeList(ctx: Context, jsonOnly: boolean): Promise<vo
 export { importHookModule } from "./hook-runtime.ts";
 
 /** The action a bare `recipe` runs. */
-export const RECIPE_DEFAULT_ACTION = "list";
+const RECIPE_DEFAULT_ACTION = "list";
 
 const NAME_ARGUMENT = {
   name: "name",

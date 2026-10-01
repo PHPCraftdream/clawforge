@@ -6,69 +6,57 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
-* The eight orchestration commands (inspect, doctor, plan, apply, accept, rollback,
-  operations, apply-config) declare their arguments and effect in one command spec, so an
-  argument error — a bad value, an empty option value, a cross-flag conflict such as
-  `apply-config --dry-run --dump` or `rollback --previous-set --operation ...` — is refused
-  before any contact with the target, lock, or .env write, on every host (previously the
-  refusal could be answered by a target error such as LOCAL_TARGET_UNSUPPORTED on hosts
-  where the transport could not be built). Empty option values (`--set`, `--expect`,
-  `--operation`, `--limit`) are refused uniformly by the shared parser, and the two MCP
-  argument descriptions that were cut off with an ellipsis (`rollback --previous-set`,
-  `apply-config --dump`) now carry their full phrases.
-* The management commands (status, lock, cli, exec, host, cli-start, cli-stop,
-  configure-provider, secrets, recipe, provision-agent, deploy, mcp-serve, mcp-setup,
-  mcp-creds) declare their arguments, actions and effects as a spec, parsed by the one
-  shared parser. Refusals that depend only on the arguments — recipe's per-action flags,
-  secrets' cross-flag rules, host's --root/--confirm-root consent, configure-provider's
-  id/variable grammars, required arguments — now land in the parser's or prepare's own
-  words, before any contact with the target, the instance lock, or a .env write, on every
-  host. Visible wording changes that follow: `recipe <action>` without its <name> answers
-  `usage: ./clawforge recipe <action> <name>`; host's unknown or missing context and a
-  missing command are named argument errors (`<context>` takes one of target, engine,
-  local …); a missing deploy target, provision-agent recipe, or cli/exec command is
-  reported as such instead of a usage line; an empty option value (`--store ""`) is
-  refused uniformly as needing a value; MCP choices/required errors arrive in the same
-  parser's words. Effects are unchanged (the parity table pins them): the `secrets`
-  default report and `--print-template` read, `--template` changes, `--init-store`,
-  `--apply` and `--dump` destroy; `recipe` reads for list/status/logs and
-  install/remove --dry-run and destroys otherwise (`recipe verify --dry-run` is refused —
-  verify takes no --dry-run); `lock --check` and `deploy --dry-run` read; cli, exec and
-  host remain always-destroying. `recipe --json` still lists. `mcp-serve` now refuses
-  arguments instead of forwarding them to the gateway's `mcp serve` (it never declared
-  any).
-* The lifecycle commands (bootstrap, up, restart, down, destroy, logs, backup, restore, pull,
-  push, verify, upgrade, smoke) declare their arguments, effects and phases as command specs.
-  Refusals that depend only on the arguments now land before any contact with the target, any
-  lock, or any .env write, on every host — notably `destroy --yes` with a missing or wrong
-  `--confirm-name`, and `backup create --native` with a non-full profile (previously refused
-  only after the bootstrappability check and the instance lock). A spec command's MCP choices
-  and required-argument refusals come in the argument parser's own words (`--profile takes
-  one of full, migrate, share, not "…"`, `verify needs <archive>`); `verify` without an
-  archive is refused that way on the console too, instead of a usage line. `backup create
-  --dry-run` now reports itself as a read on every surface, and `upgrade --image`'s schema
-  description is the full phrase instead of a cut one.
-* `set` declares its six actions (build, validate, diff, receipts, try, forget) and their effects
-  in one command spec, parsed by the shared parser. The action word is required — bare
-  `set` and an unknown action answer in the shared unknown/missing-action words, and the
-  usage line and the MCP schema now mark `action` required (it already was at run time);
-  a flag that belongs to another action is refused naming that action, also for
-  `set diff`. `set forget` without `--kind` or `--name` answers `set forget needs --kind
-  <kind>` (and `--name`), and a `--kind` outside agent, mcp-server, cron-job lists the
-  choices. Refusals that depend only on the arguments (`set diff` artifact rules,
-  `set receipts --receipt` without `--set-id`, `set try` without `--set`) land before any
-  contact with the target, and an empty option value (`--name`, `--set`) is refused
-  uniformly as needing a value. Effects are unchanged (validate, diff and receipts read,
-  build changes, try and forget destroy).
-* A deployment command that is destructive and declares `requiresConfirmationWhen` without
-  `readOnlyWhen` — confirmation is owed only for some calls — now reads as "destructive for
-  some actions" on every surface (` *` in the command list, the tool description, the
-  `--help` note, and an optional "Confirm a destructive action" `confirm` in the MCP schema)
-  instead of the flat always-destroys wording. Commands that refine destruction with
-  `readOnlyWhen` (all of the framework's own) are unaffected.
-* recover-env's MCP argument refusals now read exactly as the console's — the shared
-  argument parser's own words instead of schema-side ones; as before, they land before any
-  contact with the target.
+* All 41 commands of the framework are declared once — arguments with their value rules, actions,
+  effect and phases — and every command runs through one pipeline on the console and on MCP
+  (parse, confirm, prepare, environment, context, run). What changes for users:
+  * An argument error — a bad value (`--local-port`, `--interval`, `--tail`, `--profile`), an
+    empty option value, a missing required argument, an unknown or missing action, a flag of
+    another action, a cross-flag conflict such as `apply-config --dry-run --dump`,
+    `rollback --previous-set --operation …`, `destroy --yes` without the right `--confirm-name`,
+    `backup create --native` with a non-full profile, secrets' cross-flag rules, host's
+    `--root`/`--confirm-root` consent, configure-provider's id/variable grammars, `set diff`'s
+    artifact rules, `set receipts --receipt` without `--set-id`, `set try` without `--set` — is
+    refused before any contact with the target, the instance lock or a .env write, on every
+    host (previously the refusal could come after the bootstrappability check or the lock, or be
+    answered by a target error such as LOCAL_TARGET_UNSUPPORTED where the transport could not
+    be built). The same holds for recover-env.
+  * The parser's own words are used on the console and on MCP alike: `--tail takes a number of
+    lines, not "abc"`, `--profile takes one of full, migrate, share, not "…"`, `verify needs
+    <archive>`, `set forget needs --kind <kind>` (and `--name`; a `--kind` outside agent,
+    mcp-server, cron-job lists the choices). MCP `choices`/required errors and recover-env's
+    argument refusals read exactly like the console's instead of schema-side ones. `recipe <action>`
+    without its <name> answers `usage: ./clawforge recipe <action> <name>`; host's unknown or
+    missing context and a missing command are named argument errors (`<context>` takes one of
+    target, engine, local …); a missing deploy target, provision-agent recipe, or cli/exec
+    command is reported as such instead of a usage line; `verify` without an archive is refused
+    in the parser's words too, and so is `recipe verify --dry-run` (verify takes no --dry-run).
+  * An empty option value (`--store ""`, `--set`, `--expect`, `--operation`, `--limit`, `--name`) is
+    refused uniformly as needing a value.
+  * The five multi-action commands (backup, recipe, watch, expose, set) answer an unknown or
+    missing action in the same words (`needs an action: …`, `unknown action: x (expected …)`, with
+    a guess), and a flag that belongs to another action says which action it belongs to
+    (also for `set diff`). `set`'s action is required — bare `set` is refused, and the usage line
+    and the MCP schema mark `action` required (it already was at run time). `recipe` lists its
+    actions in its grammar's order in help and the MCP schema; `recipe --json` still lists.
+  * `backup create --dry-run` reports itself as a read on every surface. `mcp-serve` refuses
+    arguments instead of forwarding them to the gateway's `mcp serve` (it never declared any).
+    `expose tailscale --funnel` (or `funnel`) is still refused with the same explanation, now by
+    the parser, before any contact.
+  * The MCP descriptions that were cut off with an ellipsis (`upgrade --image`, `rollback
+    --previous-set`, `apply-config --dump`, `expose --apply`, `recipe <new-name>`) are the full
+    phrases.
+  * The effect of each command and action is declared once, and confirmation, the `changed`
+    flag, the markers in the command list and the `--help` note derive from it; effects are
+    unchanged (the `secrets` default report and `--print-template` read, `--template` changes,
+    `--init-store`, `--apply` and `--dump` destroy; `recipe` reads for list/status/logs and
+    install/remove --dry-run and destroys otherwise; `lock --check` and `deploy --dry-run` read;
+    cli, exec and host remain always-destroying; `set` validate, diff and receipts read, build
+    changes, try and forget destroy). A deployment command that is destructive and declares
+    `requiresConfirmationWhen` without `readOnlyWhen` — confirmation is owed only for some
+    calls — reads as "destructive for some actions" on every surface (` *` in the command list,
+    the tool description, the `--help` note, and an optional "Confirm a destructive action"
+    `confirm` in the MCP schema) instead of the flat always-destroys wording; the framework's
+    own commands, which refine destruction with `readOnlyWhen`, are unaffected.
 * `./clawforge list` answers an unknown argument the standard way — the refusal plus a
   pointer to `list --help` — instead of its own bare "unknown argument" line.
 * A set is loaded and validated by one pipeline for the working tree and an artifact alike
@@ -83,15 +71,6 @@ All notable changes to `@clawforge/framework` will be documented here.
   and clears both. Shims and launchers already committed in your repository keep working, and
   `mcp-setup` rewrites a launcher carrying the old spelling as it rewrites its other retired
   texts. No command output changes.
-* `expose`, `watch` and `incident` declare their arguments and effect once, and the shared
-  parser answers for them: a bad `--local-port`, `--interval` or `--tail` (and an empty
-  option value) is refused before any contact with the target or the instance lock; a missing
-  or unknown action of `expose`/`watch` reads like every other multi-action command's
-  (`needs an action: …`, `unknown action: x (expected …)`), and an action's flag given to
-  another action says which action it belongs to; MCP `choices`/required errors come in the
-  parser's words. `expose tailscale --funnel` (or `funnel`) is still refused with the same
-  explanation, now by the parser, before any contact. The MCP description of
-  `expose --apply` is the whole phrase instead of a cut one.
 
 ### Fixed
 

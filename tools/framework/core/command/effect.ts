@@ -109,5 +109,3 @@ export function legacyPreparesEnvironment(command: AppCommand, args: readonly st
   parseDeclaredArgs(command.arguments ?? [], args);
   return true;
 }
-
-export const preparesEnvironmentFor = legacyPreparesEnvironment;

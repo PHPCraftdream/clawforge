@@ -6,10 +6,9 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
 import {
-  parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION, specOf, specShape, type CallShape,
+  parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, specOf, specShape, type CallShape,
 } from "#framework/core/command/index.ts";
 import { countValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
-import { buildCompletionModel } from "#framework/integration/completion.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
@@ -418,87 +417,16 @@ check(
   "unknown action: bogus (expected check, install, uninstall, status or test)",
 );
 
-// --- multi-action commands: declared per-action flags equal what each parser accepts -------
-// R29-04: `watch status --interval`, `backup list --hot` were offered by completion/--help/the MCP
-// schema and then refused. Each command registers the argument slice every action parses with;
-// its declaration is derived from that (scopeByAction), and this drives the real parsers.
-// A command with a spec body needs no registry: its actions parse their own declared slices
-// by construction, and its per-action cases live in the group's own checks.
+// --- multi-action commands are declared bodies ----------------------------------------------------
+// R29-04: `watch status --interval` was offered by completion/--help/the MCP schema and then refused.
+// A body's actions parse their own declared slices (the derived view and parseCall read the same
+// declaration), so declared = accepted holds by construction; a multi-action command that is not a
+// body would bring the hand-kept slice table back. Per-action cases live in the groups' own checks.
 
-{
-  type Slices = Readonly<Record<string, readonly CommandArgument[]>>;
-
-  // A new multi-action command must register here, or this check fails for it. A command
-  // leaves the registry only by becoming a declared body: then its parser IS its
-  // declaration, and the group's own checks prove declared = accepted (backup:
-  // state/backup/backup.check.ts).
-  const REGISTRY: Readonly<Record<string, Slices>> = {
-  };
-
-  const isNamed = (argument: CommandArgument): boolean => argument.kind === "flag" || argument.kind === "option";
-
-  function tokens(argument: CommandArgument): string[] {
-    return argument.kind === "option" ? [`--${argument.name}`, "x"] : [`--${argument.name}`];
-  }
-
-  /** Whether the real parser for `action` takes `argument` (syntactically). */
-  function accepts(action: string, slice: readonly CommandArgument[], argument: CommandArgument): boolean {
-    try {
-      parseDeclaredArgs(slice, tokens(argument));
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  const completion = new Map(buildCompletionModel([]).map((spec) => [spec.name, spec]));
-
-  for (const [name, command] of Object.entries(openclawCommands)) {
-    const actionArgument = (command.arguments ?? []).find((argument) => argument.kind === "positional" && argument.name === "action");
-    if (actionArgument?.choices === undefined) continue;
-    // A spec command's slices ARE the parser's grammar — the derived view and parseCall read
-    // the same declaration — so the declared-equals-accepted cross-check covers legacy
-    // commands only.
-    if (specOf(command) !== undefined) continue;
-    const slices = REGISTRY[name];
-    if (slices === undefined) {
-      // No registry entry: the command must carry its own spec body, whose actions parse
-      // their declared slices by construction (its group check covers the per-action cases).
-      check(`${name}: unregistered multi-action command is a spec command`, specOf(command) !== undefined, true);
-      continue;
-    }
-
-    const choices = [...actionArgument.choices];
-    // Since R30-05 NO_ACTION is the real action word `create` — a registry key AND a choice,
-    // so no key is filtered out here.
-    const registered = Object.keys(slices);
-    check(`${name}: registered actions equal the action choices`, [...registered].sort(), [...choices].sort());
-
-    const declared = (command.arguments ?? []).filter(isNamed);
-    const known = new Map<string, CommandArgument>();
-    for (const slice of Object.values(slices)) for (const argument of slice.filter(isNamed)) known.set(argument.name, argument);
-    check(`${name}: every declared flag is taken by some action`, declared.filter((argument) => !known.has(argument.name)).map((argument) => argument.name), []);
-
-    for (const action of Object.keys(slices)) {
-      const slice = slices[action];
-      const label = `${name} ${action === NO_ACTION ? "(no action)" : action}`;
-      const shown = declared
-        .filter((argument) => argument.actions === undefined || argument.actions.includes(action))
-        .map((argument) => argument.name)
-        .sort();
-      const parsed = [...known.values()].filter((argument) => accepts(action, slice, argument)).map((argument) => argument.name).sort();
-      check(`${label}: declared flags equal what its parser accepts`, shown, parsed);
-
-      const offered = completion.get(name)?.action?.flags[action];
-      if (action !== NO_ACTION) {
-        check(
-          `${label}: completion offers exactly those flags`,
-          (offered ?? []).filter((flag) => flag !== "--help").sort(),
-          shown.map((flag) => `--${flag}`),
-        );
-      }
-    }
-  }
+for (const [name, command] of Object.entries(openclawCommands)) {
+  const actionArgument = (command.arguments ?? []).find((argument) => argument.kind === "positional" && argument.name === "action");
+  if (actionArgument?.choices === undefined) continue;
+  check(`${name}: a multi-action command is a spec command`, specOf(command) !== undefined, true);
 }
 
 // --- parseCall: tokenize + bind + the action word (design 1.5) ------------------------------------

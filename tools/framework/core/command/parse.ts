@@ -17,7 +17,7 @@ import { ValueError } from "#src/core/values/value.ts";
 /** Only for a multi-action command (backup): the action being parsed, and the full
  *  cross-action declaration to check an unrecognized flag against before giving up on it
  *  as wholly unknown — see CommandArgument's own `actions` field. */
-export interface ActionScope {
+interface ActionScope {
   readonly action: string;
   readonly siblings: readonly CommandArgument[];
 }

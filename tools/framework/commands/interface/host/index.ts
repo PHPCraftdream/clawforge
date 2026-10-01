@@ -48,7 +48,7 @@ export const HOST_ARGUMENTS = [
   },
 ] as const satisfies readonly ArgumentSpec[];
 
-export interface HostInvocation {
+interface HostInvocation {
   readonly context: HostContextName;
   readonly root: boolean;
   readonly confirmRoot: boolean;
@@ -59,7 +59,7 @@ export interface HostInvocation {
  *  command token — exactly so a command's own --root-like flags after that point are passed
  *  through untouched; that order is the parser's (tokenize's verbatim tail), not re-derived
  *  here. */
-export function invocationOf(values: Values<typeof HOST_ARGUMENTS>): HostInvocation {
+function invocationOf(values: Values<typeof HOST_ARGUMENTS>): HostInvocation {
   return { context: values.context, root: values.root, confirmRoot: values["confirm-root"], command: [...values.args] };
 }
 

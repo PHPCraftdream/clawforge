@@ -39,6 +39,7 @@ import { COMPLETION_SHELLS } from "#framework/integration/completion.ts";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { checkoutSubfolderReport, missingDeploymentReport, reportUnknownCommand } from "#framework/integration/gate.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
+import { renderEntryMatrix } from "./matrix.ts";
 import { runApp } from "#framework/entry/cli.ts";
 import { renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -291,6 +292,10 @@ export async function renderGolden(): Promise<Record<string, string>> {
   // --- refusals -----------------------------------------------------------------------------
 
   snapshots["refusals.txt"] = await refusals();
+
+  // --- entry decision matrix ----------------------------------------------------------------
+
+  snapshots["entry-matrix.txt"] = renderEntryMatrix();
 
   // One heavy render, one scrub: applied uniformly so a new surface cannot forget it.
   return Object.fromEntries(Object.entries(snapshots).map(([name, text]) => [name, scrub(text)]));

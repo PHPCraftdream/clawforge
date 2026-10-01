@@ -1,0 +1,1396 @@
+// Entry decisions (plan stage 2, invariant I3): resolveCheckoutEntry (gate) where the gate
+// is the process, frameworkOwner (installed command hand-over) everywhere, plus the stray
+// app.ts predicate. Fake fs, no processes. Paths are fake-root relative.
+
+== platform=linux layout=checkout-root argv=<none> env=none
+gate: run app=openclaw fact=openclaw/default argv=[] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=[]
+stray: none
+== platform=linux layout=checkout-root argv=["help"] env=none
+gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["help"]
+stray: none
+== platform=linux layout=checkout-root argv=["status"] env=none
+gate: run app=openclaw fact=openclaw/default argv=["status"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["status"]
+stray: none
+== platform=linux layout=checkout-root argv=["status","--help"] env=none
+gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["status","--help"]
+stray: none
+== platform=linux layout=checkout-root argv=["--app","x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app","x","status"]
+stray: none
+== platform=linux layout=checkout-root argv=["--app=x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app=x","status"]
+stray: none
+== platform=linux layout=checkout-root argv=["--app"] env=none
+gate: refuse: --app needs a deployment name
+handover: spawn checkout-gate delegated=false argv=["--app"]
+stray: none
+== platform=linux layout=checkout-root argv=["status","--app","x"] env=none
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["status","--app","x"]
+stray: none
+== platform=linux layout=checkout-root argv=<none> env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=[]
+stray: none
+== platform=linux layout=checkout-root argv=["help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["help"]
+stray: none
+== platform=linux layout=checkout-root argv=["status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["status"]
+stray: none
+== platform=linux layout=checkout-root argv=["status","--help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["status","--help"]
+stray: none
+== platform=linux layout=checkout-root argv=["--app","x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app","x","status"]
+stray: none
+== platform=linux layout=checkout-root argv=["--app=x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app=x","status"]
+stray: none
+== platform=linux layout=checkout-root argv=["--app"] env=OC_APP=x
+gate: refuse: --app needs a deployment name
+handover: spawn checkout-gate delegated=false argv=["--app"]
+stray: none
+== platform=linux layout=checkout-root argv=["status","--app","x"] env=OC_APP=x
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["status","--app","x"]
+stray: none
+== platform=linux layout=apps-openclaw argv=<none> env=none
+gate: run app=openclaw fact=openclaw/cwd argv=[] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw"]
+stray: none
+== platform=linux layout=apps-openclaw argv=["help"] env=none
+gate: run app=openclaw fact=openclaw/cwd argv=["help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","help"]
+stray: none
+== platform=linux layout=apps-openclaw argv=["status"] env=none
+gate: run app=openclaw fact=openclaw/cwd argv=["status"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status"]
+stray: none
+== platform=linux layout=apps-openclaw argv=["status","--help"] env=none
+gate: run app=openclaw fact=openclaw/cwd argv=["status","--help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
+stray: none
+== platform=linux layout=apps-openclaw argv=["--app","x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=linux layout=apps-openclaw argv=["--app=x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=linux layout=apps-openclaw argv=["--app"] env=none
+gate: refuse: --app needs a deployment name
+handover: refuse-app-value: missing
+stray: none
+== platform=linux layout=apps-openclaw argv=["status","--app","x"] env=none
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
+stray: none
+== platform=linux layout=apps-openclaw argv=<none> env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw"]
+stray: none
+== platform=linux layout=apps-openclaw argv=["help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","help"]
+stray: none
+== platform=linux layout=apps-openclaw argv=["status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status"]
+stray: none
+== platform=linux layout=apps-openclaw argv=["status","--help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
+stray: none
+== platform=linux layout=apps-openclaw argv=["--app","x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=linux layout=apps-openclaw argv=["--app=x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=linux layout=apps-openclaw argv=["--app"] env=OC_APP=x
+gate: refuse: --app needs a deployment name
+handover: refuse-app-value: missing
+stray: none
+== platform=linux layout=apps-openclaw argv=["status","--app","x"] env=OC_APP=x
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
+stray: none
+== platform=linux layout=apps-upper argv=<none> env=none
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=apps-upper argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=<none> env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-subfolder argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=<none> env=none
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=installed-app argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=installed-app-local argv=<none> env=none
+handover: spawn local-package delegated=true argv=[]
+stray: none
+== platform=linux layout=installed-app-local argv=["help"] env=none
+handover: spawn local-package delegated=true argv=["help"]
+stray: none
+== platform=linux layout=installed-app-local argv=["status"] env=none
+handover: spawn local-package delegated=true argv=["status"]
+stray: none
+== platform=linux layout=installed-app-local argv=["status","--help"] env=none
+handover: spawn local-package delegated=true argv=["status","--help"]
+stray: none
+== platform=linux layout=installed-app-local argv=["--app","x","status"] env=none
+handover: spawn local-package delegated=true argv=["--app","x","status"]
+stray: none
+== platform=linux layout=installed-app-local argv=["--app=x","status"] env=none
+handover: spawn local-package delegated=true argv=["--app=x","status"]
+stray: none
+== platform=linux layout=installed-app-local argv=["--app"] env=none
+handover: spawn local-package delegated=true argv=["--app"]
+stray: none
+== platform=linux layout=installed-app-local argv=["status","--app","x"] env=none
+handover: spawn local-package delegated=true argv=["status","--app","x"]
+stray: none
+== platform=linux layout=installed-app-local argv=<none> env=OC_APP=x
+handover: spawn local-package delegated=true argv=[]
+stray: none
+== platform=linux layout=installed-app-local argv=["help"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["help"]
+stray: none
+== platform=linux layout=installed-app-local argv=["status"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["status"]
+stray: none
+== platform=linux layout=installed-app-local argv=["status","--help"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["status","--help"]
+stray: none
+== platform=linux layout=installed-app-local argv=["--app","x","status"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["--app","x","status"]
+stray: none
+== platform=linux layout=installed-app-local argv=["--app=x","status"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["--app=x","status"]
+stray: none
+== platform=linux layout=installed-app-local argv=["--app"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["--app"]
+stray: none
+== platform=linux layout=installed-app-local argv=["status","--app","x"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["status","--app","x"]
+stray: none
+== platform=linux layout=stray-checkout-app argv=<none> env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["help"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["status"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["status","--help"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["--app","x","status"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["--app=x","status"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["--app"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["status","--app","x"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=<none> env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["help"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["status"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=stray-checkout-app argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=linux layout=empty-directory argv=<none> env=none
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=empty-directory argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=<none> env=none
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=nested-app argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-root argv=<none> env=none
+gate: run app=openclaw fact=openclaw/default argv=[] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=[]
+stray: none
+== platform=win32 layout=checkout-root argv=["help"] env=none
+gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["help"]
+stray: none
+== platform=win32 layout=checkout-root argv=["status"] env=none
+gate: run app=openclaw fact=openclaw/default argv=["status"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["status"]
+stray: none
+== platform=win32 layout=checkout-root argv=["status","--help"] env=none
+gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["status","--help"]
+stray: none
+== platform=win32 layout=checkout-root argv=["--app","x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app","x","status"]
+stray: none
+== platform=win32 layout=checkout-root argv=["--app=x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app=x","status"]
+stray: none
+== platform=win32 layout=checkout-root argv=["--app"] env=none
+gate: refuse: --app needs a deployment name
+handover: spawn checkout-gate delegated=false argv=["--app"]
+stray: none
+== platform=win32 layout=checkout-root argv=["status","--app","x"] env=none
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["status","--app","x"]
+stray: none
+== platform=win32 layout=checkout-root argv=<none> env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=[]
+stray: none
+== platform=win32 layout=checkout-root argv=["help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["help"]
+stray: none
+== platform=win32 layout=checkout-root argv=["status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["status"]
+stray: none
+== platform=win32 layout=checkout-root argv=["status","--help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["status","--help"]
+stray: none
+== platform=win32 layout=checkout-root argv=["--app","x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app","x","status"]
+stray: none
+== platform=win32 layout=checkout-root argv=["--app=x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app=x","status"]
+stray: none
+== platform=win32 layout=checkout-root argv=["--app"] env=OC_APP=x
+gate: refuse: --app needs a deployment name
+handover: spawn checkout-gate delegated=false argv=["--app"]
+stray: none
+== platform=win32 layout=checkout-root argv=["status","--app","x"] env=OC_APP=x
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["status","--app","x"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=<none> env=none
+gate: run app=openclaw fact=openclaw/cwd argv=[] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=["help"] env=none
+gate: run app=openclaw fact=openclaw/cwd argv=["help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","help"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=["status"] env=none
+gate: run app=openclaw fact=openclaw/cwd argv=["status"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=["status","--help"] env=none
+gate: run app=openclaw fact=openclaw/cwd argv=["status","--help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=["--app","x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-openclaw argv=["--app=x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-openclaw argv=["--app"] env=none
+gate: refuse: --app needs a deployment name
+handover: refuse-app-value: missing
+stray: none
+== platform=win32 layout=apps-openclaw argv=["status","--app","x"] env=none
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=<none> env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=["help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","help"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=["status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=["status","--help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
+stray: none
+== platform=win32 layout=apps-openclaw argv=["--app","x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-openclaw argv=["--app=x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-openclaw argv=["--app"] env=OC_APP=x
+gate: refuse: --app needs a deployment name
+handover: refuse-app-value: missing
+stray: none
+== platform=win32 layout=apps-openclaw argv=["status","--app","x"] env=OC_APP=x
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
+stray: none
+== platform=win32 layout=apps-upper argv=<none> env=none
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw"]
+stray: none
+== platform=win32 layout=apps-upper argv=["help"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","help"]
+stray: none
+== platform=win32 layout=apps-upper argv=["status"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status"]
+stray: none
+== platform=win32 layout=apps-upper argv=["status","--help"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
+stray: none
+== platform=win32 layout=apps-upper argv=["--app","x","status"] env=none
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-upper argv=["--app=x","status"] env=none
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-upper argv=["--app"] env=none
+handover: refuse-app-value: missing
+stray: none
+== platform=win32 layout=apps-upper argv=["status","--app","x"] env=none
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
+stray: none
+== platform=win32 layout=apps-upper argv=<none> env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw"]
+stray: none
+== platform=win32 layout=apps-upper argv=["help"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","help"]
+stray: none
+== platform=win32 layout=apps-upper argv=["status"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status"]
+stray: none
+== platform=win32 layout=apps-upper argv=["status","--help"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
+stray: none
+== platform=win32 layout=apps-upper argv=["--app","x","status"] env=OC_APP=x
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-upper argv=["--app=x","status"] env=OC_APP=x
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=win32 layout=apps-upper argv=["--app"] env=OC_APP=x
+handover: refuse-app-value: missing
+stray: none
+== platform=win32 layout=apps-upper argv=["status","--app","x"] env=OC_APP=x
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
+stray: none
+== platform=win32 layout=checkout-subfolder argv=<none> env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-subfolder argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=<none> env=none
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=installed-app-local argv=<none> env=none
+handover: spawn local-package delegated=true argv=[]
+stray: none
+== platform=win32 layout=installed-app-local argv=["help"] env=none
+handover: spawn local-package delegated=true argv=["help"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["status"] env=none
+handover: spawn local-package delegated=true argv=["status"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["status","--help"] env=none
+handover: spawn local-package delegated=true argv=["status","--help"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["--app","x","status"] env=none
+handover: spawn local-package delegated=true argv=["--app","x","status"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["--app=x","status"] env=none
+handover: spawn local-package delegated=true argv=["--app=x","status"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["--app"] env=none
+handover: spawn local-package delegated=true argv=["--app"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["status","--app","x"] env=none
+handover: spawn local-package delegated=true argv=["status","--app","x"]
+stray: none
+== platform=win32 layout=installed-app-local argv=<none> env=OC_APP=x
+handover: spawn local-package delegated=true argv=[]
+stray: none
+== platform=win32 layout=installed-app-local argv=["help"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["help"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["status"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["status"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["status","--help"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["status","--help"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["--app","x","status"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["--app","x","status"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["--app=x","status"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["--app=x","status"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["--app"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["--app"]
+stray: none
+== platform=win32 layout=installed-app-local argv=["status","--app","x"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["status","--app","x"]
+stray: none
+== platform=win32 layout=stray-checkout-app argv=<none> env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["help"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["status"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["status","--help"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["--app","x","status"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["--app=x","status"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["--app"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["status","--app","x"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=<none> env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["help"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["status"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=stray-checkout-app argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=win32 layout=empty-directory argv=<none> env=none
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=empty-directory argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=<none> env=none
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=nested-app argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-root argv=<none> env=none
+gate: run app=openclaw fact=openclaw/default argv=[] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=[]
+stray: none
+== platform=darwin layout=checkout-root argv=["help"] env=none
+gate: run app=openclaw fact=openclaw/default argv=["help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["help"]
+stray: none
+== platform=darwin layout=checkout-root argv=["status"] env=none
+gate: run app=openclaw fact=openclaw/default argv=["status"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["status"]
+stray: none
+== platform=darwin layout=checkout-root argv=["status","--help"] env=none
+gate: run app=openclaw fact=openclaw/default argv=["status","--help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["status","--help"]
+stray: none
+== platform=darwin layout=checkout-root argv=["--app","x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app","x","status"]
+stray: none
+== platform=darwin layout=checkout-root argv=["--app=x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app=x","status"]
+stray: none
+== platform=darwin layout=checkout-root argv=["--app"] env=none
+gate: refuse: --app needs a deployment name
+handover: spawn checkout-gate delegated=false argv=["--app"]
+stray: none
+== platform=darwin layout=checkout-root argv=["status","--app","x"] env=none
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["status","--app","x"]
+stray: none
+== platform=darwin layout=checkout-root argv=<none> env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=[]
+stray: none
+== platform=darwin layout=checkout-root argv=["help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["help"]
+stray: none
+== platform=darwin layout=checkout-root argv=["status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["status"]
+stray: none
+== platform=darwin layout=checkout-root argv=["status","--help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["status","--help"]
+stray: none
+== platform=darwin layout=checkout-root argv=["--app","x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app","x","status"]
+stray: none
+== platform=darwin layout=checkout-root argv=["--app=x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app=x","status"]
+stray: none
+== platform=darwin layout=checkout-root argv=["--app"] env=OC_APP=x
+gate: refuse: --app needs a deployment name
+handover: spawn checkout-gate delegated=false argv=["--app"]
+stray: none
+== platform=darwin layout=checkout-root argv=["status","--app","x"] env=OC_APP=x
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["status","--app","x"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=<none> env=none
+gate: run app=openclaw fact=openclaw/cwd argv=[] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=["help"] env=none
+gate: run app=openclaw fact=openclaw/cwd argv=["help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","help"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=["status"] env=none
+gate: run app=openclaw fact=openclaw/cwd argv=["status"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=["status","--help"] env=none
+gate: run app=openclaw fact=openclaw/cwd argv=["status","--help"] prefix=./clawforge
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=["--app","x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=darwin layout=apps-openclaw argv=["--app=x","status"] env=none
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=darwin layout=apps-openclaw argv=["--app"] env=none
+gate: refuse: --app needs a deployment name
+handover: refuse-app-value: missing
+stray: none
+== platform=darwin layout=apps-openclaw argv=["status","--app","x"] env=none
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=<none> env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=["help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","help"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=["status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=["status","--help"] env=OC_APP=x
+gate: help-without-deployment: no deployment "x" — available: demo, openclaw (pick one with --app <name> or OC_APP)
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--help"]
+stray: none
+== platform=darwin layout=apps-openclaw argv=["--app","x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=darwin layout=apps-openclaw argv=["--app=x","status"] env=OC_APP=x
+gate: refuse: deployment "x" not found at clawforge-checkout/apps/x | available: demo, openclaw — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>
+handover: refuse-app-value: conflict --app x
+stray: none
+== platform=darwin layout=apps-openclaw argv=["--app"] env=OC_APP=x
+gate: refuse: --app needs a deployment name
+handover: refuse-app-value: missing
+stray: none
+== platform=darwin layout=apps-openclaw argv=["status","--app","x"] env=OC_APP=x
+gate: refuse-misplaced-app-flag
+handover: spawn checkout-gate delegated=false argv=["--app","openclaw","status","--app","x"]
+stray: none
+== platform=darwin layout=apps-upper argv=<none> env=none
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=apps-upper argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=<none> env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-subfolder argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=<none> env=none
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=installed-app-local argv=<none> env=none
+handover: spawn local-package delegated=true argv=[]
+stray: none
+== platform=darwin layout=installed-app-local argv=["help"] env=none
+handover: spawn local-package delegated=true argv=["help"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["status"] env=none
+handover: spawn local-package delegated=true argv=["status"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["status","--help"] env=none
+handover: spawn local-package delegated=true argv=["status","--help"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["--app","x","status"] env=none
+handover: spawn local-package delegated=true argv=["--app","x","status"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["--app=x","status"] env=none
+handover: spawn local-package delegated=true argv=["--app=x","status"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["--app"] env=none
+handover: spawn local-package delegated=true argv=["--app"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["status","--app","x"] env=none
+handover: spawn local-package delegated=true argv=["status","--app","x"]
+stray: none
+== platform=darwin layout=installed-app-local argv=<none> env=OC_APP=x
+handover: spawn local-package delegated=true argv=[]
+stray: none
+== platform=darwin layout=installed-app-local argv=["help"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["help"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["status"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["status"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["status","--help"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["status","--help"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["--app","x","status"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["--app","x","status"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["--app=x","status"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["--app=x","status"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["--app"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["--app"]
+stray: none
+== platform=darwin layout=installed-app-local argv=["status","--app","x"] env=OC_APP=x
+handover: spawn local-package delegated=true argv=["status","--app","x"]
+stray: none
+== platform=darwin layout=stray-checkout-app argv=<none> env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["help"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["status"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["status","--help"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["--app","x","status"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["--app=x","status"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["--app"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["status","--app","x"] env=none
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=<none> env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["help"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["status"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=stray-checkout-app argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: checkout=clawforge-checkout
+== platform=darwin layout=empty-directory argv=<none> env=none
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=empty-directory argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=<none> env=none
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=nested-app argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none

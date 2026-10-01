@@ -201,7 +201,9 @@ try {
   check("the legacy shim variable is mapped onto the value", takeInvocationFromEnv(), NAMED);
   check("it is removed, so descendants never inherit it", process.env[INVOKED_AS_ENV], undefined);
   process.env[INVOKED_AS_ENV] = "clawforge";
-  check("legacy without a suffix maps to the program alone", takeInvocationFromEnv(), { ...GLOBAL, mode: "checkout" });
+  check("legacy without a suffix maps to the program alone", takeInvocationFromEnv(), GLOBAL);
+  process.env[INVOKED_AS_ENV] = "/usr/local/bin/clawforge";
+  check("a bare path ending in clawforge is still checkout mode", takeInvocationFromEnv(), { program: "/usr/local/bin/clawforge", mode: "checkout", audience: "terminal" });
   process.env[INVOKED_AS_ENV] = "   ";
   check("blank legacy reads as unset", takeInvocationFromEnv(), undefined);
   check("parseLegacyInvokedAs agrees with the env path", parseLegacyInvokedAs("../../clawforge --app app1"), { program: "../../clawforge", mode: "checkout", app: { name: "app1", selectedBy: "flag" }, audience: "terminal" });

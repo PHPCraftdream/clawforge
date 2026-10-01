@@ -14,19 +14,11 @@
 // With neither set and no "openclaw" deployment, a checkout with exactly one deployment
 // under apps/ uses it automatically.
 
-import { resolve } from "node:path";
-import { access } from "node:fs/promises";
 import { main } from "./framework/entry/cli.ts";
-import { isWithin } from "./framework/core/paths.ts";
 import {
   runGateCommand,
   gateHelpLines,
   reportUnknownCommand,
-  splitLeadingAppFlag,
-  misplacedAppFlag,
-  soleDeploymentFallback,
-  missingDeploymentReport,
-  isDeploymentHelpRequest,
   type GateCommand,
 } from "./framework/integration/gate.ts";
 import { helpEntryLine } from "./framework/core/io/help-render.ts";
@@ -38,14 +30,13 @@ import { useDeployment } from "./framework/runtime/deployment.ts";
 import { createApp } from "./framework/integration/deployment/scaffold.ts";
 import { removeApp } from "./framework/integration/deployment/remove.ts";
 import { listDeployments, printDeploymentList } from "./framework/integration/list.ts";
-import { deploymentNames } from "./framework/integration/deployment/names.ts";
-import { safeName } from "./framework/core/values/names.ts";
 import { parseDeclaredArgs } from "./framework/core/arguments.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
 import { normalizeVersionAlias, versionGateCommand } from "./framework/integration/version.ts";
 import { makeCompletionGateCommand } from "./framework/integration/completion.ts";
 import type { AppDefinition, CommandArgument } from "./framework/core/app.ts";
 import { resolveFrameworkFromSources } from "./framework/entry/delegate.ts";
+import { nodeFs, resolveCheckoutEntry } from "./framework/entry/resolve.ts";
 
 // A deployment's app.ts importing @clawforge/framework resolves onto this checkout's
 // sources — there is no dist build here (recipe hooks map the same table in the hook loader).
@@ -56,21 +47,6 @@ resolveFrameworkFromSources();
 const handedOver = takeInvocationFromEnv();
 setInvocation(handedOver ?? { program: "./clawforge", mode: "checkout", audience: "terminal" });
 const argv = normalizeVersionAlias(process.argv.slice(2));
-
-// --app wins over the environment, the environment over the default.
-let name = process.env.OC_APP ?? "openclaw";
-let appExplicit = process.env.OC_APP !== undefined;
-let selectedBy: "env" | "flag" | "sole" | "default" = appExplicit ? "env" : "default";
-const appFlag = splitLeadingAppFlag(argv);
-if (appFlag.missingValue) {
-  reportError("--app needs a deployment name");
-  process.exit(1);
-} else if (appFlag.value !== undefined) {
-  name = appFlag.value;
-  appExplicit = true;
-  selectedBy = "flag";
-}
-argv.splice(0, argv.length, ...appFlag.rest);
 
 // Drives both new-app's parser and its declaration.
 const NEW_APP_ARGUMENTS: CommandArgument[] = [
@@ -223,22 +199,6 @@ const gateCommands: GateCommand[] = [
 // (itself included), which is only true once this line has run — see completion.ts.
 gateCommands.push(makeCompletionGateCommand(gateCommands, true));
 
-// --app after the command is refused, except where the command reads argv verbatim.
-const verbatimCommands = [
-  ...gateCommands.map((command) => command.name),
-  ...Object.entries(openclawCommands)
-    .filter(([, command]) => command.arguments?.some((argument) => argument.kind === "variadic") === true)
-    .map(([commandName]) => commandName),
-];
-const misplacedApp = misplacedAppFlag(argv[0], argv.slice(1), verbatimCommands);
-if (misplacedApp !== undefined) {
-  reportError("--app must come before the command: ./clawforge --app <name> <command> …");
-  process.exit(1);
-}
-
-const gateExit = await runGateCommand(gateCommands, argv);
-if (gateExit !== undefined) process.exit(gateExit);
-
 // The command list in `./clawforge help`: the gate's own commands, plus the one line here that is
 // not a command at all.
 const monorepoGateHelp = [
@@ -246,85 +206,72 @@ const monorepoGateHelp = [
   helpEntryLine("--app <name>", "pick another deployment, before the command (default: the OC_APP one)"),
 ];
 
-// Every name this gate can dispatch without a loaded app.ts — a deployment's own app.ts
-// may declare more (see the missing-deployment branch below).
-const baseCommandNames = [
-  ...Object.keys(openclawCommands),
-  ...gateCommands.map((command) => command.name),
-  "help",
-  "control-mcp",
-];
+// Where am I, which deployment, which framework copy, how do I name myself — one pure
+// decision (entry/resolve.ts); the switch below only performs its side effects.
+const decision = resolveCheckoutEntry({
+  root: monorepoRoot,
+  cwd: process.cwd(),
+  argv,
+  ocApp: process.env.OC_APP,
+  handedOver: handedOver !== undefined,
+  fs: nodeFs,
+  gateCommands: gateCommands.map((command) => command.name),
+  deploymentCommands: Object.keys(openclawCommands),
+  variadicCommands: Object.entries(openclawCommands)
+    .filter(([, command]) => command.arguments?.some((argument) => argument.kind === "variadic") === true)
+    .map(([commandName]) => commandName),
+});
 
-// Checked before it becomes a path: --app or OC_APP set to "../.." would take the
-// framework outside apps/ entirely, and the deployment name also becomes the compose
-// project and the archive prefix.
-try {
-  safeName("deployment", name);
-} catch (error) {
-  reportError(error);
-  process.exit(1);
-}
-
-let deploymentDir = resolve(monorepoRoot, "apps", name);
-try {
-  await access(resolve(deploymentDir, "app.ts"));
-} catch {
-  // Other deployments may exist under another name: name them instead of claiming none.
-  const available = await deploymentNames(resolve(monorepoRoot, "apps"));
-
-  const sole = soleDeploymentFallback(appExplicit, available);
-  if (sole !== undefined) {
-    name = sole;
-    selectedBy = "sole";
-    deploymentDir = resolve(monorepoRoot, "apps", name);
-    // --json output must stay parseable, and a non-interactive caller (script, cron) has no one
-    // to read this for — only print for a human at a real terminal.
-    if (!argv.includes("--json") && process.stderr.isTTY === true) {
-      info(`using the only deployment: ${name}`);
-    }
-  } else if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h" || isDeploymentHelpRequest(argv, Object.keys(openclawCommands))) {
+switch (decision.kind) {
+  case "refuse": {
+    for (const line of decision.lines) reportError(line);
+    process.exit(1);
+  }
+  case "refuse-misplaced-app-flag": {
+    reportError("--app must come before the command: ./clawforge --app <name> <command> …");
+    process.exit(1);
+  }
+  case "refuse-unknown-command": {
+    reportUnknownCommand(decision.name, [...decision.candidates]);
+    process.exit(1);
+  }
+  case "gate-command": {
+    process.exit((await runGateCommand(gateCommands, [decision.name, ...decision.args])) ?? 0);
+  }
+  case "help-without-deployment": {
     // help/--help/-h must work in a completely fresh checkout, before any deployment
     // exists — and so must `<deployment command> --help`, the second form the general
     // help itself promises. Built from openclawCommands directly (there's no app.ts yet):
     // every deployment's own declaration just re-exports this set unless it adds commands of its own.
-    const pick = available.length === 0
-      ? "this checkout has no deployments yet"
-      : `no deployment "${name}" — available: ${available.join(", ")} (pick one with --app <name> or OC_APP)`;
     const genericApp: AppDefinition = {
       name: "clawforge",
-      description: `self-hosting framework for OpenClaw — ${pick}`,
+      description: `self-hosting framework for OpenClaw — ${decision.description}`,
       commands: openclawCommands,
     };
-    await main(genericApp, argv, monorepoGateHelp, gateCommands);
+    await main(genericApp, [...decision.argv], monorepoGateHelp, gateCommands);
     // runApp sets process.exitCode on error (e.g. unknown command) — respect it instead of forcing 0.
     process.exit(process.exitCode ?? 0);
-  } else if (!baseCommandNames.includes(argv[0])) {
-    // The typo case this exists for: nothing declares this name here, so no deployment's
-    // app.ts could make it valid either — answer the typo, not "deployment not found".
-    reportUnknownCommand(argv[0], baseCommandNames);
-    process.exit(1);
-  } else {
-    for (const line of missingDeploymentReport(appExplicit, name, deploymentDir, available, await access(deploymentDir).then(() => true, () => false))) reportError(line);
-    process.exit(1);
+  }
+  case "run": {
+    // --json output must stay parseable, and a non-interactive caller (script, cron) has no one
+    // to read this for — only print for a human at a real terminal.
+    if (decision.soleNote !== undefined && !decision.argv.includes("--json") && process.stderr.isTTY === true) {
+      info(`using the only deployment: ${decision.soleNote}`);
+    }
+    if (decision.app !== undefined) setInvocation({ ...invocation(), app: decision.app });
+
+    // Set before anything reads configuration: every path below resolves against it.
+    useDeployment(decision.deploymentDir);
+
+    let app: AppDefinition;
+    try {
+      const module = (await import(`../apps/${decision.appName}/app.ts`)) as { default: AppDefinition };
+      app = module.default;
+    } catch (error) {
+      reportError(`cannot load deployment "${decision.appName}": ${(error as Error).message}`);
+      process.exit(1);
+    }
+
+    await main(app, [...decision.argv], monorepoGateHelp, gateCommands);
   }
 }
-
-// A non-default deployment is named in every hint, so it can be pasted as is.
-// A hand-over from apps/<name> already selects it by the cwd; from anywhere else it must be named.
-if (name !== "openclaw" && !(handedOver !== undefined && isWithin(deploymentDir, process.cwd()))) {
-  setInvocation({ ...invocation(), app: { name, selectedBy } });
-}
-
-// Set before anything reads configuration: every path below resolves against it.
-useDeployment(deploymentDir);
-
-let app: AppDefinition;
-try {
-  const module = (await import(`../apps/${name}/app.ts`)) as { default: AppDefinition };
-  app = module.default;
-} catch (error) {
-  reportError(`cannot load deployment "${name}": ${(error as Error).message}`);
-  process.exit(1);
-}
-
-await main(app, argv, monorepoGateHelp, gateCommands);

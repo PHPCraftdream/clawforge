@@ -44,10 +44,16 @@ export function invocation(): Invocation {
   return current;
 }
 
-/** The command prefix hints render with. The `--app` suffix is part of the value itself:
- *  entries add it exactly when the pasted command would not re-select the deployment. */
+/** The command prefix hints render with. The `--app` suffix is part of the value itself —
+ *  the ONE place the printing rule lives: name the deployment exactly when the pasted
+ *  command would not re-select it. The default deployment (openclaw) is selected by doing
+ *  nothing, and `cwd` re-selects itself; flag/env/sole would be lost, so they are spelled
+ *  out. Pinned by the entry matrix (tools/checks/golden/expected/entry-matrix.txt). */
 export function invocationPrefix(): string {
-  return current.app === undefined ? current.program : `${current.program} --app ${current.app.name}`;
+  const { app } = current;
+  return app === undefined || app.name === "openclaw" || app.selectedBy === "cwd"
+    ? current.program
+    : `${current.program} --app ${app.name}`;
 }
 
 export function serializeInvocation(value: Invocation): string {
@@ -94,15 +100,18 @@ export function parseInvocation(text: string): Invocation | undefined {
 /** A legacy CLAWFORGE_INVOKED_AS prefix mapped onto the value: a program path (the launcher's
  *  relative spelling included), optionally with the hand-written `--app <name>` suffix the old
  *  variable carried. The old variable never said how the deployment was picked; every writer
- *  spelled the suffix by hand for a selection the cwd would not repeat, so `flag`. */
+ *  spelled the suffix by hand for a selection the cwd would not repeat, so `flag`. The mode
+ *  follows the program: the bare system-wide command is `installed`, everything else (a path
+ *  into the checkout or a deployment) is `checkout`. */
 export function parseLegacyInvokedAs(text: string): Invocation | undefined {
   const value = text.trim();
   if (value === "") return undefined;
   const suffix = /^(.*) --app (\S+)$/.exec(value);
   if (suffix === null || suffix[1].trim() === "") {
-    return { program: value, mode: "checkout", audience: "terminal" };
+    return { program: value, mode: value === "clawforge" ? "installed" : "checkout", audience: "terminal" };
   }
-  return { program: suffix[1].trim(), mode: "checkout", app: { name: suffix[2], selectedBy: "flag" }, audience: "terminal" };
+  const program = suffix[1].trim();
+  return { program, mode: program === "clawforge" ? "installed" : "checkout", app: { name: suffix[2], selectedBy: "flag" }, audience: "terminal" };
 }
 
 /** Reads the invocation a parent handed over and removes both variables, so descendants

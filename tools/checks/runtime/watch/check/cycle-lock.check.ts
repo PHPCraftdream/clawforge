@@ -10,7 +10,7 @@ import { watchStateFile, writeWatchState } from "#framework/commands/operate/wat
 import type { WatchState } from "#framework/commands/operate/watch/state.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { check, finish } from "#checks/kit/harness.ts";
-import { machineName, platformProbes } from "#framework/runtime/lock/process-identity.ts";
+import { START_TIME_TOLERANCE_MS, localLiveness, machineName, platformProbes } from "#framework/runtime/lock/process-identity.ts";
 async function deathOf(run: () => unknown): Promise<string> {
   try {
     await run();
@@ -86,6 +86,20 @@ try {
     } finally { platformProbes.processStartedAt = originalProbe; }
     // The newly acquired lock was released: a subsequent invocation can publish too.
     await runWatchCycle(undefined, "ok", [], true);
+  }
+
+  // The 15 s start-time tolerance is the reuse/jitter compromise: probe drift just under it
+  // must read the owner alive, just over it must not.
+  {
+    const actual = new Date().toISOString();
+    const originalProbe = platformProbes.processStartedAt;
+    platformProbes.processStartedAt = async () => actual;
+    try {
+      const near = (delta: number) =>
+        ({ pid: process.pid, machine: machineName(), startedAt: new Date(Date.parse(actual) + delta).toISOString() });
+      check("probe drift just under the tolerance reads alive", await localLiveness(near(-(START_TIME_TOLERANCE_MS - 2000))), "alive");
+      check("probe drift just over the tolerance reads dead", await localLiveness(near(-(START_TIME_TOLERANCE_MS + 2000))), "dead");
+    } finally { platformProbes.processStartedAt = originalProbe; }
   }
 } finally {
   globalThis.fetch = originalFetch;

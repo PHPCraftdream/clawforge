@@ -61,11 +61,12 @@ process.stderr.write("no second readdir of the recipes directory outside listRec
 
 // shellQuote (core/io/shell.ts) and regexEscape (core/io/log.ts) each guard an invariant —
 // POSIX argument safety, a literal-only regex match — that a second, independently
-// maintained copy could silently drift from. Counting every `function <name>(` site keeps
-// each one singular without trusting callers to remember to import rather than reimplement.
+// maintained copy could silently drift from. regexEscape is matched by its escape body, not
+// its name: an arrow-function copy (`const literal = …replace(/[.*+?^${}()|[\]\\]/…)`) is the
+// same invariant and has slipped past a name-only count.
 const SINGLE_DEFINITION: Record<string, RegExp> = {
   shellQuote: /(?:export )?function shellQuote\(/g,
-  regexEscape: /(?:export )?function regexEscape\(/g,
+  regexEscape: /\[\.\*\+\?\^\$\{\}\(\)\|\[\\\]\\\\\]/g,
 };
 async function auditSingleDefinitionSites(dir: string, counts: Map<string, string[]>): Promise<void> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {

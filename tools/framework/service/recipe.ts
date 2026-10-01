@@ -17,7 +17,6 @@ import { readdir, readFile, access } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { monorepoRoot } from "../core/env.ts";
 import { safeName } from "../core/names.ts";
 import { die } from "../core/io/log.ts";
 import { composeProjectName, deploymentName, recipesDir, selectedDeployment } from "../runtime/deployment.ts";
@@ -26,9 +25,6 @@ import type { Stack } from "../runtime/runtime.ts";
 import { setSourceDir } from "../set/artifacts/source.ts";
 import { persistedPrivatePaths } from "../security/privacy/private-paths-ledger.ts";
 
-/** Default location. An application declares its own via AppDefinition.recipesDir: the
- *  mechanism is the framework's, the recipes are the application's data. */
-export const defaultRecipesDir = resolve(monorepoRoot, "recipes");
 let explicitRecipesDir: string | undefined;
 
 /** Overrides the deployment recipe root for low-level callers and checks. */

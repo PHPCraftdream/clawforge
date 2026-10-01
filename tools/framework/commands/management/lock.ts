@@ -292,7 +292,7 @@ function summarizeCheck(problems: readonly Problem[], inventoryProblems: readonl
     ...(differences.length > 0 ? [`${differences.length} difference(s) from the lock`] : []),
     ...(unread.length > 0 ? [`${unread.length} inventory read(s) could not be compared (${reason})`] : []),
   ];
-  return { unread, differences: others, reason, summary: parts.length > 0 ? parts.join("; ") : undefined };
+  return { unread, differences, reason, summary: parts.length > 0 ? parts.join("; ") : undefined };
 }
 
 export async function lock(ctx: Context, args: string[]): Promise<void> {

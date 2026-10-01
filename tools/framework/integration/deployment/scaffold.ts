@@ -116,7 +116,7 @@ export async function createApp(name: string): Promise<void> {
       `alongside others, select it with --app ${name} or export OC_APP=${name}`,
   );
   info("open the deployment directory in Claude Code or Codex; project MCP settings are already prepared");
-  info("secrets stay inside this directory (snapshots go to the data directory on the target), so deployments never share them");
+  info("secrets stay inside this directory (snapshots go to the snapshot directory, OC_SNAPSHOT_DIR), so deployments never share them");
   info(gitInitAdvice(name));
 
   const boundaryNote = await wslBoundaryNote(envFile);

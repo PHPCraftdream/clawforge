@@ -1,6 +1,7 @@
 // `destroy`: removes what `bootstrap` created, with its removal-safety guards.
 
 import { log, info, die } from "#src/core/io/log.ts";
+import { humanSize } from "#src/core/io/size.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
@@ -130,7 +131,7 @@ async function sizeReport(ctx: Context, path: string): Promise<string> {
   const [head, ...rest] = [...prefix, "du", "-sk", path];
   const result = await ctx.transport.exec(head, rest, { allowFailure: true });
   const kb = Number(result.stdout.trim().split(/\s+/)[0]);
-  return result.code === 0 && Number.isFinite(kb) ? `${kb} KiB` : "unknown size";
+  return result.code === 0 && Number.isFinite(kb) ? humanSize(kb * 1024) : "unknown size";
 }
 
 async function printDestroyPlan(ctx: Context, targets: DestroyTarget[], bootstrapped: boolean, anyPresent: boolean): Promise<void> {

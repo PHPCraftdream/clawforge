@@ -60,6 +60,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   scheduling a gateway-stopping backup every 6 minutes), and an empty value is refused for both
   instead of silently defaulting (`backup install --interval ""` used to become `1d`). The refusal
   names nearest valid values in that
+* `--interval` is one grammar for `watch install` and `backup install`: a bare number is minutes,
+  or `30m`/`6h`/`1d` (the bare number is new for `backup`, which used to refuse it; `watch`'s
+  accepted values are unchanged). The refusal names nearest valid values in that
   same spelling (`6h, 8h`), never an empty list (`watch install --interval 10m` used to print
   `nearest valid:` with nothing) and never a value the command itself rejects.
 * `expose tailscale` no longer advises `tailscale serve reset` (it drops other services' routes on
@@ -75,9 +78,10 @@ All notable changes to `@clawforge/framework` will be documented here.
   under each action only the flags that action accepts (`backup list --hot`, `watch status
   --interval`, `expose status --local-port`, `set receipts --to` were offered and then refused).
   Each action's flags are declared once, from its own parser's argument list (`backup`'s bare
-  create counts as an action), and a check drives every parser with every flag of its command, so
-  a new flag cannot drift. A `backup` create flag under another action is refused as "applies to
-  create", not "unknown argument".
+  create counts as an action), and a check compares each action's declared argument slice with
+  what its own parser accepts, so a new flag cannot drift. A `backup` create flag under another
+  action is refused naming the create parser ("--hot applies to `create`, not `list`"), not as
+  "unknown argument".
 * System-wide `clawforge` hands over to the checkout's gate from `APPS/<name>` on Windows too (the
   `apps` directory is matched by its real spelling), so the global package no longer loads the
   checkout's `app.ts` next to its own framework. An `app.ts` inside a checkout that the gate cannot
@@ -90,6 +94,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   nothing); plain `init` there still refuses.
 * `init` help no longer breaks a sentence mid-line. A dry-run `destroy` shows an absent directory as
   `absent — nothing to remove` rather than `would remove … (absent)`.
+* Text accuracy and hygiene: `init`/`new-app` say snapshots go to the snapshot directory
+  (`OC_SNAPSHOT_DIR`), not the data directory; a text `lock --check` names a missing lock only in
+  its summary, never under `differences:`; a dry-run `destroy` sizes targets through the shared
+  `humanSize` (a 5 GiB directory reads `5.0 GiB`, not a seven-digit KiB count); the scheduler
+  module reuses `regexEscape` instead of a private copy, and the single-definition audit matches
+  the escape body so an arrow-function copy can no longer slip past; an unused `defaultRecipesDir`
+  export is gone; the guide no longer calls `1d` "daily at midnight" for the start-time-less WSL
+  `schtasks` fallback.
 * `backup install` / `watch install` on a WSL target under Windows print a `schtasks /create` line
   that cmd.exe now runs as a whole: the WSL command inside `/tr` is `set -e; cd -- '…'; exec …`
   instead of `cd … && …` (cmd.exe split the old line at `&&` and created a task that only did

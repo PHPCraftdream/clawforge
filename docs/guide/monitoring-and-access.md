@@ -164,7 +164,8 @@ An operator finds out the instance stopped doing its job without polling by hand
   but requires the explicit unit):
   minutes must divide 60 (`1,2,3,4,5,6,10,12,15,20,30`) to step cron's own minute field evenly,
   hours must divide a day (`1,2,3,4,6,8,12,24`; `1h` hourly, `2h` every 2 hours, `1d` daily at
-  midnight) — any other value (e.g. `45m`, `90`) would fire unevenly and is refused, naming the
+  midnight — on cron, that is; the WSL `schtasks` fallback line sets no start time, so such a
+  task fires from when it was created) — any other value (e.g. `45m`, `90`) would fire unevenly and is refused, naming the
   nearest valid values in the same spelling, rather than silently degrading to
   an uneven `*/N`. Marked so a re-run replaces only its own line and
   `uninstall` removes only it. Only where an unattended cron can be trusted to find this

@@ -6,7 +6,8 @@
 // A job (e.g. "watch", "backup") owns a marker keyed by canonical execution-root identity,
 // not the human basename, so same-basename deployments cannot replace one another.
 //
-// Windows has no crontab/systemd: schedulingSupport() says so, and the caller falls back to
+// Where an unattended crontab is not trusted (a WSL target, or a local one on Windows),
+// schedulingSupport() says so and the caller falls back to
 // printSchedulingInstructions(), which prints a real `schtasks /create …` line on a Windows
 // host, or generic "wire it in yourself" text otherwise. `--apply` on Windows can run that
 // line for real, through the same host-spawn helper (spawnLocal) every host-side action
@@ -16,7 +17,7 @@
 import { access, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { posix, resolve } from "node:path";
-import { die, info, infoRaw } from "../../core/io/log.ts";
+import { die, info, infoRaw, regexEscape } from "../../core/io/log.ts";
 import { monorepoRoot } from "../../core/env.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
 import { spawnLocal, SshTransport } from "../../runtime/transport/transport.ts";
@@ -145,17 +146,16 @@ export function crontabLines(text: string): string[] {
 function ownedCronPattern(job: string, name: string, prior?: PriorSchedule): string {
   const jobArgs = job === "watch" ? ["watch", "check"] : job === "backup" ? ["backup"] : undefined;
   if (jobArgs === undefined || /[%\r\n]/.test(name)) return "^$.";
-  const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const quoted = (args: readonly string[]): string => args.map(SshTransport.quote).join(" ");
-  const schedules = VALID_INTERVAL_MINUTES.map((minutes) => literal(cronSchedule(minutes))).join("|");
-  const args = `(${literal(quoted(jobArgs))}|'--app' '[^'%]+' ${literal(quoted(jobArgs))})`;
-  const current = `(${schedules}) cd ('([^'%]|'\\\\'')*') && \\./clawforge ${args} >/dev/null 2>&1 ${literal(jobMarker(job, name))}`;
+  const schedules = VALID_INTERVAL_MINUTES.map((minutes) => regexEscape(cronSchedule(minutes))).join("|");
+  const args = `(${regexEscape(quoted(jobArgs))}|'--app' '[^'%]+' ${regexEscape(quoted(jobArgs))})`;
+  const current = `(${schedules}) cd ('([^'%]|'\\\\'')*') && \\./clawforge ${args} >/dev/null 2>&1 ${regexEscape(jobMarker(job, name))}`;
   // Old basename markers are not ownership evidence. Only the exact invocation
   // produced for this root can be migrated; manual/other-root rows stay untouched.
   const invocation = prior?.invocation;
   const legacy = prior !== undefined && invocation !== undefined &&
     ![prior.name, invocation.cwd, invocation.command, ...invocation.args].some((part) => /[%\r\n]/.test(part))
-    ? `|(${schedules}) ${literal(`cd ${SshTransport.quote(invocation.cwd)} && ${invocation.command} ${quoted(invocation.args)} >/dev/null 2>&1 ${jobMarker(job, prior.name)}`)}`
+    ? `|(${schedules}) ${regexEscape(`cd ${SshTransport.quote(invocation.cwd)} && ${invocation.command} ${quoted(invocation.args)} >/dev/null 2>&1 ${jobMarker(job, prior.name)}`)}`
     : "";
   return `^(${current}${legacy})\r?$`;
 }

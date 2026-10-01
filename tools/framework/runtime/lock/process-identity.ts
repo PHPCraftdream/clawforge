@@ -79,8 +79,10 @@ export interface LocalProcessRecord {
 /** The recorded start comes from process.uptime(), which counts from after Node's own boot, and
  *  the OS probe has 1 s resolution: under load the two differ by seconds for the SAME process.
  *  Wide on purpose — a live owner called dead loses its state, a reused pid called alive only
- *  keeps a lock a human can break; a reused pid starts minutes, not seconds, after the original. */
-const START_TIME_TOLERANCE_MS = 15_000;
+ *  keeps a lock a human can break. Windows reuses pids within seconds, so no tolerance separates
+ *  reuse from jitter perfectly; 15 s keeps the common live case safe at the cost of holding a
+ *  stale lock a little longer. */
+export const START_TIME_TOLERANCE_MS = 15_000;
 
 /** "unknown" means: do not assume anything — a different machine's pid can't be signalled
  *  from here, and a probe error other than "no such process" proves nothing either way. A

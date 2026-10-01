@@ -7,6 +7,7 @@
 //     gateway writes is not restorable — hence the stop before snapshotting
 //   - workspace/.git matters: the agent versions its own memory there
 
+import { regexEscape } from "../../core/io/log.ts";
 import { DATA_DIR_MARKER } from "../../runtime/datadir.ts";
 import { PUBLISH_STAGING_MARKER, PRIVATE_STAGING_MARKER } from "../../runtime/transport/transport.ts";
 
@@ -47,7 +48,7 @@ export function backupArchiveName(deployment: string, stamp: string, profile: Pr
  *  deployment sharing a backup directory, and rotation that can't tell them apart deletes
  *  the sibling's archives. */
 export function parseBackupArchive(fileName: string, deployment: string): { stamp: string; profile: Profile } | undefined {
-  const escaped = deployment.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const escaped = regexEscape(deployment);
   const match = new RegExp(`^${escaped}-(\\d{8}-\\d{6})(?:-(migrate|share))?\\.tar\\.gz$`).exec(fileName);
   if (match === null) return undefined;
   return { stamp: match[1], profile: (match[2] ?? "full") as Profile };
@@ -65,7 +66,7 @@ const REPLACED_COPY_STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
  *  one — strict for the same reason parseBackupArchive is: `backup prune-replaced` deletes
  *  through this. */
 export function parseReplacedCopyName(baseName: string, dataDirName: string): { stamp: string } | undefined {
-  const escaped = dataDirName.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+  const escaped = regexEscape(dataDirName);
   const match = new RegExp(`^${escaped}\\.replaced-(.+)$`).exec(baseName);
   if (match === null) return undefined;
   return REPLACED_COPY_STAMP.test(match[1]) ? { stamp: match[1] } : undefined;
@@ -92,7 +93,7 @@ export function parseSnapshotArchive(fileName: string, deployment: string): { st
   // deployment identity is `openclaw`. Keep that one explicit compatibility alias; accepting
   // arbitrary spelling variants would let a sibling deployment's snapshots be restored.
   const names = snapshotDeploymentNames(deployment);
-  const escaped = names.map((name) => name.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)).join("|");
+  const escaped = names.map((name) => regexEscape(name)).join("|");
   const match = new RegExp(`^(?:${escaped})-state-(\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2})\\.tar\\.gz$`).exec(fileName);
   if (match === null) return undefined;
   const stamp = match[1];

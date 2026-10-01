@@ -90,7 +90,8 @@ function destroyContext(
         }
         return { code: 0, stdout: "", stderr: "" };
       }
-      if (command === "du") return { code: 0, stdout: `4\t${args[args.length - 1]}`, stderr: "" };
+      // 5 GiB in KiB: the dry-run size goes through humanSize, not raw `du -sk` output.
+      if (command === "du") return { code: 0, stdout: `5242880\t${args[args.length - 1]}`, stderr: "" };
       return baseExec(command, args, execOptions);
     },
   };
@@ -127,6 +128,8 @@ async function output(body: () => Promise<void>): Promise<string> {
   check("dry run still shows the containers plan", order.includes("showStatus"), true);
   check("dry run says so and names --yes/--confirm-name", text.includes("dry run") && text.includes("--confirm-name"), true);
   check("dry run names each target path", [DATA_DIR, BACKUP_DIR, SNAPSHOT_DIR].every((path) => text.includes(path)), true);
+  check("dry run sizes read as human units, not raw KiB", text.includes("5.0 GiB"), true);
+  check("dry run never prints the raw du count", text.includes("5242880 KiB"), false);
 }
 
 {

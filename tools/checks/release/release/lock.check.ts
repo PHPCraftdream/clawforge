@@ -457,7 +457,7 @@ check("and confirms secrets are already kept out of that new repository", initAd
     check("not running: unread inventories are named as not compared", unread.text.includes("could not compare — instance is not running:"), true);
     check("not running: a headline precedes the sections", unread.text.indexOf("==>") >= 0 && unread.text.indexOf("==>") < unread.text.indexOf("could not compare"), true);
     check("not running: both inventories listed", unread.text.match(/GATEWAY_DOWN/g)?.length, 2);
-    check("not running: only the missing lock is a difference", unread.text.match(/LOCK_MISSING/g)?.length, 1);
+    check("not running: a missing lock is named in the summary, not the difference list", unread.text.match(/LOCK_MISSING/g)?.length ?? 0, 0);
     check("not running: the summary is the failure alone, not repeated in the output", unread.text.includes("difference(s) from the lock"), false);
     check("not running: one summary counting differences and unread separately", unread.failure, "no lock file to compare against; 2 inventory read(s) could not be compared (instance is not running)");
     check("not running: a missing lock is not counted as a difference", unread.failure.includes("difference(s)"), false);

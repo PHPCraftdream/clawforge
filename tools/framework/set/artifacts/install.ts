@@ -6,28 +6,29 @@
 // the target afterwards, so later questions (has it drifted, what would rollback mean)
 // have somewhere to start.
 
-import { copyFile, lstat, mkdir, mkdtemp, rm, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { copyFile, lstat, mkdir, rm } from "node:fs/promises";
+import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { die, log } from "#src/core/io/log.ts";
-import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
-import { checksumOf, checksumOfFileMap } from "#src/service/checksums.ts";
-import { parseAgentConfig } from "#src/commands/management/provision-agent/index.ts";
-import { acceptanceSpecError } from "#src/commands/orchestration/accept.ts";
 import { safeName } from "#src/core/values/names.ts";
 import { problem } from "#src/service/inspection.ts";
 import { writeFileAtomic } from "#src/set/ownership/ledger.ts";
-import { validateSet } from "#src/set/ownership/validate.ts";
 import { readFileCandidate } from "#src/set/ownership/candidate-file.ts";
-import { withSetSource } from "./source.ts";
+import { loadSet, validateLoadedSet, coherenceSummary, ArtifactCoherenceError, ArtifactIntegrityError } from "#src/set/load.ts";
+import type { LoadedSet, VerifiedArtifact } from "#src/set/load.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
-import { DESIRED_STATE_PATH, SET_MANIFEST_VERSION, setManifestId, canonicalJson } from "./model.ts";
+import { setManifestId } from "./model.ts";
 import type { SetManifest } from "./model.ts";
 import { renameOverPrivateFile } from "#src/security/privacy/private-file.ts";
 import { digestOf, sameContent } from "#src/runtime/docker/image-ref.ts";
+
+// The integrity/verification machinery lives in set/load.ts (one loading pipeline for tree
+// and artifact alike); this module installs from what it loads, and must never be imported
+// BY load.ts — the dependency runs one way only (set-module-load.check.ts guards this).
+export { coherenceSummary };
+export type { VerifiedArtifact };
 
 /** What was installed immediately before the current set — one level, not a stack, same
  *  depth `rollback`'s single-file path already works at. */
@@ -175,178 +176,6 @@ export async function recordInstalledSet(ctx: Context, manifest: SetManifest, id
   await writeFileAtomic(ctx, installedSetFile(ctx), `${JSON.stringify(record, null, 2)}\n`);
 }
 
-interface ArchiveEntry {
-  readonly path: string;
-  readonly type: "file" | "directory";
-}
-
-export interface VerifiedArtifact {
-  readonly manifest: SetManifest;
-  readonly id: string;
-}
-
-function cleanArchivePath(raw: string): string {
-  const path = raw.replace(/^\.\//, "").replace(/\/$/, "");
-  if (path === "") return path;
-  if (raw.startsWith("/") || path.includes("\\") || path.split("/").includes("..") || /^[A-Za-z]:/.test(path)) {
-    throw new Error(`artifact contains an unsafe path: ${raw}`);
-  }
-  return path;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function checksumMap(value: unknown, where: string): Record<string, string> {
-  if (!isRecord(value)) throw new Error(`${where} must be an object of checksums`);
-  for (const [path, checksum] of Object.entries(value)) {
-    if (path === "" || path.includes("\\") || path.split("/").some((part) => part === ".." || part === "." || part === "") || path.startsWith("/") || /^[A-Za-z]:/.test(path)) {
-      throw new Error(`${where} contains an unsafe path: ${path}`);
-    }
-    if (typeof checksum !== "string" || !/^[0-9a-f]{64}$/.test(checksum)) {
-      throw new Error(`${where}/${path} is not a SHA-256 checksum`);
-    }
-  }
-  return value as Record<string, string>;
-}
-
-/** Checks the manifest shape and its internal inventory before any artifact file is used. */
-function validateManifest(value: unknown): SetManifest {
-  if (!isRecord(value) || value.version !== SET_MANIFEST_VERSION || typeof value.name !== "string" || !isRecord(value.requires)) {
-    throw new Error("artifact set.json has an invalid manifest shape");
-  }
-  safeName("set", value.name);
-  if (typeof value.requires.framework !== "string" || typeof value.requires.image !== "string") {
-    throw new Error("artifact set.json has invalid requirements");
-  }
-  const files = checksumMap(value.files, "set files");
-  if (files[DESIRED_STATE_PATH] === undefined) throw new Error(`artifact manifest does not contain ${DESIRED_STATE_PATH}`);
-  if (!isRecord(value.recipes) || !Array.isArray(value.secrets) || !value.secrets.every((entry) => typeof entry === "string") || !isRecord(value.acceptance)) {
-    throw new Error("artifact set.json has invalid recipes, secrets or acceptance");
-  }
-
-  const expected: Record<string, string> = { [DESIRED_STATE_PATH]: files[DESIRED_STATE_PATH] };
-  for (const [name, rawRecipe] of Object.entries(value.recipes)) {
-    safeName("recipe", name);
-    if (!isRecord(rawRecipe)) throw new Error(`recipe ${name} is not an object`);
-    const recipeFiles = checksumMap(rawRecipe.files, `recipe ${name} files`);
-    if (rawRecipe.checksum !== checksumOfFileMap(recipeFiles)) throw new Error(`recipe ${name} has an incorrect content checksum`);
-    for (const [path, checksum] of Object.entries(recipeFiles)) expected[`recipes/${name}/${path}`] = checksum;
-    if (rawRecipe.agentFiles !== undefined) {
-      const agentFiles = checksumMap(rawRecipe.agentFiles, `recipe ${name} agent files`);
-      if (rawRecipe.agentChecksum !== checksumOfFileMap(agentFiles)) throw new Error(`recipe ${name} has an incorrect agent checksum`);
-      for (const [path, checksum] of Object.entries(agentFiles)) expected[`recipes/${name}/agent/${path}`] = checksum;
-    }
-  }
-  for (const [name, checks] of Object.entries(value.acceptance)) {
-    if (!Array.isArray(checks)) throw new Error(`recipe ${name} acceptance must be an array`);
-    for (let index = 0; index < checks.length; index += 1) {
-      const invalid = acceptanceSpecError(checks[index], index);
-      if (invalid !== undefined) throw new Error(`recipe ${name}: ${invalid}`);
-    }
-  }
-  const actualKeys = Object.keys(files).sort();
-  const expectedKeys = Object.keys(expected).sort();
-  if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) throw new Error("artifact manifest file inventory disagrees with its recipe inventories");
-  for (const path of actualKeys) if (files[path] !== expected[path]) throw new Error(`artifact manifest checksum disagreement for ${path}`);
-  return value as unknown as SetManifest;
-}
-
-async function tar(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
-  let result = await spawnLocal("tar", [...forceLocal, ...args], { allowFailure: true });
-  if (result.code !== 0 && forceLocal.length > 0) result = await spawnLocal("tar", args, { allowFailure: true });
-  return result;
-}
-
-/** Verifies archive structure, extracts only after that verification, then verifies every
- *  byte. With `collectFindings`, blocking semantic findings come back instead of throwing —
- *  the read-only path (validate --set, set diff) reports them; installers stay strict. */
-async function verifyArtifact(artifact: string, staging: string, options: { collectFindings?: boolean } = {}): Promise<VerifiedArtifact & { problems?: Problem[] }> {
-  const listing = await tar(["-tzf", artifact]);
-  if (listing.code !== 0) throw new Error(`could not inspect ${artifact}: ${(listing.stderr || listing.stdout).trim()}`);
-  const verbose = await tar(["-tvzf", artifact]);
-  if (verbose.code !== 0) throw new Error(`could not inspect links in ${artifact}: ${(verbose.stderr || verbose.stdout).trim()}`);
-
-  const entries: ArchiveEntry[] = [];
-  const seen = new Set<string>();
-  for (const raw of listing.stdout.split("\n").map((line) => line.trimEnd()).filter((line) => line !== "")) {
-    const path = cleanArchivePath(raw);
-    const directory = raw.endsWith("/") || path === "";
-    if (seen.has(path)) throw new Error(`artifact contains duplicate entry: ${raw}`);
-    seen.add(path);
-    entries.push({ path, type: directory ? "directory" : "file" });
-  }
-  for (const line of verbose.stdout.split("\n").map((entry) => entry.trimEnd()).filter((entry) => entry !== "")) {
-    // GNU tar uses `Sep 10 14:04` or `2026-09-10 14:04` for the date, owner/group may be
-    // one or two fields — anchor on the date rather than counting columns.
-    const match = /^(\S)\S*\s+.*?\s+(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}|\d{4}-\d{2}-\d{2})\s+\S+\s+(.*)$/u.exec(line);
-    if (match === null) throw new Error(`cannot safely parse artifact listing: ${line}`);
-    const type = match[1];
-    const shown = match[2];
-    if (type === "l" || type === "h") throw new Error(`artifact contains a link: ${shown}`);
-    if (type !== "-" && type !== "d") throw new Error(`artifact contains unsupported entry type: ${shown}`);
-  }
-
-  const extract = await tar(["--no-same-owner", "--no-same-permissions", "-xzf", artifact, "-C", staging]);
-  if (extract.code !== 0) throw new Error(`could not unpack ${artifact}: ${(extract.stderr || extract.stdout).trim()}`);
-
-  const rawManifest = await readFile(join(staging, "set.json"), "utf8").catch(() => {
-    throw new Error(`${artifact} has no readable set.json`);
-  });
-  let parsed: unknown;
-  try { parsed = JSON.parse(rawManifest); } catch { throw new Error(`${artifact} contains invalid JSON in set.json`); }
-  const manifest = validateManifest(parsed);
-  const files = entries.filter((entry) => entry.type === "file").map((entry) => entry.path).filter((path) => path !== "set.json").sort();
-  const claimed = Object.keys(manifest.files).sort();
-  if (JSON.stringify(files) !== JSON.stringify(claimed)) throw new Error("artifact contents disagree with the manifest file inventory");
-  for (const path of claimed) {
-    const actual = await readFile(resolve(staging, ...path.split("/")));
-    if (checksumOf(actual) !== manifest.files[path]) throw new Error(`artifact content checksum mismatch: ${path}`);
-  }
-  for (const [name, recipe] of Object.entries(manifest.recipes)) {
-    if (recipe.agent !== undefined) {
-      const configPath = `recipes/${name}/agent/config.json`;
-      if (manifest.files[configPath] === undefined || manifest.files[`recipes/${name}/server.ts`] === undefined) {
-        throw new Error(`recipe ${name} has an incomplete agent bundle`);
-      }
-      const declared = parseAgentConfig(JSON.parse(await readFile(resolve(staging, configPath), "utf8")));
-      if (canonicalJson(declared) !== canonicalJson(recipe.agent)) throw new Error(`recipe ${name} agent declaration disagrees with its file`);
-    } else if (Object.keys(recipe.agentFiles ?? {}).length > 0) {
-      throw new Error(`recipe ${name} has agent files without an agent declaration`);
-    }
-    const acceptancePath = `recipes/${name}/acceptance.json`;
-    const fromFile = manifest.files[acceptancePath] === undefined
-      ? undefined
-      : JSON.parse(await readFile(resolve(staging, acceptancePath), "utf8")).checks;
-    if (canonicalJson(fromFile ?? []) !== canonicalJson(manifest.acceptance[name] ?? [])) {
-      throw new Error(`recipe ${name} acceptance disagrees with its file`);
-    }
-  }
-  // The artifact is unpacked into staging and recipesDir() points there, so the same
-  // recipe-completeness checks the working-tree validation runs can run here: a tree with
-  // blocking findings must not build into an artifact that verifies as coherent.
-  const semanticProblems = await withSetSource(staging, () => validateSet(manifest, { checkFiles: true }));
-  const blocking = semanticProblems.filter((entry) => entry.severity === "blocking");
-  if (blocking.length > 0 && options.collectFindings !== true) {
-    throw new Error(`artifact set is not coherent: ${coherenceSummary(blocking)}`);
-  }
-  return options.collectFindings === true
-    ? { manifest, id: setManifestId(manifest), problems: semanticProblems }
-    : { manifest, id: setManifestId(manifest) };
-}
-
-/** One line for the install-time refusal: each failing code once with a count when it repeats,
- *  plus the recipes named, so "SET_RECIPE_INCOMPLETE, SET_RECIPE_INCOMPLETE" says which broke. */
-export function coherenceSummary(problems: readonly Problem[]): string {
-  const counts = new Map<string, number>();
-  for (const entry of problems) counts.set(entry.code, (counts.get(entry.code) ?? 0) + 1);
-  const codes = [...counts.entries()].map(([code, count]) => (count > 1 ? `${code} ×${count}` : code)).join(", ");
-  const recipes = [...new Set(problems.map((entry) => /recipe "([^"]+)"/.exec(entry.detail)?.[1]).filter((name): name is string => name !== undefined))];
-  return recipes.length === 0 ? codes : `${codes} (recipes: ${recipes.join(", ")})`;
-}
-
 /** Keeps a validated artifact in the deployment so rollback does not depend on its original
  *  path still existing. The copy is complete before apply is allowed to mutate the target. */
 export async function storeArtifactForRollback(artifact: string, verified: VerifiedArtifact): Promise<string> {
@@ -378,18 +207,36 @@ async function fileExists(path: string): Promise<boolean> {
   try { return (await lstat(path)).isFile(); } catch { return false; }
 }
 
-/** Unpacks an artifact into a temp directory and hands back where it went. `--force-local`
- *  on Windows: GNU tar reads the `D:` of an absolute path as a remote host and tries to
- *  connect — same quirk the writing side handles. */
-export async function unpackArtifactVerified(artifact: string): Promise<{ staging: string; verified: VerifiedArtifact }> {
-  const staging = await mkdtemp(join(tmpdir(), "clawforge-set-install-"));
+/** Loads an artifact and holds it to the same validation the tree gets: integrity failures
+ *  (the archive is not a set) and blocking findings (the set it declares would not validate)
+ *  die with the one refusal wording; anything else propagates unchanged. */
+async function loadArtifactSet(artifact: string): Promise<LoadedSet> {
+  let loaded: LoadedSet;
   try {
-    const verified = await verifyArtifact(artifact, staging);
-    return { staging, verified };
+    loaded = await loadSet({ kind: "artifact", path: artifact });
+  } catch (error) {
+    if (error instanceof ArtifactIntegrityError) die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
+    throw error;
+  }
+  const staging = loaded.staging;
+  if (staging === undefined) die("internal: loading an artifact carries no staging directory");
+  try {
+    const problems = await validateLoadedSet(loaded);
+    const blocking = problems.filter((entry) => entry.severity === "blocking");
+    if (blocking.length > 0) throw new ArtifactCoherenceError(coherenceSummary(blocking));
+    return loaded;
   } catch (error) {
     await rm(staging, { recursive: true, force: true });
-    die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
+    if (error instanceof ArtifactCoherenceError) die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
+    throw error;
   }
+}
+
+export async function unpackArtifactVerified(artifact: string): Promise<{ staging: string; verified: VerifiedArtifact }> {
+  const loaded = await loadArtifactSet(artifact);
+  const staging = loaded.staging;
+  if (staging === undefined) die("internal: loading an artifact carries no staging directory");
+  return { staging, verified: { manifest: loaded.manifest, id: loaded.id } };
 }
 
 export async function unpackArtifact(artifact: string): Promise<string> {
@@ -404,19 +251,23 @@ export async function withArtifactInspected<T>(
   artifact: string,
   body: (staging: string, verified: VerifiedArtifact, problems: readonly Problem[]) => Promise<T>,
 ): Promise<T> {
-  const staging = await mkdtemp(join(tmpdir(), "clawforge-set-inspect-"));
-  let verified: VerifiedArtifact & { problems?: Problem[] };
+  // Read-only load: integrity-only — a corrupt archive refuses (typed as
+  // ArtifactIntegrityError), but blocking semantic findings are computed here from the
+  // unpacked staging and handed to the caller instead of dying in the gate, so the caller
+  // reports them through its own report/JSON path and an MCP client sees the problems
+  // rather than "error, no problems" (R32-05).
+  const loaded = await loadSet({ kind: "artifact", path: artifact }).catch((error: unknown) => {
+    if (error instanceof ArtifactIntegrityError) die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
+    throw error;
+  });
+  const staging = loaded.staging;
+  if (staging === undefined) die("internal: loading an artifact carries no staging directory");
   try {
-    verified = await verifyArtifact(artifact, staging, { collectFindings: true });
-  } catch (error) {
-    await rm(staging, { recursive: true, force: true });
-    die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
-  }
-  try {
+    const problems = await validateLoadedSet(loaded);
     // The caller's own failures (a blocking report, a diff that throws) propagate unwrapped:
     // wrapping them blames the artifact being read — in a nested `set diff`, the good one —
     // and turns validate's "N blocking finding(s)" into integrity wording (R33-03).
-    return await body(staging, verified, verified.problems ?? []);
+    return await body(staging, { manifest: loaded.manifest, id: loaded.id }, problems);
   } finally {
     await rm(staging, { recursive: true, force: true });
   }

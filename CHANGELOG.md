@@ -8,7 +8,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 * `./clawforge list` answers an unknown argument the standard way — the refusal plus a
   pointer to `list --help` — instead of its own bare "unknown argument" line.
-
+* A set is loaded and validated by one pipeline for the working tree and an artifact alike
+  (`set validate` with and without `--set`, `set build`'s collection): an artifact is verified
+  and unpacked, then answered by the same validator the tree gets, so both paths report
+  identical findings for identical content.
 * Deployments hand the invocation between processes as versioned JSON in `CLAWFORGE_INVOCATION`:
   the committed `./clawforge` shim `init` and `new-app` write, and the monorepo MCP launcher,
   now set it — alongside `CLAWFORGE_INVOKED_AS`, which they keep exporting so the shim and
@@ -20,6 +23,16 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* An agent recipe without `server.ts` (or without `agent/config.json`) no longer dies as
+  "<artifact> is not a valid set artifact: … incomplete agent bundle" on `set validate --set`
+  — it is reported as the `SET_RECIPE_INCOMPLETE` finding the working-tree validation gives
+  for the same content; only a corrupt archive or an artifact disagreeing with its own
+  manifest is refused as an integrity error.
+* `set validate` on a working tree whose `config/desired-state.json` is missing, empty, not
+  valid JSON, or not a valid declaration reports the `SET_DECLARATION_INVALID` finding instead
+  of refusing before anything was printed or — for a missing or empty file — reading as a
+  coherent set that declares nothing: the same answer an artifact carrying the same bytes
+  gets. `set build` still refuses to pack such a tree.
 * The `--json` failure contract fires only for a command's own declared `--json` flag:
   `cli`/`exec`/`host` pass their whole tail to a child, so a failing `clawforge cli … --json`
   no longer appends a second `{"error":…}` document after the child's own streamed output

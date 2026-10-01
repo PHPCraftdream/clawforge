@@ -69,6 +69,7 @@ function codes(problems: readonly { code: string }[]): string[] {
 // used to be swallowed.
 const baseDeployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-base-"));
 await mkdir(resolve(baseDeployment, "config"), { recursive: true });
+await writeFile(resolve(baseDeployment, "config", "desired-state.json"), "[]");
 useDeployment(baseDeployment);
 
 // --- a coherent set is silent -----------------------------------------------------------
@@ -120,12 +121,12 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
         version: 1,
         image: { reference: "old.example/old-image:stable", digest: `old.example/old-image@sha256:${"a".repeat(64)}` },
       }));
-      const { manifest } = await collectManifest(buildCtx, "demo", { tolerateUnpinnedImage: true });
+      const { manifest } = await collectManifest(buildCtx.settings.image, "demo", { tolerateUnpinnedImage: true });
       const problems = await validateSet(manifest, { checkFiles: true });
       const advice = problems.find((entry) => entry.code === "SET_IMAGE_UNPINNED")?.nextAction ?? "";
       let refusal = "";
       try {
-        await collectManifest(buildCtx, "demo");
+        await collectManifest(buildCtx.settings.image, "demo");
       } catch (error) {
         refusal = error instanceof Error ? error.message : String(error);
       }
@@ -200,6 +201,8 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
   const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-check-"));
   try {
     await mkdir(resolve(deployment, "recipes", "demo"), { recursive: true });
+    await mkdir(resolve(deployment, "config"), { recursive: true });
+    await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
     useDeployment(deployment);
 
     const missingServer = await validateSet(coherent(), { checkFiles: true });
@@ -289,20 +292,6 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
   }
 }
 
-// --- but a genuinely absent declaration is still a legitimate empty one ----------------------
-
-{
-  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-absent-check-"));
-  try {
-    await mkdir(resolve(deployment, "config"), { recursive: true });
-    useDeployment(deployment);
-    check("a set that declares no configuration at all is silent", codes(await validateSet(coherent())), []);
-  } finally {
-    await rm(deployment, { recursive: true, force: true });
-    useDeployment(baseDeployment);
-  }
-}
-
 // --- the default name is derivable from any deployment name ---------------------------------
 //
 // Found by running the command for real rather than by reasoning: this deployment is called
@@ -341,7 +330,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     await rm(resolve(deployment, "config", "deployment.lock.json"), { force: true });
 
     // validate: the tag travels into requires.image and the validator reports it.
-    const { manifest } = await collectManifest(buildCtx, "demo", { tolerateUnpinnedImage: true });
+    const { manifest } = await collectManifest(buildCtx.settings.image, "demo", { tolerateUnpinnedImage: true });
     check("validate builds the manifest despite an unpinned image", Object.keys(manifest.recipes).length > 0, true);
     check("the unpinned tag is kept in requires.image", manifest.requires.image.includes(":extended-stable"), true);
     const problems = await validateSet(manifest, { checkFiles: true });
@@ -354,7 +343,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     // build: the hard refusal stays — only validate tolerates the gap.
     let refused = false;
     try {
-      await collectManifest(buildCtx, "demo");
+      await collectManifest(buildCtx.settings.image, "demo");
     } catch {
       refused = true;
     }
@@ -578,6 +567,8 @@ check("leading digits and punctuation are stripped rather than smuggled through"
   try {
     await mkdir(resolve(deployment, "recipes", "demo"), { recursive: true });
     await mkdir(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
+    await mkdir(resolve(deployment, "config"), { recursive: true });
+    await writeFile(resolve(deployment, "config", "desired-state.json"), "[]");
     await writeFile(resolve(deployment, "recipes", "demo", "server.ts"), "// server\n");
     await writeFile(resolve(deployment, "recipes", "demo", "agent", "config.json"), "{}");
     useDeployment(deployment);

@@ -9,7 +9,7 @@ import { die, log, info } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { validateSet } from "#src/set/ownership/validate.ts";
+import { validateLoadedSet, loadSet } from "#src/set/load.ts";
 import { printProblem } from "#src/commands/orchestration/inspect/gather.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import { removeOwnedObject } from "#src/commands/management/provision-agent/index.ts";
@@ -20,9 +20,8 @@ import { setTry } from "./set-try.ts";
 import { setDiff } from "./set-diff.ts";
 import { setReceipts } from "./set-receipts.ts";
 import { withArtifactInspected } from "#src/set/artifacts/install.ts";
-import { withSetSource } from "#src/set/artifacts/source.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
-import { buildSet, collectManifest, defaultSetName } from "./set-manifest.ts";
+import { buildSet, defaultSetName } from "./set-manifest.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs, dieUnknownAction, scopeByAction, type ActionScope } from "#src/core/arguments.ts";
 import { SET_DIFF_ARGUMENTS } from "./set-diff.ts";
@@ -64,6 +63,7 @@ export const SET_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgum
 
 export * from "./set-secrets-guard.ts";
 export * from "./set-manifest.ts";
+export { collectManifest } from "#src/set/load.ts";
 
 /** `./clawforge set validate` — the same manifest `build` would produce, or one read back
  *  from an artifact, put through every check that needs no gateway.
@@ -113,18 +113,23 @@ async function validateAction(
   if (options.artifact !== undefined) {
     const artifact = options.artifact;
     log(`checking ${artifact}`);
-    // Read-only: the unpack gate's integrity checks still refuse a corrupt archive, but
-    // blocking semantic findings come back and go through the same report as the tree —
-    // blocking: lines, the JSON document, MCP problems — instead of dying as one bare
-    // error string before anything was printed (R32-05).
-    return withArtifactInspected(artifact, (staging, verified, problems) => withSetSource(staging, async () => {
-      await report(verified.manifest, artifact, problems, " and its artifact contents match", verified.id);
-    }));
+    // Read-only: the unpack gate's integrity checks still refuse a corrupt archive (typed as
+    // ArtifactIntegrityError), but blocking semantic findings come back and go through the
+    // same report as the tree — blocking: lines, the JSON document, MCP problems — instead
+    // of dying as one bare error string before anything was printed (R32-05).
+    return withArtifactInspected(artifact, (_staging, verified, problems) =>
+      report(verified.manifest, artifact, problems, " and its artifact contents match", verified.id));
   }
   // The tag is kept in requires.image rather than dying here: validate reports the gap
-  // itself (SET_IMAGE_UNPINNED) together with everything else it found.
-  const manifest = (await collectManifest(ctx, options.name ?? defaultSetName(deploymentName()), { tolerateUnpinnedImage: true })).manifest;
-  await report(manifest, "working tree", await validateSet(manifest, { checkFiles: true }));
+  // itself (SET_IMAGE_UNPINNED) together with everything else it found. An invalid
+  // declaration is reported the same way an artifact carrying the same bytes is.
+  const loaded = await loadSet({ kind: "tree" }, {
+    name: options.name ?? defaultSetName(deploymentName()),
+    declaredImage: ctx.settings.image,
+    tolerateUnpinnedImage: true,
+    reportInvalidDeclaration: true,
+  });
+  await report(loaded.manifest, "working tree", await validateLoadedSet(loaded));
 }
 
 /** `./clawforge set forget --kind <kind> --name <name>` — removes an object this framework

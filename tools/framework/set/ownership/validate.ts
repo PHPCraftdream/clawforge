@@ -14,7 +14,8 @@ import { resolve } from "node:path";
 import { parseRecipeDefinition } from "#src/service/recipe.ts";
 import { recipesDir, desiredStateFile } from "#src/runtime/deployment.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
-import { readLock, imagePinAdvice } from "#src/commands/management/lock.ts";
+import { readLock } from "#src/commands/management/lock.ts";
+import { imagePinAdvice, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#src/set/advice.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
@@ -65,10 +66,12 @@ export function desiredStateShapeError(value: unknown): string | undefined {
   return undefined;
 }
 
-/** Reads the desired state as declared, for the secret references inside it. A genuinely
- *  absent desired-state.json is a legitimate empty declaration; everything else is a
- *  finding — checksum verification only proves an artifact's bytes match the manifest,
- *  never that they parse, so a truncated declaration must not read as valid. */
+/** Reads the desired state as declared, for the secret references inside it. A missing or
+ *  empty declaration is a finding, not a legitimate empty one: the tree validator must give
+ *  the same answer an artifact carrying no declaration would (parity), and a deployment with
+ *  no declaration at all must not read as coherent. Everything else unreadable is a finding
+ *  too — checksum verification only proves an artifact's bytes match the manifest, never
+ *  that they parse. */
 async function declaredConfig(problems: Problem[]): Promise<unknown> {
   // Resolved outside the try: desiredStateFile() throws when no deployment is selected at
   // all — a wiring error in the caller, not a finding about a set.
@@ -78,11 +81,21 @@ async function declaredConfig(problems: Problem[]): Promise<unknown> {
   try {
     raw = await readFile(path, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       problems.push(
-        problem("SET_DECLARATION_INVALID", `${path} could not be read: ${(error as Error).message}`),
+        problem("SET_DECLARATION_INVALID", `${path} is missing or empty — a set without its config declaration would install an unconfigured instance`),
       );
+      return [];
     }
+    problems.push(
+      problem("SET_DECLARATION_INVALID", `${path} could not be read: ${(error as Error).message}`),
+    );
+    return [];
+  }
+  if (raw.trim() === "") {
+    problems.push(
+      problem("SET_DECLARATION_INVALID", `${path} is missing or empty — a set without its config declaration would install an unconfigured instance`),
+    );
     return [];
   }
   let parsed: unknown;
@@ -108,7 +121,7 @@ async function declaredConfig(problems: Problem[]): Promise<unknown> {
 
 async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Promise<void> {
   if (hasDigest(manifest.requires.image)) return;
-  // One advice, shared with set build (lock.ts's imagePinAdvice): decided from the lock's
+  // One advice, shared with set build (set/advice.ts's imagePinAdvice): decided from the lock's
   // content, never from the file's existence — a committed lock travels in git, so it does
   // not imply a deployed instance.
   const advice = imagePinAdvice(manifest.requires.image, await readLock());
@@ -121,14 +134,8 @@ async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Pro
 async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, problems: Problem[]): Promise<void> {
   for (const [name, recipe] of Object.entries(manifest.recipes)) {
     const declaresAgent = recipe.agent !== undefined;
-    // The remedy names the exact edit for THIS gap, as a runnable command with the reason in
-    // parentheses (R33-08): "add recipe.json or server.ts" was wrong for an agent recipe
-    // missing server.ts (only server.ts fixes it) and for one missing agent/config.json.
-    // An artifact's content is fixed in the tree it was built from and rebuilt.
-    const incomplete = (detail: string, fix: string, command = "./clawforge set validate"): Problem =>
-      problem("SET_RECIPE_INCOMPLETE", detail, `${command}  (after ${fix})`);
-    const missingDir = (detail: string): Problem =>
-      incomplete(detail, `adding recipe.json or server.ts to recipes/${name}, or removing the directory`, "./clawforge set build");
+    // The remedies are the advice owners in set/advice.ts — one wording per gap, shared
+    // with set build and the checks.
 
     if (checkFiles) {
       const dir = resolve(recipesDir(), name);
@@ -139,9 +146,9 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
         // must give the same answer, not a weaker one (R32-05: the tree reported three
         // blocking recipes, its own artifact one).
         if (declaresAgent || Object.keys(recipe.files).length > 0) {
-          problems.push(missingDir(`recipe "${name}" is declared but ${dir} does not exist`));
+          problems.push(recipeMissingDir(name, `recipe "${name}" is declared but ${dir} does not exist`));
         } else {
-          problems.push(missingDir(`recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
+          problems.push(recipeMissingDir(name, `recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
         }
         continue;
       }
@@ -149,13 +156,13 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
       // it an MCP recipe. A recipe without one is a plain service (its own compose stack,
       // recipe.json); demanding server.ts of it was a false positive against a real deployment.
       if (declaresAgent && !(await exists(resolve(dir, "server.ts")))) {
-        problems.push(incomplete(`recipe "${name}" declares an agent but has no server.ts — that is the file the gateway is registered to spawn`, `adding server.ts to recipes/${name}`));
+        problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no server.ts — that is the file the gateway is registered to spawn`, `adding server.ts to recipes/${name}`));
       }
       if (!declaresAgent && !(await exists(resolve(dir, "recipe.json"))) && !(await exists(resolve(dir, "server.ts")))) {
-        problems.push(missingDir(`recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
+        problems.push(recipeMissingDir(name, `recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
       }
       if (declaresAgent && !(await exists(resolve(dir, "agent", "config.json")))) {
-        problems.push(incomplete(`recipe "${name}" declares an agent but has no agent/config.json`, `adding agent/config.json to recipes/${name}`));
+        problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no agent/config.json`, `adding agent/config.json to recipes/${name}`));
       }
       // Parse the definition with the loader recipe list and recipe install use, so a
       // recipe.json `recipe list` calls broken is a finding here too instead of failing
@@ -165,9 +172,7 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
         try {
           parseRecipeDefinition(name, await readFile(definitionPath, "utf8"));
         } catch (error) {
-          problems.push(
-            problem("SET_RECIPE_INVALID", (error as Error).message, `./clawforge set validate  (after fixing recipes/${name}/recipe.json)`),
-          );
+          problems.push(recipeInvalidDefinition(name, (error as Error).message));
         }
       }
     }
@@ -176,7 +181,7 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
     // legitimate), so only an empty checksum map WITH an agent bundle is reported.
     if (declaresAgent && Object.keys(recipe.files).length === 0) {
       problems.push(
-        incomplete(`recipe "${name}" declares an agent but serves no content — the agent would have nothing to read`, `adding content to recipes/${name} and rebuilding`, "./clawforge set build"),
+        recipeIncomplete(name, `recipe "${name}" declares an agent but serves no content — the agent would have nothing to read`, `adding content to recipes/${name} and rebuilding`, "./clawforge set build"),
       );
     }
   }

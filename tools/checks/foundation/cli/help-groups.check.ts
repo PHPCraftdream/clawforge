@@ -11,7 +11,8 @@
 
 import { defineApp } from "#framework/core/app.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { runApp, GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol } from "#framework/entry/cli.ts";
+import { effectProfile } from "#framework/core/command/index.ts";
+import { runApp, GROUP_HEADINGS, GROUP_ORDER, destructiveMarker } from "#framework/entry/cli.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { regexEscape } from "#framework/core/io/log.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -73,10 +74,11 @@ for (const name of Object.keys(openclawCommands)) {
 
 // The destructive marker reflects readOnlyWhen, not a flat truth: a non-destructive command
 // carries no "(destructive" text at all, one carries exactly the marker destructiveMarker()
-// derives for it from `destructive`/`readOnlyWhen` — never a hard-coded per-command string.
+// derives for it from the effect profile — never a hard-coded per-command string.
 for (const [name, command] of Object.entries(openclawCommands)) {
   const { line } = commandLine(name);
-  const expected = destructiveSymbol(command);
+  const profile = effectProfile(command);
+  const expected = !profile.destructive ? "" : profile.alwaysDestroys ? " !" : " *";
   check(
     `${name}'s --help line carries its exact destructive symbol`,
     expected === "" ? !/ [!*]$/.test(line?.trimEnd() ?? "") : (line?.trimEnd().endsWith(`${command.summary}${expected}`) ?? false),

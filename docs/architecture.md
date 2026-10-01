@@ -580,7 +580,7 @@ that is `bootstrap`) get their preparation earlier: the framework creates `.env`
 template with this deployment's paths and port, generates a token if there is none, and
 only then builds the context. The MCP server uses the same path.
 
-Preparation only runs for a call that will actually mutate: `core/command/parse.ts`'s
+Preparation only runs for a call that will actually mutate: `core/command/effect.ts`'s
 `preparesEnvironmentFor(command, args)` is false for a read-only call (the same
 `readOnlyWhen` predicate MCP's own change-reporting uses, e.g. `bootstrap --check`) and
 false for argv the command's own parser would refuse — an invalid flag creates nothing

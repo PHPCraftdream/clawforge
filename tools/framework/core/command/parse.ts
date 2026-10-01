@@ -1,11 +1,18 @@
-// Generic argv parsing driven by a command's own declared `arguments` (core/app.ts's
-// CommandArgument) — the same list that already drives help text and the MCP schema
-// (mcp-schema.ts's inputSchema/validate/toArgv) — so a flag the declaration knows and the
+// Argv parsing driven by a command's own declared `arguments` (core/app.ts's CommandArgument)
+// — the same list that already drives help text and the MCP schema (mcp/schema.ts's
+// inputSchema, mcp/call.ts's validate/toArgv) — so a flag the declaration knows and the
 // CLI parser does not (or the reverse) stops being possible to write by hand.
+//
+// tokenize reads tokens, bind turns them into typed values, parseCall adds the action word;
+// parseDeclaredArgs is the syntactic wrapper the hand-written parsers still call.
 
-import { die } from "#src/core/io/log.ts";
-import type { AppCommand, CommandArgument } from "#src/core/app.ts";
-import { closestCommand, dieUnknownArgument, UnknownArgumentError } from "#src/core/command/errors.ts";
+import type { CommandArgument } from "#src/core/app.ts";
+import {
+  ArgumentError, closestCommand, dieUnknownAction, dieUnknownArgument, UnknownActionError, UnknownArgumentError,
+} from "#src/core/command/errors.ts";
+import type { ArgumentSpec, ParsedCall, ValueSpec } from "#src/core/command/spec.ts";
+import { scopeByAction } from "#src/core/command/view.ts";
+import { ValueError } from "#src/core/values/value.ts";
 
 /** Only for a multi-action command (backup): the action being parsed, and the full
  *  cross-action declaration to check an unrecognized flag against before giving up on it
@@ -35,11 +42,24 @@ function formatActions(actions: readonly string[]): string {
 export type ParsedArgs = Record<string, string | boolean | string[] | undefined>;
 
 /** Whether `token` is `--name` or `--name=...` for a flag/option this same declaration
- *  knows — the one shape an option's value must not swallow (see parseDeclaredArgs). */
+ *  knows — the one shape an option's value must not swallow (see tokenize). */
 function isDeclaredLongFlag(token: string, named: ReadonlyMap<string, CommandArgument>): boolean {
   if (!token.startsWith("--")) return false;
   const eq = token.indexOf("=");
   return named.has(eq === -1 ? token.slice(2) : token.slice(2, eq));
+}
+
+/** One token read against a declaration: the argument it belongs to and its text (`true` for a flag). */
+export interface TokenEntry {
+  readonly argument: CommandArgument;
+  readonly value: string | true;
+}
+
+export interface Tokens {
+  /** Every entry in typing order; a variadic contributes one entry per token. */
+  readonly entries: readonly TokenEntry[];
+  /** Flags and options, every occurrence, in typing order. */
+  readonly given: readonly string[];
 }
 
 /** Syntactic parsing only: which declared argument each token belongs to, and whether every
@@ -51,9 +71,12 @@ function isDeclaredLongFlag(token: string, named: ReadonlyMap<string, CommandArg
  *  argument — `--opt=-x`'s inline form still takes anything literally), and on a repeated
  *  `--opt`. A bare `--` ends option parsing.
  *
+ *  `verbatimTail` (a declared variadic): the first token that is no declared flag/option and
+ *  fills no free positional slot starts the variadic, and everything after it is literal.
+ *
  *  Does not enforce `required`, `choices`, or an option's value shape beyond the above —
- *  each command validates those itself against the values this returns. */
-export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: readonly string[], scope?: ActionScope): ParsedArgs {
+ *  `bind` does. */
+export function tokenize(declared: readonly CommandArgument[], argv: readonly string[], scope?: ActionScope, verbatimTail = false): Tokens {
   const named = new Map<string, CommandArgument>();
   const positionals: CommandArgument[] = [];
   let variadic: CommandArgument | undefined;
@@ -66,11 +89,20 @@ export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: re
   // True once a bare `--` was seen: every remaining token is positional/variadic, even one
   // that looks like a flag.
   let optionsEnded = false;
-  const result: ParsedArgs = {};
+  // True once the variadic has started in verbatim mode: the rest is its, whatever it looks like.
+  let tail = false;
+  const entries: TokenEntry[] = [];
+  const given: string[] = [];
+  const seenOptions = new Set<string>();
   let filled = 0;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+
+    if (tail && variadic !== undefined) {
+      entries.push({ argument: variadic, value: token });
+      continue;
+    }
 
     if (!optionsEnded && token === "--") {
       optionsEnded = true;
@@ -91,59 +123,172 @@ export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: re
       }
       const argument = flagToken.startsWith("--") ? named.get(flagToken.slice(2)) : undefined;
       if (argument === undefined) {
+        if (verbatimTail && variadic !== undefined) {
+          tail = true;
+          entries.push({ argument: variadic, value: token });
+          continue;
+        }
         const key = flagToken.startsWith("--") ? flagToken.slice(2) : undefined;
         if (key !== undefined && scope !== undefined) {
           const sibling = scope.siblings.find((candidate) => candidate.name === key);
           if (sibling?.actions !== undefined && !sibling.actions.includes(scope.action)) {
-            throw new UnknownArgumentError(`--${key} applies to ${formatActions(sibling.actions)}, not \`${scope.action}\``);
+            throw new UnknownArgumentError(`--${key} applies to ${formatActions(sibling.actions)}, not \`${scope.action}\``, key);
           }
         }
         const suggestion = key === undefined ? undefined : closestCommand(key, [...named.keys()]);
         dieUnknownArgument(token, suggestion === undefined ? undefined : `--${suggestion}`);
       }
+      given.push(argument.name);
       if (argument.kind === "flag") {
         // A flag carries no value — "=value" on one is a mistake worth naming, not a
         // silently ignored suffix.
-        if (inlineValue !== undefined) die(`--${argument.name} is a flag and takes no value`);
-        result[argument.name] = true;
+        if (inlineValue !== undefined) throw new ArgumentError(`--${argument.name} is a flag and takes no value`, argument.name);
+        entries.push({ argument, value: true });
         continue;
       }
-      if (result[argument.name] !== undefined) die(`--${argument.name} given more than once`);
+      if (seenOptions.has(argument.name)) throw new ArgumentError(`--${argument.name} given more than once`, argument.name);
+      seenOptions.add(argument.name);
       if (inlineValue !== undefined) {
-        result[argument.name] = inlineValue;
+        entries.push({ argument, value: inlineValue });
         continue;
       }
       const value = argv[index + 1];
-      if (value === undefined || isDeclaredLongFlag(value, named)) die(`--${argument.name} needs a value`);
-      result[argument.name] = value;
+      if (value === undefined || isDeclaredLongFlag(value, named)) throw new ArgumentError(`--${argument.name} needs a value`, argument.name);
+      entries.push({ argument, value });
       index += 1;
       continue;
     }
 
     if (filled < positionals.length) {
-      result[positionals[filled].name] = token;
+      entries.push({ argument: positionals[filled], value: token });
       filled += 1;
       continue;
     }
     if (variadic !== undefined) {
-      const list = result[variadic.name] as string[] | undefined;
-      if (list === undefined) result[variadic.name] = [token];
-      else list.push(token);
+      if (verbatimTail) tail = true;
+      entries.push({ argument: variadic, value: token });
       continue;
     }
     dieUnknownArgument(token);
   }
 
+  return { entries, given };
+}
+
+/** The record parseDeclaredArgs returns: a flag is true once seen, a variadic its tokens. */
+function toParsedArgs(entries: readonly TokenEntry[]): ParsedArgs {
+  const result: ParsedArgs = {};
+  for (const { argument, value } of entries) {
+    if (argument.kind === "variadic") {
+      const list = result[argument.name] as string[] | undefined;
+      if (list === undefined) result[argument.name] = [value as string];
+      else list.push(value as string);
+    } else result[argument.name] = value;
+  }
   return result;
 }
 
-/** Whether a `preparesEnvironment` command's preparation (writing .env, generating the token)
- *  should run for `args`: false for a read-only call (readOnlyWhen, e.g. `bootstrap --check`).
- *  Argv the command's parser refuses throws here, before anything is written, so an invalid
- *  flag is reported as such and creates nothing. */
-export function preparesEnvironmentFor(command: AppCommand, args: readonly string[]): boolean {
-  if (command.preparesEnvironment !== true) return false;
-  if (command.readOnlyWhen?.([...args]) === true) return false;
-  parseDeclaredArgs(command.arguments ?? [], args);
-  return true;
+/** Syntactic parsing against `declared` — see `tokenize`; `required`, `choices` and value
+ *  shapes stay with each command, against the record this returns. */
+export function parseDeclaredArgs(declared: readonly CommandArgument[], argv: readonly string[], scope?: ActionScope): ParsedArgs {
+  return toParsedArgs(tokenize(declared, argv, scope).entries);
+}
+
+function labelOf(argument: ArgumentSpec): string {
+  return argument.kind === "positional" ? `<${argument.name}>` : `--${argument.name}`;
+}
+
+function joinClause(label: string, clause: string): string {
+  return clause.startsWith(":") ? `${label}${clause}` : `${label} ${clause}`;
+}
+
+/** One typed value from its text: empty without a parser is refused, `choices` is a closed
+ *  list, `parse` has the last word and its ValueError becomes an ArgumentError. */
+function convert(argument: ValueSpec<"option"> | ValueSpec<"positional">, raw: string): unknown {
+  const label = labelOf(argument);
+  if (argument.parse !== undefined) {
+    try {
+      return argument.parse.parse(raw);
+    } catch (error) {
+      if (error instanceof ValueError) throw new ArgumentError(joinClause(label, error.clause), argument.name);
+      throw error;
+    }
+  }
+  if (raw === "") throw new ArgumentError(`${label} needs a value`, argument.name);
+  if (argument.choices !== undefined && !argument.choices.includes(raw)) {
+    throw new ArgumentError(`${label} takes one of ${argument.choices.join(", ")}, not "${raw}"`, argument.name);
+  }
+  return raw;
+}
+
+export interface BindContext {
+  /** Names the call in a missing-argument refusal: `set forget needs --kind <kind>`. */
+  readonly command?: string;
+  readonly action?: string;
+}
+
+/** Typed values from tokens: the given values in typing order (so the first bad one is the
+ *  one reported), then the missing required arguments in declaration order. A flag is false
+ *  and a variadic [] when absent. */
+export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context: BindContext = {}): Record<string, unknown> {
+  const byName = new Map(declared.map((argument) => [argument.name, argument]));
+  const values: Record<string, unknown> = {};
+  for (const argument of declared) {
+    if (argument.kind === "flag") values[argument.name] = false;
+    else if (argument.kind === "variadic") values[argument.name] = [];
+  }
+  for (const { argument: token, value } of tokens.entries) {
+    const argument = byName.get(token.name)!;
+    if (argument.kind === "flag") values[argument.name] = true;
+    else if (argument.kind === "variadic") (values[argument.name] as string[]).push(value as string);
+    else values[argument.name] = convert(argument, value as string);
+  }
+  const prefix = [context.command, context.action].filter((part) => part !== undefined && part !== "").join(" ");
+  for (const argument of declared) {
+    if (argument.kind === "flag" || argument.required !== true) continue;
+    const absent = argument.kind === "variadic" ? (values[argument.name] as string[]).length === 0 : values[argument.name] === undefined;
+    if (!absent) continue;
+    const label = argument.kind === "option" ? `--${argument.name} <${argument.valueName ?? "value"}>`
+      : argument.kind === "variadic" ? `<${argument.name}…>` : `<${argument.name}>`;
+    throw new ArgumentError(prefix === "" ? `${label} is required` : `${prefix} needs ${label}`, argument.name);
+  }
+  return values;
+}
+
+/** The parse-relevant part of a command: its arguments, or per-action arguments. */
+export interface CallShape {
+  readonly arguments?: readonly ArgumentSpec[];
+  readonly actions?: Readonly<Record<string, { readonly arguments?: readonly ArgumentSpec[] }>>;
+  readonly defaultAction?: string;
+}
+
+/** argv → ParsedCall. With `actions`, `argv[0]` naming an action picks it; no word (or one
+ *  starting with `-`) takes `defaultAction` with the whole argv, and without one is refused;
+ *  any other word is an unknown action. A flag that another action declares is refused as
+ *  belonging to it. */
+export function parseCall(shape: CallShape, argv: readonly string[], command = ""): ParsedCall<Record<string, unknown>> {
+  if (shape.actions === undefined) {
+    const declared = shape.arguments ?? [];
+    const tokens = tokenize(declared, argv, undefined, declared.some((argument) => argument.kind === "variadic"));
+    return { values: bind(declared, tokens, { command }), given: tokens.given };
+  }
+  const actions = shape.actions;
+  const names = Object.keys(actions);
+  const first = argv[0];
+  let action: string;
+  let rest: readonly string[];
+  if (first !== undefined && !first.startsWith("-")) {
+    if (!names.includes(first)) dieUnknownAction(first, `unknown action: ${first} (expected ${names.join(", ")})`, names, "action");
+    action = first;
+    rest = argv.slice(1);
+  } else if (shape.defaultAction !== undefined) {
+    action = shape.defaultAction;
+    rest = argv;
+  } else {
+    throw new UnknownActionError(`${command === "" ? "" : `${command} `}needs an action: ${names.join(", ")}`, "action");
+  }
+  const declared = actions[action].arguments ?? [];
+  const siblings = scopeByAction(Object.fromEntries(names.map((name) => [name, actions[name].arguments ?? []])));
+  const tokens = tokenize(declared, rest, { action, siblings }, declared.some((argument) => argument.kind === "variadic"));
+  return { values: bind(declared, tokens, { command, action }), action, given: tokens.given };
 }

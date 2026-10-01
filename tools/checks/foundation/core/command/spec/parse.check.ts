@@ -5,7 +5,10 @@
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
-import { parseDeclaredArgs, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION } from "#framework/core/command/index.ts";
+import {
+  parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION, type CallShape,
+} from "#framework/core/command/index.ts";
+import { countValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
 import { BACKUP_ACTION_ARGUMENTS } from "#framework/commands/lifecycle/backup/index.ts";
 import { RECIPE_ACTION_ARGUMENTS, validateRecipeArgs } from "#framework/commands/management/recipe/arguments.ts";
 import { EXPOSE_ACTION_ARGUMENTS } from "#framework/commands/operate/expose/index.ts";
@@ -488,5 +491,124 @@ check(
     }
   }
 }
+
+// --- parseCall: tokenize + bind + the action word (design 1.5) ------------------------------------
+
+function refusal(run: () => unknown): Error | undefined {
+  try {
+    run();
+  } catch (error) {
+    return error as Error;
+  }
+  return undefined;
+}
+const argumentOf = (error: unknown): string | undefined => (error instanceof ArgumentError ? error.argument : undefined);
+
+const SINGLE: CallShape = {
+  arguments: [
+    { name: "file", kind: "positional", description: "d", required: true },
+    { name: "n", kind: "option", valueName: "n", description: "d", parse: countValue("a number of lines") },
+    { name: "mode", kind: "option", valueName: "m", description: "d", choices: ["a", "b"] },
+    { name: "verbose", kind: "flag", description: "d" },
+  ],
+};
+check("values are typed; a flag absent is false", parseCall(SINGLE, ["f", "--n", "3"]).values, { file: "f", n: 3, verbose: false });
+check("given lists flags and options in typing order", parseCall(SINGLE, ["--verbose", "f", "--n=3"]).given, ["verbose", "n"]);
+check("given keeps every occurrence of a flag", parseCall(SINGLE, ["f", "--verbose", "--verbose"]).given, ["verbose", "verbose"]);
+check("an inline value is taken literally", parseCall(SINGLE, ["f", "--mode=a"]).values.mode, "a");
+{
+  const error = refusal(() => parseCall(SINGLE, ["f", "--n", "abc"]));
+  check("a parse refusal is an ArgumentError naming the argument", [error instanceof ArgumentError, argumentOf(error)], [true, "n"]);
+  check("its text is the parser's clause after the label", error?.message, '--n takes a number of lines, not "abc"');
+  check("a ValueError never escapes bind", error instanceof ValueError, false);
+}
+{
+  const error = refusal(() => parseCall(SINGLE, ["f", "--mode=c"]));
+  check("choices: an ArgumentError naming the argument", argumentOf(error), "mode");
+  check("choices: the closed list is the text", error?.message, '--mode takes one of a, b, not "c"');
+}
+check("given values are bound in typing order: n first", argumentOf(refusal(() => parseCall(SINGLE, ["f", "--n=x", "--mode=c"]))), "n");
+check("given values are bound in typing order: mode first", argumentOf(refusal(() => parseCall(SINGLE, ["f", "--mode=c", "--n=x"]))), "mode");
+{
+  const error = refusal(() => parseCall(SINGLE, ["f", "--mode="]));
+  check("an empty value without a parser is refused, naming the argument", [argumentOf(error), error?.message], ["mode", "--mode needs a value"]);
+}
+{
+  const error = refusal(() => parseCall(SINGLE, [], "x"));
+  check("a missing required argument is named", [argumentOf(error), error?.message], ["file", "x needs <file>"]);
+}
+check("a refused given value comes before a missing required one", argumentOf(refusal(() => parseCall(SINGLE, ["--n=x"]))), "n");
+check("required are reported in declaration order", argumentOf(refusal(() => parseCall({
+  arguments: [
+    { name: "a", kind: "option", valueName: "a", description: "d", required: true },
+    { name: "b", kind: "positional", description: "d", required: true },
+  ],
+}, []))), "a");
+check("an option left without a value is an ArgumentError", argumentOf(refusal(() => parseCall(SINGLE, ["f", "--n"]))), "n");
+check("an option's value is not another declared flag", refusal(() => parseCall(SINGLE, ["f", "--n", "--verbose"]))?.message, "--n needs a value");
+check("a repeated option is refused", argumentOf(refusal(() => parseCall(SINGLE, ["f", "--n=1", "--n=2"]))), "n");
+check("--flag=value is refused, naming the flag", argumentOf(refusal(() => parseCall(SINGLE, ["f", "--verbose=1"]))), "verbose");
+check("an unknown flag is an UnknownArgumentError", refusal(() => parseCall(SINGLE, ["f", "--nope"])) instanceof UnknownArgumentError, true);
+check("a bare -- ends options", parseCall(SINGLE, ["--", "--verbose"]).values.file, "--verbose");
+
+const throwing = (error: Error): ValueParser<string> => ({ expected: "x", example: "x", invalidExample: "y", parse: () => { throw error; } });
+const withParser = (parse: ValueParser<string>): CallShape => ({ arguments: [{ name: "p", kind: "option", valueName: "p", description: "d", parse }] });
+check("a parser's ValueError becomes an ArgumentError", refusal(() => parseCall(withParser(throwing(new ValueError("is wrong"))), ["--p=1"]))?.message, "--p is wrong");
+check("a clause starting with : attaches to the label", refusal(() => parseCall(withParser(throwing(new ValueError(": because"))), ["--p=1"]))?.message, "--p: because");
+check("a non-ValueError from a parser is not swallowed", refusal(() => parseCall(withParser(throwing(new RangeError("bug"))), ["--p=1"])) instanceof RangeError, true);
+
+const MULTI: CallShape = {
+  actions: {
+    list: { arguments: [{ name: "json", kind: "flag", description: "d" }] },
+    create: { arguments: [{ name: "dry-run", kind: "flag", description: "d" }, { name: "profile", kind: "option", valueName: "p", description: "d", choices: ["full", "share"] }] },
+    forget: { arguments: [{ name: "kind", kind: "option", valueName: "kind", description: "d", required: true, choices: ["agent", "cron-job"] }] },
+  },
+  defaultAction: "create",
+};
+check("an action word picks the action", parseCall(MULTI, ["list", "--json"]).action, "list");
+check("an action's values are its own", parseCall(MULTI, ["list", "--json"]).values, { json: true });
+check("no word takes the default action with the whole argv", [parseCall(MULTI, []).action, parseCall(MULTI, ["--dry-run"]).action, parseCall(MULTI, ["--dry-run"]).given], ["create", "create", ["dry-run"]]);
+check("a leading -- takes the default action too", parseCall(MULTI, ["--"]).action, "create");
+check("the default action may be named", parseCall(MULTI, ["create", "--profile=share"]).values.profile, "share");
+{
+  const error = refusal(() => parseCall(MULTI, ["lst"], "backup"));
+  check("an unknown word is an UnknownActionError naming 'action'", [error instanceof UnknownActionError, error instanceof UnknownArgumentError, argumentOf(error)], [true, true, "action"]);
+  check("it lists the actions and guesses", error?.message, "unknown action: lst (expected list, create, forget) (did you mean list?)");
+}
+{
+  const error = refusal(() => parseCall({ actions: MULTI.actions }, [], "set"));
+  check("without a default the word is required", [error instanceof UnknownActionError, argumentOf(error)], [true, "action"]);
+  check("and the text lists the actions", error?.message, "set needs an action: list, create, forget");
+  check("a flag first is not an action word either", refusal(() => parseCall({ actions: MULTI.actions }, ["--json"], "set")) instanceof UnknownActionError, true);
+}
+{
+  const error = refusal(() => parseCall(MULTI, ["list", "--dry-run"]));
+  check("a flag of another action: UnknownArgumentError naming the flag", [error instanceof UnknownArgumentError, argumentOf(error)], [true, "dry-run"]);
+  check("its text names both actions", error?.message, "--dry-run applies to `create`, not `list`");
+  check("the default action is held to its own flags", refusal(() => parseCall(MULTI, ["--json"]))?.message, "--json applies to `list`, not `create`");
+}
+check("a flag nobody declares is plain unknown", refusal(() => parseCall(MULTI, ["list", "--zzz"]))?.message, "unknown argument: --zzz");
+{
+  const error = refusal(() => parseCall(MULTI, ["forget"], "set"));
+  check("a required option of an action: named with command and action", [argumentOf(error), error?.message], ["kind", "set forget needs --kind <kind>"]);
+}
+check("a choice of an action is enforced", argumentOf(refusal(() => parseCall(MULTI, ["forget", "--kind=x"]))), "kind");
+
+const VARIADIC: CallShape = {
+  arguments: [
+    { name: "context", kind: "positional", description: "d", required: true },
+    { name: "root", kind: "flag", description: "d" },
+    { name: "args", kind: "variadic", description: "d", required: true },
+  ],
+};
+check("a variadic starts at the first undeclared token", parseCall(VARIADIC, ["target", "--root", "ls", "-la"]).values, { context: "target", root: true, args: ["ls", "-la"] });
+check("after it everything is literal, declared flags too", parseCall(VARIADIC, ["target", "ls", "--root"]).values, { context: "target", root: false, args: ["ls", "--root"] });
+check("an undeclared flag starts the variadic", parseCall(VARIADIC, ["target", "--version"]).values.args, ["--version"]);
+check("everything after -- is the variadic", parseCall(VARIADIC, ["target", "--", "--root"]).values, { context: "target", root: false, args: ["--root"] });
+check("a -- after the variadic started is literal", parseCall(VARIADIC, ["target", "ls", "--", "x"]).values.args, ["ls", "--", "x"]);
+check("a variadic alone takes a leading flag-looking token", parseCall({ arguments: [{ name: "args", kind: "variadic", description: "d" }] }, ["--foo", "bar"]).values.args, ["--foo", "bar"]);
+check("an absent variadic is []", parseCall({ arguments: [{ name: "args", kind: "variadic", description: "d" }] }, []).values.args, []);
+check("a required variadic must be given", argumentOf(refusal(() => parseCall(VARIADIC, ["target"]))), "args");
+check("parseDeclaredArgs keeps refusing an undeclared flag before a variadic", refusal(() => parseDeclaredArgs(VARIADIC.arguments as CommandArgument[], ["target", "--version"])) instanceof UnknownArgumentError, true);
 
 finish("argument");

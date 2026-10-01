@@ -104,6 +104,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     summary: "Follow the service log, or read a bounded tail of it",
     group: "start-stop",
     run: logs,
+    readOnly: true,
     details:
       "On a terminal this follows the log until interrupted. Called as a tool it reads the " +
       "last lines and returns them instead — following would never produce the single " +
@@ -255,6 +256,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
     summary: "Check a snapshot for credentials before sharing it",
     group: "save-move",
     run: verify,
+    readOnly: true,
     details:
       "What `./clawforge pull --share` runs automatically, callable by hand against any archive.\n" +
       "Structural checks (no absolute paths, no `..` escapes, no link writing outside the " +

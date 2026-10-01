@@ -5,6 +5,7 @@
 // exit-code readback for ./clawforge upgrade.
 
 import { UserError } from "../../core/io/log.ts";
+import { ValueError, type ValueParser } from "../../core/values/value.ts";
 import type { Transport } from "../transport/transport.ts";
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
@@ -138,3 +139,17 @@ export async function lastExitCode(transport: Transport, containerId: string | u
   const result = await transport.exec("docker", ["inspect", "--format", "{{.State.ExitCode}}", containerId], { allowFailure: true });
   return result.code === 0 ? Number.parseInt(result.stdout.trim(), 10) : undefined;
 }
+
+/** `upgrade --image` as an argument parser: the reference's own refusal, after the label. */
+export const imageRefValue: ValueParser<ImageRef> = {
+  expected: "an image reference",
+  example: "ghcr.io/openclaw/openclaw:latest",
+  invalidExample: "not an image",
+  parse(raw) {
+    try {
+      return parse(raw);
+    } catch (error) {
+      throw new ValueError(`: ${(error as Error).message}`);
+    }
+  },
+};

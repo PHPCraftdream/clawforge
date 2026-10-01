@@ -20,6 +20,7 @@ import { posix, resolve } from "node:path";
 import { die, info, infoRaw, regexEscape } from "../../core/io/log.ts";
 import { monorepoRoot } from "../../core/env.ts";
 import { parseInterval } from "../../core/values/durations.ts";
+import { ValueError, type ValueParser } from "../../core/values/value.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
 import { spawnLocal, SshTransport } from "../../runtime/transport/transport.ts";
 import type { Context } from "../../core/context.ts";
@@ -441,4 +442,22 @@ export async function printUnschedulingInstructions(ctx: Context, job: string, a
   if (result.code !== 0) die(`schtasks could not delete ${taskName} (exit ${result.code}): ${(result.stderr || result.stdout).trim()}`);
   info(`removed via Task Scheduler: "${taskName}"`);
   return true;
+}
+
+/** `--interval` as an argument parser over parseIntervalToMinutes: the same refusal sentences,
+ *  with the leading `--interval` left to the argument's label. */
+export function scheduleIntervalValue(options: { bareMinutes: boolean }): ValueParser<number> {
+  return {
+    expected: "an interval such as 30m, 6h or 1d",
+    example: "30m",
+    invalidExample: "7x",
+    parse(raw) {
+      try {
+        return parseIntervalToMinutes(raw, options);
+      } catch (error) {
+        const message = (error as Error).message;
+        throw new ValueError(message.startsWith("--interval ") ? message.slice("--interval ".length) : `: ${message}`);
+      }
+    },
+  };
 }

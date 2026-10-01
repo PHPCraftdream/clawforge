@@ -27,6 +27,7 @@ export const managementCommands: Record<string, AppCommand> = {
     summary: "Show containers, image, health probes and data usage",
     group: "start-stop",
     run: status,
+    readOnly: true,
     details:
       "Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) " +
       "and the runtime's own opinion —\n" +
@@ -397,6 +398,7 @@ export const managementCommands: Record<string, AppCommand> = {
     summary: "Print service URL, token and MCP client config for both servers",
     group: "integrations",
     run: mcpCreds,
+    readOnly: true,
     // Its whole job is handing over the credential: masking its healthy output (the
     // response redaction every other successful answer now goes through) would
     // answer with "***" where the caller asked for the token. The deliberate reveal is

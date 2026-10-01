@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
+import { callFactsFor, effectProfile } from "#framework/core/command/index.ts";
 import { inputSchema } from "#framework/integration/mcp/schema.ts";
 import { toArgv, toolEnvelope } from "#framework/integration/mcp/call.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
@@ -33,7 +34,7 @@ function runServer(script: string, input: string): Promise<{ code: number | null
   for (const [name, args, expected] of [
     ["status", [], false], ["print-template", ["--print-template"], false], ["template", ["--template"], false],
     ["apply", ["--apply"], true], ["init-store", ["--init-store"], true], ["dump", ["--dump"], true],
-  ] as const) check(`secrets ${name} confirmation policy`, secrets.requiresConfirmationWhen?.([...args]), expected);
+  ] as const) check(`secrets ${name} confirmation policy`, callFactsFor(secrets, args).effect === "destroy", expected);
 
   for (const name of ["restore", "push"]) {
     const command = openclawCommands[name]!;
@@ -42,17 +43,17 @@ function runServer(script: string, input: string): Promise<{ code: number | null
   }
 
   const destroyCmd = openclawCommands.destroy!;
-  check("destroy is destructive", destroyCmd.destructive, true);
-  check("its dry run (no --yes) is read-only", destroyCmd.readOnlyWhen?.([]), true);
-  check("a real run (--yes) is not read-only", destroyCmd.readOnlyWhen?.(["--yes"]), false);
+  check("destroy is destructive", effectProfile(destroyCmd).destructive, true);
+  check("its dry run (no --yes) is read-only", callFactsFor(destroyCmd, []).effect, "read");
+  check("a real run (--yes) is not read-only", callFactsFor(destroyCmd, ["--yes"]).effect, "destroy");
   check("confirm stays conditional in the schema (readOnlyWhen decides, not a bare required)", (inputSchema(destroyCmd).required as string[]).includes("confirm"), false);
   check("destroy keeps --yes and --confirm-name apart from --force", [destroyCmd.arguments?.some((a) => a.name === "force"), destroyCmd.arguments?.some((a) => a.name === "yes"), destroyCmd.arguments?.some((a) => a.name === "confirm-name")], [false, true, true]);
 
   const set = setsCommands.set!;
-  check("set build is mutable but needs no confirmation", [set.readOnlyWhen?.(["build"]), set.requiresConfirmationWhen?.(["build"])], [false, false]);
+  check("set build is mutable but needs no confirmation", callFactsFor(set, ["build"]).effect, "change");
   check("set build reports its artifact write", toolEnvelope(set, "built", undefined, "set-build", ["build"]).changed, true);
-  check("set validate remains read-only", set.readOnlyWhen?.(["validate"]), true);
-  check("set try and forget require confirmation", [set.requiresConfirmationWhen?.(["try"]), set.requiresConfirmationWhen?.(["forget"])], [true, true]);
+  check("set validate remains read-only", callFactsFor(set, ["validate"]).effect, "read");
+  check("set try and forget require confirmation", [callFactsFor(set, ["try"]).effect, callFactsFor(set, ["forget"]).effect], ["destroy", "destroy"]);
 }
 
 // Exercise the actual dispatcher, with stubbed command bodies and local-only context.

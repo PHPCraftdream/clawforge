@@ -4,6 +4,7 @@
 // range check) but share the grammar, so the accepted spellings cannot drift between them.
 
 import { UserError } from "../io/log.ts";
+import { ValueError, type ValueParser } from "./value.ts";
 
 const INTERVAL_PATTERN = /^(\d+)([mhd]?)$/;
 const INTERVAL_UNIT_MINUTES: Readonly<Record<string, number>> = { m: 1, h: 60, d: 1440 };
@@ -57,3 +58,16 @@ const SINCE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?
 export function validSince(value: string): boolean {
   return (SINCE_DURATION.test(value) && /\d/.test(value)) || SINCE_TIMESTAMP.test(value);
 }
+
+const SINCE_EXPECTED = "a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time";
+
+/** `logs --since` as an argument parser: the value is forwarded as-is once validSince accepts it. */
+export const sinceValue: ValueParser<string> = {
+  expected: SINCE_EXPECTED,
+  example: "10m",
+  invalidExample: "yesterday",
+  parse(raw) {
+    if (!validSince(raw)) throw new ValueError(`takes ${SINCE_EXPECTED}, not "${raw}"`);
+    return raw;
+  },
+};

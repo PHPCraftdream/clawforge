@@ -46,9 +46,20 @@ export function closestCommand(input: string, candidates: readonly string[]): st
   return bestDistance <= threshold ? best : undefined;
 }
 
+/** A refusal of one argument; `argument` is its declared name, so a caller reads the
+ *  structure rather than the prose. */
+export class ArgumentError extends UserError {
+  name = "ArgumentError";
+  readonly argument: string | undefined;
+  constructor(message: string, argument?: string) {
+    super(message);
+    this.argument = argument;
+  }
+}
+
 /** Thrown for a token matching no declared argument — a UserError, but distinct so the
  *  dispatcher (entry/cli.ts) can point at that command's own --help. */
-export class UnknownArgumentError extends UserError {
+export class UnknownArgumentError extends ArgumentError {
   name = "UnknownArgumentError";
 }
 
@@ -64,7 +75,15 @@ export class UnknownActionError extends UnknownArgumentError {
 }
 
 /** Refuses an unknown sub-action with `message` plus a did-you-mean guess from `choices`. */
-export function dieUnknownAction(action: string, message: string, choices: readonly string[]): never {
+export function dieUnknownAction(action: string, message: string, choices: readonly string[], argument?: string): never {
   const suggestion = closestCommand(action, choices);
-  throw new UnknownActionError(suggestion === undefined ? message : `${message} (did you mean ${suggestion}?)`);
+  throw new UnknownActionError(suggestion === undefined ? message : `${message} (did you mean ${suggestion}?)`, argument);
+}
+
+/** An MCP call to a command that replaces or destroys state, made without confirm: true. */
+export class ConfirmationRequiredError extends UserError {
+  name = "ConfirmationRequiredError";
+  constructor(command: string) {
+    super(`${command} replaces or destroys state — pass confirm: true`);
+  }
 }

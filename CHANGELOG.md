@@ -60,6 +60,15 @@ All notable changes to `@clawforge/framework` will be documented here.
   and clears both. Shims and launchers already committed in your repository keep working, and
   `mcp-setup` rewrites a launcher carrying the old spelling as it rewrites its other retired
   texts. No command output changes.
+* `expose`, `watch` and `incident` declare their arguments and effect once, and the shared
+  parser answers for them: a bad `--local-port`, `--interval` or `--tail` (and an empty
+  option value) is refused before any contact with the target or the instance lock; a missing
+  or unknown action of `expose`/`watch` reads like every other multi-action command's
+  (`needs an action: …`, `unknown action: x (expected …)`), and an action's flag given to
+  another action says which action it belongs to; MCP `choices`/required errors come in the
+  parser's words. `expose tailscale --funnel` (or `funnel`) is still refused with the same
+  explanation, now by the parser, before any contact. The MCP description of
+  `expose --apply` is the whole phrase instead of a cut one.
 
 ### Fixed
 

@@ -2,7 +2,7 @@
 // same problem codes), keep only findings that say whether the instance is doing its job,
 // add watch's own channel/disk findings (health.ts), and alert exactly on a change.
 //
-// Also owns `watch test` (watchTest, below runWatchCycle): the same webhook/heartbeat
+// Also owns `watch test` (WATCH_TEST, below runWatchCycle): the same webhook/heartbeat
 // targets, sent a one-off test message instead of a real transition, so delivery can be
 // proven before an outage is the first time it is tried.
 
@@ -30,13 +30,13 @@ import {
 } from "./webhook.ts";
 import type { WatchWebhookTarget } from "./webhook.ts";
 import { channelFindings, diskFindings, mergeFindings } from "./health.ts";
-import type { CommandArgument } from "../../../core/app.ts";
-import { parseDeclaredArgs } from "../../../core/command/index.ts";
+import { bind, defineAction, tokenize, type ArgumentSpec, type Values } from "../../../core/command/index.ts";
 
-/** Drives both watch check's own parser and its slice of watch's openclawCommands declaration. */
-export const WATCH_CHECK_ARGUMENTS: CommandArgument[] = [
+/** Drives both watch check's own slice of watch's declaration — shared by the status and
+ *  test actions, which read --json the same way. */
+export const WATCH_CHECK_ARGUMENTS = [
   { name: "json", description: "Emit JSON instead of text", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 /** The subset of `inspect`'s problem codes that say something about LIVENESS — the gateway
  *  answering, bootstrapped, reaching its own configured endpoints. Deliberately narrower
@@ -311,9 +311,9 @@ async function recordConfigError(error: unknown): Promise<void> {
   });
 }
 
-export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
+async function runCheck(ctx: Context, values: Values<typeof WATCH_CHECK_ARGUMENTS>): Promise<void> {
   await withOperatorWatchState(ctx, async () => {
-  const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
+  const jsonOnly = values.json === true;
 
   // Validated before gatherInspection ever reaches the target: a misconfigured webhook or
   // heartbeat URL is a configuration error worth stopping on every cycle, not just the one
@@ -339,6 +339,20 @@ export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
   });
 }
 
+/** The `watch check` action. */
+export const WATCH_CHECK = defineAction({
+  summary: "One probe cycle; alerts and records on a state change",
+  arguments: WATCH_CHECK_ARGUMENTS,
+  run: runCheck,
+});
+
+/** Legacy (ctx, argv) entry: parse this action's slice and run on the given context — the
+ *  same shape the pipeline's parse stage runs. Kept for importers outside this group. */
+export async function watchCheck(ctx: Context, args: string[]): Promise<void> {
+  const values = bind(WATCH_CHECK_ARGUMENTS, tokenize(WATCH_CHECK_ARGUMENTS, args)) as Values<typeof WATCH_CHECK_ARGUMENTS>;
+  await runCheck(ctx, values);
+}
+
 // --- `watch test` -----------------------------------------------------------------------
 
 export interface WatchTestResult {
@@ -359,9 +373,9 @@ async function recordHeartbeatOutcome(now: string, detail: string | undefined): 
 /** Proves delivery on demand: a test message (marked as a test, never a transition payload)
  *  to the webhook and a heartbeat ping, for whichever is configured. Any configured target
  *  that fails exits non-zero; none configured is reported, not failed. */
-export async function watchTest(ctx: Context, args: string[]): Promise<void> {
+async function runTest(ctx: Context, values: Values<typeof WATCH_CHECK_ARGUMENTS>): Promise<void> {
   await withOperatorWatchState(ctx, async () => {
-  const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
+  const jsonOnly = values.json === true;
   const now = new Date().toISOString();
   const results: WatchTestResult[] = [];
 
@@ -407,3 +421,11 @@ export async function watchTest(ctx: Context, args: string[]): Promise<void> {
   }
   });
 }
+
+/** The `watch test` action: proves webhook/heartbeat delivery before an outage is the first
+ *  time it is tried. */
+export const WATCH_TEST = defineAction({
+  summary: "Send one test webhook message and heartbeat ping",
+  arguments: WATCH_CHECK_ARGUMENTS,
+  run: runTest,
+});

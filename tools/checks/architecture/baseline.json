@@ -43,7 +43,7 @@
       "tools/framework/commands/management/recipe/actions.ts": 4,
       "tools/framework/commands/management/recipe/index.ts": 5,
       "tools/framework/commands/management/secrets.ts": 14,
-      "tools/framework/commands/operate/expose/index.ts": 3,
+      "tools/framework/commands/operate/expose/index.ts": 1,
       "tools/framework/commands/operate/expose/ssh.ts": 3,
       "tools/framework/commands/operate/expose/status.ts": 8,
       "tools/framework/commands/operate/expose/tailscale.ts": 3,
@@ -51,7 +51,7 @@
       "tools/framework/commands/operate/recover-env/index.ts": 7,
       "tools/framework/commands/operate/schedule.ts": 5,
       "tools/framework/commands/operate/watch/check.ts": 1,
-      "tools/framework/commands/operate/watch/index.ts": 3,
+      "tools/framework/commands/operate/watch/index.ts": 1,
       "tools/framework/commands/operate/watch/install.ts": 2,
       "tools/framework/commands/operate/watch/status.ts": 5,
       "tools/framework/commands/operate/watch/webhook.ts": 1,
@@ -106,7 +106,7 @@
       "tools/framework/entry/resolve.ts": 3,
       "tools/framework/entry/checkout-gate.ts": 7
     },
-    "total": 458
+    "total": 454
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
@@ -116,17 +116,17 @@
   },
   "rawArgvPredicates": {
     "comment": "stage 3 (CommandSpec effect): confirmation comes from declared effect, not raw argv",
-    "readOnlyWhen": 10,
-    "changedWhen": 5,
-    "requiresConfirmationWhen": 4
+    "readOnlyWhen": 7,
+    "changedWhen": 3,
+    "requiresConfirmationWhen": 2
   },
   "legacyCommands": {
     "comment": "stage 3 (CommandSpec): openclawCommands entries whose specOf is undefined — each migration turns one into a declared body",
-    "total": 17
+    "total": 14
   },
   "unsummarizedDescriptions": {
     "comment": "stage 3 (CommandArgument summary): MCP stops shortening heuristically when all summaries are declared; arguments of the derived `arguments` view with a description longer than 60 and no summary",
-    "total": 20
+    "total": 15
   },
   "declaredArguments": {
     "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",
@@ -156,7 +156,7 @@
       "tools/checks/foundation/core/archive.check.ts": 1,
       "tools/checks/foundation/core/command/pipeline/execute.check.ts": 3,
       "tools/checks/foundation/core/command/spec/parse.check.ts": 3,
-      "tools/checks/foundation/core/command/spec/view.check.ts": 14,
+      "tools/checks/foundation/core/command/spec/view.check.ts": 13,
       "tools/checks/foundation/core/env.check.ts": 1,
       "tools/checks/foundation/hygiene/readme-quickstart.check.ts": 1,
       "tools/checks/foundation/hygiene/spawn-noise.check.ts": 5,
@@ -293,6 +293,6 @@
       "tools/checks/sets/lifecycle/set-validate.check.ts": 22,
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 855
+    "total": 854
   }
 }

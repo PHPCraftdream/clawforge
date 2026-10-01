@@ -11,20 +11,26 @@
 // turning one off never touches another service's mapping.
 
 import { log, info, die } from "#src/core/io/log.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { defineAction, multiActionBody, runOnContext, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
-/** The slice of `expose`'s declaration this action's own argv actually uses. */
-export const EXPOSE_TAILSCALE_ARGUMENTS: CommandArgument[] = [
-  { name: "apply", description: "With tailscale: run the printed `tailscale serve` command on the target instead of only printing it", kind: "flag" },
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-];
+/** The slice of `expose`'s declaration this action's own argv actually uses. `--apply` is
+ *  the one mutating flag: its effect raises the whole call to destroy (MCP confirmation and
+ *  the instance lock read from the declaration, not from argv). */
+export const EXPOSE_TAILSCALE_ARGUMENTS = [
+  {
+    name: "apply",
+    summary: "run the printed `tailscale serve` command on the target instead of only printing it",
+    description: "With tailscale: run the printed `tailscale serve` command on the target instead of only printing it",
+    kind: "flag",
+    effect: "destroy",
+  },
+  ...LOCK_TAKEOVER_ARGUMENTS,
+] as const satisfies readonly ArgumentSpec[];
 
 export interface TailscaleProbe {
   readonly present: boolean;
@@ -119,25 +125,8 @@ export function tailscaleServeOffCommand(route: TailscaleGatewayRoute): string[]
   return args;
 }
 
-function parseArgs(args: string[]): { apply: boolean } {
-  // Checked ahead of the generic parser: neither spelling is a declared argument, so it
-  // would otherwise just die as unknown — this names the actual reason instead.
-  if (args.includes("--funnel") || args.includes("funnel")) {
-    die(
-      "expose tailscale never runs `tailscale funnel` — funnel shares a service with the " +
-        "public internet, and this framework keeps the gateway off public ports on purpose " +
-        "(.env.example: 0.0.0.0 only behind a reverse proxy with TLS and auth; OpenClaw's " +
-        "own guidance keeps the gateway on loopback, reached through Tailscale or an SSH " +
-        "tunnel). `tailscale serve` — tailnet-only, what this command prints and applies — " +
-        "is the supported path.",
-    );
-  }
-  const parsed = parseDeclaredArgs(EXPOSE_TAILSCALE_ARGUMENTS, args);
-  return { apply: parsed.apply === true };
-}
-
-export async function exposeTailscale(ctx: Context, args: string[]): Promise<void> {
-  const { apply } = parseArgs(args);
+async function runTailscale(ctx: Context, values: Values<typeof EXPOSE_TAILSCALE_ARGUMENTS>): Promise<void> {
+  const { apply } = values;
   const probe = await probeTailscale(ctx);
   const command = tailscaleServeCommand(ctx.settings.gatewayPort);
 
@@ -160,7 +149,7 @@ export async function exposeTailscale(ctx: Context, args: string[]): Promise<voi
   if (!probe.loggedIn) die(`cannot --apply: ${probe.detail}`);
 
   await requireBootstrapped(ctx);
-  return guarded(ctx, "expose tailscale --apply", args, async () => {
+  return guardedWith(ctx, "expose tailscale --apply", takeoverOf(values), async () => {
     log("applying tailscale serve on the target");
     const result = await ctx.transport.exec(command[0], command.slice(1), { allowFailure: true });
     if (result.code !== 0) {
@@ -168,4 +157,30 @@ export async function exposeTailscale(ctx: Context, args: string[]): Promise<voi
     }
     log("applied — check with ./clawforge expose status, or `tailscale serve status` on the target");
   });
+}
+
+/** Neither spelling is a declared argument: the parser refuses them with this reason instead
+ *  of as unknown. */
+const FUNNEL_REFUSAL =
+  "expose tailscale never runs `tailscale funnel` — funnel shares a service with the " +
+  "public internet, and this framework keeps the gateway off public ports on purpose " +
+  "(.env.example: 0.0.0.0 only behind a reverse proxy with TLS and auth; OpenClaw's " +
+  "own guidance keeps the gateway on loopback, reached through Tailscale or an SSH " +
+  "tunnel). `tailscale serve` — tailnet-only, what this command prints and applies — " +
+  "is the supported path.";
+
+/** The `expose tailscale` action. */
+export const EXPOSE_TAILSCALE = defineAction({
+  refuse: { "--funnel": FUNNEL_REFUSAL, funnel: FUNNEL_REFUSAL },
+  summary: "Tailnet-only HTTPS via `tailscale serve` — never funnel",
+  arguments: EXPOSE_TAILSCALE_ARGUMENTS,
+  run: runTailscale,
+});
+
+const ONLY_TAILSCALE = multiActionBody({ effect: "read", action: { description: "tailscale" }, actions: { tailscale: EXPOSE_TAILSCALE } });
+
+/** Legacy (ctx, argv) entry: the pipeline's parse (refusals included), then run on the given
+ *  context. Kept for importers outside this group. */
+export async function exposeTailscale(ctx: Context, args: string[]): Promise<void> {
+  await runOnContext(ONLY_TAILSCALE, ctx, ["tailscale", ...args], "expose");
 }

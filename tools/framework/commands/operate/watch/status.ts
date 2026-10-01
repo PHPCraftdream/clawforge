@@ -7,11 +7,11 @@
 import { info, log, warn } from "../../../core/io/log.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
+import { defineAction, type Values } from "../../../core/command/index.ts";
 import { readScheduledWatchState } from "./state.ts";
 import { codeDiff, describeTransition, watchHeartbeatUrlRaw, watchWebhookRaw } from "./webhook.ts";
 import { WATCH_CHECK_ARGUMENTS } from "./check.ts";
 import { DEFAULT_WATCH_INTERVAL_MINUTES } from "./install.ts";
-import { parseDeclaredArgs } from "../../../core/command/index.ts";
 
 // How many missed intervals before "stale" fires — one alone could just be a slow cycle or
 // scheduler jitter; three in a row means the scheduled check itself likely stopped running.
@@ -35,8 +35,8 @@ function isStale(reference: string | undefined, intervalMinutes: number | undefi
   return Date.now() - last > staleThresholdMinutes(intervalMinutes) * 60_000;
 }
 
-export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = parseDeclaredArgs(WATCH_CHECK_ARGUMENTS, args).json === true;
+async function runStatus(ctx: Context, values: Values<typeof WATCH_CHECK_ARGUMENTS>): Promise<void> {
+  const jsonOnly = values.json === true;
 
   const { state, location, known } = await readScheduledWatchState(ctx);
   const webhookConfigured = watchWebhookRaw(ctx) !== undefined;
@@ -110,3 +110,10 @@ export async function watchStatus(ctx: Context, args: string[]): Promise<void> {
   info(`heartbeat: ${heartbeatConfigured ? "configured" : "not configured"}${state?.heartbeatAt ? `, last ping ${state.heartbeatAt}` : ""}`);
   if (state?.heartbeatError) warn(`heartbeat: last ping failed — ${state.heartbeatError}`);
 }
+
+/** The `watch status` action: reads the persisted state and the schedule, never the URLs. */
+export const WATCH_STATUS = defineAction({
+  summary: "The persisted last state, delivery errors and schedule staleness",
+  arguments: WATCH_CHECK_ARGUMENTS,
+  run: runStatus,
+});

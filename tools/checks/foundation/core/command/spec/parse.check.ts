@@ -6,12 +6,10 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
 import {
-  parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION, specOf, type CallShape,
+  parseDeclaredArgs, parseCall, specOf, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION, type CallShape,
 } from "#framework/core/command/index.ts";
 import { countValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
 import { BACKUP_ACTION_ARGUMENTS } from "#framework/commands/lifecycle/backup/index.ts";
-import { EXPOSE_ACTION_ARGUMENTS } from "#framework/commands/operate/expose/index.ts";
-import { WATCH_ACTION_ARGUMENTS } from "#framework/commands/operate/watch/index.ts";
 import { SET_ACTION_ARGUMENTS } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import { buildCompletionModel } from "#framework/integration/completion.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -421,15 +419,16 @@ check(
 // R29-04: `watch status --interval`, `backup list --hot` were offered by completion/--help/the MCP
 // schema and then refused. Each command registers the argument slice every action parses with;
 // its declaration is derived from that (scopeByAction), and this drives the real parsers.
+// A command with a spec body needs no registry: its actions parse their own declared slices
+// by construction, and its per-action cases live in the group's own checks.
 
 {
   type Slices = Readonly<Record<string, readonly CommandArgument[]>>;
 
-  // A new multi-action command must register here, or this check fails for it.
+  // A new multi-action command must register here while it is still legacy, or this check
+  // fails for it.
   const REGISTRY: Readonly<Record<string, Slices>> = {
     backup: BACKUP_ACTION_ARGUMENTS,
-    expose: EXPOSE_ACTION_ARGUMENTS,
-    watch: WATCH_ACTION_ARGUMENTS,
     set: SET_ACTION_ARGUMENTS,
   };
 
@@ -459,8 +458,12 @@ check(
     // commands only.
     if (specOf(command) !== undefined) continue;
     const slices = REGISTRY[name];
-    check(`${name} has actions and registers what each action's parser accepts`, slices !== undefined, true);
-    if (slices === undefined) continue;
+    if (slices === undefined) {
+      // No registry entry: the command must carry its own spec body, whose actions parse
+      // their declared slices by construction (its group check covers the per-action cases).
+      check(`${name}: unregistered multi-action command is a spec command`, specOf(command) !== undefined, true);
+      continue;
+    }
 
     const choices = [...actionArgument.choices];
     // Since R30-05 NO_ACTION is the real action word `create` — a registry key AND a choice,
@@ -613,5 +616,22 @@ check("a variadic alone takes a leading flag-looking token", parseCall({ argumen
 check("an absent variadic is []", parseCall({ arguments: [{ name: "args", kind: "variadic", description: "d" }] }, []).values.args, []);
 check("a required variadic must be given", argumentOf(refusal(() => parseCall(VARIADIC, ["target"]))), "args");
 check("parseDeclaredArgs keeps refusing an undeclared flag before a variadic", refusal(() => parseDeclaredArgs(VARIADIC.arguments as CommandArgument[], ["target", "--version"])) instanceof UnknownArgumentError, true);
+
+// --- refuse: exact tokens refused with their own reason, ahead of tokenizing ----------------------
+{
+  const REASON = "never that — here is why";
+  const SINGLE = { effect: "read", arguments: [{ name: "go", kind: "flag", description: "d" }], refuse: { "--bad": REASON, bad: REASON } } as const;
+  for (const argv of [["--bad"], ["bad"], ["--go", "--bad"]]) {
+    const error = refusal(() => parseCall(SINGLE, argv));
+    check(`refuse: ${argv.join(" ")} is an ArgumentError with the reason`, [error instanceof ArgumentError, error instanceof UnknownArgumentError, (error as Error).message], [true, false, REASON]);
+    check(`refuse: ${argv.join(" ")} names the token without dashes`, argumentOf(error), "bad");
+  }
+  check("refuse: after a bare -- the token is not refused (it is only an unknown positional)", refusal(() => parseCall(SINGLE, ["--", "bad"])) instanceof UnknownArgumentError, true);
+  check("refuse: an unrelated token parses", parseCall(SINGLE, ["--go"]).values.go, true);
+  const ACTIONS = { effect: "read", actions: { one: { arguments: [], refuse: { zap: REASON } }, two: { arguments: [] } } } as const;
+  check("refuse: an action's own token is refused", (refusal(() => parseCall(ACTIONS, ["one", "zap"])) as Error).message, REASON);
+  check("refuse: another action does not inherit it", refusal(() => parseCall(ACTIONS, ["two", "zap"])) instanceof UnknownArgumentError, true);
+  check("refuse: the funnel tokens are not arguments of expose", (openclawCommands.expose!.arguments ?? []).some((argument) => argument.name.includes("funnel")), false);
+}
 
 finish("argument");

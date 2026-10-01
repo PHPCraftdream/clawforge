@@ -3,13 +3,17 @@
 // not-running, and the full command: it must warn loudly on 0.0.0.0/::, stay quiet on a
 // loopback address, and fold in a tailscale summary only when tailscale is present.
 
-import { exposeStatus, summarizeExposure, exposureOneLiner } from "#framework/commands/operate/expose/status.ts";
+import { summarizeExposure, exposureOneLiner } from "#framework/commands/operate/expose/status.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const settings = { bindAddress: "127.0.0.1", gatewayPort: "18789" };
+/** `expose status` through the command: parse, then run on the given context. */
+const exposeStatus = (ctx: Context, args: string[]): Promise<void> => openclawCommands.expose!.run(ctx, ["status", ...args]);
+
 function ctxWithSettings(overrides: Partial<typeof settings> = {}): Context {
   return { settings: { ...settings, ...overrides } } as unknown as Context;
 }

@@ -7,7 +7,7 @@
 import { mkdir, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { watchStatus } from "#framework/commands/operate/watch/status.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { watchStateFile, writeWatchState, recordWatchSchedule, withOperatorWatchState, readWatchState } from "#framework/commands/operate/watch/state.ts";
 import { DEFAULT_WATCH_INTERVAL_MINUTES } from "#framework/commands/operate/watch/install.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
@@ -16,6 +16,9 @@ import { registerSecret } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { runWatchCycle, watchCheck } from "#framework/commands/operate/watch/check.ts";
+
+/** `watch status` through the command: parse, then run on the given context. */
+const watchStatus = (ctx: Context, args: string[]): Promise<void> => openclawCommands.watch!.run(ctx, ["status", ...args]);
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {

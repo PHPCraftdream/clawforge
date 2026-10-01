@@ -13,21 +13,20 @@
 
 import { info, infoRaw, log, warn } from "../../../core/io/log.ts";
 import { deploymentName } from "../../../runtime/deployment.ts";
-import { guarded } from "../../../runtime/lock/instance-lock.ts";
+import { guardedWith } from "../../../runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "../../../runtime/runtime.ts";
 import type { Context } from "../../../core/context.ts";
-import type { CommandArgument } from "../../../core/app.ts";
-import { parseDeclaredArgs } from "../../../core/command/index.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../../interface/groups/shared-arguments.ts";
+import { bind, defineAction, tokenize, type ArgumentSpec, type Values } from "../../../core/command/index.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "../../interface/groups/shared-arguments.ts";
 import {
   cronLine as sharedCronLine,
   cronSchedule,
-  parseIntervalToMinutes,
   displayCommandLine,
   jobMarker,
   posixTargetInvocation,
   printSchedulingInstructions,
   printUnschedulingInstructions,
+  scheduleIntervalValue,
   schedulingSupport,
   schedulerIdentity,
   withoutMarkedLine as sharedWithoutMarkedLine,
@@ -46,20 +45,38 @@ const JOB = "watch";
  *  never guessed silently per call. */
 export const DEFAULT_WATCH_INTERVAL_MINUTES = 5;
 
-/** The slice of `watch`'s declaration `install`'s own argv actually uses. */
-export const WATCH_INSTALL_ARGUMENTS: CommandArgument[] = [
-  { name: "interval", description: "With install: time between checks (default 5m) — a bare number is minutes, or 30m/6h/1d; minutes must divide 60 (1,2,3,4,5,6,10,12,15,20,30), hours must divide a day (1,2,3,4,6,8,12,24)", kind: "option", valueName: "interval" },
-  { name: "apply", description: "With install/uninstall: mutate the target's crontab instead of only printing it", kind: "flag" },
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-];
+/** The slice of `watch`'s declaration `install`'s own argv actually uses. `--apply` is the
+ *  one mutating flag: its effect raises the call to destroy. */
+export const WATCH_INSTALL_ARGUMENTS = [
+  {
+    name: "interval",
+    summary: "time between checks — a bare number is minutes",
+    description: "With install: time between checks (default 5m) — a bare number is minutes, or 30m/6h/1d; minutes must divide 60 (1,2,3,4,5,6,10,12,15,20,30), hours must divide a day (1,2,3,4,6,8,12,24)",
+    kind: "option",
+    valueName: "interval",
+    parse: scheduleIntervalValue({ bareMinutes: true }),
+  },
+  {
+    name: "apply",
+    summary: "mutate the target's crontab instead of only printing it",
+    description: "With install/uninstall: mutate the target's crontab instead of only printing it",
+    kind: "flag",
+    effect: "destroy",
+  },
+  ...LOCK_TAKEOVER_ARGUMENTS,
+] as const satisfies readonly ArgumentSpec[];
 
 /** The slice `uninstall` uses — no --interval, since there is no schedule to set. */
-export const WATCH_UNINSTALL_ARGUMENTS: CommandArgument[] = [
-  { name: "apply", description: "With install/uninstall: mutate the target's crontab instead of only printing it", kind: "flag" },
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-];
+export const WATCH_UNINSTALL_ARGUMENTS = [
+  {
+    name: "apply",
+    summary: "mutate the target's crontab instead of only printing it",
+    description: "With install/uninstall: mutate the target's crontab instead of only printing it",
+    kind: "flag",
+    effect: "destroy",
+  },
+  ...LOCK_TAKEOVER_ARGUMENTS,
+] as const satisfies readonly ArgumentSpec[];
 
 export function watchMarker(name: string): string {
   return jobMarker(JOB, name);
@@ -75,22 +92,9 @@ export function withoutMarkedLine(text: string, name: string): string[] {
   return sharedWithoutMarkedLine(text, JOB, name);
 }
 
-function parseInstallArgs(args: string[]): { interval: number; apply: boolean } {
-  const parsed = parseDeclaredArgs(WATCH_INSTALL_ARGUMENTS, args);
-  let interval = DEFAULT_WATCH_INTERVAL_MINUTES;
-  if (parsed.interval !== undefined) {
-    interval = parseIntervalToMinutes(parsed.interval as string);
-  }
-  return { interval, apply: parsed.apply === true };
-}
-
-function parseUninstallArgs(args: string[]): boolean {
-  return parseDeclaredArgs(WATCH_UNINSTALL_ARGUMENTS, args).apply === true;
-}
-
-
-export async function watchInstall(ctx: Context, args: string[]): Promise<void> {
-  const { interval, apply } = parseInstallArgs(args);
+async function runInstall(ctx: Context, values: Values<typeof WATCH_INSTALL_ARGUMENTS>): Promise<void> {
+  const interval = values.interval ?? DEFAULT_WATCH_INTERVAL_MINUTES;
+  const { apply } = values;
   const support = schedulingSupport(ctx);
   const name = deploymentName();
 
@@ -119,15 +123,29 @@ export async function watchInstall(ctx: Context, args: string[]): Promise<void> 
     return;
   }
 
-  await guarded(ctx, "watch install --apply", args, async () => {
+  await guardedWith(ctx, "watch install --apply", takeoverOf(values), async () => {
     await updateCrontab(ctx, JOB, identity, line, { name, invocation });
     await recordWatchSchedule(ctx, interval);
     log("installed");
   });
 }
 
-export async function watchUninstall(ctx: Context, args: string[]): Promise<void> {
-  const apply = parseUninstallArgs(args);
+/** The `watch install` action. */
+export const WATCH_INSTALL = defineAction({
+  summary: "Print (or, with --apply, install) the watch crontab entry",
+  arguments: WATCH_INSTALL_ARGUMENTS,
+  run: runInstall,
+});
+
+/** Legacy (ctx, argv) entry: parse this action's slice and run on the given context — the
+ *  same shape the pipeline's parse stage runs. Kept for importers outside this group. */
+export async function watchInstall(ctx: Context, args: string[]): Promise<void> {
+  const values = bind(WATCH_INSTALL_ARGUMENTS, tokenize(WATCH_INSTALL_ARGUMENTS, args)) as Values<typeof WATCH_INSTALL_ARGUMENTS>;
+  await runInstall(ctx, values);
+}
+
+async function runUninstall(ctx: Context, values: Values<typeof WATCH_UNINSTALL_ARGUMENTS>): Promise<void> {
+  const { apply } = values;
   const support = schedulingSupport(ctx);
   const name = deploymentName();
 
@@ -146,7 +164,7 @@ export async function watchUninstall(ctx: Context, args: string[]): Promise<void
     return;
   }
 
-  await guarded(ctx, "watch uninstall --apply", args, async () => {
+  await guardedWith(ctx, "watch uninstall --apply", takeoverOf(values), async () => {
     if (!await updateCrontab(ctx, JOB, identity, undefined, { name, invocation })) {
       await recordWatchSchedule(ctx, undefined);
       info("no watch schedule was installed for this deployment — nothing to remove");
@@ -155,4 +173,17 @@ export async function watchUninstall(ctx: Context, args: string[]): Promise<void
     await recordWatchSchedule(ctx, undefined);
     log("removed");
   });
+}
+
+/** The `watch uninstall` action. */
+export const WATCH_UNINSTALL = defineAction({
+  summary: "Print (or, with --apply, remove) the watch crontab entry",
+  arguments: WATCH_UNINSTALL_ARGUMENTS,
+  run: runUninstall,
+});
+
+/** Legacy (ctx, argv) entry — kept for importers outside this group. */
+export async function watchUninstall(ctx: Context, args: string[]): Promise<void> {
+  const values = bind(WATCH_UNINSTALL_ARGUMENTS, tokenize(WATCH_UNINSTALL_ARGUMENTS, args)) as Values<typeof WATCH_UNINSTALL_ARGUMENTS>;
+  await runUninstall(ctx, values);
 }

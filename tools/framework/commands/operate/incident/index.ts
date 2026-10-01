@@ -9,14 +9,15 @@
 // collect masks and archives logs, both audit outputs and a status summary unconditionally,
 // even on failure, into apps/<name>/incidents/<ts>/ (private, gitignored).
 //
-// Mutating: guarded() holds the instance lock; --dry-run performs nothing, not even that.
+// Mutating: the body's effect holds the instance lock; --dry-run performs nothing, not even that.
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die, registerSecret, maskSecrets } from "../../../core/io/log.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
-import { guarded } from "../../../runtime/lock/instance-lock.ts";
+import { commandBody, runOnContext, type ArgumentSpec, type Values } from "../../../core/command/index.ts";
+import { guardedWith } from "../../../runtime/lock/instance-lock.ts";
 import { generateGatewayToken } from "../../../integration/provision.ts";
 import { envFile, deploymentDir, deploymentName } from "../../../runtime/deployment.ts";
 import { upsertEnvValue } from "../../../security/privacy/private-config.ts";
@@ -27,19 +28,26 @@ import { summarizeExposure, exposureOneLiner } from "../expose/status.ts";
 import { safeConnectionFacts, requireBootstrapped } from "../../../runtime/runtime.ts";
 import { runSecurityAudit, type SecurityAuditReport } from "../../../security/audit.ts";
 import { blockingProblems } from "../../../service/inspection.ts";
-import type { CommandArgument } from "../../../core/app.ts";
-import { parseDeclaredArgs } from "../../../core/command/index.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "../../interface/groups/shared-arguments.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT, takeoverOf } from "../../interface/groups/shared-arguments.ts";
+import { countValue } from "../../../core/values/value.ts";
 
-/** Drives both incident's own parser and its openclawCommands declaration. */
-export const INCIDENT_ARGUMENTS: CommandArgument[] = [
-  { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
+/** Drives both incident's own declaration and its wrapper below. `--dry-run` is the read
+ *  form: its effect lowers the body's destroy to read, so a dry run asks no MCP confirmation
+ *  and takes no lock. */
+export const INCIDENT_ARGUMENTS = [
+  { name: "dry-run", description: "Print the plan without changing anything", kind: "flag", effect: "read" },
   { name: "keep-exposure", description: "Proceed with the gateway published on every interface", kind: "flag" },
-  { name: "tail", description: "Lines of log to collect (default 500)", kind: "option", valueName: "n" },
+  {
+    name: "tail",
+    description: "Lines of log to collect (default 500)",
+    kind: "option",
+    valueName: "n",
+    parse: countValue("a number of lines", () => "needs a number of lines"),
+  },
   { name: "json", description: "Emit the report as JSON", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
-];
+] as const satisfies readonly ArgumentSpec[];
 
 interface IncidentOptions {
   readonly dryRun: boolean;
@@ -76,12 +84,14 @@ export class IncidentPhaseFailure extends Error {
   }
 }
 
-function parseArgs(args: string[]): IncidentOptions {
-  const parsed = parseDeclaredArgs(INCIDENT_ARGUMENTS, args);
-  const tail = parsed.tail === undefined
-    ? "500"
-    : !/^\d+$/.test(parsed.tail as string) ? die("--tail needs a number of lines") : parsed.tail as string;
-  return { dryRun: parsed["dry-run"] === true, keepExposure: parsed["keep-exposure"] === true, tail };
+/** The bound values as the phases read them: --tail stays the string the runtime's log
+ *  readers take, with the same default. */
+function optionsOf(values: Values<typeof INCIDENT_ARGUMENTS>): IncidentOptions {
+  return {
+    dryRun: values["dry-run"] === true,
+    keepExposure: values["keep-exposure"] === true,
+    tail: values.tail === undefined ? "500" : String(values.tail),
+  };
 }
 
 /** Refuses the whole run while the gateway may still be reachable from outside this host —
@@ -437,30 +447,41 @@ export async function runPhases(
 }
 
 export async function incident(ctx: Context, args: string[]): Promise<void> {
-  const options = parseArgs(args);
-  const jsonOnly = args.includes("--json");
-
-  // Before anything else, mutating or not: a plan for an instance that may still be publicly
-  // reachable is not a plan worth printing.
-  await refuseIfPubliclyExposed(ctx, options);
-
-  let report: IncidentReport;
-  try {
-    if (!options.dryRun) await requireBootstrapped(ctx);
-    report = options.dryRun
-      ? await runPhases(ctx, options)
-      : await guarded(ctx, "incident", args, () => runPhases(ctx, options));
-  } catch (error) {
-    if (!(error instanceof IncidentPhaseFailure)) throw error;
-    // Report completed work before propagating the phase failure.
-    if (jsonOnly || isCaptured()) emit(`${JSON.stringify(error.report, null, 2)}\n`);
-    else render(error.report);
-    throw error.cause;
-  }
-
-  if (jsonOnly || isCaptured()) {
-    emit(`${JSON.stringify(report, null, 2)}\n`);
-    return;
-  }
-  render(report);
+  return runOnContext(INCIDENT, ctx, args, "incident");
 }
+
+/** The command body: the parser refuses bad argv before any contact, `--dry-run`'s read
+ *  effect lifts the MCP confirmation and the lock; a real run holds the instance lock with
+ *  the takeover the call declared. */
+export const INCIDENT = commandBody({
+  effect: "destroy",
+  arguments: INCIDENT_ARGUMENTS,
+  async run(ctx, values) {
+    const options = optionsOf(values);
+    const jsonOnly = values.json === true;
+
+    // Before anything else, mutating or not: a plan for an instance that may still be publicly
+    // reachable is not a plan worth printing.
+    await refuseIfPubliclyExposed(ctx, options);
+
+    let report: IncidentReport;
+    try {
+      if (!options.dryRun) await requireBootstrapped(ctx);
+      report = options.dryRun
+        ? await runPhases(ctx, options)
+        : await guardedWith(ctx, "incident", takeoverOf(values), () => runPhases(ctx, options));
+    } catch (error) {
+      if (!(error instanceof IncidentPhaseFailure)) throw error;
+      // Report completed work before propagating the phase failure.
+      if (jsonOnly || isCaptured()) emit(`${JSON.stringify(error.report, null, 2)}\n`);
+      else render(error.report);
+      throw error.cause;
+    }
+
+    if (jsonOnly || isCaptured()) {
+      emit(`${JSON.stringify(report, null, 2)}\n`);
+      return;
+    }
+    render(report);
+  },
+});

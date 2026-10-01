@@ -6,6 +6,7 @@
 // for instance-lock.ts's real claim/release code to run against).
 
 import { exposeTailscale, probeTailscale, tailscaleServeCommand, tailscaleGatewayRoutes, tailscaleServeOffCommand } from "#framework/commands/operate/expose/tailscale.ts";
+import { ArgumentError } from "#framework/core/command/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
@@ -171,10 +172,20 @@ function jsonServeTransport(stdout: string, code = 0): Context["transport"] {
 }
 
 // --- funnel is refused outright, with or without --apply ---------------------------------------
+// The refusal is the parser's (funnel is not a declared argument anywhere), with its reason,
+// landing before any probe or contact.
 
 for (const args of [["--funnel"], ["funnel"], ["--apply", "--funnel"]]) {
-  const message = await deathOf(() => run(ctxFor(noLockTransport({ present: true, state: "Running" }).transport), args));
-  checkTrue(`funnel is refused for ${JSON.stringify(args)}`, message.includes("never runs `tailscale funnel`"));
+  const { transport, calls } = noLockTransport({ present: true, state: "Running" });
+  let error: unknown;
+  try {
+    await run(ctxFor(transport), args);
+  } catch (thrown) {
+    error = thrown;
+  }
+  checkTrue(`funnel is refused for ${JSON.stringify(args)}`, error instanceof ArgumentError);
+  checkTrue(`funnel is refused for ${JSON.stringify(args)} with its reason`, (error as Error).message.includes("never runs `tailscale funnel`"));
+  check(`funnel is refused for ${JSON.stringify(args)} before any contact`, calls, []);
 }
 
 // --- an undeclared argument is refused, not silently accepted -----------------------------

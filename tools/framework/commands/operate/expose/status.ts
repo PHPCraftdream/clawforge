@@ -11,14 +11,13 @@
 import { log, info, warn } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import { defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
 import { probeTailscale } from "./tailscale.ts";
 
 /** The slice of `expose`'s declaration this action's own argv actually uses. */
-export const EXPOSE_STATUS_ARGUMENTS: CommandArgument[] = [
+export const EXPOSE_STATUS_ARGUMENTS = [
   { name: "json", description: "Emit the exposure and tailscale report as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 export interface ExposureSummary {
   readonly bindAddress: string;
@@ -62,8 +61,8 @@ export function exposureOneLiner(summary: ExposureSummary): string {
   return `${summary.bindAddress}:${summary.port} (${scope})${confirmed}`;
 }
 
-export async function exposeStatus(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = parseDeclaredArgs(EXPOSE_STATUS_ARGUMENTS, args).json === true;
+async function runStatus(ctx: Context, values: Values<typeof EXPOSE_STATUS_ARGUMENTS>): Promise<void> {
+  const jsonOnly = values.json === true;
   const facts = await ctx.runtime.runningConnectionFacts?.();
   const summary = summarizeExposure(ctx, facts);
 
@@ -107,6 +106,13 @@ export async function exposeStatus(ctx: Context, args: string[]): Promise<void> 
   if (text === "") info("no tailscale serve configuration");
   else for (const line of text.split("\n")) info(line);
 }
+
+/** The `expose status` action. */
+export const EXPOSE_STATUS = defineAction({
+  summary: "What is published right now, and whether it is loopback-only",
+  arguments: EXPOSE_STATUS_ARGUMENTS,
+  run: runStatus,
+});
 
 /** The machine-readable counterpart of the text path above, with the same facts. */
 async function emitExposeStatusReport(

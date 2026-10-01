@@ -20,6 +20,11 @@ import type { Context } from "#framework/core/context.ts";
 import { redactInspectEnv } from "#framework/runtime/docker/incident-snapshot.ts";
 import { readEnvValue } from "#framework/core/env.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { callFactsFor, effectProfile, UnknownArgumentError } from "#framework/core/command/index.ts";
+import { executeCommand } from "#framework/core/command/execute.ts";
+import type { AppDefinition } from "#framework/core/app.ts";
+import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 async function withDeployment<T>(body: (dir: string) => Promise<T>): Promise<T> {
@@ -481,6 +486,34 @@ await withDeployment(async (dir) => {
     check("a real run still proceeds over a noted contain failure", realRunFailed, false);
     void dir;
   });
+}
+
+// --- the declaration: effect, and argument refusals before any contact ---------------------------
+
+{
+  const command = openclawCommands.incident!;
+  check("incident is a destroy", callFactsFor(command, []).effect, "destroy");
+  check("--dry-run lowers it to read", callFactsFor(command, ["--dry-run"]).effect, "read");
+  check("incident always destroys unless --dry-run", effectProfile(command).destructive, true);
+
+  const app: AppDefinition = { name: "incident-fixture", description: "fixture", commands: { incident: command } };
+  for (const [argv, argument, unknown] of [
+    [["--tail", "abc"], "tail", false],
+    [["--tail", ""], "tail", false],
+    [["--tail=-1"], "tail", false],
+    [["--bogus"], undefined, true],
+  ] as const) {
+    const contacts: string[] = [];
+    const transport = new Proxy({} as Transport, {
+      get: (_target, name) => () => { contacts.push(String(name)); throw new Error("unreachable target"); },
+    });
+    const execution = await executeCommand(app, "incident", [...argv], { surface: "terminal", transport });
+    const label = `incident ${argv.join(" ")}`;
+    check(`${label}: refused at the parse stage`, execution.stage, "parse");
+    check(`${label}: an unknown-argument refusal is ${unknown}`, execution.error instanceof UnknownArgumentError, unknown);
+    check(`${label}: the refusal names its argument`, (execution.error as { argument?: string } | undefined)?.argument, argument);
+    check(`${label}: never contacts the target`, contacts, []);
+  }
 }
 
 finish("incident");

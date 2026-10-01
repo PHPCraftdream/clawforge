@@ -258,8 +258,19 @@ export function bind(declared: readonly ArgumentSpec[], tokens: Tokens, context:
 /** The parse-relevant part of a command: its arguments, or per-action arguments. */
 export interface CallShape {
   readonly arguments?: readonly ArgumentSpec[];
-  readonly actions?: Readonly<Record<string, { readonly arguments?: readonly ArgumentSpec[] }>>;
+  readonly refuse?: Readonly<Record<string, string>>;
+  readonly actions?: Readonly<Record<string, { readonly arguments?: readonly ArgumentSpec[]; readonly refuse?: Readonly<Record<string, string>> }>>;
   readonly defaultAction?: string;
+}
+
+/** An exact token (before a bare `--`) the declaration refuses with its own reason: an
+ *  ArgumentError naming the token without its leading dashes. */
+function refuseTokens(refuse: Readonly<Record<string, string>> | undefined, argv: readonly string[]): void {
+  if (refuse === undefined) return;
+  for (const token of argv) {
+    if (token === "--") return;
+    if (Object.hasOwn(refuse, token)) throw new ArgumentError(refuse[token], token.replace(/^-+/, ""));
+  }
 }
 
 /** argv → ParsedCall. With `actions`, `argv[0]` naming an action picks it; no word (or one
@@ -269,6 +280,7 @@ export interface CallShape {
 export function parseCall(shape: CallShape, argv: readonly string[], command = ""): ParsedCall<Record<string, unknown>> {
   if (shape.actions === undefined) {
     const declared = shape.arguments ?? [];
+    refuseTokens(shape.refuse, argv);
     const tokens = tokenize(declared, argv, undefined, declared.some((argument) => argument.kind === "variadic"));
     return { values: bind(declared, tokens, { command }), given: tokens.given };
   }
@@ -288,6 +300,7 @@ export function parseCall(shape: CallShape, argv: readonly string[], command = "
     throw new UnknownActionError(`${command === "" ? "" : `${command} `}needs an action: ${names.join(", ")}`, "action");
   }
   const declared = actions[action].arguments ?? [];
+  refuseTokens(actions[action].refuse, rest);
   const siblings = scopeByAction(Object.fromEntries(names.map((name) => [name, actions[name].arguments ?? []])));
   const tokens = tokenize(declared, rest, { action, siblings }, declared.some((argument) => argument.kind === "variadic"));
   return { values: bind(declared, tokens, { command, action }), action, given: tokens.given };

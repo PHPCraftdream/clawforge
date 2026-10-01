@@ -1,10 +1,10 @@
-// watchTest(): a one-off delivery probe — never touches level/reasons/alertPending, reports
+// `watch test`: a one-off delivery probe — never touches level/reasons/alertPending, reports
 // success/failure per configured target, and says plainly when neither is configured.
 
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { watchTest } from "#framework/commands/operate/watch/check.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { watchStateFile, writeWatchState } from "#framework/commands/operate/watch/state.ts";
 import type { WatchState } from "#framework/commands/operate/watch/state.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
@@ -12,6 +12,9 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { registerSecret } from "#framework/core/io/log.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+/** `watch test` through the command: parse, then run on the given context. */
+const watchTest = (ctx: Context, args: string[]): Promise<void> => openclawCommands.watch!.run(ctx, ["test", ...args]);
+
 async function deathOf(run: () => unknown): Promise<string> {
   try {
     await run();

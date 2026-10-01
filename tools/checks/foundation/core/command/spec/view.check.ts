@@ -220,6 +220,7 @@ import { check, finish } from "#checks/kit/harness.ts";
     (inputSchema(openclawCommands[commandName]) as { properties: Record<string, { description?: string }> }).properties[argumentName].description ?? "";
   check("the shared break-lock override is the terse fixed text", schemaOf("bootstrap", "break-lock"), "Take over a held instance lock");
   check("recover-env.adopt-runtime is a complete clause", schemaOf("recover-env", "adopt-runtime"), "Take the running container as authoritative");
+  check("expose.apply's summary is the full phrase, not the cut", schemaOf("expose", "apply"), "run the printed `tailscale serve` command on the target instead of only printing it (tailscale)");
   check("incident.keep-exposure is a complete phrase", schemaOf("incident", "keep-exposure"), "Proceed with the gateway published on every interface");
   check("backup.apply keeps the contrast", schemaOf("backup", "apply").startsWith("Apply the action instead of only previewing it"), true);
   check("set.keep is a complete phrase", schemaOf("set", "keep").startsWith("keep the throwaway instance running instead of removing it"), true);
@@ -300,7 +301,9 @@ import { check, finish } from "#checks/kit/harness.ts";
     }
   };
   check("watch status --json parses — refused only later, on its context", !(await watchOutcome(["status", "--json"])).includes("unknown argument"), true);
-  check("watch status --interval is refused by the real parser", (await watchOutcome(["status", "--interval", "5m"])).includes("unknown argument"), true);
+  // The unified other-action-flag text (design 5.6): the refusal names the action that owns
+  // the flag, not "unknown argument".
+  check("watch status --interval is refused as install's flag", (await watchOutcome(["status", "--interval", "5m"])).includes("--interval applies to `install`, not `status`"), true);
   check("watch check --interval parses — refused only later, on its context", !(await watchOutcome(["check", "--interval", "5m"])).includes("unknown argument"), true);
 }
 

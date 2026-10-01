@@ -904,7 +904,7 @@
           },
           "apply": {
             "type": "boolean",
-            "description": "run the printed `tailscale serve` command on the target… (tailscale)"
+            "description": "run the printed `tailscale serve` command on the target instead of only printing it (tailscale)"
           },
           "break-lock": {
             "type": "boolean",

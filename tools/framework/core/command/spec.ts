@@ -99,6 +99,9 @@ export interface SingleBody<A extends readonly ArgumentSpec[], P, N extends Need
   /** Default "target". */
   readonly needs?: N;
   readonly arguments: A;
+  /** Exact argv tokens (before a bare `--`) refused with this reason, ahead of tokenizing: not an
+   *  argument, so absent from help, the MCP schema and the declared arguments. */
+  readonly refuse?: Readonly<Record<string, string>>;
   readonly preparesEnvironment?: N extends "target" ? true : never;
 }
 
@@ -107,6 +110,9 @@ export interface ActionSpec<A extends readonly ArgumentSpec[], P> extends Phases
   /** Absent: the body's effect. */
   readonly effect?: Effect;
   readonly arguments?: A;
+  /** Exact argv tokens (before a bare `--`) refused with this reason, ahead of tokenizing: not an
+   *  argument, so absent from help, the MCP schema and the declared arguments. */
+  readonly refuse?: Readonly<Record<string, string>>;
 }
 
 /** The stamp on an erased body: the only way to read one back is through this module. */
@@ -121,12 +127,14 @@ interface ActionData extends PhaseData {
   readonly summary: string;
   readonly effect?: Effect;
   readonly arguments: readonly ArgumentSpec[];
+  readonly refuse?: Readonly<Record<string, string>>;
 }
 interface SingleData extends PhaseData {
   readonly kind: "single";
   readonly effect: Effect;
   readonly needs: Needs;
   readonly arguments: readonly ArgumentSpec[];
+  readonly refuse?: Readonly<Record<string, string>>;
   readonly preparesEnvironment: boolean;
 }
 interface MultiData {
@@ -203,7 +211,7 @@ export function commandBody<const A extends readonly ArgumentSpec[], P = Values<
   checkArguments("command body", body.arguments);
   if (body.preparesEnvironment === true && needs !== "target") fail("prepares-environment-needs-target", "command body", "preparesEnvironment needs `needs: \"target\"`");
   const data: SingleData = {
-    kind: "single", effect: body.effect, needs, arguments: body.arguments,
+    kind: "single", effect: body.effect, needs, arguments: body.arguments, refuse: body.refuse,
     preparesEnvironment: body.preparesEnvironment === true, ...phasesOf(body),
   };
   return { [COMMAND_SPEC]: data };
@@ -213,7 +221,7 @@ export function commandBody<const A extends readonly ArgumentSpec[], P = Values<
 export function defineAction<const A extends readonly ArgumentSpec[], P = Values<A>>(action: ActionSpec<A, P>): Action {
   checkArguments(`action ${action.summary}`, action.arguments ?? []);
   const data: ActionData = {
-    kind: "action", summary: action.summary, effect: action.effect, arguments: action.arguments ?? [], ...phasesOf(action),
+    kind: "action", summary: action.summary, effect: action.effect, arguments: action.arguments ?? [], refuse: action.refuse, ...phasesOf(action),
   };
   return { [COMMAND_SPEC]: data };
 }
@@ -240,7 +248,7 @@ export function specData(body: CommandBody): SingleData | MultiData {
 /** The parse and effect shape of a body: arguments, or per-action arguments and effects. */
 export function specShape(body: CommandBody): CallShape & EffectShape {
   const data = specData(body);
-  if (data.kind === "single") return { effect: data.effect, arguments: data.arguments };
+  if (data.kind === "single") return { effect: data.effect, arguments: data.arguments, refuse: data.refuse };
   return { effect: data.effect, actions: data.actions, defaultAction: data.defaultAction };
 }
 

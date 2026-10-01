@@ -6,19 +6,14 @@ import type { AppCommand } from "#src/core/app.ts";
 import { materializeCommands } from "#src/core/command/index.ts";
 
 import { RECOVER_ENV } from "#src/commands/operate/recover-env/index.ts";
-import { expose, exposeActionIsReadOnly, EXPOSE_FLAG_ARGUMENTS } from "#src/commands/operate/expose/index.ts";
-import { watch, watchActionIsReadOnly, WATCH_FLAG_ARGUMENTS } from "#src/commands/operate/watch/index.ts";
-import { incident, INCIDENT_ARGUMENTS } from "#src/commands/operate/incident/index.ts";
+import { EXPOSE } from "#src/commands/operate/expose/index.ts";
+import { WATCH } from "#src/commands/operate/watch/index.ts";
+import { INCIDENT } from "#src/commands/operate/incident/index.ts";
 
 export const operateCommands: Record<string, AppCommand> = materializeCommands({
   expose: {
     summary: "Reach a loopback-bound gateway from outside: SSH tunnel or tailscale",
     group: "security-access",
-    run: expose,
-    destructive: true,
-    readOnlyWhen: exposeActionIsReadOnly,
-    changedWhen: (args) => !exposeActionIsReadOnly(args),
-    requiresConfirmationWhen: (args) => !exposeActionIsReadOnly(args),
     details:
       "Three actions, narrowest scope first.\n" +
       "ssh — for OC_TARGET_LOCATION=ssh deployments, prints the exact `ssh -N -L <local>:127.0.0.1:<gatewayPort> " +
@@ -37,19 +32,11 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "0.0.0.0 or ::.\n" +
       "The same one-line summary appears in `./clawforge status`. --json emits the same facts " +
       "structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.",
-    arguments: [
-      { name: "action", description: "ssh, tailscale or status", kind: "positional", required: true, choices: ["ssh", "tailscale", "status"] },
-      ...EXPOSE_FLAG_ARGUMENTS,
-    ],
+    ...EXPOSE,
   },
   watch: {
     summary: "Health monitoring with a webhook alert on state change",
     group: "check",
-    run: watch,
-    destructive: true,
-    readOnlyWhen: watchActionIsReadOnly,
-    changedWhen: (args) => !watchActionIsReadOnly(args),
-    requiresConfirmationWhen: (args) => !watchActionIsReadOnly(args),
     details:
       "Five actions.\n" +
       "check — one probe cycle, reusing exactly the findings `inspect`/`doctor` already " +
@@ -160,23 +147,11 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "says so plainly when neither is configured.\n" +
       "Never touches level/reasons or a pending alert — only the heartbeat's own last-ping " +
       "fields move, the same way a real cycle's heartbeat ping does.",
-    arguments: [
-      {
-        name: "action",
-        description: "check, install, uninstall, status or test",
-        kind: "positional",
-        required: true,
-        choices: ["check", "install", "uninstall", "status", "test"],
-      },
-      ...WATCH_FLAG_ARGUMENTS,
-    ],
+    ...WATCH,
   },
   incident: {
     summary: "Incident response: contain, preserve evidence, rotate the token, audit",
     group: "security-access",
-    run: incident,
-    destructive: true,
-    readOnlyWhen: (args) => args.includes("--dry-run"),
     details:
       "OpenClaw's own incident runbook, in order: contain — turns off, on the target, only the " +
       "`tailscale serve` route(s) that proxy to THIS gateway (never `tailscale serve reset`, " +
@@ -213,7 +188,7 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "original failure still reaches you afterwards as a non-zero exit.\n" +
       "Mutating (rotate recreates the gateway) — takes the instance lock. --dry-run prints the " +
       "plan and performs none of it, not even taking the lock.",
-    arguments: INCIDENT_ARGUMENTS,
+    ...INCIDENT,
     structured: true,
   },
   "recover-env": {

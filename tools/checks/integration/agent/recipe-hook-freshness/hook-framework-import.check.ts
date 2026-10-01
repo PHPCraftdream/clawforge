@@ -100,18 +100,43 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
 {
   // Unique per run: a fixed name would overwrite and delete a directory someone else owns,
   // and a killed run would leave it behind under apps/ as a phantom deployment (R32-10).
-  // Stale fixtures from earlier killed runs under this check's own prefix are swept first —
-  // safe because the file is marked check:exclusive and owns that prefix.
+  // The fixture is marked with a token file no real deployment has; stale leftovers from
+  // killed runs are swept ONLY when they carry that mark — `gateprobe-*` is a legal
+  // deployment name and this check must never delete what it did not create (R33-02).
   const prefix = "gateprobe-";
+  const marker = ".clawforge-check-fixture";
   const appsDir = resolve(monorepoRoot, "apps");
   await mkdir(appsDir, { recursive: true });
-  for (const entry of await readdir(appsDir)) {
-    if (entry.startsWith(prefix)) await rm(resolve(appsDir, entry), { recursive: true, force: true });
+  // A sweep deletes only marked leftovers: a user's own gateprobe-* deployment — same
+  // prefix, no marker — must survive a check run untouched (R33-02, reproduced with
+  // `new-app gateprobe-prod` losing .env, secrets/ and lock).
+  const decoy = resolve(appsDir, `gateprobe-user-${randomBytes(4).toString("hex")}`);
+  await mkdir(resolve(decoy, "config"), { recursive: true });
+  await writeFile(resolve(decoy, "config", "deployment.lock.json"), "{}", "utf8");
+  await writeFile(resolve(decoy, ".env"), "GATEWAY_TOKEN=not-ours", "utf8");
+
+  async function sweepStaleFixtures(): Promise<void> {
+    for (const entry of await readdir(appsDir)) {
+      if (!entry.startsWith(prefix)) continue;
+      const dir = resolve(appsDir, entry);
+      let marked = false;
+      try {
+        await readFile(resolve(dir, marker), "utf8");
+        marked = true;
+      } catch {
+        marked = false;
+      }
+      if (marked) await rm(dir, { recursive: true, force: true });
+    }
   }
+  await sweepStaleFixtures();
+
   const name = `${prefix}${randomBytes(6).toString("hex")}`;
   const appDir = resolve(appsDir, name);
-  // No recursive: an existing directory is never adopted or silently cleared.
+  // No recursive: an existing directory is never adopted or silently cleared — and if the
+  // random name ever collides with a real deployment, this fails loudly instead of deleting.
   await mkdir(appDir);
+  await writeFile(resolve(appDir, marker), "gate probe fixture of check hook-framework-import; safe to delete", "utf8");
   await writeFile(
     resolve(appDir, "app.ts"),
     [
@@ -138,6 +163,11 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
     if (!loaded) process.stderr.write(`    ${result.output.split("\n").filter((line) => /unknown command|cannot load|Cannot find|Error/.test(line)).slice(0, 4).join("\n    ")}\n`);
   } finally {
     await rm(appDir, { recursive: true, force: true });
+    const decoyStillThere = await readFile(resolve(decoy, ".env"), "utf8")
+      .then(() => true)
+      .catch(() => false);
+    check("a user's unmarked gateprobe-* deployment survives the stale-fixture sweep", decoyStillThere, true);
+    await rm(decoy, { recursive: true, force: true });
   }
 }
 

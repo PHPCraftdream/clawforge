@@ -1,16 +1,17 @@
 // Shell completion behaves, not just renders: every scenario below states "given the words
 // and the cursor state, these candidates come out" — against completionCandidates (the one
 // decision both emitted scripts implement), against the bash script actually sourced by a
-// real bash, and against the pwsh script's own emitted tables (re-parsed and re-walked).
-// Substring checks over script text passed the R32-02 regression; these cannot.
+// real bash, and against the pwsh script's own body EXECUTED by a PowerShell-subset
+// evaluator (tools/checks .../pwsh-completer.ts). All three must agree on every scenario —
+// substring checks over script text passed the R32-02 regression; these cannot (R33-10).
 
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { buildCompletionModel, renderCompletion, completionCandidates, makeCompletionGateCommand } from "#framework/integration/completion.ts";
-import type { CommandCompletionSpec } from "#framework/integration/completion.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
+import { runPwshCompleter } from "./pwsh-completer.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // The completion command itself is in the model, as the gates assemble it — so its own
@@ -45,7 +46,7 @@ function candidates(rest: string[], wordToComplete: string, appFlag = true): rea
   check("after backup --hot no action word is offered (backup would reject it)", afterFlag.includes("list"), false);
 
   check("an option with choices offers its values at the value position", candidates(["mcp-setup", "--client"], ""), ["claude", "codex", "both"]);
-  const kindValues = model.find((spec) => spec.name === "set")!.optionValues!["--kind"]!;
+  const kindValues = model.find((spec) => spec.name === "set")!.optionValues!["setforget--kind"]!;
   check("an action-scoped option with choices offers its values there too", candidates(["set", "forget", "--kind"], ""), kindValues);
   check("kind's value position does not offer flags", candidates(["set", "forget", "--kind"], "").includes("--kind"), false);
   check("after the value is given, the command's flags return", candidates(["mcp-setup", "--client", "claude"], "").includes("--rewrite-launcher"), true);
@@ -61,92 +62,53 @@ function candidates(rest: string[], wordToComplete: string, appFlag = true): rea
   check("backup with the action word typed in full offers that action's flags", candidates(["watch", "install", "--int"], "--int").includes("--interval"), true);
 }
 
-// --- the pwsh script: re-parse its own tables and walk the same decision ----------------------
+// --- the pwsh script: EXECUTED by a PowerShell-subset evaluator, differentially ---------------
 
-interface PwshTables {
-  names: string[];
-  flags: Record<string, string[]>;
-  actions: Record<string, Record<string, string[]>>;
-  choices: Record<string, string[]>;
-  positional: Record<string, string[]>;
-}
+const scenarios: Array<{ name: string; rest: string[]; word: string }> = [
+  { name: "a typed prefix at the top level", rest: ["sta"], word: "sta" },
+  { name: "a typed flag prefix", rest: ["--ap"], word: "--ap" },
+  { name: "--app's own value position", rest: ["--app"], word: "" },
+  { name: "backup's trailing space", rest: ["backup"], word: "" },
+  { name: "backup's action word typed in part", rest: ["backup", "l"], word: "l" },
+  { name: "past a typed action word", rest: ["watch", "install", "--int"], word: "--int" },
+  { name: "after a flag the command's flags continue", rest: ["backup", "--hot"], word: "" },
+  { name: "--app before the command", rest: ["--app", "app-one", "backup"], word: "" },
+  { name: "--app after a command (R33-10: flags, not deployments)", rest: ["status", "--app"], word: "" },
+  { name: "mcp-setup's --client value", rest: ["mcp-setup", "--client"], word: "" },
+  { name: "set forget's --kind value", rest: ["set", "forget", "--kind"], word: "" },
+  { name: "set try has no --kind values (R33-10)", rest: ["set", "try", "--kind"], word: "" },
+  { name: "set's action word typed in part", rest: ["set", "f"], word: "f" },
+  { name: "host's positional", rest: ["host"], word: "" },
+  { name: "past host's positional", rest: ["host", "target"], word: "" },
+  { name: "help's command names", rest: ["help", "st"], word: "st" },
+  { name: "completion's shell names", rest: ["completion", "b"], word: "b" },
+  { name: "an unknown command", rest: ["zzz"], word: "" },
+];
 
-function parsePwshTables(script: string): PwshTables {
-  const tables: PwshTables = { names: [], flags: {}, actions: {}, choices: {}, positional: {} };
-  const values = (raw: string): string[] => [...raw.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
-  let section = "";
-  let actionCommand = "";
-  for (const line of script.split("\n")) {
-    const commandsMatch = /^\$clawforgeCommands = @\((.*)\)/.exec(line);
-    if (commandsMatch !== null) {
-      tables.names = values(commandsMatch[1]);
-      continue;
-    }
-    const sectionMatch = /^\$(clawforge\w+) = @\{/.exec(line);
-    if (sectionMatch !== null) {
-      section = sectionMatch[1];
-      continue;
-    }
-    if (section === "clawforgeActions") {
-      const commandMatch = /^  "([^"]+)" = @\{$/.exec(line);
-      if (commandMatch !== null) {
-        actionCommand = commandMatch[1];
-        tables.actions[actionCommand] = {};
-      } else if (/^  \}$/.test(line)) {
-        actionCommand = "";
-      } else {
-        const entry = /^    "([^"]+)" = @\(([^)]*)\)/.exec(line);
-        if (entry !== null && actionCommand !== "") tables.actions[actionCommand][entry[1]] = values(entry[2]);
-      }
-      continue;
-    }
-    const entry = /^  "([^"]+)" = @\(([^)]*)\)/.exec(line);
-    if (entry === null) continue;
-    if (section === "clawforgeFlags") tables.flags[entry[1]] = values(entry[2]);
-    if (section === "clawforgeChoiceValues") tables.choices[entry[1]] = values(entry[2]);
-    if (section === "clawforgePositional") tables.positional[entry[1]] = values(entry[2]);
-  }
-  return tables;
-}
+const norm = (values: readonly string[]): string[] => [...new Set(values)].sort();
 
-function specFromTables(tables: PwshTables): CommandCompletionSpec[] {
-  return tables.names.map((name) => {
-    const choiceEntries = Object.entries(tables.choices).filter(([key]) => key.startsWith(`${name}--`));
-    const optionValues = choiceEntries.length === 0 ? undefined : Object.fromEntries(choiceEntries.map(([key, values]) => [key.slice(name.length), values]));
-    const action = tables.actions[name];
-    if (action === undefined) {
-      return { name, flags: tables.flags[name] ?? [], positionalValues: tables.positional[name], optionValues };
-    }
-    return {
-      name,
-      flags: tables.flags[name] ?? [],
-      action: { values: Object.keys(action).sort(), flags: action, fallback: tables.flags[name] ?? [] },
-      optionValues,
-    };
-  });
-}
+// Shells filter the candidate list by the word being typed (compgen/-like); the model does
+// not — the differential compares after that filter.
+const decision = (rest: string[], word: string, appFlag: boolean): string[] =>
+  norm(completionCandidates(model, rest, word, appFlag, ["app-one", "app-two"])).filter((value) => value.startsWith(word));
 
 {
   for (const appFlag of [true, false]) {
     const script = renderCompletion("pwsh", model, appFlag);
-    const tables = parsePwshTables(script);
-    const scriptModel = specFromTables(tables);
-    const walk = (rest: string[], wordToComplete: string): readonly string[] =>
-      completionCandidates(scriptModel, rest, wordToComplete, appFlag, ["app-one", "app-two"]);
-    // The tables in the emitted script must reproduce the model's own decision — the same
-    // scenarios, fed from the script's data rather than from the declarations.
-    check(`pwsh (appFlag ${appFlag}): script tables reproduce prefix completion`, walk(["sta"], "sta").includes("status"), true);
-    check(`pwsh (appFlag ${appFlag}): script tables reproduce the trailing-space action offer`, walk(["backup"], "").includes("create"), true);
-    check(`pwsh (appFlag ${appFlag}): script tables reproduce --app X backup`, walk(["--app", "app-one", "backup"], "").includes("--hot"), appFlag);
-    check(`pwsh (appFlag ${appFlag}): script tables reproduce the value position`, walk(["mcp-setup", "--client"], "").join(" "), "claude codex both");
-    check(`pwsh (appFlag ${appFlag}): script tables reproduce host's positional`, walk(["host"], "").includes("target"), true);
-    check(`pwsh (appFlag ${appFlag}): script tables reproduce help's command names`, walk(["help", "st"], "st").includes("status"), true);
-    check(`pwsh (appFlag ${appFlag}): script tables reproduce after-flag fallback`, [walk(["backup", "--hot"], "").includes("--hot"), walk(["backup", "--hot"], "").includes("list")], [true, false]);
-    check(
-      `pwsh (appFlag ${appFlag}): the script scans only the words before the partial one`,
-      [script.includes("$scan = @($rest[0..($rest.Count - 2)])"), script.includes("ContainsKey(\"$cmd$prev\")")],
-      [true, true],
-    );
+    const walk = (rest: string[], word: string): string[] =>
+      norm(runPwshCompleter(script, rest, word, ["app-one", "app-two"]));
+    for (const scenario of scenarios) {
+      check(`pwsh (appFlag ${appFlag}): ${scenario.name} matches the model's decision`, walk(scenario.rest, scenario.word), decision(scenario.rest, scenario.word, appFlag));
+    }
+    // The R33-10 facts the differential must hold, stated on their own too.
+    check(`pwsh (appFlag ${appFlag}): --app after a command offers the command's flags, not deployments`,
+      [walk(["status", "--app"], "").includes("--help"), walk(["status", "--app"], "").includes("app-one")], [true, false]);
+    check(`pwsh (appFlag ${appFlag}): set try's --kind value position offers no kind values`,
+      walk(["set", "try", "--kind"], "").includes("agent"), false);
+    check(`pwsh (appFlag ${appFlag}): set forget's --kind value position offers the kind values`,
+      walk(["set", "forget", "--kind"], "").join(" "), "agent cron-job mcp-server");
+    check(`pwsh (appFlag ${appFlag}): --app's own value offers the deployments`,
+      walk(["--app"], "").sort().join(" "), appFlag ? "app-one app-two" : "");
     check(`pwsh (appFlag ${appFlag}): rendering is deterministic`, renderCompletion("pwsh", model, appFlag), script);
   }
   check("pwsh without --app never mentions it", /--app\b/.test(renderCompletion("pwsh", model, false)), false);
@@ -163,6 +125,10 @@ function specFromTables(tables: PwshTables): CommandCompletionSpec[] {
     try {
       const scriptPath = join(dir, "completion.sh");
       await writeFile(scriptPath, renderCompletion("bash", model, true), "utf8");
+      // A stub `clawforge` on PATH answers --app's lazy `list --json` deterministically.
+      const stub = join(dir, "clawforge");
+      await writeFile(stub, "#!/bin/sh\necho '[{\"name\":\"app-one\"},{\"name\":\"app-two\"}]'\n", "utf8");
+      await chmod(stub, 0o755);
       // Words + cursor -> COMPREPLY, exactly as an interactive shell would call it.
       const scenario = (words: string[], cword: number): Promise<string[]> =>
         new Promise((resolveScenario) => {
@@ -170,10 +136,21 @@ function specFromTables(tables: PwshTables): CommandCompletionSpec[] {
           const proc = spawnSync(
             "bash",
             ["-c", `source "${scriptPath}"\nCOMP_WORDS=${wordsLit}\nCOMP_CWORD=${cword}\n_clawforge_complete\nprintf '%s\n' "\${COMPREPLY[@]}"`],
-            { timeout: 30_000 },
+            { timeout: 30_000, env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` } },
           );
           resolveScenario(proc.stdout.toString().split("\n").filter((line) => line !== ""));
         });
+      // Differential: every scenario through the REAL bash completer must equal the model.
+      const bashScenario = (scenarioSpec: { rest: string[]; word: string }): Promise<string[]> => {
+        const words = scenarioSpec.word === "" ? [...scenarioSpec.rest, ""] : scenarioSpec.rest;
+        return scenario(words, words.length);
+      };
+      for (const scenarioSpec of scenarios) {
+        const expected = decision(scenarioSpec.rest, scenarioSpec.word, true);
+        check(`bash: ${scenarioSpec.name} matches the model's decision`, norm(await bashScenario(scenarioSpec)), expected);
+      }
+      check("bash: --app after a command offers flags, not deployments",
+        [(await bashScenario(scenarios[8]!)).includes("--help"), (await bashScenario(scenarios[8]!)).includes("app-one")], [true, false]);
 
       check("bash: typed prefix completes status", (await scenario(["sta"], 1)).includes("status"), true);
       check("bash: typed flag prefix completes --app", (await scenario(["--ap"], 1)).includes("--app"), true);

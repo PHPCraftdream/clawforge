@@ -33,6 +33,18 @@ All notable changes to `@clawforge/framework` will be documented here.
   mid-apply on the target — and each completeness gap carries the advice that closes that
   gap (add server.ts, add agent/config.json, fix the tree and rebuild) rather than one
   recipe.json-or-server.ts line for all of them.
+* The `hook-framework-import` check no longer sweeps every `apps/gateprobe-*` directory before
+  its run — `gateprobe-prod` is a legal deployment name and the sweep deleted it whole
+  (`.env`, `secrets/`, lock and all). The check now marks its own fixture with a token file
+  and sweeps only directories carrying that mark; any other `gateprobe-*` directory survives,
+  and a name collision fails the check instead of deleting.
+* Shell completion: `--app` after a command offers that command's flags in the model and the
+  pwsh script, matching bash (`--app` must come before the command), and option choices are
+  scoped by the typed action — `set forget --kind <Tab>` offers the kind values, `set try
+  --kind <Tab>` does not. The pwsh completer body is executed by a PowerShell-subset
+  evaluator in the check and compared scenario-by-scenario against the model and a real
+  sourced bash script, so a body mutation like the R32-02 regression fails the check instead
+  of passing substring pins.
 * PowerShell completion answers again with a typed prefix (`clawforge sta<Tab>`, `--ap<Tab>`,
   `backup l<Tab>`, `watch in<Tab>`), which the previous script lost by scanning the word being
   completed as a typed command; `--app <name> backup <Tab>` offers the default action's flags

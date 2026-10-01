@@ -20,7 +20,9 @@ import { mountPoints } from "#src/runtime/mounts.ts";
 import { useSetSource, clearSetSource, setSourceDir, withSetSource } from "#src/set/artifacts/source.ts";
 import { recordInstalledSet } from "#src/set/artifacts/install.ts";
 import { validateSet } from "#src/set/ownership/validate.ts";
-import { localSecretValues } from "./set.ts";
+// From its own module, not set.ts: set.ts reads SET_TRY_ARGUMENTS at load, so importing it
+// back here is a cycle that fails with a TDZ error when set-try is the entry.
+import { localSecretValues } from "./set-secrets-guard.ts";
 import { ensureDataDirs, ensureSecretsFile, secretsFileOnTarget, runMaybePrivileged } from "#src/runtime/datadir.ts";
 import { ensureBaselineConfig, configureProvider } from "#src/commands/management/credentials/provider.ts";
 import { applyConfig } from "#src/commands/orchestration/config.ts";

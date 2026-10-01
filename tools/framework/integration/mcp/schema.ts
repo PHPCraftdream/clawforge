@@ -4,7 +4,6 @@
 // module, so external importers keep importing from "./server.ts" unchanged.
 
 import type { CommandArgument } from "../../core/app.ts";
-import { actionLabel } from "../../core/arguments.ts";
 import { maskSecrets } from "../../core/io/log.ts";
 import { destructiveMarker } from "../../core/io/help-render.ts";
 
@@ -200,7 +199,7 @@ export function schemaArgumentDescription(argument: CommandArgument): string | u
   // labelled as such, so a client knows `hot` without an `action` still means a create.
   const scoped = argument.actions === undefined
     ? short
-    : `${short} (${argument.actions.map(actionLabel).join(", ")})`;
+    : `${short} (${argument.actions.join(", ")})`;
   return argument.kind === "option" && argument.valueName !== undefined
     ? `${scoped} (value: <${argument.valueName}>)`
     : scoped;

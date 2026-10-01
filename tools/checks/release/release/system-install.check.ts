@@ -241,7 +241,7 @@ try {
   tail(ambiguousHelp);
   check("watch --help at the checkout root answers even with several deployments", ambiguousHelp.code === 0 && ambiguousHelp.output.includes("watch"), true);
   const statusHelp = await clawforge(["status", "--help"], monorepoRoot);
-  check("status -h works the same way", statusHelp.code === 0 && statusHelp.output.includes("status"), true);
+  check("status --help works the same way", statusHelp.code === 0 && statusHelp.output.includes("status"), true);
   // An existing but empty apps/<name>: new-app would take it over, so the answer says so.
   const emptyApp = resolve(appsDir, `${checkoutApp}-empty`);
   await mkdir(emptyApp, { recursive: true });

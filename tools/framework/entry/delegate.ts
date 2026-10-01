@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { INVOKED_AS_ENV, invocation } from "../core/io/invocation.ts";
-import { checkoutFrameworkSource } from "../commands/management/recipe/hook-graph.ts";
+import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError } from "../core/io/log.ts";
 import { splitLeadingAppFlag } from "../integration/gate.ts";
 import { isWithin } from "../core/paths.ts";

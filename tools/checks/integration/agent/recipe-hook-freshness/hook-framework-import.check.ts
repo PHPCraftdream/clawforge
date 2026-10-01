@@ -1,3 +1,4 @@
+// check:exclusive — drops a scratch deployment into apps/ for the gate, which other checks that enumerate deployments must not see.
 // The documented hook import — `@clawforge/framework/private-config` — loads in both kinds of
 // deployment: a checkout one (no dist build; the hook loader maps the package's public exports
 // onto the checkout's own framework sources) and an installed one (the recipe's own node_modules
@@ -7,11 +8,12 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
-import { checkoutFrameworkSource } from "#framework/commands/management/recipe/hook-graph.ts";
+import { checkoutFrameworkSource, FRAMEWORK_EXPORT_SOURCES } from "#framework/core/env.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { runProcess } from "#checks/kit/spawn.ts";
 import { scratchDeployment, stubContext } from "./fixture.ts";
 const { outerRecipes } = scratchDeployment();
 
@@ -82,12 +84,46 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
   }
   check("an unknown subpath maps to nothing", checkoutFrameworkSource("@clawforge/framework/not-an-export"), undefined);
   check("a foreign package maps to nothing", checkoutFrameworkSource("json5"), undefined);
+  check("the mapping table covers no more than the package's exports", Object.keys(FRAMEWORK_EXPORT_SOURCES).sort(), Object.keys(manifest.exports).sort());
 }
 
 // The gate's own resolver (a deployment's app.ts) answers with the same sources.
 {
   const probe = await import("#framework/entry/delegate.ts");
   check("the gate resolver is exported for tools/clawforge.ts", typeof probe.resolveFrameworkFromSources, "function");
+}
+
+// The gate itself: a checkout deployment whose app.ts imports the public
+// `@clawforge/framework/app` specifier loads only while tools/clawforge.ts registers
+// resolveFrameworkFromSources() — a probe of the loader's own functions cannot tell.
+{
+  const name = "r31gateprobe";
+  const appDir = resolve(monorepoRoot, "apps", name);
+  await mkdir(appDir, { recursive: true });
+  await writeFile(
+    resolve(appDir, "app.ts"),
+    [
+      "import { defineApp } from \"@clawforge/framework/app\";",
+      "export default defineApp({ name: \"r31gateprobe\", description: \"checkout gate probe\", commands: { ping: { summary: \"probe\" } } });",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  try {
+    const result = await runProcess(
+      process.execPath,
+      ["--experimental-strip-types", "tools/clawforge.ts", "--app", name, "status"],
+      { cwd: monorepoRoot, timeoutMs: 120_000 },
+    );
+    check(
+      "a checkout deployment's app.ts importing @clawforge/framework/app loads through the gate",
+      result.output.includes("cannot load deployment") === false && result.output.includes("Cannot find package '@clawforge/framework'") === false,
+      true,
+    );
+    if (result.output.includes("cannot load deployment")) process.stderr.write(`    ${result.output.split("\n").filter((line) => /cannot load|Cannot find/.test(line)).join("\n    ")}\n`);
+  } finally {
+    await rm(appDir, { recursive: true, force: true });
+  }
 }
 
 finish("recipe hook framework import");

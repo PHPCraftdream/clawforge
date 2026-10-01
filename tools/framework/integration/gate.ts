@@ -128,7 +128,9 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
 }
 
 /** The monorepo gate's own commands, which are real in any folder of a checkout — just run
- *  from its root. A subfolder's help must not call them unknown. */
+ *  from its root. A subfolder's help must not call them unknown. Kept by hand in step with
+ *  tools/clawforge.ts's gateCommands (the gate script runs its own dispatch on import, so
+ *  importing the list from there is not an option) — a new gate command must be added here too. */
 export const CHECKOUT_GATE_COMMANDS: readonly string[] = ["check", "list", "new-app", "remove-app"];
 
 /** Report lines for a checkout gate command typed from a checkout subfolder: the command is

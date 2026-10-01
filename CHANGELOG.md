@@ -6,6 +6,14 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* The checks now distinguish the fixes they cover: a scratch checkout deployment's `app.ts` importing
+  `@clawforge/framework/app` must load through the gate, the watch cycle lock's start-time tolerance
+  is asserted at absolute 14 s/16 s offsets, the upgrade `health-fail` scenario reaches the health
+  gate (the stub's post-backup restart succeeds and the failure names health after recreation), and
+  every module of all three known import cycles loads as a first import. Hygiene: the package-export
+  map moved from the recipe-hook module to `core/env.ts` (with a both-directions check against
+  `package.json`), the `regexEscape` copy in a check is gone and the single-definition audit covers
+  `tools/checks` too, and the identity `actionLabel` indirection was removed.
 * A failed `upgrade`'s rollback re-pins `OPENCLAW_IMAGE` to the exact reference the deployment
   had before the upgrade (tag and digest), not the tagless `repo@sha256:…` form Docker reports —
   so a rolled-back deployment is indistinguishable from before and the next plain `upgrade` (or
@@ -76,8 +84,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 * A live lock/compose-env owner is no longer called dead under load: its recorded start comes
   from `process.uptime()` (counted after Node's own boot) while the OS probe has 1 s resolution,
   so the same process could differ by more than the 2 s reuse tolerance. The tolerance is now
-  15 s — a reused pid starts minutes after the original, and calling a live owner dead loses its
-  state. Seen as a flake in `compose-sweep.check.ts`.
+  15 s — Windows reuses pids within seconds of the original, and calling a live owner dead loses its
+  state; no tolerance separates reuse from jitter perfectly, so 15 s keeps the common live case safe
+  at the cost of holding a stale lock a little longer. Seen as a flake in `compose-sweep.check.ts`.
 * The global command refuses an `app.ts` inside a checkout by what it imports, not where it sits:
   only a relative import of the checkout's `tools/framework/` (the `new-app` declaration) outside
   `apps/<name>` is refused; an installed-style `app.ts` (`@clawforge/framework`) under a checkout
@@ -90,17 +99,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `init --local` in a checkout deployment (`apps/<name>` or a subfolder) prints that the editor types
   already resolve through the checkout and exits 0, instead of "unknown command: init" or an
   `npm install` line for the global package.
-* `--interval` is one grammar for `watch install` and `backup install`: `30m`/`6h`/`1d` (existing
-  values keep working), and a bare number is minutes for `watch install` only — `backup install`
-  requires the explicit unit (`--interval 6` is refused, naming `6m`/`6h`, instead of silently
-  scheduling a gateway-stopping backup every 6 minutes), and an empty value is refused for both
-  instead of silently defaulting (`backup install --interval ""` used to become `1d`). The refusal
-  names nearest valid values in that
-* `--interval` is one grammar for `watch install` and `backup install`: a bare number is minutes,
-  or `30m`/`6h`/`1d` (the bare number is new for `backup`, which used to refuse it; `watch`'s
-  accepted values are unchanged). The refusal names nearest valid values in that
-  same spelling (`6h, 8h`), never an empty list (`watch install --interval 10m` used to print
-  `nearest valid:` with nothing) and never a value the command itself rejects.
+* `watch install --interval` names nearest valid values in the same spelling it accepts
+  (`6h, 8h`), never an empty list (`watch install --interval 10m` used to print `nearest valid:`
+  with nothing) and never a value the command itself rejects.
 * `expose tailscale` no longer advises `tailscale serve reset` (it drops other services' routes on
   the node): the printed undo is `tailscale serve --https=443 off`, and the `incident` fallback note
   no longer offers `reset` either. A check scans the framework sources and the guide so no text

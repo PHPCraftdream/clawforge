@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { monorepoRoot } from "#framework/core/env.ts";
 
 const MAX_LINES = 700;
@@ -76,6 +77,8 @@ async function auditSingleDefinitionSites(dir: string, counts: Map<string, strin
       continue;
     }
     if (!entry.isFile() || !/\.(?:ts|js)$/.test(entry.name)) continue;
+    // This file carries the patterns themselves; only real definitions count.
+    if (full === fileURLToPath(import.meta.url)) continue;
     const content = await readFile(full, "utf8");
     for (const [name, pattern] of Object.entries(SINGLE_DEFINITION)) {
       if (content.match(pattern) !== null) counts.get(name)!.push(full);
@@ -84,11 +87,14 @@ async function auditSingleDefinitionSites(dir: string, counts: Map<string, strin
 }
 const definitionSites = new Map<string, string[]>(Object.keys(SINGLE_DEFINITION).map((name) => [name, []]));
 await auditSingleDefinitionSites(resolve(monorepoRoot, "tools", "framework"), definitionSites);
+// Checks import the framework's own helpers (#framework/core/io/log.ts) too — a local copy
+// there drifts just the same.
+await auditSingleDefinitionSites(resolve(monorepoRoot, "tools", "checks"), definitionSites);
 for (const [name, sites] of definitionSites) {
   assert.equal(
     sites.length,
     1,
-    `expected exactly one definition of ${name} in tools/framework, found ${sites.length}: ${sites.join(", ")}`,
+    `expected exactly one definition of ${name} in tools/framework and tools/checks, found ${sites.length}: ${sites.join(", ")}`,
   );
 }
 process.stderr.write("shellQuote and regexEscape each have exactly one definition\n");

@@ -6,6 +6,7 @@
 // The shell version used `source .env`, which executes whatever the file contains; here it
 // is parsed as data.
 
+import { existsSync } from "node:fs";
 import { readFile, access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,6 +57,32 @@ export async function isMonorepoCheckout(root: string = monorepoRoot): Promise<b
 /** Shared by every deployment (same service, different settings), so it stays with the
  *  framework rather than being copied into each one; ships inside tools/framework/ itself. */
 export const composeFile = resolve(frameworkRoot, "docker-compose.yml");
+
+/** The package's public exports, mapped onto this checkout's sources: a hook (or a
+ *  deployment's app.ts) importing `@clawforge/framework/<export>` in a checkout has no
+ *  dist build and no install to resolve against, so the loaders fall back to this table —
+ *  keyed off the package's own root (frameworkRoot), which in an installed package points
+ *  inside it and matches no source file, leaving normal resolution in charge. */
+const FRAMEWORK_PACKAGE = "@clawforge/framework";
+/** Exported for checks only: the table must mirror package.json's exports in both
+ *  directions, and an extra entry here is exactly what a one-way check cannot see. */
+export const FRAMEWORK_EXPORT_SOURCES: Record<string, string> = {
+  "./app": "core/app.ts",
+  "./mounts": "runtime/mounts.ts",
+  "./commands": "commands/interface/index.ts",
+  "./private-config": "security/privacy/private-config.ts",
+};
+
+/** The checkout source file a `@clawforge/framework` specifier maps to, or undefined when
+ *  this code does not run from the checkout sources or the specifier is not a public export. */
+export function checkoutFrameworkSource(specifier: string): string | undefined {
+  if (specifier !== FRAMEWORK_PACKAGE && !specifier.startsWith(`${FRAMEWORK_PACKAGE}/`)) return undefined;
+  const sub = specifier === FRAMEWORK_PACKAGE ? "./" : `./${specifier.slice(FRAMEWORK_PACKAGE.length + 1).split(/[?#]/, 1)[0]}`;
+  const source = FRAMEWORK_EXPORT_SOURCES[sub];
+  if (source === undefined) return undefined;
+  const target = resolve(frameworkRoot, source);
+  return existsSync(target) ? target : undefined;
+}
 
 export type Env = Record<string, string>;
 

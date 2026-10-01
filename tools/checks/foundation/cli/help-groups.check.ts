@@ -13,6 +13,7 @@ import { defineApp } from "#framework/core/app.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { runApp, GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol } from "#framework/entry/cli.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { regexEscape } from "#framework/core/io/log.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- every real command has a known group -------------------------------------
@@ -60,7 +61,7 @@ check(
 // itself indents ("    " + the caller's own leading spaces) — match any leading whitespace
 // rather than a fixed column count, so this stays correct if that indentation ever changes.
 function commandLine(name: string): { matches: string[]; line: string | undefined } {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = regexEscape(name);
   const pattern = new RegExp(`^\\s+${escaped}\\s`);
   const matches = lines.filter((line) => pattern.test(line));
   return { matches, line: matches[0] };

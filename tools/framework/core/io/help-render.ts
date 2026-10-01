@@ -3,7 +3,6 @@
 // dropped `choices`, a stale `<value>`) cannot happen to only one of them and not the other.
 
 import { log, info } from "./log.ts";
-import { actionLabel } from "../arguments.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
 
 /** What renderCommandHelp needs from a command — the shape AppCommand and GateCommand both
@@ -48,7 +47,7 @@ export function renderCommandHelp(name: string, command: HelpDeclaration): void 
     const choices = argument.choices === undefined ? "" : ` [${argument.choices.join("|")}]`;
     // A multi-action command's argument that belongs to only some of its actions (backup's
     // own --keep, install-only) — see CommandArgument's `actions`.
-    const scope = argument.actions === undefined ? "" : ` (${argument.actions.map(actionLabel).join(", ")})`;
+    const scope = argument.actions === undefined ? "" : ` (${argument.actions.join(", ")})`;
     info(`  ${argumentLabel(argument).padEnd(USAGE_COLUMN)} ${argument.description}${scope}${choices}${required}`);
   }
   if (command.details !== undefined) {

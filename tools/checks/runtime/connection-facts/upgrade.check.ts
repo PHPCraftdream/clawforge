@@ -92,15 +92,18 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
     },
     runtime: {
       description: "docker",
-      async isRunning(): Promise<boolean> { return runningDigest === PREVIOUS_DIGEST || (scenario !== "health-fail" && scenario !== "exit78"); },
+      async isRunning(): Promise<boolean> { return runningDigest === PREVIOUS_DIGEST || (scenario !== "health-fail" && scenario !== "exit78") || (scenario === "health-fail"); },
       async pause(): Promise<void> {},
       // Migration compensation restores while stopped, then recreates the previous image.
       async start(): Promise<void> { runningDigest = PREVIOUS_DIGEST; },
       async stop(): Promise<void> {},
+      // Health fails only for the freshly recreated gateway: the restart after the stopped
+      // pre-upgrade backup must succeed, so the scenario reaches the health gate it exists
+      // to test instead of dying inside the backup.
       async waitForHealth(): Promise<void> {
-        if (scenario === "health-fail") throw new Error("the service did not become healthy");
+        if (scenario === "health-fail" && runningDigest === TARGET_DIGEST) throw new Error("the service did not become healthy");
       },
-      async probe(): Promise<number> { return scenario === "health-fail" || scenario === "exit78" ? 0 : 200; },
+      async probe(): Promise<number> { return scenario === "exit78" ? 0 : 200; },
       async lastExitCode(): Promise<number | undefined> {
         if (scenario === "exit78") return 78;
         return scenario === "health-fail" ? 1 : 0;
@@ -156,6 +159,10 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
     try { await upgrade(ctx, []); } catch (error) { failure = error; }
   });
   check("a health failure is reported as a failure", failure instanceof Error, true);
+  // The scenario is about the health gate: the gateway must have been recreated onto the
+  // target first, and the reported reason must be the health failure itself.
+  check("the failure comes after recreation onto the target", calls.some((call) => call === `recreateWithImage ${TARGET_DIGEST}`), true);
+  check("the reported reason is the health failure", failure instanceof Error && failure.message.includes("the service did not become healthy"), true);
   check("it rolls back to the previous digest", runningDigest(), PREVIOUS_DIGEST);
   check("a non-migration failure never restores the backup", calls.some((call) => call.includes("-xzf")), false);
 }

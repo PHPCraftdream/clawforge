@@ -12,7 +12,8 @@
 // recomputes the target fresh off disk via hook-graph.ts's resolvePackageImport and
 // short-circuits to its versioned URL. Bare installed packages resolve normally.
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { checkoutFrameworkSource, resolvePackageImport } from "./hook-graph.ts";
+import { checkoutFrameworkSource } from "../../../core/env.ts";
+import { resolvePackageImport } from "./hook-graph.ts";
 
 const VERSION_PARAM = "g";
 /** The recipe directory a versioned hook graph is bounded to, carried alongside the

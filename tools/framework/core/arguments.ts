@@ -83,13 +83,8 @@ export interface ActionScope {
  *  "applies to `create`" names a word the CLI actually takes. */
 export const NO_ACTION = "create";
 
-/** Human label for an `actions` entry. */
-export function actionLabel(action: string): string {
-  return action;
-}
-
 function formatActions(actions: readonly string[]): string {
-  return actions.map((name) => `\`${actionLabel(name)}\``).join(", ");
+  return actions.map((name) => `\`${name}\``).join(", ");
 }
 
 /** One multi-action command's flags/options from what each action's own parser accepts:
@@ -118,7 +113,7 @@ export function scopeByAction(slices: Readonly<Record<string, readonly CommandAr
     ...(byDescription.size > 1
       ? {
         description: [...byDescription.entries()]
-          .map(([description, own]) => `${description} (${own.map(actionLabel).join(", ")})`)
+          .map(([description, own]) => `${description} (${own.join(", ")})`)
           .join("; "),
       }
       : {}),

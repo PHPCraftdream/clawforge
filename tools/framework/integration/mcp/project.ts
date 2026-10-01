@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { renameOverPrivateFile } from "../../security/privacy/private-file.ts";
 import { warn } from "../../core/io/log.ts";
+import { INVOCATION_VERSION } from "../../core/io/invocation/index.ts";
 
 export type McpClient = "claude" | "codex" | "both";
 export type DeploymentMode = "installed" | "monorepo";
@@ -31,7 +32,9 @@ if (!["mcp-serve", "control-mcp"].includes(action)) throw new Error("invalid MCP
 
 const entry = resolve(root, "../../tools/clawforge.ts");
 process.chdir(root);
-// Hints must resolve from this directory: the shim is two levels up.
+// Hints must resolve from this directory: the shim is two levels up. Both variables: new
+// frameworks read the JSON one, older ones only CLAWFORGE_INVOKED_AS.
+process.env.CLAWFORGE_INVOCATION = JSON.stringify({ version: ${INVOCATION_VERSION}, program: "../../clawforge", mode: "checkout", app: { name: basename(root), selectedBy: "flag" }, audience: "mcp" });
 process.env.CLAWFORGE_INVOKED_AS = "../../clawforge --app " + basename(root);
 process.argv = [process.argv[0], entry, "--app", basename(root), action];
 await import(pathToFileURL(entry).href);

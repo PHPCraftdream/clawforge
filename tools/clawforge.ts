@@ -32,7 +32,7 @@ import {
 import { helpEntryLine } from "./framework/core/io/help-render.ts";
 import { reportError, info } from "./framework/core/io/log.ts";
 import { emit } from "./framework/core/io/output.ts";
-import { setInvocation, takeInvokedAs } from "./framework/core/io/invocation.ts";
+import { invocation, setInvocation, takeInvocationFromEnv } from "./framework/core/io/invocation/index.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
 import { createApp } from "./framework/integration/deployment/scaffold.ts";
@@ -51,14 +51,16 @@ import { resolveFrameworkFromSources } from "./framework/entry/delegate.ts";
 // sources — there is no dist build here (recipe hooks map the same table in the hook loader).
 resolveFrameworkFromSources();
 
-// A hand-over from the system-wide command names itself; otherwise this is the ./clawforge gate.
-const invokedAs = takeInvokedAs();
-if (invokedAs !== undefined) setInvocation(invokedAs);
+// A hand-over from the system-wide command or a launcher names itself; otherwise this is
+// the ./clawforge gate.
+const handedOver = takeInvocationFromEnv();
+setInvocation(handedOver ?? { program: "./clawforge", mode: "checkout", audience: "terminal" });
 const argv = normalizeVersionAlias(process.argv.slice(2));
 
 // --app wins over the environment, the environment over the default.
 let name = process.env.OC_APP ?? "openclaw";
 let appExplicit = process.env.OC_APP !== undefined;
+let selectedBy: "env" | "flag" | "sole" | "default" = appExplicit ? "env" : "default";
 const appFlag = splitLeadingAppFlag(argv);
 if (appFlag.missingValue) {
   reportError("--app needs a deployment name");
@@ -66,6 +68,7 @@ if (appFlag.missingValue) {
 } else if (appFlag.value !== undefined) {
   name = appFlag.value;
   appExplicit = true;
+  selectedBy = "flag";
 }
 argv.splice(0, argv.length, ...appFlag.rest);
 
@@ -272,6 +275,7 @@ try {
   const sole = soleDeploymentFallback(appExplicit, available);
   if (sole !== undefined) {
     name = sole;
+    selectedBy = "sole";
     deploymentDir = resolve(monorepoRoot, "apps", name);
     // --json output must stay parseable, and a non-interactive caller (script, cron) has no one
     // to read this for — only print for a human at a real terminal.
@@ -307,7 +311,9 @@ try {
 
 // A non-default deployment is named in every hint, so it can be pasted as is.
 // A hand-over from apps/<name> already selects it by the cwd; from anywhere else it must be named.
-if (name !== "openclaw" && !(invokedAs !== undefined && isWithin(deploymentDir, process.cwd()))) setInvocation(`${invokedAs ?? "./clawforge"} --app ${name}`);
+if (name !== "openclaw" && !(handedOver !== undefined && isWithin(deploymentDir, process.cwd()))) {
+  setInvocation({ ...invocation(), app: { name, selectedBy } });
+}
 
 // Set before anything reads configuration: every path below resolves against it.
 useDeployment(deploymentDir);

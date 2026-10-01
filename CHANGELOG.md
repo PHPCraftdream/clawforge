@@ -4,6 +4,17 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ## Unreleased
 
+### Changed
+
+* Deployments hand the invocation between processes as versioned JSON in `CLAWFORGE_INVOCATION`:
+  the committed `./clawforge` shim `init` and `new-app` write, and the monorepo MCP launcher,
+  now set it — alongside `CLAWFORGE_INVOKED_AS`, which they keep exporting so the shim and
+  launcher keep spelling the hints right for older frameworks (pinned local or older global
+  installs) that read only the old variable; a framework that reads both prefers the JSON
+  and clears both. Shims and launchers already committed in your repository keep working, and
+  `mcp-setup` rewrites a launcher carrying the old spelling as it rewrites its other retired
+  texts. No command output changes.
+
 ### Fixed
 
 * The `--json` failure contract fires only for a command's own declared `--json` flag:

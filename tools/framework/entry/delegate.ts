@@ -12,7 +12,7 @@ import { createRequire, registerHooks } from "node:module";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { INVOKED_AS_ENV, invocation } from "../core/io/invocation.ts";
+import { INVOCATION_ENV, invocation, serializeInvocation } from "../core/io/invocation/index.ts";
 import { checkoutFrameworkSource } from "../core/env.ts";
 import { reportError } from "../core/io/log.ts";
 import { splitLeadingAppFlag } from "../integration/gate.ts";
@@ -62,7 +62,7 @@ export function takeDelegationFlag(): boolean {
 function runInstead(entry: string, args: string[], flag: boolean): never {
   const result = spawnSync(process.execPath, ["--experimental-strip-types", entry, ...args], {
     stdio: "inherit",
-    env: { ...process.env, [INVOKED_AS_ENV]: invocation(), ...(flag ? { [DELEGATED]: "1" } : {}) },
+    env: { ...process.env, [INVOCATION_ENV]: serializeInvocation(invocation()), ...(flag ? { [DELEGATED]: "1" } : {}) },
   });
   if (result.error !== undefined) {
     process.stderr.write(`clawforge: cannot start ${entry}: ${result.error.message}\n`);

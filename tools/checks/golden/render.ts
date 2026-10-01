@@ -42,7 +42,7 @@ import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { runApp } from "#framework/entry/cli.ts";
 import { renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { setInvocation } from "#framework/core/io/invocation.ts";
+import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { UnknownArgumentError } from "#framework/core/arguments.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
@@ -51,10 +51,10 @@ const BIN_SCRIPT = resolve(monorepoRoot, "tools", "framework", "entry", "bin.ts"
 const FIXTURE_APP = "golden-fixture";
 
 /** Invocations the refusal matrix is rendered under, in the order they appear in refusals.txt. */
-const INVOCATIONS: readonly [string, string][] = [
-  ["checkout root (./clawforge)", "./clawforge"],
-  ["named deployment (./clawforge --app demo)", "./clawforge --app demo"],
-  ["installed command (clawforge)", "clawforge"],
+const INVOCATIONS: readonly [string, Invocation][] = [
+  ["checkout root (./clawforge)", { program: "./clawforge", mode: "checkout", audience: "terminal" }],
+  ["named deployment (./clawforge --app demo)", { program: "./clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" }],
+  ["installed command (clawforge)", { program: "clawforge", mode: "installed", audience: "terminal" }],
 ];
 
 /** Replaces machine-specific path prefixes with the placeholders documented in the header. */
@@ -96,6 +96,7 @@ function runGate(script: string, args: string[], options: GateOptions = {}): Pro
 function fixtureEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, OC_APP: FIXTURE_APP };
   delete env.CLAWFORGE_INVOKED_AS;
+  delete env.CLAWFORGE_INVOCATION;
   return env;
 }
 

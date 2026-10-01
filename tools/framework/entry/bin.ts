@@ -20,7 +20,7 @@ import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, helpWithoutDeployment, checkoutSubfolderReport, type GateCommand } from "../integration/gate.ts";
 import { info, reportError, reportErrorVerbatim } from "../core/io/log.ts";
-import { INVOKED_AS_ENV, cli, invocation, setInvocation, takeInvokedAs } from "../core/io/invocation.ts";
+import { INVOCATION_ENV, cli, invocation, invocationPrefix, serializeInvocation, setInvocation, takeInvocationFromEnv } from "../core/io/invocation/index.ts";
 import { useDeployment } from "../runtime/deployment.ts";
 import { safeName } from "../core/values/names.ts";
 import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
@@ -35,9 +35,9 @@ import type { AppDefinition } from "../core/app.ts";
 
 // First, before anything can spawn: the flag covers this hand-over only, not descendants.
 const handedOver = takeDelegationFlag();
-// The shim says `./clawforge`; unnamed, the copy decides (see defaultInvocation).
-const invokedAs = takeInvokedAs();
-setInvocation(invokedAs ?? "clawforge");
+// The shim names itself; unnamed, the copy decides (see defaultInvocation).
+const handed = takeInvocationFromEnv();
+setInvocation(handed ?? { program: "clawforge", mode: "installed", audience: "terminal" });
 const rawArgv = process.argv.slice(2);
 const scheduled = rawArgv[0] === "--project-root";
 if (scheduled && (rawArgv[1] === undefined || !isAbsolute(rawArgv[1]))) {
@@ -93,7 +93,7 @@ const appRoot = scheduled ? resolve(rawArgv[1]) : initializing ? cwd : (ancestor
 // A hand-over target may predate the walk, so the found root is passed explicitly.
 const launchArgv = scheduled || appRoot === cwd ? rawArgv : ["--project-root", appRoot, ...rawArgv];
 
-if (invokedAs === undefined) setInvocation(await defaultInvocation(appRoot));
+if (handed === undefined) setInvocation({ ...(await defaultInvocation(appRoot)), audience: "terminal" });
 
 // Installed system-wide, this may not be the framework this deployment runs on.
 delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv, handedOver);
@@ -157,7 +157,7 @@ try {
   });
   if (helpExit !== undefined) process.exit(helpExit);
   reportError(`no app.ts in ${appRoot}`);
-  if (checkout !== undefined) reportErrorVerbatim(`this is a ClawForge checkout (${checkout}) — run ${invocation()} from its root (in bash also ./clawforge)`);
+  if (checkout !== undefined) reportErrorVerbatim(`this is a ClawForge checkout (${checkout}) — run ${invocationPrefix()} from its root (in bash also ./clawforge)`);
   else reportError(`this directory has not been initialised as an OpenClaw deployment yet — run: ${cli("init")}`);
   process.exit(1);
 }
@@ -174,7 +174,7 @@ function retryWithTypeStripping(): never {
   const result = spawnSync(
     process.execPath,
     ["--experimental-strip-types", fileURLToPath(import.meta.url), ...launchArgv],
-    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1", [INVOKED_AS_ENV]: invocation(), ...(handedOver ? { CLAWFORGE_DELEGATED: "1" } : {}) } },
+    { stdio: "inherit", env: { ...process.env, CLAWFORGE_TYPE_STRIPPING_RETRY: "1", [INVOCATION_ENV]: serializeInvocation(invocation()), ...(handedOver ? { CLAWFORGE_DELEGATED: "1" } : {}) } },
   );
   process.exit(result.status ?? 1);
 }

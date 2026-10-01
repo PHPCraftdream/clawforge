@@ -9,7 +9,7 @@
 
 import { parseDeclaredArgs, NO_ACTION } from "../core/arguments.ts";
 import { reportError } from "../core/io/log.ts";
-import { cli } from "../core/io/invocation.ts";
+import { cli } from "../core/io/invocation/index.ts";
 import { emitRaw } from "../core/io/output.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import type { CommandArgument } from "../core/app.ts";

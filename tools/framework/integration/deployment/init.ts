@@ -12,6 +12,7 @@
 import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/promises";
 import { resolve, basename, dirname, relative } from "node:path";
 import { frameworkPackage, frameworkRoot } from "../../core/env.ts";
+import { INVOCATION_VERSION } from "../../core/io/invocation/index.ts";
 import type { CommandArgument } from "../../core/app.ts";
 import { log, info, die } from "../../core/io/log.ts";
 import { safeName } from "../../core/values/names.ts";
@@ -62,6 +63,8 @@ const SHIM = `#!/usr/bin/env bash
 # without typing a package path or npx by hand.
 set -Eeuo pipefail
 # Hints in the CLI say "./clawforge" for this entry, "clawforge" for the system-wide command.
+# Both variables: new frameworks read the JSON one, older ones only CLAWFORGE_INVOKED_AS.
+export CLAWFORGE_INVOCATION='{"version":${INVOCATION_VERSION},"program":"./clawforge","mode":"installed","audience":"terminal"}'
 export CLAWFORGE_INVOKED_AS=./clawforge
 DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 node_bin=""

@@ -25,7 +25,7 @@ import { useApplicationRecipesDir } from "../../runtime/deployment.ts";
 import { ensureEnvironment } from "../provision.ts";
 import { preparesEnvironmentFor } from "../../core/arguments.ts";
 import { maskSecrets, UserError } from "../../core/io/log.ts";
-import { localizeHints } from "../../core/io/invocation.ts";
+import { localizeHints } from "../../core/io/invocation/index.ts";
 import { withOutputSink } from "../../core/io/output.ts";
 import { maskStructuredOutput, maskStructuredResult, toolEnvelope, toolDescription, inputSchema, validate, toArgv, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../../commands/operate/recover-env/index.ts";

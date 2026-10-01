@@ -114,8 +114,9 @@ try {
     mcpLauncherContent("monorepo"),
     "new-app writes the monorepo-mode launcher",
   );
-  assert.ok(mcpLauncherContent("monorepo").includes('CLAWFORGE_INVOKED_AS = "../../clawforge --app "'), "the checkout launcher makes hints resolve from apps/<name>");
-  const previousLauncher = mcpLauncherContent("monorepo").split("\n").filter((line) => !/^\/\/ Hints must|CLAWFORGE_INVOKED_AS/.test(line)).join("\n");
+  assert.ok(mcpLauncherContent("monorepo").includes('CLAWFORGE_INVOCATION = JSON.stringify({ version: 1, program: "../../clawforge"'), "the checkout launcher makes hints resolve from apps/<name>");
+  assert.ok(mcpLauncherContent("monorepo").includes('CLAWFORGE_INVOKED_AS = "../../clawforge --app "'), "the checkout launcher also feeds frameworks that only read the old variable");
+  const previousLauncher = mcpLauncherContent("monorepo").split("\n").filter((line) => !/^\/\/ (Hints must|frameworks read)|CLAWFORGE_INVOCATION|CLAWFORGE_INVOKED_AS/.test(line)).join("\n");
   assert.equal(createHash("sha256").update(previousLauncher).digest("hex"), "184fdbb3149ce05cd8b6c970538c93bc162dc0049b2d730cb927802dbb992431", "the retired launcher text is the one shipped before");
   await writeFile(join(monorepoApp, MCP_LAUNCHER_FILENAME), previousLauncher, "utf8");
   await setupProjectMcp(monorepoApp, "monorepo");

@@ -2,7 +2,7 @@
 // and anyone reading logs sees the same shape before and after the migration.
 
 import { outputSink } from "./output.ts";
-import { localizeHints } from "./invocation.ts";
+import { localizeHints } from "./invocation/index.ts";
 
 const useColour = process.stderr.isTTY === true;
 

@@ -7,7 +7,7 @@
 // So there is a mode — a module-level sink, not a threaded parameter, because the thing
 // that must not write to stdout is arbitrarily deep: a command, a helper, a spawned process.
 
-import { localizeHints } from "./invocation.ts";
+import { localizeHints } from "./invocation/index.ts";
 
 type Sink = (chunk: string) => void;
 

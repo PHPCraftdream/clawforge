@@ -5,7 +5,20 @@
 // from it, and the entry's hand-over of the prefix.
 
 import { renderUsage, renderFullCommandHelp } from "#framework/core/io/help-render.ts";
-import { INVOKED_AS_ENV, cli, invocation, localizeHints, setInvocation, takeInvokedAs } from "#framework/core/io/invocation.ts";
+import {
+  INVOKED_AS_ENV,
+  INVOCATION_ENV,
+  cli,
+  invocation,
+  invocationPrefix,
+  localizeHints,
+  parseInvocation,
+  parseLegacyInvokedAs,
+  serializeInvocation,
+  setInvocation,
+  takeInvocationFromEnv,
+  type Invocation,
+} from "#framework/core/io/invocation/index.ts";
 import { reportError, info, infoRaw } from "#framework/core/io/log.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
 import { structuredResult } from "#framework/integration/mcp/server.ts";
@@ -24,6 +37,10 @@ import { check, finish } from "#checks/kit/harness.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 
 const HINT = "./clawforge";
+
+const MONO: Invocation = { program: HINT, mode: "checkout", audience: "terminal" };
+const GLOBAL: Invocation = { program: "clawforge", mode: "installed", audience: "terminal" };
+const NAMED: Invocation = { ...MONO, app: { name: "staging", selectedBy: "flag" } };
 
 async function capture(body: () => void | Promise<void>): Promise<string> {
   let text = "";
@@ -53,15 +70,16 @@ async function samples(): Promise<{ usage: string; commandHelp: string; refusal:
 try {
   // --- the helper -----------------------------------------------------------------------------
 
-  check("nothing set: the monorepo prefix", invocation(), HINT);
+  check("nothing set: the monorepo prefix", invocation(), MONO);
   check("cli() renders the prefix and the rest", cli("bootstrap --check"), "./clawforge bootstrap --check");
-  setInvocation("clawforge");
+  setInvocation(GLOBAL);
   check("cli() follows the prefix", cli("bootstrap --check"), "clawforge bootstrap --check");
   check("a bare hint is rewritten", localizeHints("run ./clawforge up, then `./clawforge logs`."), "run clawforge up, then `clawforge logs`.");
   check("a hint naming its own --app keeps it", localizeHints("run ./clawforge --app x bootstrap"), "run clawforge --app x bootstrap");
   check("a quoted argv element is left alone", localizeHints("&& './clawforge' 'backup'"), "&& './clawforge' 'backup'");
   check("a path and a regex source are left alone", localizeHints("apps/x/./clawforge y \\./clawforge z"), "apps/x/./clawforge y \\./clawforge z");
-  setInvocation("./clawforge --app staging");
+  setInvocation(NAMED);
+  check("the app part is in the prefix", invocationPrefix(), "./clawforge --app staging");
   check("a non-default deployment is named", localizeHints("run ./clawforge up"), "run ./clawforge --app staging up");
   check("and not twice", localizeHints("run ./clawforge --app x up"), "run ./clawforge --app x up");
   check("emitRaw never rewrites data", await capture(() => emitRaw("./clawforge up\n")), "./clawforge up\n");
@@ -75,8 +93,9 @@ try {
     `provider keys are not copied — install them there: ./clawforge --app staging secrets --apply`,
     `  bash -lc "cd /srv/app1 && ./clawforge backup"`,
   ];
-  for (const prefix of ["clawforge", "./clawforge --app x"]) {
-    setInvocation(prefix);
+  for (const value of [GLOBAL, { ...MONO, app: { name: "x", selectedBy: "flag" } }] as const) {
+    setInvocation(value);
+    const prefix = invocationPrefix();
     for (const line of [cron, ...remote]) {
       check(`infoRaw keeps the line verbatim under "${prefix}"`, await capture(() => infoRaw(line)).then((text) => text.includes(line)), true);
     }
@@ -110,9 +129,9 @@ try {
     { label: "watch install", run: (ctx: Context, args: string[]) => watchInstall(ctx, args), job: "watch", jobArgs: ["watch", "check"], minutes: 5 },
   ];
 
-  for (const prefix of ["clawforge", "./clawforge --app x"]) {
-    setInvocation(prefix);
-    const at = `under "${prefix}"`;
+  for (const value of [GLOBAL, { ...MONO, app: { name: "x", selectedBy: "flag" } }] as const) {
+    setInvocation(value);
+    const at = `under "${invocationPrefix()}"`;
     for (const { label, run, job, jobArgs, minutes } of jobs) {
       const crontab = cronLine(minutes, await posixTargetInvocation(sshCtx, jobArgs), job, await schedulerIdentity(sshCtx));
       check(`${label} prints the crontab line it would install ${at}`, (await capture(() => run(sshCtx, []))).includes(crontab), true);
@@ -139,13 +158,53 @@ try {
     check(`deploy's provider-keys hint is verbatim ${at}`, done.includes(`provider keys are not copied — install them there: ./clawforge --app ${name} secrets --apply`), true);
   }
 
-  setInvocation("");
-  check("blank falls back to the monorepo prefix", invocation(), HINT);
+  setInvocation(MONO);
+  check("the entry default is the monorepo prefix, without an app part", invocationPrefix(), HINT);
+  check("the default names no deployment", invocation().app, undefined);
 
-  process.env[INVOKED_AS_ENV] = "./clawforge";
-  check("the shim's variable is read", takeInvokedAs(), "./clawforge");
-  check("and removed, so descendants never inherit it", process.env[INVOKED_AS_ENV], undefined);
-  check("unset reads as undefined", takeInvokedAs(), undefined);
+  // --- the value between processes: versioned JSON in CLAWFORGE_INVOCATION -------------------
+
+  for (const value of [
+    MONO,
+    GLOBAL,
+    NAMED,
+    { program: "../../clawforge", mode: "checkout", app: { name: "app1", selectedBy: "cwd" }, audience: "mcp" },
+    { program: "../../clawforge", mode: "local-package", audience: "mcp" },
+  ] as const) {
+    check(`serialize then parse is the identity: ${serializeInvocation(value)}`, parseInvocation(serializeInvocation(value)), value);
+  }
+  check("the serialized form carries the version", JSON.parse(serializeInvocation(MONO)).version, 1);
+
+  process.env[INVOCATION_ENV] = serializeInvocation(NAMED);
+  process.env[INVOKED_AS_ENV] = HINT;
+  check("both set, as the shim and launcher now write them: the JSON wins", takeInvocationFromEnv(), NAMED);
+  check(
+    "both variables are removed, so descendants never inherit them",
+    process.env[INVOCATION_ENV] === undefined && process.env[INVOKED_AS_ENV] === undefined,
+    true,
+  );
+
+  process.env[INVOCATION_ENV] = "not json";
+  check("malformed JSON reads as unset", takeInvocationFromEnv(), undefined);
+  process.env[INVOCATION_ENV] = '{"version":2,"program":"clawforge","mode":"installed","audience":"terminal"}';
+  check("an unknown version reads as unset", takeInvocationFromEnv(), undefined);
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"sometimes","audience":"terminal"}';
+  check("an unknown mode reads as unset", takeInvocationFromEnv(), undefined);
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","extra":true}';
+  check("an extra field reads as unset — never half a value", takeInvocationFromEnv(), undefined);
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"","mode":"installed","audience":"terminal"}';
+  check("an empty program reads as unset", takeInvocationFromEnv(), undefined);
+  process.env[INVOCATION_ENV] = '{"version":1,"program":"clawforge","mode":"installed","audience":"terminal","app":{"name":"x","selectedBy":"sometimes"}}';
+  check("an unknown app selection reads as unset", takeInvocationFromEnv(), undefined);
+
+  process.env[INVOKED_AS_ENV] = "./clawforge --app staging";
+  check("the legacy shim variable is mapped onto the value", takeInvocationFromEnv(), NAMED);
+  check("it is removed, so descendants never inherit it", process.env[INVOKED_AS_ENV], undefined);
+  process.env[INVOKED_AS_ENV] = "clawforge";
+  check("legacy without a suffix maps to the program alone", takeInvocationFromEnv(), { ...GLOBAL, mode: "checkout" });
+  process.env[INVOKED_AS_ENV] = "   ";
+  check("blank legacy reads as unset", takeInvocationFromEnv(), undefined);
+  check("parseLegacyInvokedAs agrees with the env path", parseLegacyInvokedAs("../../clawforge --app app1"), { program: "../../clawforge", mode: "checkout", app: { name: "app1", selectedBy: "flag" }, audience: "terminal" });
 
   // --- monorepo prefix: outputs keep ./clawforge --------------------------------------------
 
@@ -158,7 +217,7 @@ try {
 
   // --- system-wide prefix: no ./clawforge anywhere ------------------------------------------
 
-  setInvocation("clawforge");
+  setInvocation(GLOBAL);
   const global = await samples();
   check("global: Usage", global.usage.includes("Usage: clawforge <command> [options]"), true);
   check("global: help footer", global.usage.includes("Run `clawforge help <command>` or `clawforge <command> --help`"), true);
@@ -171,7 +230,7 @@ try {
   }
   check("global: MCP nextActions have no ./clawforge", global.nextActions.some((entry) => entry.includes(HINT)), false);
 } finally {
-  setInvocation("");
+  setInvocation(MONO);
   await teardownFixtureDeployment(deployment);
 }
 

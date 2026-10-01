@@ -73,19 +73,19 @@
       "tools/framework/core/app.ts": 1,
       "tools/framework/core/env.ts": 1,
       "tools/framework/core/io/help-render.ts": 4,
-      "tools/framework/core/io/invocation.ts": 8,
+      "tools/framework/core/io/invocation/index.ts": 4,
       "tools/framework/core/io/log.ts": 3,
-      "tools/framework/entry/bin.ts": 6,
+      "tools/framework/entry/bin.ts": 5,
       "tools/framework/entry/cli.ts": 3,
       "tools/framework/entry/delegate.ts": 1,
       "tools/framework/entry/root.ts": 2,
       "tools/framework/integration/completion.ts": 9,
-      "tools/framework/integration/deployment/init.ts": 8,
+      "tools/framework/integration/deployment/init.ts": 9,
       "tools/framework/integration/deployment/remove.ts": 3,
       "tools/framework/integration/deployment/scaffold.ts": 3,
       "tools/framework/integration/gate.ts": 15,
       "tools/framework/integration/list.ts": 4,
-      "tools/framework/integration/mcp/project.ts": 1,
+      "tools/framework/integration/mcp/project.ts": 2,
       "tools/framework/integration/mcp/server.ts": 4,
       "tools/framework/runtime/datadir.ts": 1,
       "tools/framework/runtime/docker/image-digest.ts": 1,
@@ -101,7 +101,7 @@
       "tools/framework/set/artifacts/model.ts": 1,
       "tools/framework/set/ownership/validate.ts": 4
     },
-    "total": 461
+    "total": 458
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",

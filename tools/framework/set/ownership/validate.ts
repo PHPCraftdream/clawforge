@@ -114,8 +114,9 @@ function checkImagePinned(manifest: SetManifest, problems: Problem[]): void {
   }
 }
 
-/** Checked against the working tree only when asked: a built artifact carries files as
- *  checksums, not paths on this machine — checking them here would flag a valid artifact. */
+/** The file checks run only where the files actually are: a working tree, or an unpacked
+ *  artifact's staging directory (recipesDir() points into it). A packed artifact carries
+ *  files as checksums — looking for those paths on this machine would flag a valid artifact. */
 async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, problems: Problem[]): Promise<void> {
   for (const [name, recipe] of Object.entries(manifest.recipes)) {
     const declaresAgent = recipe.agent !== undefined;
@@ -123,7 +124,11 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
     if (checkFiles) {
       const dir = resolve(recipesDir(), name);
       if (!(await exists(dir))) {
-        problems.push(problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" is declared but ${dir} does not exist`));
+        // An unpacked artifact has a directory only where the manifest lists files in it;
+        // a recipe carrying nothing unpacks to nothing, and must not read as incomplete.
+        if (Object.keys(recipe.files).length > 0 || declaresAgent) {
+          problems.push(problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" is declared but ${dir} does not exist`));
+        }
         continue;
       }
       // server.ts is required only of a recipe that declares an agent — that's what makes

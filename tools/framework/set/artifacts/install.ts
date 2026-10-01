@@ -321,7 +321,10 @@ async function verifyArtifact(artifact: string, staging: string): Promise<Verifi
       throw new Error(`recipe ${name} acceptance disagrees with its file`);
     }
   }
-  const semanticProblems = await withSetSource(staging, () => validateSet(manifest, { checkFiles: false }));
+  // The artifact is unpacked into staging and recipesDir() points there, so the same
+  // recipe-completeness checks the working-tree validation runs can run here: a tree with
+  // blocking findings must not build into an artifact that verifies as coherent.
+  const semanticProblems = await withSetSource(staging, () => validateSet(manifest, { checkFiles: true }));
   const blocking = semanticProblems.filter((entry) => entry.severity === "blocking");
   if (blocking.length > 0) throw new Error(`artifact set is not coherent: ${blocking.map((entry) => entry.code).join(", ")}`);
   return { manifest, id: setManifestId(manifest) };
@@ -427,10 +430,15 @@ export function requirementProblems(manifest: SetManifest, present: { framework?
 }
 
 /** Runs `body` with an artifact unpacked, removing the staging directory afterwards
- *  whatever happens — a half-installed set left unpacked invites confusion with the deployment. */
-export async function withUnpackedArtifact<T>(artifact: string, body: (staging: string, verified: VerifiedArtifact) => Promise<T>): Promise<T> {
+ *  whatever happens — a half-installed set left unpacked invites confusion with the deployment.
+ *  The line after verification is the caller's: validate reads an artifact it will not install. */
+export async function withUnpackedArtifact<T>(
+  artifact: string,
+  body: (staging: string, verified: VerifiedArtifact) => Promise<T>,
+  note = `installing from ${artifact}`,
+): Promise<T> {
   const { staging, verified } = await unpackArtifactVerified(artifact);
-  log(`installing from ${artifact}`);
+  log(note);
   try {
     return await body(staging, verified);
   } finally {

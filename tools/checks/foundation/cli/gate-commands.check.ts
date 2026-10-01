@@ -286,6 +286,19 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   check("a gate command is left to the caller", helpWithoutDeployment(gate, ["version"], context), undefined);
   const checkoutCommand = await help(["help", "status"], { checkout: "/some/checkout" });
   check("help <deployment command> in a checkout does not advise init", checkoutCommand.code === 1 && !checkoutCommand.text.includes("clawforge init"), true);
+  // `help <checkout command>` in a subfolder used to say "unknown command" — the same
+  // regression R30-02 fixed for typing the command itself, one level deeper.
+  const helpedSubfolder = await help(["help", "list"], { checkout: "/some/checkout with spaces" });
+  check(
+    "help <checkout command> in a subfolder says it runs at the root, not unknown",
+    helpedSubfolder.code === 1 && helpedSubfolder.text.includes("list is a checkout command") && !helpedSubfolder.text.includes("unknown command"),
+    true,
+  );
+  check("and the cd hint quotes a path with spaces", helpedSubfolder.text.includes('cd "/some/checkout with spaces"'), true);
+  for (const command of ["new-app", "remove-app", "check"]) {
+    const helped = await help(["help", command], { checkout: "/some/checkout" });
+    check(`help ${command} in a subfolder points to the checkout root too`, helped.code === 1 && helped.text.includes("checkout command"), true);
+  }
 }
 
 // --- checkout subfolders and help without a resolvable deployment -----------------------------
@@ -304,7 +317,12 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   check("a bare command is not", isDeploymentHelpRequest([deployment], Object.keys(openclawCommands)), false);
   check("nor -h, which entry/cli.ts does not treat as help after a command", isDeploymentHelpRequest([deployment, "-h"], Object.keys(openclawCommands)), false);
   check("nor an unknown command's --help", isDeploymentHelpRequest(["stauts", "--help"], Object.keys(openclawCommands)), false);
-  check("nor extra arguments", isDeploymentHelpRequest([deployment, "--help", "x"], Object.keys(openclawCommands)), false);
+  // The action form is the natural one for commands with actions, and it used to fall
+  // through to "several deployments" — the bug R30-02's fix left behind.
+  check("a command's action-level --help is a help request too", isDeploymentHelpRequest([deployment, "install", "--help"], Object.keys(openclawCommands)), true);
+  check("so is --help after the command's own flags", isDeploymentHelpRequest([deployment, "--json", "--help"], Object.keys(openclawCommands)), true);
+  check("extra arguments after --help still count as help", isDeploymentHelpRequest([deployment, "--help", "x"], Object.keys(openclawCommands)), true);
+  check("but -- beyond it ends the scan, like requestsHelp", isDeploymentHelpRequest([deployment, "--", "--help"], Object.keys(openclawCommands)), false);
 
   const empty = missingDeploymentReport(true, "emptyx", "/some/checkout/apps/emptyx", [], true);
   check("an existing directory without app.ts is offered to new-app, not told to gain an app.ts by hand", empty.join(" ").includes("new-app emptyx takes it over") && !empty.join(" ").includes("add one there"), true);

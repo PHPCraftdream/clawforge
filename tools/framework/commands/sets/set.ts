@@ -5,12 +5,13 @@
 // validateAction/forgetAction/the dispatcher and re-exports the other two, so every
 // external importer keeps using "./set.ts".
 
-import { die, log, info, warn } from "#src/core/io/log.ts";
+import { die, log, info } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { validateSet } from "#src/set/ownership/validate.ts";
+import { printProblem } from "#src/commands/orchestration/inspect/gather.ts";
+import type { Problem } from "#src/service/inspection.ts";
 import { removeOwnedObject } from "#src/commands/management/provision-agent/index.ts";
 import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
@@ -64,85 +65,61 @@ export const SET_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgum
 export * from "./set-secrets-guard.ts";
 export * from "./set-manifest.ts";
 
-/** The manifest inside an artifact, without unpacking the rest of it.
- *
- *  `--force-local` on Windows, same reason as writeArtifact: GNU tar reads the drive
- *  letter in an absolute path as a remote host spec. */
-export async function readManifestFromArtifact(artifact: string): Promise<SetManifest> {
-  const forceLocal = process.platform === "win32" ? ["--force-local"] : [];
-  let result = await spawnLocal("tar", [...forceLocal, "-xzOf", artifact, "./set.json"], { allowFailure: true });
-  if (result.code !== 0) {
-    result = await spawnLocal("tar", ["-xzOf", artifact, "./set.json"], { allowFailure: true });
-  }
-  if (result.code !== 0) {
-    die(`could not read a set manifest from ${artifact}: ${(result.stderr || result.stdout).trim()}`);
-  }
-
-  try {
-    return JSON.parse(result.stdout) as SetManifest;
-  } catch {
-    die(`${artifact} contains a set.json that is not JSON — it is not an artifact this framework wrote`);
-  }
-}
-
 /** `./clawforge set validate` — the same manifest `build` would produce, or one read back
  *  from an artifact, put through every check that needs no gateway.
  *
- *  Validating the working tree also checks the files are there; validating an artifact must
- *  not — its content is checksums, and looking for those paths on the reading machine would
- *  report a good set as broken everywhere except where it was built. */
+ *  Validating the working tree also checks the files are there; validating an artifact runs
+ *  the same checks against the staging directory it was unpacked into, so the artifact is
+ *  held to exactly what the tree it came from would have been — an incomplete recipe is
+ *  refused here (by the unpack verification), not waved through as "coherent". */
 async function validateAction(
   ctx: Context,
   options: { name?: string; artifact?: string; jsonOnly: boolean },
 ): Promise<void> {
-  const fromArtifact = options.artifact !== undefined;
-  if (fromArtifact) {
-    return withUnpackedArtifact(options.artifact!, (staging, verified) => withSetSource(staging, async () => {
-      if (options.jsonOnly || isCaptured()) {
-        emit(`${JSON.stringify({set:verified.manifest.name,id:verified.id,source:options.artifact,valid:true,problems:[],nextActions:[]},null,2)}\n`);
-      } else {
-        log(`set ${verified.manifest.name} (${verified.id}) is coherent and its artifact contents match`);
-      }
-    }));
-  }
-  const manifest = fromArtifact
-    ? await readManifestFromArtifact(options.artifact!)
-    // The tag is kept in requires.image rather than dying here: validate reports the gap
-    // itself (SET_IMAGE_UNPINNED) together with everything else it found.
-    : (await collectManifest(ctx, options.name ?? defaultSetName(deploymentName()), { tolerateUnpinnedImage: true })).manifest;
-
-  const problems = await validateSet(manifest, { checkFiles: !fromArtifact });
-  const blocking = problems.filter((entry) => entry.severity === "blocking");
-
-  if (options.jsonOnly || isCaptured()) {
-    emit(
-      `${JSON.stringify(
-        {
-          set: manifest.name,
-          source: fromArtifact ? options.artifact : "working tree",
-          valid: blocking.length === 0,
-          problems,
-          nextActions: [...new Set(problems.map((entry) => entry.nextAction))],
-        },
-        null,
-        2,
-      )}\n`,
-    );
-  } else if (problems.length === 0) {
-    log(`set ${manifest.name} is coherent`);
-    info(`${Object.keys(manifest.recipes).length} recipe(s), ${manifest.secrets.length} secret name(s)`);
-    info("checked without a gateway; whether the pinned image supports what the recipes use is settled at install");
-  } else {
-    log(`set ${manifest.name}: ${blocking.length} blocking, ${problems.length - blocking.length} warning(s)`);
-    for (const entry of problems) {
-      warn(`${entry.code}  ${entry.detail}`);
-      info(`  → ${entry.nextAction}`);
+  // Both sources answer through one report, so the artifact path cannot drift from the
+  // tree path: blocking findings print as blocking (doctor's verb, not warning:), the
+  // summary names each failing code once, and non-zero exit comes from the blockers alone.
+  const report = async (manifest: SetManifest, source: string, problems: Problem[], coherentNote = "", id?: string): Promise<void> => {
+    const blocking = problems.filter((entry) => entry.severity === "blocking");
+    if (options.jsonOnly || isCaptured()) {
+      emit(
+        `${JSON.stringify(
+          {
+            set: manifest.name,
+            // The artifact's content id, as the JSON always carried for an artifact.
+            ...(id === undefined ? {} : { id }),
+            source,
+            valid: blocking.length === 0,
+            problems,
+            nextActions: [...new Set(problems.map((entry) => entry.nextAction))],
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    } else if (problems.length === 0) {
+      log(`set ${manifest.name} is coherent${coherentNote}`);
+      info(`${Object.keys(manifest.recipes).length} recipe(s), ${manifest.secrets.length} secret name(s)`);
+      info("checked without a gateway; whether the pinned image supports what the recipes use is settled at install");
+    } else {
+      log(`set ${manifest.name}: ${blocking.length} blocking, ${problems.length - blocking.length} warning(s)`);
+      for (const entry of problems) printProblem(entry);
     }
-  }
+    if (blocking.length > 0) {
+      throw new Error(`${blocking.length} blocking finding(s): ${[...new Set(blocking.map((entry) => entry.code))].join(", ")}`);
+    }
+  };
 
-  if (blocking.length > 0) {
-    throw new Error(`${blocking.length} blocking finding(s): ${blocking.map((entry) => entry.code).join(", ")}`);
+  if (options.artifact !== undefined) {
+    const artifact = options.artifact;
+    return withUnpackedArtifact(artifact, (staging, verified) => withSetSource(staging, async () => {
+      await report(verified.manifest, artifact, await validateSet(verified.manifest, { checkFiles: true }), " and its artifact contents match", verified.id);
+    }), `checking ${artifact}`);
   }
+  // The tag is kept in requires.image rather than dying here: validate reports the gap
+  // itself (SET_IMAGE_UNPINNED) together with everything else it found.
+  const manifest = (await collectManifest(ctx, options.name ?? defaultSetName(deploymentName()), { tolerateUnpinnedImage: true })).manifest;
+  await report(manifest, "working tree", await validateSet(manifest, { checkFiles: true }));
 }
 
 /** `./clawforge set forget --kind <kind> --name <name>` — removes an object this framework

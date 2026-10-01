@@ -6,10 +6,12 @@
 // is worse than no finding.
 
 import { validateSet, cronProblem } from "#framework/set/ownership/validate.ts";
-import { defaultSetName, collectManifest } from "#framework/commands/sets/set.ts";
+import { defaultSetName, collectManifest, buildSet, set } from "#framework/commands/sets/set.ts";
+import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
 import { problem } from "#framework/service/inspection.ts";
 import { buildSetManifest } from "#framework/set/artifacts/model.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { createBuildDeployment, removeBuildDeployment, ctx as buildCtx } from "#checks/sets/artifact/set-build/fixture.ts";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -301,6 +303,93 @@ check("leading digits and punctuation are stripped rather than smuggled through"
       refused = true;
     }
     check("build still refuses to pin a tag", refused, true);
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
+}
+
+// --- an artifact is held to what the tree it came from would have been -----------------------
+//
+// Found by building from a tree with recipes that had only verify.ts in them: the build
+// wrote the artifact (build does not validate — that is validate's task), and
+// `validate --set` then called it "coherent", because the unpack verification ran the
+// semantic checks with checkFiles: false and the recipe-completeness rules never fired —
+// even though the artifact was unpacked and its recipes were right there in staging. The
+// same incomplete tree now refuses at the unpack gate, which is also the gate for
+// `apply --set`, `plan`, `rollback --previous-set`, `set try`, `set diff` and `accept --set`.
+{
+  const deployment = await createBuildDeployment();
+  try {
+    // The good case first: a complete tree builds an artifact that verifies.
+    const good = await buildSet(buildCtx, "demo-set");
+    const verified = await unpackArtifactVerified(good.artifact);
+    check("a complete tree's artifact verifies at the unpack gate", verified.verified.id, good.id);
+    await rm(verified.staging, { recursive: true, force: true });
+
+    // The incomplete tree: nine-ish recipes with nothing but verify.ts.
+    for (const name of ["hk-a", "hk-b", "hk-c"]) {
+      await mkdir(resolve(deployment, "recipes", name), { recursive: true });
+      await writeFile(resolve(deployment, "recipes", name, "verify.ts"), "// verify only\n");
+    }
+    const bad = await buildSet(buildCtx, "demo-set");
+    check("build itself still writes the artifact — validating is not build's task", bad.id !== good.id, true);
+
+    let refusal = "";
+    try {
+      const unpacked = await unpackArtifactVerified(bad.artifact);
+      await rm(unpacked.staging, { recursive: true, force: true });
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error);
+    }
+    check("an artifact built from an incomplete tree refuses at the unpack gate", refusal.includes("SET_RECIPE_INCOMPLETE"), true);
+
+    // And the command surface: validate --set refuses, printing the findings as blocking
+    // (doctor's verb), not warning: — and the summary does not repeat the code per finding.
+    // stderr is patched directly rather than withOutputSink: that helper makes isCaptured()
+    // true, which forces the --json answer instead of the text a terminal run gets.
+    let text = "";
+    let failed = false;
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stderr.write as any) = (chunk: string | Uint8Array): boolean => {
+      text += String(chunk);
+      return true;
+    };
+    try {
+      try {
+        await set(buildCtx, ["validate"]);
+      } catch {
+        failed = true;
+      }
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+    check("validating that tree fails", failed, true);
+    check("blocking findings print as blocking, not warning:", text.includes("blocking: SET_RECIPE_INCOMPLETE") && !text.includes("warning: SET_RECIPE_INCOMPLETE"), true);
+    check("the summary names each failing code once", text.includes("3 blocking, 0 warning(s)") && (text.match(/SET_RECIPE_INCOMPLETE/g) ?? []).length === 3, true);
+
+    // The verb: validate reads an artifact it has no intention of installing.
+    let goodText = "";
+    const originalWriteAgain = process.stderr.write.bind(process.stderr);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stderr.write as any) = (chunk: string | Uint8Array): boolean => {
+      goodText += String(chunk);
+      return true;
+    };
+    try {
+      await set(buildCtx, ["validate", "--set", good.artifact]);
+    } finally {
+      process.stderr.write = originalWriteAgain;
+    }
+    check("validate --set says checking, not installing", goodText.includes("checking") && !goodText.includes("installing"), true);
+    check("a good artifact still validates as coherent", goodText.includes("is coherent and its artifact contents match"), true);
+
+    // --json (a capturing sink) keeps the artifact's content id, as it always carried it.
+    let captured = "";
+    await withOutputSink((chunk) => { captured += chunk; }, () => set(buildCtx, ["validate", "--set", good.artifact]));
+    const document = JSON.parse(captured.slice(captured.indexOf("{\n")));
+    check("validate --set --json carries the artifact's id", document.id, good.id);
+    check("and the source and validity", [document.source, document.valid], [good.artifact, true]);
   } finally {
     await removeBuildDeployment(deployment);
   }

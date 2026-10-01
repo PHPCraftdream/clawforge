@@ -15,6 +15,20 @@ All notable changes to `@clawforge/framework` will be documented here.
   `1440` reads as `1d`, `90` as `1h, 2h`, `0` as `1m` (previously `1440m`/`1440h`, which backup
   then refuses), and its general refusal no longer opens with "a number of minutes" — backup
   requires an explicit unit. `watch install` still accepts bare minutes.
+* `set build`'s no-digest refusal advises `./clawforge bootstrap` (which pins the digest and works
+  before the first bootstrap) instead of `./clawforge lock`, which refuses there — the same advice
+  `set validate` already gives. Artifact validation now runs the same recipe-completeness checks
+  the working-tree validation runs (the artifact is unpacked when verified), so a tree with
+  blocking findings can no longer build into an artifact that `set validate --set` calls coherent —
+  the unpack gate (also behind `apply --set`, `plan`, `rollback --previous-set`, `set try`,
+  `set diff`, `accept --set`) refuses it. `set validate --set` reports findings through the same
+  path as the tree (blocking findings print as `blocking:`, each failing code once in the summary)
+  and prints "checking …" rather than "installing from …".
+* Checkout help leftovers: `<command> <action> --help` at the checkout root answers with the
+  command's help instead of "several deployments" (so does `--help` after the command's own
+  flags); `help <checkout command>` in a checkout subfolder points to the checkout root instead of
+  "unknown command"; the `cd` hint quotes the path; and `init` in a checkout refuses with what is
+  actually true — it writes an installed-style deployment, not one the checkout cannot load.
 * `set validate` on a working tree whose image is not pinned yet builds the manifest with the
   tag in `requires.image` and reports `SET_IMAGE_UNPINNED` as a blocking finding together with
   everything else it found — in `--json` too — instead of dying inside the manifest build with

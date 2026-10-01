@@ -78,8 +78,9 @@ if (initializing && ancestor === undefined && checkout !== undefined) {
     })();
   // Verbatim: the bash form must stay `./clawforge`, not be localized to this invocation.
   reportErrorVerbatim(
-    `${checkout} is a ClawForge checkout — init would write an installed-style deployment it cannot load; ` +
-      `from its root run: ${cli("new-app <name>")} (in bash also ./clawforge new-app <name>)` +
+    `${checkout} is a ClawForge checkout — init writes an installed-style deployment (its own committed ` +
+      `clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one ` +
+      `is new-app under apps/. From the checkout root run: ${cli("new-app <name>")} (in bash also ./clawforge new-app <name>)` +
       (reusable ? `; new-app ${basename(cwd)} takes over this empty directory, or remove it` : ""),
   );
   process.exit(1);

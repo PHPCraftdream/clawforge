@@ -72,7 +72,7 @@ async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<
       die(
         `the lock's digest does not belong to ${image} — it was recorded for ${lock.image.reference}, ` +
           "and pinning it here would put the previous image's runtime under a declaration that no longer names it.\n" +
-          "Run ./clawforge lock to record the digest for the image now declared, or set OPENCLAW_IMAGE to a @sha256 reference.",
+          "Run ./clawforge bootstrap to record the digest for the image now declared, or set OPENCLAW_IMAGE to a @sha256 reference.",
       );
     }
     return lock.image.digest;
@@ -83,7 +83,7 @@ async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<
   die(
     `no image digest to pin the set to — ${image} is a tag, and a set that names a tag ` +
       "would install whatever that tag means on the day it is installed.\n" +
-      "Run ./clawforge lock to record the digest that was proven, or set OPENCLAW_IMAGE to a @sha256 reference.",
+      "Run ./clawforge bootstrap to record the digest that was proven, or set OPENCLAW_IMAGE to a @sha256 reference.",
   );
 }
 

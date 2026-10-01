@@ -106,6 +106,15 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
     gateCommandHelp(command);
     return 0;
   }
+  // `help list` from a checkout subfolder: the command is real, it just runs at the root —
+  // the same answer typing `list` there gets, not "unknown command".
+  if (checkout !== undefined) {
+    const fromRoot = checkoutSubfolderReport(target, checkout);
+    if (fromRoot !== undefined) {
+      for (const line of fromRoot) reportError(line);
+      return 1;
+    }
+  }
   if (context.deploymentCommands.includes(target)) {
     reportError(
       checkout === undefined
@@ -126,16 +135,24 @@ export const CHECKOUT_GATE_COMMANDS: readonly string[] = ["check", "list", "new-
  *  real there too, it just runs at the root — not an unknown command. */
 export function checkoutSubfolderReport(first: string, checkout: string): string[] | undefined {
   if (!CHECKOUT_GATE_COMMANDS.includes(first)) return undefined;
+  // Quoted: a path with spaces breaks unquoted in any shell, and Windows backslashes read
+  // as escapes in the Git Bash this hint is most likely pasted into.
   return [
     `${first} is a checkout command — run it from the checkout root:`,
-    `    cd ${checkout}`,
+    `    cd "${checkout}"`,
   ];
 }
 
-/** `<command> --help` for a deployment command: help must answer without a deployment. Only
- *  --help, matching entry/cli.ts's requestsHelp, which `-h` after a command does not satisfy. */
+/** `<command> [<any arguments up to a bare --> --help>` for a deployment command: help must
+ *  answer without a deployment. The scan matches entry/cli.ts's requestsHelp — so the natural
+ *  `<command> <action> --help` form and `--json --help` count, while `-h` after a command,
+ *  which requestsHelp also does not treat as help, does not. */
 export function isDeploymentHelpRequest(argv: readonly string[], deploymentCommands: readonly string[]): boolean {
-  return argv.length === 2 && argv[1] === "--help" && deploymentCommands.includes(argv[0]);
+  if (argv[0] === undefined || !deploymentCommands.includes(argv[0])) return false;
+  const rest = argv.slice(1);
+  if (rest.length === 0) return false;
+  const sep = rest.indexOf("--");
+  return (sep === -1 ? rest : rest.slice(0, sep)).includes("--help");
 }
 
 /** What a leading `--app <name>` or `--app=<name>` split off argv, if either was there. */

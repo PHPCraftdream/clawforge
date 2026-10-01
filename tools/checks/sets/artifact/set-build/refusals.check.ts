@@ -81,7 +81,7 @@ try {
         refusal.includes(otherRepo) && refusal.includes(declared),
         true,
       );
-      check("that refusal names the safe remedies for a deployed instance", refusal.includes("./clawforge upgrade --image") && refusal.includes("./clawforge lock") && !refusal.includes("./clawforge bootstrap"), true);
+      check("that refusal names the safe remedies for a deployed instance", refusal.includes("./clawforge upgrade --image") && refusal.includes("`lock`") && !refusal.includes("bootstrap"), true);
       const otherTag = "ghcr.io/openclaw/openclaw:older-stable";
       await writeLock(otherTag, `ghcr.io/openclaw/openclaw@sha256:${"b".repeat(64)}`);
       refusal = await buildRefusal();
@@ -125,7 +125,7 @@ try {
     try {
       const none = await buildRefusal();
       check("no lock at all keeps the no-digest refusal", none.includes("no image digest to pin the set to") && none.includes(declared), true);
-      check("its advice covers both states: bootstrap before the first, lock on a running instance", none.includes("./clawforge bootstrap") && none.includes("./clawforge lock"), true);
+      check("its advice covers both states: bootstrap before the first, lock on a running instance", none.includes("./clawforge bootstrap") && none.includes("`lock`"), true);
     } finally {
       await writeFile(lockPath, originalLock);
     }
@@ -145,7 +145,7 @@ try {
     try {
       const digestless = await buildRefusal();
       check("a digestless lock for the declared tag still refuses", digestless.includes("no image digest to pin the set to"), true);
-      check("its advice names both pull paths, then lock", digestless.includes("./clawforge bootstrap") && digestless.includes(`./clawforge upgrade --image ${declared}`) && digestless.includes("./clawforge lock"), true);
+      check("its advice names both pull paths, then lock", digestless.includes(`./clawforge upgrade --image ${declared}`) && digestless.includes("`bootstrap`") && digestless.includes("`lock`"), true);
     } finally {
       await writeFile(lockPath, originalLock);
     }

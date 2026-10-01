@@ -21,7 +21,7 @@ import { requirements } from "#src/service/secrets.ts";
 import { recipeNames } from "#src/service/recipe.ts";
 import { checksumOf, checksumOfFileMap, recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { openclawCliBatch } from "#src/service/openclaw-cli.ts";
-import { nextActions, problem } from "#src/service/inspection.ts";
+import { nextActions, nextAdvice, problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import {
@@ -315,7 +315,7 @@ async function runLock(ctx: Context, checkOnly: boolean, jsonOnly: boolean): Pro
     const problems = [...inventoryProblems, ...compareLock(await readLock(), current)];
     const report = summarizeCheck(problems, inventoryProblems);
     if (jsonOnly || isCaptured()) {
-      emit(`${JSON.stringify({ deployment: current.deployment, problems, nextActions: nextActions(problems) }, null, 2)}\n`);
+      emit(`${JSON.stringify({ deployment: current.deployment, problems, nextActions: nextActions(problems), next: nextAdvice(problems) }, null, 2)}\n`);
       if (report.summary !== undefined) dieWithExitCode(report.summary, 1);
       return;
     }

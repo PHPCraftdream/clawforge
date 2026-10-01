@@ -303,9 +303,14 @@ export async function renderGolden(): Promise<Record<string, string>> {
   // --- problem codes ----------------------------------------------------------------------
 
   const { PROBLEM_CODES } = await import("#framework/service/inspection.ts");
+  const { renderAdvice, SHIM_PROGRAM } = await import("#framework/core/io/invocation/render.ts");
+  const { invocation, setInvocation } = await import("#framework/core/io/invocation/index.ts");
+  const before = invocation();
+  setInvocation({ program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" });
   const codeLines = Object.entries(PROBLEM_CODES)
-    .map(([code, meaning]) => `${code}\t${meaning.severity}\t${meaning.nextAction}`)
+    .map(([code, meaning]) => `${code}\t${meaning.severity}\t${renderAdvice(meaning.next)}`)
     .join("\n");
+  setInvocation(before);
   snapshots["problem-codes.txt"] = `code\tseverity\tnextAction\n${codeLines}\n`;
 
   // --- refusals -----------------------------------------------------------------------------

@@ -562,6 +562,14 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* Problems and JSON documents that carry `nextActions` (inspect/doctor/lock --check/apply/set
+  validate --json) now also carry a structural `next`: the remedies as data instead of rendered
+  strings.
+* The MCP structured envelope now carries `nextSteps` (`{tool, arguments}`) beside the unchanged
+  `nextActions`.
+* The `GATEWAY_PUBLICLY_BOUND`/`UFW_DOCKER_BYPASS` notes and the image-pin advice in `set
+  validate`/`set build` name the main command first; alternatives are named bare (`` `up` ``,
+  `` `expose` ``, `` `lock` ``) in the note.
 * Command hints (log lines, errors, `Usage:`, the `help` footer, `nextActions` in JSON and MCP
   envelopes) now name the command the way it was invoked: `./clawforge` from the monorepo gate
   (plus `--app <name>` for a non-default deployment) and from the committed shim, `clawforge` from

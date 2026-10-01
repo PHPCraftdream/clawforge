@@ -65,7 +65,7 @@ export interface SetManifest {
   /** Secret NAMES only. The shape has no field a value could go into — same rule as the lock:
    *  a manifest that carried values would be a credential store that looks like a kit. */
   readonly secrets: readonly string[];
-  /** Acceptance checks per recipe name — exactly what `./clawforge accept` runs. */
+  /** Acceptance checks per recipe name — exactly what `accept` runs. */
   readonly acceptance: Record<string, readonly AcceptanceCheck[]>;
 }
 

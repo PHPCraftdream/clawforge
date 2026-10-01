@@ -21,7 +21,7 @@ Every finding carries a code (`CONFIG_DRIFT`, `SECRET_MISSING`, `RESTART_REQUIRE
 `RECIPE_MIRROR_DRIFT`, …) and the command that resolves it, so an agent branches on the code
 instead of reading prose. `./clawforge doctor` is the same inspection as a verdict, exiting non-zero
 when something blocking was found. Over MCP these four return `structuredContent` —
-`{operationId, changed, healthy, problems, warnings, nextActions, result}` — beside the usual
+`{operationId, changed, healthy, problems, warnings, nextActions, nextSteps, result}` — beside the usual
 text.
 
 `inspect` also asks the running container, from inside it, whether it can reach the

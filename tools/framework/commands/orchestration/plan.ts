@@ -69,10 +69,10 @@ function recipeWork(inspection: Inspection): Map<string, ProblemCode[]> {
 
   for (const entry of inspection.problems) {
     if (!recipeCodes.includes(entry.code)) continue;
-    // The remedy carries "./clawforge provision-agent <recipe>" — the name is taken from
-    // there rather than re-parsed out of the human sentence.
-    const recipe = entry.nextAction.startsWith("./clawforge provision-agent ")
-      ? entry.nextAction.slice("./clawforge provision-agent ".length).trim()
+    // The remedy carries the recipe name as its argv: ["provision-agent", "<recipe>"] —
+    // read from the advice's data, never re-parsed out of the human sentence.
+    const recipe = entry.next.kind === "clawforge" && entry.next.argv[0] === "provision-agent" && entry.next.argv.length === 2
+      ? entry.next.argv[1]
       : undefined;
     if (recipe === undefined) continue;
     const codes = perRecipe.get(recipe) ?? [];
@@ -82,9 +82,14 @@ function recipeWork(inspection: Inspection): Map<string, ProblemCode[]> {
   return perRecipe;
 }
 
-/** SET_OBJECT_ORPHANED's remedy is "./clawforge set forget --kind <kind> --name <name>" —
- *  same convention as recipeWork's, kind/name taken from there. */
-const FORGET_PATTERN = /^\.\/clawforge set forget --kind (\S+) --name (.+)$/;
+/** SET_OBJECT_ORPHANED's remedy is set forget's argv — ["set", "forget", "--kind", <kind>,
+ *  "--name", <name>] — same convention as recipeWork's, kind/name taken from there. */
+function forgottenObject(entry: Problem): { kind: string; name: string } | undefined {
+  const argv = entry.next.kind === "clawforge" ? entry.next.argv : [];
+  return argv.length === 6 && argv[0] === "set" && argv[1] === "forget" && argv[2] === "--kind" && argv[4] === "--name"
+    ? { kind: argv[3], name: argv[5] }
+    : undefined;
+}
 
 /** Orphaned objects, turned into steps. An agent is always advisory since deleting one
  *  prunes its workspace and memory — a decision for the reader. An MCP server or cron job
@@ -93,9 +98,9 @@ function orphanActions(inspection: Inspection): PlanAction[] {
   const actions: PlanAction[] = [];
   for (const entry of inspection.problems) {
     if (entry.code !== "SET_OBJECT_ORPHANED") continue;
-    const match = FORGET_PATTERN.exec(entry.nextAction);
-    if (match === null) continue;
-    const [, kind, name] = match;
+    const forgotten = forgottenObject(entry);
+    if (forgotten === undefined) continue;
+    const { kind, name } = forgotten;
     if (kind !== "agent" && kind !== "mcp-server" && kind !== "cron-job") continue;
     if (kind === "agent") {
       actions.push({

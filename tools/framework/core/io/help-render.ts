@@ -161,7 +161,8 @@ export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
 export const STRUCTURED_ENVELOPE_HELP =
   "Every call answers in one envelope: operationId (a stable id), changed (bool), " +
   "healthy (bool, when known), problems/warnings (findings), nextActions (commands to run " +
-  "next), result (the command's own output, unaltered).";
+  "next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the " +
+  "command's own output, unaltered).";
 
 /** One command's full `--help` body plus the destructive-state note entry/cli.ts's console
  *  path appends after it. */

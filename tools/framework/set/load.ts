@@ -14,6 +14,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { die } from "#src/core/io/log.ts";
+import { renderAdvice } from "#src/core/io/invocation/render.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { safeName } from "#src/core/values/names.ts";
 import { deploymentDir, desiredStateFile, recipesDir, secretsTemplateFile } from "#src/runtime/deployment.ts";
@@ -92,14 +93,14 @@ async function desiredSecretNames(desiredState: unknown): Promise<string[]> {
   try {
     names.push(...Object.keys(parseEnv(await readFile(secretsTemplateFile(), "utf8"))));
   } catch {
-    // No template yet — `./clawforge secrets --template` writes one.
+    // No template yet — `secrets --template` writes one.
   }
   return names;
 }
 
 /** The image the set pins, as a digest — a tag moves, the digest is what was proven.
  *
- *  Read from config/deployment.lock.json (recorded at `./clawforge lock` time) rather than
+ *  Read from config/deployment.lock.json (recorded at `lock` time) rather than
  *  re-resolved via runtime.imageReference(), which needs a reachable target this command
  *  must not depend on. An already-digest OPENCLAW_IMAGE is honoured directly.
  *
@@ -116,7 +117,7 @@ async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<
       die(
         `the lock's digest does not belong to ${image} — it was recorded for ${lock.image.reference}, ` +
           "and pinning it here would put the previous image's runtime under a declaration that no longer names it.\n" +
-          `${advice.nextAction}. Or set OPENCLAW_IMAGE to a @sha256 reference.`,
+          `${renderAdvice(advice.next)}. Or set OPENCLAW_IMAGE to a @sha256 reference.`,
       );
     }
     return lock.image.digest;
@@ -126,7 +127,7 @@ async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<
   if (tolerateUnpinned) return image;
   const advice = imagePinAdvice(image, lock);
   die(
-    `no image digest to pin the set to — ${advice.detail}\n${advice.nextAction}. ` +
+    `no image digest to pin the set to — ${advice.detail}\n${renderAdvice(advice.next)}. ` +
       "Or set OPENCLAW_IMAGE to a @sha256 reference.",
   );
 }

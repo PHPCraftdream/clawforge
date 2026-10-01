@@ -5,12 +5,15 @@
 // cannot quietly downgrade a blocking situation, and "healthy" keeps meaning what a reader
 // expects — working, not merely silent.
 
+import { command } from "#framework/core/io/invocation/advice.ts";
+import { renderAdvice } from "#framework/core/io/invocation/render.ts";
 import {
   PROBLEM_CODES,
   problem,
   blockingProblems,
   isHealthy,
   nextActions,
+  nextAdvice,
 } from "#framework/service/inspection.ts";
 import type { Inspection, ProblemCode } from "#framework/service/inspection.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -30,7 +33,9 @@ for (const code of codes) {
   // and an unreachable target, whose fix is outside clawforge entirely (WSL/ssh config).
   check(
     `${code} names something the reader can act on`,
-    meaning.nextAction.startsWith("./clawforge ") || code === "MCP_RESTART_REQUIRED" || code === "TARGET_UNREACHABLE",
+    code === "MCP_RESTART_REQUIRED" || code === "TARGET_UNREACHABLE"
+      ? meaning.next.kind === "manual"
+      : meaning.next.kind === "clawforge" && meaning.next.argv.length > 0,
     true,
   );
 }
@@ -123,7 +128,7 @@ check(
 
 {
   // A more specific remedy is allowed — one named recipe rather than the whole declaration.
-  const specific = problem("CRON_DRIFT", "example-refresh runs at 0 4 * * *, declared 17 3 * * *", "./clawforge provision-agent example-recipe");
+  const specific = problem("CRON_DRIFT", "example-refresh runs at 0 4 * * *, declared 17 3 * * *", command(["provision-agent", "example-recipe"]));
   check("a call site may narrow the remedy", specific.nextAction, "./clawforge provision-agent example-recipe");
   check("but not the severity", specific.severity, PROBLEM_CODES.CRON_DRIFT.severity);
 }
@@ -134,10 +139,18 @@ const problems = [
   problem("CONFIG_DRIFT", "one setting differs"),
   problem("LOCK_MISSING", "no config/deployment.lock.json"),
   problem("SECRET_MISSING", "ZAI_API_KEY is not set in <data>/config/.env"),
+  // A second finding with a remedy already named above: nextAdvice must deduplicate
+  // under the same key (the rendered nextAction) as nextActions, or the two lists drift.
+  problem("LOCK_MISSING", "still no config/deployment.lock.json next to the deployment"),
 ];
 
 check("blocking problems are separated from warnings", blockingProblems(problems).map((entry) => entry.code), ["CONFIG_DRIFT", "SECRET_MISSING"]);
 check("next actions are deduplicated and ordered as found", nextActions(problems), ["./clawforge apply", "./clawforge lock", "./clawforge secrets --apply"]);
+check(
+  "next advice is index-aligned with next actions",
+  nextAdvice(problems).map((advice) => renderAdvice(advice)),
+  nextActions(problems),
+);
 
 // --- healthy means working, not silent ---------------------------------------------------
 

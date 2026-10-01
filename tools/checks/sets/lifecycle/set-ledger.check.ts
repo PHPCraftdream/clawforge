@@ -28,6 +28,7 @@ import { planActions } from "#framework/commands/orchestration/plan.ts";
 import { problem } from "#framework/service/inspection.ts";
 import type { Inspection, Problem } from "#framework/service/inspection.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { command } from "#framework/core/io/invocation/advice.ts";
 import type { Context } from "#framework/core/context.ts";
 import { InstalledSetUnreadableError, readInstalledSetStrict } from "#framework/set/artifacts/install.ts";
 import { buildSet } from "#framework/commands/sets/set.ts";
@@ -296,7 +297,7 @@ function inspectionWith(problems: Problem[]): Inspection {
   const orphanedAgent = problem(
     "SET_OBJECT_ORPHANED",
     "agent \"old-agent\" was created for recipe \"beta\", which the set no longer declares this way — removing it would also prune its workspace and memory",
-    "./clawforge set forget --kind agent --name old-agent",
+    command(["set", "forget", "--kind", "agent", "--name", "old-agent"]),
   );
   const actions = planActions(inspectionWith([orphanedAgent]));
   check("an orphaned agent is one step", actions.length, 1);
@@ -309,7 +310,7 @@ function inspectionWith(problems: Problem[]): Inspection {
   const orphanedMcp = problem(
     "SET_OBJECT_ORPHANED",
     "mcp-server \"old-server\" was created for recipe \"beta\", which the set no longer declares this way",
-    "./clawforge set forget --kind mcp-server --name old-server",
+    command(["set", "forget", "--kind", "mcp-server", "--name", "old-server"]),
   );
   const actions = planActions(inspectionWith([orphanedMcp]));
   check("an orphaned mcp server is one step", actions.length, 1);
@@ -408,7 +409,7 @@ function inspectionWith(problems: Problem[]): Inspection {
   const orphanProblem = problem(
     "SET_OBJECT_ORPHANED",
     "agent \"old-agent\" was created for recipe \"beta\", which the set no longer declares this way",
-    "./clawforge set forget --kind agent --name old-agent",
+    command(["set", "forget", "--kind", "agent", "--name", "old-agent"]),
   );
   check("the plan marks it advisory rather than removing it on its own", planActions(inspectionWith([orphanProblem]))[0].advisory, true);
 

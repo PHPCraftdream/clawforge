@@ -3,9 +3,10 @@
 // keeps the tool description and input schema; server.ts re-exports both modules.
 
 import { maskSecrets } from "../../core/io/log.ts";
-import { specOf, specShape } from "../../core/command/index.ts";
+import { specOf, specShape, tokenize } from "../../core/command/index.ts";
 import type { CallFacts } from "../../core/command/effect.ts";
-import type { Declared, StructuredResult } from "./schema.ts";
+import type { Advice, CommandAdvice } from "../../core/io/invocation/advice.ts";
+import type { Declared, StructuredResult, ToolStep } from "./schema.ts";
 
 function isWarning(problem: unknown): boolean {
   return (problem as { severity?: unknown } | null)?.severity === "warning";
@@ -23,10 +24,77 @@ function changedFact(command: Declared, fields: { changed?: unknown }, args: str
   return command.changedWhen?.(args) ?? (command.readOnly === true ? false : (typeof fields.changed === "boolean" ? fields.changed : true));
 }
 
+/** The tool-argument record for a command's own argv — the inverse of toArgv: the command
+ *  word is stripped, the action word lands in the derived `action` positional, a flag
+ *  becomes true, an option or positional its string, a variadic its array. Undefined when
+ *  the argv does not parse against the declaration — a step is never guessed. */
+export function toolArguments(command: Declared, argv: readonly string[]): Record<string, unknown> | undefined {
+  if (argv.length === 0) return undefined;
+  const verbatim = (command.arguments ?? []).some(
+    (argument) => argument.kind === "variadic" && "verbatim" in argument && argument.verbatim === true,
+  );
+  let entries;
+  try {
+    entries = tokenize(command.arguments ?? [], argv.slice(1), undefined, verbatim).entries;
+  } catch {
+    return undefined;
+  }
+  const result: Record<string, unknown> = {};
+  for (const { argument, value } of entries) {
+    if (argument.kind === "variadic") {
+      const list = result[argument.name];
+      if (Array.isArray(list)) list.push(value as string);
+      else result[argument.name] = [value as string];
+    } else {
+      result[argument.name] = value;
+    }
+  }
+  return result;
+}
+
+/** The only advice a step can be built from: a clawforge one for this deployment. A
+ *  shell or manual step, and an advice naming another deployment explicitly, are not. */
+function localAdvice(advice: Advice): CommandAdvice | undefined {
+  if (advice.kind !== "clawforge" || advice.app !== undefined) return undefined;
+  return advice;
+}
+
+/** The envelope's nextSteps: the clawforge advices a document carries, matched against the
+ *  tools this server serves. A shell or manual step, an advice naming another deployment
+ *  explicitly, and anything without a matching tool are skipped — not guessed. */
+export function toolSteps(next: readonly Advice[], lookup: (name: string) => Declared | undefined): ToolStep[] {
+  const steps: ToolStep[] = [];
+  for (const advice of next) {
+    const local = localAdvice(advice);
+    if (local === undefined) continue;
+    const [tool] = local.argv;
+    if (typeof tool !== "string") continue;
+    const command = lookup(tool);
+    if (command === undefined) continue;
+    const args = toolArguments(command, local.argv);
+    if (args === undefined) continue;
+    steps.push({ tool, arguments: args });
+  }
+  return steps;
+}
+
+/** The structured `next` field a document carries, narrowed to real advice values. */
+function adviceList(value: unknown): Advice[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is Advice => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const advice = entry as { kind?: unknown; argv?: unknown; text?: unknown; shell?: unknown };
+    if (advice.kind === "clawforge") return Array.isArray(advice.argv) && advice.argv.every((word) => typeof word === "string");
+    if (advice.kind === "manual") return typeof advice.text === "string";
+    if (advice.kind === "shell") return typeof advice.text === "string" && (advice.shell === "posix" || advice.shell === "cmd" || advice.shell === "pwsh");
+    return false;
+  });
+}
+
 /** Builds the envelope from what a structured command emitted. Returns undefined when the
  *  output is not the single JSON document promised — the text result still stands, so a
  *  broken promise degrades rather than turning a working call into an error. */
-export function structuredResult(command: Declared, output: string, operationId: string, args: string[] = [], facts?: CallFacts): StructuredResult | undefined {
+export function structuredResult(command: Declared, output: string, operationId: string, args: string[] = [], facts?: CallFacts, lookup?: (name: string) => Declared | undefined): StructuredResult | undefined {
   let payload: unknown;
   try {
     payload = JSON.parse(output);
@@ -35,7 +103,7 @@ export function structuredResult(command: Declared, output: string, operationId:
   }
   if (payload === null || typeof payload !== "object") return undefined;
 
-  const fields = payload as { operationId?: unknown; healthy?: unknown; problems?: unknown; nextActions?: unknown; changed?: unknown };
+  const fields = payload as { operationId?: unknown; healthy?: unknown; problems?: unknown; nextActions?: unknown; next?: unknown; changed?: unknown };
   const problems = Array.isArray(fields.problems) ? fields.problems : [];
   const commandOperationId = typeof fields.operationId === "string" && fields.operationId !== ""
     ? fields.operationId
@@ -50,6 +118,7 @@ export function structuredResult(command: Declared, output: string, operationId:
     problems,
     warnings: problems.filter(isWarning),
     nextActions: Array.isArray(fields.nextActions) ? fields.nextActions.filter((entry): entry is string => typeof entry === "string") : [],
+    nextSteps: toolSteps(adviceList(fields.next), lookup ?? (() => undefined)),
     result: payload,
   };
 }
@@ -60,13 +129,14 @@ export function structuredResult(command: Declared, output: string, operationId:
  *  returned bare, since the tool declares one outputSchema for all its actions. A text
  *  action's envelope stays silent where a structured one speaks — no healthy, no problems,
  *  no nextActions — a gap can be seen, a guess cannot be trusted. */
-export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = [], facts?: CallFacts): StructuredResult {
-  return structuredResult(command, machineOutput ?? output, operationId, args, facts) ?? {
+export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = [], facts?: CallFacts, lookup?: (name: string) => Declared | undefined): StructuredResult {
+  return structuredResult(command, machineOutput ?? output, operationId, args, facts, lookup) ?? {
     operationId,
     changed: changedFact(command, {}, args, facts),
     problems: [],
     warnings: [],
     nextActions: [],
+    nextSteps: [],
     result: machineOutput ?? output,
   };
 }

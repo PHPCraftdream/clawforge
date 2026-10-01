@@ -37,9 +37,9 @@ SET_IMAGE_UNPINNED	blocking	./clawforge bootstrap
 SET_OBJECT_ORPHANED	warning	./clawforge plan
 SECURITY_AUDIT_CRITICAL	blocking	./clawforge cli security audit --json
 SECURITY_AUDIT_WARN	warning	./clawforge cli security audit --json
-GATEWAY_PUBLICLY_BOUND	blocking	./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and ./clawforge up to recreate, or acknowledge it in config/security-suppressions.json)
+GATEWAY_PUBLICLY_BOUND	blocking	./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and `up` to recreate, or acknowledge it in config/security-suppressions.json)
 GATEWAY_EXPOSURE_ACKNOWLEDGED	warning	./clawforge expose status
-UFW_DOCKER_BYPASS	warning	./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use ./clawforge expose)
+UFW_DOCKER_BYPASS	warning	./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use `expose`)
 PRIVATE_FILE_INSECURE	warning	./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
 PRIVATE_FILE_UNREADABLE	warning	./clawforge doctor  (check local filesystem access, then retry)
 BACKUP_MISSING	warning	./clawforge backup

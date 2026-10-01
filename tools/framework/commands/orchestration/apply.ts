@@ -12,7 +12,7 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { computePlan, printPlanActions } from "./plan.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum, frameworkVersion } from "#src/commands/management/lock.ts";
-import { isHealthy, nextActions, PROBLEM_CODES } from "#src/service/inspection.ts";
+import { isHealthy, nextActions, nextAdvice, PROBLEM_CODES } from "#src/service/inspection.ts";
 import { applyConfig } from "./config.ts";
 import { secrets } from "#src/commands/management/secrets.ts";
 import { up, restart } from "#src/commands/lifecycle/instance/control.ts";
@@ -30,6 +30,7 @@ import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
+import type { Advice } from "#src/core/io/invocation/advice.ts";
 import type { ArgumentSpec } from "#src/core/command/spec.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -135,6 +136,8 @@ export interface ApplyOutcome {
   readonly steps: StepOutcome[];
   readonly problems: readonly { readonly code: string; readonly detail: string }[];
   readonly nextActions: string[];
+  /** The same remedies as structured advice, index-aligned with nextActions. */
+  readonly next: Advice[];
 }
 
 /** Thrown by runSteps when a step moved the deployment target itself (dataDir, port, ...):
@@ -590,6 +593,7 @@ async function confirm(ctx: Context, plan: Plan, steps: StepOutcome[], changed: 
     steps,
     problems: after.problems.map((entry) => ({ code: entry.code, detail: entry.detail })),
     nextActions: nextActions(after.problems),
+    next: nextAdvice(after.problems),
   };
 }
 

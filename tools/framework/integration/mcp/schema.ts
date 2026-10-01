@@ -24,6 +24,12 @@ export type Declared = {
   readonly forceOnConfirmation?: boolean;
 };
 
+/** One remedy as a tool call: the inverse of the argv an advice spells out. */
+export interface ToolStep {
+  readonly tool: string;
+  readonly arguments: Readonly<Record<string, unknown>>;
+}
+
 /** The envelope every structured tool result carries. A text log is written for a person;
  *  an agent has to read prose and guess whether anything changed — these fields answer
  *  that once, in the same shape for every command that produces them. Only what is known
@@ -37,6 +43,9 @@ export interface StructuredResult {
   readonly problems: unknown[];
   readonly warnings: unknown[];
   readonly nextActions: string[];
+  /** The remedies as tool calls, when the command's document carries them as advice:
+   *  `nextSteps` answers "what do I run" without reparsing nextActions' console text. */
+  readonly nextSteps: ToolStep[];
   /** The command's own output, whole and unaltered — its JSON document when it emitted
    *  one, its captured text otherwise. The envelope adds to it, never replaces it, so a
    *  caller that wants a field the envelope does not name still has it. */
@@ -56,9 +65,10 @@ export const STRUCTURED_OUTPUT_SCHEMA = {
     problems: { type: "array" },
     warnings: { type: "array" },
     nextActions: { type: "array", items: { type: "string" } },
+    nextSteps: { type: "array" },
     result: {},
   },
-  required: ["operationId", "changed", "problems", "warnings", "nextActions", "result"],
+  required: ["operationId", "changed", "problems", "warnings", "nextActions", "nextSteps", "result"],
 } as const;
 
 /** The tool description: one-line summary plus a pointer to the `help` tool for the full text. */

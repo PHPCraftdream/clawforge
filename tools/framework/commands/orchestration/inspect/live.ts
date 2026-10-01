@@ -10,6 +10,7 @@ import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
 import { recipeFileChecksums, agentBundleChecksums } from "#src/service/checksums.ts";
 import { readLedger, orphanedBy, foreign } from "#src/set/ownership/ledger.ts";
 import type { DeclaredOwnership } from "#src/set/ownership/ledger.ts";
+import { forgetRemedy, provisionRemedy } from "#src/set/advice.ts";
 import {
   recipeMirrorTargetDir,
   agentWorkspaceTargetDir,
@@ -280,7 +281,7 @@ async function observeOwnership(
       problem(
         "SET_OBJECT_ORPHANED",
         `${owned.kind} "${owned.name}" was created for recipe "${owned.recipe}", which the set no longer declares this way${memoryNote}`,
-        `./clawforge set forget --kind ${owned.kind} --name ${owned.name}`,
+        forgetRemedy(owned.kind, owned.name),
       ),
     );
   }
@@ -308,20 +309,20 @@ async function checkRecipeExpectation(
 
   if (agents !== undefined && !agents.includes(agentId)) {
     problems.push(
-      problem("AGENT_MISSING", `recipe "${expectation.recipe}" declares agent "${agentId}", which the instance does not have`, `./clawforge provision-agent ${expectation.recipe}`),
+      problem("AGENT_MISSING", `recipe "${expectation.recipe}" declares agent "${agentId}", which the instance does not have`, provisionRemedy(expectation.recipe)),
     );
   }
   const registeredServer = mcpServerEntries?.find(([name]) => name === config.mcpServerName)?.[1];
   if (mcpServerEntries !== undefined && registeredServer === undefined) {
     problems.push(
-      problem("MCP_SERVER_MISSING", `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is not registered`, `./clawforge provision-agent ${expectation.recipe}`),
+      problem("MCP_SERVER_MISSING", `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is not registered`, provisionRemedy(expectation.recipe)),
     );
   } else if (registeredServer !== undefined && !mcpServerMatches(registeredServer, expectation.recipe)) {
     problems.push(
       problem(
         "MCP_SERVER_MISSING",
         `recipe "${expectation.recipe}" declares MCP server "${config.mcpServerName}", which is registered but does not launch the recipe's server.ts (wrong command, or disabled)`,
-        `./clawforge provision-agent ${expectation.recipe}`,
+        provisionRemedy(expectation.recipe),
       ),
     );
   }
@@ -329,12 +330,12 @@ async function checkRecipeExpectation(
     const live = liveJobs.find((job) => job.name === config.cronJobName);
     if (live === undefined) {
       problems.push(
-        problem("CRON_DRIFT", `recipe "${expectation.recipe}" declares cron job "${config.cronJobName}", which does not exist`, `./clawforge provision-agent ${expectation.recipe}`),
+        problem("CRON_DRIFT", `recipe "${expectation.recipe}" declares cron job "${config.cronJobName}", which does not exist`, provisionRemedy(expectation.recipe)),
       );
     } else if (!cronJobMatches(live, config, cronMessage)) {
       // Named field by field: "the job differs" leaves the reader to diff it themselves.
       problems.push(
-        problem("CRON_DRIFT", `cron job "${config.cronJobName}" differs from the recipe: ${cronDifferences(live, config, cronMessage).join("; ")}`, `./clawforge provision-agent ${expectation.recipe}`),
+        problem("CRON_DRIFT", `cron job "${config.cronJobName}" differs from the recipe: ${cronDifferences(live, config, cronMessage).join("; ")}`, provisionRemedy(expectation.recipe)),
       );
     }
   }
@@ -368,7 +369,7 @@ async function checkRecipeExpectation(
         problem(
           "RECIPE_MIRROR_DRIFT",
           `recipe "${expectation.recipe}": agent "${agentId}" has prompt drift: ${details.join("; ")}`,
-          `./clawforge provision-agent ${expectation.recipe}`,
+          provisionRemedy(expectation.recipe),
         ),
       );
     }
@@ -379,7 +380,7 @@ async function checkRecipeExpectation(
     if (differing.length > 0) parts.push(`${differing.length} file(s) differ or are missing (${differing.slice(0, 3).join(", ")}${differing.length > 3 ? ", …" : ""})`);
     if (extra.length > 0) parts.push(`${extra.length} file(s) on the target the recipe no longer declares (${extra.slice(0, 3).join(", ")}${extra.length > 3 ? ", …" : ""})`);
     problems.push(
-      problem("RECIPE_MIRROR_DRIFT", `recipe "${expectation.recipe}": ${parts.join("; ")}`, `./clawforge provision-agent ${expectation.recipe}`),
+      problem("RECIPE_MIRROR_DRIFT", `recipe "${expectation.recipe}": ${parts.join("; ")}`, provisionRemedy(expectation.recipe)),
     );
   }
 }

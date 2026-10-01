@@ -17,6 +17,8 @@ import { BATCH_NOT_BOOTSTRAPPED, BATCH_NOT_RUNNING } from "#src/service/openclaw
 import type { BatchedCliResult } from "#src/service/openclaw-cli.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
+import { command, type CommandAdvice } from "#src/core/io/invocation/advice.ts";
+import { renderAdvice } from "#src/core/io/invocation/render.ts";
 
 /** The exact CLI invocations both `lock` and `inspect` read — one place, so the two commands
  *  cannot silently start asking a different question about the same instance. */
@@ -141,17 +143,17 @@ export function skillsForLock(entries: readonly SkillListEntry[]): LockSkill[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** The exact command a reader can run to put a plugin back at the version the lock pinned.
- *  Built from `name` (falling back to `id`) — the closest approximation to the original
- *  install spec, not proven to be it: an npm-origin plugin's id can differ from its
+/** The exact command a reader can run to put a plugin back at the version the lock pinned,
+ *  as Advice: built from `name` (falling back to `id`) — the closest approximation to the
+ *  original install spec, not proven to be it: an npm-origin plugin's id can differ from its
  *  manifest name, so a reinstall built from either can name the wrong package. Why this is
  *  only ever offered as an advisory step (plan.ts), never run unattended. */
-function pluginReinstallCommand(label: string, version: string | undefined): string {
-  return `./clawforge cli plugins install ${label}${version === undefined ? "" : `@${version}`} --force`;
+export function pluginReinstall(label: string, version: string | undefined): CommandAdvice {
+  return command(["cli", "plugins", "install", `${label}${version === undefined ? "" : `@${version}`}`, "--force"]);
 }
 
-function skillReinstallCommand(name: string): string {
-  return `./clawforge cli skills install ${name} --force`;
+export function skillReinstall(name: string): CommandAdvice {
+  return command(["cli", "skills", "install", name, "--force"]);
 }
 
 /** PLUGIN_DRIFT / SKILL_DRIFT: the live third-party set against what the lock pinned, named
@@ -178,7 +180,7 @@ export function compareExtensions(
         problem(
           "PLUGIN_DRIFT",
           `plugin "${label}" is locked at version ${locked.version ?? "(unknown)"} but is no longer installed — ` +
-            `reinstall it: ${pluginReinstallCommand(label, locked.version)}`,
+            `reinstall it: ${renderAdvice(pluginReinstall(label, locked.version))}`,
         ),
       );
     } else if (locked.version !== undefined && live.version !== undefined && locked.version !== live.version) {
@@ -186,7 +188,7 @@ export function compareExtensions(
         problem(
           "PLUGIN_DRIFT",
           `plugin "${label}" is version ${live.version}, locked at ${locked.version} — ` +
-            `reinstall the pinned version: ${pluginReinstallCommand(label, locked.version)}`,
+            `reinstall the pinned version: ${renderAdvice(pluginReinstall(label, locked.version))}`,
         ),
       );
     }
@@ -197,7 +199,7 @@ export function compareExtensions(
       problem(
         "PLUGIN_DRIFT",
         `plugin "${live.name ?? id}" (source ${live.source}) is installed but not in the lock — ` +
-          "review it, then either remove it or run ./clawforge lock to pin it deliberately",
+          "review it, then either remove it or run `lock` to pin it deliberately",
       ),
     );
   }
@@ -210,7 +212,7 @@ export function compareExtensions(
       problem(
         "SKILL_DRIFT",
         `skill "${name}" (source ${locked.source}) is locked but no longer installed — ` +
-          `reinstall it: ${skillReinstallCommand(name)}`,
+          `reinstall it: ${renderAdvice(skillReinstall(name))}`,
       ),
     );
   }
@@ -220,7 +222,7 @@ export function compareExtensions(
       problem(
         "SKILL_DRIFT",
         `skill "${name}" (source ${live.source}) is installed but not in the lock — ` +
-          "review it, then either remove it or run ./clawforge lock to pin it deliberately",
+          "review it, then either remove it or run `lock` to pin it deliberately",
       ),
     );
   }

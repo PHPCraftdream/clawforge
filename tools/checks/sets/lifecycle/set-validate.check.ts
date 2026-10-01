@@ -98,7 +98,7 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
     // lock for another image means the deployment was last pinned elsewhere, and the honest
     // path is the upgrade one — lock only after the gateway really runs the declared tag.
     const locked = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
-    check("a lock for another image advises the upgrade path", locked[0]?.nextAction, "./clawforge upgrade --image ghcr.io/openclaw/openclaw:extended-stable to move the deployment to the image now declared — ./clawforge lock afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's)");
+    check("a lock for another image advises the upgrade path", locked[0]?.nextAction, "./clawforge upgrade --image ghcr.io/openclaw/openclaw:extended-stable  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))");
     check("the detail no longer claims lock records what the running gateway serves", locked[0]?.detail.includes("the running gateway already serves"), false);
     check("the detail names the reference the lock was taken for", locked[0]?.detail.includes("x:y"), true);
 
@@ -107,7 +107,7 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
     await writeFile(lockPath, JSON.stringify({ version: 1, image: { reference: "ghcr.io/openclaw/openclaw:extended-stable" } }));
     const digestless = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
     check("a digestless lock is still a finding", codes(digestless), ["SET_IMAGE_UNPINNED"]);
-    check("its advice names bootstrap AND upgrade as the pull paths", digestless[0]?.nextAction.includes("./clawforge bootstrap") && digestless[0]?.nextAction.includes("./clawforge upgrade --image"), true);
+    check("its advice names upgrade first and bootstrap as the alternative", digestless[0]?.nextAction.includes("./clawforge upgrade --image") && digestless[0]?.nextAction.includes("`bootstrap`"), true);
     check("and says lock pins the LOCAL image of the tag, not the container", digestless[0]?.detail.includes("local image that OPENCLAW_IMAGE names"), true);
   } finally {
     await rm(lockPath);

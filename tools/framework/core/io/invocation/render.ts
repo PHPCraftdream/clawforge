@@ -27,9 +27,8 @@ function isGateCommand(word: string | undefined): boolean {
   return word !== undefined && gateCommands.has(word);
 }
 
-/** A word POSIX and cmd leave as is without quoting. `/` is excluded, so a path is a
- *  program spelling (rendered bare) rather than an argument. */
-const SAFE_WORD = /^[A-Za-z0-9_@%+=:,.-]+$/;
+/** A word POSIX, cmd and pwsh leave as is without quoting (a path or an image reference included). */
+const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 
 function renderArgument(word: string, program: string): string {
   if (/^<.*>$/.test(word)) return word;                // a placeholder <…> stays bare

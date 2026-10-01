@@ -23,6 +23,7 @@ import {
   blockingProblems,
   isHealthy,
   nextActions,
+  nextAdvice,
 } from "#src/service/inspection.ts";
 import type { Problem, Inspection, SecretStoreObservation } from "#src/service/inspection.ts";
 import type { SecretStatus } from "#src/service/secrets.ts";
@@ -353,6 +354,7 @@ export function renderJson(inspection: Inspection): Record<string, unknown> {
     healthy: isHealthy(inspection),
     problems: inspection.problems,
     nextActions: nextActions(inspection.problems),
+    next: nextAdvice(inspection.problems),
     declared: inspection.declared,
     observed: inspection.observed,
   };
@@ -399,6 +401,7 @@ export const DOCTOR = commandBody({
             problems,
             security: security.findings,
             nextActions: nextActions(problems),
+            next: nextAdvice(problems),
           },
           null,
           2,

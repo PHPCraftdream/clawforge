@@ -244,6 +244,8 @@ try {
   const lockLines = [
     { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "lock", arguments: { check: true, json: true } } },
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "lock", arguments: { json: true, confirm: true } } },
+    { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "inspect", arguments: { json: true } } },
+    { jsonrpc: "2.0", id: 4, method: "tools/list" },
   ].map((request) => JSON.stringify(request)).join("\n");
 
   try {
@@ -254,13 +256,30 @@ try {
       .filter((line) => line.trim() !== "")
       .map((line) => JSON.parse(line) as Record<string, unknown>);
     const byId = new Map(responses.map((response) => [response.id, response]));
-    const structured = (id: number): { changed?: boolean } | undefined =>
-      (byId.get(id)?.result as { structuredContent?: { changed?: boolean } } | undefined)?.structuredContent;
+    const structured = (id: number): { changed?: boolean; nextActions?: unknown; nextSteps?: unknown } | undefined =>
+      (byId.get(id)?.result as { structuredContent?: { changed?: boolean; nextActions?: unknown; nextSteps?: unknown } } | undefined)?.structuredContent;
 
     check("lock check is callable without confirmation", byId.get(1)?.error, undefined);
     check("lock check reports changed false", structured(1)?.changed, false);
     check("confirmed lock write succeeds", byId.get(2)?.error, undefined);
     check("lock write reports changed true", structured(2)?.changed, true);
+
+    // The envelope's remedies travel twice — console strings beside the tool form the client
+    // can call, matched against the tools this server actually serves (design 1.4). The
+    // inspect line beside it dies before its document on an unbootstrapped app and takes the
+    // empty-remedy fallback, so the lock check is the call asserted here.
+    const servedTools = new Set(((((byId.get(4)?.result as { tools?: Array<{ name: string }> } | undefined)?.tools) ?? []).map((tool) => tool.name)));
+    const toolNamesServe = (name: string): boolean => servedTools.has(name);
+    const envelope = structured(1);
+    const actions = Array.isArray(envelope?.nextActions) ? (envelope?.nextActions as unknown[]) : [];
+    const steps = Array.isArray(envelope?.nextSteps) ? (envelope?.nextSteps as { tool?: unknown; arguments?: unknown }[]) : [];
+    check("lock session (lock --check): console remedies are present", actions.length > 0 && actions.every((entry) => typeof entry === "string"), true);
+    check("lock session (lock --check): the remedies also travel as tool steps", steps.length > 0, true);
+    check(
+      "lock session (lock --check): every step names a tool this server serves",
+      steps.every((step) => typeof step.tool === "string" && toolNamesServe(step.tool) && typeof step.arguments === "object" && step.arguments !== null && !Array.isArray(step.arguments)),
+      true,
+    );
   } finally {
     await rm(resolve(appsDir, lockDeployment), { recursive: true, force: true });
   }
@@ -424,6 +443,20 @@ function conforms(
   check("the remedies are a list", envelope?.nextActions, ["./clawforge apply", "./clawforge lock"]);
   check("the call names itself", envelope?.operationId, "op-1");
   check("and the command's own document is kept unaltered", JSON.stringify(envelope?.result), payload);
+}
+
+{
+  // The structured remedies: a document that carries `next` advice answers with the tool
+  // form beside nextActions — matched against the tools this server serves (design 1.4).
+  const lookup = (name: string) => (name === "lock" ? { summary: "s", structured: true, arguments: [{ name: "check", description: "c", kind: "flag" as const }, { name: "json", description: "j", kind: "flag" as const }] } : undefined);
+  const payload = JSON.stringify({
+    healthy: false,
+    problems: [{ code: "LOCK_MISSING", severity: "warning", detail: "y", nextAction: "./clawforge lock", next: { kind: "clawforge", argv: ["lock"] } }],
+    nextActions: ["./clawforge lock"],
+    next: [{ kind: "clawforge", argv: ["lock"] }, { kind: "manual", text: "reconnect the MCP client" }, { kind: "clawforge", argv: ["deploy", "--host", "x"] }],
+  });
+  const envelope = structuredResult({ summary: "s", structured: true, readOnly: true }, payload, "op-1", [], undefined, lookup);
+  check("the remedies come through as tool steps where a tool exists", envelope?.nextSteps, [{ tool: "lock", arguments: {} }]);
 }
 
 {

@@ -35,7 +35,6 @@
       "tools/framework/commands/management/deploy/arguments.ts": 1,
       "tools/framework/commands/management/deploy/index.ts": 2,
       "tools/framework/commands/management/deploy/sync.ts": 3,
-      "tools/framework/commands/management/extensions.ts": 4,
       "tools/framework/commands/management/lock.ts": 1,
       "tools/framework/commands/management/provision-agent/declaration.ts": 1,
       "tools/framework/commands/management/provision-agent/index.ts": 3,
@@ -61,9 +60,8 @@
       "tools/framework/commands/orchestration/inspect/declared.ts": 1,
       "tools/framework/commands/orchestration/inspect/drift.ts": 1,
       "tools/framework/commands/orchestration/inspect/gather.ts": 4,
-      "tools/framework/commands/orchestration/inspect/live.ts": 8,
       "tools/framework/commands/orchestration/operations.ts": 3,
-      "tools/framework/commands/orchestration/plan.ts": 20,
+      "tools/framework/commands/orchestration/plan.ts": 16,
       "tools/framework/commands/orchestration/rollback.ts": 11,
       "tools/framework/commands/sets/set-diff.ts": 5,
       "tools/framework/commands/sets/set-manifest.ts": 1,
@@ -90,15 +88,9 @@
       "tools/framework/runtime/docker/runtime-docker.ts": 1,
       "tools/framework/runtime/lock/lock-claim.ts": 3,
       "tools/framework/runtime/runtime.ts": 1,
-      "tools/framework/security/audit.ts": 2,
       "tools/framework/security/privacy/deploy-boundary.ts": 1,
-      "tools/framework/service/inspection.ts": 47,
       "tools/framework/service/openclaw-cli.ts": 2,
       "tools/framework/service/operations.ts": 3,
-      "tools/framework/set/advice.ts": 11,
-      "tools/framework/set/load.ts": 2,
-      "tools/framework/set/artifacts/model.ts": 1,
-      "tools/framework/set/ownership/validate.ts": 1,
       "tools/framework/entry/resolve.ts": 3,
       "tools/framework/entry/checkout-gate.ts": 7,
       "tools/clawforge.ts": 7
@@ -135,7 +127,7 @@
         }
       }
     },
-    "total": 445
+    "total": 365
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",

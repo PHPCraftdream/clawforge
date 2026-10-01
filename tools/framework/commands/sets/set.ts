@@ -13,6 +13,7 @@ import { deploymentName } from "#src/runtime/deployment.ts";
 import { validateLoadedSet, loadSet } from "#src/set/load.ts";
 import { printProblem } from "#src/commands/orchestration/inspect/gather.ts";
 import type { Problem } from "#src/service/inspection.ts";
+import { nextActions, nextAdvice } from "#src/service/inspection.ts";
 import { removeOwnedObject } from "#src/commands/management/provision-agent/index.ts";
 import { withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { newOperationId } from "#src/service/operations.ts";
@@ -74,7 +75,8 @@ async function validateAction(
             source,
             valid: blocking.length === 0,
             problems,
-            nextActions: [...new Set(problems.map((entry) => entry.nextAction))],
+            nextActions: nextActions(problems),
+            next: nextAdvice(problems),
           },
           null,
           2,

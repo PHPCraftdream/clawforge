@@ -251,6 +251,7 @@ async function handleAppToolCall(
   name: string,
   command: AppCommand,
   args: Record<string, unknown>,
+  lookup: (name: string) => Declared | undefined,
 ): Promise<void> {
   const problems = validate(command, args);
   if (problems.length > 0) {
@@ -283,7 +284,7 @@ async function handleAppToolCall(
     // true of each response rather than of the actions someone remembered to list. The
     // pipeline's facts (effect, changedWhen) drive `changed`.
     const structured = command.structured === true
-      ? toolEnvelope(command, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv, execution.facts)
+      ? toolEnvelope(command, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv, execution.facts, lookup)
       : undefined;
     // Redaction is not an error-path courtesy: a successful diagnostic prints the same
     // logs, hook output and machine JSON a failure would have, so registered values are
@@ -330,6 +331,7 @@ async function handleToolsCall(
   gateTools: GateCommand[],
   gateCommands: GateCommand[],
   gateHelp: string[],
+  lookup: (name: string) => Declared | undefined,
 ): Promise<void> {
   const params = request.params ?? {};
   // Never String(params.name ?? "") — an object whose toString is not callable (e.g.
@@ -352,7 +354,7 @@ async function handleToolsCall(
   }
 
   const [, command] = entry;
-  await handleAppToolCall(request.id, app, name, command, args);
+  await handleAppToolCall(request.id, app, name, command, args, lookup);
 }
 
 export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] = [], gateHelp: string[] = []): Promise<void> {
@@ -361,6 +363,14 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
   // dispatches what. Kept apart here only because they are invoked differently — a gate
   // command takes no Context, having to run before there is one.
   const gateTools = gateCommands.filter((command) => MCP_EXEMPTIONS[command.name] === undefined);
+
+  // The tools nextSteps can name: what this server serves, app commands and gate commands
+  // alike — the one surface a client called, so a remedy names a tool it can actually call.
+  const served = new Map<string, Declared>([
+    ...tools.map(([name, command]): [string, Declared] => [name, command as Declared]),
+    ...gateTools.map((command): [string, Declared] => [command.name, command as unknown as Declared]),
+  ]);
+  const lookup = (name: string): Declared | undefined => served.get(name);
 
   const lines = createInterface({ input: process.stdin });
 
@@ -423,7 +433,7 @@ export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] =
           .then(() => {
             // Cancelled while still queued: never start it.
             if (id !== undefined && cancelledIds.delete(id)) return undefined;
-            return handleToolsCall(request, app, tools, gateTools, gateCommands, gateHelp);
+            return handleToolsCall(request, app, tools, gateTools, gateCommands, gateHelp, lookup);
           })
           .catch((error) => {
             // handleToolsCall answers its own failures; this only guards a throw from

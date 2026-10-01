@@ -372,7 +372,7 @@
     Read-only: it starts, writes and registers nothing. `./clawforge plan` turns its findings into actions.
     The live agent/MCP/cron lists come from OpenClaw's own CLI, a container per call — `./clawforge cli-start` first makes this noticeably faster.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === doctor --help ===
 ==> doctor — Say whether anything is wrong and what to run about it
@@ -387,7 +387,7 @@
     Also runs the security gate — `openclaw security audit` and `openclaw secrets audit` inside the instance, plus what only the host side can see: the gateway published on every interface (blocking unless acknowledged in config/security-suppressions.json), a public port that Docker's DOCKER-USER chain may let bypass an active UFW, and the deployment's own secret file permissions.
     Never every ./clawforge inspect/plan call — each audit is a container exec — only doctor and accept. Suppress a finding by upstream checkId in config/security-suppressions.json; it stays visible but stops counting.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === plan --help ===
 ==> plan — The ordered actions the declaration implies, without performing them
@@ -405,7 +405,7 @@
     "nothing to do" prints only once inspect finds this deployment healthy with no problems at all — never merely because plan has no step for what it found.
     Changes nothing. `./clawforge apply` runs exactly this list.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === apply --help ===
 ==> apply — Run the plan, then confirm what the instance actually is
@@ -426,7 +426,7 @@
     
     This command can replace or destroy state, depending on the flags given.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === accept --help ===
 ==> accept — Run the acceptance checks this deployment's recipes declare
@@ -443,7 +443,7 @@
     Also runs the security gate — see `./clawforge doctor`'s own description — and fails on a blocking finding the same way a failed check does.
     Exits non-zero when a check fails, could not be checked, or the security gate finds a blocking issue.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === rollback --help ===
 ==> rollback — Put back the configuration an operation replaced
@@ -466,7 +466,7 @@
     
     This command can replace or destroy state, depending on the flags given.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === operations --help ===
 ==> operations — What mutating runs did to this instance, and what they left behind
@@ -479,7 +479,7 @@
     Without an id this lists the most recent ones; with one it shows that run in full: which steps ran, which failed, which never started, and whether a configuration snapshot was taken that `./clawforge rollback` can put back.
     An operation with no outcome did not reach its own end — killed, disconnected or still running. That is reported as unfinished rather than dressed up as a result.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === apply-config --help ===
 ==> apply-config — Apply the deployment's desired-state.json
@@ -596,7 +596,7 @@
     
     This command can replace or destroy state, depending on the flags given.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === recover-env --help ===
 ==> recover-env — Repair .env's connection facts from the running instance
@@ -634,7 +634,7 @@
     --check compares without writing; `./clawforge inspect` reports the same differences as warnings, because an instance that drifted from its lock still works and it is the reader who decides whether the difference was intended.
     Meant to be committed.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === cli --help ===
 ==> cli — Run the OpenClaw CLI in a throwaway container
@@ -766,7 +766,7 @@
     
     This command can replace or destroy state, depending on the action given.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === provision-agent --help ===
 ==> provision-agent — Wire a recipe's MCP server to its own OpenClaw agent, with optional cron
@@ -823,7 +823,7 @@
     Writes project .mcp.json for Claude Code and .codex/config.toml for Codex. Other servers and settings are preserved; invalid or ambiguous configuration is refused.
     init and new-app do this automatically. Use --client claude or --client codex to update only one client. Launch paths are resolved inside the project, without absolute host paths. The client may still require project trust or server approval; reconnect it after setup.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 
 === mcp-creds --help ===
 ==> mcp-creds — Print service URL, token and MCP client config for both servers
@@ -862,5 +862,5 @@
     
     This command can replace or destroy state, depending on the action given.
     
-    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), result (the command's own output, unaltered).
+    Every call answers in one envelope: operationId (a stable id), changed (bool), healthy (bool, when known), problems/warnings (findings), nextActions (commands to run next), nextSteps (the same remedies as tool calls: {tool, arguments}), result (the command's own output, unaltered).
 

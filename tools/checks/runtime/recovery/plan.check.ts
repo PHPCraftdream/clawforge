@@ -15,6 +15,8 @@ import { problem } from "#framework/service/inspection.ts";
 import type { Inspection, Problem } from "#framework/service/inspection.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { command } from "#framework/core/io/invocation/advice.ts";
+import { setInvocation } from "#framework/core/io/invocation/index.ts";
 
 function inspectionWith(problems: Problem[], running = true): Inspection {
   return {
@@ -117,5 +119,23 @@ check(
   planNextStepLine([action(true), action(false)]),
   "apply it: ./clawforge apply",
 );
+
+// The plan reads the remedies' argv, not their rendered text: under `--app demo` a problem's
+// nextAction renders with `--app demo` (the renderer's rule), and a plan that parsed the
+// sentence would find no recipe and no orphan. It must still find both. (design 1.4)
+{
+  setInvocation({ program: "./clawforge", mode: "checkout", app: { name: "demo", selectedBy: "flag" }, audience: "terminal" });
+  try {
+    const actions = planActions(inspectionWith([
+      problem("RECIPE_MIRROR_DRIFT", "demo differs", command(["provision-agent", "demo-recipe"])),
+      problem("SET_OBJECT_ORPHANED", "cron job left over", command(["set", "forget", "--kind", "cron-job", "--name", "demo-refresh"])),
+    ]));
+    check("under --app demo the recipe step is still found", actions.some((step) => step.id === "provision-agent:demo-recipe"), true);
+    check("under --app demo the orphan step is still found", actions.some((step) => step.id === "remove-owned:cron-job:demo-refresh"), true);
+    check("the orphan step runs the set forget command", actions.find((step) => step.id === "remove-owned:cron-job:demo-refresh")?.command, "./clawforge set forget --kind cron-job --name demo-refresh");
+  } finally {
+    setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
+  }
+}
 
 finish("plan");

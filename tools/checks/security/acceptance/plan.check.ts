@@ -5,6 +5,7 @@
 // on the old configuration — which is what happened by hand before this command existed.
 // So each rule is asserted as a rule, against inspections built to provoke it.
 
+import { command } from "#framework/core/io/invocation/advice.ts";
 import { planActions, planIsClean } from "#framework/commands/orchestration/plan.ts";
 import { problem, PROBLEM_CODES } from "#framework/service/inspection.ts";
 import type { Inspection, Problem, ProblemCode } from "#framework/service/inspection.ts";
@@ -43,7 +44,7 @@ check("a clean inspection produces an empty plan", ids([]), []);
   // other: a secret missing, a setting drifted, and a recipe that needs re-provisioning.
   const everything = ids([
     problem("CONFIG_DRIFT", "gateway.mode differs"),
-    problem("RECIPE_MIRROR_DRIFT", "demo differs", "./clawforge provision-agent demo"),
+    problem("RECIPE_MIRROR_DRIFT", "demo differs", command(["provision-agent", "demo"])),
     problem("SECRET_MISSING", "ZAI_API_KEY"),
   ]);
   check("secrets, then config, then restart, then recipes", everything, [
@@ -85,7 +86,7 @@ checkTrue("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIF
 
 // Provisioning talks to a running gateway, so it cannot precede the step that provides one.
 {
-  const withRecipe = ids([problem("GATEWAY_DOWN", "not running"), problem("AGENT_MISSING", "demo agent", "./clawforge provision-agent demo")], false);
+  const withRecipe = ids([problem("GATEWAY_DOWN", "not running"), problem("AGENT_MISSING", "demo agent", command(["provision-agent", "demo"]))], false);
   checkTrue("recipes are provisioned after the gateway is up", withRecipe.indexOf("up") < withRecipe.indexOf("provision-agent:demo"));
 }
 
@@ -102,9 +103,9 @@ checkTrue("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIF
 {
   const actions = planActions(
     inspectionWith([
-      problem("CRON_DRIFT", "wrong schedule", "./clawforge provision-agent alpha"),
-      problem("AGENT_MISSING", "no agent", "./clawforge provision-agent beta"),
-      problem("MCP_SERVER_MISSING", "no server", "./clawforge provision-agent beta"),
+      problem("CRON_DRIFT", "wrong schedule", command(["provision-agent", "alpha"])),
+      problem("AGENT_MISSING", "no agent", command(["provision-agent", "beta"])),
+      problem("MCP_SERVER_MISSING", "no server", command(["provision-agent", "beta"])),
     ]),
   );
   const recipeSteps = actions.filter((action) => action.id.startsWith("provision-agent:"));
@@ -115,7 +116,7 @@ checkTrue("drift alone is enough to plan the restart", ids([problem("CONFIG_DRIF
 // --- advisory steps: what apply must not do ------------------------------------------------
 
 {
-  const actions = planActions(inspectionWith([problem("RECIPE_MIRROR_DRIFT", "demo", "./clawforge provision-agent demo")]));
+  const actions = planActions(inspectionWith([problem("RECIPE_MIRROR_DRIFT", "demo", command(["provision-agent", "demo"]))]));
   const reconnect = actions.find((action) => action.id === "reconnect-mcp");
   checkTrue("changed recipe files raise the client-reconnect advisory", reconnect !== undefined);
   // Nothing on this side can perform it: the client owns the server process it started.

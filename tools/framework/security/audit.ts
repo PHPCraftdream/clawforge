@@ -11,6 +11,7 @@ import { constants, type Dirent } from "node:fs";
 import { access, readFile, readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Context } from "../core/context.ts";
+import { command, manual } from "../core/io/invocation/advice.ts";
 import { deploymentDir, envFile, secretsDir, selectedDeployment } from "../runtime/deployment.ts";
 import { problem, type Problem, type Severity } from "../service/inspection.ts";
 import { openclawCliJson } from "../service/openclaw-cli.ts";
@@ -351,7 +352,7 @@ export async function runSecurityAudit(ctx: Context): Promise<SecurityAuditRepor
       problem(
         finding.severity === "blocking" ? "SECURITY_AUDIT_CRITICAL" : "SECURITY_AUDIT_WARN",
         `${finding.source} ${finding.checkId}: ${finding.message}`,
-        finding.remediation ?? (finding.source === "security-audit" ? "./clawforge cli security audit --json" : "./clawforge cli secrets audit --json"),
+        finding.remediation === undefined ? command(finding.source === "security-audit" ? ["cli", "security", "audit", "--json"] : ["cli", "secrets", "audit", "--json"]) : manual(finding.remediation),
       )
     );
 

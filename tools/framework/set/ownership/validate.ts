@@ -125,7 +125,7 @@ async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Pro
   // content, never from the file's existence — a committed lock travels in git, so it does
   // not imply a deployed instance.
   const advice = imagePinAdvice(manifest.requires.image, await readLock());
-  problems.push(problem("SET_IMAGE_UNPINNED", advice.detail, advice.nextAction));
+  problems.push(problem("SET_IMAGE_UNPINNED", advice.detail, advice.next));
 }
 
 /** The file checks run only where the files actually are: a working tree, or an unpacked
@@ -181,7 +181,7 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
     // legitimate), so only an empty checksum map WITH an agent bundle is reported.
     if (declaresAgent && Object.keys(recipe.files).length === 0) {
       problems.push(
-        recipeIncomplete(name, `recipe "${name}" declares an agent but serves no content — the agent would have nothing to read`, `adding content to recipes/${name} and rebuilding`, "./clawforge set build"),
+        recipeIncomplete(name, `recipe "${name}" declares an agent but serves no content — the agent would have nothing to read`, `adding content to recipes/${name} and rebuilding`, "set build"),
       );
     }
   }

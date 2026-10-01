@@ -8,6 +8,7 @@
 
 import { runSteps, blockingRemainder, APPLY_ARGUMENTS, runnerFor } from "#framework/commands/orchestration/apply.ts";
 import { parseDeclaredArgs } from "#framework/core/command/index.ts";
+import { command } from "#framework/core/io/invocation/advice.ts";
 import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { planActions } from "#framework/commands/orchestration/plan.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
@@ -184,8 +185,8 @@ function inspectionWith(problems: Problem[], running = true): Inspection {
     problem("SECRET_MISSING", "ZAI_API_KEY"),
     problem("CONFIG_DRIFT", "gateway.mode differs"),
     problem("GATEWAY_DOWN", "not running"),
-    problem("RECIPE_MIRROR_DRIFT", "demo differs", "./clawforge provision-agent demo"),
-    problem("SET_OBJECT_ORPHANED", "cron job left over", "./clawforge set forget --kind cron-job --name demo-refresh"),
+    problem("RECIPE_MIRROR_DRIFT", "demo differs", command(["provision-agent", "demo"])),
+    problem("SET_OBJECT_ORPHANED", "cron job left over", command(["set", "forget", "--kind", "cron-job", "--name", "demo-refresh"])),
   ];
   for (const running of [true, false]) {
     const actions = planActions(inspectionWith(everyFamily, running));

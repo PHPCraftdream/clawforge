@@ -18,10 +18,12 @@ import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
 import { makeVersionGateCommand } from "#framework/integration/version.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
+import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
+import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
 import { renderAdvice, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import type { Invocation } from "#framework/core/io/invocation/index.ts";
-import { ADVICE_ROWS, GATE_COMMAND_NAMES, MATRIX_COLUMNS, TOOL_FORM_CELL } from "#checks/golden/advice.ts";
+import { ADVICE_ROWS, GATE_COMMAND_NAMES, MATRIX_COLUMNS, toolFormCell } from "#checks/golden/advice.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 const APP_FLAG = "--app";
@@ -75,6 +77,13 @@ check(
   [...GATE_COMMAND_NAMES].sort(),
 );
 const gateByName = new Map(gateCommands.map((command) => [command.name, command]));
+/** The tools a nextStep can name: the declared commands and the gate's own — the surface an
+ *  MCP client called, so a remedy names a tool it can actually call. */
+const toolByName = new Map<string, Declared>([
+  ...Object.entries(openclawCommands).map(([name, declared]): [string, Declared] => [name, declared as Declared]),
+  ...gateCommands.map((gate): [string, Declared] => [gate.name, gate as unknown as Declared]),
+]);
+const toolByNameEquivalent = (name: string): Declared | undefined => toolByName.get(name);
 
 /** P1 — `--app`: between the program and the command word sits exactly one `--app <name>` or
  *  none, and the name is the rule's. */
@@ -107,8 +116,10 @@ for (const { label, advice } of ADVICE_ROWS) {
     const where = `${label} under ${column.label}`;
     const line = renderAdvice(advice, column.invocation);
     if (advice.kind === CLAWFORGE_KIND) {
-      checkTrue(`${where}: no ${SHIM_SPELLING}`, !line.includes(SHIM_SPELLING));
-      checkTrue(`${where}: no single quote`, !line.includes(SINGLE_QUOTE));
+      // The note is prose the product writes, not the command: it is not typed anywhere.
+      const commandLine = withoutNote(line, advice);
+      checkTrue(`${where}: no ${SHIM_SPELLING}`, !commandLine.includes(SHIM_SPELLING));
+      checkTrue(`${where}: no single quote`, !commandLine.includes(SINGLE_QUOTE));
     } else if (advice.kind === "shell" && (advice.shell === "cmd" || advice.shell === "pwsh")) {
       checkTrue(`${where}: does not start with ./`, !line.startsWith("./"));
     }
@@ -183,12 +194,54 @@ for (const { label, advice } of ADVICE_ROWS) {
   checkTrue(`${label}: ${word} parses${problem === undefined ? "" : ` — ${problem}`}`, problem === undefined);
 }
 
-/** P5 — the tool form: the MCP `nextSteps` shape of an advice, built from the same argv so
- *  that toArgv(c, toolArguments(c, argv)) reparses to the same values. That round-trip
- *  lands with rf4-codes; until it does the column shows the placeholder, and a row that
- *  silently grew a tool form fails here. */
-for (const { label } of ADVICE_ROWS) {
-  check(`${label}: the tool form is still the placeholder`, TOOL_FORM_CELL, PLACEHOLDER);
+/** Key-order-independent JSON, so the law compares values, not declaration order. */
+function canon(value: Record<string, unknown>): string {
+  return JSON.stringify(value, Object.keys(value).sort());
+}
+
+/** The values a parser reads out of an argv — tokenize plus the record parseDeclaredArgs builds. */
+function parsedValues(declared: readonly CommandArgument[] | undefined, argv: readonly string[], verbatim: boolean): Record<string, unknown> {
+  const entries = tokenize(declared ?? [], argv, undefined, verbatim).entries;
+  const values: Record<string, unknown> = {};
+  for (const { argument, value } of entries) {
+    if (argument.kind === "variadic") {
+      const list = values[argument.name];
+      if (Array.isArray(list)) list.push(value as string);
+      else values[argument.name] = [value as string];
+    } else {
+      values[argument.name] = value;
+    }
+  }
+  return values;
+}
+
+/** P5 — the tool form: the golden's cell must be exactly the first step the lookup
+ *  produces, and toArgv(c, toolArguments(c, argv)) must reparse to the argv's own values —
+ *  the law toolArguments exists for. A row without a step stays on the placeholder. */
+for (const { label, advice } of ADVICE_ROWS) {
+  const cell = toolFormCell(advice);
+  if (advice.kind !== CLAWFORGE_KIND || advice.app !== undefined) {
+    checkTrue(`${label}: no local tool, no step`, cell === PLACEHOLDER);
+    continue;
+  }
+  const tool = advice.argv[0] ?? "";
+  const declared = toolByNameEquivalent(tool);
+  if (declared === undefined) {
+    checkTrue(`${label}: no tool, no step`, cell === PLACEHOLDER);
+    continue;
+  }
+  check(`${label}: the cell is the step the lookup produces`, cell, JSON.stringify({ tool, arguments: toolArguments(declared, advice.argv) }));
+  const filled = advice.argv.map((word) => (PLACEHOLDER_WORD.test(word) ? EXAMPLE : word));
+  const stepArguments = toolArguments(declared, filled);
+  if (stepArguments === undefined) {
+    checkTrue(`${label}: the filled argv builds no step`, false);
+    continue;
+  }
+  const round = toArgv(declared, stepArguments);
+  const verbatim = (declared.arguments ?? []).some((argument) => "verbatim" in argument && argument.verbatim === true);
+  const direct = parsedValues(declared.arguments, filled.slice(1), verbatim);
+  const reparsed = parsedValues(declared.arguments, round, verbatim);
+  check(`${label}: the step's argv reparses to the same values`, canon(reparsed), canon(direct));
 }
 
 finish("advice matrix");

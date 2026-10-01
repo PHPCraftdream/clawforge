@@ -8,6 +8,16 @@
 import { command, manual, shellLine, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { renderAdvice, SHIM_PROGRAM, useGateCommands } from "#framework/core/io/invocation/render.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
+import { makeVersionGateCommand } from "#framework/integration/version.ts";
+import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
+import type { GateCommand } from "#framework/integration/gate.ts";
+import { PROBLEM_CODES } from "#framework/service/inspection.ts";
+import { imagePinAdvice, provisionRemedy, forgetRemedy, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#framework/set/advice.ts";
+import { pluginReinstall, skillReinstall } from "#framework/commands/management/extensions.ts";
+import { toolSteps } from "#framework/integration/mcp/call.ts";
+import type { Declared } from "#framework/integration/mcp/schema.ts";
 
 /** The gate names an entry registers before any command runs: the checkout gate's own four
  *  plus version and completion (wired in tools/clawforge.ts), and init, which the installed
@@ -20,11 +30,44 @@ export const GATE_COMMAND_NAMES: readonly string[] = [
 
 useGateCommands(GATE_COMMAND_NAMES);
 
+/** The tools a nextStep can name: the declared commands and the gate's own — the surface
+ *  an MCP client called, so a remedy names a tool it can actually call. */
+const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand()];
+gateCommands.push(makeCompletionGateCommand(gateCommands, true));
+const toolByName = new Map<string, Declared>([
+  ...Object.entries(openclawCommands).map(([name, declared]): [string, Declared] => [name, declared as Declared]),
+  ...gateCommands.map((gate): [string, Declared] => [gate.name, gate as unknown as Declared]),
+]);
+
 /** One matrix row: the advice, under the label the snapshot shows. */
 export interface AdviceRow {
   readonly label: string;
   readonly advice: Advice;
 }
+
+/** Group 1 (design 4.2): every remedy the problem-code table builds from data. */
+const CODE_ROWS: readonly AdviceRow[] = Object.entries(PROBLEM_CODES).map(([code, meaning]) => ({
+  label: `problem code: ${code}`,
+  advice: meaning.next,
+}));
+
+/** Group 2: the refinements built at the call sites, on fixture inputs. */
+const LOCK_FIELDS = { version: 1, image: { reference: "<other>" } };
+const REFINEMENT_ROWS: readonly AdviceRow[] = [
+  { label: "image pin: no lock recorded", advice: imagePinAdvice("<image>", undefined).next },
+  { label: "image pin: lock without a digest", advice: imagePinAdvice("<image>", { ...LOCK_FIELDS } as Parameters<typeof imagePinAdvice>[1]).next },
+  { label: "image pin: lock for another image", advice: imagePinAdvice("<image>", { image: { reference: "<other>", digest: "<digest>" } } as Parameters<typeof imagePinAdvice>[1]).next },
+  { label: "recipe incomplete (set validate)", advice: recipeIncomplete("<recipe>", "a recipe finding", "adding the missing file").next },
+  { label: "recipe incomplete (set build)", advice: recipeIncomplete("<recipe>", "a recipe finding", "rebuilding", "set build").next },
+  { label: "recipe missing directory", advice: recipeMissingDir("<recipe>", "a recipe finding").next },
+  { label: "recipe invalid definition", advice: recipeInvalidDefinition("<recipe>", "the loader's message").next },
+  { label: "provision remedy", advice: provisionRemedy("<recipe>") },
+  { label: "forget remedy", advice: forgetRemedy("cron-job", "<name>") },
+  { label: "plugin reinstall", advice: pluginReinstall("<package>", undefined) },
+  { label: "skill reinstall", advice: skillReinstall("<name>") },
+  { label: "audit remediation (OpenClaw's own)", advice: manual("Set gateway.auth (token recommended).") },
+  { label: "audit fallback: cli security audit", advice: command(["cli", "security", "audit", "--json"]) },
+];
 
 /** This task's synthetic rows (design 5.2: rf4-advice renders the synthetic group, rf4-codes
  *  and the sweeps append their own). Every row is only a `command`/`shellLine`/`manual`
@@ -39,6 +82,8 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   { label: "shell cmd", advice: shellLine("cmd", `schtasks /Create /SC DAILY /TN clawforge-backup /TR "clawforge backup"`) },
   { label: "shell pwsh", advice: shellLine("pwsh", "clawforge status | Out-String") },
   { label: "manual", advice: manual("reconnect the MCP client (in Claude Code: /mcp)") },
+  ...CODE_ROWS,
+  ...REFINEMENT_ROWS,
 ];
 
 /** One matrix column: the invocation every row renders under. */
@@ -48,7 +93,8 @@ export interface InvocationColumn {
 }
 
 /** The tool-form column: the MCP `ToolStep` view of a clawforge advice (design 1.4), which
- *  rf4-codes fills from toolArguments. `cell` is the placeholder until it does. */
+ *  rf4-codes fills from toolArguments. `cell` is the placeholder for a row whose advice names
+ *  no tool this surface serves. */
 export interface ToolFormColumn {
   readonly label: string;
   readonly cell: string;
@@ -58,6 +104,13 @@ export type MatrixColumn = InvocationColumn | ToolFormColumn;
 
 export const TOOL_FORM_LABEL = "tool form";
 export const TOOL_FORM_CELL = "—";
+
+/** The tool-form cell for one advice: its first ToolStep as JSON, or the placeholder when
+ *  the advice names no tool this surface serves. */
+export function toolFormCell(advice: Advice): string {
+  const [step] = toolSteps([advice], (name) => toolByName.get(name));
+  return step === undefined ? TOOL_FORM_CELL : JSON.stringify(step);
+}
 
 /** The invocations an entry can name, in the order the snapshot renders them (design 4.2):
  *  the checkout root and every way a deployment is selected, the installed command and its
@@ -83,7 +136,7 @@ export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
 const CHECKOUT_ROOT: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" };
 
 function renderCell(advice: Advice, column: MatrixColumn): string {
-  if (!("invocation" in column)) return column.cell;
+  if (!("invocation" in column)) return toolFormCell(advice);
   setInvocation(column.invocation);
   return renderAdvice(advice);
 }

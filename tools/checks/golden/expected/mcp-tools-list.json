@@ -470,6 +470,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -478,6 +481,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -518,6 +522,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -526,6 +533,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -570,6 +578,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -578,6 +589,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -642,6 +654,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -650,6 +665,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -702,6 +718,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -710,6 +729,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -778,6 +798,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -786,6 +809,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -834,6 +858,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -842,6 +869,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -1035,6 +1063,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -1043,6 +1074,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -1121,6 +1153,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -1129,6 +1164,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -1413,6 +1449,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -1421,6 +1460,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -1542,6 +1582,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -1550,6 +1593,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }
@@ -1675,6 +1719,9 @@
               "type": "string"
             }
           },
+          "nextSteps": {
+            "type": "array"
+          },
           "result": {}
         },
         "required": [
@@ -1683,6 +1730,7 @@
           "problems",
           "warnings",
           "nextActions",
+          "nextSteps",
           "result"
         ]
       }

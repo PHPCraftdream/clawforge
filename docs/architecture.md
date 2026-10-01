@@ -299,7 +299,8 @@ the first kind and not the second — a check that objects to everything stops b
 
 A tool result carries text for a person and, for commands declared `structured`, a
 `structuredContent` envelope for an agent: `operationId`, `changed`, `healthy`, `problems`,
-`warnings`, `nextActions`, and the command's own JSON whole under `result`. The command does
+`warnings`, `nextActions`, `nextSteps` (the same remedies as tool calls), and the command's own JSON
+whole under `result`. The command does
 not change to produce it — it already emits that document through `emit()` when its output
 is captured, which is what `--json` prints on a console.
 

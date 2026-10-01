@@ -10,6 +10,7 @@ import { parseEnv, toSettings, type Settings } from "../core/env.ts";
 import { createContext, type Context } from "../core/context.ts";
 import { useDeployment, selectedDeployment } from "../runtime/deployment.ts";
 import { NotBootstrapped } from "../runtime/runtime.ts";
+import { hasDigest } from "../runtime/docker/image-ref.ts";
 import type { AppDefinition } from "../core/app.ts";
 import { appsDir } from "./deployment/scaffold.ts";
 import { scanApps } from "./deployment/names.ts";
@@ -67,7 +68,7 @@ function configSummary(name: string, settings: Settings): Omit<DeploymentSummary
     target: target === "auto" ? "auto (not resolved)" : target,
     port: settings.gatewayPort,
     image: settings.image,
-    pinned: settings.image.includes("@sha256:"),
+    pinned: hasDigest(settings.image),
   };
 }
 

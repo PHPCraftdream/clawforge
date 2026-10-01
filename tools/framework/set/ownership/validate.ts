@@ -18,6 +18,7 @@ import { readLock, imagePinAdvice } from "#src/commands/management/lock.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
+import { hasDigest } from "#src/runtime/docker/image-ref.ts";
 
 async function exists(path: string): Promise<boolean> {
   return access(path).then(
@@ -106,7 +107,7 @@ async function declaredConfig(problems: Problem[]): Promise<unknown> {
 }
 
 async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Promise<void> {
-  if (manifest.requires.image.includes("@sha256:")) return;
+  if (hasDigest(manifest.requires.image)) return;
   // One advice, shared with set build (lock.ts's imagePinAdvice): decided from the lock's
   // content, never from the file's existence — a committed lock travels in git, so it does
   // not imply a deployed instance.

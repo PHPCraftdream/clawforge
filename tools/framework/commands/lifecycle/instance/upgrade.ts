@@ -12,7 +12,7 @@ import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "#src/commands/lifecycle/backup/index.ts";
 import { restoreArchive } from "#src/commands/lifecycle/restore/index.ts";
-import { imageChannel, channelHasTag } from "#src/runtime/docker/image-digest.ts";
+import { parse, tryParse, channel, format, repositoryOf, withDigest, sameContent, digestOf, type ImageRef } from "#src/runtime/docker/image-ref.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -26,21 +26,19 @@ export const UPGRADE_ARGUMENTS: CommandArgument[] = [
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
 
-/** The sha256 hash of a `repo@sha256:…`/`repo:tag@sha256:…` reference, or the whole string
- *  when it carries no digest — so a plain reference and its digest form still compare equal
- *  by content, the same suffix match runningImageDigest() (set/artifacts/install.ts) uses. */
-function digestHash(reference: string): string {
-  return reference.split("@").at(-1) ?? reference;
-}
-
 function parseUpgradeArgs(args: string[]): { image?: string; dryRun: boolean; jsonOnly: boolean } {
   const parsed = parseDeclaredArgs(UPGRADE_ARGUMENTS, args);
   const image = parsed.image as string | undefined;
   if (image === "" || image?.startsWith("-") === true) die("--image needs an image reference");
   // Refused before any contact — a typo must not survive to the registry call, let alone
-  // to the backup that stops the gateway.
-  if (image !== undefined && image.includes("@sha256:") && !/^[^@\s]+@sha256:[0-9a-f]{64}$/.test(image)) {
-    die(`--image "${image}" is not a valid digest reference — expected repo[:tag]@sha256:<64 hex characters>`);
+  // to the backup that stops the gateway. The grammar's own refusal names the input and
+  // the full expected shape, so a malformed tag reads differently from a bad digest.
+  if (image !== undefined) {
+    try {
+      parse(image);
+    } catch (error) {
+      die(`--image: ${(error as Error).message}`);
+    }
   }
   return { image, dryRun: parsed["dry-run"] === true, jsonOnly: parsed.json === true };
 }
@@ -62,47 +60,47 @@ async function resolveUpgradeTarget(
   requestedImage: string | undefined,
   resolveImageDigest: (reference: string) => Promise<string | undefined>,
 ): Promise<UpgradeTarget> {
-  if (requestedImage !== undefined && requestedImage.includes("@sha256:")) {
+  const requested = requestedImage === undefined ? undefined : parse(requestedImage);
+  if (requested?.digest !== undefined) {
     // An explicit digest is checked at the registry (buildx imagetools inspect accepts one)
     // before anything else — --dry-run must not sign an unverified reference, and a real run
     // must refuse before the pre-upgrade backup stops the gateway.
-    if ((await resolveImageDigest(requestedImage)) === undefined) {
+    if ((await resolveImageDigest(requestedImage!)) === undefined) {
       die(`the registry does not know ${requestedImage} — refusing before any backup or change`);
     }
-    if (channelHasTag(imageChannel(requestedImage))) return { targetDigest: requestedImage };
+    if (requested.tag !== undefined) return { targetDigest: requestedImage! };
     // The channel and the requested digest name the same repository when their tagless
-    // repo parts match — compare with the tag stripped, never the channel string itself.
-    const repoOf = (reference: string): string => {
-      const channelPart = imageChannel(reference);
-      return channelHasTag(channelPart) ? channelPart.slice(0, channelPart.lastIndexOf(":")) : channelPart;
-    };
-    const channel = imageChannel(ctx.settings.image);
-    if (channelHasTag(channel) && repoOf(channel) === repoOf(requestedImage)) {
-      return { targetDigest: requestedImage, pin: `${channel}@${digestHash(requestedImage)}` };
+    // repo parts match — compare repositories, never the channel string itself.
+    const declared = tryParse(ctx.settings.image);
+    if (declared !== undefined && declared.tag !== undefined && repositoryOf(declared) === repositoryOf(requested)) {
+      return { targetDigest: requestedImage!, pin: `${channel(declared)}@${requested.digest}` };
     }
-    return { targetDigest: requestedImage };
+    return { targetDigest: requestedImage! };
   }
 
-  let channel = requestedImage;
-  if (channel === undefined) {
-    const declared = ctx.settings.image;
-    if (!declared.includes("@sha256:")) {
-      channel = declared;
-    } else {
-      channel = imageChannel(declared);
-      if (!channelHasTag(channel)) {
-        die(
-          `OPENCLAW_IMAGE is "${declared}" — a digest with no tag alongside it, so the channel it was ` +
-            "pulled from is unknown and cannot be re-resolved. Name the channel explicitly: " +
-            "./clawforge upgrade --image <repo:tag> (upgrade then keeps the tag alongside the digest).",
-        );
-      }
+  let channelRef: ImageRef | undefined = requested === undefined ? undefined : { ...requested, digest: undefined };
+  if (channelRef === undefined) {
+    const declared = tryParse(ctx.settings.image);
+    if (declared === undefined) {
+      die(
+        `OPENCLAW_IMAGE is "${ctx.settings.image}" — not a valid image reference ` +
+          "(expected [registry[:port]/]repo[:tag][@sha256:<64 hex characters>]).",
+      );
     }
+    if (declared.digest !== undefined && declared.tag === undefined) {
+      die(
+        `OPENCLAW_IMAGE is "${ctx.settings.image}" — a digest with no tag alongside it, so the channel it was ` +
+          "pulled from is unknown and cannot be re-resolved. Name the channel explicitly: " +
+          "./clawforge upgrade --image <repo:tag> (upgrade then keeps the tag alongside the digest).",
+      );
+    }
+    channelRef = { ...declared, digest: undefined };
   }
 
-  const targetDigest = await resolveImageDigest(channel);
-  if (targetDigest === undefined) die(`could not resolve a digest for ${channel} — refusing to upgrade to an unverified reference`);
-  return { targetDigest, channel };
+  const channelString = format(channelRef);
+  const targetDigest = await resolveImageDigest(channelString);
+  if (targetDigest === undefined) die(`could not resolve a digest for ${channelString} — refusing to upgrade to an unverified reference`);
+  return { targetDigest, channel: channelString };
 }
 
 /** Waits for /startupz then /readyz, watching the container's own exit code the whole time
@@ -180,9 +178,12 @@ async function rollbackUpgrade(
   // (tagless RepoDigests under a tagged pin) leaves the next up recreating again even though
   // the digest matches. The pin below is computed once and used for BOTH: the recreated
   // container's image IS the string .env will hold.
-  const pinned = digestHash(previousReference) === digestHash(previousDigest) || !channelHasTag(imageChannel(previousReference))
+  const previous = tryParse(previousReference);
+  const previousContent = digestOf(previousDigest);
+  const pinned = previous === undefined || previousContent === undefined || previous.tag === undefined
+    || sameContent(previousReference, previousDigest)
     ? previousReference
-    : `${imageChannel(previousReference)}@${digestHash(previousDigest)}`;
+    : format(withDigest({ ...previous, digest: undefined }, previousContent));
   try {
     // Restore before starting the old code against data that migrations may have changed.
     // noStart prevents restore from restarting the failed target's transient settings.
@@ -193,7 +194,7 @@ async function rollbackUpgrade(
     await recreateWithImage(pinned);
     await ctx.runtime.waitForHealth();
     const identity = await ctx.runtime.runningImageIdentity?.();
-    if (!identity?.digests.some((digest) => digestHash(digest) === digestHash(previousDigest))) {
+    if (!identity?.digests.some((digest) => sameContent(digest, previousDigest))) {
       throw new Error(`could not confirm the rollback gateway is running ${previousDigest}`);
     }
     // The exact string the container was recreated on — never a different spelling of it.
@@ -249,7 +250,7 @@ async function upgradeLocked(
     if (!lint.ok) throw new Error(`openclaw doctor --lint reported blocking finding(s): ${lint.detail}`);
 
     const identity = await ctx.runtime.runningImageIdentity?.();
-    if (!identity?.digests.some((digest) => digestHash(digest) === digestHash(targetDigest))) {
+    if (!identity?.digests.some((digest) => sameContent(digest, targetDigest))) {
       throw new Error(`could not confirm the validated gateway is running ${targetDigest}`);
     }
     await pinImageReference(pinnedReference);
@@ -295,7 +296,7 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
     die("could not determine the currently running image digest — refusing to upgrade with no rollback target. Is the gateway running (./clawforge up)?");
   }
   const previousDigest = identity.digests[0];
-  const upToDate = digestHash(target.targetDigest) === digestHash(previousDigest);
+  const upToDate = sameContent(target.targetDigest, previousDigest);
 
   if (options.dryRun === true) {
     if (options.jsonOnly) {
@@ -333,7 +334,7 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
     if (!(await ctx.runtime.isRunning()) || current === undefined || current.digests.length === 0) {
       die("could not determine the currently running image digest under the instance lock — refusing to upgrade with no rollback target");
     }
-    if (digestHash(current.digests[0]) !== digestHash(previousDigest)) {
+    if (!sameContent(current.digests[0], previousDigest)) {
       die("the running image changed while preparing upgrade — refusing before backup or recreation; retry the command");
     }
     const refreshed = await refreshContext(ctx);
@@ -341,7 +342,7 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
       die("deployment settings changed while preparing upgrade — refusing before backup or recreation; retry the command");
     }
     // Even a no-op must be decided against the authoritative predecessor.
-    if (digestHash(target.targetDigest) === digestHash(current.digests[0])) {
+    if (sameContent(target.targetDigest, current.digests[0])) {
       log(target.channel === undefined ? `already running ${current.digests[0]} — nothing to upgrade` : `already on the latest ${target.channel} (${current.digests[0]}) — nothing to upgrade`);
       return;
     }

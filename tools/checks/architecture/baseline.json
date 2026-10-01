@@ -88,7 +88,7 @@
       "tools/framework/integration/mcp/project.ts": 2,
       "tools/framework/integration/mcp/server.ts": 4,
       "tools/framework/runtime/datadir.ts": 1,
-      "tools/framework/runtime/docker/image-digest.ts": 1,
+      "tools/framework/runtime/docker/image-ref.ts": 1,
       "tools/framework/runtime/docker/incident-snapshot.ts": 1,
       "tools/framework/runtime/docker/runtime-docker.ts": 1,
       "tools/framework/runtime/lock/lock-claim.ts": 3,
@@ -121,20 +121,15 @@
     "arguments": 183
   },
   "imageStringOps": {
-    "comment": "stage 1 (ImageRef): image references are parsed by one module",
+    "comment": "stage 1 (ImageRef): image references are parsed by runtime/docker/image-ref.ts; the lines still counted are prose (help text, refusal messages, comments) that merely mentions the grammar",
     "files": {
       "tools/framework/commands/interface/groups/openclawCommands.lifecycle.ts": 4,
-      "tools/framework/commands/lifecycle/bootstrap/index.ts": 4,
-      "tools/framework/commands/lifecycle/instance/upgrade.ts": 8,
-      "tools/framework/commands/operate/recover-env/facts.ts": 2,
-      "tools/framework/commands/orchestration/inspect/gather.ts": 3,
-      "tools/framework/commands/sets/set-manifest.ts": 3,
-      "tools/framework/integration/list.ts": 1,
-      "tools/framework/set/artifacts/evidence.ts": 5,
-      "tools/framework/set/artifacts/install.ts": 3,
-      "tools/framework/set/ownership/validate.ts": 1
+      "tools/framework/commands/lifecycle/bootstrap/index.ts": 1,
+      "tools/framework/commands/lifecycle/instance/upgrade.ts": 2,
+      "tools/framework/commands/operate/recover-env/facts.ts": 1,
+      "tools/framework/commands/sets/set-manifest.ts": 2
     },
-    "total": 34
+    "total": 10
   },
   "prosePins": {
     "comment": "stage 5 + cross-cutting (I9): checks assert structure, prose lives in goldens",
@@ -184,7 +179,7 @@
       "tools/checks/runtime/connection-facts/bootstrap-image-pin.check.ts": 3,
       "tools/checks/runtime/connection-facts/recover-env-command.check.ts": 10,
       "tools/checks/runtime/connection-facts/recover-env-dispatch.check.ts": 7,
-      "tools/checks/runtime/connection-facts/upgrade/pin-and-digest.check.ts": 7,
+      "tools/checks/runtime/connection-facts/upgrade/pin-and-digest.check.ts": 9,
       "tools/checks/runtime/connection-facts/upgrade/upgrade.check.ts": 6,
       "tools/checks/runtime/convergence/apply/apply-recovery.check.ts": 8,
       "tools/checks/runtime/convergence/apply/apply-refresh.check.ts": 3,
@@ -284,6 +279,6 @@
       "tools/checks/sets/lifecycle/set-try.check.ts": 2,
       "tools/checks/sets/lifecycle/set-validate.check.ts": 22
     },
-    "total": 853
+    "total": 855
   }
 }

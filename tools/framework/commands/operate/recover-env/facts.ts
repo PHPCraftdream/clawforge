@@ -13,6 +13,7 @@
 // rotted file or a deliberate edit the container has not caught up with yet.
 
 import { deploymentName } from "#src/runtime/deployment.ts";
+import { sameContent } from "#src/runtime/docker/image-ref.ts";
 
 export interface ConnectionFacts {
   dataDir?: string;
@@ -65,7 +66,7 @@ export function connectionFactDiffs(
     // (repo@sha256:…), while .env pins keep the tag (repo:tag@sha256:…) — the same content
     // must not read as stale for its spelling alone.
     const diverged = fact.field === "image"
-      ? local !== value && local.split("@").at(-1) !== value.split("@").at(-1)
+      ? !sameContent(local, value)
       : local !== value;
     return diverged ? [{ name: fact.name, value, kind: "diverged" as const }] : [];
   });

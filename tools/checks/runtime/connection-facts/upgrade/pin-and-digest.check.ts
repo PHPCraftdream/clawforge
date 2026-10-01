@@ -37,6 +37,10 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   check(".env keeps the tag alongside the requested digest", await pinOf(), PINNED_WITH_TAG);
   const report = JSON.parse(outcome) as { pinnedImage?: string };
   check("--json pinnedImage equals the .env pin", report.pinnedImage, await pinOf());
+  // The invariant, stated as one fact: recreate === .env pin === pinnedImage.
+  const pin = await pinOf();
+  const recreateCall = `recreateWithImage ${pin}`;
+  check("recreate, .env pin and pinnedImage are one value", calls.includes(recreateCall) && report.pinnedImage === pin, true);
 }
 
 // and the same agreement on the success path WITHOUT --image (channel re-resolve)
@@ -51,6 +55,10 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   const report = JSON.parse(outcome) as { pinnedImage?: string };
   check("a channel upgrade recreates on its own pin", calls.includes(`recreateWithImage ${report.pinnedImage}`), true);
   check("and --json pinnedImage equals the .env pin", report.pinnedImage, await pinOf());
+  // The invariant on the --image tag path: recreate === .env pin === pinnedImage.
+  const pin = await pinOf();
+  const recreateCall = `recreateWithImage ${pin}`;
+  check("recreate, .env pin and pinnedImage are one value on the tag path", calls.includes(recreateCall) && report.pinnedImage === pin, true);
 }
 
 // dry-run names the true pin in its plan
@@ -75,6 +83,36 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   });
   check("the bare-tag rollback recreates on the exact string .env records", calls.includes(`recreateWithImage ${await pinOf()}`), true);
   check("that string carries the tag alongside the proven digest", await pinOf(), `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`);
+  // With --json, the failure report announces no pin (nothing new was pinned): the .env pin
+  // and the recreated container are the only two sides of the agreement a rollback makes.
+  {
+    await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\n`);
+    const { ctx, calls } = makeUpgradeCtx("doctor-fail", { image: SHARED_TAG });
+    let outcome = "";
+    await withOutputSink((chunk) => { outcome += chunk; }, async () => {
+      try { await upgrade(ctx, ["--json"]); } catch { /* the rollback under test */ }
+    });
+    const report = JSON.parse(outcome) as { ok?: boolean; pinnedImage?: string };
+    check("the rollback failure is reported as a failure", report.ok, false);
+    check("the failure report names no pinnedImage", report.pinnedImage, undefined);
+    const pin = await pinOf();
+    const recreateCall = `recreateWithImage ${pin}`;
+    check("the --json rollback also recreates on the .env pin", calls.includes(recreateCall), true);
+  }
+}
+
+// --- rollback over a TAGGED pin in .env: the pin keeps its own tag, only the digest moves ----
+
+{
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PINNED_WITH_TAG}\n`);
+  const { ctx, calls } = makeUpgradeCtx("doctor-fail", { image: PINNED_WITH_TAG });
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(ctx, []); } catch { /* the rollback under test */ }
+  });
+  const pin = await pinOf();
+  const recreateCall = `recreateWithImage ${pin}`;
+  check("the tagged-pin rollback recreates on the exact string .env records", calls.includes(recreateCall), true);
+  check("the tagged pin keeps its channel and the previously running digest", pin, `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`);
 }
 
 // --- R33-05: an explicit digest is format-checked locally, then resolved at the registry,
@@ -88,8 +126,36 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   await withOutputSink(() => {}, async () => {
     try { await upgrade(ctx, ["--dry-run", "--image", malformed]); } catch (error) { failure = error; }
   });
-  check("a malformed digest is refused locally", failure instanceof Error && failure.message.includes("not a valid digest reference"), true);
+  check("a malformed digest is refused locally, naming the input and the grammar", failure instanceof Error && failure.message.includes("--image:") && failure.message.includes(malformed) && failure.message.includes("not a valid image reference"), true);
   check("the format refusal happens before any registry contact", calls.some((call) => call.startsWith("resolveImageDigest")), false);
+}
+
+// a malformed TAG reference gets the grammar's own refusal too — it used to be sent to the registry
+
+{
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PINNED_WITH_TAG}\n`);
+  const malformedTag = "repo::tag";
+  const { ctx, calls } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
+  let failure: unknown;
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(ctx, ["--dry-run", "--image", malformedTag]); } catch (error) { failure = error; }
+  });
+  check("a malformed tag reference is refused, naming the argument and the input", failure instanceof Error && failure.message.includes("--image:") && failure.message.includes(malformedTag) && failure.message.includes("not a valid image reference"), true);
+  check("the tag refusal also happens before any registry contact", calls.some((call) => call.startsWith("resolveImageDigest")), false);
+}
+
+// a malformed OPENCLAW_IMAGE in .env is refused locally — it used to be re-resolved as given
+
+{
+  const garbage = "not a reference";
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${garbage}\n`);
+  const { ctx, calls } = makeUpgradeCtx("success", { image: garbage });
+  let failure: unknown;
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(ctx, ["--dry-run"]); } catch (error) { failure = error; }
+  });
+  check("a malformed OPENCLAW_IMAGE is refused locally, naming the value and the grammar", failure instanceof Error && failure.message.includes(garbage) && failure.message.includes("not a valid image reference"), true);
+  check("the OPENCLAW_IMAGE refusal happens before any registry contact", calls.some((call) => call.startsWith("resolveImageDigest")), false);
 }
 
 {

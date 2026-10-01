@@ -29,13 +29,13 @@ import { check, finish } from "#checks/kit/harness.ts";
 const DATA_DIR = "/srv/openclaw/data";
 const CONFIG_PATH = `${DATA_DIR}/config/openclaw.json`;
 const SHARED_TAG = "ghcr.io/openclaw/openclaw:extended-stable";
-const PULLED_HASH = "sha256:pulled0000000000000000000000000000000000000000000000000000000";
+const PULLED_HASH = `sha256:${"ab".repeat(32)}`;
 // What imageReference() itself reports — Docker's own RepoDigests, bare, never a tag.
 const PULLED_DIGEST = `${SHARED_TAG.split(":")[0]}@${PULLED_HASH}`;
 // What bootstrap must actually WRITE to .env: the channel that was pulled, rejoined with just
 // the digest hash — never the bare RepoDigests answer above.
 const PINNED_WITH_TAG = `${SHARED_TAG}@${PULLED_HASH}`;
-const ALREADY_PINNED = `${SHARED_TAG.split(":")[0]}@sha256:already000000000000000000000000000000000000000000000000000000`;
+const ALREADY_PINNED = `${SHARED_TAG.split(":")[0]}@sha256:${"cd".repeat(32)}`;
 
 /** The exact value of OPENCLAW_IMAGE in an .env's text — never a substring match, since a
  *  tag-preserving pin (`repo:tag@sha256:…`) starts with the same bytes as the bare tag alone

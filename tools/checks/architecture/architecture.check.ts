@@ -159,12 +159,12 @@ report(ratchet("rawArgvPredicates.requiresConfirmationWhen", baseline.rawArgvPre
 report(ratchet("longArgumentDescriptions", baseline.longArgumentDescriptions.total, longDescriptions, [], []));
 report(ratchet("declaredArguments", baseline.longArgumentDescriptions.arguments, argumentCount, [], []));
 
-// 5. String operations on image references outside runtime/docker/image-digest.ts — stage 1
+// 5. String operations on image references outside runtime/docker/image-ref.ts — stage 1
 // (ImageRef): one module owns the grammar, call sites get values.
 const IMAGE_OPS = /@sha256|split\("@"\)|indexOf\("@"\)|lastIndexOf\(":"\)/;
 const imageAfter = new Map<string, number>();
 for (const full of frameworkFiles) {
-  if (rel(full) === "tools/framework/runtime/docker/image-digest.ts") continue;
+  if (rel(full) === "tools/framework/runtime/docker/image-ref.ts") continue;
   const content = await readFile(full, "utf8");
   let count = 0;
   for (const line of content.split("\n")) if (IMAGE_OPS.test(line)) count += 1;

@@ -25,7 +25,7 @@ import { preflightPort } from "#src/commands/lifecycle/bootstrap/prereqs.ts";
 import { pinImageReference } from "#src/commands/lifecycle/instance/upgrade.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
-import { imageChannel } from "#src/runtime/docker/image-digest.ts";
+import { format, withDigest, tryParse, digestOf, hasDigest } from "#src/runtime/docker/image-ref.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
 import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -51,13 +51,19 @@ export const BOOTSTRAP_ARGUMENTS: CommandArgument[] = [
  *  from the .env this just rewrote; a context not built through createContext() has nothing to
  *  refresh and is returned unchanged. */
 async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
-  if (image.includes("@sha256:")) return ctx;
+  const ref = tryParse(image);
+  if (ref === undefined || hasDigest(image)) return ctx;
   const pulled = await ctx.runtime.imageReference();
   if (pulled === undefined) {
     warn(`pulled ${image} but could not resolve the digest it now holds locally — OPENCLAW_IMAGE stays a moving tag`);
     return ctx;
   }
-  const pinned = `${imageChannel(image)}@${pulled.split("@").at(-1)}`;
+  const digest = digestOf(pulled);
+  if (digest === undefined) {
+    warn(`pulled ${image} but could not resolve the digest it now holds locally — OPENCLAW_IMAGE stays a moving tag`);
+    return ctx;
+  }
+  const pinned = format(withDigest(ref, digest));
   await pinImageReference(pinned);
   info(`pinned OPENCLAW_IMAGE to ${pinned} in .env — another deployment pulling ${image} on this Docker daemon can no longer move this one; ./clawforge upgrade is how to move it from here`);
   const refreshed = await refreshContext(ctx);
@@ -140,7 +146,7 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
   } else {
     // A tag is resolved to its digest at the registry and pinned BEFORE the pull, so the
     // pull is by digest and never moves the shared local tag other deployments run on.
-    const resolved = fresh.image.includes("@sha256:") ? undefined : await live.runtime.resolveImageDigest?.(fresh.image);
+    const resolved = hasDigest(fresh.image) ? undefined : await live.runtime.resolveImageDigest?.(fresh.image);
     if (resolved !== undefined) {
       await pinImageReference(resolved);
       info(`pinned OPENCLAW_IMAGE to ${resolved} in .env — pulled by digest, the shared ${fresh.image} tag stays where it is; ./clawforge upgrade moves it from here`);

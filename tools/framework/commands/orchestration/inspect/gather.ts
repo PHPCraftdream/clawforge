@@ -27,6 +27,7 @@ import {
 import type { Problem, Inspection, SecretStoreObservation } from "#src/service/inspection.ts";
 import type { SecretStatus } from "#src/service/secrets.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
+import { hasDigest, sameContent } from "#src/runtime/docker/image-ref.ts";
 import type { Context } from "#src/core/context.ts";
 import { prospectiveConfig, publicConfigValue, readLiveConfigForProspective, frameworkVersion, redactEndpoint, redactEndpointText } from "./helpers.ts";
 import { declaredState, observeDeclarationFile } from "./declared.ts";
@@ -136,7 +137,7 @@ async function gatherPreflight(
   // Pure fact about this deployment's own .env, no runtime call needed. Skipped
   // pre-bootstrap like PROVIDER_MISSING below: NOT_BOOTSTRAPPED already names the remedy,
   // and `upgrade` (this finding's remedy) needs a running instance to roll back to.
-  if (notBootstrapped === undefined && !declared.image.includes("@sha256:")) {
+  if (notBootstrapped === undefined && !hasDigest(declared.image)) {
     problems.push(problem("IMAGE_UNPINNED", `OPENCLAW_IMAGE is "${declared.image}", a tag rather than a digest`));
   }
 
@@ -219,11 +220,11 @@ async function gatherRunningInspection(
   // Only for a tag still in force (a digest can't move) and only while running (nothing to
   // compare a stopped container against) — a pinned deployment never pays for this extra
   // `docker image inspect`.
-  if (!declared.image.includes("@sha256:") && runningDigestList.length > 0) {
+  if (!hasDigest(declared.image) && runningDigestList.length > 0) {
     const localTagDigest = await ctx.runtime.imageReference();
     if (
       localTagDigest !== undefined &&
-      !runningDigestList.some((digest) => digest.split("@").at(-1) === localTagDigest.split("@").at(-1))
+      !runningDigestList.some((digest) => sameContent(digest, localTagDigest))
     ) {
       problems.push(
         problem(

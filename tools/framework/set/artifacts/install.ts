@@ -27,6 +27,7 @@ import type { Context } from "#src/core/context.ts";
 import { DESIRED_STATE_PATH, SET_MANIFEST_VERSION, setManifestId, canonicalJson } from "./model.ts";
 import type { SetManifest } from "./model.ts";
 import { renameOverPrivateFile } from "#src/security/privacy/private-file.ts";
+import { digestOf, sameContent } from "#src/runtime/docker/image-ref.ts";
 
 /** What was installed immediately before the current set — one level, not a stack, same
  *  depth `rollback`'s single-file path already works at. */
@@ -435,8 +436,8 @@ export async function runningDigests(ctx: Context): Promise<string[]> {
 /** Pure: which fetched digest matches what the manifest requires, or the first one when
  *  none does. Split out so a caller already holding a runningDigests() result can reuse it. */
 export function matchRequiredDigest(digests: string[], manifest: SetManifest): string | undefined {
-  const requiredHash = manifest.requires.image.split("@").at(-1);
-  return digests.find((digest) => digest.split("@").at(-1) === requiredHash) ?? digests[0];
+  const required = digestOf(manifest.requires.image);
+  return digests.find((digest) => digestOf(digest) === required) ?? digests[0];
 }
 
 export async function runningImageDigest(ctx: Context, manifest: SetManifest): Promise<string | undefined> {
@@ -460,7 +461,7 @@ export function requirementProblems(manifest: SetManifest, present: { framework?
   // By hash suffix, not the full string: matchRequiredDigest() already matches the running
   // digest by SHA-256 hash alone so a mirrored image (different registry) still counts as
   // the same image, per runtimeMatches() (evidence.ts). Comparing the full string undid that.
-  if (present.imageDigest !== undefined && present.imageDigest.split("@").at(-1) !== manifest.requires.image.split("@").at(-1)) {
+  if (present.imageDigest !== undefined && !sameContent(present.imageDigest, manifest.requires.image)) {
     problems.push(
       problem(
         "SET_REQUIREMENT_UNMET",

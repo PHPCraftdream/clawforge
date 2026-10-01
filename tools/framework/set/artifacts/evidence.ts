@@ -8,6 +8,7 @@ import type { Context } from "#src/core/context.ts";
 import type { AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 import type { SecurityAuditReport } from "#src/security/audit.ts";
 import { blockingProblems } from "#src/service/inspection.ts";
+import { digestOf } from "#src/runtime/docker/image-ref.ts";
 
 export interface ObservedRuntime {
   readonly observations: ReceiptObservations;
@@ -21,8 +22,8 @@ export async function observeRuntime(ctx: Context, manifest: SetManifest): Promi
   let image;
   try { image = await ctx.runtime.runningImageIdentity?.(); } catch { /* Unknown is retained. */ }
   const digests = image?.digests ?? [];
-  const requiredHash = manifest.requires.image.split("@").at(-1);
-  const imageDigest = digests.find((digest) => digest.split("@").at(-1) === requiredHash) ?? digests[0];
+  const requiredDigest = digestOf(manifest.requires.image);
+  const imageDigest = digests.find((digest) => digestOf(digest) === requiredDigest) ?? digests[0];
   return {
     observations: {
       frameworkVersion: version ?? "unknown",
@@ -36,13 +37,13 @@ export async function observeRuntime(ctx: Context, manifest: SetManifest): Promi
 }
 
 export function runtimeMatches(manifest: SetManifest, before: ObservedRuntime, after: ObservedRuntime): boolean {
-  const hash = manifest.requires.image.split("@").at(-1);
+  const requiredDigest = digestOf(manifest.requires.image);
   return before.containerId !== undefined && before.containerId === after.containerId
     && before.observations.imageId !== undefined && before.observations.imageId === after.observations.imageId
     && before.observations.frameworkVersion === manifest.requires.framework
     && after.observations.frameworkVersion === manifest.requires.framework
-    && before.digests.some((digest) => digest.split("@").at(-1) === hash)
-    && after.digests.some((digest) => digest.split("@").at(-1) === hash);
+    && before.digests.some((digest) => digestOf(digest) === requiredDigest)
+    && after.digests.some((digest) => digestOf(digest) === requiredDigest);
 }
 
 /** A result slot belongs to one declared check, even when that check never completed. */

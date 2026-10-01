@@ -30,6 +30,10 @@ All notable changes to `@clawforge/framework` will be documented here.
   difference; `--json`'s `pinnedImage` and the `--dry-run` plan name that same string.
   An explicit `--image repo@sha256:…` is now format-checked (64 hex) and verified at the
   registry before `--dry-run` reports it and before a real run takes its pre-upgrade backup.
+* `upgrade` refuses a malformed image reference before contacting anything: a bad `--image`
+  (malformed digest or tag) fails locally with the reference grammar's own refusal naming the
+  input, and a malformed `OPENCLAW_IMAGE` in `.env` is refused the same way instead of being
+  sent to the registry as given.
 * `set validate` and `set build` give one image-pin advice decided from the lock's content
   (lock for another image, lock without digest, no lock) instead of disagreeing — `lock` no
   longer claims to record what the running gateway serves (it records the local image's

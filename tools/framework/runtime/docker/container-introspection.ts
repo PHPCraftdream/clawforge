@@ -7,7 +7,7 @@
 import { composeProjectName } from "../deployment.ts";
 import type { Settings } from "../../core/env.ts";
 import type { Transport } from "../transport/transport.ts";
-import { resolveImageDigest as resolveDigest, lastExitCode as readLastExitCode } from "./image-digest.ts";
+import { resolveImageDigest as resolveDigest, lastExitCode as readLastExitCode } from "./image-ref.ts";
 import { captureIncidentSnapshot as readIncidentSnapshot } from "./incident-snapshot.ts";
 
 export class ContainerIntrospection {

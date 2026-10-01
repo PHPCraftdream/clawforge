@@ -29,6 +29,7 @@ import { DESIRED_STATE_PATH, buildSetManifest, setManifestId } from "#src/set/ar
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import { assertNoSecretValues, localSecretValues, MIN_VALUE_LENGTH } from "./set-secrets-guard.ts";
 import { renameOverPrivateFile } from "#src/security/privacy/private-file.ts";
+import { hasDigest } from "#src/runtime/docker/image-ref.ts";
 
 /** What one build produced. The id is setManifestId(manifest); the artifact carries it in
  *  its file name, so two builds of unchanged content land on the same path. */
@@ -64,7 +65,7 @@ async function desiredSecretNames(desiredState: unknown): Promise<string[]> {
  *  A recorded digest answers only for the reference it was proven under: a lock left over
  *  from a previous OPENCLAW_IMAGE must not pin this build to the wrong digest. */
 async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<string> {
-  if (image.includes("@sha256:")) return image;
+  if (hasDigest(image)) return image;
   const lock = await readLock();
   if (lock?.image.digest !== undefined) {
     if (lock.image.reference !== image) {

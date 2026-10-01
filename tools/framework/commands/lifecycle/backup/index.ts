@@ -19,7 +19,7 @@ import { randomUUID } from "node:crypto";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import {
-  archiveCarriesContent, archiveRoot, createArchive, dataDirName, excludesFor, fileSize, isProfile, backupArchiveName,
+  archiveCarriesContent, archiveRoot, createArchive, dataDirName, excludesFor, fileSize, backupArchiveName,
   listArchive, parseBackupArchive, privilegePrefixFor, symlinkedDataRoot, PROFILE_SHORTHAND_FLAGS, type Profile,
 } from "#src/service/archive/index.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
@@ -28,69 +28,94 @@ import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/management/recipe/lifecycle.ts";
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "#src/commands/lifecycle/verify.ts";
-import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
-import { parseDeclaredArgs, scopeByAction, NO_ACTION, dieUnknownAction, type ActionScope } from "#src/core/command/index.ts";
+import type { BackupPurpose } from "#src/core/app.ts";
+import {
+  multiActionBody, defineAction, type ArgumentSpec, type ParsedCall, type Values,
+} from "#src/core/command/spec.ts";
+import { ArgumentError } from "#src/core/command/errors.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
-import { backupPruneReplaced, PRUNE_PARSE_ARGUMENTS } from "./prune-replaced.ts";
+import { backupPruneReplaced, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
 import { backupInstall, backupUninstall, BACKUP_INSTALL_ARGUMENTS, BACKUP_UNINSTALL_ARGUMENTS } from "./install.ts";
 import { buildBackupPlan, printBackupPlan } from "./plan.ts";
 
-export { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
-export { backupPruneReplaced, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
+export { backupList, BACKUP_LIST_ARGUMENTS, JSON_ARGUMENT } from "./list.ts";
+export { backupPruneReplaced, BACKUP_APPLY_ARGUMENT, BACKUP_PRUNE_ARGUMENTS } from "./prune-replaced.ts";
 export { backupInstall, backupUninstall, BACKUP_INSTALL_ARGUMENTS, BACKUP_UNINSTALL_ARGUMENTS } from "./install.ts";
 
-/** The first positional token `./clawforge backup` accepts instead of creating an archive. */
-export const BACKUP_ACTIONS = ["list", "prune-replaced", "install", "uninstall"] as const;
-
-/** Only `list` and a preview `prune-replaced`/`install`/`uninstall` (no --apply) merely read
- *  the instance; a bare create and any of the three `--apply` forms change it (install/
- *  uninstall mutate the target's crontab — the same target-state mutation `watch install`'s
- *  own guard classifies). One predicate for openclawCommands' readOnlyWhen/changedWhen/
- *  requiresConfirmationWhen, same reasoning as expose/watch's own <action>IsReadOnly helpers. */
-export function backupActionIsReadOnly(argv: string[]): boolean {
-  const action = argv[0];
-  if (action === "list") return true;
-  if (action === "prune-replaced" || action === "install" || action === "uninstall") return !argv.includes("--apply");
-  // A bare create with --dry-run touches nothing either — same reasoning as restore's own.
-  if (action === undefined || !BACKUP_ACTIONS.includes(action as (typeof BACKUP_ACTIONS)[number])) return argv.includes("--dry-run");
-  return false;
-}
-
-/** Drives both `./clawforge backup`'s own parser and its openclawCommands declaration (help,
- *  MCP schema) from one list, so the two cannot drift apart. Only the creation path's own
- *  flags — `list`'s, `prune-replaced`'s and `install`'s own are BACKUP_LIST_ARGUMENTS/
- *  BACKUP_PRUNE_ARGUMENTS/BACKUP_INSTALL_ARGUMENTS. */
-export const BACKUP_ARGUMENTS: CommandArgument[] = [
+/** The creation path's own arguments (the default `create` action). --dry-run is a read:
+ *  the preview touches nothing, so the call itself is one. */
+export const BACKUP_ARGUMENTS = [
   PROFILE_ARGUMENT,
   { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
-  { name: "native", description: "Consistent snapshot without stopping the gateway (full profile only); auth-secrets/ and anything OpenClaw's own backup omits are copied in, hot", kind: "flag" },
-  { name: "share", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
-  { name: "migrate", description: "Migrate profile: no provider keys (same as --profile migrate)", kind: "flag" },
-  { name: "with-secrets", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
-  { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag" },
-];
+  {
+    name: "native",
+    summary: "Consistent snapshot without stopping the gateway",
+    description: "Consistent snapshot without stopping the gateway (full profile only); auth-secrets/ and anything OpenClaw's own backup omits are copied in, hot",
+    kind: "flag",
+  },
+  { name: "share", summary: "Shareable profile with verification", description: "Shareable profile with verification (same as --profile share)", kind: "flag" },
+  { name: "migrate", summary: "Migrate profile: no provider keys", description: "Migrate profile: no provider keys (same as --profile migrate)", kind: "flag" },
+  { name: "with-secrets", summary: "Full profile: includes provider keys", description: "Full profile: includes provider keys (already backup's default)", kind: "flag" },
+  { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag", effect: "read" },
+] as const satisfies readonly ArgumentSpec[];
 
-/** What each action's own parser accepts (`create` — NO_ACTION — is the bare create, also
- *  accepted as an explicit action word); the merged declaration below, and so completion,
- *  --help and the MCP schema, is derived from it. `uninstall` has no --interval, since there
- *  is no schedule to set. */
-export const BACKUP_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = {
-  [NO_ACTION]: BACKUP_ARGUMENTS,
-  list: BACKUP_LIST_ARGUMENTS,
-  "prune-replaced": PRUNE_PARSE_ARGUMENTS,
-  install: BACKUP_INSTALL_ARGUMENTS,
-  uninstall: BACKUP_UNINSTALL_ARGUMENTS,
-};
+export interface BackupCreateValues extends Values<typeof BACKUP_ARGUMENTS> {}
 
-/** The merged declaration for openclawCommands — one optional `action` positional ahead of
- *  every sub-action's own flags, so `./clawforge backup` with none of them still creates an
- *  archive exactly as it always has; `create` is the explicit word for the same thing. */
-export const BACKUP_ALL_ARGUMENTS: CommandArgument[] = [
-  { name: "action", description: "Omit to create a backup; an action word lists or manages backups instead", kind: "positional", choices: [...BACKUP_ACTIONS, "create"] },
-  ...scopeByAction(BACKUP_ACTION_ARGUMENTS),
-];
+/** --share/--migrate/--with-secrets and --profile set one field; the last one typed wins.
+ *  PROFILE_BY_FLAG is PROFILE_SHORTHAND_FLAGS with keys without `--`. */
+const PROFILE_BY_FLAG: ReadonlyMap<string, Profile> = new Map(
+  [...PROFILE_SHORTHAND_FLAGS].map(([flag, profile]) => [flag.slice("--".length), profile]),
+);
+
+interface BackupCreatePlan {
+  readonly options: BackupOptions;
+  readonly dryRun: boolean;
+}
+
+/** The plan for a create: the profile decision and the native/full refusal (an arguments-and-
+ *  values refusal, so it happens in prepare — before requireBootstrapped and the lock). */
+function createPlan(call: ParsedCall<BackupCreateValues>): BackupCreatePlan {
+  const values = call.values;
+  const last = call.given.filter((name) => name === "profile" || PROFILE_BY_FLAG.has(name)).at(-1);
+  const profile = last === undefined ? undefined : last === "profile" ? values.profile : PROFILE_BY_FLAG.get(last);
+  if (values.native === true && (profile ?? "full") !== "full") {
+    throw new ArgumentError("--native only supports the full profile — migrate/share stay on the framework's own tar path", "native");
+  }
+  return { options: { hot: values.hot === true, native: values.native === true, profile }, dryRun: values["dry-run"] === true };
+}
+
+/** The `--dry-run` branch of a create: the plan, printed or emitted, nothing else. */
+async function previewBackup(ctx: Context, options: BackupOptions): Promise<void> {
+  const plan = await buildBackupPlan(ctx, options);
+  if (isCaptured()) {
+    emit(`${JSON.stringify({ ok: plan.refusals.length === 0, changed: false, dryRun: true, ...plan }, null, 2)}\n`);
+    return;
+  }
+  printBackupPlan(plan);
+}
+
+/** The whole command: no action word creates an archive; the four other actions manage
+ *  backups. Declaration order is the action word's choices, `create` last — as the default
+ *  it is merged first, so its flags lead the derived `arguments` view exactly as before. */
+export const BACKUP = multiActionBody({
+  effect: "change",
+  action: { description: "Omit to create a backup; an action word lists or manages backups instead", summary: "Omit to create a backup" },
+  defaultAction: "create",
+  actions: {
+    list: defineAction({ summary: "List archives and replaced copies", effect: "read", arguments: BACKUP_LIST_ARGUMENTS, run: backupList }),
+    "prune-replaced": defineAction({ summary: "Delete copies restore left aside", effect: "read", arguments: BACKUP_PRUNE_ARGUMENTS, run: backupPruneReplaced }),
+    install: defineAction({ summary: "Schedule a plain backup", effect: "read", arguments: BACKUP_INSTALL_ARGUMENTS, run: backupInstall }),
+    uninstall: defineAction({ summary: "Remove the backup schedule", effect: "read", arguments: BACKUP_UNINSTALL_ARGUMENTS, run: backupUninstall }),
+    create: defineAction({
+      summary: "Create an archive",
+      arguments: BACKUP_ARGUMENTS,
+      prepare: (call) => createPlan(call),
+      run: (ctx, plan) => (plan.dryRun ? previewBackup(ctx, plan.options) : createBackup(ctx, plan.options).then(() => {})),
+    }),
+  },
+});
 
 export interface BackupOptions {
   hot?: boolean;
@@ -593,62 +618,3 @@ async function targetExists(ctx: Context, path: string): Promise<boolean> {
   throw new Error(`could not check backup path ${path} (exit ${result.code})`);
 }
 
-export async function backup(ctx: Context, args: string[]): Promise<void> {
-  const [first, ...rest] = args;
-  // Positional and unambiguous: every creation flag is `--something`, so a bare `list`,
-  // `prune-replaced`, `install` or `uninstall` token can never collide with one. `scopeFor`
-  // lets each action's own parser name the RIGHT action when a flag belongs to a different
-  // one — `backup list --keep` names `prune-replaced`, not just "unknown".
-  const scopeFor = (action: string): ActionScope => ({ action, siblings: BACKUP_ALL_ARGUMENTS });
-  if (first === "list") return backupList(ctx, rest, scopeFor("list"));
-  if (first === "prune-replaced") return backupPruneReplaced(ctx, rest, scopeFor("prune-replaced"));
-  if (first === "install") return backupInstall(ctx, rest, scopeFor("install"));
-  if (first === "uninstall") return backupUninstall(ctx, rest, scopeFor("uninstall"));
-
-  // `create` is the explicit word for the default (no action word needed). Any other bare
-  // non-flag token is a mistyped action — refused with the usual did-you-mean, not a bare
-  // "unknown argument" (R30-05: `backup lst`).
-  if (first !== undefined && first !== NO_ACTION && !first.startsWith("-")) {
-    const expected = [...BACKUP_ACTIONS, NO_ACTION];
-    dieUnknownAction(first, `unknown action: ${first} (expected ${expected.join(", ")})`, expected);
-  }
-
-  // The create path: whatever follows the `create` word; without an action word, the whole
-  // argv — a leading token that only looks like a flag is one.
-  const createArgs = first === undefined || first.startsWith("-") ? args : rest;
-  const options: BackupOptions = {};
-  const parsed = parseDeclaredArgs(BACKUP_ARGUMENTS, createArgs, scopeFor(NO_ACTION));
-
-  if (parsed.hot === true) options.hot = true;
-  if (parsed.native === true) options.native = true;
-
-  // --share, --with-secrets, --migrate (the same shorthand vocabulary `pull` accepts) and
-  // --profile all set the same field, so whichever was typed LAST decides it — scanned over
-  // the raw argv, not the declaration-keyed `parsed` above, so one pass sees the true order
-  // regardless of which of the two forms was used.
-  for (let index = 0; index < createArgs.length; index += 1) {
-    const arg = createArgs[index];
-    const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
-    if (shorthand !== undefined) {
-      options.profile = shorthand;
-    } else if (arg === "--profile" || arg.startsWith("--profile=")) {
-      const value = arg === "--profile" ? createArgs[index + 1] : arg.slice("--profile=".length);
-      if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");
-      options.profile = value;
-      if (arg === "--profile") index += 1;
-    }
-  }
-
-  if (parsed["dry-run"] === true) {
-    const plan = await buildBackupPlan(ctx, options);
-    if (isCaptured()) {
-      emit(`${JSON.stringify({ ok: plan.refusals.length === 0, changed: false, dryRun: true, ...plan }, null, 2)}\n`);
-      return;
-    }
-    printBackupPlan(plan);
-    return;
-  }
-
-  // Not repeated here: createBackup() already announced the path in "backup done: <path>".
-  await createBackup(ctx, options);
-}

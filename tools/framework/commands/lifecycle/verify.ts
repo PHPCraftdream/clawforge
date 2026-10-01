@@ -23,7 +23,6 @@ import {
   canonicalArchiveEntries,
   listArchive,
   listArchiveLinks,
-  isProfile,
   reportableProblems,
   SHARE_ALLOWED,
   type Profile,
@@ -32,16 +31,14 @@ import { parseEnv } from "#src/core/env.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { privatePathsPolicy } from "#src/security/privacy/private-paths-ledger.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
-/** Drives both verify's own parser and its openclawCommands declaration. */
-export const VERIFY_ARGUMENTS: CommandArgument[] = [
+export const VERIFY_ARGUMENTS = [
   { name: "archive", description: "Archive to inspect", kind: "positional", required: true },
   PROFILE_ARGUMENT,
-  { name: "json", description: "Emit the verdict and findings as JSON — locations and kinds only, never credential values", kind: "flag" },
-];
+  { name: "json", summary: "Emit the verdict and findings as JSON", description: "Emit the verdict and findings as JSON — locations and kinds only, never credential values", kind: "flag" },
+] as const satisfies readonly ArgumentSpec[];
 
 /** One thing verifySnapshot found. `detail` is a path, a rule name or a provider id —
  *  never a credential value, so this is exactly what --json is safe to print. */
@@ -556,19 +553,15 @@ export async function verifySnapshotQuietly(ctx: Context, archive: string, profi
   return passed;
 }
 
-export async function verify(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(VERIFY_ARGUMENTS, args);
-  let profile: Profile = "share";
-  if (parsed.profile !== undefined) {
-    if (!isProfile(parsed.profile as string)) die("--profile needs one of: full, migrate, share");
-    profile = parsed.profile as Profile;
-  }
-  const archive = parsed.archive as string | undefined;
-  const jsonOnly = parsed.json === true;
+export const VERIFY = commandBody({
+  effect: "read",
+  arguments: VERIFY_ARGUMENTS,
+  async run(ctx, values) {
+    const profile = (values.profile ?? "share") as Profile;
+    const archive = values.archive;
+    const jsonOnly = values.json === true;
 
-  if (archive === undefined) die("usage: ./clawforge verify [--profile share|migrate|full] <archive>");
-
-  if (jsonOnly || isCaptured()) {
+    if (jsonOnly || isCaptured()) {
     const findings: VerifyFinding[] = [];
     let passed = false;
     // Swallows verifySnapshot's own narration (log/info/warn) so a captured caller — MCP
@@ -586,4 +579,5 @@ export async function verify(ctx: Context, args: string[]): Promise<void> {
   if (!(await verifySnapshot(ctx, archive, profile))) {
     die(`snapshot failed the '${profile}' profile check`);
   }
-}
+},
+});

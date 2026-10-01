@@ -21,8 +21,6 @@ import {
   type LockHolder,
 } from "#framework/runtime/lock/instance-lock.ts";
 import { machineName } from "#framework/runtime/lock/process-identity.ts";
-import { bootstrap } from "#framework/commands/lifecycle/bootstrap/index.ts";
-import { pull } from "#framework/commands/lifecycle/state.ts";
 import { stubContext } from "./fixture.ts";
 import { readFile } from "node:fs/promises";
 import type { Context } from "#framework/core/context.ts";
@@ -190,7 +188,7 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
 {
   let message = "";
   try {
-    await bootstrap({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
+    await openclawCommands.bootstrap.run({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   }
@@ -201,7 +199,7 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
 {
   let message = "";
   try {
-    await bootstrap({} as unknown as Context, ["--break-foreign-lock", "some-host", "--totally-unknown-flag"]);
+    await openclawCommands.bootstrap.run({} as unknown as Context, ["--break-foreign-lock", "some-host", "--totally-unknown-flag"]);
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   }
@@ -213,7 +211,7 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
 {
   let message = "";
   try {
-    await pull({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
+    await openclawCommands.pull.run({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   }

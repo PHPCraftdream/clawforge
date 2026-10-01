@@ -15,7 +15,7 @@ import { log, UserError } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
 import { CouldNotCheck } from "#src/commands/check-outcome.ts";
 import { createBackup } from "#src/commands/lifecycle/backup/index.ts";
-import { pull } from "#src/commands/lifecycle/state.ts";
+import { pullSnapshot } from "#src/commands/lifecycle/state.ts";
 import { restoreArchive } from "#src/commands/lifecycle/restore/index.ts";
 import { verifySnapshotQuietly } from "#src/commands/lifecycle/verify.ts";
 import { dataDirName, dataDirParent } from "#src/service/archive/index.ts";
@@ -74,7 +74,7 @@ export const ACCEPTS_SHARE_ENTRY: Check = {
   name: ACCEPTS_SHARE_CHECK,
   run: async (ctx) => {
     try {
-      await pull(ctx, ["--share"], { purpose: "internal" });
+      await pullSnapshot(ctx, "share", { purpose: "internal" });
     } catch (error) {
       // pull's own die() IS the verdict — a rejected snapshot is a failed check, not an
       // unreachable instance. Anything else never got far enough to judge anything.
@@ -348,7 +348,7 @@ export async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>
         // Same leaveStopped reasoning as the full backup above — and harmless either way
         // here, since createBackup()/pull() already skip re-pausing a gateway they find
         // already stopped (isRunning() is read fresh on every call).
-        await pull(ctx, ["--share"], { leaveStopped: true, purpose: "internal" });
+        await pullSnapshot(ctx, "share", { leaveStopped: true, purpose: "internal" });
       } catch (error) {
         // pull's own die() IS the verdict — a rejected snapshot is a failed check, not an
         // unreachable instance. Anything else never got far enough to judge anything. Same

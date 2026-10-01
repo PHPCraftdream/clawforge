@@ -19,11 +19,11 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { bootstrap } from "#framework/commands/lifecycle/bootstrap/index.ts";
 import { useDeployment, deploymentDir } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const DATA_DIR = "/srv/openclaw/data";
 const CONFIG_PATH = `${DATA_DIR}/config/openclaw.json`;
@@ -119,7 +119,7 @@ try {
     },
   } as unknown as Context;
 
-  await withOutputSink(() => {}, () => bootstrap(ctx, ["--no-pull"]));
+  await withOutputSink(() => {}, () => openclawCommands.bootstrap.run(ctx, ["--no-pull"]));
 
   const kinds = calls.map((call) => call.kind);
   check("port conflict is checked before pulling or mutating the instance", kinds[0], "port-check");
@@ -140,7 +140,7 @@ try {
   conflictingContainer = "occupied-1 (compose project other)";
   let refusal = "";
   try {
-    await withOutputSink(() => {}, () => bootstrap(ctx, ["--no-pull"]));
+    await withOutputSink(() => {}, () => openclawCommands.bootstrap.run(ctx, ["--no-pull"]));
   } catch (error) {
     refusal = error instanceof Error ? error.message : String(error);
   }
@@ -235,7 +235,7 @@ function providerHintContext(liveConfig: unknown, targetEnv = ""): Context {
 
     {
       let output = "";
-      await withOutputSink((chunk) => { output += chunk; }, () => bootstrap(providerHintContext({ models: { providers: {} } }), ["--no-pull"]));
+      await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.bootstrap.run(providerHintContext({ models: { providers: {} } }), ["--no-pull"]));
       check("no provider configured prints the configure-provider hint", output.includes("./clawforge configure-provider"), true);
       check("the hint says an agent cannot answer yet", output.includes("cannot answer"), true);
     }
@@ -244,7 +244,7 @@ function providerHintContext(liveConfig: unknown, targetEnv = ""): Context {
       let output = "";
       await withOutputSink(
         (chunk) => { output += chunk; },
-        () => bootstrap(providerHintContext({ models: { providers: { zai: { apiKey: "k" } } } }), ["--no-pull"]),
+        () => openclawCommands.bootstrap.run(providerHintContext({ models: { providers: { zai: { apiKey: "k" } } } }), ["--no-pull"]),
       );
       check("a configured provider prints no hint at all", output.includes("configure-provider"), false);
     }
@@ -255,7 +255,7 @@ function providerHintContext(liveConfig: unknown, targetEnv = ""): Context {
       let output = "";
       await withOutputSink(
         (chunk) => { output += chunk; },
-        () => bootstrap(providerHintContext({ models: { providers: {} }, auth: { profiles: { mine: { provider: "zai" } } } }, "ZAI_API_KEY=k\n"), ["--no-pull"]),
+        () => openclawCommands.bootstrap.run(providerHintContext({ models: { providers: {} }, auth: { profiles: { mine: { provider: "zai" } } } }, "ZAI_API_KEY=k\n"), ["--no-pull"]),
       );
       check("a provider named only through auth.profiles prints no hint either", output.includes("configure-provider"), false);
     }

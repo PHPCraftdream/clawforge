@@ -4,11 +4,11 @@
 // local-store.check.ts's own note on why): a minimal stub transport it builds itself, not a
 // real archive or target.
 
-import { verify } from "#framework/commands/lifecycle/verify.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const ARCHIVE = "/tmp/verify-json.tar.gz";
 
@@ -83,7 +83,7 @@ for (const [name, archivedConfig, kind, marker] of [
   let output = "";
   let rejected = false;
   await withOutputSink((chunk) => { output += chunk; }, async () => {
-    try { await verify(ctx, [ARCHIVE, "--json"]); } catch { rejected = true; }
+    try { await openclawCommands.verify.run(ctx, [ARCHIVE, "--json"]); } catch { rejected = true; }
   });
   const payload = JSON.parse(output) as { findings: { kind: string; detail: string }[] };
   check(`${name} is rejected independently of live credentials`, rejected, true);
@@ -96,7 +96,7 @@ for (const [name, archivedConfig, kind, marker] of [
   const archivedConfig = { channels: { telegram: { botToken: { source: "env", id: "BOT_TOKEN" } } } };
   const ctx = makeCtx({ listing: CLEAN_LISTING, verboseListing: CLEAN_VERBOSE, archivedConfig });
   let output = "";
-  await withOutputSink((chunk) => { output += chunk; }, () => verify(ctx, [ARCHIVE, "--json"]));
+  await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.verify.run(ctx, [ARCHIVE, "--json"]));
   check("an env reference in a secret field stays shareable", (JSON.parse(output) as { passed: boolean }).passed, true);
 }
 
@@ -106,7 +106,7 @@ for (const [name, archivedConfig, kind, marker] of [
   let threw = false;
   await withOutputSink((chunk) => { output += chunk; }, async () => {
     try {
-      await verify(ctx, [ARCHIVE, "--json"]);
+      await openclawCommands.verify.run(ctx, [ARCHIVE, "--json"]);
     } catch {
       threw = true;
     }
@@ -122,7 +122,7 @@ for (const [name, archivedConfig, kind, marker] of [
 {
   const ctx = makeCtx({ listing: CLEAN_LISTING, verboseListing: CLEAN_VERBOSE });
   let output = "";
-  await withOutputSink((chunk) => { output += chunk; }, () => verify(ctx, [ARCHIVE, "--json"]));
+  await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.verify.run(ctx, [ARCHIVE, "--json"]));
   const payload = JSON.parse(output) as { passed: boolean; findings: unknown[] };
   checkTrue("a passing archive reports passed:true", payload.passed);
   check("a passing archive has no findings", payload.findings.length, 0);
@@ -133,7 +133,7 @@ for (const [name, archivedConfig, kind, marker] of [
   // --json, must still answer in JSON (the same contract watch status/plan already keep).
   const ctx = makeCtx({ listing: CLEAN_LISTING, verboseListing: CLEAN_VERBOSE });
   let output = "";
-  await withOutputSink((chunk) => { output += chunk; }, () => verify(ctx, [ARCHIVE]));
+  await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.verify.run(ctx, [ARCHIVE]));
   const payload = JSON.parse(output) as { passed: boolean };
   checkTrue("captured without --json still reports JSON", payload.passed);
 }
@@ -153,7 +153,7 @@ for (const [name, archivedConfig, kind, marker] of [
   let threw = false;
   await withOutputSink((chunk) => { output += chunk; }, async () => {
     try {
-      await verify(ctx, [ARCHIVE, "--json"]);
+      await openclawCommands.verify.run(ctx, [ARCHIVE, "--json"]);
     } catch {
       threw = true;
     }

@@ -5,7 +5,6 @@
 // backup/prune-replaced.check.ts layers its own domain exec handling over, not a stand-in
 // for the lock.
 
-import { destroy, SAFE_DESTROY_SCRIPT } from "#framework/commands/lifecycle/instance/destroy.ts";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +16,13 @@ import { takeLock } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext, refused } from "#checks/runtime/convergence/instance-lock/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { SAFE_DESTROY_SCRIPT } from "#framework/commands/lifecycle/instance/destroy.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { executeCommand } from "#framework/core/command/execute.ts";
+import { ArgumentError } from "#framework/core/command/index.ts";
+import type { AppDefinition } from "#framework/core/app.ts";
+import type { Transport } from "#framework/runtime/transport/transport.ts";
 
 useDeployment("/srv/destroy-check-deployment");
 const DEPLOYMENT_NAME = "destroy-check-deployment";
@@ -122,7 +127,7 @@ async function output(body: () => Promise<void>): Promise<string> {
 
 {
   const { ctx, dirs, order } = destroyContext();
-  const text = await output(() => destroy(ctx, ["--data", "--backups", "--snapshots"]));
+  const text = await output(() => openclawCommands.destroy.run(ctx, ["--data", "--backups", "--snapshots"]));
   check("dry run leaves every target in place", [dirs.has(DATA_DIR), dirs.has(BACKUP_DIR), dirs.has(SNAPSHOT_DIR)], [true, true, true]);
   check("dry run never calls runtime.stop", order.some((entry) => entry.startsWith("stop:")), false);
   check("dry run still shows the containers plan", order.includes("showStatus"), true);
@@ -135,7 +140,7 @@ async function output(body: () => Promise<void>): Promise<string> {
 {
   // No flags at all: still a dry run of the containers/network/volumes, nothing else.
   const { ctx, order } = destroyContext();
-  await output(() => destroy(ctx, []));
+  await output(() => openclawCommands.destroy.run(ctx, []));
   check("no target flags still shows the containers-only plan", order, ["showStatus"]);
 }
 
@@ -143,14 +148,14 @@ async function output(body: () => Promise<void>): Promise<string> {
 
 {
   const { ctx, dirs } = destroyContext();
-  const message = await refused(() => destroy(ctx, ["--data", "--yes"]));
+  const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes"]));
   check("--yes with no --confirm-name is refused", message.includes("--confirm-name"), true);
   check("nothing was removed", dirs.has(DATA_DIR), true);
 }
 
 {
   const { ctx, dirs } = destroyContext();
-  const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", "not-this-deployment"]));
+  const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", "not-this-deployment"]));
   check("a wrong --confirm-name is refused", message.includes("does not match"), true);
   check("nothing was removed", dirs.has(DATA_DIR), true);
 }
@@ -171,7 +176,7 @@ for (const [name, dataDir, expectedSubstring] of [
   ["repeated separators", "/srv//data", "normalized path"],
   ["mixed separators", "C:\\srv/data", "mixes path separators"],
 ] as const) {
-  const message = await refused(() => destroy(shapeContext(dataDir), ["--data"]));
+  const message = await refused(() => openclawCommands.destroy.run(shapeContext(dataDir), ["--data"]));
   check(`refuses ${name}`, message.includes(expectedSubstring), true);
 }
 
@@ -187,7 +192,7 @@ for (const [flag, envName, path] of [
       env: {},
     },
   } as unknown as Context;
-  const message = await refused(() => destroy(ctx, [flag]));
+  const message = await refused(() => openclawCommands.destroy.run(ctx, [flag]));
   check(`${envName} unsafe path is refused`, message.includes(envName), true);
 }
 
@@ -196,7 +201,7 @@ for (const [flag, envName, path] of [
 
 {
   const { ctx } = destroyContext([DATA_DIR], new Set([DATA_DIR]));
-  const message = await refused(() => destroy(ctx, ["--data"]));
+  const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data"]));
   check("refuses a symlinked target, even in dry run", message.includes("symlink"), true);
 }
 
@@ -207,7 +212,7 @@ for (const [flag, envName, path] of [
   } as unknown as Context;
   const { ctx: transportCtx } = destroyContext([linkedParent], new Set(), new Map([[linkedParent, "/outside/backups"]]));
   const linkedCtx = { ...transportCtx, settings: ctx.settings } as Context;
-  const message = await refused(() => destroy(linkedCtx, ["--backups"]));
+  const message = await refused(() => openclawCommands.destroy.run(linkedCtx, ["--backups"]));
   check("refuses a path reached through a symlinked parent", message.includes("resolves through a symlink"), true);
 }
 
@@ -215,7 +220,7 @@ for (const [flag, envName, path] of [
 
 {
   const { ctx, dirs, order } = destroyContext();
-  await output(() => destroy(ctx, ["--data", "--backups", "--snapshots", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  await output(() => openclawCommands.destroy.run(ctx, ["--data", "--backups", "--snapshots", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check(
     "stops containers first, then removes data, backups, snapshots in that order",
     order.filter((entry) => entry.startsWith("stop:") || entry.startsWith("rm:")),
@@ -234,7 +239,7 @@ for (const [name, setup, expected] of [
   ["test exit other than 0 or 1", { failedTest: true }, "target link test failed"],
 ] as const) {
   const { ctx, order, dirs } = destroyContext([DATA_DIR], new Set(), new Map(), setup);
-  const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check(`${name} refuses removal`, message.includes(expected), true);
   check(`${name} never reaches rm`, order.some((entry) => entry.startsWith("rm:")), false);
   check(`${name} preserves the target`, dirs.has(DATA_DIR), true);
@@ -242,15 +247,15 @@ for (const [name, setup, expected] of [
 
 {
   const { ctx, order } = destroyContext([BACKUP_DIR, SNAPSHOT_DIR], new Set(), new Map(), { uid: 1001, noSudo: true });
-  await output(() => destroy(ctx, ["--backups", "--snapshots"]));
-  await output(() => destroy(ctx, ["--backups", "--snapshots", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  await output(() => openclawCommands.destroy.run(ctx, ["--backups", "--snapshots"]));
+  await output(() => openclawCommands.destroy.run(ctx, ["--backups", "--snapshots", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check("a different uid can inspect and remove writable directories without sudo", order.filter((entry) => entry.includes(`:${BACKUP_DIR}`) || entry.includes(`:${SNAPSHOT_DIR}`)),
     [`plain:verify:${BACKUP_DIR}`, `plain:verify:${SNAPSHOT_DIR}`, `plain:verify:${BACKUP_DIR}`, `plain:verify:${SNAPSHOT_DIR}`, `plain:remove:${BACKUP_DIR}`, `rm:${BACKUP_DIR}`, `plain:remove:${SNAPSHOT_DIR}`, `rm:${SNAPSHOT_DIR}`]);
 }
 
 {
   const { ctx, order } = destroyContext([DATA_DIR], new Set(), new Map(), { uid: 1001, unwritable: new Set([DATA_DIR]) });
-  await output(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  await output(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check("a protected target uses the same sudo prefix for verification and removal", order.filter((entry) => entry.includes(`:${DATA_DIR}`)),
     [`sudo:verify:${DATA_DIR}`, `sudo:remove:${DATA_DIR}`, `rm:${DATA_DIR}`]);
 }
@@ -259,7 +264,7 @@ for (const [name, setup, expected] of [
   const { ctx, order } = destroyContext([DATA_DIR, BACKUP_DIR], new Set(), new Map(), {
     uid: 1001, unwritable: new Set([DATA_DIR]),
   });
-  await output(() => destroy(ctx, ["--data", "--backups", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  await output(() => openclawCommands.destroy.run(ctx, ["--data", "--backups", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check("mixed target permissions select separate prefixes", order.filter((entry) => entry.includes(`:${DATA_DIR}`) || entry.includes(`:${BACKUP_DIR}`)),
     [`sudo:verify:${DATA_DIR}`, `plain:verify:${BACKUP_DIR}`, `sudo:remove:${DATA_DIR}`, `rm:${DATA_DIR}`, `plain:remove:${BACKUP_DIR}`, `rm:${BACKUP_DIR}`]);
 }
@@ -268,7 +273,7 @@ for (const [name, setup, expected] of [
   const { ctx, order, dirs } = destroyContext([DATA_DIR], new Set(), new Map(), {
     uid: 1001, unwritable: new Set([DATA_DIR]), noSudo: true,
   });
-  const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check("a protected target without passwordless sudo is refused", message.includes("sudo asks for a password"), true);
   check("a protected target without sudo is never verified or removed", order.some((entry) => entry.includes(`:${DATA_DIR}`)), false);
   check("a protected target without sudo preserves the target", dirs.has(DATA_DIR), true);
@@ -278,7 +283,7 @@ for (const [name, setup, expected] of [
   const { ctx, order } = destroyContext([DATA_DIR], new Set(), new Map(), {
     uid: 1001, unsearchable: new Set(["/srv/destroy-check"]),
   });
-  await output(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  await output(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check("an unsearchable parent uses sudo for both phases", order.filter((entry) => entry.includes(`:${DATA_DIR}`)),
     [`sudo:verify:${DATA_DIR}`, `sudo:remove:${DATA_DIR}`, `rm:${DATA_DIR}`]);
 }
@@ -287,7 +292,7 @@ for (const [name, setup, expected] of [
   const { ctx, order, dirs } = destroyContext([DATA_DIR], new Set(), new Map(), {
     uid: 1001, unsearchable: new Set(["/srv/destroy-check"]), noSudo: true,
   });
-  const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check("a protected parent without passwordless sudo is refused", message.includes("sudo asks for a password"), true);
   check("a protected parent without sudo is never verified or removed", order.some((entry) => entry.includes(`:${DATA_DIR}`)), false);
   check("a protected parent without sudo preserves the target", dirs.has(DATA_DIR), true);
@@ -296,7 +301,7 @@ for (const [name, setup, expected] of [
 {
   const links = new Set<string>();
   const { ctx, dirs, order } = destroyContext([DATA_DIR], links, new Map(), { afterStop: () => { links.add("/srv/destroy-check"); } });
-  const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check("symlink introduced after preflight is refused", message.includes("symlink"), true);
   check("symlink introduced after preflight never reaches rm", order.some((entry) => entry.startsWith("rm:")), false);
   check("symlink introduced after preflight preserves target", dirs.has(DATA_DIR), true);
@@ -368,7 +373,7 @@ if (process.platform === "linux") {
 {
   // Only --data: backups/snapshots are never touched.
   const { ctx, dirs, order } = destroyContext();
-  await output(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  await output(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check(
     "only the requested target is removed",
     order.filter((entry) => entry.startsWith("stop:") || entry.startsWith("rm:")),
@@ -383,7 +388,7 @@ if (process.platform === "linux") {
   const { ctx, dirs } = destroyContext();
   const held = await takeLock(ctx, "unrelated", "op-holder");
   try {
-    const message = await refused(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+    const message = await refused(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
     check("a real run refuses while another operation holds the lock", message.includes("operations op-holder"), true);
   } finally {
     await held.release();
@@ -395,7 +400,7 @@ if (process.platform === "linux") {
 
 {
   const { ctx, dirs, order } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
-  const text = await output(() => destroy(ctx, ["--data"]));
+  const text = await output(() => openclawCommands.destroy.run(ctx, ["--data"]));
   check("never bootstrapped dry run says nothing to destroy", text.includes("nothing to destroy") && text.includes("dry run"), true);
   check("never bootstrapped dry run does not show a container plan", order.includes("showStatus"), false);
   check("never bootstrapped dry run creates nothing", [...dirs], []);
@@ -403,7 +408,7 @@ if (process.platform === "linux") {
 
 {
   const { ctx, dirs, order } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
-  const text = await output(() => destroy(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  const text = await output(() => openclawCommands.destroy.run(ctx, ["--data", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check("never bootstrapped real run says nothing to destroy", text.includes("nothing to destroy"), true);
   check("never bootstrapped real run stops and removes nothing", order.filter((e) => e.startsWith("stop:") || e.startsWith("rm:")), []);
   check("never bootstrapped real run creates no lock directory", [...dirs], []);
@@ -412,7 +417,7 @@ if (process.platform === "linux") {
 {
   const message = await refused(async () => {
     const { ctx } = destroyContext([], new Set(), new Map(), { neverBootstrapped: true });
-    await destroy(ctx, ["--yes", "--confirm-name", "not-this-deployment"]);
+    await openclawCommands.destroy.run(ctx, ["--yes", "--confirm-name", "not-this-deployment"]);
   });
   check("never bootstrapped still needs the right --confirm-name", message.includes("does not match"), true);
 }
@@ -420,9 +425,9 @@ if (process.platform === "linux") {
 {
   // --backups/--snapshots are independent directories and still go when present.
   const { ctx, dirs, order } = destroyContext([BACKUP_DIR], new Set(), new Map(), { neverBootstrapped: true });
-  const text = await output(() => destroy(ctx, ["--backups", "--snapshots"]));
+  const text = await output(() => openclawCommands.destroy.run(ctx, ["--backups", "--snapshots"]));
   check("never bootstrapped dry run names the present backup dir", text.includes(BACKUP_DIR), true);
-  await output(() => destroy(ctx, ["--backups", "--snapshots", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
+  await output(() => openclawCommands.destroy.run(ctx, ["--backups", "--snapshots", "--yes", "--confirm-name", DEPLOYMENT_NAME]));
   check("never bootstrapped real run removes the present backup dir only", order.filter((e) => e.startsWith("rm:")), [`rm:${BACKUP_DIR}`]);
   check("never bootstrapped removal leaves no lock directory behind", [...dirs], []);
 }
@@ -435,7 +440,7 @@ if (process.platform === "linux") {
     uid: 1001, noSudo: true, neverBootstrapped: true,
     unwritable: new Set(["/srv/destroy-check"]), unsearchable: new Set(["/srv/destroy-check"]),
   });
-  const text = await output(() => destroy(ctx, ["--backups", "--snapshots"]));
+  const text = await output(() => openclawCommands.destroy.run(ctx, ["--backups", "--snapshots"]));
   check("absent dry run needs no sudo and runs no target script", order, []);
   check("absent dry run reports the directories absent", text.includes(`${BACKUP_DIR}`) && text.includes("absent"), true);
   check("absent dry run says there is nothing to remove", text.includes("nothing to remove"), true);
@@ -446,9 +451,39 @@ if (process.platform === "linux") {
 {
   // A present target is still verified, and the real-run invitation stays.
   const { ctx, order } = destroyContext([BACKUP_DIR], new Set(), new Map(), { uid: 1001, noSudo: true, neverBootstrapped: true });
-  const text = await output(() => destroy(ctx, ["--backups", "--snapshots"]));
+  const text = await output(() => openclawCommands.destroy.run(ctx, ["--backups", "--snapshots"]));
   check("present target is still verified in the dry run", order, [`plain:verify:${BACKUP_DIR}`]);
   check("present target keeps the real-run hint", text.includes("for a real run"), true);
 }
+
+// --- --yes + --confirm-name is a prepare refusal: before any contact or the lock ------------
+// The name check needs only the arguments and the local deployment name, so the pipeline
+// refuses at the prepare stage — executeCommand with a recording transport proves no target
+// is ever reached.
+
+{
+  const app: AppDefinition = { name: "destroy-fixture", description: "fixture", commands: { destroy: openclawCommands.destroy } };
+  const contacts: string[] = [];
+  const transport = {
+    description: "stub",
+    exec(...rest: unknown[]): never { contacts.push(String(rest[0])); throw new Error("unreachable"); },
+    exists(): never { contacts.push("exists"); throw new Error("unreachable"); },
+    readFile(): never { contacts.push("readFile"); throw new Error("unreachable"); },
+  } as unknown as Transport;
+
+  for (const [label, argv, messagePart] of [
+    ["a missing --confirm-name", ["--data", "--yes"], "--confirm-name <deployment name> too"],
+    ["a wrong --confirm-name", ["--data", "--yes", "--confirm-name", "not-this-deployment"], "does not match"],
+  ] as const) {
+    const execution = await executeCommand(app, "destroy", [...argv], { surface: "terminal", transport });
+    check(`${label} stops at the prepare stage`, execution.stage, "prepare");
+    checkTrue(`${label} is an ArgumentError naming the argument`, execution.error instanceof ArgumentError
+      && (execution.error as ArgumentError).argument === "confirm-name");
+    checkTrue(`${label} keeps the established refusal text`, (execution.error as Error).message.includes(messagePart));
+    check(`${label} never contacts the target`, contacts, []);
+    contacts.length = 0;
+  }
+}
+
 
 finish("destroy");

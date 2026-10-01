@@ -2,7 +2,6 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { backupInstall, backupUninstall } from "#framework/commands/lifecycle/backup/install.ts";
 import { watchInstall, watchUninstall } from "#framework/commands/operate/watch/install.ts";
 import { cronLine, jobMarker, posixTargetInvocation, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
@@ -12,6 +11,9 @@ import { stubContext } from "#checks/runtime/convergence/instance-lock/fixture.t
 import { stubCrontabTransaction } from "#checks/runtime/schedule/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+const backupInstall = (ctx: any, args: string[]) => openclawCommands.backup.run(ctx, ["install", ...args]);
+const backupUninstall = (ctx: any, args: string[]) => openclawCommands.backup.run(ctx, ["uninstall", ...args]);
 
 const parent = await mkdtemp(join(tmpdir(), "clawforge-scheduler-identity-"));
 const roots = [join(parent, "team-a", "deployment"), join(parent, "team-b", "deployment")];

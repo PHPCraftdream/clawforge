@@ -10,44 +10,38 @@
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
+import { countValue } from "#src/core/values/value.ts";
+import type { ArgumentSpec, Values } from "#src/core/command/spec.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { runMaybePrivileged, sudoFor, needsOwnerEscalation, OWNER, answeredProbe } from "#src/runtime/datadir.ts";
 import {
   listReplacedCopies, dataDirName, dataDirParent, parseReplacedCopyName, type ReplacedCopyInfo,
 } from "#src/service/archive/index.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 import { JSON_ARGUMENT } from "./list.ts";
 
 /** Shared across every `backup` sub-action that previews by default — prune-replaced and
  *  install/uninstall alike — so the merged `backup` command's single `--apply` never carries
- *  two different descriptions. Declared once, here, reused by install.ts. */
-export const BACKUP_APPLY_ARGUMENT: CommandArgument = {
+ *  two different descriptions. Declared once, here, reused by install.ts. --apply is the
+ *  action's destructive form, so the effect model demands the confirmation. */
+export const BACKUP_APPLY_ARGUMENT = {
   name: "apply",
+  summary: "Apply the action instead of only previewing it",
   description: "Apply the action instead of only previewing it (delete, or install/uninstall the schedule)",
   kind: "flag",
-};
+  effect: "destroy",
+} as const satisfies ArgumentSpec;
 
 /** The declared, help/MCP-visible shape — `--json` is declared once, in list.ts, and
  *  reused here (not redeclared) so the merged `backup` command never lists it twice. */
-export const BACKUP_PRUNE_ARGUMENTS: CommandArgument[] = [
+export const BACKUP_PRUNE_ARGUMENTS = [
   BACKUP_APPLY_ARGUMENT,
-  { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n" },
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-];
+  { name: "keep", description: "Keep this many newest copies instead of deleting all of them", kind: "option", valueName: "n", parse: countValue("a non-negative integer") },
+  ...LOCK_TAKEOVER_ARGUMENTS,
+  JSON_ARGUMENT,
+] as const satisfies readonly ArgumentSpec[];
 
-/** What this command's own parser actually accepts — BACKUP_PRUNE_ARGUMENTS plus the shared
- *  --json, kept out of the declared array above so openclawCommands' merged list has it once. */
-export const PRUNE_PARSE_ARGUMENTS: CommandArgument[] = [...BACKUP_PRUNE_ARGUMENTS, JSON_ARGUMENT];
-
-function parseKeep(raw: string | undefined): number {
-  if (raw === undefined) return 0;
-  const keep = Number.parseInt(raw, 10);
-  if (!Number.isFinite(keep) || keep < 0 || String(keep) !== raw.trim()) die("--keep needs a non-negative integer");
-  return keep;
-}
+export interface PruneValues extends Values<typeof BACKUP_PRUNE_ARGUMENTS> {}
 
 function summary(entry: ReplacedCopyInfo): { name: string; path: string; sizeBytes: number | null; modifiedAt: string } {
   return { name: entry.name, path: entry.path, sizeBytes: entry.sizeBytes ?? null, modifiedAt: entry.modifiedAt };
@@ -79,11 +73,10 @@ async function deleteReplacedCopy(ctx: Context, dataDir: string, path: string): 
   await runMaybePrivileged(ctx, path, "rm", ["-rf", "--", path], { force: await needsOwnerEscalation(ctx, OWNER) });
 }
 
-export async function backupPruneReplaced(ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
-  const parsed = parseDeclaredArgs(PRUNE_PARSE_ARGUMENTS, args, scope);
-  const apply = parsed.apply === true;
-  const jsonOnly = parsed.json === true;
-  const keep = parseKeep(parsed.keep as string | undefined);
+export async function backupPruneReplaced(ctx: Context, values: PruneValues): Promise<void> {
+  const apply = values.apply === true;
+  const jsonOnly = values.json === true;
+  const keep = values.keep ?? 0;
 
   const { dataDir } = ctx.settings;
   // newest first, from listReplacedCopies — the newest `keep` are retained, everything
@@ -120,7 +113,7 @@ export async function backupPruneReplaced(ctx: Context, args: string[], scope?: 
   // The one mutating path here, so the one that takes the instance lock — deleting a
   // replaced copy while a restore is mid-move of a NEW one into that same name is exactly
   // the race guarded() exists to serialize against.
-  await guarded(ctx, "backup prune-replaced", args, async () => {
+  await guardedWith(ctx, "backup prune-replaced", takeoverOf(values), async () => {
     const deleted: ReplacedCopyInfo[] = [];
     const failed: { path: string; error: string }[] = [];
     for (const entry of toDelete) {

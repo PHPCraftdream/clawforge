@@ -3,11 +3,11 @@ import { resolve } from "node:path";
 import type { Context } from "#framework/core/context.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
-import { restore } from "#framework/commands/lifecycle/restore/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { lockPath, runOwning, type HeldLock } from "#framework/runtime/lock/instance-lock.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 const DATA_DIR = "/srv/clawforge-restore-outcome/data";
@@ -61,7 +61,7 @@ for (const scenario of [
   const held = { resource: `${ctx.transport.description}\u0000${lockPath(ctx)}` } as HeldLock;
   let output = "";
   await withOutputSink((line) => { output += line; }, () => runOwning(held, () =>
-    restore(ctx, [ARCHIVE, "--force", "--json", ...(scenario.noStart ? ["--no-start"] : [])]),
+    openclawCommands.restore.run(ctx, [ARCHIVE, "--force", "--json", ...(scenario.noStart ? ["--no-start"] : [])]),
   ));
   const report = JSON.parse(output) as Record<string, unknown>;
   check(`${scenario.name}: data restoration succeeds`, [report.ok, report.changed, report.restored], [true, true, true]);

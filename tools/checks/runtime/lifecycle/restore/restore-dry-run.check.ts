@@ -3,8 +3,7 @@
 // restoreDryRun() must never issue a mutating command (mv/tar -x/mkdir/rm/chmod) and must
 // never touch runtime.stop/start, whether the archive validates or not.
 
-import { restore, restoreDryRun, restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
-import { push } from "#framework/commands/lifecycle/state.ts";
+import { restoreDryRun, restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
 import { NATIVE_MANIFEST_NAME } from "#framework/commands/lifecycle/backup/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -14,6 +13,7 @@ import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { resolve } from "node:path";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -91,7 +91,7 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
   let called = false;
   const { ctx, calls } = makeCtx(FULL_ENTRIES, async () => { called = true; return ARCHIVE; });
   let output = "";
-  await withOutputSink(() => {}, () => push(ctx, [ARCHIVE, "--dry-run", "--json"]), (line) => { output += line; });
+  await withOutputSink(() => {}, () => openclawCommands.push.run(ctx, [ARCHIVE, "--dry-run", "--json"]), (line) => { output += line; });
   const plan = JSON.parse(output) as { checksDeferred: string[] };
   check("push preview never invokes beforeRestore", called, false);
   check("push preview reports the deferred hook", plan.checksDeferred.some((item) => item.includes("beforeRestore")), true);
@@ -174,7 +174,7 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
   let output = "";
   let threw = false;
   await withOutputSink((line) => { output += line; }, async () => {
-    try { await restore(ctx, [ARCHIVE, "--dry-run"]); } catch { threw = true; }
+    try { await openclawCommands.restore.run(ctx, [ARCHIVE, "--dry-run"]); } catch { threw = true; }
   });
   check("restore --dry-run does not ask for confirmation", threw, false);
   check("restore --dry-run reports a plan", output.includes("would restore"), true);
@@ -187,7 +187,7 @@ function makeCtx(entries: string[], beforeRestore?: Context["applicationBeforeRe
   const { ctx } = makeCtx(FULL_ENTRIES);
   let threw = false;
   await withOutputSink(() => {}, async () => {
-    try { await restore(ctx, [ARCHIVE, "--dry-run", "--force"]); } catch { threw = true; }
+    try { await openclawCommands.restore.run(ctx, [ARCHIVE, "--dry-run", "--force"]); } catch { threw = true; }
   });
   check("--dry-run --force does not throw", threw, false);
 }

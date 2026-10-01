@@ -23,8 +23,6 @@ import { executeCommand } from "#framework/core/command/execute.ts";
 import { commandBody, defineAction, materializeCommands, multiActionBody } from "#framework/core/command/index.ts";
 import { toArgv } from "#framework/integration/mcp/call.ts";
 import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
-import { logs } from "#framework/commands/lifecycle/instance/logs.ts";
-import { smoke } from "#framework/commands/lifecycle/smoke/index.ts";
 import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
 import { exposeSsh } from "#framework/commands/operate/expose/ssh.ts";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
@@ -40,6 +38,7 @@ import type { Context } from "#framework/core/context.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useLinuxHost();
 
@@ -229,8 +228,8 @@ try {
         name: "legacy-fixture",
         description: "fixture",
         commands: {
-          logs: { summary: "logs", run: (ctx, args) => logs(ctx, args) },
-          smoke: { summary: "smoke", run: (ctx, args) => smoke(ctx, args) },
+          logs: { summary: "logs", run: (ctx, args) => openclawCommands.logs.run(ctx, args) },
+          smoke: { summary: "smoke", run: (ctx, args) => openclawCommands.smoke.run(ctx, args) },
           "configure-provider": { summary: "provider", run: (ctx, args) => configureProvider(ctx, args) },
         },
       },

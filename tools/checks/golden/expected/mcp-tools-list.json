@@ -392,7 +392,7 @@
         "properties": {
           "image": {
             "type": "string",
-            "description": "Upgrade to this image reference instead of the deployment's… (value: <ref>)"
+            "description": "Upgrade to this image instead of the deployment's OPENCLAW_IMAGE (value: <ref>)"
           },
           "dry-run": {
             "type": "boolean",

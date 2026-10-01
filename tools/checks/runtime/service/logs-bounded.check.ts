@@ -9,7 +9,6 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
-import { logs, takeTail } from "#framework/commands/lifecycle/instance/logs.ts";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
 import { useDeployment, useComposeProjectOverride } from "#framework/runtime/deployment.ts";
 import { useRecipesDir } from "#framework/service/recipe.ts";
@@ -17,6 +16,8 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink, outputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { takeTail } from "#framework/commands/lifecycle/instance/logs.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 useComposeProjectOverride("example-app");
@@ -80,7 +81,7 @@ for (const bad of ["", "10", "1x", "not-a-date", "10m "]) {
   let threw = false;
   try {
     await withOutputSink(() => {}, async () => {
-      await logs(ctxWith({ followed: false }), ["--since", bad]);
+      await openclawCommands.logs.run(ctxWith({ followed: false }), ["--since", bad]);
     });
   } catch {
     threw = true;
@@ -91,7 +92,7 @@ for (const bad of ["", "10", "1x", "not-a-date", "10m "]) {
 {
   let threw = false;
   try {
-    await logs(ctxWith({ followed: false }), ["--since"]);
+    await openclawCommands.logs.run(ctxWith({ followed: false }), ["--since"]);
   } catch {
     threw = true;
   }
@@ -101,7 +102,7 @@ for (const bad of ["", "10", "1x", "not-a-date", "10m "]) {
 for (const good of ["10m", "2h", "1h30m", "45s", "2024-01-02", "2024-01-02T15:04:05Z", "2024-01-02T15:04:05.123+02:00"]) {
   const seen: Seen = { followed: false };
   await withOutputSink(() => {}, async () => {
-    await logs(ctxWith(seen), ["--since", good]);
+    await openclawCommands.logs.run(ctxWith(seen), ["--since", good]);
   });
   check(`--since "${good}" is accepted and still reaches the runtime`, seen.readRest, ["--since", good]);
 }
@@ -112,7 +113,7 @@ for (const bad of ["(", "[", "*"]) {
   let threw = false;
   try {
     await withOutputSink(() => {}, async () => {
-      await logs(ctxWith({ followed: false }), ["--grep", bad]);
+      await openclawCommands.logs.run(ctxWith({ followed: false }), ["--grep", bad]);
     });
   } catch {
     threw = true;
@@ -123,7 +124,7 @@ for (const bad of ["(", "[", "*"]) {
 {
   let threw = false;
   try {
-    await logs(ctxWith({ followed: false }), ["--grep"]);
+    await openclawCommands.logs.run(ctxWith({ followed: false }), ["--grep"]);
   } catch {
     threw = true;
   }
@@ -134,7 +135,7 @@ for (const bad of ["(", "[", "*"]) {
   const seen: Seen = { followed: false };
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), async () => {
-    await logs(ctxWith(seen), ["--since", "10m", "--grep", "two"]);
+    await openclawCommands.logs.run(ctxWith(seen), ["--since", "10m", "--grep", "two"]);
   });
   check("--grep never reaches the runtime as an argument", seen.readRest, ["--since", "10m"]);
   check("--grep filters the bounded read down to the matching line", written.join(""), "line two\n");
@@ -143,7 +144,7 @@ for (const bad of ["(", "[", "*"]) {
 {
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), async () => {
-    await logs(ctxWith({ followed: false }), ["--grep", "nomatch"]);
+    await openclawCommands.logs.run(ctxWith({ followed: false }), ["--grep", "nomatch"]);
   });
   check("--grep with nothing matching returns nothing", written.join(""), "");
 }
@@ -155,7 +156,7 @@ for (const bad of ["(", "[", "*"]) {
   let message = "";
   try {
     await withOutputSink(() => {}, async () => {
-      await logs(ctxWith({ followed: false }), ["extra"]);
+      await openclawCommands.logs.run(ctxWith({ followed: false }), ["extra"]);
     });
   } catch (error) {
     threw = true;
@@ -169,7 +170,7 @@ for (const bad of ["(", "[", "*"]) {
   let threw = false;
   try {
     await withOutputSink(() => {}, async () => {
-      await logs(ctxWith({ followed: false }), ["--bogus"]);
+      await openclawCommands.logs.run(ctxWith({ followed: false }), ["--bogus"]);
     });
   } catch {
     threw = true;
@@ -179,7 +180,7 @@ for (const bad of ["(", "[", "*"]) {
 
 {
   const seen: Seen = { followed: false };
-  await logs(ctxWith(seen), []);
+  await openclawCommands.logs.run(ctxWith(seen), []);
   check("on a terminal the log is followed", seen.followed, true);
   check("nothing is read in bounded form on a terminal", seen.readTail === undefined && seen.readRest === undefined, true);
 }
@@ -187,7 +188,7 @@ for (const bad of ["(", "[", "*"]) {
 {
   // --grep while following: inherited stdio (the plain terminal case above) cannot be
   // filtered by this process at all, so this path trades it for a piped one it CAN filter
-  // (logs()'s withOutputSink(grepFollowSink(...), ...)) — asserted here by capturing what
+  // (openclawCommands.logs.run()'s withOutputSink(grepFollowSink(...), ...)) — asserted here by capturing what
   // reaches the real process.stdout.write instead of the fake sink used everywhere else in
   // this file, since a real write is exactly what a filtered follow still owes the terminal.
   const seen: Seen = { followed: false };
@@ -199,7 +200,7 @@ for (const bad of ["(", "[", "*"]) {
     return true;
   };
   try {
-    await logs(ctxWith(seen), ["--grep", "kept"]);
+    await openclawCommands.logs.run(ctxWith(seen), ["--grep", "kept"]);
   } finally {
     process.stdout.write = originalWrite;
   }
@@ -212,7 +213,7 @@ for (const bad of ["(", "[", "*"]) {
   const seen: Seen = { followed: false };
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), async () => {
-    await logs(ctxWith(seen), ["--tail", "50", "--since", "1h"]);
+    await openclawCommands.logs.run(ctxWith(seen), ["--tail", "50", "--since", "1h"]);
   });
 
   check("under a sink the log is read, not followed", seen.followed, false);
@@ -224,7 +225,7 @@ for (const bad of ["(", "[", "*"]) {
 {
   const seen: Seen = { followed: false };
   await withOutputSink(() => {}, async () => {
-    await logs(ctxWith(seen), []);
+    await openclawCommands.logs.run(ctxWith(seen), []);
   });
   check("without --tail the runtime decides the bound, not this command", seen.readTail, undefined);
 }
@@ -295,7 +296,7 @@ Object.defineProperty(process.stdout, "isTTY", { value: undefined, configurable:
     return true;
   };
   try {
-    await logs(ctxWith(seen), []);
+    await openclawCommands.logs.run(ctxWith(seen), []);
   } finally {
     process.stdout.write = originalWrite;
   }

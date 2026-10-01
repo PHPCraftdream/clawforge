@@ -14,11 +14,13 @@ import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { buildStack } from "#framework/runtime/docker/side-stack.ts";
 import { composeProjectOverride, selectedDeployment, useComposeProjectOverride, useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { clearRecipesDir, useRecipesDir, recipeProjectName } from "#framework/service/recipe.ts";
-import { restore, restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
-import { push } from "#framework/commands/lifecycle/state.ts";
 import { guarded, lockHeldHere } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
+const restore = openclawCommands.restore.run;
+const push = openclawCommands.push.run;
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const id = randomBytes(8).toString("hex");
 const local = await mkdtemp(resolve(tmpdir(), "restore-ownership-"));
@@ -153,8 +155,8 @@ try {
       let failure: unknown;
       await withOutputSink(() => {}, async () => {
         try {
-          if (command === "push") await push(ctx, [archive, "--force"]);
-          else await restore(ctx, [archive, "--force", ...(command === "no-start" ? ["--no-start"] : [])]);
+          if (command === "push") await openclawCommands.push.run(ctx, [archive, "--force"]);
+          else await openclawCommands.restore.run(ctx, [archive, "--force", ...(command === "no-start" ? ["--no-start"] : [])]);
         } catch (error) { failure = error; }
       });
       assert.match(String(failure), policy === "legacy" ? /cutover required/ : policy === "foreign" ? /not verifiably linked/ : /inventory unavailable/);
@@ -179,7 +181,7 @@ try {
     unknown = false; await clearPolicy();
   }
   await resetA();
-  await withOutputSink(() => {}, () => restore(ctx, [archive, "--force"]));
+  await withOutputSink(() => {}, () => openclawCommands.restore.run(ctx, [archive, "--force"]));
   assert.equal(await readData(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), true); assert.equal(healthWaits, 1);
   await resetA();
   let outcome;
@@ -188,7 +190,7 @@ try {
   assert.deepEqual(outcome, { restored: true, started: false, reason: "no-start", nextAction: "./clawforge up" });
   assert.equal(await readData(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), false); assert.equal(healthWaits, 1);
   await resetA();
-  await withOutputSink(() => {}, () => push(ctx, [archive, "--force"]));
+  await withOutputSink(() => {}, () => openclawCommands.push.run(ctx, [archive, "--force"]));
   assert.equal(await readData(`${data}/workspace/value`), "B");
   assert.equal(await readData(`${data}/config/.env`), "SNAPSHOT_ONLY=must-not-install\n");
   assert.equal(await runtime.isRunning(), true);

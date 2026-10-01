@@ -13,12 +13,12 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { bootstrap } from "#framework/commands/lifecycle/bootstrap/index.ts";
 import { DATA_DIR_MARKER, ensureDataDirs } from "#framework/runtime/datadir.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const DATA_DIR = "/srv/openclaw/data";
 
@@ -128,7 +128,7 @@ try {
 
   let refused = "";
   try {
-    await withOutputSink(() => {}, () => bootstrap(ctx, ["--no-pull"]));
+    await withOutputSink(() => {}, () => openclawCommands.bootstrap.run(ctx, ["--no-pull"]));
   } catch (error) {
     refused = error instanceof Error ? error.message : String(error);
   }
@@ -281,7 +281,7 @@ try {
         (chunk: string) => {
           said += chunk;
         },
-        () => bootstrap(freshCtx, ["--no-pull"]),
+        () => openclawCommands.bootstrap.run(freshCtx, ["--no-pull"]),
       );
     } catch (error) {
       freshError = error instanceof Error ? error.message : String(error);

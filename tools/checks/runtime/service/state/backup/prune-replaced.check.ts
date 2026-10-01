@@ -6,13 +6,14 @@
 // tools/checks/security/expose/tailscale.check.ts already layer their own domain-specific
 // exec handling over — never a hand-rolled approximation of the lock.
 
-import { backupPruneReplaced, verifyPruneCandidate } from "#framework/commands/lifecycle/backup/prune-replaced.ts";
 import { takeLock } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { stubContext, refused } from "#checks/runtime/convergence/instance-lock/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { verifyPruneCandidate } from "#framework/commands/lifecycle/backup/prune-replaced.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const DATA_DIR = "/srv/openclaw/data";
 
@@ -62,14 +63,14 @@ function named(index: number): string {
 {
   const copies = [named(1), named(2), named(3)];
   const { ctx, dirs } = pruneContext(copies);
-  await withOutputSink(() => {}, () => backupPruneReplaced(ctx, []));
+  await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["prune-replaced"]));
   check("a preview run deletes nothing", [...dirs].filter((d) => copies.includes(d)).sort(), [...copies].sort());
 }
 
 {
   const { ctx, dirs } = pruneContext([]);
   let threw: unknown;
-  try { await withOutputSink(() => {}, () => backupPruneReplaced(ctx, [])); }
+  try { await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["prune-replaced"])); }
   catch (error) { threw = error; }
   check("no replaced copies at all is a no-op preview, not an error", threw, undefined);
   check("and touches nothing", dirs.size, 0);
@@ -80,7 +81,7 @@ function named(index: number): string {
 {
   const copies = [named(1), named(2), named(3)];
   const { ctx, dirs } = pruneContext(copies);
-  await withOutputSink(() => {}, () => backupPruneReplaced(ctx, ["--apply"]));
+  await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["prune-replaced", "--apply"]));
   check("--apply with no --keep removes every replaced copy", copies.some((c) => dirs.has(c)), false);
 }
 
@@ -89,7 +90,7 @@ function named(index: number): string {
 {
   const copies = [named(1), named(2), named(3)]; // named(3) is newest per the synthetic timestamps
   const { ctx, dirs } = pruneContext(copies);
-  await withOutputSink(() => {}, () => backupPruneReplaced(ctx, ["--apply", "--keep", "1"]));
+  await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["prune-replaced", "--apply", "--keep", "1"]));
   check("--keep 1 removes the two oldest", [dirs.has(named(1)), dirs.has(named(2))], [false, false]);
   check("--keep 1 retains the newest", dirs.has(named(3)), true);
 }
@@ -98,7 +99,7 @@ function named(index: number): string {
   const copies = [named(1)];
   const { ctx, dirs } = pruneContext(copies);
   let message = "";
-  try { await withOutputSink(() => {}, () => backupPruneReplaced(ctx, ["--keep", "not-a-number"])); }
+  try { await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["prune-replaced", "--keep", "not-a-number"])); }
   catch (error) { message = (error as Error).message; }
   check("a non-numeric --keep is refused before anything is touched", message.includes("--keep"), true);
   check("and nothing was removed", dirs.has(named(1)), true);
@@ -111,7 +112,7 @@ function named(index: number): string {
   const { ctx, dirs } = pruneContext(copies);
   const held = await takeLock(ctx, "unrelated", "op-holder");
   try {
-    const message = await refused(() => backupPruneReplaced(ctx, ["--apply"]));
+    const message = await refused(() => openclawCommands.backup.run(ctx, ["prune-replaced", "--apply"]));
     check("prune-replaced refuses --apply while another operation holds the lock", message !== "", true);
     check("and names how to proceed for a live holder, not a generic failure", message.includes("operations op-holder"), true);
   } finally {
@@ -128,7 +129,7 @@ function named(index: number): string {
   const held = await takeLock(ctx, "unrelated", "op-holder");
   try {
     let threw: unknown;
-    try { await withOutputSink(() => {}, () => backupPruneReplaced(ctx, [])); }
+    try { await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["prune-replaced"])); }
     catch (error) { threw = error; }
     check("a preview run is never refused for a lock it never asked for", threw, undefined);
   } finally {

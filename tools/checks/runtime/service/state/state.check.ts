@@ -1,13 +1,12 @@
 // Checks that profile verification errors leave neither a published backup nor share copy.
 //
-// No target: a stub transport drives the real pull() end to end, with the grep step inside
+// No target: a stub transport drives the real openclawCommands.pull.run() end to end, with the grep step inside
 // verifySnapshot made to fail outright (exit code 2, "scanning failed"), which is a genuine
 // exception rather than a structural rejection. Backup staging must still be cleaned.
 // Snapshot naming and listing live here too; pull's lock and publication failures are
 // pull-lock.check.ts, loadSecrets is secrets.check.ts.
 
 import { resolve } from "node:path";
-import { pull, resolvePushArchive, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
 import { InventoryUnreadableError, parseSnapshotArchive } from "#framework/service/archive/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -16,6 +15,8 @@ import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { modelMutationGuard } from "./mutation-guard.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { resolvePushArchive, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
 const snapshotName = (name: string, stamp: string): string => `${name}-state-${stamp}.tar.gz`;
@@ -170,7 +171,7 @@ let threw = false;
 try {
   await withOutputSink(
     () => {},
-    () => pull(ctx, ["--share"]),
+    () => openclawCommands.pull.run(ctx, ["--share"]),
   );
 } catch {
   threw = true;

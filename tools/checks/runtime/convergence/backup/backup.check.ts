@@ -6,12 +6,17 @@ import { resolve, join } from "node:path";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { parseDeclaredArgs, specOf, specShape, ArgumentError } from "#framework/core/command/index.ts";
+import { executeCommand } from "#framework/core/command/execute.ts";
+import type { AppDefinition } from "#framework/core/app.ts";
+import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { useDeployment, useComposeProjectOverride } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { clearRecipesDir, useRecipesDir } from "#framework/service/recipe.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 useComposeProjectOverride("example-app");
 // --- createBackup must respect the instance lock, not bypass it ---------------------------
@@ -275,5 +280,51 @@ function stubBackupCtx(
     await rm(recipes, { recursive: true, force: true });
   }
 }
+
+
+// --- declared = accepted (moved from the shared parse registry once backup became a body) ---
+// R29-04: every action's derived slice is exactly what its own parser accepts. The parser IS
+// the declaration now, so this is a syntactic re-proof over the body's own arguments.
+
+{
+  const shape = specShape(specOf(openclawCommands.backup)!);
+  for (const [action, data] of Object.entries(shape.actions!)) {
+    const slice = data.arguments ?? [];
+    for (const argument of slice) {
+      if (argument.kind !== "flag" && argument.kind !== "option") continue;
+      const tokens = argument.kind === "option" ? [`--${argument.name}`, "x"] : [`--${argument.name}`];
+      let error: unknown;
+      try { parseDeclaredArgs(slice, tokens); } catch (caught) { error = caught; }
+      check(`backup ${action} accepts its declared --${argument.name}`, error, undefined);
+    }
+  }
+}
+
+
+// --- --native with a non-full profile is a prepare refusal ---------------------------------
+// The refusal needs only the arguments, so the pipeline lands it at prepare — before
+// requireBootstrapped and the instance lock (which the create path takes inside
+// createBackup). A recording transport proves nothing was contacted.
+
+{
+  const app: AppDefinition = { name: "backup-fixture", description: "fixture", commands: { backup: openclawCommands.backup } };
+  const contacts: string[] = [];
+  const transport = {
+    description: "stub",
+    exec(...rest: unknown[]): never { contacts.push(String(rest[0])); throw new Error("unreachable"); },
+    exists(): never { contacts.push("exists"); throw new Error("unreachable"); },
+    readFile(): never { contacts.push("readFile"); throw new Error("unreachable"); },
+  } as unknown as Transport;
+
+  for (const argv of [["--native", "--profile", "share"], ["--native", "--migrate"], ["create", "--native", "--share"]]) {
+    const execution = await executeCommand(app, "backup", [...argv], { surface: "terminal", transport });
+    check(`backup ${argv.join(" ")} stops at the prepare stage`, execution.stage, "prepare");
+    checkTrue(`backup ${argv.join(" ")} is an ArgumentError naming --native`, execution.error instanceof ArgumentError
+      && (execution.error as ArgumentError).argument === "native");
+    check(`backup ${argv.join(" ")} never contacts the target`, contacts, []);
+    contacts.length = 0;
+  }
+}
+
 
 finish("backup");

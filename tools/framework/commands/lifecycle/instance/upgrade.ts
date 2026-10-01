@@ -5,43 +5,30 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { refreshContext, type Context } from "#src/core/context.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { envFile } from "#src/runtime/deployment.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "#src/commands/lifecycle/backup/index.ts";
 import { restoreArchive } from "#src/commands/lifecycle/restore/index.ts";
-import { parse, tryParse, channel, format, repositoryOf, withDigest, sameContent, digestOf, type ImageRef } from "#src/runtime/docker/image-ref.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { parse, tryParse, channel, format, repositoryOf, withDigest, sameContent, digestOf, imageRefValue, type ImageRef } from "#src/runtime/docker/image-ref.ts";
+import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
-/** Drives both upgrade's own parser and its openclawCommands declaration. */
-export const UPGRADE_ARGUMENTS: CommandArgument[] = [
-  { name: "image", description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE", kind: "option", valueName: "ref" },
-  { name: "dry-run", description: "Print the plan without changing anything", kind: "flag" },
+export const UPGRADE_ARGUMENTS = [
+  {
+    name: "image",
+    summary: "Upgrade to this image instead of the deployment's OPENCLAW_IMAGE",
+    description: "Upgrade to this image reference instead of the deployment's own OPENCLAW_IMAGE",
+    kind: "option",
+    valueName: "ref",
+    parse: imageRefValue,
+  },
+  { name: "dry-run", description: "Print the plan without changing anything", kind: "flag", effect: "read" },
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-];
-
-function parseUpgradeArgs(args: string[]): { image?: string; dryRun: boolean; jsonOnly: boolean } {
-  const parsed = parseDeclaredArgs(UPGRADE_ARGUMENTS, args);
-  const image = parsed.image as string | undefined;
-  if (image === "" || image?.startsWith("-") === true) die("--image needs an image reference");
-  // Refused before any contact — a typo must not survive to the registry call, let alone
-  // to the backup that stops the gateway. The grammar's own refusal names the input and
-  // the full expected shape, so a malformed tag reads differently from a bad digest.
-  if (image !== undefined) {
-    try {
-      parse(image);
-    } catch (error) {
-      die(`--image: ${(error as Error).message}`);
-    }
-  }
-  return { image, dryRun: parsed["dry-run"] === true, jsonOnly: parsed.json === true };
-}
+  ...LOCK_TAKEOVER_ARGUMENTS,
+] as const satisfies readonly ArgumentSpec[];
 
 /** `channel` is the repo[:tag] the digest was resolved from; `pin` the reference the success
  *  path writes — an explicit tagless digest of the tracked repository keeps the deployment's
@@ -275,9 +262,12 @@ async function upgradeLocked(
  *  --image <ref> upgrades to that reference instead of the deployment's own OPENCLAW_IMAGE;
  *  see resolveUpgradeTarget for how the target is chosen.
  *  --dry-run prints the plan and changes nothing — not even taking the instance lock. */
-export async function upgrade(ctx: Context, args: string[]): Promise<void> {
-  const options = parseUpgradeArgs(args);
-  await requireBootstrapped(ctx);
+export const UPGRADE = commandBody({
+  effect: "destroy",
+  arguments: UPGRADE_ARGUMENTS,
+  async run(ctx, values) {
+    const options = { image: values.image === undefined ? undefined : format(values.image), dryRun: values["dry-run"] === true, jsonOnly: values.json === true };
+    await requireBootstrapped(ctx);
 
   if (ctx.runtime.resolveImageDigest === undefined || ctx.runtime.recreateWithImage === undefined) {
     die(`${ctx.runtime.description} does not support ./clawforge upgrade`);
@@ -327,7 +317,7 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
   }
 
   let changed = false;
-  const execute = () => guarded(ctx, "upgrade", args, async () => {
+  const execute = () => guardedWith(ctx, "upgrade", takeoverOf(values), async () => {
     // Preparation is only an observation. Never let a completed competing upgrade
     // supply the backup while the old Context supplies its CLI/image or rollback.
     const current = await ctx.runtime.runningImageIdentity?.();
@@ -371,4 +361,5 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
   }
 
   await execute();
-}
+  },
+});

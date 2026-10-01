@@ -3,13 +3,13 @@
 // stub transport models `find`/`du`, no real target and no instance lock (list never takes
 // one).
 
-import { backupList } from "#framework/commands/lifecycle/backup/list.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { resolve } from "node:path";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 const NAME = deploymentName();
@@ -56,7 +56,7 @@ function emptyContext(): Context {
 {
   const ctx = listContext();
   let output = "";
-  await withOutputSink((chunk) => { output += chunk; }, () => backupList(ctx, ["--json"]));
+  await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.backup.run(ctx, ["list", "--json"]));
   const parsed = JSON.parse(output) as {
     backupDir: string;
     archives: { name: string; profile: string; default: boolean; sizeBytes: number }[];
@@ -81,7 +81,7 @@ function emptyContext(): Context {
 {
   const ctx = emptyContext();
   let output = "";
-  await withOutputSink((chunk) => { output += chunk; }, () => backupList(ctx, ["--json"]));
+  await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.backup.run(ctx, ["list", "--json"]));
   const parsed = JSON.parse(output) as { archives: unknown[]; replacedCopies: unknown[] };
   check("an empty backup directory reports no archives, not an error", parsed.archives, []);
   check("no replaced copies reports an empty list", parsed.replacedCopies, []);
@@ -94,7 +94,7 @@ function emptyContext(): Context {
       ? { code: 1, stdout: "", stderr: "sensitive detail" }
       : { code: 0, stdout: "", stderr: "" };
   let error: unknown;
-  try { await withOutputSink(() => {}, () => backupList(ctx, ["--json"])); } catch (caught) { error = caught; }
+  try { await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["list", "--json"])); } catch (caught) { error = caught; }
   check("failed listing reports unknown instead of returning empty JSON", String(error).includes("unreadable; contents unknown"), true);
   check("failed listing hides target stderr", String(error).includes("sensitive detail"), false);
 }

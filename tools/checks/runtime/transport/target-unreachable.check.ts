@@ -28,9 +28,9 @@ import { monorepoRoot } from "#framework/core/env.ts";
 import { doctor, gatherInspection } from "#framework/commands/orchestration/inspect/gather.ts";
 import { plan } from "#framework/commands/orchestration/plan.ts";
 import { status } from "#framework/commands/interface/status.ts";
-import { backupList } from "#framework/commands/lifecycle/backup/list.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 // --- Part A: the decode/classification mechanism, byte-accurate -----------------------------
 
@@ -169,7 +169,7 @@ try {
     let thrown: Error | undefined;
     await withOutputSink(() => {}, async () => {
       try {
-        await backupList(stubUnreachableContext(), []);
+        await openclawCommands.backup.run(stubUnreachableContext(), ["list"]);
       } catch (error) {
         thrown = error as Error;
       }

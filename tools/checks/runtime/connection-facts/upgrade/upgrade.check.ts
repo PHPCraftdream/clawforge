@@ -10,7 +10,6 @@
 import { mkdtemp, writeFile, readFile, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upgrade } from "#framework/commands/lifecycle/instance/upgrade.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -23,6 +22,7 @@ import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { toSettings, parseEnv } from "#framework/core/env.ts";
 import type { Transport, ExecOptions } from "#framework/runtime/transport/transport.ts";
 import { DATA_DIR, SHARED_TAG, TARGET_DIGEST, PREVIOUS_DIGEST, PINNED_WITH_TAG, PINNED_NO_TAG, makeUpgradeCtx } from "./stub.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 // pinImageReference (instance/upgrade.ts) writes the deployment's OWN .env on success — a real
 // repo-side file, not one ctx.transport can stand in for — so a real temporary deployment
@@ -38,7 +38,7 @@ await writeFile(envFile(), "OC_DATA_DIR=/srv/clawforge/data\nOPENCLAW_IMAGE=ghcr
   const { ctx, runningDigest } = makeUpgradeCtx("success");
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch (error) { failure = error; }
   });
   check("a healthy upgrade completes without throwing", failure, undefined);
   check("it recreates on the resolved target digest", runningDigest(), TARGET_DIGEST);
@@ -53,7 +53,7 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
   const { ctx, calls, runningDigest } = makeUpgradeCtx("health-fail");
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch (error) { failure = error; }
   });
   check("a health failure is reported as a failure", failure instanceof Error, true);
   // The scenario is about the health gate: the gateway must have been recreated onto the
@@ -72,7 +72,7 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
   const { ctx, calls, runningDigest } = makeUpgradeCtx("exit78");
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch (error) { failure = error; }
   });
   check("an exit-78 failure is reported as a failure", failure instanceof Error, true);
   check("the reported reason names the migration exit", failure instanceof Error && failure.message.includes("78"), true);
@@ -88,7 +88,7 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
   const { ctx, runningDigest } = makeUpgradeCtx("doctor-fail");
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch (error) { failure = error; }
   });
   check("a blocking doctor finding fails the upgrade", failure instanceof Error, true);
   check("and rolls back onto the pinned string", runningDigest(), TAGGED_PREVIOUS);
@@ -106,14 +106,14 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
   const { ctx } = makeUpgradeCtx("doctor-fail", { image: PINNED_WITH_TAG, running: PINNED_NO_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch (error) { failure = error; }
   });
   check("a failed upgrade over a tagged pin is reported", failure instanceof Error, true);
   check("the rollback restores the exact pre-upgrade pin, tag and digest", parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, PINNED_WITH_TAG);
   let retry: unknown;
   const dryCtx = makeUpgradeCtx("success", { image: PINNED_WITH_TAG }).ctx;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(dryCtx, ["--dry-run"]); } catch (error) { retry = error; }
+    try { await openclawCommands.upgrade.run(dryCtx, ["--dry-run"]); } catch (error) { retry = error; }
   });
   check("the next upgrade --dry-run succeeds against the restored pin", retry, undefined);
 }
@@ -129,7 +129,7 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
   // The container carries Docker's own tagless RepoDigests spelling of the same digest.
   const { ctx, calls, runningDigest } = makeUpgradeCtx("doctor-fail", { image: PINNED_WITH_TAG, running: PINNED_NO_TAG });
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch { /* the rollback under test */ }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch { /* the rollback under test */ }
   });
   check("a rollback over a tagged pin recreates the gateway on the tagged reference itself", calls.includes(`recreateWithImage ${PINNED_WITH_TAG}`), true);
   check("the rolled-back container carries the tagged reference, not the tagless form", runningDigest(), PINNED_WITH_TAG);
@@ -142,7 +142,7 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
   const { ctx, runningDigest } = makeUpgradeCtx("doctor-fail", { image: SHARED_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch (error) { failure = error; }
   });
   check("a rollback over a bare-tag .env still rolls back", failure instanceof Error, true);
   const pinned = parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE;
@@ -159,7 +159,7 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
   const { ctx } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, ["--image", PINNED_NO_TAG]); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, ["--image", PINNED_NO_TAG]); } catch (error) { failure = error; }
   });
   check("upgrading to a tagless digest of the tracked repository succeeds", failure, undefined);
   check("the success pin keeps the tag alongside the requested digest", parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, PINNED_WITH_TAG);
@@ -173,7 +173,7 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
   const { ctx, runningDigest } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch (error) { failure = error; }
   });
   check("upgrading off a tag-preserving pin succeeds", failure, undefined);
   check("it recreates on the newly resolved digest, not the old pin", runningDigest(), TARGET_DIGEST);
@@ -185,7 +185,7 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
 {
   const { ctx, calls } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
   (ctx.runtime as unknown as { resolveImageDigest: (reference: string) => Promise<string> }).resolveImageDigest = async () => PREVIOUS_DIGEST;
-  await withOutputSink(() => {}, () => upgrade(ctx, []));
+  await withOutputSink(() => {}, () => openclawCommands.upgrade.run(ctx, []));
   check("nothing recreates when the channel still resolves to what is running", calls.some((call) => call.startsWith("recreateWithImage")), false);
 }
 
@@ -196,7 +196,7 @@ const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
   const { ctx, calls } = makeUpgradeCtx("success", { image: PINNED_NO_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch (error) { failure = error; }
   });
   check("an untagged pin refuses rather than guessing a channel", failure instanceof Error, true);
   check("the refusal names the remedy", failure instanceof Error && failure.message.includes("--image"), true);
@@ -304,7 +304,7 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
   };
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(dockerCtx, ["--image", TARGET_DIGEST]); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(dockerCtx, ["--image", TARGET_DIGEST]); } catch (error) { failure = error; }
   });
   if (scenario === "success") {
     check("Docker success returns without failure", failure, undefined);
@@ -514,7 +514,7 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
   let outcome = "";
   const target = scenario === "same" || scenario === "race-noop" ? d0 : d2;
   const a = withOutputSink((chunk) => { outcome += chunk; }, async () => {
-    try { await upgrade(ctx, ["--image", target, ...(scenario === "dry" ? ["--dry-run"] : []), "--json"]); }
+    try { await openclawCommands.upgrade.run(ctx, ["--image", target, ...(scenario === "dry" ? ["--dry-run"] : []), "--json"]); }
     catch (error) { failure = error; }
   });
   if (gated) {
@@ -522,7 +522,7 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
     if (scenario === "race" || scenario === "race-noop") {
       // B uses the public command, completes validation/pin and releases the real
       // instance-lock implementation before A receives its captured D0 observation.
-      await withOutputSink(() => {}, () => upgrade(ctx, ["--image", d1]));
+      await withOutputSink(() => {}, () => openclawCommands.upgrade.run(ctx, ["--image", d1]));
       check(`${scenario}: B commits actual D1`, running, d1);
       check(`${scenario}: B commits durable D1`, parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, d1);
     } else if (scenario === "unknown") unknown = true;

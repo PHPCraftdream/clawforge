@@ -21,7 +21,7 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
   destroy: [[[], "read", false], [["--data"], "read", false], [["--yes"], "destroy", true], [["--data", "--yes"], "destroy", true]],
   logs: [[[], "read"], [["--tail", "5"], "read"]],
   backup: [
-    [[], "change", true], [["--dry-run"], "read", false], [["--hot"], "change", true], [["create"], "change", true],
+    [[], "change", true], [["--dry-run"], "read", false], [["--hot"], "change", true], [["create"], "change", true], [["create", "--dry-run"], "read", false],
     [["list"], "read", false], [["prune-replaced"], "read", false], [["prune-replaced", "--apply"], "destroy", true],
     [["install"], "read", false], [["install", "--apply"], "destroy", true],
     [["uninstall"], "read", false], [["uninstall", "--apply"], "destroy", true],
@@ -92,6 +92,7 @@ const REFUSED: readonly (readonly [name: string, argv: readonly string[]])[] = [
   ["exec", []],
   ["host", []],
   ["deploy", []],
+  ["verify", []],
   ["provision-agent", []],
   ["recipe", ["verify", "--dry-run"]],
 ];

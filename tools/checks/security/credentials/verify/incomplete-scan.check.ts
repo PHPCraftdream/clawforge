@@ -1,14 +1,14 @@
 // Incomplete scans must stop both backup and pull before publication.
 
 import { resolve } from "node:path";
-import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
-import { pull } from "#framework/commands/lifecycle/state.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { pullScenario } from "../../../runtime/service/state/pull-harness.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -76,7 +76,7 @@ for (const profile of ["share", "migrate"] as const) {
       await withOutputSink(() => {}, async () => {
         try {
           if (operation === "backup") await createBackup(scenario.ctx, { profile });
-          else await pull(scenario.ctx, ["--profile", profile]);
+          else await openclawCommands.pull.run(scenario.ctx, ["--profile", profile]);
         } catch {
           rejected = true;
         }
@@ -97,7 +97,7 @@ for (const [name, result, refuses] of results.filter(([, , refuses]) => refuses)
   const scenario = scenarioForScan(result, 2);
   let rejected = false;
   await withOutputSink(() => {}, async () => {
-    try { await pull(scenario.ctx, ["--share"]); }
+    try { await openclawCommands.pull.run(scenario.ctx, ["--share"]); }
     catch { rejected = true; }
   });
   check(`${label} refuses publication`, rejected, refuses);

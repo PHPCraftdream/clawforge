@@ -17,11 +17,6 @@ import { resolve } from "node:path";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { requireBootstrapped, NotBootstrapped } from "#framework/runtime/runtime.ts";
-import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
-import { up, restart, down } from "#framework/commands/lifecycle/instance/control.ts";
-import { logs } from "#framework/commands/lifecycle/instance/logs.ts";
-import { upgrade } from "#framework/commands/lifecycle/instance/upgrade.ts";
-import { smoke } from "#framework/commands/lifecycle/smoke/index.ts";
 import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
 import { provisionAgent } from "#framework/commands/management/provision-agent/index.ts";
 import { secrets } from "#framework/commands/management/secrets.ts";
@@ -30,9 +25,10 @@ import { applyConfig } from "#framework/commands/orchestration/config.ts";
 import { incident } from "#framework/commands/operate/incident/index.ts";
 import { exposeTailscale } from "#framework/commands/operate/expose/tailscale.ts";
 import { watchInstall } from "#framework/commands/operate/watch/install.ts";
-import { backupInstall } from "#framework/commands/lifecycle/backup/install.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { createBackup } from "#framework/commands/lifecycle/backup/index.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useDeployment(resolve("/tmp", "clawforge-requires-bootstrapped-check"));
 
@@ -127,17 +123,17 @@ for (const kase of [
   { name: "backup", run: async (ctx: Context) => { await createBackup(ctx, {}); } },
   { name: "incident", run: (ctx: Context) => incident(ctx, []) },
   { name: "configure-provider", run: (ctx: Context) => configureProvider(ctx, []) },
-  { name: "smoke", run: (ctx: Context) => smoke(ctx, []) },
+  { name: "smoke", run: (ctx: Context) => openclawCommands.smoke.run(ctx, []) },
   { name: "apply-config", run: (ctx: Context) => applyConfig(ctx, []) },
   { name: "apply-config --dry-run", run: (ctx: Context) => applyConfig(ctx, ["--dry-run"]) },
   { name: "apply-config --dump", run: (ctx: Context) => applyConfig(ctx, ["--dump"]) },
-  { name: "up", run: (ctx: Context) => up(ctx, []) },
-  { name: "restart", run: (ctx: Context) => restart(ctx, []) },
-  { name: "down", run: (ctx: Context) => down(ctx, []) },
+  { name: "up", run: (ctx: Context) => openclawCommands.up.run(ctx, []) },
+  { name: "restart", run: (ctx: Context) => openclawCommands.restart.run(ctx, []) },
+  { name: "down", run: (ctx: Context) => openclawCommands.down.run(ctx, []) },
   // destroy is deliberately absent: on a never-bootstrapped target it reports "nothing to
   // destroy" and exits 0 (destroy.check.ts).
-  { name: "logs", run: (ctx: Context) => logs(ctx, []) },
-  { name: "upgrade", run: (ctx: Context) => upgrade(ctx, []) },
+  { name: "logs", run: (ctx: Context) => openclawCommands.logs.run(ctx, []) },
+  { name: "upgrade", run: (ctx: Context) => openclawCommands.upgrade.run(ctx, []) },
   { name: "secrets --apply", run: (ctx: Context) => secrets(ctx, ["--apply"]) },
   { name: "mcp-creds", run: (ctx: Context) => mcpCreds(ctx, []) },
   { name: "provision-agent", run: (ctx: Context) => provisionAgent(ctx, ["vault"]) },
@@ -155,7 +151,7 @@ for (const kase of [
   },
   {
     name: "backup install --apply",
-    run: (ctx: Context) => backupInstall(ctx, ["--apply"]),
+    run: (ctx: Context) => openclawCommands.backup.run(ctx, ["install", "--apply"]),
     transportDescription: "ssh:user@example.com",
   },
 ] satisfies GuardCase[]) {

@@ -9,10 +9,10 @@ import { emit, withOutputSink } from "#src/core/io/output.ts";
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv, parseRetention } from "#src/core/env.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith, type LockTakeover } from "#src/runtime/lock/instance-lock.ts";
 import { sudoFor, runMaybePrivileged, secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { publishPrivateTargetFile } from "#src/security/privacy/private-target-file.ts";
-import { archiveRoot, isProfile, listArchive, listSnapshotArchives, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
+import { archiveRoot, listArchive, listSnapshotArchives, fileSize, parseSnapshotArchive, snapshotDeploymentNames, SHARE_ALLOWED, PROFILE_SHORTHAND_FLAGS, type Profile } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { requirements, template } from "#src/service/secrets.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
@@ -22,39 +22,30 @@ import type { RestoreOptions } from "./restore/index.ts";
 import { buildRestorePlan, printRestorePlan } from "./restore/plan.ts";
 import { forbiddenViolations, verifySnapshot } from "./verify.ts";
 import { preflightSecrets, MissingSecretsError } from "#src/commands/management/secrets.ts";
-import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { PROFILE_ARGUMENT, FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import type { BackupPurpose } from "#src/core/app.ts";
+import { commandBody, type ArgumentSpec, type ParsedCall, type Values } from "#src/core/command/spec.ts";
+import { PROFILE_ARGUMENT, FORCE_ARGUMENT, LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
 const SECRETS_SUFFIX = ".secrets.env";
 
-/** Drives both pull's own parser and its openclawCommands declaration. */
-export const PULL_ARGUMENTS: CommandArgument[] = [
+export const PULL_ARGUMENTS = [
   PROFILE_ARGUMENT,
   { name: "share", description: "Shareable profile with verification", kind: "flag" },
   { name: "with-secrets", description: "Full profile: includes provider keys", kind: "flag" },
-  { name: "migrate", description: "Migrate profile (already pull's default) — accepted so backup and pull share the same flag vocabulary", kind: "flag" },
+  { name: "migrate", summary: "Migrate profile", description: "Migrate profile (already pull's default) — accepted so backup and pull share the same flag vocabulary", kind: "flag" },
   { name: "hot", description: "Do not stop the service (risks a partial write)", kind: "flag" },
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
+  ...LOCK_TAKEOVER_ARGUMENTS,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
-/** Drives both push's own parser and its openclawCommands declaration. */
-export const PUSH_ARGUMENTS: CommandArgument[] = [
+export const PUSH_ARGUMENTS = [
   { name: "archive", description: "Snapshot to push; newest if omitted", kind: "positional" },
-  FORCE_ARGUMENT,
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
+  { ...FORCE_ARGUMENT, setByConfirm: true },
+  ...LOCK_TAKEOVER_ARGUMENTS,
   { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
-  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag" },
+  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag", effect: "read" },
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
-
-/** Whether argv requests --dry-run — same shape as restore's own isRestoreDryRun. */
-export function isPushDryRun(args: readonly string[]): boolean {
-  return parseDeclaredArgs(PUSH_ARGUMENTS, args)["dry-run"] === true;
-}
+] as const satisfies readonly ArgumentSpec[];
 
 async function ensureSnapshotDir(ctx: Context): Promise<string> {
   const directory = ctx.settings.snapshotDir;
@@ -290,48 +281,64 @@ export interface PullTransactionOptions {
   purpose?: BackupPurpose;
 }
 
-export async function pull(ctx: Context, args: string[], transaction: PullTransactionOptions = {}): Promise<void> {
-  const jsonOnly = parseDeclaredArgs(PULL_ARGUMENTS, args).json === true;
-  let profile: Profile = "migrate";
-  let hot = false;
+interface PullPlan {
+  readonly profile: Profile;
+  readonly hot: boolean;
+  readonly jsonOnly: boolean;
+  readonly takeover: LockTakeover;
+}
 
-  // --share, --with-secrets, --migrate (the same shorthand vocabulary `backup` accepts) and
-  // --profile all set the same field, so whichever was typed LAST wins — scanned over the
-  // raw argv, in order, so the true typed order decides it.
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
-    if (arg === "--hot") hot = true;
-    else if (shorthand !== undefined) profile = shorthand;
-    else if (arg === "--profile" || arg.startsWith("--profile=")) {
-      const value = arg === "--profile" ? args[index + 1] : arg.slice("--profile=".length);
-      if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");
-      profile = value;
-      if (arg === "--profile") index += 1;
-    }
-  }
+/** --share/--with-secrets/--migrate and --profile set one field; keys without `--`. */
+const PROFILE_BY_FLAG: ReadonlyMap<string, Profile> = new Map(
+  [...PROFILE_SHORTHAND_FLAGS].map(([flag, profile]) => [flag.slice("--".length), profile]),
+);
 
-  // Validate argv before creating the lock or touching the target.
-  if (jsonOnly) {
-    let result: PullPaths | undefined;
-    let caught: unknown;
-    await withOutputSink(() => {}, async () => {
-      try {
-        result = await guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot, transaction.leaveStopped === true, transaction.purpose ?? "pull"));
-      } catch (error) {
-        caught = error;
+/** The plan for a pull: the profile decision and the output mode. --share, --with-secrets,
+ *  --migrate (the same shorthand vocabulary `backup` accepts) and --profile all set one
+ *  field, so whichever was typed LAST wins — `given` is in typing order, so the last
+ *  profile-naming argument decides it. */
+function pullPlan(call: ParsedCall<Values<typeof PULL_ARGUMENTS>>): PullPlan {
+  const values = call.values;
+  const last = call.given.filter((name) => name === "profile" || PROFILE_BY_FLAG.has(name)).at(-1);
+  const profile = last === undefined ? "migrate" : last === "profile" ? values.profile as Profile : PROFILE_BY_FLAG.get(last)!;
+  return { profile, hot: values.hot === true, jsonOnly: values.json === true, takeover: takeoverOf(values) };
+}
+
+export const PULL = commandBody({
+  effect: "change",
+  arguments: PULL_ARGUMENTS,
+  prepare: (call) => pullPlan(call),
+  async run(ctx, plan, transaction: PullTransactionOptions = {}) {
+    const pull = () => pullLocked(ctx, plan.profile, plan.hot, transaction.leaveStopped === true, transaction.purpose ?? "pull");
+    if (plan.jsonOnly) {
+      let result: PullPaths | undefined;
+      let caught: unknown;
+      await withOutputSink(() => {}, async () => {
+        try {
+          result = await guardedWith(ctx, "pull", plan.takeover, pull);
+        } catch (error) {
+          caught = error;
+        }
+      });
+      if (caught !== undefined) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        emit(`${JSON.stringify({ ok: false, changed: true, profile: plan.profile, problems: [message] }, null, 2)}\n`);
+        throw caught;
       }
-    });
-    if (caught !== undefined) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      emit(`${JSON.stringify({ ok: false, changed: true, profile, problems: [message] }, null, 2)}\n`);
-      throw caught;
+      const paths = result!;
+      emit(`${JSON.stringify({ ok: true, changed: true, profile: plan.profile, snapshot: paths.snapshot, template: paths.snapshotTemplate }, null, 2)}\n`);
+      return;
     }
-    const paths = result!;
-    emit(`${JSON.stringify({ ok: true, changed: true, profile, snapshot: paths.snapshot, template: paths.snapshotTemplate }, null, 2)}\n`);
-    return;
-  }
-  await guarded(ctx, "pull", args, () => pullLocked(ctx, profile, hot, transaction.leaveStopped === true, transaction.purpose ?? "pull"));
+    await guardedWith(ctx, "pull", plan.takeover, pull);
+  },
+});
+
+/** Not part of the CLI surface: a caller already inside a larger transaction (smoke's
+ *  round-trip check) that pulls directly, without argv — the body's phases do not carry the
+ *  transaction options (leaveStopped, purpose). Ordinary callers go through PULL. */
+export async function pullSnapshot(ctx: Context, profile: Profile, transaction: PullTransactionOptions = {}): Promise<void> {
+  await guardedWith(ctx, "pull", { breakLock: false }, () =>
+    pullLocked(ctx, profile, false, transaction.leaveStopped === true, transaction.purpose ?? "pull"));
 }
 
 
@@ -564,48 +571,47 @@ async function pushDryRun(ctx: Context, archive: string, options: RestoreOptions
   info("does not cover: whether the restored config's required secrets are actually satisfied — a real push checks that before starting");
 }
 
-export async function push(ctx: Context, args: string[]): Promise<void> {
-  // Dies before the lock is ever taken, same as up/restart/down: guarded() reads
-  // --break-(foreign-)lock straight from argv, ahead of restoreFromSnapshot's own parse — a
-  // bogus flag must be refused before a takeover, not after one already happened.
-  const parsed = parseDeclaredArgs(PUSH_ARGUMENTS, args);
-  const jsonOnly = parsed.json === true;
+export const PUSH = commandBody({
+  effect: "destroy",
+  arguments: PUSH_ARGUMENTS,
+  async run(ctx, values) {
+    const jsonOnly = values.json === true;
 
-  if (parsed["dry-run"] === true) {
-    const archive = await resolvePushArchive(ctx, parsed.archive as string | undefined);
-    const options: RestoreOptions = { force: parsed.force === true, freshIdentity: parsed["fresh-identity"] === true, noStart: true };
-    return pushDryRun(ctx, archive, options, jsonOnly);
-  }
-
-  if (jsonOnly) {
-    let outcome: { archive: string; secretsInstalled: boolean; started: boolean } | undefined;
-    let caught: unknown;
-    await withOutputSink(() => {}, async () => {
-      try {
-        outcome = await guarded(ctx, "push", args, () => restoreFromSnapshot(ctx, args));
-      } catch (error) {
-        caught = error;
-      }
-    });
-    if (caught !== undefined) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      emit(`${JSON.stringify({ ok: false, changed: true, problems: [message] }, null, 2)}\n`);
-      throw caught;
+    if (values["dry-run"] === true) {
+      const archive = await resolvePushArchive(ctx, values.archive);
+      const options: RestoreOptions = { force: values.force === true, freshIdentity: values["fresh-identity"] === true, noStart: true };
+      return pushDryRun(ctx, archive, options, jsonOnly);
     }
-    emit(`${JSON.stringify({ ok: true, changed: true, ...outcome }, null, 2)}\n`);
-    return;
-  }
 
-  await guarded(ctx, "push", args, () => restoreFromSnapshot(ctx, args));
-}
+    if (jsonOnly) {
+      let outcome: { archive: string; secretsInstalled: boolean; started: boolean } | undefined;
+      let caught: unknown;
+      await withOutputSink(() => {}, async () => {
+        try {
+          outcome = await guardedWith(ctx, "push", takeoverOf(values), () => restoreFromSnapshot(ctx, values));
+        } catch (error) {
+          caught = error;
+        }
+      });
+      if (caught !== undefined) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        emit(`${JSON.stringify({ ok: false, changed: true, problems: [message] }, null, 2)}\n`);
+        throw caught;
+      }
+      emit(`${JSON.stringify({ ok: true, changed: true, ...outcome }, null, 2)}\n`);
+      return;
+    }
 
-async function restoreFromSnapshot(ctx: Context, args: string[]): Promise<{ archive: string; secretsInstalled: boolean; started: boolean }> {
-  const parsed = parseDeclaredArgs(PUSH_ARGUMENTS, args);
-  const force = parsed.force === true;
-  const freshIdentity = parsed["fresh-identity"] === true;
+    await guardedWith(ctx, "push", takeoverOf(values), () => restoreFromSnapshot(ctx, values));
+  },
+});
 
-  const archive = await resolvePushArchive(ctx, parsed.archive as string | undefined);
-  if (parsed.archive === undefined) log(`using the newest snapshot: ${archive}`);
+async function restoreFromSnapshot(ctx: Context, values: Values<typeof PUSH_ARGUMENTS>): Promise<{ archive: string; secretsInstalled: boolean; started: boolean }> {
+  const force = values.force === true;
+  const freshIdentity = values["fresh-identity"] === true;
+
+  const archive = await resolvePushArchive(ctx, values.archive);
+  if (values.archive === undefined) log(`using the newest snapshot: ${archive}`);
 
   const secretsPath = `${archive}${SECRETS_SUFFIX}`;
   const hasSecrets = await ctx.transport.exists(secretsPath);

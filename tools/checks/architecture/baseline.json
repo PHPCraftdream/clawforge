@@ -15,7 +15,7 @@
       "tools/framework/commands/interface/host/index.ts": 1,
       "tools/framework/commands/interface/index.ts": 1,
       "tools/framework/commands/interface/status.ts": 3,
-      "tools/framework/commands/lifecycle/backup/index.ts": 6,
+      "tools/framework/commands/lifecycle/backup/index.ts": 3,
       "tools/framework/commands/lifecycle/backup/install.ts": 3,
       "tools/framework/commands/lifecycle/backup/list.ts": 3,
       "tools/framework/commands/lifecycle/backup/plan.ts": 1,
@@ -29,7 +29,7 @@
       "tools/framework/commands/lifecycle/smoke/index.ts": 3,
       "tools/framework/commands/lifecycle/smoke/round-trip.ts": 1,
       "tools/framework/commands/lifecycle/state.ts": 5,
-      "tools/framework/commands/lifecycle/verify.ts": 2,
+      "tools/framework/commands/lifecycle/verify.ts": 1,
       "tools/framework/commands/management/credentials/mcp.ts": 4,
       "tools/framework/commands/management/credentials/provider.ts": 1,
       "tools/framework/commands/management/deploy/arguments.ts": 1,
@@ -106,7 +106,7 @@
       "tools/framework/entry/resolve.ts": 3,
       "tools/framework/entry/checkout-gate.ts": 7
     },
-    "total": 454
+    "total": 450
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
@@ -116,17 +116,17 @@
   },
   "rawArgvPredicates": {
     "comment": "stage 3 (CommandSpec effect): confirmation comes from declared effect, not raw argv",
-    "readOnlyWhen": 7,
-    "changedWhen": 3,
-    "requiresConfirmationWhen": 2
+    "readOnlyWhen": 1,
+    "changedWhen": 1,
+    "requiresConfirmationWhen": 1
   },
   "legacyCommands": {
     "comment": "stage 3 (CommandSpec): openclawCommands entries whose specOf is undefined — each migration turns one into a declared body",
-    "total": 14
+    "total": 1
   },
   "unsummarizedDescriptions": {
     "comment": "stage 3 (CommandArgument summary): MCP stops shortening heuristically when all summaries are declared; arguments of the derived `arguments` view with a description longer than 60 and no summary",
-    "total": 15
+    "total": 3
   },
   "declaredArguments": {
     "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",

@@ -6,12 +6,10 @@
 // Two tiers: an unrecognised flag or an invalid --profile value dies inside the parsing loop
 // before either command ever touches its target, so those cases need no transport at all.
 // Resolving a shorthand to the right profile is proven by actually running the real
-// backup()/pull() CLI entry points to completion against a minimal stub target and reading
+// backup()/openclawCommands.pull.run() CLI entry points to completion against a minimal stub target and reading
 // back the profile each command reports having used.
 
 import { resolve } from "node:path";
-import { backup } from "#framework/commands/lifecycle/backup/index.ts";
-import { pull } from "#framework/commands/lifecycle/state.ts";
 import { PROFILE_SHORTHAND_FLAGS } from "#framework/service/archive/index.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
@@ -19,6 +17,8 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+const backup = openclawCommands.backup.run;
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -52,18 +52,18 @@ check(
 );
 check(
   "pull rejects an unknown flag before touching the target",
-  await rejects(() => pull(untouchedCtx, ["--bogus"])),
+  await rejects(() => openclawCommands.pull.run(untouchedCtx, ["--bogus"])),
   "unknown argument: --bogus",
 );
 check(
   "backup rejects an invalid --profile value before touching the target",
   await rejects(() => backup(untouchedCtx, ["--profile", "everything"])),
-  "--profile needs one of: full, migrate, share",
+  "--profile takes one of full, migrate, share, not \"everything\"",
 );
 check(
   "pull rejects an invalid --profile value before touching the target",
-  await rejects(() => pull(untouchedCtx, ["--profile", "everything"])),
-  "--profile needs one of: full, migrate, share",
+  await rejects(() => openclawCommands.pull.run(untouchedCtx, ["--profile", "everything"])),
+  "--profile takes one of full, migrate, share, not \"everything\"",
 );
 
 // --- a real run of each shorthand resolves to the right profile ------------------------------
@@ -168,7 +168,7 @@ async function backupProfile(args: string[]): Promise<string> {
 
 async function pullProfile(args: string[]): Promise<string> {
   const { ctx, output } = makeCtx();
-  await withOutputSink((chunk) => output.push(chunk), () => pull(ctx, args));
+  await withOutputSink((chunk) => output.push(chunk), () => openclawCommands.pull.run(ctx, args));
   const text = output.join("");
   return /profile: (\w+)/.exec(text)?.[1] ?? "";
 }

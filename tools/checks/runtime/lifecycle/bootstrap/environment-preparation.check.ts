@@ -24,7 +24,7 @@ import { mkdtemp, readFile, rm, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { ensureEnvironment } from "#framework/integration/provision.ts";
-import { preparesEnvironmentFor } from "#framework/core/command/index.ts";
+import { callFactsFor, preparesEnvironmentFor } from "#framework/core/command/index.ts";
 import { runApp } from "#framework/entry/cli.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
 import { lifecycleCommands } from "#framework/commands/interface/groups/openclawCommands.lifecycle.ts";
@@ -82,13 +82,23 @@ checkTrue(
   preparesEnvironmentFor({ ...fixtureCommand, readOnlyWhen: undefined }, []),
 );
 
-// bootstrap's own real declaration, not a stand-in — proves the fix reaches the actual
-// command, not just a fixture shaped like it.
+// bootstrap's own real declaration, not a stand-in — proves the gate reaches the actual
+// command. Since bootstrap became a body, the gate is the model's: a read call (the --check
+// read flag) never prepares, a mutating one does, and argv the parser refuses throws before
+// any of it.
 const realBootstrap = lifecycleCommands.bootstrap;
-check("bootstrap --check is read-only by the real declaration", preparesEnvironmentFor(realBootstrap, ["--check"]), false);
-check("bootstrap --bogus (undeclared) is refused by the real declaration before preparing", refusal(realBootstrap, ["--bogus"]), "UnknownArgumentError");
-check("a plain bootstrap (no flags) prepares by the real declaration", preparesEnvironmentFor(realBootstrap, []), true);
-check("bootstrap --no-pull (a declared, non-check flag) still prepares", preparesEnvironmentFor(realBootstrap, ["--no-pull"]), true);
+check("bootstrap --check is read-only by the real declaration", callFactsFor(realBootstrap, ["--check"]).effect, "read");
+check("a plain bootstrap (no flags) prepares by the real declaration", callFactsFor(realBootstrap, []).effect !== "read", true);
+check("bootstrap --no-pull (a declared, non-check flag) still prepares", callFactsFor(realBootstrap, ["--no-pull"]).effect !== "read", true);
+function refusalEffect(command: AppCommand, argv: string[]): string {
+  try {
+    callFactsFor(command, argv);
+    return "prepared";
+  } catch (error) {
+    return (error as Error).name;
+  }
+}
+check("bootstrap --bogus (undeclared) is refused by the real declaration before preparing", refusalEffect(realBootstrap, ["--bogus"]), "UnknownArgumentError");
 
 // --- the real CLI dispatcher: bootstrap --check / --bogus write nothing on a deployment with
 // no .env yet (U1's own reproduction) ----------------------------------------------------------
@@ -100,7 +110,7 @@ check("bootstrap --no-pull (a declared, non-check flag) still prepares", prepare
 // with ensureEnvironment() now skipped, loadEnv() (inside createContext) refuses a still-absent
 // .env the same way it would for any other command — the point is what it does NOT create.
 
-const fixtureBootstrap: AppCommand = { ...realBootstrap, run: async () => {} };
+const fixtureBootstrap: AppCommand = { ...realBootstrap, readOnlyWhen: (args) => args.includes("--check"), run: async () => {} };
 const fixtureApp: AppDefinition = {
   name: "u1-fixture",
   description: "U1 regression fixture",

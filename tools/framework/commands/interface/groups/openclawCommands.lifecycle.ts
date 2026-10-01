@@ -1,28 +1,28 @@
 // Lifecycle command group: bringing an instance up, down, and moving its state around.
 // Split out of index.ts, which merges every group's fragment into one openclawCommands.
+//
+// Prose only: each command's body (arguments, effect, phases) lives in its implementation
+// module and is spread into the entry here; materializeCommands builds the AppCommand face.
 
 import type { AppCommand } from "#src/core/app.ts";
 import { materializeCommands } from "#src/core/command/index.ts";
 
-import { up, down, restart, LOCK_ARGUMENTS } from "#src/commands/lifecycle/instance/control.ts";
-import { destroy, DESTROY_ARGUMENTS } from "#src/commands/lifecycle/instance/destroy.ts";
-import { logs, LOGS_ARGUMENTS } from "#src/commands/lifecycle/instance/logs.ts";
-import { upgrade, UPGRADE_ARGUMENTS } from "#src/commands/lifecycle/instance/upgrade.ts";
-import { bootstrap, BOOTSTRAP_ARGUMENTS } from "#src/commands/lifecycle/bootstrap/index.ts";
-import { backup, BACKUP_ALL_ARGUMENTS, backupActionIsReadOnly } from "#src/commands/lifecycle/backup/index.ts";
-import { restore, RESTORE_ARGUMENTS, isRestoreDryRun } from "#src/commands/lifecycle/restore/index.ts";
-import { verify, VERIFY_ARGUMENTS } from "#src/commands/lifecycle/verify.ts";
-import { pull, push, PULL_ARGUMENTS, PUSH_ARGUMENTS, isPushDryRun } from "#src/commands/lifecycle/state.ts";
-import { smoke, SMOKE_ARGUMENTS } from "#src/commands/lifecycle/smoke/index.ts";
+import { UP, RESTART, DOWN } from "#src/commands/lifecycle/instance/control.ts";
+import { DESTROY } from "#src/commands/lifecycle/instance/destroy.ts";
+import { LOGS } from "#src/commands/lifecycle/instance/logs.ts";
+import { UPGRADE } from "#src/commands/lifecycle/instance/upgrade.ts";
+import { BOOTSTRAP } from "#src/commands/lifecycle/bootstrap/index.ts";
+import { BACKUP } from "#src/commands/lifecycle/backup/index.ts";
+import { RESTORE } from "#src/commands/lifecycle/restore/index.ts";
+import { VERIFY } from "#src/commands/lifecycle/verify.ts";
+import { PULL, PUSH } from "#src/commands/lifecycle/state.ts";
+import { SMOKE } from "#src/commands/lifecycle/smoke/index.ts";
 
 export const lifecycleCommands: Record<string, AppCommand> = materializeCommands({
   bootstrap: {
     summary: "Bring the instance up from nothing (idempotent)",
     group: "start-stop",
-    run: bootstrap,
-    // The one command that must work on a deployment with no .env at all.
-    preparesEnvironment: true,
-    readOnlyWhen: (args) => args.includes("--check"),
+    ...BOOTSTRAP,
     details:
       "Fixed order, each step paid for in debugging: .env and the gateway token first " +
       "(compose interpolates them), then data directories owned by uid 1000, the image, " +
@@ -35,23 +35,20 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "--check runs none of that: a read-only prerequisite report (docker and compose v2, " +
       "the data/backup/snapshot directories, the gateway port, free disk space), one " +
       "ok/WARN/FAIL line each, no lock and nothing created — run it before the first bootstrap.",
-    arguments: BOOTSTRAP_ARGUMENTS,
   },
   up: {
     summary: "Start the service and wait until it serves",
     group: "start-stop",
-    run: up,
-    arguments: LOCK_ARGUMENTS,
     details:
       "Checks secrets and the gateway port before starting, not after —\n" +
       "a missing SecretRef or a port already held by another deployment otherwise " +
       "surfaces as a crash-loop with the real reason buried in the container log.\n" +
       "Returns only once /healthz answers, not just once the container exists.",
+    ...UP,
   },
   restart: {
     summary: "Restart the instance so it re-reads its configuration",
     group: "start-stop",
-    run: restart,
     details:
       "`up` cannot do this: it converges on \"running\", and an instance that is already " +
       "running and healthy is already converged — an edit to openclaw.json inside a bind " +
@@ -64,22 +61,17 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "performs itself, or `./clawforge up`.\n" +
       "Secrets are checked first, same as `up`; the port is not, since the container keeps " +
       "the binding it already holds.",
-    arguments: LOCK_ARGUMENTS,
+    ...RESTART,
   },
   down: {
     summary: "Stop and remove the containers (data is kept)",
     group: "start-stop",
-    run: down,
     details: "Data lives in host bind mounts, not in runtime-managed volumes, so this never touches it.",
-    arguments: LOCK_ARGUMENTS,
+    ...DOWN,
   },
   destroy: {
     summary: "Remove what bootstrap created",
     group: "start-stop",
-    run: destroy,
-    destructive: true,
-    readOnlyWhen: (args) => !args.includes("--yes"),
-    changedWhen: (args) => args.includes("--yes"),
     details:
       "The inverse of bootstrap. Always stops and removes the compose project's containers, " +
       "network and volumes (down, plus volumes) — nothing else goes without its own flag:\n" +
@@ -99,13 +91,11 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "command line, so this is a sanity check on the deployment's .env, not on user input.\n" +
       "Removal escalates through sudo on the target the same way bootstrap's own " +
       "ensureDataDirs does, never through this machine's own privileges.",
-    arguments: DESTROY_ARGUMENTS,
+    ...DESTROY,
   },
   logs: {
     summary: "Follow the service log, or read a bounded tail of it",
     group: "start-stop",
-    run: logs,
-    readOnly: true,
     details:
       "On a terminal this follows the log until interrupted. Called as a tool it reads the " +
       "last lines and returns them instead — following would never produce the single " +
@@ -117,20 +107,11 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "--grep filters lines by a JS RegExp, on the bounded read and on a followed stream " +
       "alike (filtered line by line as it arrives); an invalid pattern is refused before " +
       "anything runs.",
-    arguments: LOGS_ARGUMENTS,
+    ...LOGS,
   },
   backup: {
     summary: "Snapshot the data directory; list, prune, schedule",
     group: "save-move",
-    run: backup,
-    readOnlyWhen: backupActionIsReadOnly,
-    changedWhen: (args) => !backupActionIsReadOnly(args),
-    // Only an --apply form of prune-replaced/install/uninstall is destructive enough to need
-    // MCP confirmation — a bare backup already changes nothing anyone would want undone (it
-    // only ever adds an archive) and has never required it; mirroring readOnlyWhen's negation
-    // here would start demanding confirm: true for the plain, everyday case.
-    requiresConfirmationWhen: (args) => ["prune-replaced", "install", "uninstall"].includes(args[0]) && args.includes("--apply"),
-    destructive: true,
     details:
       "With no action: stops the gateway for the duration by default — OpenClaw keeps " +
       "state in SQLite with a multi-megabyte -wal sibling, and a copy taken mid-write is " +
@@ -180,15 +161,11 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "mirroring `watch install`/`watch uninstall` exactly (same marker convention, " +
       "same POSIX-only trust boundary, same Windows fallback: a printed `schtasks` entry, " +
       "applied for real on --apply on an actual Windows host).",
-    arguments: BACKUP_ALL_ARGUMENTS,
+    ...BACKUP,
   },
   restore: {
     summary: "Restore an archive over the current state",
     group: "save-move",
-    run: restore,
-    destructive: true,
-    forceOnConfirmation: true,
-    readOnlyWhen: isRestoreDryRun,
     details:
       "The archive is validated before anything is stopped or overwritten —\n" +
       "every entry is checked for absolute paths, `..` escapes and links that would " +
@@ -208,12 +185,11 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "archive it picked (name, size, date), whether it carries identity, where the current " +
       "data would move to, and the ordered steps a real restore would run — nothing is " +
       "stopped, moved, written or extracted.",
-    arguments: RESTORE_ARGUMENTS,
+    ...RESTORE,
   },
   pull: {
     summary: "Snapshot the instance state into the snapshot directory",
     group: "save-move",
-    run: pull,
     details:
       "Defaults to migrate, unlike `backup`, which defaults to full: moving an instance's " +
       "state should not silently also hand over provider keys.\n" +
@@ -231,15 +207,11 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "Keeps the newest OC_SNAPSHOT_KEEP snapshots (default 10, same as backup's " +
       "OC_BACKUP_KEEP) and removes the rest, sidecar files included — unbounded before, " +
       "on a deployment pulled regularly this filled the snapshot directory forever.",
-    arguments: PULL_ARGUMENTS,
+    ...PULL,
   },
   push: {
     summary: "Push a snapshot back onto the instance",
     group: "save-move",
-    run: push,
-    destructive: true,
-    forceOnConfirmation: true,
-    readOnlyWhen: isPushDryRun,
     details:
       "Restores the newest snapshot in the deployment's snapshot directory (or a given " +
       "path), installs whatever provider keys travelled beside it (<archive>.secrets.env, " +
@@ -251,13 +223,11 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "what would be replaced, what the archive holds (identity, structure), and whether a " +
       "secrets sidecar would be installed — nothing is stopped, moved, written or extracted, " +
       "and no lock is taken.",
-    arguments: PUSH_ARGUMENTS,
+    ...PUSH,
   },
   verify: {
     summary: "Check a snapshot for credentials before sharing it",
     group: "save-move",
-    run: verify,
-    readOnly: true,
     details:
       "What `./clawforge pull --share` runs automatically, callable by hand against any archive.\n" +
       "Structural checks (no absolute paths, no `..` escapes, no link writing outside the " +
@@ -274,13 +244,11 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "--json emits {archive, profile, passed, findings}: each finding is a kind, a " +
       "location (a path, a rule or a provider id) and whether it is fatal under the " +
       "profile that ran — never a credential value.",
-    arguments: VERIFY_ARGUMENTS,
+    ...VERIFY,
   },
   upgrade: {
     summary: "Update the image by digest, with automatic rollback on failure",
     group: "change",
-    run: upgrade,
-    destructive: true,
     details:
       "Resolves the target (--image <ref>, or the deployment's own OPENCLAW_IMAGE) to a " +
       "digest and pulls that digest specifically — a shared tag another deployment on the " +
@@ -308,13 +276,11 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "--dry-run prints the current digest, the channel, what it resolves to at the " +
       "registry, and whether that is an upgrade — changing nothing, not even taking the " +
       "instance lock.",
-    arguments: UPGRADE_ARGUMENTS,
-    readOnlyWhen: (args) => args.includes("--dry-run"),
+    ...UPGRADE,
   },
   smoke: {
     summary: "Acceptance run: health, agent, config, snapshots, MCP",
     group: "check",
-    run: smoke,
     details:
       "Eight checks, the two negative ones matter as much as the positive ones — a suite " +
       "that only confirms success degrades silently:\n" +
@@ -337,6 +303,6 @@ export const lifecycleCommands: Record<string, AppCommand> = materializeCommands
       "gateway up.\n" +
       "--quick skips the slow round-trip check, but still shares that one stop/start " +
       "window with the two snapshot checks it does not skip.",
-    arguments: SMOKE_ARGUMENTS,
+    ...SMOKE,
   },
 });

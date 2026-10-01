@@ -37,6 +37,17 @@ All notable changes to `@clawforge/framework` will be documented here.
   host remain always-destroying. `recipe --json` still lists. `mcp-serve` now refuses
   arguments instead of forwarding them to the gateway's `mcp serve` (it never declared
   any).
+* The lifecycle commands (bootstrap, up, restart, down, destroy, logs, backup, restore, pull,
+  push, verify, upgrade, smoke) declare their arguments, effects and phases as command specs.
+  Refusals that depend only on the arguments now land before any contact with the target, any
+  lock, or any .env write, on every host — notably `destroy --yes` with a missing or wrong
+  `--confirm-name`, and `backup create --native` with a non-full profile (previously refused
+  only after the bootstrappability check and the instance lock). A spec command's MCP choices
+  and required-argument refusals come in the argument parser's own words (`--profile takes
+  one of full, migrate, share, not "…"`, `verify needs <archive>`); `verify` without an
+  archive is refused that way on the console too, instead of a usage line. `backup create
+  --dry-run` now reports itself as a read on every surface, and `upgrade --image`'s schema
+  description is the full phrase instead of a cut one.
 * A deployment command that is destructive and declares `requiresConfirmationWhen` without
   `readOnlyWhen` — confirmation is owed only for some calls — now reads as "destructive for
   some actions" on every surface (` *` in the command list, the tool description, the

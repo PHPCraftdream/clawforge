@@ -9,14 +9,17 @@ import { countValue, nameValue, nonEmptyValue, portValue, regexValue, ValueError
 import { sinceValue } from "#framework/core/values/durations.ts";
 import { scheduleIntervalValue } from "#framework/commands/operate/schedule.ts";
 import { imageRefValue } from "#framework/runtime/docker/image-ref.ts";
-import { logs } from "#framework/commands/lifecycle/instance/logs.ts";
-import { backupPruneReplaced } from "#framework/commands/lifecycle/backup/prune-replaced.ts";
-import { backupInstall } from "#framework/commands/lifecycle/backup/install.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { exposeSsh } from "#framework/commands/operate/expose/ssh.ts";
-import { upgrade } from "#framework/commands/lifecycle/instance/upgrade.ts";
 import { watchInstall } from "#framework/commands/operate/watch/install.ts";
 import { incident } from "#framework/commands/operate/incident/index.ts";
 import type { Context } from "#framework/core/context.ts";
+
+// The migrated lifecycle commands, through their spec faces: the refusal text is the binder's.
+const logs = openclawCommands.logs.run;
+const upgrade = openclawCommands.upgrade.run;
+const backupPruneReplaced = (ctx: Context, args: string[]) => openclawCommands.backup.run(ctx, ["prune-replaced", ...args]);
+const backupInstall = (ctx: Context, args: string[]) => openclawCommands.backup.run(ctx, ["install", ...args]);
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 /** What a user reads for `--<name> <raw>` through the shared binder. */
@@ -108,7 +111,7 @@ check("logs --since", refusalOf(sinceValue, "yesterday", "since"), await printed
 check("logs --grep", refusalOf(regexValue(), "(", "grep"), await printedBy(logs, ["--grep", "("]));
 check(
   "backup prune-replaced --keep",
-  refusalOf(countValue("a non-negative integer", () => "needs a non-negative integer"), "abc", "keep"),
+  refusalOf(countValue("a non-negative integer"), "abc", "keep"),
   await printedBy(backupPruneReplaced, ["--keep", "abc"]),
 );
 check("incident --tail", refusalOf(countValue("a number of lines", () => "needs a number of lines"), "abc", "tail"), await printedBy(incident, ["--tail", "abc"]));

@@ -6,7 +6,6 @@
 // the instance, must never gain that guard — this proves --check keeps that exemption too,
 // and additionally never takes the lock guarded() would).
 
-import { bootstrap } from "#framework/commands/lifecycle/bootstrap/index.ts";
 import { bootstrapCheck } from "#framework/commands/lifecycle/bootstrap/check.ts";
 import {
   parseDockerInfo,
@@ -20,6 +19,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal, TransportUnreachableError } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 // --- pure parsers: fed a canned ExecResult, nothing else -------------------------------------
 
@@ -310,7 +310,7 @@ function healthyExecHandler(command: string, args: string[]): { code: number; st
     () => {},
     async () => {
       try {
-        await bootstrap(ctx, ["--check"]);
+        await openclawCommands.bootstrap.run(ctx, ["--check"]);
       } catch (error) {
         threw = error as Error;
       }

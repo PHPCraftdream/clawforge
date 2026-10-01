@@ -7,12 +7,15 @@
 // health rather than returning as soon as the container is told to come back.
 
 import { resolve } from "node:path";
-import { restart, up, down } from "#framework/commands/lifecycle/instance/control.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+const up = openclawCommands.up.run;
+const restart = openclawCommands.restart.run;
+const down = openclawCommands.down.run;
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 
@@ -69,7 +72,7 @@ async function run(ctx: Context): Promise<string | undefined> {
     () => {},
     async () => {
       try {
-        await restart(ctx, []);
+        await openclawCommands.restart.run(ctx, []);
         return undefined;
       } catch (error) {
         return error instanceof Error ? error.message : String(error);

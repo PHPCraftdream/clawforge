@@ -19,12 +19,12 @@
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { bootstrap } from "#framework/commands/lifecycle/bootstrap/index.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const DATA_DIR = "/srv/openclaw/data";
 const CONFIG_PATH = `${DATA_DIR}/config/openclaw.json`;
@@ -120,7 +120,7 @@ async function withTempDeployment(envBody: string, body: () => Promise<void>): P
 await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\nOPENCLAW_GATEWAY_TOKEN=test-token\n`, async () => {
   const { ctx, calls } = makeCtx({ image: SHARED_TAG, pulledDigest: PULLED_DIGEST });
   let output = "";
-  await withOutputSink((chunk) => { output += chunk; }, () => bootstrap(ctx, []));
+  await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.bootstrap.run(ctx, []));
   const envNow = await readFile(envFile(), "utf8");
   check("the pull ran before the digest was read", calls.indexOf("pull") < calls.indexOf("imageReference"), true);
   // imageReference() itself (the stub above) answers with the bare, untagged form Docker's own
@@ -139,7 +139,7 @@ await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\
 await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\nOPENCLAW_GATEWAY_TOKEN=test-token\n`, async () => {
   const { ctx, calls } = makeCtx({ image: SHARED_TAG, pulledDigest: PULLED_DIGEST });
   const envBefore = await readFile(envFile(), "utf8");
-  await withOutputSink(() => {}, () => bootstrap(ctx, ["--no-pull"]));
+  await withOutputSink(() => {}, () => openclawCommands.bootstrap.run(ctx, ["--no-pull"]));
   const envAfter = await readFile(envFile(), "utf8");
   // Only the final summary's own read remains — the pin itself never asks, because there was
   // no pull for it to ask about.
@@ -152,7 +152,7 @@ await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\
 await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${ALREADY_PINNED}\nOPENCLAW_GATEWAY_TOKEN=test-token\n`, async () => {
   const { ctx, calls } = makeCtx({ image: ALREADY_PINNED, pulledDigest: PULLED_DIGEST });
   const envBefore = await readFile(envFile(), "utf8");
-  await withOutputSink(() => {}, () => bootstrap(ctx, []));
+  await withOutputSink(() => {}, () => openclawCommands.bootstrap.run(ctx, []));
   const envAfter = await readFile(envFile(), "utf8");
   check("an already-pinned deployment is never asked to re-resolve — only the final summary reads it", calls.filter((call) => call === "imageReference").length, 1);
   check("its .env is untouched — ./clawforge upgrade is how to move it, never a bootstrap re-run", envAfter, envBefore);
@@ -164,7 +164,7 @@ await withTempDeployment(`OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\
   const { ctx } = makeCtx({ image: SHARED_TAG, pulledDigest: undefined });
   const envBefore = await readFile(envFile(), "utf8");
   let output = "";
-  await withOutputSink((chunk) => { output += chunk; }, () => bootstrap(ctx, []));
+  await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.bootstrap.run(ctx, []));
   const envAfter = await readFile(envFile(), "utf8");
   check("an unresolvable pull leaves .env exactly as it was — never guessed", envAfter, envBefore);
   check("bootstrap says the tag stays a moving one", output.includes("stays a moving tag"), true);
@@ -183,7 +183,7 @@ OPENCLAW_GATEWAY_TOKEN=test-token
   // which runtime-image-identity.check.ts covers directly.
   const { ctx, calls } = makeCtx({ image: SHARED_TAG, pulledDigest: PULLED_DIGEST, registryDigest: PINNED_WITH_TAG });
   let output = "";
-  await withOutputSink((chunk) => { output += chunk; }, () => bootstrap(ctx, []));
+  await withOutputSink((chunk) => { output += chunk; }, () => openclawCommands.bootstrap.run(ctx, []));
   check("the digest is resolved at the registry before any pull", calls.indexOf("resolve") < calls.indexOf("pull"), true);
   check("no local tag read is needed to pin", calls.indexOf("imageReference") > calls.indexOf("pull"), true);
   check(".env holds the registry answer, tag kept alongside the digest", imageValue(await readFile(envFile(), "utf8")), PINNED_WITH_TAG);

@@ -6,12 +6,12 @@
 import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { upgrade } from "#framework/commands/lifecycle/instance/upgrade.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { parseEnv } from "#framework/core/env.ts";
 import { DATA_DIR, SHARED_TAG, PREVIOUS_DIGEST, PINNED_WITH_TAG, PINNED_NO_TAG, makeUpgradeCtx } from "./stub.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 // pinImageReference writes the deployment's OWN .env — a real temporary deployment
 // directory backs these checks, cleaned up at the end.
@@ -30,7 +30,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   let outcome = "";
   let failure: unknown;
   await withOutputSink((chunk) => { outcome += chunk; }, async () => {
-    try { await upgrade(ctx, ["--image", PINNED_NO_TAG, "--json"]); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, ["--image", PINNED_NO_TAG, "--json"]); } catch (error) { failure = error; }
   });
   check("an explicit tracked-repo digest upgrades successfully", failure, undefined);
   check("the recreated container's image IS the pinned .env value", calls.includes(`recreateWithImage ${await pinOf()}`), true);
@@ -50,7 +50,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   const { ctx, calls } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
   let outcome = "";
   await withOutputSink((chunk) => { outcome += chunk; }, async () => {
-    await upgrade(ctx, ["--json"]);
+    await openclawCommands.upgrade.run(ctx, ["--json"]);
   });
   const report = JSON.parse(outcome) as { pinnedImage?: string };
   check("a channel upgrade recreates on its own pin", calls.includes(`recreateWithImage ${report.pinnedImage}`), true);
@@ -68,7 +68,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   const { ctx } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
   let outcome = "";
   await withOutputSink((chunk) => { outcome += chunk; }, async () => {
-    await upgrade(ctx, ["--dry-run", "--image", PINNED_NO_TAG]);
+    await openclawCommands.upgrade.run(ctx, ["--dry-run", "--image", PINNED_NO_TAG]);
   });
   check("the dry-run plan pins the tagged reference, not the bare digest", outcome.includes(`pin OPENCLAW_IMAGE to ${PINNED_WITH_TAG} in .env`), true);
 }
@@ -79,7 +79,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\n`);
   const { ctx, calls } = makeUpgradeCtx("doctor-fail", { image: SHARED_TAG });
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch { /* the rollback under test */ }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch { /* the rollback under test */ }
   });
   check("the bare-tag rollback recreates on the exact string .env records", calls.includes(`recreateWithImage ${await pinOf()}`), true);
   check("that string carries the tag alongside the proven digest", await pinOf(), `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`);
@@ -90,7 +90,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
     const { ctx, calls } = makeUpgradeCtx("doctor-fail", { image: SHARED_TAG });
     let outcome = "";
     await withOutputSink((chunk) => { outcome += chunk; }, async () => {
-      try { await upgrade(ctx, ["--json"]); } catch { /* the rollback under test */ }
+      try { await openclawCommands.upgrade.run(ctx, ["--json"]); } catch { /* the rollback under test */ }
     });
     const report = JSON.parse(outcome) as { ok?: boolean; pinnedImage?: string };
     check("the rollback failure is reported as a failure", report.ok, false);
@@ -107,7 +107,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PINNED_WITH_TAG}\n`);
   const { ctx, calls } = makeUpgradeCtx("doctor-fail", { image: PINNED_WITH_TAG });
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, []); } catch { /* the rollback under test */ }
+    try { await openclawCommands.upgrade.run(ctx, []); } catch { /* the rollback under test */ }
   });
   const pin = await pinOf();
   const recreateCall = `recreateWithImage ${pin}`;
@@ -124,7 +124,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   const { ctx, calls } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, ["--dry-run", "--image", malformed]); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, ["--dry-run", "--image", malformed]); } catch (error) { failure = error; }
   });
   check("a malformed digest is refused locally, naming the input and the grammar", failure instanceof Error && failure.message.includes("--image:") && failure.message.includes(malformed) && failure.message.includes("not a valid image reference"), true);
   check("the format refusal happens before any registry contact", calls.some((call) => call.startsWith("resolveImageDigest")), false);
@@ -138,7 +138,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   const { ctx, calls } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, ["--dry-run", "--image", malformedTag]); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, ["--dry-run", "--image", malformedTag]); } catch (error) { failure = error; }
   });
   check("a malformed tag reference is refused, naming the argument and the input", failure instanceof Error && failure.message.includes("--image:") && failure.message.includes(malformedTag) && failure.message.includes("not a valid image reference"), true);
   check("the tag refusal also happens before any registry contact", calls.some((call) => call.startsWith("resolveImageDigest")), false);
@@ -152,7 +152,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   const { ctx, calls } = makeUpgradeCtx("success", { image: garbage });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, ["--dry-run"]); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, ["--dry-run"]); } catch (error) { failure = error; }
   });
   check("a malformed OPENCLAW_IMAGE is refused locally, naming the value and the grammar", failure instanceof Error && failure.message.includes(garbage) && failure.message.includes("not a valid image reference"), true);
   check("the OPENCLAW_IMAGE refusal happens before any registry contact", calls.some((call) => call.startsWith("resolveImageDigest")), false);
@@ -165,7 +165,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   let failure: unknown;
   let outcome = "";
   await withOutputSink((chunk) => { outcome += chunk; }, async () => {
-    try { await upgrade(ctx, ["--dry-run", "--image", typo]); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, ["--dry-run", "--image", typo]); } catch (error) { failure = error; }
   });
   check("a well-formed digest unknown to the registry is refused on --dry-run", failure instanceof Error && failure.message.includes(typo), true);
   check("the registry was actually asked", calls.includes(`resolveImageDigest ${typo}`), true);
@@ -178,7 +178,7 @@ const pinOf = async (): Promise<string | undefined> => parseEnv(await readFile(e
   const { ctx, calls } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
-    try { await upgrade(ctx, ["--image", typo]); } catch (error) { failure = error; }
+    try { await openclawCommands.upgrade.run(ctx, ["--image", typo]); } catch (error) { failure = error; }
   });
   check("a real run refuses the unknown digest too", failure instanceof Error && failure.message.includes("registry"), true);
   check("the refusal precedes the pre-upgrade backup", calls.some((call) => call.startsWith("runOneOff backup")), false);

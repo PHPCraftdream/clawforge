@@ -11,12 +11,12 @@
 
 import { info, infoRaw, log, warn } from "#src/core/io/log.ts";
 import type { Context } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
+import { scheduleIntervalValue } from "#src/commands/operate/schedule.ts";
+import type { ArgumentSpec, Values } from "#src/core/command/spec.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 import {
   cronLine,
   jobMarker,
@@ -36,37 +36,41 @@ const DEFAULT_BACKUP_INTERVAL = "1d";
 /** The slice of `backup`'s declaration `install`'s own argv actually uses. `--apply` is the
  *  shared BACKUP_APPLY_ARGUMENT (prune-replaced.ts), not a second declaration of the same
  *  name — see its own comment for why. */
-export const BACKUP_INSTALL_ARGUMENTS: CommandArgument[] = [
-  { name: "interval", description: "With install: how often (default 1d) — 30m, 6h or 1d, explicit unit required (a bare number is minutes only for watch install); minutes must divide 60, hours must divide a day", kind: "option", valueName: "interval" },
+export const BACKUP_INSTALL_ARGUMENTS = [
+  {
+    name: "interval",
+    summary: "how often — 30m, 6h or 1d, explicit unit required",
+    description: "With install: how often (default 1d) — 30m, 6h or 1d, explicit unit required (a bare number is minutes only for watch install); minutes must divide 60, hours must divide a day",
+    kind: "option",
+    valueName: "interval",
+    parse: scheduleIntervalValue({ bareMinutes: false }),
+  },
   BACKUP_APPLY_ARGUMENT,
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-];
+  ...LOCK_TAKEOVER_ARGUMENTS,
+] as const satisfies readonly ArgumentSpec[];
 
 /** The slice `uninstall` uses — no --interval, since there is no schedule to set. A strict
  *  subset of BACKUP_INSTALL_ARGUMENTS's own names, so it is never merged into the top-level
  *  declaration itself (same convention as watch's own WATCH_UNINSTALL_ARGUMENTS). */
-export const BACKUP_UNINSTALL_ARGUMENTS: CommandArgument[] = [
+export const BACKUP_UNINSTALL_ARGUMENTS = [
   BACKUP_APPLY_ARGUMENT,
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-];
+  ...LOCK_TAKEOVER_ARGUMENTS,
+] as const satisfies readonly ArgumentSpec[];
 
-function parseInstallArgs(args: string[], scope?: ActionScope): { minutes: number; interval: string; apply: boolean } {
-  const parsed = parseDeclaredArgs(BACKUP_INSTALL_ARGUMENTS, args, scope);
+export interface InstallValues extends Values<typeof BACKUP_INSTALL_ARGUMENTS> {}
+export interface UninstallValues extends Values<typeof BACKUP_UNINSTALL_ARGUMENTS> {}
+
+function installPlan(values: InstallValues): { minutes: number; interval: string; apply: boolean } {
   // An empty --interval is refused (not defaulted), and a bare number is refused: a backup
   // cadence must always carry an explicit unit — "6" is probably a typo for "6h", and a
   // gateway-stopping backup every 6 minutes would out-rotate OC_BACKUP_KEEP within an hour.
-  const raw = parsed.interval === undefined ? DEFAULT_BACKUP_INTERVAL : parsed.interval as string;
-  return { minutes: parseIntervalToMinutes(raw, { bareMinutes: false }), interval: raw, apply: parsed.apply === true };
+  const interval = values.interval === undefined ? DEFAULT_BACKUP_INTERVAL : String(values.interval);
+  return { minutes: values.interval ?? parseIntervalToMinutes(interval, { bareMinutes: false }), interval, apply: values.apply === true };
 }
 
-function parseUninstallArgs(args: string[], scope?: ActionScope): boolean {
-  return parseDeclaredArgs(BACKUP_UNINSTALL_ARGUMENTS, args, scope).apply === true;
-}
-
-export async function backupInstall(ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
-  const { minutes, interval, apply } = parseInstallArgs(args, scope);
+export async function backupInstall(ctx: Context, values: InstallValues): Promise<void> {
+  const { minutes, interval, apply } = installPlan(values);
+  const takeover = takeoverOf(values);
   const support = schedulingSupport(ctx);
   const name = deploymentName();
 
@@ -94,14 +98,15 @@ export async function backupInstall(ctx: Context, args: string[], scope?: Action
     return;
   }
 
-  await guarded(ctx, "backup install --apply", args, async () => {
+  await guardedWith(ctx, "backup install --apply", takeover, async () => {
     await updateCrontab(ctx, JOB, identity, line, { name, invocation });
     log("installed");
   });
 }
 
-export async function backupUninstall(ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
-  const apply = parseUninstallArgs(args, scope);
+export async function backupUninstall(ctx: Context, values: UninstallValues): Promise<void> {
+  const apply = values.apply === true;
+  const takeover = takeoverOf(values);
   const support = schedulingSupport(ctx);
   const name = deploymentName();
 
@@ -119,7 +124,7 @@ export async function backupUninstall(ctx: Context, args: string[], scope?: Acti
     return;
   }
 
-  await guarded(ctx, "backup uninstall --apply", args, async () => {
+  await guardedWith(ctx, "backup uninstall --apply", takeover, async () => {
     if (!await updateCrontab(ctx, JOB, identity, undefined, { name, invocation })) {
       info("no backup schedule was installed for this deployment — nothing to remove");
       return;

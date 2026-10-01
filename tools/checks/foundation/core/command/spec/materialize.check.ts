@@ -3,7 +3,6 @@
 // runOnContext parses -> prepares -> runs on the context it is given, and the structural mistakes
 // of a declaration throw when its module loads. Plus the spec paths of callFactsFor / effectProfile.
 
-import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import type { AppCommand } from "#framework/core/app.ts";
 import {
@@ -94,7 +93,8 @@ const spread = { ...commands.single, summary: "other" };
 check("a spread keeps the spec (the symbol key is copied)", specOf(spread)?.summary, "one");
 const replaced = { ...commands.single, run: async () => {} };
 check("replacing run drops it", specOf(replaced), undefined);
-check("a framework command that is still legacy has none", specOf(openclawCommands.up), undefined);
+const legacy: AppCommand = { summary: "legacy", group: "check", run: async () => {} };
+check("a legacy command has none", specOf(legacy), undefined);
 
 // --- structural errors at load ---------------------------------------------------------------------------------
 

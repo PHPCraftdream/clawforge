@@ -6,10 +6,9 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
 import {
-  parseDeclaredArgs, parseCall, specOf, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION, type CallShape,
+  parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION, specOf, specShape, type CallShape,
 } from "#framework/core/command/index.ts";
 import { countValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
-import { BACKUP_ACTION_ARGUMENTS } from "#framework/commands/lifecycle/backup/index.ts";
 import { SET_ACTION_ARGUMENTS } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import { buildCompletionModel } from "#framework/integration/completion.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -75,21 +74,26 @@ check(
   validate(openclawCommands.status, { bogus: "x" }),
   ["unknown argument: bogus"],
 );
-check(
-  "a value outside the choices is rejected",
-  validate(openclawCommands.pull, { profile: "everything" }),
-  ["profile must be one of: full, migrate, share"],
-);
+// A spec command's choices and required belong to the parser, not to validate (which
+// checks only the form); the refusal comes in the parser's own words at call time.
+function formRefusal(run: () => unknown): (Error & { argument?: string }) | undefined {
+  try { run(); return undefined; } catch (error) { return error as Error & { argument?: string }; }
+}
+check("a spec command's validate is form-only: choices left to the parser", validate(openclawCommands.pull, { profile: "everything" }), []);
+{
+  const error = formRefusal(() => parseCall(specShape(specOf(openclawCommands.pull)!), ["--profile", "everything"], "pull"));
+  check("the parser refuses a choice outside the list, in its own words", [error instanceof ArgumentError, error?.argument, error?.message], [true, "profile", '--profile takes one of full, migrate, share, not "everything"']);
+}
 check(
   "a wrong type is rejected",
   validate(openclawCommands.backup, { hot: "yes" }),
   ["hot takes true or false"],
 );
-check(
-  "a missing required argument is rejected",
-  validate(openclawCommands.verify, {}),
-  ["archive is required"],
-);
+check("a spec command's validate is form-only: required left to the parser", validate(openclawCommands.verify, {}), []);
+{
+  const error = formRefusal(() => parseCall(specShape(specOf(openclawCommands.verify)!), [], "verify"));
+  check("the parser refuses a missing required argument", [error instanceof ArgumentError, error?.argument, error?.message], [true, "archive", "verify needs <archive>"]);
+}
 
 // --- variadic: the arguments of another program ---------------------------------------------
 
@@ -425,10 +429,11 @@ check(
 {
   type Slices = Readonly<Record<string, readonly CommandArgument[]>>;
 
-  // A new multi-action command must register here while it is still legacy, or this check
-  // fails for it.
+  // A new multi-action command must register here, or this check fails for it. A command
+  // leaves the registry only by becoming a declared body: then its parser IS its
+  // declaration, and the group's own checks prove declared = accepted (backup:
+  // state/backup/backup.check.ts).
   const REGISTRY: Readonly<Record<string, Slices>> = {
-    backup: BACKUP_ACTION_ARGUMENTS,
     set: SET_ACTION_ARGUMENTS,
   };
 

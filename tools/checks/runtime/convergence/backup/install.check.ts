@@ -6,10 +6,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  backupInstall,
-  backupUninstall,
-} from "#framework/commands/lifecycle/backup/install.ts";
 import { jobMarker, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
 import { deploymentName, useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -18,6 +14,7 @@ import { stubCrontabTransaction } from "#checks/runtime/schedule/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { ExecOptions, ExecResult } from "#framework/runtime/transport/transport.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 async function deathOf(run: () => unknown): Promise<string> {
   try {
@@ -87,12 +84,12 @@ try {
   const identity = await schedulerIdentity(ctx);
 
   // print-only (no --apply): never touches crontab at all.
-  await withOutputSink(() => {}, () => backupInstall(ctx, []));
+  await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install"]));
   check("print-only install never reads or writes the real crontab", calls.some((call) => call.command === "crontab"), false);
 
   // --apply, default interval (1d): installs our own line under our OWN marker, leaving the
   // foreign line AND the same deployment's own watch entry alone.
-  await withOutputSink(() => {}, () => backupInstall(ctx, ["--apply"]));
+  await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--apply"]));
   const afterInstall = crontab();
   check("the foreign entry survives install", afterInstall.includes(FOREIGN), true);
   check("this deployment's own watch entry survives install untouched", afterInstall.includes(WATCH_ENTRY), true);
@@ -100,7 +97,7 @@ try {
   check("the default interval (1d) is a daily schedule", afterInstall.includes("0 0 * * * cd"), true);
 
   // --apply again with a different interval: replaces the SAME line rather than duplicating it.
-  await withOutputSink(() => {}, () => backupInstall(ctx, ["--apply", "--interval", "6h"]));
+  await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--apply", "--interval", "6h"]));
   const afterSecondInstall = crontab();
   const ourLines = afterSecondInstall.split("\n").filter((line) => line.includes(jobMarker("backup", identity)));
   check("re-installing replaces the one line rather than adding a second", ourLines.length, 1);
@@ -110,27 +107,27 @@ try {
   // an invalid interval is refused up front, before any crontab line is even built.
   {
     calls.length = 0;
-    const message = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "90m"])));
+    const message = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", "90m"])));
     check("--interval 90m is refused — no faithful cron encoding", message.length > 0, true);
     check("...and never touches the crontab", calls.some((call) => call.command === "crontab"), false);
   }
   {
-    const message = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "not-a-duration"])));
+    const message = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", "not-a-duration"])));
     check("a malformed --interval is refused, named", message.includes("an explicit unit is required"), true);
   }
   {
     calls.length = 0;
-    const bare = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "30"])));
+    const bare = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", "30"])));
     check("a bare number is refused — a backup cadence needs an explicit unit", bare.includes("nearest valid: 30m"), true);
     check("...and never touches the crontab", calls.some((call) => call.command === "crontab"), false);
-    const empty = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", ""])));
+    const empty = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", ""])));
     check("an empty --interval is refused instead of silently defaulting to 1d", empty.includes("an explicit unit is required"), true);
-    const nearest = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "45m"])));
+    const nearest = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--interval", "45m"])));
     check("--interval 45m suggests only values backup itself accepts", nearest.includes("nearest valid: 30m, 1h"), true);
   }
 
   // uninstall --apply: removes only OUR marked line.
-  await withOutputSink(() => {}, () => backupUninstall(ctx, ["--apply"]));
+  await withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["uninstall", "--apply"]));
   const afterUninstall = crontab();
   check("uninstall removes our own line", afterUninstall.includes(jobMarker("backup", identity)), false);
   check("uninstall leaves the foreign entry alone", afterUninstall.includes(FOREIGN), true);
@@ -139,14 +136,14 @@ try {
   // uninstall --apply again: nothing to remove, and it does not touch the crontab at all.
   calls.length = 0;
   const written: string[] = [];
-  await withOutputSink((chunk) => written.push(chunk), () => backupUninstall(ctx, ["--apply"]));
+  await withOutputSink((chunk) => written.push(chunk), () => openclawCommands.backup.run(ctx, ["uninstall", "--apply"]));
   check("a second uninstall reports nothing to remove", written.join("").includes("nothing to remove"), true);
   check("and never re-writes the crontab", calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
 
   const unreadableInitial = `${FOREIGN}\n${WATCH_ENTRY}\n`;
   const unreadable = crontabTransport(unreadableInitial, { code: 1, stdout: "", stderr: "permission denied" });
   const unreadableCtx = { ...ctx, transport: unreadable.transport } as Context;
-  const readError = await deathOf(() => withOutputSink(() => {}, () => backupInstall(unreadableCtx, ["--apply"])));
+  const readError = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(unreadableCtx, ["install", "--apply"])));
   check("backup install aborts on crontab read failure", readError.includes("could not read crontab"), true);
   check("backup install leaves existing entries untouched on read failure", unreadable.crontab(), unreadableInitial);
   check("backup install never writes after a crontab read failure", unreadable.calls.some((call) => call.command === "crontab" && call.args[0] === "-"), false);
@@ -163,7 +160,7 @@ try {
   const written: string[] = [];
   await withOutputSink((chunk) => written.push(chunk), () => withScheduleRunner(
     async () => ({ code: 0, stdout: "", stderr: "" }),
-    () => backupInstall(ctx, []),
+    () => openclawCommands.backup.run(ctx, ["install"]),
     "win32",
   ));
   check("an unsupported transport prints instructions instead of a crontab line", written.join("").includes("Run this yourself"), true);
@@ -176,19 +173,19 @@ try {
           recorded.push({ command, args: [...args] });
           return { code: 0, stdout: "", stderr: "" };
         },
-        () => backupInstall(ctx, ["--apply"]),
+        () => openclawCommands.backup.run(ctx, ["install", "--apply"]),
         "win32",
       ));
     check("--apply on Windows runs schtasks through the recording transport, never a real one", recorded.length, 1);
     const failed = await deathOf(() => withOutputSink(() => {}, () => withScheduleRunner(
       async () => ({ code: 1, stdout: "", stderr: "access denied" }),
-      () => backupUninstall(ctx, ["--apply"]),
+      () => openclawCommands.backup.run(ctx, ["uninstall", "--apply"]),
       "win32",
     )));
     check("a failed Windows backup uninstall is reported", failed.includes("access denied"), true);
   }
   if (process.platform !== "win32") {
-    const message = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--apply"])));
+    const message = await deathOf(() => withOutputSink(() => {}, () => openclawCommands.backup.run(ctx, ["install", "--apply"])));
     check("--apply refuses outright on an unsupported, non-Windows transport", message.includes("refusing --apply"), true);
   }
 }

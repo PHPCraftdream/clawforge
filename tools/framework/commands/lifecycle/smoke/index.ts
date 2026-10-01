@@ -22,19 +22,17 @@ import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import { noProviderConfigured } from "#src/service/secrets.ts";
 import { valueAt } from "#src/commands/orchestration/inspect/helpers.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 import { reach, expect, describeError, evaluate, type Check, type SmokeResult } from "./verdict.ts";
 import { REJECTS_SECRETS_ENTRY, ACCEPTS_SHARE_ENTRY, ROUND_TRIP_ENTRY, ROUND_TRIP_CHECK, ARCHIVE_CHECK_NAMES, runArchiveChecks } from "./round-trip.ts";
 
 export { reach, expect, describeError, evaluate, toResult } from "./verdict.ts";
 export type { Check, SmokeResult } from "./verdict.ts";
 
-/** Drives both smoke's own parser and its openclawCommands declaration. */
-export const SMOKE_ARGUMENTS: CommandArgument[] = [
+export const SMOKE_ARGUMENTS = [
   { name: "quick", description: "Skip the slow round-trip check", kind: "flag" },
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 // Hard ceiling on smoke's agent round-trip, enforced inside the container.
 const AGENT_DEADLINE_S = 120;
@@ -238,12 +236,14 @@ export function report(summary: SmokeSummary, quick: boolean): void {
   log(`all ${summary.passed} checks passed${summary.notChecked > 0 ? `, ${summary.notChecked} not checked` : ""}`);
 }
 
-export async function smoke(ctx: Context, args: string[]): Promise<void> {
-  // Arguments first: a typo is refused before the target is contacted at all.
-  const parsed = parseDeclaredArgs(SMOKE_ARGUMENTS, args);
-  await requireBootstrapped(ctx);
-  const quick = parsed.quick === true;
-  const jsonOnly = parsed.json === true;
+export const SMOKE = commandBody({
+  effect: "change",
+  arguments: SMOKE_ARGUMENTS,
+  async run(ctx, values) {
+    // Arguments first: a typo is refused before the target is contacted at all.
+    await requireBootstrapped(ctx);
+    const quick = values.quick === true;
+    const jsonOnly = values.json === true;
   const selected = quick ? checks.filter((check) => check.name !== ROUND_TRIP_CHECK) : checks;
 
   if (jsonOnly) {
@@ -278,4 +278,5 @@ export async function smoke(ctx: Context, args: string[]): Promise<void> {
   log(`smoke run against ${ctx.settings.serviceUrl}`);
 
   report(await runSmokeSuite(ctx, selected), quick);
-}
+  },
+});

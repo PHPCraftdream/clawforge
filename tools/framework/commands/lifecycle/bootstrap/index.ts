@@ -23,22 +23,20 @@ import { applyConfig } from "#src/commands/orchestration/config.ts";
 import { preflightSecrets } from "#src/commands/management/secrets.ts";
 import { preflightPort } from "#src/commands/lifecycle/bootstrap/prereqs.ts";
 import { pinImageReference } from "#src/commands/lifecycle/instance/upgrade.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { collectConfiguredProviders } from "#src/service/secrets.ts";
 import { format, withDigest, tryParse, digestOf, hasDigest } from "#src/runtime/docker/image-ref.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 import { bootstrapCheck } from "./check.ts";
 
-/** Drives both bootstrap's own parser and its openclawCommands declaration. */
-export const BOOTSTRAP_ARGUMENTS: CommandArgument[] = [
+export const BOOTSTRAP_ARGUMENTS = [
   { name: "no-pull", description: "Use the image already present locally", kind: "flag" },
-  { name: "check", description: "Read-only prerequisite report — no lock, no mutation", kind: "flag" },
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
+  // A read flag: --check runs none of the mutation, so the call itself is a read.
+  { name: "check", description: "Read-only prerequisite report — no lock, no mutation", kind: "flag", effect: "read" },
+  ...LOCK_TAKEOVER_ARGUMENTS,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 /** After a fresh pull, repoints this deployment's OWN OPENCLAW_IMAGE from the moving tag to
  *  the exact digest just pulled — so a later pull of the same shared tag by another
@@ -70,54 +68,59 @@ async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
   return refreshed?.context ?? ctx;
 }
 
-export async function bootstrap(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(BOOTSTRAP_ARGUMENTS, args);
-  const jsonOnly = parsed.json === true;
+export const BOOTSTRAP = commandBody({
+  effect: "change",
+  preparesEnvironment: true,
+  arguments: BOOTSTRAP_ARGUMENTS,
+  async run(ctx, values) {
+    const jsonOnly = values.json === true;
 
-  // Read-only, and returned before anything below touches a lock or the target: --check
-  // answers "would this bootstrap need something I have not prepared yet" without ever
-  // creating ensureLockHome's own directory, let alone taking the instance lock guarded()
-  // below does. See bootstrap/check.ts.
-  if (parsed.check === true) {
-    await bootstrapCheck(ctx, jsonOnly);
-    return;
-  }
-
-  const noPull = parsed["no-pull"] === true;
-
-  if (jsonOnly) {
-    let outcome: BootstrapOutcome | undefined;
-    let caught: unknown;
-    await withOutputSink(() => {}, async () => {
-      try {
-        await ensureLockHome(ctx);
-        outcome = await guarded(ctx, "bootstrap", args, () => bootstrapLocked(ctx, noPull));
-      } catch (error) {
-        caught = error;
-      }
-    });
-    if (caught !== undefined) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      emit(`${JSON.stringify({ ok: false, changed: true, problems: [message] }, null, 2)}\n`);
-      throw caught;
+    // Read-only, and returned before anything below touches a lock or the target: --check
+    // answers "would this bootstrap need something I have not prepared yet" without ever
+    // creating ensureLockHome's own directory, let alone taking the instance lock guarded()
+    // below does. See bootstrap/check.ts.
+    if (values.check === true) {
+      await bootstrapCheck(ctx, jsonOnly);
+      return;
     }
-    emit(`${JSON.stringify({ ok: true, changed: true, ...outcome }, null, 2)}\n`);
-    return;
-  }
 
-  // Ahead of the lock, not inside it: the lock directory's PARENT is root:root on a fresh
-  // host, needing the same sudo escalation ensureDataDirs uses — which cannot run while this
-  // process is already trying to take a lock inside the very directory it is escalating to
-  // create. Idempotent and side-effect-free beyond permissions, so running it unlocked
-  // reintroduces none of the race the lock below exists to prevent.
-  await ensureLockHome(ctx);
+    const noPull = values["no-pull"] === true;
+    const takeover = takeoverOf(values);
 
-  // One lock for the whole sequence: separate locks per sub-command would let a run refused
-  // by another operation already holding the lock still WRITE config/.env (ensureSecretsFile)
-  // before the refusal surfaced. guarded() is nesting-safe, so applyConfig()/configureProvider()
-  // below run inside this one outer hold instead of each acquiring their own.
-  await guarded(ctx, "bootstrap", args, () => bootstrapLocked(ctx, noPull));
-}
+    if (jsonOnly) {
+      let outcome: BootstrapOutcome | undefined;
+      let caught: unknown;
+      await withOutputSink(() => {}, async () => {
+        try {
+          await ensureLockHome(ctx);
+          outcome = await guardedWith(ctx, "bootstrap", takeover, () => bootstrapLocked(ctx, noPull));
+        } catch (error) {
+          caught = error;
+        }
+      });
+      if (caught !== undefined) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        emit(`${JSON.stringify({ ok: false, changed: true, problems: [message] }, null, 2)}\n`);
+        throw caught;
+      }
+      emit(`${JSON.stringify({ ok: true, changed: true, ...outcome }, null, 2)}\n`);
+      return;
+    }
+
+    // Ahead of the lock, not inside it: the lock directory's PARENT is root:root on a fresh
+    // host, needing the same sudo escalation ensureDataDirs uses — which cannot run while this
+    // process is already trying to take a lock inside the very directory it is escalating to
+    // create. Idempotent and side-effect-free beyond permissions, so running it unlocked
+    // reintroduces none of the race the lock below exists to prevent.
+    await ensureLockHome(ctx);
+
+    // One lock for the whole sequence: separate locks per sub-command would let a run refused
+    // by another operation already holding the lock still WRITE config/.env (ensureSecretsFile)
+    // before the refusal surfaced. guarded() is nesting-safe, so applyConfig()/configureProvider()
+    // below run inside this one outer hold instead of each acquiring their own.
+    await guardedWith(ctx, "bootstrap", takeover, () => bootstrapLocked(ctx, noPull));
+  },
+});
 
 /** What bootstrap's own --json emits — assembled from the same facts the narration path
  *  prints, not a second read of anything. */

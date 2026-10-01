@@ -23,7 +23,6 @@ import { reportError, info, infoRaw } from "#framework/core/io/log.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
 import { structuredResult } from "#framework/integration/mcp/server.ts";
 import { cronLine, displayCommandLine, posixTargetInvocation, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
-import { backupInstall } from "#framework/commands/lifecycle/backup/install.ts";
 import { watchInstall } from "#framework/commands/operate/watch/install.ts";
 import { deploy } from "#framework/commands/management/deploy/index.ts";
 import { bootstrapAndReport } from "#framework/commands/management/deploy/sync.ts";
@@ -125,7 +124,7 @@ try {
     settings: { remotePath: "/opt/openclaw", gatewayPort: 18789 },
   } as unknown as Context;
   const jobs = [
-    { label: "backup install", run: (ctx: Context, args: string[]) => backupInstall(ctx, args), job: "backup", jobArgs: ["backup"], minutes: 1440 },
+    { label: "backup install", run: (ctx: Context, args: string[]) => openclawCommands.backup.run(ctx, ["install", ...args]), job: "backup", jobArgs: ["backup"], minutes: 1440 },
     { label: "watch install", run: (ctx: Context, args: string[]) => watchInstall(ctx, args), job: "watch", jobArgs: ["watch", "check"], minutes: 5 },
   ];
 

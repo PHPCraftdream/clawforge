@@ -4,26 +4,24 @@ import { log, info, die } from "#src/core/io/log.ts";
 import { humanSize } from "#src/core/io/size.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { deploymentName, composeProjectName } from "#src/runtime/deployment.ts";
 import { answeredProbe, sudoFor, sudoForRead } from "#src/runtime/datadir.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { ArgumentError } from "#src/core/command/errors.ts";
+import { commandBody, type ArgumentSpec, type Values } from "#src/core/command/spec.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
-/** Drives both destroy's own parser and its openclawCommands declaration. --data/--backups/
- *  --snapshots name one of the three directories this deployment declares — never a
- *  free-form path — so "only remove what the deployment itself declared" is structural,
- *  not a check against user input. */
-export const DESTROY_ARGUMENTS: CommandArgument[] = [
+/** --data/--backups/--snapshots name one of the three directories this deployment declares —
+ *  never a free-form path — so "only remove what the deployment itself declared" is
+ *  structural, not a check against user input. Default is a dry run (--yes performs it). */
+export const DESTROY_ARGUMENTS = [
   { name: "data", description: "Remove the data directory (OC_DATA_DIR)", kind: "flag" },
   { name: "backups", description: "Remove the backup directory (OC_BACKUP_DIR)", kind: "flag" },
   { name: "snapshots", description: "Remove the snapshot directory (OC_SNAPSHOT_DIR)", kind: "flag" },
-  { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag" },
+  { name: "yes", description: "Perform the removal instead of a dry run", kind: "flag", effect: "destroy" },
   { name: "confirm-name", description: "Confirms the deployment's own name", kind: "option", valueName: "name" },
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-];
+  ...LOCK_TAKEOVER_ARGUMENTS,
+] as const satisfies readonly ArgumentSpec[];
 
 interface DestroyTarget {
   readonly flag: "data" | "backups" | "snapshots";
@@ -33,11 +31,11 @@ interface DestroyTarget {
 
 /** Fixed order (data, backups, snapshots) regardless of flag order on the command line —
  *  what a check can assert against and what the plan prints in. */
-function destroyTargets(ctx: Context, parsed: Record<string, unknown>): DestroyTarget[] {
+function destroyTargets(ctx: Context, values: DestroyValues): DestroyTarget[] {
   const targets: DestroyTarget[] = [];
-  if (parsed.data === true) targets.push({ flag: "data", envName: "OC_DATA_DIR", path: ctx.settings.dataDir });
-  if (parsed.backups === true) targets.push({ flag: "backups", envName: "OC_BACKUP_DIR", path: ctx.settings.backupDir });
-  if (parsed.snapshots === true) targets.push({ flag: "snapshots", envName: "OC_SNAPSHOT_DIR", path: ctx.settings.snapshotDir });
+  if (values.data === true) targets.push({ flag: "data", envName: "OC_DATA_DIR", path: ctx.settings.dataDir });
+  if (values.backups === true) targets.push({ flag: "backups", envName: "OC_BACKUP_DIR", path: ctx.settings.backupDir });
+  if (values.snapshots === true) targets.push({ flag: "snapshots", envName: "OC_SNAPSHOT_DIR", path: ctx.settings.snapshotDir });
   return targets;
 }
 
@@ -166,6 +164,12 @@ async function destroyLocked(ctx: Context, targets: PreparedDestroyTarget[], boo
   }
 }
 
+interface DestroyValues extends Values<typeof DESTROY_ARGUMENTS> {}
+interface DestroyPlan extends DestroyValues {
+  /** Set only when a real run was asked for and the name matched. */
+  readonly confirmName?: string;
+}
+
 /** Removes what `bootstrap` created. Default is a dry run: prints the plan and exits 0,
  *  nothing touched. A real run needs `--yes` AND `--confirm-name <deployment name>` — two
  *  independent typo-proofs, since this is the one command that can take an instance's data
@@ -175,42 +179,55 @@ async function destroyLocked(ctx: Context, targets: PreparedDestroyTarget[], boo
  *  No operation record: Journal writes into `${dataDir}/clawforge-operations`, which
  *  `--data` is about to remove along with everything else in the tree — recording a
  *  destruction inside the thing being destroyed answers nothing a later reader could use. */
-export async function destroy(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(DESTROY_ARGUMENTS, args);
-  const targets = destroyTargets(ctx, parsed);
-  for (const target of targets) assertSafeRemovalShape(target);
-
-  // Never bootstrapped: no instance or lock home exists — only the independent dirs can be there.
-  const bootstrapped = await ctx.runtime.isRunning().then(() => true, (error) => {
-    if (error instanceof NotBootstrapped) return false;
-    throw error;
-  });
-
-  if (parsed.yes !== true) {
-    // An absent target is reported absent without any privilege probe.
-    let anyPresent = false;
-    for (const target of targets) {
-      if (!(await ctx.transport.exists(target.path))) continue;
-      anyPresent = true;
-      await verifyOrRemoveTarget(ctx, await prepareDestroyTarget(ctx, target), "verify");
+export const DESTROY = commandBody({
+  effect: "read",
+  arguments: DESTROY_ARGUMENTS,
+  prepare(call): DestroyPlan {
+    const values = call.values as DestroyValues;
+    // Refused in prepare, before any contact or lock: the name is local, the decision is
+    // the arguments'. Shape guards below stay in run — they read the deployment's settings.
+    if (values.yes === true) {
+      const confirmName = values["confirm-name"];
+      if (confirmName !== deploymentName()) {
+        throw new ArgumentError(
+          confirmName === undefined
+            ? "--yes needs --confirm-name <deployment name> too — this refuses a typo removing the wrong instance"
+            : `--confirm-name "${confirmName}" does not match this deployment's name "${deploymentName()}"`,
+          "confirm-name",
+        );
+      }
+      return { ...values, confirmName };
     }
-    await printDestroyPlan(ctx, targets, bootstrapped, anyPresent);
-    return;
-  }
+    return { ...values };
+  },
+  async run(ctx, plan) {
+    const targets = destroyTargets(ctx, plan);
+    for (const target of targets) assertSafeRemovalShape(target);
 
-  const confirmName = parsed["confirm-name"] as string | undefined;
-  if (confirmName !== deploymentName()) {
-    die(
-      confirmName === undefined
-        ? "--yes needs --confirm-name <deployment name> too — this refuses a typo removing the wrong instance"
-        : `--confirm-name "${confirmName}" does not match this deployment's name "${deploymentName()}"`,
-    );
-  }
-  const present = bootstrapped ? targets : [];
-  if (!bootstrapped) for (const target of targets) if (await ctx.transport.exists(target.path)) present.push(target);
-  const prepared = await Promise.all(present.map((target) => prepareDestroyTarget(ctx, target)));
-  for (const target of prepared) await verifyOrRemoveTarget(ctx, target, "verify");
+    // Never bootstrapped: no instance or lock home exists — only the independent dirs can be there.
+    const bootstrapped = await ctx.runtime.isRunning().then(() => true, (error) => {
+      if (error instanceof NotBootstrapped) return false;
+      throw error;
+    });
 
-  if (bootstrapped) await guarded(ctx, "destroy", args, () => destroyLocked(ctx, prepared));
-  else await destroyLocked(ctx, prepared, false);
-}
+    if (plan.confirmName === undefined) {
+      // An absent target is reported absent without any privilege probe.
+      let anyPresent = false;
+      for (const target of targets) {
+        if (!(await ctx.transport.exists(target.path))) continue;
+        anyPresent = true;
+        await verifyOrRemoveTarget(ctx, await prepareDestroyTarget(ctx, target), "verify");
+      }
+      await printDestroyPlan(ctx, targets, bootstrapped, anyPresent);
+      return;
+    }
+
+    const present = bootstrapped ? targets : [];
+    if (!bootstrapped) for (const target of targets) if (await ctx.transport.exists(target.path)) present.push(target);
+    const prepared = await Promise.all(present.map((target) => prepareDestroyTarget(ctx, target)));
+    for (const target of prepared) await verifyOrRemoveTarget(ctx, target, "verify");
+
+    if (bootstrapped) await guardedWith(ctx, "destroy", takeoverOf(plan), () => destroyLocked(ctx, prepared));
+    else await destroyLocked(ctx, prepared, false);
+  },
+});

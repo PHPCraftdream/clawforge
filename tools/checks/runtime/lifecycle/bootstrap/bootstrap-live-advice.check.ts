@@ -8,11 +8,11 @@
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { bootstrap } from "#framework/commands/lifecycle/bootstrap/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 const DATA_DIR = "/srv/openclaw/data";
 const LOCK_HOME = "/srv/openclaw/data-locks";
@@ -118,7 +118,7 @@ try {
     let said = "";
     await withOutputSink((chunk: string) => {
       said += chunk;
-    }, () => bootstrap(ctx, ["--no-pull"]));
+    }, () => openclawCommands.bootstrap.run(ctx, ["--no-pull"]));
 
     check(
       "a live instance hears that the applied desired state needs a restart",
@@ -133,7 +133,7 @@ try {
     let said = "";
     await withOutputSink((chunk: string) => {
       said += chunk;
-    }, () => bootstrap(ctx, ["--no-pull"]));
+    }, () => openclawCommands.bootstrap.run(ctx, ["--no-pull"]));
 
     check(
       "a fresh instance keeps the advice suppressed — this run starts the gateway itself",

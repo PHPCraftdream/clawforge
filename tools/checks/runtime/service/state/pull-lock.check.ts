@@ -1,9 +1,8 @@
-// pull() and the instance lock: one lock held through the archive and every sidecar, released
+// openclawCommands.pull.run() and the instance lock: one lock held through the archive and every sidecar, released
 // again when a step fails, and every publication failure leaving neither a discoverable partial
 // snapshot nor a held lock. A modelled target filesystem, no real target.
 
 import { resolve } from "node:path";
-import { pull, selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
 import { useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { takeLock } from "#framework/runtime/lock/instance-lock.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -13,6 +12,8 @@ import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { pullScenario, type PullFailure } from "./pull-harness.ts";
 import { modelMutationGuard } from "./mutation-guard.ts";
 import { check, finish } from "#checks/kit/harness.ts";
+import { selectSnapshotPaths } from "#framework/commands/lifecycle/state.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 // --- pull holds one lock through the archive and every sidecar ---------------------------
@@ -129,7 +130,7 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
   } as unknown as Context;
   modelMutationGuard(ctx);
 
-  await withOutputSink(() => {}, () => pull(ctx, []));
+  await withOutputSink(() => {}, () => openclawCommands.pull.run(ctx, []));
   const sidecar = files.get(`${snapshotPath}.secrets.env`) ?? "";
   check("pull refuses a competing lock at the copy boundary", competitorMessage.includes("another operation is changing this instance"), true);
   check("the competing operation attempted to take the lock", competitorAttempts, 1);
@@ -190,7 +191,7 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
   modelMutationGuard(ctx);
 
   let failedPull = false;
-  try { await withOutputSink(() => {}, () => pull(ctx, [])); } catch { failedPull = true; }
+  try { await withOutputSink(() => {}, () => openclawCommands.pull.run(ctx, [])); } catch { failedPull = true; }
   const next = await takeLock(ctx, "after-failure", "op-after-failure");
   await next.release();
   check("pull propagates a copy failure", failedPull, true);
@@ -206,7 +207,7 @@ for (const failure of ["template", "secrets", "verify", "archive", "archive-afte
   modelMutationGuard(scenario.ctx);
   let threw = false;
   try {
-    await withOutputSink(() => {}, () => pull(scenario.ctx, failure === "verify" ? ["--share"] : []));
+    await withOutputSink(() => {}, () => openclawCommands.pull.run(scenario.ctx, failure === "verify" ? ["--share"] : []));
   } catch {
     threw = true;
   }

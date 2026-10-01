@@ -9,7 +9,6 @@ import { createInterface } from "node:readline/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe, assertCanonicalAncestry, physicalPath } from "#src/runtime/datadir.ts";
 import {
   archiveRoot,
@@ -40,28 +39,22 @@ import {
   type PrivatePathsLedgerState,
 } from "#src/security/privacy/private-paths-ledger.ts";
 import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
-import type { CommandArgument } from "#src/core/app.ts";
 import type { Recipe } from "#src/service/recipe.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { FORCE_ARGUMENT, BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { commandBody, type ArgumentSpec, type Values } from "#src/core/command/spec.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
+import { FORCE_ARGUMENT, LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
-/** Drives both restore's own parser and its openclawCommands declaration. */
-export const RESTORE_ARGUMENTS: CommandArgument[] = [
+export const RESTORE_ARGUMENTS = [
   { name: "archive", description: "Path to the archive; newest if omitted", kind: "positional" },
-  FORCE_ARGUMENT,
-  BREAK_LOCK_ARGUMENT,
-  BREAK_FOREIGN_LOCK_ARGUMENT,
+  { ...FORCE_ARGUMENT, setByConfirm: true },
+  ...LOCK_TAKEOVER_ARGUMENTS,
   { name: "fresh-identity", description: "Drop identity and paired devices (cloning, not moving)", kind: "flag" },
   { name: "no-start", description: "Leave the service stopped afterwards", kind: "flag" },
-  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag" },
-  { name: "json", description: "Emit restored data and actual gateway startup outcome as JSON", kind: "flag" },
-];
+  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag", effect: "read" },
+  { name: "json", summary: "Emit restored data and the gateway startup outcome as JSON", description: "Emit restored data and actual gateway startup outcome as JSON", kind: "flag" },
+] as const satisfies readonly ArgumentSpec[];
 
-/** Whether argv requests --dry-run (an option value is never mistaken for the flag) — same
- *  shape as apply.ts's isApplyDryRun. */
-export function isRestoreDryRun(args: readonly string[]): boolean {
-  return parseDeclaredArgs(RESTORE_ARGUMENTS, args)["dry-run"] === true;
-}
+export interface RestoreValues extends Values<typeof RESTORE_ARGUMENTS> {}
 
 export interface RestoreOptions {
   force?: boolean;
@@ -564,70 +557,73 @@ export async function restoreDryRun(ctx: Context, archive: string, options: Rest
   printRestorePlan(plan);
 }
 
-export async function restore(ctx: Context, args: string[]): Promise<void> {
-  const options: RestoreOptions = {};
-  const parsed = parseDeclaredArgs(RESTORE_ARGUMENTS, args);
-  if (parsed.force === true) options.force = true;
-  if (parsed["fresh-identity"] === true) options.freshIdentity = true;
-  if (parsed["no-start"] === true) options.noStart = true;
-  const dryRun = parsed["dry-run"] === true;
-  const jsonOnly = parsed.json === true;
-  let archive = parsed.archive as string | undefined;
+export const RESTORE = commandBody({
+  effect: "destroy",
+  arguments: RESTORE_ARGUMENTS,
+  async run(ctx, values) {
+    const options: RestoreOptions = {};
+    if (values.force === true) options.force = true;
+    if (values["fresh-identity"] === true) options.freshIdentity = true;
+    if (values["no-start"] === true) options.noStart = true;
+    const dryRun = values["dry-run"] === true;
+    const jsonOnly = values.json === true;
+    let archive = values.archive;
 
-  if (archive === undefined) {
-    const { archive: newest, skipped } = await newestArchive(ctx, ctx.settings.backupDir);
-    if (newest === undefined) {
-      if (skipped.length > 0) {
-        die(
-          `no full archives in ${ctx.settings.backupDir} — the ${skipped.length} archive(s) there are profile-limited ` +
-            `(${skipped[0]}) and restoring one replaces this instance with something that cannot start. ` +
-            "Run ./clawforge backup first, or pass the archive explicitly if that is really what you want.",
-        );
+    if (archive === undefined) {
+      const { archive: newest, skipped } = await newestArchive(ctx, ctx.settings.backupDir);
+      if (newest === undefined) {
+        if (skipped.length > 0) {
+          die(
+            `no full archives in ${ctx.settings.backupDir} — the ${skipped.length} archive(s) there are profile-limited ` +
+              `(${skipped[0]}) and restoring one replaces this instance with something that cannot start. ` +
+              "Run ./clawforge backup first, or pass the archive explicitly if that is really what you want.",
+          );
+        }
+        die(`no archives found in ${ctx.settings.backupDir} — pass one explicitly`);
       }
-      die(`no archives found in ${ctx.settings.backupDir} — pass one explicitly`);
-    }
-    archive = newest;
-    if (!jsonOnly) {
-      // Said rather than done quietly: the operator who just ran `pull --share` and then
-      // `restore` is entitled to know why the newest file in that directory was not used.
-      for (const entry of skipped) info(`skipping ${entry} — not a full backup`);
-      // Before any confirmation prompt (below, inside restoreArchive) or anything else runs:
-      // an operator asking "which one" must not have to read it out of a log a restore is
-      // already mid-way through.
-      const pickedName = archive.slice(archive.lastIndexOf("/") + 1);
-      const pickedStamp = parseBackupArchive(pickedName, deploymentName())?.stamp;
-      log(`using the newest archive: ${pickedName}${pickedStamp === undefined ? "" : ` (${formatArchiveStamp(pickedStamp)})`}`);
-    }
-  }
-
-  if (dryRun) {
-    // Read-only, same convention as apply --dry-run/plan: no instance lock taken, so this
-    // never blocks a concurrent apply/restore/push longer than the validation itself takes.
-    await restoreDryRun(ctx, archive, options, jsonOnly);
-    return;
-  }
-
-  if (jsonOnly) {
-    let caught: unknown;
-    let outcome: RestoreOutcome | undefined;
-    await withOutputSink(() => {}, async () => {
-      try {
-        outcome = await guarded(ctx, "restore", args, () => restoreArchive(ctx, archive!, options));
-      } catch (error) {
-        caught = error;
+      archive = newest;
+      if (!jsonOnly) {
+        // Said rather than done quietly: the operator who just ran `pull --share` and then
+        // `restore` is entitled to know why the newest file in that directory was not used.
+        for (const entry of skipped) info(`skipping ${entry} — not a full backup`);
+        // Before any confirmation prompt (below, inside restoreArchive) or anything else runs:
+        // an operator asking "which one" must not have to read it out of a log a restore is
+        // already mid-way through.
+        const pickedName = archive.slice(archive.lastIndexOf("/") + 1);
+        const pickedStamp = parseBackupArchive(pickedName, deploymentName())?.stamp;
+        log(`using the newest archive: ${pickedName}${pickedStamp === undefined ? "" : ` (${formatArchiveStamp(pickedStamp)})`}`);
       }
-    });
-    if (caught !== undefined) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      emit(`${JSON.stringify({ ok: false, changed: true, archive, problems: [message] }, null, 2)}\n`);
-      throw caught;
     }
-    emit(`${JSON.stringify({ ok: true, changed: true, archive, freshIdentity: options.freshIdentity === true, ...outcome }, null, 2)}\n`);
-    return;
-  }
 
-  // The most destructive command here, and until now the only mutating one taking no lock:
-  // it replaces the entire data directory while anything else may be writing into it.
-  // Nested under push, which already holds it, this is a no-op.
-  await guarded(ctx, "restore", args, () => restoreArchive(ctx, archive!, options));
-}
+    if (dryRun) {
+      // Read-only, same convention as apply --dry-run/plan: no instance lock taken, so this
+      // never blocks a concurrent apply/restore/push longer than the validation itself takes.
+      await restoreDryRun(ctx, archive, options, jsonOnly);
+      return;
+    }
+
+    if (jsonOnly) {
+      let caught: unknown;
+      let outcome: RestoreOutcome | undefined;
+      await withOutputSink(() => {}, async () => {
+        try {
+          outcome = await guardedWith(ctx, "restore", takeoverOf(values), () => restoreArchive(ctx, archive!, options));
+        } catch (error) {
+          caught = error;
+        }
+      });
+      if (caught !== undefined) {
+        const message = caught instanceof Error ? caught.message : String(caught);
+        emit(`${JSON.stringify({ ok: false, changed: true, archive, problems: [message] }, null, 2)}\n`);
+        throw caught;
+      }
+      emit(`${JSON.stringify({ ok: true, changed: true, archive, freshIdentity: options.freshIdentity === true, ...outcome }, null, 2)}\n`);
+      return;
+    }
+
+    // The most destructive command here, and until now the only mutating one taking no lock:
+    // it replaces the entire data directory while anything else may be writing into it.
+    // Nested under push, which already holds it, this is a no-op.
+    await guardedWith(ctx, "restore", takeoverOf(values), () => restoreArchive(ctx, archive!, options));
+  },
+});

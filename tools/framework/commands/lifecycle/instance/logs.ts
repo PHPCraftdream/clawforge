@@ -1,19 +1,17 @@
 // `logs`: bounded read or live follow, with --tail/--since/--grep.
 
 import { die } from "#src/core/io/log.ts";
-import { validSince } from "#src/core/values/durations.ts";
 import { shouldFollow, emitRaw, withOutputSink } from "#src/core/io/output.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
-import type { Context } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import { countValue, regexValue } from "#src/core/values/value.ts";
+import { sinceValue } from "#src/core/values/durations.ts";
+import { commandBody, type ArgumentSpec } from "#src/core/command/spec.ts";
 
-/** Drives logs's own parser and its openclawCommands declaration. */
-export const LOGS_ARGUMENTS: CommandArgument[] = [
-  { name: "tail", description: "Lines to return when reading rather than following", kind: "option", valueName: "n" },
-  { name: "since", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option", valueName: "duration|timestamp" },
-  { name: "grep", description: "Only lines matching this regular expression", kind: "option", valueName: "pattern" },
-];
+export const LOGS_ARGUMENTS = [
+  { name: "tail", description: "Lines to return when reading rather than following", kind: "option", valueName: "n", parse: countValue("a number of lines") },
+  { name: "since", summary: "Only lines at or after this duration/timestamp", description: "Only lines at or after this duration/timestamp (10m, 2h, 1h30m, or RFC3339/ISO)", kind: "option", valueName: "duration|timestamp", parse: sinceValue },
+  { name: "grep", description: "Only lines matching this regular expression", kind: "option", valueName: "pattern", parse: regexValue() },
+] as const satisfies readonly ArgumentSpec[];
 
 /** One capability, two shapes. On a terminal this follows the log until interrupted; anywhere
  *  else — an MCP call, a script, a redirect — following would never return, so it reads a
@@ -22,36 +20,27 @@ export const LOGS_ARGUMENTS: CommandArgument[] = [
  *  The switch is on how output is consumed, not a separate command — recipe.ts's logs action
  *  makes the same choice. Only the validated `--since` reaches the runtime; any other token
  *  is refused, never passed to compose as a service name. */
-export async function logs(ctx: Context, args: string[]): Promise<void> {
-  // Arguments first: every refusal below happens before the target is contacted at all.
-  const parsed = parseDeclaredArgs(LOGS_ARGUMENTS, args);
-  const tail = parsed.tail as string | undefined;
-  if (tail !== undefined && !/^\d+$/.test(tail)) die(`--tail takes a number of lines, not "${tail}"`);
-  const since = parsed.since as string | undefined;
-  // --since is forwarded to compose as-is — the only piece of logs's own argv that reaches
-  // the runtime at all — so a typo is refused here instead of quietly changing what compose
-  // thinks "since" means. The spellings are the shared grammar's since-mode.
-  if (since !== undefined && !validSince(since)) {
-    die(`--since takes a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time, not "${since}"`);
-  }
-  const grep = parsed.grep as string | undefined;
-  const pattern = grep === undefined ? undefined : compileGrep(grep);
-  await requireBootstrapped(ctx);
-  const rest = since === undefined ? [] : ["--since", since];
+export const LOGS = commandBody({
+  effect: "read",
+  arguments: LOGS_ARGUMENTS,
+  async run(ctx, { tail, since, grep }) {
+    await requireBootstrapped(ctx);
+    const rest = since === undefined ? [] : ["--since", since];
 
-  if (shouldFollow()) {
-    if (pattern === undefined) {
-      await ctx.runtime.followLogs(rest);
+    if (shouldFollow()) {
+      if (grep === undefined) {
+        await ctx.runtime.followLogs(rest);
+        return;
+      }
+      // A sink makes the output captured, so the child never inherits stdio and can be filtered.
+      await withOutputSink(grepFollowSink(grep), () => ctx.runtime.followLogs(rest));
       return;
     }
-    // A sink makes the output captured, so the child never inherits stdio and can be filtered.
-    await withOutputSink(grepFollowSink(pattern), () => ctx.runtime.followLogs(rest));
-    return;
-  }
 
-  const output = await ctx.runtime.readLogs(tail, rest);
-  emitRaw(pattern === undefined ? output : filterLines(output, pattern));
-}
+    const output = await ctx.runtime.readLogs(tail === undefined ? undefined : String(tail), rest);
+    emitRaw(grep === undefined ? output : filterLines(output, grep));
+  },
+});
 
 /** Takes a validated recipe action's tail binding without losing inline literal values. */
 export function takeTail(args: string[]): { tail?: string; rest: string[] } {
@@ -64,14 +53,6 @@ export function takeTail(args: string[]): { tail?: string; rest: string[] } {
   if (!/^\d+$/.test(value)) die(`--tail takes a number of lines, not "${value}"`);
 
   return { tail: value, rest: [...args.slice(0, at), ...args.slice(at + (inline ? 1 : 2))] };
-}
-
-function compileGrep(pattern: string): RegExp {
-  try {
-    return new RegExp(pattern);
-  } catch (error) {
-    die(`--grep takes a valid regular expression: ${(error as Error).message}`);
-  }
 }
 
 /** Keeps only the lines `pattern` matches, preserving a trailing newline when the input had

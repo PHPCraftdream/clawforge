@@ -69,7 +69,14 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     const { setsCommands } = await import(${JSON.stringify(url("commands/interface/groups/openclawCommands.sets"))});
     const { log } = await import(${JSON.stringify(url("core/io/log"))});
     await useDeployment(${JSON.stringify(root)});
+    const { commandBody, specData, materializeCommands } = await import(${JSON.stringify(url("core/command/spec"))});
+    const { RESTORE } = await import(${JSON.stringify(url("commands/lifecycle/restore/index"))});
+    const { PUSH } = await import(${JSON.stringify(url("commands/lifecycle/state"))});
+    const { DESTROY } = await import(${JSON.stringify(url("commands/lifecycle/instance/destroy"))});
     const spy = async (_ctx, args) => { log(args.join(" ") || "status"); };
+    // A spec command keeps its effects, arguments and phases; only its run is stubbed, to echo the plan's set flags.
+    const planSpy = async (_ctx, plan) => { log(Object.keys(plan).filter((key) => plan[key] === true).map((key) => "--" + key).join(" ") || "status"); };
+    const stubbed = (name, body) => materializeCommands({ [name]: { summary: lifecycleCommands[name].summary, group: lifecycleCommands[name].group, ...commandBody({ ...specData(body), run: planSpy }) } })[name];
     await serveMcp({ name: "policy", commands: {
       // A replaced run reads as a legacy command, whose classification comes from its own
       // predicates — so the stub declares the ones the real command now derives from its
@@ -78,9 +85,9 @@ function runServer(script: string, input: string): Promise<{ code: number | null
       secrets: { ...managementCommands.secrets, run: spy,
         readOnlyWhen: (args) => !["--init-store", "--apply", "--dump", "--template"].some((flag) => args.includes(flag)),
         requiresConfirmationWhen: (args) => ["--init-store", "--apply", "--dump"].some((flag) => args.includes(flag)) },
-      restore: { ...lifecycleCommands.restore, run: spy },
-      push: { ...lifecycleCommands.push, run: spy },
-      destroy: { ...lifecycleCommands.destroy, run: spy },
+      restore: stubbed("restore", RESTORE),
+      push: stubbed("push", PUSH),
+      destroy: stubbed("destroy", DESTROY),
       set: { ...setsCommands.set, run: spy },
     }});
   `;

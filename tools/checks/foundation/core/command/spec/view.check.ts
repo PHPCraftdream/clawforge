@@ -187,7 +187,10 @@ import { check, finish } from "#checks/kit/harness.ts";
       // A composed description ("X (build); Y (forget)") is shortened per part, each part
       // keeping its own actions (R32-04).
       const parts = splitActionScoped(argument.description, argument.actions);
-      const short = parts === undefined
+      // A declared summary is the schema text verbatim (stage 3): the oracle defers to it.
+      const short = argument.summary !== undefined
+        ? argument.summary + (argument.actions === undefined ? "" : ` (${argument.actions.join(", ")})`)
+        : parts === undefined
         ? (() => {
           const single = oracleShort(argument.description);
           return argument.actions === undefined ? single : `${single} (${argument.actions.join(", ")})`;

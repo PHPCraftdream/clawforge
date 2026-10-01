@@ -14,17 +14,18 @@ import { humanSize } from "#src/core/io/size.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { unreachableProblem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, type ActionScope } from "#src/core/command/index.ts";
+import type { ArgumentSpec, Values } from "#src/core/command/spec.ts";
 import {
   listBackupArchives, listReplacedCopies, defaultRestoreArchive,
   InventoryUnreadableError,
   type BackupArchiveInfo, type ReplacedCopyInfo,
 } from "#src/service/archive/index.ts";
 
-export const JSON_ARGUMENT: CommandArgument = { name: "json", description: "Emit archives and replaced copies as JSON instead of text", kind: "flag" };
+export const JSON_ARGUMENT = { name: "json", description: "Emit archives and replaced copies as JSON instead of text", kind: "flag" } as const satisfies ArgumentSpec;
 
-export const BACKUP_LIST_ARGUMENTS: CommandArgument[] = [JSON_ARGUMENT];
+export const BACKUP_LIST_ARGUMENTS = [JSON_ARGUMENT] as const satisfies readonly ArgumentSpec[];
+
+export interface BackupListValues extends Values<typeof BACKUP_LIST_ARGUMENTS> {}
 
 function archiveLine(entry: BackupArchiveInfo, isDefault: boolean): string {
   return `${entry.name}  ${humanSize(entry.sizeBytes)}  ${entry.modifiedAt}  ${entry.profile}${isDefault ? "  (default for restore)" : ""}`;
@@ -34,8 +35,8 @@ function replacedLine(entry: ReplacedCopyInfo): string {
   return `${entry.name}  ${humanSize(entry.sizeBytes)}  ${entry.modifiedAt}`;
 }
 
-export async function backupList(ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
-  const jsonOnly = parseDeclaredArgs(BACKUP_LIST_ARGUMENTS, args, scope).json === true;
+export async function backupList(ctx: Context, values: BackupListValues): Promise<void> {
+  const jsonOnly = values.json === true;
 
   const { backupDir, dataDir } = ctx.settings;
   let archives: BackupArchiveInfo[];

@@ -6,11 +6,10 @@
 // `vault`, the `.example` neighbor of a declared exact file — are valid content, and a
 // migrate pull carrying only those must publish, not reject and delete.
 //
-// Real pull() is driven through the shared harness, and the stub listing is the seam —
+// Real openclawCommands.pull.run() is driven through the shared harness, and the stub listing is the seam —
 // listing fidelity against real tar is snapshot.check.ts's job, not this file's.
 
 import { pullScenario } from "../../../runtime/service/state/pull-harness.ts";
-import { pull } from "#framework/commands/lifecycle/state.ts";
 import { clearRecipesDir, recipesDirectory, useRecipesDir } from "#framework/service/recipe.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -19,6 +18,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 
 useDeployment(resolve(monorepoRoot, "apps", "example app"));
 useComposeProjectOverride("example-app");
@@ -44,7 +44,7 @@ try {
   const output: string[] = [];
   let message: string | undefined;
   try {
-    await withOutputSink((chunk) => output.push(chunk), () => pull(scenario.ctx, []));
+    await withOutputSink((chunk) => output.push(chunk), () => openclawCommands.pull.run(scenario.ctx, []));
   } catch (error) {
     message = (error as Error).message;
   }
@@ -58,7 +58,7 @@ try {
   const clean = pullScenario();
   let cleanThrew = false;
   try {
-    await withOutputSink(() => {}, () => pull(clean.ctx, []));
+    await withOutputSink(() => {}, () => openclawCommands.pull.run(clean.ctx, []));
   } catch {
     cleanThrew = true;
   }
@@ -72,7 +72,7 @@ try {
   const neighbors = pullScenario("private-neighbor");
   let neighborsThrew = false;
   try {
-    await withOutputSink(() => {}, () => pull(neighbors.ctx, []));
+    await withOutputSink(() => {}, () => openclawCommands.pull.run(neighbors.ctx, []));
   } catch {
     neighborsThrew = true;
   }

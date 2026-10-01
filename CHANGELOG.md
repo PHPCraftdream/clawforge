@@ -6,6 +6,28 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* PowerShell completion answers again with a typed prefix (`clawforge sta<Tab>`, `--ap<Tab>`,
+  `backup l<Tab>`, `watch in<Tab>`), which the previous script lost by scanning the word being
+  completed as a typed command; `--app <name> backup <Tab>` offers the default action's flags
+  again, and `backup --hot <Tab>` no longer offers action words backup would reject. The
+  completer's candidate decision now lives in one function the checks drive through
+  words-and-cursor scenarios — against the emitted tables of the pwsh script and a real
+  sourced bash script, not script substrings.
+* Completion covers `help <command>` (command names), `completion <shell>` (the shell names),
+  `host <context>` and every option declared with fixed choices (`--profile`, `--kind`,
+  `--client`) at its value position instead of offering flags a command would refuse there.
+  `<deployment command> --help` and `help <deployment command>` answer from the built-in
+  declarations outside an app folder and in a checkout subfolder — with a note naming where
+  the command runs — instead of refusing with "needs an app folder".
+* The action-argument drift check now drives every action command's real dispatcher (watch,
+  expose, set, backup, recipe) per action and flag — declared means accepted — so a table
+  drift like `watch status` gaining `--install` flags fails it. The MCP description oracle
+  states structural properties (prefix of the declaration's text, clause-boundary or
+  ellipsis-marked cut, no dangling word, budget) instead of repeating the implementation's
+  cut algorithm, and the gate probe writes a uniquely named scratch deployment (own prefix,
+  refuses to adopt an existing directory, sweeps its stale fixtures) and asserts the app
+  actually loaded. The module-load check lists the two import cycles the graph shows, not
+  the broken `set` one.
 * The checks now distinguish the fixes they cover: a scratch checkout deployment's `app.ts` importing
   `@clawforge/framework/app` must load through the gate, the watch cycle lock's start-time tolerance
   is asserted at absolute 14 s/16 s offsets, the upgrade `health-fail` scenario reaches the health

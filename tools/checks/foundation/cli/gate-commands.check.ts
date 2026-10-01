@@ -275,6 +275,26 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const deployment = await help(["help", "status"]);
   check("a real deployment command still says it needs an app folder", deployment.code === 1 && deployment.text.includes("needs an app folder"), true);
 
+  // R32-09: with a deploymentHelp renderer (the gates that carry openclawCommands), the same
+  // request answers from the built-in declaration, with where the command runs appended.
+  const helped = async (argv: string[], extra: { checkout?: string } = {}): Promise<{ code: number | undefined; text: string }> => {
+    let text = "";
+    const code = await withOutputSink((chunk) => {
+      text += chunk;
+    }, async () => helpWithoutDeployment(gate, argv, { ...context, ...extra, deploymentHelp: (name) => { text += `HELP-BODY:${name}\n`; } }));
+    return { code, text };
+  };
+  const helpedStatus = await helped(["help", "status"]);
+  check("help <deployment command> renders the declaration's help and exits 0", helpedStatus.code === 0 && helpedStatus.text.includes("HELP-BODY:status"), true);
+  check("and says where the command runs, outside an app", helpedStatus.text.includes('"status" runs inside an app folder') && helpedStatus.text.includes("clawforge init"), true);
+  const helpedFlagForm = await helped(["status", "--help"]);
+  check("<deployment command> --help answers the same way", helpedFlagForm.code === 0 && helpedFlagForm.text.includes("HELP-BODY:status"), true);
+  const bareDeployment = await helped(["status"]);
+  check("a bare deployment command is still left to the caller", bareDeployment.code === undefined && bareDeployment.text === "", true);
+  const helpedInCheckout = await helped(["help", "status"], { checkout: "/some/checkout" });
+  check("in a checkout the note points at apps/<name> instead of init", helpedInCheckout.code === 0 && helpedInCheckout.text.includes("run it from apps/<name>"), true);
+  check("a deployment command is still no typo in a checkout subfolder", checkoutSubfolderReport("status", "/some/checkout"), undefined);
+
   const inCheckout = await help(["help"], { checkout: "/some/checkout" });
   check("in a checkout the list does not offer init", inCheckout.code === 0 && !inCheckout.text.includes("Initialise this directory") && !inCheckout.text.includes("clawforge init"), true);
   check("and says it is a checkout whose root lists the commands", inCheckout.text.includes("ClawForge checkout") && inCheckout.text.includes("./clawforge help"), true);

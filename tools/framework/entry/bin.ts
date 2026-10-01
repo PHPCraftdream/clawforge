@@ -26,6 +26,7 @@ import { safeName } from "../core/names.ts";
 import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";
+import { renderFullCommandHelp } from "../core/io/help-render.ts";
 import { normalizeVersionAlias, makeVersionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
 import { delegateToOwnFramework, findCheckoutRoot, importsCheckoutSources, refuseStrayCheckoutApp, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
@@ -144,7 +145,16 @@ try {
     for (const line of subfolder) reportErrorVerbatim(line);
     process.exit(1);
   }
-  const helpExit = helpWithoutDeployment(gateCommands, argv, { deploymentCommands: Object.keys(openclawCommands), checkout });
+  // Help for a deployment command answers without a deployment, from the built-in
+  // declarations — the same way the checkout root's gate answers (R32-09).
+  const helpExit = helpWithoutDeployment(gateCommands, argv, {
+    deploymentCommands: Object.keys(openclawCommands),
+    checkout,
+    deploymentHelp: (name) => {
+      const declared = openclawCommands[name];
+      if (declared !== undefined) renderFullCommandHelp(name, declared);
+    },
+  });
   if (helpExit !== undefined) process.exit(helpExit);
   reportError(`no app.ts in ${appRoot}`);
   if (checkout !== undefined) reportErrorVerbatim(`this is a ClawForge checkout (${checkout}) — run ${invocation()} from its root (in bash also ./clawforge)`);

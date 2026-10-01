@@ -73,6 +73,11 @@ export interface HelpContext {
   readonly deploymentCommands: readonly string[];
   /** The ClawForge checkout the directory is in, if any: `init` is refused there. */
   readonly checkout?: string;
+  /** Renders a deployment command's --help body from its declaration, without a
+   *  deployment (built from openclawCommands, as the checkout root does). Absent — as in
+   *  older callers — a deployment command stays refused with the "needs an app folder"
+   *  advice. */
+  readonly deploymentHelp?: (name: string) => void;
 }
 
 /** `help`/`--help`/`-h` (or no argument at all) where no deployment exists: the gate's own
@@ -84,6 +89,13 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   const offered = checkout === undefined ? commands : commands.filter((entry) => entry.name !== "init");
   const candidates = [...context.deploymentCommands, ...offered.map((entry) => entry.name), "help"];
   if (first !== undefined && first !== "help" && first !== "--help" && first !== "-h") {
+    // `<deployment command> --help` answers without a deployment, from the built-in
+    // declaration — same as the checkout root (R32-09). A bare command stays a refusal.
+    if (context.deploymentCommands.includes(first) && context.deploymentHelp !== undefined && isDeploymentHelpRequest(argv, context.deploymentCommands)) {
+      context.deploymentHelp(first);
+      deploymentHelpNote(first, checkout);
+      return 0;
+    }
     // A word nothing declares is a typo, not a missing app.ts; options are left to the caller.
     if (first.startsWith("-") || first === "control-mcp" || candidates.includes(first) || commands.some((entry) => entry.name === first)) return undefined;
     reportUnknownCommand(first, candidates);
@@ -115,6 +127,14 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
       return 1;
     }
   }
+  // A deployment command's declaration is built in — the checkout root answers
+  // `help <cmd>` from it, so a subfolder and an installed command outside an app answer
+  // the same way instead of refusing (R32-09).
+  if (context.deploymentCommands.includes(target) && context.deploymentHelp !== undefined) {
+    context.deploymentHelp(target);
+    deploymentHelpNote(target, checkout);
+    return 0;
+  }
   if (context.deploymentCommands.includes(target)) {
     reportError(
       checkout === undefined
@@ -125,6 +145,17 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   }
   reportUnknownCommand(target, candidates);
   return 1;
+}
+
+/** The one line after a deployment command's help, rendered without a deployment: where
+ *  the command actually runs — the refusal's advice, one level deeper. */
+function deploymentHelpNote(name: string, checkout: string | undefined): void {
+  info("");
+  info(
+    checkout === undefined
+      ? `"${name}" runs inside an app folder — there is no app.ts here; run: ./clawforge init`
+      : `"${name}" runs inside an app folder — this is a ClawForge checkout; run it from apps/<name> or with ./clawforge at the checkout root`,
+  );
 }
 
 /** The monorepo gate's own commands, which are real in any folder of a checkout — just run

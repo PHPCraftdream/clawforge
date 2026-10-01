@@ -4,7 +4,8 @@
 // onto the checkout's own framework sources) and an installed one (the recipe's own node_modules
 // answers first, and the checkout mapping never shadows it).
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { recipe } from "#framework/commands/management/recipe/index.ts";
@@ -97,14 +98,25 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
 // `@clawforge/framework/app` specifier loads only while tools/clawforge.ts registers
 // resolveFrameworkFromSources() — a probe of the loader's own functions cannot tell.
 {
-  const name = "r31gateprobe";
-  const appDir = resolve(monorepoRoot, "apps", name);
-  await mkdir(appDir, { recursive: true });
+  // Unique per run: a fixed name would overwrite and delete a directory someone else owns,
+  // and a killed run would leave it behind under apps/ as a phantom deployment (R32-10).
+  // Stale fixtures from earlier killed runs under this check's own prefix are swept first —
+  // safe because the file is marked check:exclusive and owns that prefix.
+  const prefix = "gateprobe-";
+  const appsDir = resolve(monorepoRoot, "apps");
+  await mkdir(appsDir, { recursive: true });
+  for (const entry of await readdir(appsDir)) {
+    if (entry.startsWith(prefix)) await rm(resolve(appsDir, entry), { recursive: true, force: true });
+  }
+  const name = `${prefix}${randomBytes(6).toString("hex")}`;
+  const appDir = resolve(appsDir, name);
+  // No recursive: an existing directory is never adopted or silently cleared.
+  await mkdir(appDir);
   await writeFile(
     resolve(appDir, "app.ts"),
     [
       "import { defineApp } from \"@clawforge/framework/app\";",
-      "export default defineApp({ name: \"r31gateprobe\", description: \"checkout gate probe\", commands: { ping: { summary: \"probe\" } } });",
+      "export default defineApp({ name: \"gateprobe\", description: \"checkout gate probe\", commands: { ping: { summary: \"probe\" } } });",
       "",
     ].join("\n"),
     "utf8",
@@ -115,12 +127,15 @@ async function verifyRevision(name: string): Promise<{ revision?: number }> {
       ["--experimental-strip-types", "tools/clawforge.ts", "--app", name, "status"],
       { cwd: monorepoRoot, timeoutMs: 120_000 },
     );
+    // Positive assertion: the app LOADED far enough for the dispatcher to answer — a loader
+    // failure, a timeout or an otherwise empty output must fail here, not pass vacuously.
+    const loaded = result.output.includes("unknown command: status");
     check(
       "a checkout deployment's app.ts importing @clawforge/framework/app loads through the gate",
-      result.output.includes("cannot load deployment") === false && result.output.includes("Cannot find package '@clawforge/framework'") === false,
+      loaded && !result.output.includes("cannot load deployment") && !result.output.includes("Cannot find package '@clawforge/framework'"),
       true,
     );
-    if (result.output.includes("cannot load deployment")) process.stderr.write(`    ${result.output.split("\n").filter((line) => /cannot load|Cannot find/.test(line)).join("\n    ")}\n`);
+    if (!loaded) process.stderr.write(`    ${result.output.split("\n").filter((line) => /unknown command|cannot load|Cannot find|Error/.test(line)).slice(0, 4).join("\n    ")}\n`);
   } finally {
     await rm(appDir, { recursive: true, force: true });
   }

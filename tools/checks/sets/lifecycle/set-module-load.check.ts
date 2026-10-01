@@ -1,8 +1,9 @@
 // Each module in a known import cycle loads on its own, whichever the entry: a cycle entered
 // from the other side fails with a TDZ error only when that module is the first import
-// (set.ts once read set-try.ts's argument tables through such a cycle). Three cycles exist
-// today: the `set` actions, the lifecycle/restore state helpers, and the artifact install →
-// provision-agent → orchestration loop.
+// (set.ts once read set-try.ts's argument tables through such a cycle). Two static runtime
+// cycles exist today (verified over the import graph, type-only and lazy dynamic imports
+// excluded): the lifecycle/restore state helpers and the artifact install → provision-agent
+// → orchestration loop. The `set` actions cycle was broken in 6c43b01 and must not return.
 
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -12,7 +13,6 @@ import { runProcess } from "#checks/kit/spawn.ts";
 
 const framework = (...parts: string[]) => resolve(monorepoRoot, "tools", "framework", ...parts);
 const CYCLES: Record<string, string[]> = {
-  "set actions": ["commands/sets/set.ts", "commands/sets/set-try.ts", "commands/sets/set-diff.ts", "commands/sets/set-receipts.ts", "commands/sets/set-manifest.ts", "commands/sets/set-secrets-guard.ts"],
   "lifecycle state ↔ restore": ["commands/lifecycle/state.ts", "commands/management/secrets.ts", "commands/lifecycle/restore/index.ts"],
   "artifact install ↔ provision-agent ↔ orchestration": [
     "set/artifacts/install.ts",

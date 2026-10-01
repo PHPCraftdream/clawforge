@@ -3,6 +3,8 @@
 // schema description is a complete phrase. Split from arguments.check.ts (700-line limit).
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import type { CommandArgument } from "#framework/core/app.ts";
+import { NO_ACTION } from "#framework/core/arguments.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import { buildCompletionModel, renderCompletion } from "#framework/integration/completion.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -99,38 +101,24 @@ import { check, finish } from "#checks/kit/harness.ts";
   const bashOtherFirst = /watch\)\n      if \[\[ \$cword -eq \$\(\(idx \+ 1\)\) \]\]; then\n        COMPREPLY=\( \$\(compgen -W "([^"]*)"/.exec(bash)![1];
   check("a command without a default action keeps words + --help on the first position", bashOtherFirst.trim(), "check install status test uninstall --help");
   check("pwsh offers actions plus flags at the action position", pwsh.includes("@($clawforgeActions[$cmd].Keys) + $clawforgeFlags[$cmd]"), true);
-  check("pwsh treats a trailing space as a new token, not a suffix of the last one", pwsh.includes("elseif ($wordToComplete -eq '')"), true);
-  check("pwsh's position past a typed action word offers that action's own flags", pwsh.includes("$candidates = $clawforgeActions[$cmd][$nextAction]"), true);
+  check("pwsh's new-token and typed-word cases share the between-space scan", pwsh.includes("if ($between.Count -eq 0)"), true);
+  check("pwsh's position past a typed action word offers that action's own flags", pwsh.includes("$candidates = $clawforgeActions[$cmd][$between[0]]"), true);
 }
 
-// --- R31-02: every MCP schema description is a complete phrase, verified independently ------
+// --- R31-02 / R32-10: every MCP schema description holds structurally, verified independently
 //
-// The check must not reuse the implementation's own word list (R30-06's version confirmed
-// only itself). This oracle recomputes the expected short form from the declaration with
-// ITS OWN boundary rules and demands the schema text equals it plus the structural suffixes
-// — so a cut like "— refused" (a meaning flip, R31-02) or "merge its" fails here.
+// The oracle no longer recomputes the implementation's cut (the R32-10 hole: the same
+// algorithm can only confirm itself). It states properties a well-cut description has
+// regardless of how it was computed: the shown text is a prefix of the declaration's own
+// text (parentheticals aside), the cut lands on a clause boundary or is marked partial
+// with an ellipsis, nothing ends on a dangling word, and the short form keeps the budget.
 
 {
-  const BOUNDARIES = new Set([".", ";", ":", ",", "—"]);
   const DANGLING = new Set(["of", "is", "are", "a", "an", "the", "or", "and", "to", "for", "with", "than", "that", "from", "by", "at", "as", "be"]);
+  const BOUNDARIES = new Set([".", ";", ":", ",", "—"]);
   // These two names get fixed schema texts regardless of their declaration (the override is
   // data, not cut logic); asserted directly below instead of through the oracle.
   const SHARED_OVERRIDE_NAMES = new Set(["break-lock", "break-foreign-lock"]);
-
-  function oracleShort(description: string): string {
-    const stripped = description.replace(/^With [\w/-]+: /, "").replace(/\s*\([^()]*\)/g, "").replace(/\s{2,}/g, " ").trim();
-    if (stripped.length <= 60) return stripped;
-    const head = stripped.slice(0, 60);
-    let cut = -1;
-    for (let i = 8; i < head.length; i++) {
-      // "e.g." / "i.e." periods are not boundaries — same exclusion the implementation makes.
-      const abbrev = head.slice(Math.max(0, i - 3), i + 1);
-      if (BOUNDARIES.has(head[i]) && abbrev !== "e.g." && abbrev !== "i.e." && (i + 1 >= head.length || head[i + 1] === " ")) cut = i;
-    }
-    if (cut >= 0) return stripped.slice(0, cut).trim();
-    const lastSpace = head.lastIndexOf(" ");
-    return `${(lastSpace > 24 ? head.slice(0, lastSpace) : head).trim()}…`;
-  }
 
   const offenders: string[] = [];
   for (const [name, command] of Object.entries(openclawCommands)) {
@@ -138,19 +126,31 @@ import { check, finish } from "#checks/kit/harness.ts";
       if (SHARED_OVERRIDE_NAMES.has(argument.name)) continue;
       const actual = schemaArgumentDescription(argument);
       if (actual === undefined) continue;
-      // Suffixes are appended after shortening — rebuild them structurally, not by regex.
-      const scoped = argument.actions === undefined
-        ? oracleShort(argument.description)
-        : `${oracleShort(argument.description)} (${argument.actions.join(", ")})`;
-      const expected = argument.kind === "option" && argument.valueName !== undefined
-        ? `${scoped} (value: <${argument.valueName}>)`
-        : scoped;
-      if (actual !== expected) offenders.push(`${name}.${argument.name}: ${actual} (expected ${expected})`);
-      const lastWord = actual.replace(/\s*\([^()]*\)$/, "").trim().split(" ").pop()!.toLowerCase();
-      if (DANGLING.has(lastWord)) offenders.push(`${name}.${argument.name} ends on a dangling word: ${actual}`);
+      // The schema appends structural suffixes after the short form — strip them, then judge
+      // the short form against the declaration's own text, not against a recomputation.
+      let core = actual;
+      for (;;) {
+        const stripped = core.replace(/\s*\([^()]*\)$/, "");
+        if (stripped === core) break;
+        core = stripped;
+      }
+      const source = argument.description.replace(/^With [\w/-]+: /, "").replace(/\s*\([^()]*\)/g, "").replace(/\s{2,}/g, " ").trim();
+      const partial = core.endsWith("…");
+      const shown = partial ? core.slice(0, -1).trimEnd() : core;
+      if (!source.startsWith(shown)) offenders.push(`${name}.${argument.name}: "${shown}" is not a prefix of the declaration's text "${source}"`);
+      else if (shown !== source) {
+        const next = source[shown.length];
+        // The cut lands on a clause boundary — the boundary itself kept or dropped, but never
+        // inside a word; a mid-phrase cut must be marked with an ellipsis.
+        if (!partial && next !== undefined && !BOUNDARIES.has(next) && next !== " ") offenders.push(`${name}.${argument.name}: cut mid-clause before "${next}": ${actual}`);
+      }
+      if (core.length > 61) offenders.push(`${name}.${argument.name}: short form over budget: ${actual}`);
+      // A partial cut cannot control where the budget runs out, so a dangling word is only
+      // rejected on a boundary cut.
+      if (!partial && DANGLING.has(shown.split(" ").pop()!.toLowerCase())) offenders.push(`${name}.${argument.name} ends on a dangling word: ${actual}`);
     }
   }
-  check("every schema description equals its independently recomputed complete phrase", offenders, []);
+  check("every schema description is a clean prefix of its declaration's text", offenders, []);
 
   // The nine R31-02 offenders, by their observable schema text.
   const schemaOf = (commandName: string, argumentName: string): string =>
@@ -234,6 +234,68 @@ import { check, finish } from "#checks/kit/harness.ts";
   check("watch status --json parses — refused only later, on its context", !(await watchOutcome(["status", "--json"])).includes("unknown argument"), true);
   check("watch status --interval is refused by the real parser", (await watchOutcome(["status", "--interval", "5m"])).includes("unknown argument"), true);
   check("watch check --interval parses — refused only later, on its context", !(await watchOutcome(["check", "--interval", "5m"])).includes("unknown argument"), true);
+}
+
+// --- R32-10: declared = accepted, for every action command, through the real dispatcher ------
+//
+// The registry-vs-registry comparison above cannot see a drift BETWEEN the table and the
+// action's own parser (watch status parses its slice in status.ts, not through the table).
+// Each declared flag of each action is therefore offered to the command's real run on a
+// stub context: a flag the action's slice declares must never die with a parse refusal,
+// and a flag scoped to other actions must.
+
+{
+  const ACTION_COMMANDS = ["backup", "watch", "expose", "set", "recipe"];
+  const parseRefusal = (message: string): boolean => message.includes("unknown argument") || message.includes("applies to");
+  for (const name of ACTION_COMMANDS) {
+    const command = openclawCommands[name]!;
+    const run = command.run!;
+    const outcome = async (argv: string[]): Promise<string> => {
+      try {
+        await run({} as Parameters<typeof run>[0], argv);
+        return "";
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    };
+    const declared = (command.arguments ?? []).filter((argument) => argument.kind === "flag" || argument.kind === "option");
+    const actionArgument = (command.arguments ?? []).find(
+      (argument): argument is CommandArgument & { choices: readonly string[] } =>
+        argument.kind === "positional" && argument.name === "action" && argument.choices !== undefined,
+    );
+    if (actionArgument === undefined) {
+      check(`${name} registers an action positional with choices`, false, true);
+      continue;
+    }
+    // Words before the flag matter only for actions the parser must recognise; the value
+    // after an option is its first declared choice, so choice validation cannot misfire.
+    const argvFor = (action: string | undefined, argument: CommandArgument): string[] => {
+      const value = argument.kind === "option" ? (argument.choices?.[0] ?? "x") : undefined;
+      return [...(action === undefined ? [] : [action]), `--${argument.name}`, ...(value === undefined ? [] : [value])];
+    };
+    // Only the discriminating direction is asserted: a flag the declaration scopes to this
+    // action must be ACCEPTED by the real parser. The reverse cannot hold — several real
+    // parsers are deliberately more lenient than the declaration (watch check reads
+    // --interval; recipe list ignores unknown flags) — and the R32-10 mutation (declaration
+    // offers --interval under watch status) is caught exactly here, as an accepted-refusal.
+    for (const action of actionArgument.choices) {
+      const actionsOf = (argument: CommandArgument): string[] => argvFor(action, argument);
+      if (action === NO_ACTION) {
+        // The implicit default action is reached without any action word at all.
+        for (const argument of declared) {
+          if (argument.actions !== undefined && !argument.actions.includes(action)) continue;
+          const message = await outcome(actionsOf(argument));
+          check(`${name} (bare): --${argument.name} is accepted by the real parser`, parseRefusal(message), false);
+        }
+        continue;
+      }
+      for (const argument of declared) {
+        if (argument.actions !== undefined && !argument.actions.includes(action)) continue;
+        const message = await outcome(actionsOf(argument));
+        check(`${name} ${action}: --${argument.name} is accepted by the real parser`, parseRefusal(message), false);
+      }
+    }
+  }
 }
 
 finish("action arguments");

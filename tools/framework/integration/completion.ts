@@ -26,7 +26,7 @@ export const COMPLETION_ARGUMENTS: CommandArgument[] = [
 /** One command's completion surface: its own flags, and — only for a command whose
  *  declaration has a first `action` positional with `choices` (backup, recipe, watch,
  *  expose, sets) — that action's own value list plus which flags apply under each one. */
-interface CommandCompletionSpec {
+export interface CommandCompletionSpec {
   readonly name: string;
   /** Every flag/option this command declares with no `actions` scoping — its own flags when
    *  it has no action positional, or the ones every action shares (core/app.ts's documented
@@ -41,6 +41,12 @@ interface CommandCompletionSpec {
      *  --help. */
     readonly fallback: readonly string[];
   };
+  /** A non-action positional's `choices` (completion's shell, host's context) — offered at
+   *  the word right after the command, before any flag is typed. */
+  readonly positionalValues?: readonly string[];
+  /** Options declared with `choices` (--profile, --kind, --client), keyed by `--name` —
+   *  offered at the option's value position instead of the command's flags. */
+  readonly optionValues?: Readonly<Record<string, readonly string[]>>;
 }
 
 function flagName(argument: CommandArgument): string {
@@ -55,8 +61,19 @@ function specFor(name: string, declared: readonly CommandArgument[] | undefined)
   );
   const flagArgs = args.filter((argument) => argument.kind === "flag" || argument.kind === "option");
   const globalFlags = [...new Set([...flagArgs.filter((argument) => argument.actions === undefined).map(flagName), "--help"])].sort();
+  const choiceFlags: Record<string, readonly string[]> = {};
+  for (const argument of flagArgs) {
+    if (argument.kind === "option" && argument.choices !== undefined) choiceFlags[flagName(argument)] = argument.choices;
+  }
+  const optionValues = Object.keys(choiceFlags).length === 0 ? undefined : choiceFlags;
 
-  if (actionArgument === undefined) return { name, flags: globalFlags };
+  if (actionArgument === undefined) {
+    const positional = args.find(
+      (argument): argument is CommandArgument & { choices: readonly string[] } =>
+        argument.kind === "positional" && argument.choices !== undefined,
+    );
+    return { name, flags: globalFlags, positionalValues: positional?.choices, optionValues };
+  }
 
   const perAction: Record<string, readonly string[]> = {};
   for (const value of actionArgument.choices) {
@@ -69,7 +86,7 @@ function specFor(name: string, declared: readonly CommandArgument[] | undefined)
   const fallback = actionArgument.required === true
     ? globalFlags
     : [...new Set([...globalFlags, ...(perAction[NO_ACTION] ?? globalFlags)])].sort();
-  return { name, flags: globalFlags, action: { values: [...actionArgument.choices].sort(), flags: perAction, fallback } };
+  return { name, flags: globalFlags, action: { values: [...actionArgument.choices].sort(), flags: perAction, fallback }, optionValues };
 }
 
 /** Every name the console dispatcher can resolve, from the same declarations --help/the MCP
@@ -89,12 +106,75 @@ export function buildCompletionModel(gateCommands: readonly GateCommand[]): read
 const LIST_NAMES_JSON =
   "$(\"${COMP_WORDS[0]}\" list --json --no-status 2>/dev/null | grep -o '\"name\":\"[^\"]*\"' | cut -d'\"' -f4 | grep -v '^[.]')";
 
-/** One `case "$cmd" in …` arm: a plain compgen for a single-action command, or a nested
- *  dispatch on the action word (still typing it vs. already past it) for one with an
- *  `action` positional — the exact shape backup/recipe/watch/expose/sets declare theirs. */
+/** The candidate list for one completion request — the one decision both emitted scripts
+ *  (bash/zsh and pwsh) implement. `rest` is every token after the program name INCLUDING
+ *  the word being completed; `wordToComplete` is that partial word ('' after a trailing
+ *  space). The checks drive this function through the same scenarios the scripts must
+ *  answer, so a script and the model it was rendered from cannot quietly diverge.
+ *  `appNames` stands in for the lazy `list --json` call the scripts make for --app. */
+export function completionCandidates(
+  specs: readonly CommandCompletionSpec[],
+  rest: readonly string[],
+  wordToComplete: string,
+  appFlag: boolean,
+  appNames?: readonly string[] | (() => readonly string[]),
+): readonly string[] {
+  const byName = new Map(specs.map((spec) => [spec.name, spec]));
+  const names = specs.map((spec) => spec.name);
+  // Only the words BEFORE the cursor pick the command — the partial word itself is not a
+  // typed command (R32-02: `clawforge sta<Tab>` used to see the command "sta").
+  const scan = wordToComplete !== "" ? (rest.length > 1 ? rest.slice(0, -1) : []) : rest;
+  const prev = wordToComplete !== "" ? (rest.length >= 2 ? rest[rest.length - 2] : undefined) : (rest.length >= 1 ? rest[rest.length - 1] : undefined);
+  let cmd: string | undefined;
+  let idx = -1;
+  let skip = false;
+  for (let i = 0; i < scan.length; i++) {
+    if (skip) {
+      skip = false;
+      continue;
+    }
+    if (appFlag && scan[i] === "--app") {
+      skip = true;
+      continue;
+    }
+    cmd = scan[i];
+    idx = i;
+    break;
+  }
+  if (appFlag && prev === "--app") {
+    return typeof appNames === "function" ? appNames() : (appNames ?? []);
+  }
+  if (cmd === undefined) return appFlag ? [...names, "--app"] : names;
+  const spec = byName.get(cmd);
+  if (spec === undefined) return [];
+  if (prev !== undefined && prev.startsWith("--") && spec.optionValues?.[prev] !== undefined) return spec.optionValues[prev];
+  // `help` takes a command name — the most natural place to look one up.
+  if (cmd === "help") return [...names, "--help"];
+  const between = scan.slice(idx + 1);
+  if (spec.action !== undefined) {
+    // Empty between-space means the word being completed IS the action word (typed in full
+    // or in part) — the action words are offered, plus an implicit default action's flags.
+    if (between.length === 0) return [...spec.action.values, ...spec.action.fallback];
+    return spec.action.flags[between[0]] ?? spec.action.fallback;
+  }
+  if (spec.positionalValues !== undefined && between.length === 0) return [...spec.positionalValues, ...spec.flags];
+  return spec.flags;
+}
+
+/** One `case "$cmd" in …` arm: a plain compgen for a single-action command, a
+ *  positional-choices command offered at its first position, or a nested dispatch on the
+ *  action word (still typing it vs. already past it) for one with an `action` positional —
+ *  the exact shape backup/recipe/watch/expose/sets declare theirs. */
 function bashCaseArm(spec: CommandCompletionSpec): string {
   const reply = (flags: readonly string[]): string => `COMPREPLY=( $(compgen -W "${flags.join(" ")}" -- "$cur") )`;
   if (spec.action === undefined) {
+    if (spec.positionalValues !== undefined) {
+      const first = [...new Set([...spec.positionalValues, ...spec.flags])];
+      return (
+        `    ${spec.name})\n` +
+        `      if [[ $cword -eq $((idx + 1)) ]]; then\n        ${reply(first)}\n      else\n        ${reply(spec.flags)}\n      fi\n      ;;\n`
+      );
+    }
     return `    ${spec.name}) ${reply(spec.flags)} ;;\n`;
   }
   const action = spec.action;
@@ -123,6 +203,16 @@ function bashFunctionBody(commands: readonly CommandCompletionSpec[], appFlag: b
     ? `  if [[ "$prev" == "--app" ]]; then\n    COMPREPLY=( $(compgen -W "${LIST_NAMES_JSON}" -- "$cur") )\n    return\n  fi\n`
     : "";
   const arms = commands.map(bashCaseArm).join("");
+  const reply = (flags: readonly string[]): string => `COMPREPLY=( $(compgen -W "${flags.join(" ")}" -- "$cur") )`;
+  // Choice values for options that declare `choices` (--kind, --client, --profile): keyed
+  // "cmd--flag", offered instead of the command's flags at the value position. The key
+  // never collides with a bare command name — command names contain no "--".
+  const choiceArms = commands
+    .flatMap((command) =>
+      Object.entries(command.optionValues ?? {}).map(([flag, values]) => `    "${command.name}${flag}") ${reply(values)}\n      return\n      ;;`),
+    )
+    .join("\n");
+  const choiceCase = choiceArms === "" ? "" : `  case "$cmd$prev" in\n${choiceArms}\n  esac\n`;
   // The --app skip only makes sense where the gate has one — an installed single-deployment
   // gate (appFlag: false) must not mention --app in the generated script either.
   const appSkip = appFlag
@@ -140,12 +230,14 @@ function bashFunctionBody(commands: readonly CommandCompletionSpec[], appFlag: b
     appSkip +
     '    cmd="$w"; idx=$i; break\n' +
     "  done\n" +
-    '  if [[ -z "$cmd" ]]; then\n' +
+    "  if [[ -z \"$cmd\" ]]; then\n" +
     appBlock +
     `    COMPREPLY=( $(compgen -W "${topLevel}" -- "$cur") )\n` +
     "    return\n" +
     "  fi\n" +
-    '  case "$cmd" in\n' +
+    choiceCase +
+    "  case \"$cmd\" in\n" +
+    "    help) COMPREPLY=( $(compgen -W \"" + names + " --help\" -- \"$cur\") ) ;;\n" +
     arms +
     "    *) COMPREPLY=() ;;\n" +
     "  esac\n" +
@@ -178,9 +270,11 @@ function renderZsh(commands: readonly CommandCompletionSpec[], appFlag: boolean)
   );
 }
 
-/** PowerShell data: one line of names, and a `Hashtable` per command (Flags, and — only for
- *  an action command — an Actions table keyed by action name). Sorted, so the emitted text is
- *  the same on every run for the same declarations (no timestamps, no Map iteration order). */
+/** PowerShell data: one line of names, a `Hashtable` per command (Flags; Actions for an
+ *  action command; ChoiceValues keyed "cmd--flag"; Positional for a command whose first
+ *  positional declares `choices`). Sorted, so the emitted text is the same on every run for
+ *  the same declarations (no timestamps, no Map iteration order). The completer body below
+ *  implements the same decision completionCandidates() does — branch for branch. */
 function renderPwsh(commands: readonly CommandCompletionSpec[], appFlag: boolean): string {
   const names = commands.map((command) => `"${command.name}"`).join(", ");
   const flagTable = commands
@@ -196,11 +290,19 @@ function renderPwsh(commands: readonly CommandCompletionSpec[], appFlag: boolean
       return `  "${command.name}" = @{\n${perAction}\n  }`;
     })
     .join("\n");
+  const choiceTable = commands
+    .flatMap((command) =>
+      Object.entries(command.optionValues ?? {}).map(([flag, values]) => `  "${command.name}${flag}" = @(${values.map((value) => `"${value}"`).join(", ")})`),
+    )
+    .join("\n");
+  const positionalTable = commands
+    .filter((command) => command.positionalValues !== undefined)
+    .map((command) => `  "${command.name}" = @(${command.positionalValues!.map((value) => `"${value}"`).join(", ")})`)
+    .join("\n");
   const appLine = appFlag ? " + @('--app')" : "";
-  const appSkip = appFlag ? "    if ($rest[$i] -eq '--app') { $i++; continue }\n" : "";
+  const appSkip = appFlag ? "    if ($scan[$i] -eq '--app') { $skip = $true; continue }\n" : "";
   const appValues = appFlag
-    ? `  $afterApp = ($rest.Count -ge 1 -and $rest[-1] -eq '--app' -and -not $wordToComplete) -or ($rest.Count -ge 2 -and $rest[-2] -eq '--app' -and $wordToComplete)
-  if ($afterApp) {
+    ? `  if ($prev -eq '--app') {
     $names = try { & $tokens[0] list --json --no-status 2>$null | ConvertFrom-Json | ForEach-Object { $_.name } | Where-Object { $_ -notlike '.*' } } catch { @() }
     $names | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
       [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
@@ -219,43 +321,63 @@ ${flagTable}
 $clawforgeActions = @{
 ${actionsTable === "" ? "" : actionsTable}
 }
+$clawforgeChoiceValues = @{
+${choiceTable === "" ? "" : choiceTable}
+}
+$clawforgePositional = @{
+${positionalTable === "" ? "" : positionalTable}
+}
 Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock {
   param($wordToComplete, $commandAst, $cursorPosition)
   $tokens = @($commandAst.CommandElements | ForEach-Object { $_.Extent.Text })
   $rest = if ($tokens.Count -gt 1) { $tokens[1..($tokens.Count - 1)] } else { @() }
-${appValues}  $cmd = $null
+  # The word being completed is the last token whenever it is non-empty. Command discovery
+  # must scan only the words BEFORE it (R32-02: 'clawforge sta<Tab>' used to see the
+  # command "sta" and offer nothing).
+  $scan = $rest
+  if ($wordToComplete -ne '' -and $scan.Count -gt 0) { $scan = @($rest[0..($rest.Count - 2)]) }
+  $prev = $null
+  if ($wordToComplete -ne '') {
+    if ($rest.Count -ge 2) { $prev = $rest[$rest.Count - 2] }
+  } else {
+    if ($rest.Count -ge 1) { $prev = $rest[$rest.Count - 1] }
+  }
+  $cmd = $null
   $idx = -1
-  for ($i = 0; $i -lt $rest.Count; $i++) {
-${appSkip}    $cmd = $rest[$i]
+  $skip = $false
+  for ($i = 0; $i -lt $scan.Count; $i++) {
+    if ($skip) { $skip = $false; continue }
+${appSkip}    $cmd = $scan[$i]
     $idx = $i
     break
   }
-  $candidates = @()
+${appValues}  $candidates = @()
   if (-not $cmd) {
     $candidates = $clawforgeCommands${appLine}
-  } elseif ($wordToComplete -eq '') {
-    # Cursor after a trailing space: a NEW token is being completed, one past the last typed
-    # word — not a suffix of it (R31-07: 'clawforge backup <Tab>' used to list command names).
+  } elseif ($null -ne $prev -and $clawforgeChoiceValues.ContainsKey("$cmd$prev")) {
+    # A value position: the option before the cursor declares its own choices.
+    $candidates = $clawforgeChoiceValues["$cmd$prev"]
+  } elseif ($cmd -eq 'help') {
+    # help takes a command name.
+    $candidates = $clawforgeCommands + @('--help')
+  } else {
+    $between = @()
+    if ($scan.Count - $idx - 1 -gt 0) { $between = @($scan[($idx + 1)..($scan.Count - 1)]) }
     if ($clawforgeActions.ContainsKey($cmd)) {
-      $nextAction = $rest[$idx + 1]
-      if ($null -ne $nextAction -and $clawforgeActions[$cmd].ContainsKey($nextAction)) {
-        $candidates = $clawforgeActions[$cmd][$nextAction]
-      } elseif ($idx -eq 0) {
+      if ($between.Count -eq 0) {
+        # The action word itself (whole or partial) is being typed; an implicit default
+        # action's flags are offered too.
         $candidates = @($clawforgeActions[$cmd].Keys) + $clawforgeFlags[$cmd]
+      } elseif ($clawforgeActions[$cmd].ContainsKey($between[0])) {
+        $candidates = $clawforgeActions[$cmd][$between[0]]
       } else {
         $candidates = $clawforgeFlags[$cmd]
       }
+    } elseif ($clawforgePositional.ContainsKey($cmd) -and $between.Count -eq 0) {
+      $candidates = @($clawforgePositional[$cmd]) + $clawforgeFlags[$cmd]
     } else {
       $candidates = $clawforgeFlags[$cmd]
     }
-  } elseif ($clawforgeActions.ContainsKey($cmd) -and $idx -eq ($rest.Count - 1)) {
-    # Still typing the action word itself; an implicit default action's flags are offered too.
-    $candidates = @($clawforgeActions[$cmd].Keys) + $clawforgeFlags[$cmd]
-  } elseif ($clawforgeActions.ContainsKey($cmd)) {
-    $action = $rest[$idx + 1]
-    $candidates = if ($clawforgeActions[$cmd].ContainsKey($action)) { $clawforgeActions[$cmd][$action] } else { $clawforgeFlags[$cmd] }
-  } else {
-    $candidates = $clawforgeFlags[$cmd]
   }
   $candidates | Where-Object { $_ -like "$wordToComplete*" } | Sort-Object -Unique | ForEach-Object {
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)

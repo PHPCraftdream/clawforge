@@ -29,6 +29,19 @@ All notable changes to `@clawforge/framework` will be documented here.
   flags); `help <checkout command>` in a checkout subfolder points to the checkout root instead of
   "unknown command"; the `cd` hint quotes the path; and `init` in a checkout refuses with what is
   actually true — it writes an installed-style deployment, not one the checkout cannot load.
+* MCP argument descriptions are cut only at clause boundaries and marked with an ellipsis when
+  nothing whole fits, so no schema line ends mid-phrase or flips meaning (`secrets --json` no
+  longer reads as refused by itself, `recover-env --adopt-runtime` no longer stops at "merge
+  its"); `backup`'s `action` positional now says that omitting it creates a backup. Five long
+  declarations were reworded so their short forms are complete phrases.
+* `set`'s merged declaration describes a shared flag per action instead of letting the first
+  action's text stand for all (`set --name` says the set for build/validate and the object for
+  forget), `watch --json` lost its stale "With check/status:" lead-in, and `set try`, `set diff`
+  and `set receipts` parse with the same action scope as the other actions, so a flag of another
+  action is refused naming that action, not as unknown.
+* Shell completion offers a default-action command's own flags on the first position too, in
+  bash/zsh (`clawforge backup --h` completes `--hot`, not only `--help`) and in PowerShell,
+  where a trailing space is now treated as starting a new token instead of extending the last.
 * `set validate` on a working tree whose image is not pinned yet builds the manifest with the
   tag in `requires.image` and reports `SET_IMAGE_UNPINNED` as a blocking finding together with
   everything else it found — in `--json` too — instead of dying inside the manifest build with

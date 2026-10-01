@@ -149,27 +149,28 @@ async function forgetAction(
 
 export async function set(ctx: Context, args: string[]): Promise<void> {
   const [action, ...rest] = args;
-  if (action === "diff") return setDiff(ctx, rest);
-  if (action === "receipts") return setReceipts(ctx, rest);
-
-  // No default action, and no pretending: with one subcommand, an unknown one fails naming
-  // what exists rather than hinting at a surface that is not there yet.
   if (action === undefined) die(`usage: ./clawforge set <${SET_ACTIONS.join("|")}> [options] (see ./clawforge set --help)`);
-  if (action !== "build" && action !== "validate" && action !== "try" && action !== "forget") {
+  if (action !== "build" && action !== "validate" && action !== "diff" && action !== "receipts" && action !== "try" && action !== "forget") {
     dieUnknownAction(action, `unknown action: ${action} (expected build, validate, diff, receipts, try, or forget)`, SET_ACTIONS);
   }
+
+  // The merged declaration as scope, for every action: a flag belonging to another action is
+  // refused naming that action, not "unknown" (try/diff/receipts parse their own slices, but
+  // with the same scope — R31-03).
+  const scope: ActionScope = { action, siblings: scopeByAction(SET_ACTION_ARGUMENTS) };
+
+  if (action === "diff") return setDiff(ctx, rest, scope);
+  if (action === "receipts") return setReceipts(ctx, rest, scope);
 
   // try has its own argument shape (--with-model, --keep) that the flags shared by the
   // other actions below do not carry — parsed there, not folded into the loop that follows.
   if (action === "try") {
-    await setTry(ctx, rest);
+    await setTry(ctx, rest, {}, scope);
     return;
   }
 
   // Each action parses its own slice of the declaration (openclawCommands.sets.ts's table,
-  // the same one completion/--help/MCP derive from), with the merged declaration as scope —
-  // a flag belonging to another action is refused naming that action, not "unknown".
-  const scope: ActionScope = { action, siblings: scopeByAction(SET_ACTION_ARGUMENTS) };
+  // the same one completion/--help/MCP derive from).
   const parsed = parseDeclaredArgs(SET_ACTION_ARGUMENTS[action], rest, scope);
 
   if (action === "forget") {

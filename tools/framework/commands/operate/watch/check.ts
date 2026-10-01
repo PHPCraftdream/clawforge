@@ -35,7 +35,7 @@ import { parseDeclaredArgs } from "../../../core/arguments.ts";
 
 /** Drives both watch check's own parser and its slice of watch's openclawCommands declaration. */
 export const WATCH_CHECK_ARGUMENTS: CommandArgument[] = [
-  { name: "json", description: "With check/status: emit JSON instead of text", kind: "flag" },
+  { name: "json", description: "Emit JSON instead of text", kind: "flag" },
 ];
 
 /** The subset of `inspect`'s problem codes that say something about LIVENESS — the gateway

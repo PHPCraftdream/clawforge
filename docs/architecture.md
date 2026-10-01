@@ -637,7 +637,8 @@ more of them than fit here:
 | `release/release/installed-consumer.check.ts` | the published tarball, installed into a directory `npm init -y` made: `init` there, then a command through the installed entry point |
 | `foundation/core/paths.check.ts` | 48 translations between the four coordinate systems |
 | `foundation/core/archive.check.ts` | absolute paths, `..`, links pointing outside (symlink and hard link), consistency of the `share` profile |
-| `foundation/core/arguments.check.ts` | argument declarations, MCP schemas, the reverse mapping back to argv |
+| `foundation/core/arguments/arguments.check.ts` | argument declarations, MCP schemas, the reverse mapping back to argv |
+| `foundation/core/arguments/action-arguments.check.ts` | per-action slices of multi-action commands, schema descriptions as complete phrases |
 | `runtime/service/deploy.check.ts` | what a server delivery contains: what travels and what stays, and that it refuses to mirror a tree that is not a checkout |
 | `integration/mcp/transport-listing.check.ts` | `listFiles`: a real local tree (no separator leaks into a target path, directories are not files) and what the remote implementations make of `find` output |
 | `secrets.check.ts` | masking of secrets in diagnostics, including a failing child process |

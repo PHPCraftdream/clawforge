@@ -38,7 +38,7 @@ import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { unpackForTry, findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
 
 export * from "./set-try-env.ts";
 
@@ -46,8 +46,8 @@ export * from "./set-try-env.ts";
 export const SET_TRY_ARGUMENTS: CommandArgument[] = [
   { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
   { name: "with-model", description: "With try: include acceptance checks that call the model", kind: "flag" },
-  { name: "keep", description: "With try: leave the throwaway instance running instead of tearing it down", kind: "flag" },
-  { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
+  { name: "keep", description: "With try: keep the throwaway instance running instead of removing it", kind: "flag" },
+  { name: "json", description: "Emit the trial report as JSON", kind: "flag" },
 ];
 
 const SCAFFOLD_MODULES: Record<string, string> = {
@@ -95,8 +95,8 @@ export interface SetTryOptions {
 }
 
 /** Parses the artifact and explicit execution options. */
-export function parseSetTryArgs(args: string[]): SetTryOptions {
-  const parsed = parseDeclaredArgs(SET_TRY_ARGUMENTS, args);
+export function parseSetTryArgs(args: string[], scope?: ActionScope): SetTryOptions {
+  const parsed = parseDeclaredArgs(SET_TRY_ARGUMENTS, args, scope);
   const artifact = parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string | undefined;
   if (artifact === undefined) die("usage: ./clawforge set try --set <artifact> [--with-model] [--keep] [--json]");
   return { artifact, withModel: parsed["with-model"] === true, keep: parsed.keep === true, jsonOnly: parsed.json === true };
@@ -146,8 +146,8 @@ export async function setTry(ctx: Context, args: string[], dependencies: {
   findFreePort?: typeof findFreePort;
   protectPrivateDirectory?: typeof protectPrivateDirectory;
   createPrivateFile?: typeof createPrivateFile;
-} = {}): Promise<void> {
-  const options = parseSetTryArgs(args);
+} = {}, scope?: ActionScope): Promise<void> {
+  const options = parseSetTryArgs(args, scope);
   return withModelApproval(options.withModel, () => setTryInScope(ctx, options, dependencies));
 }
 

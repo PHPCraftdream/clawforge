@@ -13,7 +13,7 @@ import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import type { Context } from "#src/core/context.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 
 export type SetDiffAction = "added" | "removed" | "changed";
@@ -310,8 +310,8 @@ export const SET_DIFF_ARGUMENTS: CommandArgument[] = [
   { name: "artifacts", kind: "variadic", description: "Two positional artifacts" },
 ];
 
-function parseArgs(args: string[]): { from: string; to: string; json: boolean } {
-  const parsed = parseDeclaredArgs(SET_DIFF_ARGUMENTS, args);
+function parseArgs(args: string[], scope?: ActionScope): { from: string; to: string; json: boolean } {
+  const parsed = parseDeclaredArgs(SET_DIFF_ARGUMENTS, args, scope);
   const positional = (parsed.artifacts as string[] | undefined) ?? [];
   const from = parsed.from as string | undefined;
   const to = parsed.to as string | undefined;
@@ -341,8 +341,8 @@ function humanChange(change: SetDiffChange): string {
 }
 
 /** `./clawforge set diff A.tar.gz B.tar.gz`; both artifacts are fully verified before comparison. */
-export async function setDiff(_ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseArgs(args);
+export async function setDiff(_ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
+  const parsed = parseArgs(args, scope);
   await withUnpackedArtifact(parsed.from, async (fromStaging, fromVerified) => {
     await withUnpackedArtifact(parsed.to, async (toStaging, toVerified) => {
       const result = diffManifests(

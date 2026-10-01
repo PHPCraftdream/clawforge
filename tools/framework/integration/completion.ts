@@ -99,10 +99,14 @@ function bashCaseArm(spec: CommandCompletionSpec): string {
   }
   const action = spec.action;
   const arms = action.values.map((value) => `        ${value}) ${reply(action.flags[value] ?? spec.flags)} ;;`).join("\n");
+  // First position (nothing typed after the command yet): the action words plus — for an
+  // implicit default action like backup's bare create — that action's own flags (R31-07),
+  // since `backup --h` must complete --hot, not only --help.
+  const firstPosition = [...new Set([...action.values, ...action.fallback])];
   return (
     `    ${spec.name})\n` +
     `      if [[ $cword -eq $((idx + 1)) ]]; then\n` +
-    `        ${reply([...action.values, "--help"])}\n` +
+    `        ${reply(firstPosition)}\n` +
     `      else\n` +
     `        case "\${words[$((idx + 1))]}" in\n${arms}\n          *) ${reply(action.fallback)} ;;\n        esac\n` +
     `      fi\n      ;;\n`
@@ -227,10 +231,26 @@ ${appSkip}    $cmd = $rest[$i]
     break
   }
   $candidates = @()
-  if (-not $cmd -or $idx -eq ($rest.Count - 1)) {
+  if (-not $cmd) {
     $candidates = $clawforgeCommands${appLine}
-  } elseif ($clawforgeActions.ContainsKey($cmd) -and $idx -eq ($rest.Count - 2)) {
-    $candidates = $clawforgeActions[$cmd].Keys
+  } elseif ($wordToComplete -eq '') {
+    # Cursor after a trailing space: a NEW token is being completed, one past the last typed
+    # word — not a suffix of it (R31-07: 'clawforge backup <Tab>' used to list command names).
+    if ($clawforgeActions.ContainsKey($cmd)) {
+      $nextAction = $rest[$idx + 1]
+      if ($null -ne $nextAction -and $clawforgeActions[$cmd].ContainsKey($nextAction)) {
+        $candidates = $clawforgeActions[$cmd][$nextAction]
+      } elseif ($idx -eq 0) {
+        $candidates = @($clawforgeActions[$cmd].Keys) + $clawforgeFlags[$cmd]
+      } else {
+        $candidates = $clawforgeFlags[$cmd]
+      }
+    } else {
+      $candidates = $clawforgeFlags[$cmd]
+    }
+  } elseif ($clawforgeActions.ContainsKey($cmd) -and $idx -eq ($rest.Count - 1)) {
+    # Still typing the action word itself; an implicit default action's flags are offered too.
+    $candidates = @($clawforgeActions[$cmd].Keys) + $clawforgeFlags[$cmd]
   } elseif ($clawforgeActions.ContainsKey($cmd)) {
     $action = $rest[$idx + 1]
     $candidates = if ($clawforgeActions[$cmd].ContainsKey($action)) { $clawforgeActions[$cmd][$action] } else { $clawforgeFlags[$cmd] }

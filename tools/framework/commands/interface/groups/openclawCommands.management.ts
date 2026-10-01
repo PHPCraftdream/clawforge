@@ -335,7 +335,7 @@ export const managementCommands: Record<string, AppCommand> = {
         kind: "positional",
         choices: ["list", "import", "new", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
       },
-      { name: "name", description: "Recipe name; with import, the source directory to copy from", kind: "positional" },
+      { name: "name", description: "Recipe name; with import, the source directory to copy", kind: "positional" },
       { name: "new-name", description: "With import: import under this name instead of the source directory's own name", kind: "positional" },
       ...RECIPE_FLAG_ARGUMENTS,
     ],

@@ -95,19 +95,35 @@ function formatActions(actions: readonly string[]): string {
 /** One multi-action command's flags/options from what each action's own parser accepts:
  *  `actions` is derived (absent when every action takes it), so completion, --help and the MCP
  *  schema cannot offer a flag the chosen action rejects. First declaration of a name wins;
- *  slices must not set `actions` themselves. Positionals/variadics are not scoped, so skipped. */
+ *  slices must not set `actions` themselves. Positionals/variadics are not scoped, so skipped.
+ *  When the slices describe one name differently (set's `--name`: the set for build/validate,
+ *  the object for forget), the descriptions are composed with their own action lists instead
+ *  of the first one silently standing for every action (R31-03). */
 export function scopeByAction(slices: Readonly<Record<string, readonly CommandArgument[]>>): CommandArgument[] {
   const all = Object.keys(slices);
-  const merged = new Map<string, { argument: CommandArgument; actions: string[] }>();
+  const merged = new Map<string, { argument: CommandArgument; byDescription: Map<string, string[]>; actions: string[] }>();
   for (const action of all) {
     for (const argument of slices[action]) {
       if (argument.kind !== "flag" && argument.kind !== "option") continue;
-      const entry = merged.get(argument.name);
-      if (entry === undefined) merged.set(argument.name, { argument, actions: [action] });
-      else if (!entry.actions.includes(action)) entry.actions.push(action);
+      let entry = merged.get(argument.name);
+      if (entry === undefined) merged.set(argument.name, entry = { argument, byDescription: new Map(), actions: [] });
+      if (!entry.actions.includes(action)) entry.actions.push(action);
+      const actions = entry.byDescription.get(argument.description) ?? [];
+      if (!actions.includes(action)) actions.push(action);
+      entry.byDescription.set(argument.description, actions);
     }
   }
-  return [...merged.values()].map(({ argument, actions }) => (actions.length === all.length ? argument : { ...argument, actions }));
+  return [...merged.values()].map(({ argument, byDescription, actions }) => ({
+    ...argument,
+    ...(byDescription.size > 1
+      ? {
+        description: [...byDescription.entries()]
+          .map(([description, own]) => `${description} (${own.map(actionLabel).join(", ")})`)
+          .join("; "),
+      }
+      : {}),
+    ...(actions.length === all.length ? {} : { actions }),
+  }));
 }
 
 /** One value per declared argument, keyed by its name (not its `--flag` spelling):

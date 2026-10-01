@@ -25,7 +25,7 @@ import { JSON_ARGUMENT } from "./list.ts";
  *  two different descriptions. Declared once, here, reused by install.ts. */
 export const BACKUP_APPLY_ARGUMENT: CommandArgument = {
   name: "apply",
-  description: "Actually apply the action (delete, or install/uninstall the schedule) instead of only previewing/printing it",
+  description: "Apply the action instead of only previewing it (delete, or install/uninstall the schedule)",
   kind: "flag",
 };
 

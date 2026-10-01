@@ -88,7 +88,7 @@ export const BACKUP_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandAr
  *  every sub-action's own flags, so `./clawforge backup` with none of them still creates an
  *  archive exactly as it always has; `create` is the explicit word for the same thing. */
 export const BACKUP_ALL_ARGUMENTS: CommandArgument[] = [
-  { name: "action", description: "list, prune-replaced, install, uninstall or create", kind: "positional", choices: [...BACKUP_ACTIONS, "create"] },
+  { name: "action", description: "Omit to create a backup; an action word lists or manages backups instead", kind: "positional", choices: [...BACKUP_ACTIONS, "create"] },
   ...scopeByAction(BACKUP_ACTION_ARGUMENTS),
 ];
 

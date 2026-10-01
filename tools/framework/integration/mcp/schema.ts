@@ -164,24 +164,21 @@ function isTrivialDescription(name: string, description: string): boolean {
   return normalizedDescription === normalizedName;
 }
 
-/** First sentence or clause, parentheticals dropped. `:` is not a boundary ("With x: …" would
- *  keep the qualifier and lose what it qualifies); no early boundary → cut at a word, then
- *  drop any function word the cut would end on — a truncated "… instead of" dangles mid-phrase
- *  and reads as if the rest were missing (R30-06). */
+/** First sentence or clause, cut ONLY at a clause boundary (`.`, `;`, `:`, `,`, `—`) within
+ *  the budget — never mid-phrase, since a cut like "— refused" flips meaning (R30-06, R31-02).
+ *  No boundary in reach → cut at a word and mark the truncation with an ellipsis, so a client
+ *  can see the text is partial. `:` is a boundary here, not before: the "With x: " lead-in is
+ *  stripped by the caller first. `help <command>` keeps the full text. */
 function shortenDescription(description: string): string {
   const stripped = description.replace(/\s*\([^()]*\)/g, "").replace(/\s{2,}/g, " ").trim();
+  if (stripped.length <= SHORT_DESCRIPTION_LIMIT) return stripped;
+  const head = stripped.slice(0, SHORT_DESCRIPTION_LIMIT);
   // Not "e.g." / "i.e." — an abbreviation's period is not a clause boundary either.
-  const boundary = /(?<!\be\.g)(?<!\bi\.e)[.;](\s|$)/.exec(stripped);
-  const clause = boundary !== null && boundary.index >= 8
-    ? stripped.slice(0, boundary.index).trim()
-    : stripped;
-  if (clause.length <= SHORT_DESCRIPTION_LIMIT) return clause;
-  const cut = clause.slice(0, SHORT_DESCRIPTION_LIMIT);
-  const lastSpace = cut.lastIndexOf(" ");
-  let text = (lastSpace > SHORT_DESCRIPTION_LIMIT * 0.4 ? cut.slice(0, lastSpace) : cut).trim();
-  const dangling = /\s+(of|is|are|a|an|the|or|and|to|for|with|on|instead|than|that|from|by|at|as|be)$/i;
-  while (dangling.test(text)) text = text.replace(dangling, "").trim();
-  return text;
+  const boundaries = [...head.matchAll(/(?<!\be\.g)(?<!\bi\.e)[.;:,—](?=\s|$)/g)];
+  const last = boundaries[boundaries.length - 1];
+  if (last !== undefined && last.index >= 8) return stripped.slice(0, last.index).trim();
+  const cut = head.lastIndexOf(" ") > SHORT_DESCRIPTION_LIMIT * 0.4 ? head.slice(0, head.lastIndexOf(" ")) : head;
+  return `${cut.trim()}…`;
 }
 
 /** Arguments repeated on many tools: one terse schema line each (`help` keeps the full text). */

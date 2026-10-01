@@ -5,17 +5,17 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { listReceipts, readReceipt, type AcceptanceReceipt } from "#src/set/artifacts/receipt.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
 
 /** The slice of `set`'s declaration `receipts`'s own argv actually uses. */
 export const SET_RECEIPTS_ARGUMENTS: CommandArgument[] = [
   { name: "set-id", description: "With receipts: filter by immutable set id", kind: "option", valueName: "id" },
   { name: "receipt", description: "With receipts: show this receipt; requires --set-id", kind: "option", valueName: "id" },
-  { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
+  { name: "json", description: "Emit the receipts as JSON", kind: "flag" },
 ];
 
-function validateArgs(args: string[]): { setId?: string; receiptId?: string; json: boolean } {
-  const parsed = parseDeclaredArgs(SET_RECEIPTS_ARGUMENTS, args);
+function validateArgs(args: string[], scope?: ActionScope): { setId?: string; receiptId?: string; json: boolean } {
+  const parsed = parseDeclaredArgs(SET_RECEIPTS_ARGUMENTS, args, scope);
   const setId = parsed["set-id"] as string | undefined;
   const receiptId = parsed.receipt as string | undefined;
   if (receiptId !== undefined && setId === undefined) die("--receipt requires --set-id");
@@ -48,8 +48,8 @@ function securitySummary(receipt: AcceptanceReceipt): string {
 
 /** The persistence root is deploymentDir(), while the optional root in the persistence API
  *  keeps that API independently testable. This command intentionally has no runtime calls. */
-export async function setReceipts(_ctx: Context, args: string[]): Promise<void> {
-  const { setId, receiptId, json } = validateArgs(args);
+export async function setReceipts(_ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
+  const { setId, receiptId, json } = validateArgs(args, scope);
   if (receiptId !== undefined && setId !== undefined) {
     const receipt = await readReceipt(setId, receiptId);
     if (json || isCaptured()) emit(`${JSON.stringify(receipt, null, 2)}\n`);

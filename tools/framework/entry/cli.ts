@@ -4,16 +4,16 @@
 // declares its commands. Adding a command to an application must not require touching any
 // file in framework/ — that is the property this module exists to guarantee.
 
-import { reportError, UserError, CommandFailedError, log, info, maskSecrets } from "../core/io/log.ts";
+import { reportError, UserError, CommandFailedError, info, maskSecrets } from "../core/io/log.ts";
 import { UnknownArgumentError, preparesEnvironmentFor } from "../core/arguments.ts";
-import { emit, machineWritesCount } from "../core/io/output.ts";
+import { emit, machineWritesCount, stdoutBytesWritten } from "../core/io/output.ts";
 import { createContext } from "../core/context.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../commands/operate/recover-env/index.ts";
 import { clearRecipesDir } from "../service/recipe.ts";
 import { useApplicationRecipesDir } from "../runtime/deployment.ts";
 import { ensureEnvironment } from "../integration/provision.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
-import { knownCommandNames, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
+import { knownCommandNames, reportUnknownCommand, renderHelp, controlMcpHelp, type GateCommand } from "../integration/gate.ts";
 import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, helpEntryLine, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
 import type { AppDefinition } from "../core/app.ts";
 
@@ -65,15 +65,9 @@ export async function runApp(
   // chat client too. --help is checked before starting: the server owns stdio once it runs.
   if (name === "control-mcp") {
     if (args.includes("--help") || args.includes("-h")) {
-      log(`control-mcp — expose ${app.name}'s commands as MCP tools`);
-      info("Usage: ./clawforge control-mcp");
-      info("");
-      info("stdio JSON-RPC server, same shape as mcp-serve but for this deployment's own");
-      info("commands instead of OpenClaw's channels — status, backup, secrets, and the");
-      info("rest, with arguments checked against the same declarations --help reads.");
-      info("Destructive commands (push, restore, deploy) need confirm: true.");
-      info("Registered for a client automatically by ./clawforge mcp-setup; not meant to be run");
-      info("by hand outside of testing.");
+      // From the declaration gate.ts's renderHelp reads, so `help control-mcp` and this
+      // never answer differently.
+      controlMcpHelp(app.name);
       return 0;
     }
     // Gate commands travel with the application's — the surface mirrors what `./clawforge`
@@ -159,16 +153,23 @@ export function reportUnknownArgument(commandName: string, error: UnknownArgumen
   info(`run ./clawforge ${commandName} --help for its full argument list`);
 }
 
-/** The one --json failure contract: a command invoked with --json that fails after its
- *  arguments parsed still prints a machine-readable answer — an error document on stdout —
- *  so a script's jq never receives empty input. Skipped when the command already printed a
- *  document of its own (status/doctor/upgrade --dry-run report their failures as JSON), and
- *  never for a non-JSON invocation, whose human-readable reporting is unchanged. */
-function reportJsonFailure(argv: string[], error: unknown): void {
+/** The one --json failure contract: a command invoked with its OWN declared --json flag that
+ *  fails after its arguments parsed still prints a machine-readable answer — an error
+ *  document on stdout — so a script's jq never receives empty input. Skipped when the command
+ *  already printed a document of its own (status/doctor/upgrade --dry-run report their
+ *  failures as JSON) or streamed anything to real stdout, and never for a non-JSON
+ *  invocation, whose human-readable reporting is unchanged.
+ *
+ *  By declaration, not by argv shape: `cli`/`exec`/`host` pass their whole tail to a child,
+ *  so a `--json` in there belongs to that child — its own streamed output is the answer,
+ *  and no second document may follow it. */
+function reportJsonFailure(app: AppDefinition, argv: string[], error: unknown): void {
+  const command = app.commands[argv[0]];
+  if (command?.arguments?.some((argument) => argument.name === "json" && argument.kind === "flag") !== true) return;
   const sep = argv.indexOf("--");
   const scope = sep === -1 ? argv : argv.slice(0, sep);
   if (!scope.slice(1).includes("--json")) return;
-  if (machineWritesCount() > 0) return;
+  if (machineWritesCount() > 0 || stdoutBytesWritten() > 0) return;
   const message = maskSecrets(error instanceof Error ? error.message : String(error));
   emit(`${JSON.stringify({ error: { message } }, null, 2)}\n`);
 }
@@ -184,7 +185,7 @@ export async function main(
   try {
     process.exitCode = await runApp(app, argv, gateHelp, gateCommands);
   } catch (error) {
-    reportJsonFailure(argv, error);
+    reportJsonFailure(app, argv, error);
     reportError(error);
     // A UserError is an expected, explained failure; anything else is a bug worth a trace.
     if (!(error instanceof UserError) && process.env.OC_DEBUG === "1") {

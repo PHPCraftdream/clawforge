@@ -239,6 +239,26 @@ export function knownCommandNames(app: AppDefinition, gateCommands: readonly Gat
   return [...Object.keys(app.commands), ...gateCommands.map((command) => command.name), "help", "control-mcp"];
 }
 
+/** The details body shared by `help control-mcp` and `control-mcp --help` — control-mcp is
+ *  dispatched by runApp (entry/cli.ts) before the app.commands lookup, so no AppCommand
+ *  carries it, but both help paths must answer from this one declaration (R33-09). */
+const CONTROL_MCP_DETAILS = [
+  "stdio JSON-RPC server, same shape as mcp-serve but for this deployment's own",
+  "commands instead of OpenClaw's channels — status, backup, secrets, and the",
+  "rest, with arguments checked against the same declarations --help reads.",
+  "Destructive commands (push, restore, deploy) need confirm: true.",
+  "Registered for a client automatically by ./clawforge mcp-setup; not meant to be run",
+  "by hand outside of testing.",
+].join("\n");
+
+/** Prints `control-mcp`'s help — the same body `<command> --help` gets from its declaration. */
+export function controlMcpHelp(appName: string): void {
+  renderCommandHelp("control-mcp", {
+    summary: `expose ${appName}'s commands as MCP tools, for agents`,
+    details: CONTROL_MCP_DETAILS,
+  });
+}
+
 /** Renders `./clawforge help [<command>]`; false for an unknown command. Shared by the console
  *  and the MCP `help` tool. */
 export function renderHelp(
@@ -250,6 +270,12 @@ export function renderHelp(
   // `help` is not in app.commands; `help help` shows the general list.
   if (target === undefined || target === "--help" || target === "-h" || target === "help") {
     renderUsage(app, gateHelp);
+    return true;
+  }
+  // control-mcp is not in app.commands either — it is dispatched by runApp before that
+  // lookup, and skipping it here made `help control-mcp` report the very word as unknown.
+  if (target === "control-mcp") {
+    controlMcpHelp(app.name);
     return true;
   }
   const command = app.commands[target];

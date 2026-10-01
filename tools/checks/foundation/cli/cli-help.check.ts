@@ -59,6 +59,21 @@ try {
   check("help --help exits cleanly", helpHelp.code, 0);
   check("help --help falls back to the command list", helpHelp.stdout.includes(`Usage: ./clawforge --app ${deploymentName} <command>`), true);
 
+  // `help control-mcp` used to fail with "unknown command: control-mcp / did you mean:
+  // control-mcp" — the general help and completion both offer it, but renderHelp knew only
+  // app.commands and gate commands, while closestCommand happily suggested the exact match.
+  const helpControl = await runGate(["--app", deploymentName, "help", "control-mcp"]);
+  check("help control-mcp exits cleanly", helpControl.code, 0);
+  check("help control-mcp does not report itself unknown", helpControl.stdout.includes("unknown command"), false);
+  check("help control-mcp does not suggest itself", helpControl.stdout.includes("did you mean: control-mcp"), false);
+  check("help control-mcp prints its help", helpControl.stdout.includes("MCP tools"), true);
+
+  // mcp-serve and the other framework-owned names live in the declarations renderHelp
+  // already reads; spot-check that `help <name>` answers for one of them too.
+  const helpMcpServe = await runGate(["--app", deploymentName, "help", "mcp-serve"]);
+  check("help mcp-serve exits cleanly", helpMcpServe.code, 0);
+  check("help mcp-serve prints its help", helpMcpServe.stdout.includes("mcp-serve —"), true);
+
   const newAppHelp = await runGate(["new-app", "--help"]);
   check("new-app --help exits cleanly", newAppHelp.code, 0);
   check("new-app --help explains itself", newAppHelp.stdout.includes("new-app"), true);

@@ -14,6 +14,7 @@ type Sink = (chunk: string) => void;
 let sink: Sink | undefined;
 let machineSink: Sink | undefined;
 let machineWrites = 0;
+let stdoutBytes = 0;
 
 /** Runs `body` with every line of output handed to `collect` instead of the terminal. */
 export async function withOutputSink<T>(collect: Sink, body: () => Promise<T>, collectMachine?: Sink): Promise<T> {
@@ -67,5 +68,22 @@ export function emitRaw(text: string): void {
   machineWrites += 1;
   machineSink?.(text);
   if (sink !== undefined) sink(text);
-  else process.stdout.write(text);
+  else {
+    stdoutBytes += Buffer.byteLength(text);
+    process.stdout.write(text);
+  }
+}
+
+/** Bytes a streaming child wrote straight to the real stdout (transport/exec.ts's forwarders
+ *  and protocol relay), recorded here so entry/cli.ts's --json failure contract can tell
+ *  "the command already produced output" even when nothing went through emit/emitRaw. */
+export function recordStreamedStdout(bytes: number): void {
+  stdoutBytes += bytes;
+}
+
+/** Bytes that really reached process.stdout so far — emitRaw without a sink plus the
+ *  recorded stream forwards. Real stdout only: output captured into a sink (MCP, a test)
+ *  never competes with the failure contract's document on stdout. */
+export function stdoutBytesWritten(): number {
+  return stdoutBytes;
 }

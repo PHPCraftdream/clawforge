@@ -26,6 +26,8 @@ import { configureProvider } from "#framework/commands/management/credentials/pr
 import { exposeSsh } from "#framework/commands/operate/expose/ssh.ts";
 import { runPhases, IncidentPhaseFailure } from "#framework/commands/operate/incident/index.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
+import { spawnLocal } from "#framework/runtime/transport/exec.ts";
+import { dieWithExitCode } from "#framework/core/io/log.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
@@ -187,6 +189,7 @@ const contractApp: AppDefinition = {
   commands: {
     boom: {
       summary: "always fails like an unreachable target would",
+      arguments: [{ name: "json", kind: "flag", description: "Emit the outcome as JSON" }],
       run: async () => {
         throw new Error(UNREACHABLE);
       },
@@ -195,9 +198,21 @@ const contractApp: AppDefinition = {
     // way — and must not get a second, trailing error document appended.
     ownDocument: {
       summary: "prints its own JSON, then fails",
+      arguments: [{ name: "json", kind: "flag", description: "Emit the outcome as JSON" }],
       run: async () => {
         emit(`${JSON.stringify({ ok: false, problems: ["the check did not pass"] }, null, 2)}\n`);
         throw new Error("the check did not pass");
+      },
+    },
+    // cli/exec's shape: the whole tail is a child command line, the child streams its own
+    // output (spawnLocal with no input streams, past the emit counter), then the wrapper
+    // dies with the child's exit code. A `--json` in the tail is the CHILD's flag.
+    passthrough: {
+      summary: "streams a child's own JSON, then dies with its exit code",
+      arguments: [{ name: "args", kind: "variadic", description: "passed through to the child" }],
+      run: async () => {
+        const result = await spawnLocal(process.execPath, ["-e", "process.stdout.write(JSON.stringify({child:'own document'}) + '\\n'); process.exit(3)"], { stream: true, allowFailure: true });
+        dieWithExitCode(`child lint --json failed (exit ${result.code})`, result.code);
       },
     },
   },
@@ -205,6 +220,15 @@ const contractApp: AppDefinition = {
 
 try {
   const previousExit = process.exitCode;
+
+  {
+    // First, while the process-wide counters are still clean: the streamed child output
+    // bypasses emit/emitRaw, so only the declaration gate keeps the contract off.
+    const { output } = await capture(() => main(contractApp, ["passthrough", "lint", "--json"]));
+    checkTrue("a passthrough command streams the child's own JSON", output.includes('"child":"own document"'));
+    check("a passthrough --json failure appends no second error document", output.includes('"error"'), false);
+    check("the passthrough failure exits with the child's code", process.exitCode === 3, true);
+  }
 
   {
     const { output } = await capture(() => main(contractApp, ["boom", "--json"]));

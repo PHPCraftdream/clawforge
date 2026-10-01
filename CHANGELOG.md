@@ -6,6 +6,13 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* The `--json` failure contract fires only for a command's own declared `--json` flag:
+  `cli`/`exec`/`host` pass their whole tail to a child, so a failing `clawforge cli … --json`
+  no longer appends a second `{"error":…}` document after the child's own streamed output
+  (streamed stdout counts as already-printed output). `help control-mcp` (and the MCP `help`
+  tool) now prints control-mcp's help from the same declaration `control-mcp --help` uses,
+  instead of failing with "unknown command: control-mcp / did you mean: control-mcp", and an
+  exact name is never offered as its own did-you-mean suggestion.
 * PowerShell completion answers again with a typed prefix (`clawforge sta<Tab>`, `--ap<Tab>`,
   `backup l<Tab>`, `watch in<Tab>`), which the previous script lost by scanning the word being
   completed as a typed command; `--app <name> backup <Tab>` offers the default action's flags

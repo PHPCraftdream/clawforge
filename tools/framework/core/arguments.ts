@@ -37,6 +37,9 @@ export function closestCommand(input: string, candidates: readonly string[]): st
   let bestDistance = Infinity;
   for (const candidate of candidates) {
     const distance = editDistance(input, candidate);
+    // An exact match is never a suggestion: `help control-mcp` reached the unknown-command
+    // path (control-mcp is dispatched elsewhere) and was told "did you mean: control-mcp".
+    if (distance === 0) continue;
     if (distance < bestDistance) {
       bestDistance = distance;
       best = candidate;

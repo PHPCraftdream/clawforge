@@ -8,7 +8,7 @@
 
 import { spawn } from "node:child_process";
 import { maskSecrets } from "../../core/io/log.ts";
-import { outputSink } from "../../core/io/output.ts";
+import { outputSink, recordStreamedStdout } from "../../core/io/output.ts";
 import { meaningfulLines, describeInvocation, noiseFilteredForwarder } from "./spawn-failure.ts";
 
 export interface ExecOptions {
@@ -208,13 +208,22 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
     // OC_DEBUG=1 wants the undiluted byte stream. streamToTerminal inherits stdio directly,
     // so these "data" handlers never fire for it anyway.
     const debug = process.env.OC_DEBUG === "1";
-    const forwardStdout = protocol || debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stdout.write(text); });
+    // Record bytes that reach the real stdout, so the --json failure contract (entry/cli.ts)
+    // sees a streaming child's own output and never appends a second document after it. The
+    // inherit path (streamToTerminal) bypasses these handlers and cannot be counted — the
+    // contract's declaration gate covers it instead.
+    const toRealStdout = (text: string): void => {
+      recordStreamedStdout(Buffer.byteLength(text));
+      process.stdout.write(text);
+    };
+    const forwardStdout = protocol || debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else toRealStdout(text); });
     const forwardStderr = protocol || debug ? undefined : noiseFilteredForwarder((text) => { if (sink !== undefined) sink(text); else process.stderr.write(text); });
 
     if (protocol) {
       // Never inherit Windows/MSYS pipe descriptors. Node relays with backpressure,
       // without decoding, filtering, progress sinks, or accumulating protocol responses.
       child.stdout?.pipe(process.stdout, { end: false });
+      child.stdout?.on("data", (chunk: Buffer) => recordStreamedStdout(chunk.length));
       child.stderr?.pipe(process.stderr, { end: false });
       child.stderr?.on("data", (chunk: Buffer) => {
         stderr = (stderr + chunk.toString("utf8")).slice(-8192);
@@ -228,7 +237,7 @@ export function spawnLocal(command: string, args: string[], options: ExecOptions
         if (options.stream === true) {
           if (forwardStdout !== undefined) forwardStdout.push(chunk);
           else if (sink !== undefined) sink(chunk);
-          else process.stdout.write(chunk);
+          else toRealStdout(chunk);
         }
       });
       child.stderr?.on("data", (chunk: string) => {

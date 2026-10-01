@@ -290,8 +290,9 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   SET_IMAGE_UNPINNED: {
     severity: "blocking",
     summary: "the set pins an image tag rather than a digest, so what it installs depends on the day",
-    // `lock` refuses before the first bootstrap (no inventory to read yet); bootstrap
-    // itself resolves and pins the digest.
+    // Default for a deployment no lock was ever recorded for — there `bootstrap` is the only
+    // command that can pin. set validate overrides to ./clawforge lock once a lock exists:
+    // on a live instance bootstrap would re-resolve the tag and recreate the gateway.
     nextAction: "./clawforge bootstrap",
   },
   SET_OBJECT_ORPHANED: {

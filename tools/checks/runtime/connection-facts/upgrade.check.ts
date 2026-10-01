@@ -17,6 +17,7 @@ import type { Context } from "#framework/core/context.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { mountPoints } from "#framework/runtime/mounts.ts";
 import { toContainerPath, fromContainerPath } from "#framework/core/paths.ts";
+import { connectionFactDiffs } from "#framework/commands/operate/recover-env/facts.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { toSettings, parseEnv } from "#framework/core/env.ts";
@@ -46,10 +47,10 @@ type Scenario = "success" | "health-fail" | "exit78" | "doctor-fail";
  *  restore.check.ts's own makeCtx() and backup.check.ts's stubBackupCtx() already use), plus
  *  the runtime primitives ./clawforge upgrade itself asks for. `image` overrides the
  *  deployment's own OPENCLAW_IMAGE, for the pinned-channel scenarios below. */
-function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): { ctx: Context; calls: string[]; runningDigest: () => string } {
+function makeUpgradeCtx(scenario: Scenario, options: { image?: string; running?: string } = {}): { ctx: Context; calls: string[]; runningDigest: () => string } {
   const calls: string[] = [];
   const files = new Set([DATA_DIR]);
-  let runningDigest = PREVIOUS_DIGEST;
+  let runningDigest = options.running ?? PREVIOUS_DIGEST;
   const holder = JSON.stringify({ operationId: "op", what: "x", by: "a@b pid 1", takenAt: new Date().toISOString() });
 
   const mounts = mountPoints(DATA_DIR);
@@ -200,7 +201,9 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
 
 {
   await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PINNED_WITH_TAG}\n`);
-  const { ctx } = makeUpgradeCtx("doctor-fail", { image: PINNED_WITH_TAG });
+  // The container holds Docker's tagless spelling of the pin's own digest — what a healthy
+  // bootstrap/upgrade leaves running.
+  const { ctx } = makeUpgradeCtx("doctor-fail", { image: PINNED_WITH_TAG, running: PINNED_NO_TAG });
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
     try { await upgrade(ctx, []); } catch (error) { failure = error; }
@@ -213,6 +216,53 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
     try { await upgrade(dryCtx, ["--dry-run"]); } catch (error) { retry = error; }
   });
   check("the next upgrade --dry-run succeeds against the restored pin", retry, undefined);
+}
+
+// --- a rollback leaves the container and .env on the SAME content: the recreated gateway gets
+// the tagged pre-upgrade reference itself when that is the digest that ran (the recreated
+// container's image IS what Compose reads from OPENCLAW_IMAGE, so a tagless recreate under a
+// tagged pin would leave inspect/doctor reporting ENV_STALE and the next up recreating again);
+// when .env named a bare tag, the pin records that tag alongside the proven digest ----------
+
+{
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PINNED_WITH_TAG}\n`);
+  // The container carries Docker's own tagless RepoDigests spelling of the same digest.
+  const { ctx, calls, runningDigest } = makeUpgradeCtx("doctor-fail", { image: PINNED_WITH_TAG, running: PINNED_NO_TAG });
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(ctx, []); } catch { /* the rollback under test */ }
+  });
+  check("a rollback over a tagged pin recreates the gateway on the tagged reference itself", calls.includes(`recreateWithImage ${PINNED_WITH_TAG}`), true);
+  check("the rolled-back container carries the tagged reference, not the tagless form", runningDigest(), PINNED_WITH_TAG);
+  const facts = connectionFactDiffs({ image: runningDigest() }, parseEnv(await readFile(envFile(), "utf8")));
+  check("inspect's connection-fact comparison sees no divergence after the rollback", facts, []);
+}
+
+{
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\n`);
+  const { ctx, runningDigest } = makeUpgradeCtx("doctor-fail", { image: SHARED_TAG });
+  let failure: unknown;
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+  });
+  check("a rollback over a bare-tag .env still rolls back", failure instanceof Error, true);
+  const pinned = parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE;
+  check("the pin records the tag alongside the digest that was proven", pinned, `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`);
+  check("and inspect's comparison still sees no divergence", connectionFactDiffs({ image: runningDigest() }, parseEnv(await readFile(envFile(), "utf8"))), []);
+}
+
+// --- an explicit --image repo@sha256:… of the tracked repository keeps the deployment's tag,
+// so the success pin stays a channel the next plain upgrade can re-resolve — a tagless digest
+// of a different repository still pins as-is --------------------------------------------
+
+{
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PINNED_WITH_TAG}\n`);
+  const { ctx } = makeUpgradeCtx("success", { image: PINNED_WITH_TAG });
+  let failure: unknown;
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(ctx, ["--image", PINNED_NO_TAG]); } catch (error) { failure = error; }
+  });
+  check("upgrading to a tagless digest of the tracked repository succeeds", failure, undefined);
+  check("the success pin keeps the tag alongside the requested digest", parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, PINNED_WITH_TAG);
 }
 
 // --- upgrade with no --image, after a tag-preserving pin, re-resolves the CHANNEL (`repo:tag`),
@@ -353,7 +403,8 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
   if (scenario === "success") {
     check("Docker success returns without failure", failure, undefined);
     check("Docker success running identity is B", running, TARGET_DIGEST);
-    check("Docker success publishes B after validation", parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, TARGET_DIGEST);
+    // An explicit --image digest of the tracked repository keeps the deployment's tag in the pin.
+    check("Docker success publishes B alongside the deployment's tag", parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, `${SHARED_TAG}@${TARGET_DIGEST.split("@")[1]}`);
   } else {
     check(`${scenario}: upgrade reports failure`, failure instanceof Error, true);
     check(`${scenario}: B is not durably pinned`, parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, PREVIOUS_DIGEST);

@@ -14,24 +14,39 @@ All notable changes to `@clawforge/framework` will be documented here.
   map moved from the recipe-hook module to `core/env.ts` (with a both-directions check against
   `package.json`), the `regexEscape` copy in a check is gone and the single-definition audit covers
   `tools/checks` too, and the identity `actionLabel` indirection was removed.
-* A failed `upgrade`'s rollback re-pins `OPENCLAW_IMAGE` to the exact reference the deployment
-  had before the upgrade (tag and digest), not the tagless `repo@sha256:…` form Docker reports —
-  so a rolled-back deployment is indistinguishable from before and the next plain `upgrade` (or
-  `--dry-run`) re-resolves the channel instead of refusing on a pin it blames on "older versions".
-  A genuinely tagless pin is still refused, with the `--image <repo:tag>` remedy and no blame.
+* A failed `upgrade`'s rollback recreates the gateway on the same reference it writes back to
+  `OPENCLAW_IMAGE` — the exact pre-upgrade pin (tag and digest), not the tagless `repo@sha256:…`
+  form Docker reports, so container and `.env` agree and inspect/doctor see no divergence after
+  a rollback; when `.env` named a bare tag, the rollback runs the digest that was proven and
+  pins that tag alongside it. The connection-fact comparison reads the image by digest, so the
+  two spellings of one digest no longer read as stale, `plan` offers no spurious
+  `recover-env --adopt-runtime`, and the next plain `upgrade` (or `--dry-run`) re-resolves the
+  channel instead of refusing on a pin it blames on "older versions". A genuinely tagless pin
+  is still refused, with the `--image <repo:tag>` remedy and no blame.
+* `upgrade --image repo@sha256:…` keeps the deployment's tag when the digest names the same
+  repository, so the success pin stays a channel a plain `upgrade` can re-resolve; a digest of
+  a different repository still pins as-is, and the help and guide say so instead of claiming
+  every digest is "used as-is".
 * `backup install --interval <bare number>` suggests only spellings the command itself accepts:
   `1440` reads as `1d`, `90` as `1h, 2h`, `0` as `1m` (previously `1440m`/`1440h`, which backup
   then refuses), and its general refusal no longer opens with "a number of minutes" — backup
   requires an explicit unit. `watch install` still accepts bare minutes.
-* `set build`'s no-digest refusal advises `./clawforge bootstrap` (which pins the digest and works
-  before the first bootstrap) instead of `./clawforge lock`, which refuses there — the same advice
-  `set validate` already gives. Artifact validation now runs the same recipe-completeness checks
+* `set build`'s no-digest refusal names the remedy for both states — `./clawforge bootstrap`
+  before the first bootstrap, `./clawforge lock` on a running instance — instead of always
+  advising `bootstrap`, which on a live instance re-resolves the tag and recreates the gateway
+  with no backup, lint gate or rollback; the lock-mismatch refusal (which only exists on a
+  deployed instance) advises `upgrade --image`/`lock` and never `bootstrap`. `SET_IMAGE_UNPINNED`
+  picks its remedy the same way: `./clawforge lock` once a lock is recorded, `./clawforge
+  bootstrap` before. Artifact validation now runs the same recipe-completeness checks
   the working-tree validation runs (the artifact is unpacked when verified), so a tree with
   blocking findings can no longer build into an artifact that `set validate --set` calls coherent —
   the unpack gate (also behind `apply --set`, `plan`, `rollback --previous-set`, `set try`,
   `set diff`, `accept --set`) refuses it. `set validate --set` reports findings through the same
   path as the tree (blocking findings print as `blocking:`, each failing code once in the summary)
   and prints "checking …" rather than "installing from …".
+* `backup --help` (and MCP `help backup`) no longer promises "30m, 6h, 1d or a bare number of
+  minutes" for `--interval` — an explicit unit is required, as the argument's own line already
+  said.
 * Checkout help leftovers: `<command> <action> --help` at the checkout root answers with the
   command's help instead of "several deployments" (so does `--help` after the command's own
   flags); `help <checkout command>` in a checkout subfolder points to the checkout root instead of
@@ -53,8 +68,8 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `set validate` on a working tree whose image is not pinned yet builds the manifest with the
   tag in `requires.image` and reports `SET_IMAGE_UNPINNED` as a blocking finding together with
   everything else it found — in `--json` too — instead of dying inside the manifest build with
-  no findings at all. Its advice now names `./clawforge bootstrap` (which resolves and pins the
-  digest) rather than `./clawforge lock`, which refuses before the first bootstrap. The hard
+  no findings at all. Its advice follows the deployment's state — `./clawforge lock` once a
+  lock is recorded, `./clawforge bootstrap` before (where `lock` refuses). The hard
   refusal stays on `set build`.
 * Recipe hooks and a checkout deployment's `app.ts` can import `@clawforge/framework/private-config`
   (and the package's other public exports) the way the guide and the `--with-hooks` stub say: in a

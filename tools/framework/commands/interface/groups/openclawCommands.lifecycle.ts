@@ -172,7 +172,7 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "— prune-replaced never touches an archive.\n" +
       "install / uninstall — print (and, with --apply, install through the transport) a " +
       "crontab entry that runs a plain `./clawforge backup` every --interval (default 1d) — " +
-      "30m, 6h, 1d or a bare number of minutes (as `watch install`); minutes must divide 60, hours must divide a day; anything " +
+      "30m, 6h or 1d, an explicit unit required (a bare number is minutes only for `watch install`); minutes must divide 60, hours must divide a day; anything " +
       "else is refused, naming the nearest valid values — the schedule OC_BACKUP_KEEP " +
       "presumes but nothing installed before this,\n" +
       "mirroring `watch install`/`watch uninstall` exactly (same marker convention, " +
@@ -286,9 +286,12 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "it is already pinned to repo:tag@sha256:…, so upgrade with no --image still checks " +
       "whether the tracked tag has moved instead of comparing the pin to itself and always " +
       "finding nothing to do.\n" +
-      "--image repo@sha256:… names exact content and is used as-is. A pin left with no tag " +
-      "(repo@sha256:… from before pins kept one) has no channel to recover without " +
-      "guessing, and is refused with --image <repo:tag> as the remedy.\n" +
+      "--image repo@sha256:… names exact content; without a tag it keeps this deployment's tag " +
+      "when it names the same repository, so the pin stays a channel a plain upgrade can " +
+      "re-resolve — a digest of a different repository pins as-is, and the next plain upgrade " +
+      "then needs --image <repo:tag>. A pin left with no tag (repo@sha256:… from before pins " +
+      "kept one) has no channel to recover without guessing, and is refused with --image " +
+      "<repo:tag> as the remedy.\n" +
       "Records the currently running digest, takes a consistent pre-upgrade backup (the " +
       "native path from `backup --native` when the image supports it, else a stopped full " +
       "backup), recreates the gateway on the new digest, waits for /startupz then /readyz, " +

@@ -356,10 +356,12 @@ gets the pre-upgrade backup restored while stopped, before the previous image is
 Failures before recreation do not trigger image rollback. A failed compensation reports both
 the original failure and the rollback error, with the pre-upgrade backup path; it never claims
 the rollback succeeded. Successful compensation confirms the previous running digest and
-re-pins `OPENCLAW_IMAGE` to the reference the deployment had before the upgrade — the exact
-pre-upgrade form, tag and digest, never the tagless `repo@sha256:…` form Docker reports —
-so a rolled-back deployment is indistinguishable from before and the next plain `upgrade`
-(or `--dry-run`) re-resolves the channel as usual. On upgrade success `OPENCLAW_IMAGE` in
+recreates the gateway on the reference .env will carry: the exact pre-upgrade form (tag and
+digest), never the tagless `repo@sha256:…` form Docker reports — so container and `.env`
+agree and inspect/doctor see no divergence. When `OPENCLAW_IMAGE` named a bare tag, the
+rollback runs the digest that was proven and pins that tag alongside it in `.env`; the next
+plain `upgrade` (or `--dry-run`) re-resolves the channel as usual. On upgrade success
+`OPENCLAW_IMAGE` in
 `.env` is pinned to `repo:tag@sha256:…`
 (the channel it was resolved from, alongside the new digest) — `apply` never rewrites
 `config/deployment.lock.json` (see [Instance settings as code](operations.md#instance-settings-as-code)),

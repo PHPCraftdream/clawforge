@@ -82,6 +82,20 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
   const problems = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
   check("a tag instead of a digest is a finding", codes(problems), ["SET_IMAGE_UNPINNED"]);
   check("and the tag is named", problems[0]?.detail.includes("extended-stable"), true);
+  // The remedy follows the deployment's state: with no lock recorded, only bootstrap can
+  // pin (lock refuses with no inventory to read).
+  check("with no lock recorded, the remedy is bootstrap", problems[0]?.nextAction, "./clawforge bootstrap");
+  const lockPath = resolve(baseDeployment, "config", "deployment.lock.json");
+  await writeFile(lockPath, JSON.stringify({ version: 1, image: { reference: "x:y", digest: "x@sha256:z" } }));
+  try {
+    // A lock exists only once a live instance was recorded — there bootstrap would
+    // re-resolve the tag and recreate the gateway, so the remedy is lock instead.
+    const locked = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
+    check("on a recorded deployment, the remedy is lock", locked[0]?.nextAction, "./clawforge lock");
+    check("and the detail says why not bootstrap", locked[0]?.detail.includes("bootstrap"), true);
+  } finally {
+    await rm(lockPath);
+  }
 }
 
 // --- references resolve --------------------------------------------------------------------

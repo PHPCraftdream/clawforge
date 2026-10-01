@@ -72,18 +72,23 @@ async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<
       die(
         `the lock's digest does not belong to ${image} — it was recorded for ${lock.image.reference}, ` +
           "and pinning it here would put the previous image's runtime under a declaration that no longer names it.\n" +
-          "Run ./clawforge bootstrap to record the digest for the image now declared, or set OPENCLAW_IMAGE to a @sha256 reference.",
+          "A lock only exists on a deployed instance, so the safe paths are the upgrade ones: " +
+          "run ./clawforge upgrade --image <repo:tag> to move to the image now declared, or ./clawforge lock " +
+          "if the running gateway already serves it. Or set OPENCLAW_IMAGE to a @sha256 reference.",
       );
     }
     return lock.image.digest;
   }
   // validate keeps going with the tag in requires.image, so checkImagePinned can report
-  // SET_IMAGE_UNPINNED alongside everything else; only build refuses outright.
+  // SET_IMAGE_UNPINNED alongside everything else; only build refuses outright. Both states
+  // exist here — never bootstrapped, or bootstrapped with the tag still unpinned (bootstrap
+  // --no-pull) — so the advice names the remedy for each instead of picking one.
   if (tolerateUnpinned) return image;
   die(
     `no image digest to pin the set to — ${image} is a tag, and a set that names a tag ` +
       "would install whatever that tag means on the day it is installed.\n" +
-      "Run ./clawforge bootstrap to record the digest that was proven, or set OPENCLAW_IMAGE to a @sha256 reference.",
+      "Before the first bootstrap, ./clawforge bootstrap pins the digest it pulls; on a running instance, " +
+      "./clawforge lock records the digest the gateway already serves. Or set OPENCLAW_IMAGE to a @sha256 reference.",
   );
 }
 

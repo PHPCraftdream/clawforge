@@ -40,10 +40,13 @@ function parseUpgradeArgs(args: string[]): { image?: string; dryRun: boolean; js
   return { image, dryRun: parsed["dry-run"] === true, jsonOnly: parsed.json === true };
 }
 
-/** `channel` is the repo[:tag] the digest was resolved from; absent for an explicit digest. */
+/** `channel` is the repo[:tag] the digest was resolved from; `pin` the reference the success
+ *  path writes — an explicit tagless digest of the tracked repository keeps the deployment's
+ *  tag, so the pin stays a channel a plain `upgrade` can re-resolve. */
 interface UpgradeTarget {
   readonly targetDigest: string;
   readonly channel?: string;
+  readonly pin?: string;
 }
 
 /** An explicit digest is used as-is. Anything else — including a pinned `repo:tag@sha256:…`
@@ -55,6 +58,17 @@ async function resolveUpgradeTarget(
   resolveImageDigest: (reference: string) => Promise<string | undefined>,
 ): Promise<UpgradeTarget> {
   if (requestedImage !== undefined && requestedImage.includes("@sha256:")) {
+    if (channelHasTag(imageChannel(requestedImage))) return { targetDigest: requestedImage };
+    // The channel and the requested digest name the same repository when their tagless
+    // repo parts match — compare with the tag stripped, never the channel string itself.
+    const repoOf = (reference: string): string => {
+      const channelPart = imageChannel(reference);
+      return channelHasTag(channelPart) ? channelPart.slice(0, channelPart.lastIndexOf(":")) : channelPart;
+    };
+    const channel = imageChannel(ctx.settings.image);
+    if (channelHasTag(channel) && repoOf(channel) === repoOf(requestedImage)) {
+      return { targetDigest: requestedImage, pin: `${channel}@${digestHash(requestedImage)}` };
+    }
     return { targetDigest: requestedImage };
   }
 
@@ -150,6 +164,13 @@ async function rollbackUpgrade(
 ): Promise<never> {
   const reason = cause instanceof Error ? cause.message : String(cause);
   warn(`upgrade failed — rolling back to ${previousDigest}: ${reason}`);
+  // Container and .env must end on the same content: Compose reads OPENCLAW_IMAGE into the
+  // recreated container's image, so a tagged .env pin over a tagless RepoDigests recreate
+  // would leave inspect/doctor reporting ENV_STALE and the next up recreating again. When
+  // the pre-upgrade reference is the digest that ran, recreate on the reference itself;
+  // otherwise (a bare-tag .env, a drifted pin) the proven digest runs and the pin records
+  // the tag alongside it.
+  const sameContent = digestHash(previousReference) === digestHash(previousDigest);
   try {
     // Restore before starting the old code against data that migrations may have changed.
     // noStart prevents restore from restarting the failed target's transient settings.
@@ -157,15 +178,19 @@ async function rollbackUpgrade(
       warn(`migrations may have run against the new image — restoring the pre-upgrade backup: ${backupArchive}`);
       await restoreArchive(ctx, backupArchive, { force: true, noStart: true });
     }
-    await recreateWithImage(previousDigest);
+    await recreateWithImage(sameContent ? previousReference : previousDigest);
     await ctx.runtime.waitForHealth();
     const identity = await ctx.runtime.runningImageIdentity?.();
     if (!identity?.digests.some((digest) => digestHash(digest) === digestHash(previousDigest))) {
       throw new Error(`could not confirm the rollback gateway is running ${previousDigest}`);
     }
-    // Restore the reference exactly as it was validated pre-upgrade — tag and digest, not the
-    // tagless RepoDigests form — so a rolled-back deployment is indistinguishable from before.
-    await pinImageReference(previousReference);
+    // The exact pre-upgrade reference, tag and digest — or, when .env named a bare tag, that
+    // tag alongside the digest that was proven — never a guessed channel.
+    await pinImageReference(
+      sameContent || !channelHasTag(imageChannel(previousReference))
+        ? previousReference
+        : `${imageChannel(previousReference)}@${digestHash(previousDigest)}`,
+    );
   } catch (compensationError) {
     const detail = compensationError instanceof Error ? compensationError.message : String(compensationError);
     throw new AggregateError(
@@ -180,6 +205,7 @@ async function upgradeLocked(
   ctx: Context,
   previousDigest: string,
   targetDigest: string,
+  pinnedReference: string,
   previousReference: string,
   recreateWithImage: (reference: string, onMutationStart?: () => void) => Promise<void>,
 ): Promise<void> {
@@ -217,7 +243,7 @@ async function upgradeLocked(
     if (!identity?.digests.some((digest) => digestHash(digest) === digestHash(targetDigest))) {
       throw new Error(`could not confirm the validated gateway is running ${targetDigest}`);
     }
-    await pinImageReference(targetDigest);
+    await pinImageReference(pinnedReference);
   } catch (error) {
     if (!mutationStarted) throw error;
     // An exception from recreation/probes can precede the normal exit-78 observation.
@@ -309,7 +335,7 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
       return;
     }
     changed = true;
-    await upgradeLocked(ctx, current.digests[0], target.targetDigest, previousReference, recreateWithImage);
+    await upgradeLocked(ctx, current.digests[0], target.targetDigest, target.pin ?? target.targetDigest, previousReference, recreateWithImage);
   });
 
   if (options.jsonOnly) {

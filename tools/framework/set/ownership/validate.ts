@@ -13,6 +13,7 @@ import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { recipesDir, desiredStateFile } from "#src/runtime/deployment.ts";
 import { collectSecretRefs } from "#src/service/secrets.ts";
+import { readLock } from "#src/commands/management/lock.ts";
 import { problem } from "#src/service/inspection.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
@@ -103,15 +104,22 @@ async function declaredConfig(problems: Problem[]): Promise<unknown> {
   return (parsed as { path: string; value?: unknown }[]).map((entry) => entry.value);
 }
 
-function checkImagePinned(manifest: SetManifest, problems: Problem[]): void {
-  if (!manifest.requires.image.includes("@sha256:")) {
-    problems.push(
-      problem(
-        "SET_IMAGE_UNPINNED",
-        `the set requires image ${manifest.requires.image}, which is a tag — a set that names a tag installs whatever that tag means on the day it is installed`,
-      ),
-    );
-  }
+async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Promise<void> {
+  if (manifest.requires.image.includes("@sha256:")) return;
+  // The remedy follows the deployment's state: a lock file only exists once a live instance
+  // was recorded, and on one of those `bootstrap` would re-resolve the tag and recreate the
+  // gateway — no backup, no lint gate, no rollback. Before the first bootstrap only
+  // `bootstrap` can pin, since `lock` refuses with no inventory to read.
+  const locked = (await readLock()) !== undefined;
+  problems.push(
+    problem(
+      "SET_IMAGE_UNPINNED",
+      locked
+        ? `the set requires image ${manifest.requires.image}, which is a tag — a set that names a tag installs whatever that tag means on the day it is installed; ./clawforge lock records the digest the running gateway already serves, while ./clawforge bootstrap would re-resolve the tag and recreate the gateway`
+        : `the set requires image ${manifest.requires.image}, which is a tag — a set that names a tag installs whatever that tag means on the day it is installed`,
+      locked ? "./clawforge lock" : "./clawforge bootstrap",
+    ),
+  );
 }
 
 /** The file checks run only where the files actually are: a working tree, or an unpacked
@@ -219,7 +227,7 @@ async function checkSecretsDeclared(manifest: SetManifest, problems: Problem[]):
  *  artifact must answer exactly as validating the tree it came from. */
 export async function validateSet(manifest: SetManifest, options: { checkFiles?: boolean } = {}): Promise<Problem[]> {
   const problems: Problem[] = [];
-  checkImagePinned(manifest, problems);
+  await checkImagePinned(manifest, problems);
   await checkRecipesComplete(manifest, options.checkFiles === true, problems);
   checkReferencesResolve(manifest, problems);
   checkSchedulesValid(manifest, problems);

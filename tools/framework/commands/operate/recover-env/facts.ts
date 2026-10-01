@@ -61,7 +61,13 @@ export function connectionFactDiffs(
     if (value === undefined) return [];
     const local = effectiveLocalValue(fact.name, current[fact.name]);
     if (local === undefined) return [{ name: fact.name, value, kind: "missing" as const }];
-    return local !== value ? [{ name: fact.name, value, kind: "diverged" as const }] : [];
+    // The image fact compares by digest: Docker's own answer is the tagless RepoDigests form
+    // (repo@sha256:…), while .env pins keep the tag (repo:tag@sha256:…) — the same content
+    // must not read as stale for its spelling alone.
+    const diverged = fact.field === "image"
+      ? local !== value && local.split("@").at(-1) !== value.split("@").at(-1)
+      : local !== value;
+    return diverged ? [{ name: fact.name, value, kind: "diverged" as const }] : [];
   });
 }
 

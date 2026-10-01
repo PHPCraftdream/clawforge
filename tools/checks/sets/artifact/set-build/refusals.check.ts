@@ -81,7 +81,7 @@ try {
         refusal.includes(otherRepo) && refusal.includes(declared),
         true,
       );
-      check("that refusal says how to record the right digest", refusal.includes("./clawforge bootstrap") && !refusal.includes("./clawforge lock") && refusal.includes("@sha256"), true);
+      check("that refusal names the safe remedies for a deployed instance", refusal.includes("./clawforge upgrade --image") && refusal.includes("./clawforge lock") && !refusal.includes("./clawforge bootstrap"), true);
       const otherTag = "ghcr.io/openclaw/openclaw:older-stable";
       await writeLock(otherTag, `ghcr.io/openclaw/openclaw@sha256:${"b".repeat(64)}`);
       refusal = await buildRefusal();
@@ -119,13 +119,13 @@ try {
     }
 
     // No lock at all keeps the existing refusal: a tag with nothing proven to pin it to.
-    // The advice names bootstrap — `lock` refuses before the first bootstrap, so it was a
-    // step the reader could not take; R30-07 fixed validate's advice, build's follows it now.
+    // Both states reach it — never bootstrapped, or bootstrapped with the tag still
+    // unpinned — so the advice names the remedy for each instead of assuming one.
     await rm(lockPath);
     try {
       const none = await buildRefusal();
       check("no lock at all keeps the no-digest refusal", none.includes("no image digest to pin the set to") && none.includes(declared), true);
-      check("and its advice is bootstrap, which works before the first bootstrap too", none.includes("./clawforge bootstrap") && !none.includes("./clawforge lock"), true);
+      check("its advice covers both states: bootstrap before the first, lock on a running instance", none.includes("./clawforge bootstrap") && none.includes("./clawforge lock"), true);
     } finally {
       await writeFile(lockPath, originalLock);
     }

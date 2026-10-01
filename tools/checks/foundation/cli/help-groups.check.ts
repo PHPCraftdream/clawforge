@@ -107,4 +107,20 @@ check("secrets (destructive only with --apply/--init-store/--dump) is not flatly
 check("restore (destructive except --dry-run) is not flatly destructive either", destructiveMarker(openclawCommands.restore!), " (destructive for some actions)");
 check("push (destructive except --dry-run) is not flatly destructive either", destructiveMarker(openclawCommands.push!), " (destructive for some actions)");
 
+// --- per-command details: the grammar a command's details preach is the one it enforces --
+
+{
+  const backupDetails = openclawCommands.backup!.details ?? "";
+  check("backup details state the explicit-unit rule", backupDetails.includes("an explicit unit"), true);
+  // The details used to promise "30m, 6h, 1d or a bare number of minutes (as `watch
+  // install`)" — behaviour requires an explicit unit since watch's grammar split off.
+  check("backup details no longer promise a bare number of minutes", backupDetails.includes("bare number of minutes"), false);
+  const interval = openclawCommands.backup!.arguments?.find((argument) => argument.name === "interval");
+  check("backup's --interval line agrees with the details", (interval?.description ?? "").includes("explicit unit required"), true);
+
+  const upgradeDetails = openclawCommands.upgrade!.details ?? "";
+  check("upgrade help says a tagless explicit digest keeps the deployment's tag", upgradeDetails.includes("keeps this deployment's tag"), true);
+  check("upgrade help no longer claims a digest is used as-is", upgradeDetails.includes("used as-is"), false);
+}
+
 finish("help-groups");

@@ -1,0 +1,90 @@
+=== unknown command: frobnicate — checkout root (./clawforge) ===
+error: unknown command: frobnicate
+    run ./clawforge help to list every command
+
+=== unknown command: frobnicate — named deployment (./clawforge --app demo) ===
+error: unknown command: frobnicate
+    run ./clawforge --app demo help to list every command
+
+=== unknown command: frobnicate — installed command (clawforge) ===
+error: unknown command: frobnicate
+    run clawforge help to list every command
+
+=== unknown argument: status --bogus — checkout root (./clawforge) ===
+error: unknown argument: --bogus
+    run ./clawforge status --help for its full argument list
+
+=== unknown argument: status --bogus — named deployment (./clawforge --app demo) ===
+error: unknown argument: --bogus
+    run ./clawforge --app demo status --help for its full argument list
+
+=== unknown argument: status --bogus — installed command (clawforge) ===
+error: unknown argument: --bogus
+    run clawforge status --help for its full argument list
+
+=== <command> --help without a deployment: status --help — checkout root (./clawforge) ===
+==> status — Show containers, image, health probes and data usage
+    Usage: ./clawforge status [--json]
+      --json                 Emit status as JSON instead of text
+    
+    Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
+    because they can disagree: an image whose healthcheck binary is missing
+    reports "unhealthy" forever while the gateway is serving traffic fine.
+    --json emits the same facts structured instead of the container table, since that table is not machine-readable: target, runtime, exposure, bootstrapped, running, image, health, serviceUrl, dataUsage.
+
+=== <command> --help without a deployment: status --help — named deployment (./clawforge --app demo) ===
+==> status — Show containers, image, health probes and data usage
+    Usage: ./clawforge --app demo status [--json]
+      --json                 Emit status as JSON instead of text
+    
+    Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
+    because they can disagree: an image whose healthcheck binary is missing
+    reports "unhealthy" forever while the gateway is serving traffic fine.
+    --json emits the same facts structured instead of the container table, since that table is not machine-readable: target, runtime, exposure, bootstrapped, running, image, health, serviceUrl, dataUsage.
+
+=== <command> --help without a deployment: status --help — installed command (clawforge) ===
+==> status — Show containers, image, health probes and data usage
+    Usage: clawforge status [--json]
+      --json                 Emit status as JSON instead of text
+    
+    Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
+    because they can disagree: an image whose healthcheck binary is missing
+    reports "unhealthy" forever while the gateway is serving traffic fine.
+    --json emits the same facts structured instead of the container table, since that table is not machine-readable: target, runtime, exposure, bootstrapped, running, image, health, serviceUrl, dataUsage.
+
+=== missing deployment, no others available: --app demo — checkout root (./clawforge) ===
+error: deployment "demo" not found at <root>/apps/demo
+error: create one with: ./clawforge new-app <name>
+
+=== missing deployment, no others available: --app demo — named deployment (./clawforge --app demo) ===
+error: deployment "demo" not found at <root>/apps/demo
+error: create one with: ./clawforge --app demo new-app <name>
+
+=== missing deployment, no others available: --app demo — installed command (clawforge) ===
+error: deployment "demo" not found at <root>/apps/demo
+error: create one with: clawforge new-app <name>
+
+=== missing deployment, others available: openclaw — checkout root (./clawforge) ===
+error: several deployments (demo, staging) — pick one with --app <name> or OC_APP
+
+=== missing deployment, others available: openclaw — named deployment (./clawforge --app demo) ===
+error: several deployments (demo, staging) — pick one with --app <name> or OC_APP
+
+=== missing deployment, others available: openclaw — installed command (clawforge) ===
+error: several deployments (demo, staging) — pick one with --app <name> or OC_APP
+
+=== checkout gate command from a checkout subfolder: check — checkout root (./clawforge) ===
+error: no app.ts in <root>
+error: check is a checkout command — run it from the checkout root:
+error:     cd "<checkout>"
+
+=== checkout gate command from a checkout subfolder: check — named deployment (./clawforge --app demo) ===
+error: no app.ts in <root>
+error: check is a checkout command — run it from the checkout root:
+error:     cd "<checkout>"
+
+=== checkout gate command from a checkout subfolder: check — installed command (clawforge) ===
+error: no app.ts in <root>
+error: check is a checkout command — run it from the checkout root:
+error:     cd "<checkout>"
+

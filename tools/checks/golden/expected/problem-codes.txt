@@ -1,0 +1,48 @@
+code	severity	nextAction
+NOT_BOOTSTRAPPED	blocking	./clawforge bootstrap
+TARGET_UNREACHABLE	blocking	check OC_WSL_DISTRO with `wsl.exe -l -q`, or OC_SSH_HOST with `ssh -o BatchMode=yes <host> true`
+TARGET_NOT_GNU	blocking	./clawforge bootstrap --check
+GATEWAY_DOWN	blocking	./clawforge up
+GATEWAY_UNHEALTHY	blocking	./clawforge logs --tail 100
+EGRESS_UNREACHABLE	warning	./clawforge logs --tail 100
+CONFIG_DRIFT	blocking	./clawforge apply
+SECRET_MISSING	blocking	./clawforge secrets --apply
+PROVIDER_MISSING	warning	./clawforge configure-provider
+RESTART_REQUIRED	blocking	./clawforge restart
+MCP_RESTART_REQUIRED	warning	reconnect the MCP client (in Claude Code: /mcp)
+RECIPE_MIRROR_DRIFT	blocking	./clawforge apply
+AGENT_MISSING	blocking	./clawforge apply
+MCP_SERVER_MISSING	blocking	./clawforge apply
+CRON_DRIFT	blocking	./clawforge apply
+CLI_READ_FAILED	blocking	./clawforge inspect
+CHANNEL_UNKNOWN	warning	./clawforge cli channels status --json
+LOCK_MISSING	warning	./clawforge lock
+LOCK_DRIFT	warning	./clawforge plan
+PLUGIN_DRIFT	warning	./clawforge plan
+SKILL_DRIFT	warning	./clawforge plan
+ENV_STALE	warning	./clawforge recover-env
+ENV_LINE_INVALID	warning	./clawforge inspect  (then edit .env: fix the line named)
+DECLARATION_MISSING	warning	./clawforge apply-config --dump
+STORE_INCOMPLETE	warning	./clawforge secrets --dump
+IMAGE_UNPINNED	warning	./clawforge upgrade
+IMAGE_TAG_MOVED	warning	./clawforge upgrade
+SET_RECIPE_INCOMPLETE	blocking	./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)
+SET_RECIPE_INVALID	blocking	./clawforge set validate  (after fixing the recipe's recipe.json)
+SET_REFERENCE_BROKEN	blocking	./clawforge set validate
+SET_SCHEDULE_INVALID	blocking	./clawforge set validate
+SET_SECRET_UNDECLARED	blocking	./clawforge set validate
+SET_DECLARATION_INVALID	blocking	./clawforge set validate
+SET_REQUIREMENT_UNMET	warning	./clawforge inspect
+SET_IMAGE_UNPINNED	blocking	./clawforge bootstrap
+SET_OBJECT_ORPHANED	warning	./clawforge plan
+SECURITY_AUDIT_CRITICAL	blocking	./clawforge cli security audit --json
+SECURITY_AUDIT_WARN	warning	./clawforge cli security audit --json
+GATEWAY_PUBLICLY_BOUND	blocking	./clawforge expose status  (then set OC_BIND_ADDRESS=127.0.0.1 in .env and ./clawforge up to recreate, or acknowledge it in config/security-suppressions.json)
+GATEWAY_EXPOSURE_ACKNOWLEDGED	warning	./clawforge expose status
+UFW_DOCKER_BYPASS	warning	./clawforge expose status  (then add a DOCKER-USER rule restricting the port, or bind the gateway to 127.0.0.1 and use ./clawforge expose)
+PRIVATE_FILE_INSECURE	warning	./clawforge secrets --apply  (re-protects the local store on write; chmod 600 by hand for .env, or the equivalent ACL fix on Windows)
+PRIVATE_FILE_UNREADABLE	warning	./clawforge doctor  (check local filesystem access, then retry)
+BACKUP_MISSING	warning	./clawforge backup
+BACKUP_UNREADABLE	warning	./clawforge backup list
+BACKUP_STALE	warning	./clawforge backup install --apply
+DISK_LOW	warning	./clawforge backup list  (then remove old archives, or point OC_DATA_DIR/OC_BACKUP_DIR at a volume with more free space)

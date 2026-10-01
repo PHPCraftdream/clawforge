@@ -1,0 +1,109 @@
+=== clawforge help (installed) ===
+==> clawforge — self-hosting framework for OpenClaw
+    
+    Usage: clawforge <command> [options]
+    
+    Start & stop:
+      bootstrap            Bring the instance up from nothing (idempotent)
+      up                   Start the service and wait until it serves
+      restart              Restart the instance so it re-reads its configuration
+      down                 Stop and remove the containers (data is kept)
+      destroy              Remove what bootstrap created *
+      logs                 Follow the service log, or read a bounded tail of it
+      status               Show containers, image, health probes and data usage
+    
+    Check:
+      smoke                Acceptance run: health, agent, config, snapshots, MCP
+      inspect              What is declared, what is actually running, and where they disagree
+      doctor               Say whether anything is wrong and what to run about it
+      accept               Run the acceptance checks this deployment's recipes declare
+      operations           What mutating runs did to this instance, and what they left behind
+      watch                Health monitoring with a webhook alert on state change *
+    
+    Change:
+      upgrade              Update the image by digest, with automatic rollback on failure *
+      plan                 The ordered actions the declaration implies, without performing them
+      apply                Run the plan, then confirm what the instance actually is *
+      rollback             Put back the configuration an operation replaced *
+      apply-config         Apply the deployment's desired-state.json
+      configure-provider   Configure model providers from target-side environment variables
+      secrets              Show required secrets and whether they are in place *
+      recipe               Deploy services next to the instance: install, verify, list, and more *
+      provision-agent      Wire a recipe's MCP server to its own OpenClaw agent, with optional cron
+      set                  Build or validate the set: what a deployment installs, as one artifact *
+    
+    Save & move:
+      backup               Snapshot the data directory; list, prune, schedule *
+      restore              Restore an archive over the current state *
+      pull                 Snapshot the instance state into the snapshot directory
+      push                 Push a snapshot back onto the instance *
+      verify               Check a snapshot for credentials before sharing it
+      lock                 Pin what this instance is made of, or check it still matches
+      deploy               Deploy to a server over SSH and bootstrap it there *
+    
+    Security & access:
+      expose               Reach a loopback-bound gateway from outside: SSH tunnel or tailscale *
+      incident             Incident response: contain, preserve evidence, rotate the token, audit *
+    
+    Integrations & recovery:
+      recover-env          Repair .env's connection facts from the running instance
+      mcp-serve            stdio MCP bridge to the service's own channels
+      mcp-setup            Configure project MCP servers for Claude Code and Codex
+      mcp-creds            Print service URL, token and MCP client config for both servers
+    
+    Low-level:
+      cli                  Run the OpenClaw CLI in a throwaway container !
+      exec                 Run an arbitrary command in the same sidecar as clawforge cli !
+      host                 Run one command on the operator's own machine, not in a container !
+      cli-start            Start the persistent CLI helper (no per-call container overhead)
+      cli-stop             Stop the persistent CLI helper
+    
+    Framework:
+      init                 Initialise this directory as an OpenClaw deployment
+      version              Print clawforge's own version (also: --version, -v)
+      completion           Print a shell completion script (bash, zsh or pwsh) to stdout
+      control-mcp          expose clawforge's commands as MCP tools, for agents
+      help <command>       same as: <command> --help
+    
+      ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)
+    
+    Run `clawforge help <command>` or `clawforge <command> --help` for its full description.
+
+=== clawforge init --help (installed) ===
+==> init — Initialise this directory as an OpenClaw deployment
+    Usage: clawforge init [--local]
+      --local                Print the npm command for editor types (also in an already initialised directory)
+    
+    Writes app.ts, config/desired-state.json and .env (own data directory and project-specific port) directly into the current directory, plus config/, secrets/, recipes/, .gitignore entries for the deployment state and node_modules/, and a committed clawforge entrypoint that delegates to this package's CLI. Project MCP settings for Claude Code and Codex are created automatically, without changing global client settings.
+    The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.
+    Refuses if app.ts already exists — run this once, then clawforge bootstrap. `init --local` in an already initialised directory only prints the editor-types npm line and writes nothing.
+
+=== clawforge version --help (installed) ===
+==> version — Print clawforge's own version (also: --version, -v)
+    Usage: clawforge version [--json] [--verbose]
+      --json                 Emit { name, version, source, path } instead of the one-line text
+      --verbose              Also print which copy runs and where
+    
+    Reads the framework's package.json, as `inspect` does. No deployment is resolved, no .env is read, no lock is touched. --verbose / --json also say which copy runs: global, local (the app's own dependency) or checkout, and its path.
+
+=== clawforge completion --help (installed) ===
+==> completion — Print a shell completion script (bash, zsh or pwsh) to stdout
+    Usage: clawforge completion <shell>
+      <shell>                bash, zsh or pwsh [bash|zsh|pwsh] (required)
+    
+    Generated from the live command declarations — names, flags, and a multi-action command's own flags under the right action — so it cannot drift from --help.
+    Install: source <(clawforge completion bash); clawforge completion zsh > "${fpath[1]}/_clawforge"; or clawforge completion pwsh | Out-String | Invoke-Expression.
+    No deployment is resolved, no .env is read, no lock is touched.
+
+=== clawforge status --help (installed, no app.ts here) ===
+==> status — Show containers, image, health probes and data usage
+    Usage: clawforge status [--json]
+      --json                 Emit status as JSON instead of text
+    
+    Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) and the runtime's own opinion —
+    because they can disagree: an image whose healthcheck binary is missing
+    reports "unhealthy" forever while the gateway is serving traffic fine.
+    --json emits the same facts structured instead of the container table, since that table is not machine-readable: target, runtime, exposure, bootstrapped, running, image, health, serviceUrl, dataUsage.
+    
+    "status" runs inside an app folder — there is no app.ts here; run: clawforge init
+

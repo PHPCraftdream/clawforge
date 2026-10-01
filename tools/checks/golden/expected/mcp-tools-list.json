@@ -1,0 +1,1782 @@
+{
+  "tools": [
+    {
+      "name": "bootstrap",
+      "description": "Bring the instance up from nothing (idempotent)\n\nFull text: call help with command=bootstrap.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "no-pull": {
+            "type": "boolean",
+            "description": "Use the image already present locally"
+          },
+          "check": {
+            "type": "boolean",
+            "description": "Read-only prerequisite report — no lock, no mutation"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          }
+        }
+      }
+    },
+    {
+      "name": "up",
+      "description": "Start the service and wait until it serves\n\nFull text: call help with command=up.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          }
+        }
+      }
+    },
+    {
+      "name": "restart",
+      "description": "Restart the instance so it re-reads its configuration\n\nFull text: call help with command=restart.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          }
+        }
+      }
+    },
+    {
+      "name": "down",
+      "description": "Stop and remove the containers (data is kept)\n\nFull text: call help with command=down.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          }
+        }
+      }
+    },
+    {
+      "name": "destroy",
+      "description": "Remove what bootstrap created (destructive for some actions)\n\nFull text: call help with command=destroy.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "boolean",
+            "description": "Remove the data directory"
+          },
+          "backups": {
+            "type": "boolean",
+            "description": "Remove the backup directory"
+          },
+          "snapshots": {
+            "type": "boolean",
+            "description": "Remove the snapshot directory"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "Perform the removal instead of a dry run"
+          },
+          "confirm-name": {
+            "type": "string",
+            "description": "Confirms the deployment's own name (value: <name>)"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      }
+    },
+    {
+      "name": "logs",
+      "description": "Follow the service log, or read a bounded tail of it\n\nFull text: call help with command=logs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tail": {
+            "type": "string",
+            "description": "Lines to return when reading rather than following (value: <n>)"
+          },
+          "since": {
+            "type": "string",
+            "description": "Only lines at or after this duration/timestamp (value: <duration|timestamp>)"
+          },
+          "grep": {
+            "type": "string",
+            "description": "Only lines matching this regular expression (value: <pattern>)"
+          }
+        }
+      }
+    },
+    {
+      "name": "backup",
+      "description": "Snapshot the data directory; list, prune, schedule (destructive for some actions)\n\nFull text: call help with command=backup.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Omit to create a backup",
+            "enum": [
+              "list",
+              "prune-replaced",
+              "install",
+              "uninstall",
+              "create"
+            ]
+          },
+          "profile": {
+            "type": "string",
+            "description": "full, migrate or share (create) (value: <profile>)",
+            "enum": [
+              "full",
+              "migrate",
+              "share"
+            ]
+          },
+          "hot": {
+            "type": "boolean",
+            "description": "Do not stop the service (create)"
+          },
+          "native": {
+            "type": "boolean",
+            "description": "Consistent snapshot without stopping the gateway (create)"
+          },
+          "share": {
+            "type": "boolean",
+            "description": "Shareable profile with verification (create)"
+          },
+          "migrate": {
+            "type": "boolean",
+            "description": "Migrate profile: no provider keys (create)"
+          },
+          "with-secrets": {
+            "type": "boolean",
+            "description": "Full profile: includes provider keys (create)"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "Show what would happen without touching anything (create)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit archives and replaced copies as JSON instead of text (list, prune-replaced)"
+          },
+          "apply": {
+            "type": "boolean",
+            "description": "Apply the action instead of only previewing it (prune-replaced, install, uninstall)"
+          },
+          "keep": {
+            "type": "string",
+            "description": "Keep this many newest copies instead of deleting all of them (prune-replaced) (value: <n>)"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "interval": {
+            "type": "string",
+            "description": "how often — 30m, 6h or 1d, explicit unit required (install) (value: <interval>)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      }
+    },
+    {
+      "name": "restore",
+      "description": "Restore an archive over the current state (destructive for some actions)\n\nFull text: call help with command=restore.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "archive": {
+            "type": "string",
+            "description": "Path to the archive; newest if omitted"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Skip the confirmation prompt"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "fresh-identity": {
+            "type": "boolean",
+            "description": "Drop identity and paired devices"
+          },
+          "no-start": {
+            "type": "boolean",
+            "description": "Leave the service stopped afterwards"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "Show what would happen without touching the target"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit restored data and the gateway startup outcome as JSON"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      }
+    },
+    {
+      "name": "pull",
+      "description": "Snapshot the instance state into the snapshot directory\n\nFull text: call help with command=pull.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "description": "full, migrate or share (value: <profile>)",
+            "enum": [
+              "full",
+              "migrate",
+              "share"
+            ]
+          },
+          "share": {
+            "type": "boolean",
+            "description": "Shareable profile with verification"
+          },
+          "with-secrets": {
+            "type": "boolean",
+            "description": "Full profile: includes provider keys"
+          },
+          "migrate": {
+            "type": "boolean",
+            "description": "Migrate profile"
+          },
+          "hot": {
+            "type": "boolean",
+            "description": "Do not stop the service"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          }
+        }
+      }
+    },
+    {
+      "name": "push",
+      "description": "Push a snapshot back onto the instance (destructive for some actions)\n\nFull text: call help with command=push.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "archive": {
+            "type": "string",
+            "description": "Snapshot to push; newest if omitted"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Skip the confirmation prompt"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "fresh-identity": {
+            "type": "boolean",
+            "description": "Drop identity and paired devices"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "Show what would happen without touching the target"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      }
+    },
+    {
+      "name": "verify",
+      "description": "Check a snapshot for credentials before sharing it\n\nFull text: call help with command=verify.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "archive": {
+            "type": "string",
+            "description": "Archive to inspect"
+          },
+          "profile": {
+            "type": "string",
+            "description": "full, migrate or share (value: <profile>)",
+            "enum": [
+              "full",
+              "migrate",
+              "share"
+            ]
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the verdict and findings as JSON"
+          }
+        },
+        "required": [
+          "archive"
+        ]
+      }
+    },
+    {
+      "name": "upgrade",
+      "description": "Update the image by digest, with automatic rollback on failure (destructive for some actions)\n\nFull text: call help with command=upgrade.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "image": {
+            "type": "string",
+            "description": "Upgrade to this image reference instead of the deployment's… (value: <ref>)"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "Print the plan without changing anything"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      }
+    },
+    {
+      "name": "smoke",
+      "description": "Acceptance run: health, agent, config, snapshots, MCP\n\nFull text: call help with command=smoke.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "quick": {
+            "type": "boolean",
+            "description": "Skip the slow round-trip check"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          }
+        }
+      }
+    },
+    {
+      "name": "inspect",
+      "description": "What is declared, what is actually running, and where they disagree\n\nFull text: call help with command=inspect.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "json": {
+            "type": "boolean",
+            "description": "Emit the whole inspection as JSON"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "doctor",
+      "description": "Say whether anything is wrong and what to run about it\n\nFull text: call help with command=doctor.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "json": {
+            "type": "boolean",
+            "description": "Emit the verdict, problems and next actions as JSON"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "plan",
+      "description": "The ordered actions the declaration implies, without performing them\n\nFull text: call help with command=plan.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "type": "string",
+            "description": "Plan from a built set artifact instead of the working tree (value: <artifact>)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the plan as JSON"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "apply",
+      "description": "Run the plan, then confirm what the instance actually is (destructive for some actions)\n\nFull text: call help with command=apply.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "type": "string",
+            "description": "Install this built set artifact instead of the working tree (value: <artifact>)"
+          },
+          "expect": {
+            "type": "string",
+            "description": "Declaration checksum the plan was computed against (value: <checksum>)"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "Show the steps without running any of them"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "accept",
+      "description": "Run the acceptance checks this deployment's recipes declare\n\nFull text: call help with command=accept.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "recipe": {
+            "type": "string",
+            "description": "Recipe to check"
+          },
+          "set": {
+            "type": "string",
+            "description": "Check the verified artifact and save an acceptance receipt (value: <artifact>)"
+          },
+          "with-model": {
+            "type": "boolean",
+            "description": "Include the checks that call the model, and pay for them"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the report as JSON"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "rollback",
+      "description": "Put back the configuration an operation replaced (destructive for some actions)\n\nFull text: call help with command=rollback.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "Operation id to undo (value: <id>)"
+          },
+          "no-restart": {
+            "type": "boolean",
+            "description": "Restore the file without restarting the instance"
+          },
+          "previous-set": {
+            "type": "boolean",
+            "description": "Reinstall the previously installed set instead of restoring…"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "Show what would happen without touching anything"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "operations",
+      "description": "What mutating runs did to this instance, and what they left behind\n\nFull text: call help with command=operations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Operation id to show in full"
+          },
+          "limit": {
+            "type": "string",
+            "description": "How many recent operations to list (value: <n>)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the record, or the list, as JSON"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "apply-config",
+      "description": "Apply the deployment's desired-state.json\n\nFull text: call help with command=apply-config.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dry-run": {
+            "type": "boolean",
+            "description": "Validate the apply without writing"
+          },
+          "dump": {
+            "type": "boolean",
+            "description": "Reconstruct desired-state.json from the live instance's…"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Overwrite an existing desired-state.json; refused without it"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          }
+        }
+      }
+    },
+    {
+      "name": "status",
+      "description": "Show containers, image, health probes and data usage\n\nFull text: call help with command=status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "json": {
+            "type": "boolean",
+            "description": "Emit status as JSON instead of text"
+          }
+        }
+      }
+    },
+    {
+      "name": "lock",
+      "description": "Pin what this instance is made of, or check it still matches\n\nFull text: call help with command=lock.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "check": {
+            "type": "boolean",
+            "description": "Compare against the existing lock instead of writing one"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the lock, or the differences, as JSON"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "cli",
+      "description": "Run the OpenClaw CLI in a throwaway container (destructive)\n\nFull text: call help with command=cli.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Arguments passed to OpenClaw's CLI verbatim"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true: destroys state"
+          }
+        },
+        "required": [
+          "args",
+          "confirm"
+        ]
+      }
+    },
+    {
+      "name": "exec",
+      "description": "Run an arbitrary command in the same sidecar as ./clawforge cli (destructive)\n\nFull text: call help with command=exec.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Command and arguments to run"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true: destroys state"
+          }
+        },
+        "required": [
+          "args",
+          "confirm"
+        ]
+      }
+    },
+    {
+      "name": "host",
+      "description": "Run one command on the operator's own machine, not in a container (destructive)\n\nFull text: call help with command=host.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Where to run: target, engine, local",
+            "enum": [
+              "target",
+              "engine",
+              "local"
+            ]
+          },
+          "root": {
+            "type": "boolean",
+            "description": "Request root; one half of the elevation consent"
+          },
+          "confirm-root": {
+            "type": "boolean",
+            "description": "Second consent; both flags together are required"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Command and arguments to run"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Must be true: destroys state"
+          }
+        },
+        "required": [
+          "context",
+          "args",
+          "confirm"
+        ]
+      }
+    },
+    {
+      "name": "cli-start",
+      "description": "Start the persistent CLI helper (no per-call container overhead)\n\nFull text: call help with command=cli-start.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "cli-stop",
+      "description": "Stop the persistent CLI helper\n\nFull text: call help with command=cli-stop.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "configure-provider",
+      "description": "Configure model providers from target-side environment variables\n\nFull text: call help with command=configure-provider.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "Provider id, for example openai (value: <id>)"
+          },
+          "env": {
+            "type": "string",
+            "description": "Secret variable, for example OPENAI_API_KEY (value: <var>)"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Replace an existing provider SecretRef"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          }
+        }
+      }
+    },
+    {
+      "name": "secrets",
+      "description": "Show required secrets and whether they are in place (destructive for some actions)\n\nFull text: call help with command=secrets.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "boolean",
+            "description": "Write the secrets template into config/"
+          },
+          "print-template": {
+            "type": "boolean",
+            "description": "Print the template instead of writing it"
+          },
+          "init-store": {
+            "type": "boolean",
+            "description": "Create an empty store to fill in"
+          },
+          "apply": {
+            "type": "boolean",
+            "description": "Fill the target from a local store"
+          },
+          "dump": {
+            "type": "boolean",
+            "description": "Recover a local store from the running instance"
+          },
+          "store": {
+            "type": "string",
+            "description": "Store name, e.g. local or prod (value: <name>)"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Replace an existing store"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the default read-only report as JSON"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      }
+    },
+    {
+      "name": "recover-env",
+      "description": "Repair .env's connection facts from the running instance\n\nFull text: call help with command=recover-env.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dry-run": {
+            "type": "boolean",
+            "description": "Print what would change without writing"
+          },
+          "adopt-runtime": {
+            "type": "boolean",
+            "description": "Take the running container as authoritative"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          }
+        }
+      }
+    },
+    {
+      "name": "recipe",
+      "description": "Deploy services next to the instance: install, verify, list, and more (destructive for some actions)\n\nFull text: call help with command=recipe.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "What to do with the recipe",
+            "enum": [
+              "list",
+              "import",
+              "new",
+              "install",
+              "remove",
+              "status",
+              "logs",
+              "verify",
+              "onboard",
+              "diagnose"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Recipe name; with import, the source directory to copy"
+          },
+          "new-name": {
+            "type": "string",
+            "description": "import under this name instead of the source directory's…"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "emit the catalog as JSON (list)"
+          },
+          "with-hooks": {
+            "type": "boolean",
+            "description": "add commented prepare.ts/verify.ts stubs (new)"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "tail": {
+            "type": "string",
+            "description": "lines to return per service (diagnose, logs) (value: <n>)"
+          },
+          "force-disabled": {
+            "type": "boolean",
+            "description": "build a recipe marked disabled (install)"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "show what would happen (install, remove)"
+          },
+          "volumes": {
+            "type": "boolean",
+            "description": "delete its volumes too (remove)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "provision-agent",
+      "description": "Wire a recipe's MCP server to its own OpenClaw agent, with optional cron\n\nFull text: call help with command=provision-agent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "recipe": {
+            "type": "string",
+            "description": "Recipe name under recipes/"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          }
+        },
+        "required": [
+          "recipe"
+        ]
+      }
+    },
+    {
+      "name": "deploy",
+      "description": "Deploy to a server over SSH and bootstrap it there (destructive for some actions)\n\nFull text: call help with command=deploy.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "user@host"
+          },
+          "path": {
+            "type": "string",
+            "description": "Remote install directory (value: <path>)"
+          },
+          "no-bootstrap": {
+            "type": "boolean",
+            "description": "Copy the files without starting anything"
+          },
+          "adopt": {
+            "type": "boolean",
+            "description": "Take over an existing, unmarked, non-empty remote root"
+          },
+          "dry-run": {
+            "type": "boolean",
+            "description": "Show what would happen without touching the target"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the outcome as JSON"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "mcp-setup",
+      "description": "Configure project MCP servers for Claude Code and Codex\n\nFull text: call help with command=mcp-setup.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "client": {
+            "type": "string",
+            "description": "Client configuration to update (value: <client>)",
+            "enum": [
+              "claude",
+              "codex",
+              "both"
+            ]
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Report changed files as JSON"
+          },
+          "rewrite-launcher": {
+            "type": "boolean",
+            "description": "Overwrite a locally edited mcp-launch.mjs"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "expose",
+      "description": "Reach a loopback-bound gateway from outside: SSH tunnel or tailscale (destructive for some actions)\n\nFull text: call help with command=expose.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "ssh, tailscale or status",
+            "enum": [
+              "ssh",
+              "tailscale",
+              "status"
+            ]
+          },
+          "local-port": {
+            "type": "string",
+            "description": "local port to bind (ssh) (value: <port>)"
+          },
+          "run": {
+            "type": "boolean",
+            "description": "open the tunnel in the foreground until Ctrl+C (ssh)"
+          },
+          "apply": {
+            "type": "boolean",
+            "description": "run the printed `tailscale serve` command on the target… (tailscale)"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the exposure and tailscale report as JSON (status)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "watch",
+      "description": "Health monitoring with a webhook alert on state change (destructive for some actions)\n\nFull text: call help with command=watch.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "check, install, uninstall, status or test",
+            "enum": [
+              "check",
+              "install",
+              "uninstall",
+              "status",
+              "test"
+            ]
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit JSON instead of text (check, status, test)"
+          },
+          "interval": {
+            "type": "string",
+            "description": "time between checks — a bare number is minutes (install) (value: <interval>)"
+          },
+          "apply": {
+            "type": "boolean",
+            "description": "mutate the target's crontab instead of only printing it (install, uninstall)"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "name": "incident",
+      "description": "Incident response: contain, preserve evidence, rotate the token, audit (destructive for some actions)\n\nFull text: call help with command=incident.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "dry-run": {
+            "type": "boolean",
+            "description": "Print the plan without changing anything"
+          },
+          "keep-exposure": {
+            "type": "boolean",
+            "description": "Proceed with the gateway published on every interface"
+          },
+          "tail": {
+            "type": "string",
+            "description": "Lines of log to collect (value: <n>)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the report as JSON"
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "mcp-creds",
+      "description": "Print service URL, token and MCP client config for both servers\n\nFull text: call help with command=mcp-creds.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "json": {
+            "type": "boolean",
+            "description": "Print the client config only"
+          },
+          "token": {
+            "type": "boolean",
+            "description": "Print the gateway token only"
+          }
+        }
+      }
+    },
+    {
+      "name": "set",
+      "description": "Build or validate the set: what a deployment installs, as one artifact (destructive for some actions)\n\nFull text: call help with command=set.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "What to do with sets",
+            "enum": [
+              "build",
+              "validate",
+              "diff",
+              "receipts",
+              "try",
+              "forget"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Set name (build, validate); Object name (forget) (value: <name>)"
+          },
+          "json": {
+            "type": "boolean",
+            "description": "Emit the manifest and its id as JSON (build); Emit the findings as JSON (validate); Emit JSON (diff); Emit the receipts as JSON (receipts); Emit the trial report as JSON (try)"
+          },
+          "set": {
+            "type": "string",
+            "description": "Artifact instead of the working tree (validate, try) (value: <artifact>)"
+          },
+          "from": {
+            "type": "string",
+            "description": "original artifact (diff) (value: <artifact>)"
+          },
+          "to": {
+            "type": "string",
+            "description": "replacement artifact (diff) (value: <artifact>)"
+          },
+          "set-id": {
+            "type": "string",
+            "description": "filter by immutable set id (receipts) (value: <id>)"
+          },
+          "receipt": {
+            "type": "string",
+            "description": "show this receipt; requires --set-id (receipts) (value: <id>)"
+          },
+          "with-model": {
+            "type": "boolean",
+            "description": "include acceptance checks that call the model (try)"
+          },
+          "keep": {
+            "type": "boolean",
+            "description": "keep the throwaway instance running instead of removing it (try)"
+          },
+          "kind": {
+            "type": "string",
+            "description": "agent, mcp-server, or cron-job (forget) (value: <kind>)",
+            "enum": [
+              "agent",
+              "mcp-server",
+              "cron-job"
+            ]
+          },
+          "break-lock": {
+            "type": "boolean",
+            "description": "Take over a held instance lock"
+          },
+          "break-foreign-lock": {
+            "type": "string",
+            "description": "Host id of an orphaned lock to take over"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "Confirm a destructive action"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array"
+          },
+          "warnings": {
+            "type": "array"
+          },
+          "nextActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {}
+        },
+        "required": [
+          "operationId",
+          "changed",
+          "problems",
+          "warnings",
+          "nextActions",
+          "result"
+        ]
+      }
+    },
+    {
+      "name": "check",
+      "description": "Run the framework's own checks (no instance needed)\n\nFull text: call help with command=check.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only run checks whose relative path contains this text"
+          },
+          "list": {
+            "type": "boolean",
+            "description": "Print the matching check paths instead of running them"
+          },
+          "jobs": {
+            "type": "string",
+            "description": "Concurrent check-file processes"
+          },
+          "require": {
+            "type": "string",
+            "description": "Comma-separated capabilities whose absence must fail a… (value: <cap,...>)"
+          }
+        }
+      }
+    },
+    {
+      "name": "new-app",
+      "description": "Create a deployment under apps/\n\nFull text: call help with command=new-app.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Deployment name"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "remove-app",
+      "description": "Delete apps/<name>\n\nFull text: call help with command=remove-app.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Deployment name"
+          },
+          "yes": {
+            "type": "boolean",
+            "description": "Perform the removal instead of a dry run"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "list",
+      "description": "Overview of every deployment under apps/\n\nFull text: call help with command=list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "json": {
+            "type": "boolean",
+            "description": "Emit as a JSON array instead of text"
+          },
+          "no-status": {
+            "type": "boolean",
+            "description": "Configuration only — do not query any target"
+          }
+        }
+      }
+    },
+    {
+      "name": "help",
+      "description": "Full description, usage and argument list for one command, or the command list when none is given",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Command name; omit to list every command (value: <name>)"
+          }
+        }
+      }
+    }
+  ]
+}

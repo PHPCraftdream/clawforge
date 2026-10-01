@@ -12,6 +12,7 @@
   },
   "scripts": {
     "check": "node --experimental-strip-types tools/clawforge.ts check",
+    "golden:update": "node --experimental-strip-types tools/dev/golden-update.ts",
     "check:linux": "node --experimental-strip-types tools/dev/check-linux.ts",
     "test": "npm run check",
     "gate": "npm run typecheck && npm run lint && npm run check",

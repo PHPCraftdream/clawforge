@@ -8,7 +8,7 @@ unfixed findings; every other status is taken from the document's own summary.
 ## Current
 
 * [review-2026-10-01-round-33.md](review-2026-10-01-round-33.md) — round 33, first review of the
-  round-32 fixes. Open: R33-01…R33-12 (P0: 0, P1: 0, P2: 2, P3: 10).
+  round-32 fixes. R33-01…R33-12 all fixed (949909e, 6752f0f, 73c3fec, b02953e and 117d731).
 * [review-2026-10-01-round-32.md](review-2026-10-01-round-32.md) — round 32, first review of the
   round-31 fixes. R32-01…R32-11 all fixed (239bad4, cce0a92, 4eae8b5, bc4015a and 720a530);
   follow-ups in round 33.
@@ -110,6 +110,8 @@ each list findings that the matching session-task list works through.
 
 ## Plans, audits, feedback
 
+* [refactor-plan-2026-10-01.md](refactor-plan-2026-10-01.md) — refactoring plan against the source
+  of recurring P2–P3 findings (rounds 27–33 classified): invariants, stages 0–6, ratchets. Not started.
 * [host-audit-macos-windows.md](host-audit-macos-windows.md) — host code on macOS and Windows
   without WSL (2026-09-29): 9 items, no P0; three P2 left for a separate task.
 * [field-feedback-sidecar-round-13.md](field-feedback-sidecar-round-13.md) — field feedback on

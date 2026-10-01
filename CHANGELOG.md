@@ -25,6 +25,18 @@ All notable changes to `@clawforge/framework` will be documented here.
   a stray checkout-style `app.ts`; the "new-app takes over this empty directory" advice only
   names folders new-app accepts, and an existing empty `apps/<name>` is offered to `new-app`
   rather than told to gain an `app.ts` by hand.
+* `set`'s actions each parse their own argument slice, so completion, `--help` and the MCP schema
+  no longer offer a flag the chosen action refuses (`set build --set`, `set validate --kind`,
+  `set forget --json`); a flag of another action is refused naming that action, and the drift
+  check drives the real dispatcher, not the registry against itself.
+* `backup create` is the explicit word for the default action the help already called "create":
+  it parses like a bare `backup`, a mistyped action word (`backup lst`) gets the usual
+  did-you-mean instead of "unknown argument", a create flag under another action names `create`,
+  and completion offers the create flags when no action word was typed (the pwsh fallback is no
+  longer just `--help`).
+* No MCP `tools/list` argument description ends mid-phrase: the "With x:" lead-in is stripped
+  before the 60-character shortening and a cut that would land on a dangling word ("a bare number
+  is", "instead of") drops it, so `--interval`'s bare-number unit survives.
 * A live lock/compose-env owner is no longer called dead under load: its recorded start comes
   from `process.uptime()` (counted after Node's own boot) while the OS probe has 1 s resolution,
   so the same process could differ by more than the 2 s reuse tolerance. The tolerance is now

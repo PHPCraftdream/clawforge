@@ -4,7 +4,7 @@
 // module, so external importers keep importing from "./server.ts" unchanged.
 
 import type { CommandArgument } from "../../core/app.ts";
-import { actionLabel, NO_ACTION } from "../../core/arguments.ts";
+import { actionLabel } from "../../core/arguments.ts";
 import { maskSecrets } from "../../core/io/log.ts";
 import { destructiveMarker } from "../../core/io/help-render.ts";
 
@@ -165,7 +165,9 @@ function isTrivialDescription(name: string, description: string): boolean {
 }
 
 /** First sentence or clause, parentheticals dropped. `:` is not a boundary ("With x: …" would
- *  keep the qualifier and lose what it qualifies); no early boundary → cut at a word. */
+ *  keep the qualifier and lose what it qualifies); no early boundary → cut at a word, then
+ *  drop any function word the cut would end on — a truncated "… instead of" dangles mid-phrase
+ *  and reads as if the rest were missing (R30-06). */
 function shortenDescription(description: string): string {
   const stripped = description.replace(/\s*\([^()]*\)/g, "").replace(/\s{2,}/g, " ").trim();
   // Not "e.g." / "i.e." — an abbreviation's period is not a clause boundary either.
@@ -176,7 +178,10 @@ function shortenDescription(description: string): string {
   if (clause.length <= SHORT_DESCRIPTION_LIMIT) return clause;
   const cut = clause.slice(0, SHORT_DESCRIPTION_LIMIT);
   const lastSpace = cut.lastIndexOf(" ");
-  return (lastSpace > SHORT_DESCRIPTION_LIMIT * 0.4 ? cut.slice(0, lastSpace) : cut).trim();
+  let text = (lastSpace > SHORT_DESCRIPTION_LIMIT * 0.4 ? cut.slice(0, lastSpace) : cut).trim();
+  const dangling = /\s+(of|is|are|a|an|the|or|and|to|for|with|on|instead|than|that|from|by|at|as|be)$/i;
+  while (dangling.test(text)) text = text.replace(dangling, "").trim();
+  return text;
 }
 
 /** Arguments repeated on many tools: one terse schema line each (`help` keeps the full text). */
@@ -190,13 +195,15 @@ export function schemaArgumentDescription(argument: CommandArgument): string | u
   if (isTrivialDescription(argument.name, argument.description)) return undefined;
   const shared = SHARED_SCHEMA_DESCRIPTIONS[argument.name];
   if (shared !== undefined) return shared;
-  const short = shortenDescription(argument.description);
+  // "With x:" is help-render's lead-in, not content — stripped BEFORE shortening, or it
+  // eats the budget and the cut lands mid-phrase (R30-06: watch.interval "a bare number is").
+  const short = shortenDescription(argument.description.replace(/^With [\w/-]+: /, ""));
   // Which action(s) of a multi-action command this argument belongs to — same wording
-  // help-render.ts prints; it replaces a "With x:" lead-in. Create-only (no action word) is the
-  // default and stays unmarked here to save bytes.
-  const scoped = argument.actions === undefined || (argument.actions.length === 1 && argument.actions[0] === NO_ACTION)
+  // help-render.ts prints. `create` is backup's default (no action word needed) and is
+  // labelled as such, so a client knows `hot` without an `action` still means a create.
+  const scoped = argument.actions === undefined
     ? short
-    : `${short.replace(/^With [\w/-]+: /, "")} (${argument.actions.map(actionLabel).join(", ")})`;
+    : `${short} (${argument.actions.map(actionLabel).join(", ")})`;
   return argument.kind === "option" && argument.valueName !== undefined
     ? `${scoped} (value: <${argument.valueName}>)`
     : scoped;

@@ -2,24 +2,14 @@
 // from. Split out of index.ts, which merges every group's fragment into one
 // openclawCommands.
 
-import type { AppCommand, CommandArgument } from "#src/core/app.ts";
+import type { AppCommand } from "#src/core/app.ts";
 import { scopeByAction } from "#src/core/arguments.ts";
 
-import { set, SET_MAIN_ARGUMENTS } from "#src/commands/sets/set.ts";
-import { SET_DIFF_ARGUMENTS } from "#src/commands/sets/set-diff.ts";
-import { SET_RECEIPTS_ARGUMENTS } from "#src/commands/sets/set-receipts.ts";
-import { SET_TRY_ARGUMENTS } from "#src/commands/sets/set-try.ts";
-
-/** What each action's own parser accepts (build, validate and forget share one);
- *  the declaration below is derived from it. */
-export const SET_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = {
-  build: SET_MAIN_ARGUMENTS,
-  validate: SET_MAIN_ARGUMENTS,
-  diff: SET_DIFF_ARGUMENTS,
-  receipts: SET_RECEIPTS_ARGUMENTS,
-  try: SET_TRY_ARGUMENTS,
-  forget: SET_MAIN_ARGUMENTS,
-};
+// The per-action argument table lives in set.ts next to the dispatcher that parses from
+// it; re-exported here so completion/--help/MCP checks keep importing it from this group.
+export { SET_ACTION_ARGUMENTS } from "#src/commands/sets/set.ts";
+import { SET_ACTION_ARGUMENTS } from "#src/commands/sets/set.ts";
+import { set } from "#src/commands/sets/set.ts";
 
 export const setsCommands: Record<string, AppCommand> = {
   set: {

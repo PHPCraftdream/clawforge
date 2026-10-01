@@ -23,21 +23,43 @@ import { withSetSource } from "#src/set/artifacts/source.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, collectManifest, defaultSetName } from "./set-manifest.ts";
 import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs, dieUnknownAction } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, dieUnknownAction, scopeByAction, type ActionScope } from "#src/core/arguments.ts";
+import { SET_DIFF_ARGUMENTS } from "./set-diff.ts";
+import { SET_RECEIPTS_ARGUMENTS } from "./set-receipts.ts";
+import { SET_TRY_ARGUMENTS } from "./set-try.ts";
 
 /** The action words `set`'s dispatcher accepts, in the order its usage messages name them. */
 const SET_ACTIONS = ["build", "validate", "diff", "receipts", "try", "forget"] as const;
 
-/** The slice of `set`'s declaration build/validate/forget share — `try` parses its own
- *  (set-try.ts), `diff`/`receipts` parse theirs (set-diff.ts/set-receipts.ts). */
-export const SET_MAIN_ARGUMENTS: CommandArgument[] = [
-  { name: "name", description: "Set name (default: the deployment's name); with forget, the object's name", kind: "option", valueName: "name" },
-  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
-  { name: "kind", description: "With forget: agent, mcp-server, or cron-job", kind: "option", valueName: "kind", choices: ["agent", "mcp-server", "cron-job"] },
-  { name: "break-lock", description: "With forget: take over the instance lock held by another operation", kind: "flag" },
-  BREAK_FOREIGN_LOCK_ARGUMENT,
-  { name: "json", description: "Emit the manifest and its id, or the findings, as JSON", kind: "flag" },
+/** Each action's own slice — the parser below takes it from this table, and the merged
+ *  declaration (openclawCommands.sets.ts, derived via scopeByAction) from the same one, so
+ *  completion/--help/MCP cannot offer a flag the chosen action refuses. */
+export const SET_BUILD_ARGUMENTS: CommandArgument[] = [
+  { name: "name", description: "Set name (default: the deployment's name)", kind: "option", valueName: "name" },
+  { name: "json", description: "Emit the manifest and its id as JSON", kind: "flag" },
 ];
+
+export const SET_VALIDATE_ARGUMENTS: CommandArgument[] = [
+  { name: "name", description: "Set name (default: the deployment's name)", kind: "option", valueName: "name" },
+  { name: "set", description: "Artifact instead of the working tree", kind: "option", valueName: "artifact" },
+  { name: "json", description: "Emit the findings as JSON", kind: "flag" },
+];
+
+export const SET_FORGET_ARGUMENTS: CommandArgument[] = [
+  { name: "kind", description: "agent, mcp-server, or cron-job", kind: "option", valueName: "kind", choices: ["agent", "mcp-server", "cron-job"] },
+  { name: "name", description: "The object's name", kind: "option", valueName: "name" },
+  { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
+  BREAK_FOREIGN_LOCK_ARGUMENT,
+];
+
+export const SET_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = {
+  build: SET_BUILD_ARGUMENTS,
+  validate: SET_VALIDATE_ARGUMENTS,
+  diff: SET_DIFF_ARGUMENTS,
+  receipts: SET_RECEIPTS_ARGUMENTS,
+  try: SET_TRY_ARGUMENTS,
+  forget: SET_FORGET_ARGUMENTS,
+};
 
 export * from "./set-secrets-guard.ts";
 export * from "./set-manifest.ts";
@@ -167,24 +189,27 @@ export async function set(ctx: Context, args: string[]): Promise<void> {
     return;
   }
 
-  const parsed = parseDeclaredArgs(SET_MAIN_ARGUMENTS, rest);
-  const name = parsed.name === "" ? die("--name needs a value") : parsed.name as string | undefined;
-  const kind = parsed.kind === "" ? die("--kind needs a value") : parsed.kind as string | undefined;
-  const artifact = parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string | undefined;
-  const breakLock = parsed["break-lock"] === true;
-  const breakForeignLockHost = parseBreakForeignLockHost(rest);
-  const jsonOnly = parsed.json === true;
+  // Each action parses its own slice of the declaration (openclawCommands.sets.ts's table,
+  // the same one completion/--help/MCP derive from), with the merged declaration as scope —
+  // a flag belonging to another action is refused naming that action, not "unknown".
+  const scope: ActionScope = { action, siblings: scopeByAction(SET_ACTION_ARGUMENTS) };
+  const parsed = parseDeclaredArgs(SET_ACTION_ARGUMENTS[action], rest, scope);
 
   if (action === "forget") {
-    await forgetAction(ctx, kind, name, breakLock, breakForeignLockHost);
+    const kind = parsed.kind === "" ? die("--kind needs a value") : parsed.kind as string | undefined;
+    const name = parsed.name === "" ? die("--name needs a value") : parsed.name as string | undefined;
+    await forgetAction(ctx, kind, name, parsed["break-lock"] === true, parseBreakForeignLockHost(rest));
     return;
   }
 
+  const name = parsed.name === "" ? die("--name needs a value") : parsed.name as string | undefined;
+  const jsonOnly = parsed.json === true;
+
   if (action === "validate") {
+    const artifact = parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string | undefined;
     await validateAction(ctx, { name, artifact, jsonOnly });
     return;
   }
-  if (artifact !== undefined) die("--set validates an existing artifact; it has no meaning for build");
 
   const built = await buildSet(ctx, name ?? defaultSetName(deploymentName()));
 

@@ -7,7 +7,7 @@
 // only once a shell asks for `--app`'s value — never baked into the generated text, and via
 // whichever of `clawforge`/`./clawforge` was typed. Output never carries a machine path.
 
-import { parseDeclaredArgs } from "../core/arguments.ts";
+import { parseDeclaredArgs, NO_ACTION } from "../core/arguments.ts";
 import { reportError } from "../core/io/log.ts";
 import { cli } from "../core/io/invocation.ts";
 import { emitRaw } from "../core/io/output.ts";
@@ -36,6 +36,10 @@ interface CommandCompletionSpec {
   readonly action?: {
     readonly values: readonly string[];
     readonly flags: Readonly<Record<string, readonly string[]>>;
+    /** Flags offered when no (or an unknown) action word was typed — for a command with an
+     *  implicit default action (backup's bare create), that action's own flags, not just
+     *  --help. */
+    readonly fallback: readonly string[];
   };
 }
 
@@ -59,7 +63,13 @@ function specFor(name: string, declared: readonly CommandArgument[] | undefined)
     const scoped = flagArgs.filter((argument) => argument.actions?.includes(value) === true).map(flagName);
     perAction[value] = [...new Set([...globalFlags, ...scoped])].sort();
   }
-  return { name, flags: globalFlags, action: { values: [...actionArgument.choices].sort(), flags: perAction } };
+  // An OPTIONAL action positional means the command has an implicit default action —
+  // backup's bare create (NO_ACTION). Its flags are the fallback for the no-action and
+  // unknown-action cases, where the shell cannot know which action is meant.
+  const fallback = actionArgument.required === true
+    ? globalFlags
+    : [...new Set([...globalFlags, ...(perAction[NO_ACTION] ?? globalFlags)])].sort();
+  return { name, flags: globalFlags, action: { values: [...actionArgument.choices].sort(), flags: perAction, fallback } };
 }
 
 /** Every name the console dispatcher can resolve, from the same declarations --help/the MCP
@@ -94,7 +104,7 @@ function bashCaseArm(spec: CommandCompletionSpec): string {
     `      if [[ $cword -eq $((idx + 1)) ]]; then\n` +
     `        ${reply([...action.values, "--help"])}\n` +
     `      else\n` +
-    `        case "\${words[$((idx + 1))]}" in\n${arms}\n          *) ${reply(["--help"])} ;;\n        esac\n` +
+    `        case "\${words[$((idx + 1))]}" in\n${arms}\n          *) ${reply(action.fallback)} ;;\n        esac\n` +
     `      fi\n      ;;\n`
   );
 }
@@ -170,7 +180,7 @@ function renderZsh(commands: readonly CommandCompletionSpec[], appFlag: boolean)
 function renderPwsh(commands: readonly CommandCompletionSpec[], appFlag: boolean): string {
   const names = commands.map((command) => `"${command.name}"`).join(", ");
   const flagTable = commands
-    .map((command) => `  "${command.name}" = @(${command.flags.map((flag) => `"${flag}"`).join(", ")})`)
+    .map((command) => `  "${command.name}" = @(${(command.action?.fallback ?? command.flags).map((flag) => `"${flag}"`).join(", ")})`)
     .join("\n");
   const actionCommands = commands.filter((command) => command.action !== undefined);
   const actionsTable = actionCommands

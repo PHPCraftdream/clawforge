@@ -29,7 +29,7 @@ import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/managemen
 import type { Recipe } from "#src/service/recipe.ts";
 import { verifySnapshot } from "#src/commands/lifecycle/verify.ts";
 import type { CommandArgument, BackupPurpose } from "#src/core/app.ts";
-import { parseDeclaredArgs, scopeByAction, NO_ACTION, type ActionScope } from "#src/core/arguments.ts";
+import { parseDeclaredArgs, scopeByAction, NO_ACTION, dieUnknownAction, type ActionScope } from "#src/core/arguments.ts";
 import { openclawCliJson } from "#src/service/openclaw-cli.ts";
 import { PROFILE_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 import { backupList, BACKUP_LIST_ARGUMENTS } from "./list.ts";
@@ -72,9 +72,10 @@ export const BACKUP_ARGUMENTS: CommandArgument[] = [
   { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag" },
 ];
 
-/** What each action's own parser accepts (NO_ACTION: the bare create); the merged declaration
- *  below, and so completion, --help and the MCP schema, is derived from it. `uninstall` has no
- *  --interval, since there is no schedule to set. */
+/** What each action's own parser accepts (`create` — NO_ACTION — is the bare create, also
+ *  accepted as an explicit action word); the merged declaration below, and so completion,
+ *  --help and the MCP schema, is derived from it. `uninstall` has no --interval, since there
+ *  is no schedule to set. */
 export const BACKUP_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandArgument[]>> = {
   [NO_ACTION]: BACKUP_ARGUMENTS,
   list: BACKUP_LIST_ARGUMENTS,
@@ -85,9 +86,9 @@ export const BACKUP_ACTION_ARGUMENTS: Readonly<Record<string, readonly CommandAr
 
 /** The merged declaration for openclawCommands — one optional `action` positional ahead of
  *  every sub-action's own flags, so `./clawforge backup` with none of them still creates an
- *  archive exactly as it always has. */
+ *  archive exactly as it always has; `create` is the explicit word for the same thing. */
 export const BACKUP_ALL_ARGUMENTS: CommandArgument[] = [
-  { name: "action", description: "list, prune-replaced, install or uninstall instead of creating a backup", kind: "positional", choices: [...BACKUP_ACTIONS] },
+  { name: "action", description: "list, prune-replaced, install, uninstall or create", kind: "positional", choices: [...BACKUP_ACTIONS, "create"] },
   ...scopeByAction(BACKUP_ACTION_ARGUMENTS),
 ];
 
@@ -604,8 +605,19 @@ export async function backup(ctx: Context, args: string[]): Promise<void> {
   if (first === "install") return backupInstall(ctx, rest, scopeFor("install"));
   if (first === "uninstall") return backupUninstall(ctx, rest, scopeFor("uninstall"));
 
+  // `create` is the explicit word for the default (no action word needed). Any other bare
+  // non-flag token is a mistyped action — refused with the usual did-you-mean, not a bare
+  // "unknown argument" (R30-05: `backup lst`).
+  if (first !== undefined && first !== NO_ACTION && !first.startsWith("-")) {
+    const expected = [...BACKUP_ACTIONS, NO_ACTION];
+    dieUnknownAction(first, `unknown action: ${first} (expected ${expected.join(", ")})`, expected);
+  }
+
+  // The create path: whatever follows the `create` word; without an action word, the whole
+  // argv — a leading token that only looks like a flag is one.
+  const createArgs = first === undefined || first.startsWith("-") ? args : rest;
   const options: BackupOptions = {};
-  const parsed = parseDeclaredArgs(BACKUP_ARGUMENTS, args);
+  const parsed = parseDeclaredArgs(BACKUP_ARGUMENTS, createArgs, scopeFor(NO_ACTION));
 
   if (parsed.hot === true) options.hot = true;
   if (parsed.native === true) options.native = true;
@@ -614,13 +626,13 @@ export async function backup(ctx: Context, args: string[]): Promise<void> {
   // --profile all set the same field, so whichever was typed LAST decides it — scanned over
   // the raw argv, not the declaration-keyed `parsed` above, so one pass sees the true order
   // regardless of which of the two forms was used.
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
+  for (let index = 0; index < createArgs.length; index += 1) {
+    const arg = createArgs[index];
     const shorthand = PROFILE_SHORTHAND_FLAGS.get(arg);
     if (shorthand !== undefined) {
       options.profile = shorthand;
     } else if (arg === "--profile" || arg.startsWith("--profile=")) {
-      const value = arg === "--profile" ? args[index + 1] : arg.slice("--profile=".length);
+      const value = arg === "--profile" ? createArgs[index + 1] : arg.slice("--profile=".length);
       if (value === undefined || !isProfile(value)) die("--profile needs one of: full, migrate, share");
       options.profile = value;
       if (arg === "--profile") index += 1;

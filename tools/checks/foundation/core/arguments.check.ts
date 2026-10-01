@@ -4,14 +4,14 @@
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
-import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
+import { inputSchema, toArgv, validate, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import { parseDeclaredArgs, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION } from "#framework/core/arguments.ts";
 import { BACKUP_ACTION_ARGUMENTS } from "#framework/commands/lifecycle/backup/index.ts";
 import { RECIPE_ACTION_ARGUMENTS, validateRecipeArgs } from "#framework/commands/management/recipe/arguments.ts";
 import { EXPOSE_ACTION_ARGUMENTS } from "#framework/commands/operate/expose/index.ts";
 import { WATCH_ACTION_ARGUMENTS } from "#framework/commands/operate/watch/index.ts";
 import { SET_ACTION_ARGUMENTS } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
-import { buildCompletionModel } from "#framework/integration/completion.ts";
+import { buildCompletionModel, renderCompletion } from "#framework/integration/completion.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { renderCommandHelp } from "#framework/core/io/help-render.ts";
 import type { CommandArgument } from "#framework/core/app.ts";
@@ -457,7 +457,9 @@ check(
     if (slices === undefined) continue;
 
     const choices = [...actionArgument.choices];
-    const registered = Object.keys(slices).filter((action) => action !== NO_ACTION);
+    // Since R30-05 NO_ACTION is the real action word `create` — a registry key AND a choice,
+    // so no key is filtered out here.
+    const registered = Object.keys(slices);
     check(`${name}: registered actions equal the action choices`, [...registered].sort(), [...choices].sort());
 
     const declared = (command.arguments ?? []).filter(isNamed);
@@ -485,6 +487,125 @@ check(
       }
     }
   }
+}
+
+// --- R30-04: set's actions each parse their own slice of the declaration --------------------
+//
+// The dispatcher (set.ts) takes each action's slice from the same SET_ACTION_ARGUMENTS table
+// the declaration is derived from — so the check below drives the REAL run (stub context:
+// every refusal dies in the parser, before any context use) and demands a non-parse refusal
+// for the flags the action does accept. Mis-declaring the table (the registry checking
+// itself, the R30-04 hole) fails these, because the real parser would then take the flag.
+
+{
+  const setRun = openclawCommands.set.run!;
+  const outcome = async (argv: string[]): Promise<string> => {
+    try {
+      await setRun({} as Parameters<typeof setRun>[0], argv);
+      return "no error";
+    } catch (error) {
+      return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+  };
+
+  check(
+    "set build --set is refused at parse, naming the actions that take it",
+    (await outcome(["build", "--set", "x.tar.gz"])).includes("--set applies to `validate`, `try`, not `build`"),
+    true,
+  );
+  check("set build --kind is refused at parse", (await outcome(["build", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
+  check("set validate --kind is refused at parse", (await outcome(["validate", "--kind", "agent"])).includes("--kind applies to `forget`"), true);
+  check("set forget --json is refused at parse", (await outcome(["forget", "--json"])).includes("--json applies to `build`"), true);
+  check(
+    "set validate --set still reaches the artifact reader — the parser accepted it",
+    (await outcome(["validate", "--set", "missing.tar.gz"])).startsWith("UserError:"),
+    true,
+  );
+  check(
+    "set forget parses its own slice — dies on the missing --kind, not on parsing",
+    (await outcome(["forget"])).includes("usage: ./clawforge set forget"),
+    true,
+  );
+  check("a mistyped set action still gets the did-you-mean", (await outcome(["bild"])).includes("did you mean build?"), true);
+}
+
+// --- R30-05: backup's `create` is a real action word -----------------------------------------
+
+{
+  const backupRun = openclawCommands.backup.run!;
+  const outcome = async (argv: string[]): Promise<string> => {
+    try {
+      await backupRun({} as Parameters<typeof backupRun>[0], argv);
+      return "no error";
+    } catch (error) {
+      return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    }
+  };
+
+  check(
+    "backup create --dry-run parses — dies later, on the plan's context, not on `create`",
+    (await outcome(["create", "--dry-run"])).startsWith("TypeError:"),
+    true,
+  );
+  check("a bare create parses exactly the same way", (await outcome(["--dry-run"])).startsWith("TypeError:"), true);
+  check("backup lst suggests list", (await outcome(["lst"])).includes("did you mean list?"), true);
+  check(
+    "backup --keep 3 names the action --keep belongs to",
+    (await outcome(["--keep", "3"])).includes("--keep applies to `prune-replaced`, not `create`"),
+    true,
+  );
+  check("backup list --hot names create", (await outcome(["list", "--hot"])).includes("--hot applies to `create`, not `list`"), true);
+
+  const model = new Map(buildCompletionModel([]).map((spec) => [spec.name, spec]));
+  const backupSpec = model.get("backup")!;
+  check("completion offers create as an action word", backupSpec.action!.values.includes("create"), true);
+  check(
+    "completion offers the create flags under create",
+    backupSpec.action!.flags.create,
+    ["--dry-run", "--help", "--hot", "--migrate", "--native", "--profile", "--share", "--with-secrets"],
+  );
+  check(
+    "the no-action fallback offers the create flags, not just --help",
+    backupSpec.action!.fallback.includes("--hot") && backupSpec.action!.fallback.includes("--dry-run"),
+    true,
+  );
+  const bash = renderCompletion("bash", buildCompletionModel([]), false);
+  check("bash's *) arm after an action word offers the create fallback", /\*\) COMPREPLY=\( \$\(compgen -W "[^"]*--hot[^"]*"/.test(bash), true);
+  const pwsh = renderCompletion("pwsh", buildCompletionModel([]), false);
+  check("pwsh's fallback flag list offers the create flags", pwsh.includes('"backup" = @("--dry-run", "--help", "--hot"'), true);
+}
+
+// --- R30-06: no MCP schema description ends mid-phrase ----------------------------------------
+
+{
+  // Same word class shortenDescription drops; a description ending on one means the cut
+  // landed mid-phrase (or the source text itself dangles).
+  const dangling = / (of|is|are|a|an|the|or|and|to|for|with|on|instead|than|that|from|by|at|as|be)$/i;
+  const offenders: string[] = [];
+  for (const [name, command] of Object.entries(openclawCommands)) {
+    for (const argument of command.arguments ?? []) {
+      const description = schemaArgumentDescription(argument);
+      if (description === undefined) continue;
+      // The action suffix and value hint are appended after the shortening — judge the text.
+      const bare = description.replace(/\s*\([^()]*\)$/, "").trim();
+      if (dangling.test(bare)) offenders.push(`${name}.${argument.name}: ${description}`);
+    }
+  }
+  check("no schema description ends on a dangling word", offenders, []);
+
+  const backupSchema = inputSchema(openclawCommands.backup) as { properties: Record<string, { description?: string }> };
+  check("backup.action's schema text keeps the whole action list", backupSchema.properties.action.description, "list, prune-replaced, install, uninstall or create");
+  check(
+    "backup.interval keeps the explicit-unit rule",
+    (backupSchema.properties.interval.description ?? "").includes("explicit unit required"),
+    true,
+  );
+  const watchSchema = inputSchema(openclawCommands.watch) as { properties: Record<string, { description?: string }> };
+  check(
+    "watch.interval keeps what a bare number means",
+    (watchSchema.properties.interval.description ?? "").includes("a bare number is minutes"),
+    true,
+  );
 }
 
 finish("argument");

@@ -78,12 +78,14 @@ export interface ActionScope {
   readonly siblings: readonly CommandArgument[];
 }
 
-/** The `actions` entry for "no action word" (backup's bare create). */
-export const NO_ACTION = "";
+/** The `actions` entry — and the explicit action word — for backup's create: the default
+ *  behaviour when no action word is typed, spelled so `backup create --dry-run` parses and
+ *  "applies to `create`" names a word the CLI actually takes. */
+export const NO_ACTION = "create";
 
 /** Human label for an `actions` entry. */
 export function actionLabel(action: string): string {
-  return action === NO_ACTION ? "create" : action;
+  return action;
 }
 
 function formatActions(actions: readonly string[]): string {

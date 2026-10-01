@@ -1334,13 +1334,13 @@
               "list",
               "import",
               "new",
+              "verify",
+              "onboard",
+              "diagnose",
               "install",
               "remove",
               "status",
-              "logs",
-              "verify",
-              "onboard",
-              "diagnose"
+              "logs"
             ]
           },
           "name": {
@@ -1349,7 +1349,7 @@
           },
           "new-name": {
             "type": "string",
-            "description": "import under this name instead of the source directory's…"
+            "description": "import under this name instead of the source directory's own name"
           },
           "json": {
             "type": "boolean",

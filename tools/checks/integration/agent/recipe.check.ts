@@ -3,7 +3,9 @@
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { recipe, recipeActionIsReadOnly } from "#framework/commands/management/recipe/index.ts";
+import { recipe } from "#framework/commands/management/recipe/index.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { callFactsFor } from "#framework/core/command/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { guarded, lockPath, readLockHolder, takeLock, withInstanceLock } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -392,8 +394,8 @@ try {
 
   check(
     "diagnose is not read-only: it runs verify.ts, the same reason verify itself is not",
-    recipeActionIsReadOnly(["diagnose", "prepared"]),
-    false,
+    callFactsFor(openclawCommands.recipe, ["diagnose", "prepared"]).effect === "destroy",
+    true,
   );
 
   // --- mutating actions share apply's lock; nested actions reuse it --------------------

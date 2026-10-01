@@ -19,10 +19,10 @@
 import { log, info, die } from "#src/core/io/log.ts";
 import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { safeName } from "#src/core/values/names.ts";
-import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
+import { nameValue } from "#src/core/values/value.ts";
+import { withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { newOperationId } from "#src/service/operations.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
@@ -46,22 +46,31 @@ import {
 export * from "./declaration.ts";
 export * from "./reconcile.ts";
 
-/** Drives both provision-agent's own parser and its openclawCommands declaration. */
-export const PROVISION_AGENT_ARGUMENTS: CommandArgument[] = [
-  { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true },
+export const PROVISION_AGENT_ARGUMENTS = [
+  { name: "recipe", description: "Recipe name under recipes/", kind: "positional", required: true, parse: nameValue("recipe") },
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
+
+/** The command body; provisionAgent(ctx, args) stays for callers that already hold a Context. */
+export const PROVISION_AGENT = commandBody({
+  effect: "change",
+  arguments: PROVISION_AGENT_ARGUMENTS,
+  async run(ctx, values) {
+    await runProvisionAgent(ctx, values as Values<typeof PROVISION_AGENT_ARGUMENTS>);
+  },
+});
 
 export async function provisionAgent(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(PROVISION_AGENT_ARGUMENTS, args);
-  const breakLock = parsed["break-lock"] === true;
-  const breakForeignLockHost = parseBreakForeignLockHost(args);
-  const jsonOnly = parsed.json === true;
-  const rawName = parsed.recipe as string | undefined;
-  if (rawName === undefined) die("usage: ./clawforge provision-agent <recipe>");
-  const recipeName = safeName("recipe", rawName);
+  await runOnContext(PROVISION_AGENT, ctx, args);
+}
+
+async function runProvisionAgent(ctx: Context, values: Values<typeof PROVISION_AGENT_ARGUMENTS>): Promise<void> {
+  const breakLock = values["break-lock"] === true;
+  const breakForeignLockHost = values["break-foreign-lock"];
+  const jsonOnly = values.json === true;
+  const recipeName = values.recipe;
 
   // Local first: a typo in the recipe name must not cost a trip to the target.
   const bundle = await loadRecipeAgentBundle(recipeName);

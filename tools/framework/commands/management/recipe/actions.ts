@@ -6,7 +6,6 @@ import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { docsUrl } from "#src/core/io/docs-url.ts";
-import { dieUnknownAction } from "#src/core/command/index.ts";
 import type { Context } from "#src/core/context.ts";
 import {
   loadRecipe,
@@ -19,13 +18,12 @@ import { collectPortableRecipeFiles } from "#src/security/privacy/recipe-portabl
 import { safeName } from "#src/core/values/names.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit, emitRaw } from "#src/core/io/output.ts";
-import { takeTail } from "#src/commands/lifecycle/instance/logs.ts";
 import { importHookModule } from "./hook-runtime.ts";
 
-/** Every action the dispatcher knows, in the order the usage message names them. Checked
- *  by index.ts's recipe() before the lock gate so an unknown action dies as a typo, not as
- *  a lock failure. */
-export const RECIPE_ACTIONS: readonly string[] = ["list", "import", "new", "verify", "onboard", "diagnose", "install", "remove", "status", "logs"];
+/** The readiness actions read and print; everything else is a lifecycle change. Kept beside
+ *  the runs so the gate (the body's per-action effects) and the runs cannot drift apart.
+ *  verify is deliberately not among them: it runs with the same Context prepare.ts gets,
+ *  which may mutate the target, so the framework can't know a given hook is read-only. */
 
 async function stackFor(ctx: Context, name: string) {
   const recipe = await loadRecipe(name);
@@ -193,10 +191,9 @@ const SKIPPED_SUMMARY_LIMIT = 8;
 /** Hooks whose presence earns the operator-rights warning below. */
 const RECIPE_HOOK_FILES = ["prepare.ts", "verify.ts", "onboard.ts"];
 
-async function runImportAction(name: string, rest: string[]): Promise<void> {
+export async function runImportAction(name: string, newName: string | undefined): Promise<void> {
   const source = resolve(name);
-  const importedName = rest[0] ?? basename(source);
-  if (rest.length > 1) die(`unknown argument: ${rest[1]}`);
+  const importedName = newName ?? basename(source);
   safeName("recipe", importedName);
   try { await access(resolve(source, "recipe.json")); } catch { die(`recipe source has no recipe.json: ${source}`); }
   const destination = resolve(recipesDirectory(), importedName);
@@ -279,9 +276,8 @@ export async function verify(): Promise<{ ok: boolean }> {
 `;
 }
 
-async function runNewAction(name: string, rest: string[]): Promise<void> {
+export async function runNewAction(name: string, withHooks: boolean): Promise<void> {
   safeName("recipe", name);
-  const withHooks = rest.includes("--with-hooks");
   const destination = resolve(recipesDirectory(), name);
   try {
     await access(destination);
@@ -302,22 +298,22 @@ async function runNewAction(name: string, rest: string[]): Promise<void> {
   if (withHooks) info("prepare.ts and verify.ts are commented stubs — uncomment and edit before they run");
 }
 
-async function runVerifyAction(ctx: Context, name: string): Promise<void> {
+export async function runVerifyAction(ctx: Context, name: string): Promise<void> {
   const { recipe: spec } = await stackFor(ctx, name);
   await runRecipeHook(ctx, spec, "verify");
 }
 
-async function runOnboardAction(ctx: Context, name: string): Promise<void> {
+export async function runOnboardAction(ctx: Context, name: string): Promise<void> {
   const { recipe: spec } = await stackFor(ctx, name);
   await runRecipeHook(ctx, spec, "onboard");
 }
 
-async function runDiagnoseAction(ctx: Context, name: string, rest: string[]): Promise<void> {
+export async function runDiagnoseAction(ctx: Context, name: string, tail: number | undefined): Promise<void> {
   const { recipe: spec, stack } = await stackFor(ctx, name);
   const running = await stack.isRunning();
   // Every service in the recipe's compose project, not just one — a multi-container recipe
   // needs all of them in one place to correlate a failure that spans two.
-  const logs = await stack.readLogs(takeTail(rest).tail ?? "50");
+  const logs = await stack.readLogs(tail === undefined ? "50" : String(tail));
 
   let verify: unknown;
   let verifyError: string | undefined;
@@ -349,11 +345,11 @@ async function runDiagnoseAction(ctx: Context, name: string, rest: string[]): Pr
  *  missing declared variables) plus whether the stack is already running — nothing is built,
  *  started or written. Does not cover: build output, compose's own readiness probing, or the
  *  prepare/afterStart hooks' side effects — those only run for a real install. */
-async function runInstallDryRun(ctx: Context, name: string, rest: string[]): Promise<void> {
+export async function runInstallDryRun(ctx: Context, name: string, forceDisabled: boolean): Promise<void> {
   const { recipe: spec, stack } = await stackFor(ctx, name);
   const refusals: string[] = [];
 
-  if (!spec.enabled && !rest.includes("--force-disabled")) {
+  if (!spec.enabled && !forceDisabled) {
     refusals.push(`recipe is disabled${spec.disabledReason === undefined ? "" : `: ${spec.disabledReason}`} — needs --force-disabled`);
   }
   const declared = Object.keys(spec.variables ?? {});
@@ -393,9 +389,8 @@ async function runInstallDryRun(ctx: Context, name: string, rest: string[]): Pro
 /** `--dry-run`: whether the stack is running and what --volumes would additionally remove —
  *  nothing is stopped or removed. Does not cover whether the recipe's own containers hold
  *  state outside its declared compose volumes. */
-async function runRemoveDryRun(ctx: Context, name: string, rest: string[]): Promise<void> {
+export async function runRemoveDryRun(ctx: Context, name: string, removeVolumes: boolean): Promise<void> {
   const { stack } = await stackFor(ctx, name);
-  const removeVolumes = rest.includes("--volumes");
   const running = await stack.isRunning();
   const report = { ok: true, changed: false, dryRun: true, recipe: name, running, wouldRemoveVolumes: removeVolumes };
 
@@ -409,12 +404,12 @@ async function runRemoveDryRun(ctx: Context, name: string, rest: string[]): Prom
   info("does not cover: state the recipe's containers hold outside its declared compose volumes");
 }
 
-async function runInstallAction(ctx: Context, name: string, rest: string[]): Promise<void> {
+export async function runInstallAction(ctx: Context, name: string, forceDisabled: boolean): Promise<void> {
   const { recipe: spec, stack } = await stackFor(ctx, name);
 
   // Kept in the repository but switched off: refuse rather than start an expensive
   // build nobody asked for. --force-disabled is the deliberate override.
-  if (!spec.enabled && !rest.includes("--force-disabled")) {
+  if (!spec.enabled && !forceDisabled) {
     warn(`recipe ${spec.name} is disabled`);
     if (spec.disabledReason !== undefined) info(spec.disabledReason);
     die(`install it anyway with: ./clawforge recipe install ${spec.name} --force-disabled`);
@@ -473,42 +468,25 @@ async function runInstallAction(ctx: Context, name: string, rest: string[]): Pro
   info("it restarts automatically: restart policy unless-stopped");
 }
 
-async function runRemoveAction(ctx: Context, name: string, rest: string[]): Promise<void> {
+export async function runRemoveAction(ctx: Context, name: string, removeVolumes: boolean): Promise<void> {
   const { stack } = await stackFor(ctx, name);
-  const removeVolumes = rest.includes("--volumes");
   await stack.down(removeVolumes);
   log(`${name} removed${removeVolumes ? " (including volumes)" : ""}`);
 }
 
-async function runStatusAction(ctx: Context, name: string): Promise<void> {
+export async function runStatusAction(ctx: Context, name: string): Promise<void> {
   const { stack } = await stackFor(ctx, name);
   await stack.status();
   info((await stack.isRunning()) ? "running" : "not running");
 }
 
-async function runLogsAction(ctx: Context, name: string, rest: string[]): Promise<void> {
+export async function runLogsAction(ctx: Context, name: string, tail: number | undefined): Promise<void> {
   const { stack } = await stackFor(ctx, name);
   // Following runs until interrupted, which only an attended terminal can do. Same choice
   // as instance/logs.ts's logs.
   if (!shouldFollow()) {
-    emitRaw(await stack.readLogs(takeTail(rest).tail ?? "100"));
+    emitRaw(await stack.readLogs(tail === undefined ? "100" : String(tail)));
     return;
   }
   await stack.followLogs();
-}
-
-export async function runRecipeAction(ctx: Context, action: string, name: string, rest: string[]): Promise<void> {
-  switch (action) {
-    case "import": return runImportAction(name, rest);
-    case "new": return runNewAction(name, rest);
-    case "verify": return runVerifyAction(ctx, name);
-    case "onboard": return runOnboardAction(ctx, name);
-    case "diagnose": return runDiagnoseAction(ctx, name, rest);
-    case "install": return rest.includes("--dry-run") ? runInstallDryRun(ctx, name, rest) : runInstallAction(ctx, name, rest);
-    case "remove": return rest.includes("--dry-run") ? runRemoveDryRun(ctx, name, rest) : runRemoveAction(ctx, name, rest);
-    case "status": return runStatusAction(ctx, name);
-    case "logs": return runLogsAction(ctx, name, rest);
-    default:
-      dieUnknownAction(action, `unknown action: ${action} (expected list, import, new, verify, onboard, diagnose, install, remove, status or logs)`, RECIPE_ACTIONS);
-  }
 }

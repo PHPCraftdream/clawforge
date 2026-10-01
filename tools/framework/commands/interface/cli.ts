@@ -6,14 +6,35 @@ import { isCaptured, emitRaw } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { HelperNotRunning } from "#src/runtime/runtime.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import { CLI_HELPER_SERVICE } from "./cli-helper.ts";
 
-export async function cli(ctx: Context, args: string[]): Promise<void> {
-  // A leading bare -- is our own boundary (`./clawforge cli -- --help` reaches OpenClaw's
-  // real --help instead of ours) and is stripped; everything else passes through untouched —
-  // filtering would break OpenClaw's own flags, which include --force on several subcommands.
-  const passed = args[0] === "--" ? args.slice(1) : args;
+export const CLI_ARGUMENTS = [
+  {
+    name: "args",
+    summary: "Arguments passed to OpenClaw's CLI verbatim",
+    description: "Arguments passed to OpenClaw's CLI verbatim, e.g. [\"config\", \"get\", \"gateway.mode\"]",
+    kind: "variadic",
+    required: true,
+  },
+] as const;
 
+/** The command body; cli(ctx, args) stays for callers that already hold a Context. The
+ *  verbatim tail starts at the first token that is no declared flag of ours — a leading
+ *  bare -- is consumed as the boundary, everything after it is literal. */
+export const CLI = commandBody({
+  effect: "destroy",
+  arguments: CLI_ARGUMENTS,
+  async run(ctx, { args: passed }) {
+    await runCli(ctx, [...passed]);
+  },
+});
+
+export async function cli(ctx: Context, args: string[]): Promise<void> {
+  await runOnContext(CLI, ctx, args);
+}
+
+async function runCli(ctx: Context, passed: string[]): Promise<void> {
   if (passed.length === 0) {
     die("usage: ./clawforge cli <openclaw arguments>, e.g. ./clawforge cli agent --agent main -m 'hi'");
   }

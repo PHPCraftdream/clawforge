@@ -9,15 +9,39 @@ import { isCaptured, emitRaw } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
 import { HelperNotRunning } from "#src/runtime/runtime.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
 import { CLI_HELPER_SERVICE } from "./cli-helper.ts";
 
+export const EXEC_ARGUMENTS = [
+  {
+    name: "args",
+    summary: "Command and arguments to run",
+    description: "Command and arguments to run, e.g. [\"curl\", \"-fsS\", \"http://127.0.0.1:18789/healthz\"]",
+    kind: "variadic",
+    required: true,
+  },
+] as const;
+
+/** The command body; exec(ctx, args) stays for callers that already hold a Context. Same
+ *  verbatim-tail rule as cli: the first token that is no flag of ours starts the command,
+ *  and everything from there is literal. */
+export const EXEC = commandBody({
+  effect: "destroy",
+  arguments: EXEC_ARGUMENTS,
+  async run(ctx, { args }) {
+    await runExec(ctx, [...args]);
+  },
+});
+
 export async function exec(ctx: Context, args: string[]): Promise<void> {
-  // The framework's leading grammar boundary is not the child executable.
-  args = args[0] === "--" ? args.slice(1) : args;
-  if (args.length === 0) {
+  await runOnContext(EXEC, ctx, args);
+}
+
+async function runExec(ctx: Context, rawArgs: string[]): Promise<void> {
+  const [command, ...rest] = rawArgs;
+  if (command === undefined) {
     die("usage: ./clawforge exec <command> [args...], e.g. ./clawforge exec cat /app/docs/channels/telegram.md");
   }
-  const [command, ...rest] = args;
 
   // Same capture/streaming and failure-reporting shape as `cli` — see its own comments for why.
   const captured = isCaptured();
@@ -28,7 +52,7 @@ export async function exec(ctx: Context, args: string[]): Promise<void> {
       emitRaw(result.stdout);
       if (result.code !== 0) emitRaw(result.stderr);
     }
-    if (result.code !== 0) dieWithExitCode(`exec ${args.join(" ")} failed (exit ${result.code})`, result.code);
+    if (result.code !== 0) dieWithExitCode(`exec ${rawArgs.join(" ")} failed (exit ${result.code})`, result.code);
   };
 
   if (ctx.runtime.execCommand === undefined) {

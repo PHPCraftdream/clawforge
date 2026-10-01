@@ -4,7 +4,7 @@
     "comment": "stage 4 (Advice): ./clawforge must reach output only through one renderer",
     "files": {
       "tools/framework/commands/interface/cli-helper.ts": 5,
-      "tools/framework/commands/interface/cli.ts": 5,
+      "tools/framework/commands/interface/cli.ts": 4,
       "tools/framework/commands/interface/exec.ts": 6,
       "tools/framework/commands/interface/groups/openclawCommands.lifecycle.ts": 8,
       "tools/framework/commands/interface/groups/openclawCommands.management.ts": 20,
@@ -12,7 +12,7 @@
       "tools/framework/commands/interface/groups/openclawCommands.orchestration.ts": 19,
       "tools/framework/commands/interface/groups/openclawCommands.sets.ts": 1,
       "tools/framework/commands/interface/host/contexts.ts": 1,
-      "tools/framework/commands/interface/host/index.ts": 5,
+      "tools/framework/commands/interface/host/index.ts": 1,
       "tools/framework/commands/interface/index.ts": 1,
       "tools/framework/commands/interface/status.ts": 3,
       "tools/framework/commands/lifecycle/backup/index.ts": 6,
@@ -32,13 +32,13 @@
       "tools/framework/commands/lifecycle/verify.ts": 2,
       "tools/framework/commands/management/credentials/mcp.ts": 4,
       "tools/framework/commands/management/credentials/provider.ts": 1,
-      "tools/framework/commands/management/deploy/arguments.ts": 2,
+      "tools/framework/commands/management/deploy/arguments.ts": 1,
       "tools/framework/commands/management/deploy/index.ts": 2,
       "tools/framework/commands/management/deploy/sync.ts": 3,
       "tools/framework/commands/management/extensions.ts": 4,
       "tools/framework/commands/management/lock.ts": 1,
       "tools/framework/commands/management/provision-agent/declaration.ts": 1,
-      "tools/framework/commands/management/provision-agent/index.ts": 4,
+      "tools/framework/commands/management/provision-agent/index.ts": 3,
       "tools/framework/commands/management/provision-agent/reconcile.ts": 1,
       "tools/framework/commands/management/recipe/actions.ts": 4,
       "tools/framework/commands/management/recipe/index.ts": 5,
@@ -106,7 +106,7 @@
       "tools/framework/entry/resolve.ts": 3,
       "tools/framework/entry/checkout-gate.ts": 7
     },
-    "total": 465
+    "total": 458
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
@@ -116,17 +116,17 @@
   },
   "rawArgvPredicates": {
     "comment": "stage 3 (CommandSpec effect): confirmation comes from declared effect, not raw argv",
-    "readOnlyWhen": 14,
-    "changedWhen": 6,
-    "requiresConfirmationWhen": 5
+    "readOnlyWhen": 10,
+    "changedWhen": 5,
+    "requiresConfirmationWhen": 4
   },
   "legacyCommands": {
     "comment": "stage 3 (CommandSpec): openclawCommands entries whose specOf is undefined — each migration turns one into a declared body",
-    "total": 32
+    "total": 17
   },
   "unsummarizedDescriptions": {
     "comment": "stage 3 (CommandArgument summary): MCP stops shortening heuristically when all summaries are declared; arguments of the derived `arguments` view with a description longer than 60 and no summary",
-    "total": 30
+    "total": 20
   },
   "declaredArguments": {
     "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",
@@ -152,7 +152,7 @@
       "tools/checks/foundation/cli/gate-commands.check.ts": 25,
       "tools/checks/foundation/cli/gate-dispatch.check.ts": 14,
       "tools/checks/foundation/cli/help-groups.check.ts": 6,
-      "tools/checks/foundation/cli/host.check.ts": 22,
+      "tools/checks/foundation/cli/host.check.ts": 19,
       "tools/checks/foundation/core/archive.check.ts": 1,
       "tools/checks/foundation/core/command/pipeline/execute.check.ts": 3,
       "tools/checks/foundation/core/command/spec/parse.check.ts": 3,
@@ -293,6 +293,6 @@
       "tools/checks/sets/lifecycle/set-validate.check.ts": 22,
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 858
+    "total": 855
   }
 }

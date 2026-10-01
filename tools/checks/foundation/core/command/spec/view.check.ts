@@ -170,6 +170,19 @@ import { check, finish } from "#checks/kit/harness.ts";
       if (argument.summary !== undefined) continue;
       const actual = schemaArgumentDescription(argument);
       if (actual === undefined) continue;
+      // A declared summary that IS the whole description (lead-in aside) is the stage-3 end
+      // state — the schema shows the full phrase instead of a heuristic cut (design 5.1's
+      // five "…" arguments, e.g. recipe's <new-name>). Compare it against the complete
+      // text, not the truncation.
+      if (argument.summary !== undefined) {
+        let complete = argument.description.replace(/^With [\w/-]+: /, "");
+        for (;;) {
+          const next = complete.replace(/\s*\([^()]*\)/g, "");
+          if (next === complete) break;
+          complete = next;
+        }
+        if (argument.summary === complete.replace(/\s{2,}/g, " ").trim()) continue;
+      }
       // Suffixes are appended after shortening — rebuild them structurally, not by regex.
       // A composed description ("X (build); Y (forget)") is shortened per part, each part
       // keeping its own actions (R32-04).

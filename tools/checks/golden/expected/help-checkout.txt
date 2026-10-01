@@ -734,7 +734,7 @@
 === recipe --help ===
 ==> recipe — Deploy services next to the instance: install, verify, list, and more
     Usage: ./clawforge recipe [<action>] [<name>] [<new-name>] [--json] [--with-hooks] [--break-lock] [--break-foreign-lock <hostId>] [--tail <n>] [--force-disabled] [--dry-run] [--volumes]
-      <action>               What to do with the recipe [list|import|new|install|remove|status|logs|verify|onboard|diagnose]
+      <action>               What to do with the recipe [list|import|new|verify|onboard|diagnose|install|remove|status|logs]
       <name>                 Recipe name; with import, the source directory to copy
       <new-name>             import under this name instead of the source directory's own name
       --json                 emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON (list)

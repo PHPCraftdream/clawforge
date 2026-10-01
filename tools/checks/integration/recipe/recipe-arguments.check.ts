@@ -91,7 +91,7 @@ try {
     withOutputSink(() => {}, () => recipe(ctx, ["list", "--bogus", "extra"])),
   );
   check("the refusal names the flag", listBogus.includes("--bogus"), true);
-  check("the refusal names the action", listBogus.includes("recipe list"), true);
+  check("the refusal is the parser's unknown-argument form", listBogus.includes("unknown argument"), true);
 
   const listExtra = await messageOf("recipe list refuses a bare positional — it takes no name at all", () =>
     withOutputSink(() => {}, () => recipe(ctx, ["list", "plain"])),
@@ -102,7 +102,7 @@ try {
     withOutputSink(() => {}, () => recipe(ctx, ["list", "--volumes"])),
   );
   check("the refusal names --volumes", listVolumes.includes("--volumes"), true);
-  check("and names what list does accept instead", listVolumes.includes("--json"), true);
+  check("and names the action it belongs to instead", listVolumes.includes("remove"), true);
 
   // --- status: <name> only, no flags at all --------------------------------------------------
 

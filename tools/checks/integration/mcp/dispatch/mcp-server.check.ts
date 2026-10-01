@@ -200,7 +200,7 @@ try {
   check(
     "recipe MCP schema documents import/new/verify/onboard/diagnose actions",
     recipeActionSchema?.enum,
-    ["list", "import", "new", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
+    ["list", "import", "new", "verify", "onboard", "diagnose", "install", "remove", "status", "logs"],
   );
   check("recipe's short MCP description points at the help tool instead", toolDescription("recipe", openclawCommands.recipe!).includes("call help with command=recipe"), true);
     check("the help tool explains recipe's app-owned hooks in full", textOf(6).includes("prepare.ts"), true);

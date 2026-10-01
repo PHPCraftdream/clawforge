@@ -71,7 +71,13 @@ function runServer(script: string, input: string): Promise<{ code: number | null
     await useDeployment(${JSON.stringify(root)});
     const spy = async (_ctx, args) => { log(args.join(" ") || "status"); };
     await serveMcp({ name: "policy", commands: {
-      secrets: { ...managementCommands.secrets, run: spy },
+      // A replaced run reads as a legacy command, whose classification comes from its own
+      // predicates — so the stub declares the ones the real command now derives from its
+      // spec: the report (and --print-template) read, the store/template writes change,
+      // and only --init-store/--apply/--dump are confirmed.
+      secrets: { ...managementCommands.secrets, run: spy,
+        readOnlyWhen: (args) => !["--init-store", "--apply", "--dump", "--template"].some((flag) => args.includes(flag)),
+        requiresConfirmationWhen: (args) => ["--init-store", "--apply", "--dump"].some((flag) => args.includes(flag)) },
       restore: { ...lifecycleCommands.restore, run: spy },
       push: { ...lifecycleCommands.push, run: spy },
       destroy: { ...lifecycleCommands.destroy, run: spy },

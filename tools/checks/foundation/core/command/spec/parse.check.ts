@@ -6,11 +6,10 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { inputSchema, toArgv, validate } from "#framework/integration/mcp/server.ts";
 import {
-  parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION, type CallShape,
+  parseDeclaredArgs, parseCall, ArgumentError, UnknownArgumentError, UnknownActionError, dieUnknownAction, NO_ACTION, specOf, type CallShape,
 } from "#framework/core/command/index.ts";
 import { countValue, ValueError, type ValueParser } from "#framework/core/values/value.ts";
 import { BACKUP_ACTION_ARGUMENTS } from "#framework/commands/lifecycle/backup/index.ts";
-import { RECIPE_ACTION_ARGUMENTS, validateRecipeArgs } from "#framework/commands/management/recipe/arguments.ts";
 import { EXPOSE_ACTION_ARGUMENTS } from "#framework/commands/operate/expose/index.ts";
 import { WATCH_ACTION_ARGUMENTS } from "#framework/commands/operate/watch/index.ts";
 import { SET_ACTION_ARGUMENTS } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
@@ -120,7 +119,9 @@ check(
   validate(openclawCommands.cli, { args: ["status", ""] }),
   ["args takes a list of non-empty strings"],
 );
-check("a missing required variadic is reported", validate(openclawCommands.cli, {}), ["args is required"]);
+// A spec command's required arguments are the parser's, not validate's: the missing-args
+// refusal arrives from parseCall in the parser's own words, one stage later (design 4).
+check("a missing required variadic is the parser's refusal, not validate's", validate(openclawCommands.cli, {}), []);
 
 // --- deploy: every flag deploy.ts actually parses is declared, so --help and MCP agree with it ---
 
@@ -427,7 +428,6 @@ check(
   // A new multi-action command must register here, or this check fails for it.
   const REGISTRY: Readonly<Record<string, Slices>> = {
     backup: BACKUP_ACTION_ARGUMENTS,
-    recipe: RECIPE_ACTION_ARGUMENTS,
     expose: EXPOSE_ACTION_ARGUMENTS,
     watch: WATCH_ACTION_ARGUMENTS,
     set: SET_ACTION_ARGUMENTS,
@@ -440,10 +440,9 @@ check(
   }
 
   /** Whether the real parser for `action` takes `argument` (syntactically). */
-  function accepts(command: string, action: string, slice: readonly CommandArgument[], argument: CommandArgument): boolean {
+  function accepts(action: string, slice: readonly CommandArgument[], argument: CommandArgument): boolean {
     try {
-      if (command === "recipe") validateRecipeArgs(action, tokens(argument));
-      else parseDeclaredArgs(slice, tokens(argument));
+      parseDeclaredArgs(slice, tokens(argument));
       return true;
     } catch {
       return false;
@@ -455,6 +454,10 @@ check(
   for (const [name, command] of Object.entries(openclawCommands)) {
     const actionArgument = (command.arguments ?? []).find((argument) => argument.kind === "positional" && argument.name === "action");
     if (actionArgument?.choices === undefined) continue;
+    // A spec command's slices ARE the parser's grammar — the derived view and parseCall read
+    // the same declaration — so the declared-equals-accepted cross-check covers legacy
+    // commands only.
+    if (specOf(command) !== undefined) continue;
     const slices = REGISTRY[name];
     check(`${name} has actions and registers what each action's parser accepts`, slices !== undefined, true);
     if (slices === undefined) continue;
@@ -477,7 +480,7 @@ check(
         .filter((argument) => argument.actions === undefined || argument.actions.includes(action))
         .map((argument) => argument.name)
         .sort();
-      const parsed = [...known.values()].filter((argument) => accepts(name, action, slice, argument)).map((argument) => argument.name).sort();
+      const parsed = [...known.values()].filter((argument) => accepts(action, slice, argument)).map((argument) => argument.name).sort();
       check(`${label}: declared flags equal what its parser accepts`, shown, parsed);
 
       const offered = completion.get(name)?.action?.flags[action];

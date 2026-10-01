@@ -14,29 +14,40 @@ import { HelperNotRunning, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { CLI_HELPER_SERVICE } from "#src/commands/interface/cli-helper.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, CLAWFORGE_MCP_NAME, MCP_LAUNCHER_FILENAME, projectMcpEntries, setupProjectMcp } from "#src/integration/mcp/project.ts";
 import type { McpClient } from "#src/integration/mcp/project.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import type { ArgumentSpec } from "#src/core/command/index.ts";
 
-/** Drives both mcp-setup's own parser and its openclawCommands declaration. */
-export const MCP_SETUP_ARGUMENTS: CommandArgument[] = [
+export const MCP_SETUP_ARGUMENTS = [
   { name: "client", kind: "option", valueName: "client", choices: ["claude", "codex", "both"], description: "Client configuration to update (default both)" },
   { name: "json", kind: "flag", description: "Report changed files as JSON" },
-  { name: "rewrite-launcher", kind: "flag", description: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME} (refused by default)` },
-];
+  { name: "rewrite-launcher", kind: "flag", summary: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME}`, description: `Overwrite a locally edited ${MCP_LAUNCHER_FILENAME} (refused by default)` },
+] as const satisfies readonly ArgumentSpec[];
 
-/** Drives both mcp-creds' own parser and its openclawCommands declaration. */
-export const MCP_CREDS_ARGUMENTS: CommandArgument[] = [
+export const MCP_CREDS_ARGUMENTS = [
   { name: "json", description: "Print the client config only", kind: "flag" },
   { name: "token", description: "Print the gateway token only", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 /** Client configuration belongs to the selected application in either distribution mode. */
 export async function mcpConfigFilePath(_ctx: Context): Promise<string> {
   return resolve(deploymentDir(), ".mcp.json");
 }
 
-/** stdio bridge to the gateway's channel conversations. */
+/** stdio bridge to the gateway's channel conversations. The bridge takes no options of its
+ *  own; the body declares none, so a stray flag is refused instead of forwarded. */
+export const MCP_SERVE = commandBody({
+  effect: "change",
+  arguments: [] as const,
+  async run(ctx) {
+    await runMcpServe(ctx, []);
+  },
+});
+
 export async function mcpServe(ctx: Context, args: string[]): Promise<void> {
+  await runOnContext(MCP_SERVE, ctx, args);
+}
+
+async function runMcpServe(ctx: Context, args: string[]): Promise<void> {
   // Exact duplex stdio via transport pipes; never captured command output or a PTY.
   // The gateway token reaches the CLI via the compose environment. A successful helper
   // exec already proves reachability, before the fallback readiness preflight.
@@ -72,17 +83,30 @@ async function mcpConfig(ctx: Context): Promise<string> {
   return `${JSON.stringify({ mcpServers: await mcpServerEntries(ctx) }, null, 2)}\n`;
 }
 
-/** Refresh project-local client settings without replacing other servers or global config. */
+/** The command body; mcpSetup(ctx, args) stays for callers that already hold a Context. */
+export const MCP_SETUP = commandBody({
+  effect: "change",
+  arguments: MCP_SETUP_ARGUMENTS,
+  async run(ctx, values) {
+    const { client, json, rewriteLauncher } = setupOptions(values);
+    await runMcpSetup(ctx, client, json, rewriteLauncher);
+  },
+});
+
+function setupOptions(values: { client?: "claude" | "codex" | "both"; json?: boolean; "rewrite-launcher"?: boolean }): {
+  client: McpClient;
+  json: boolean;
+  rewriteLauncher: boolean;
+} {
+  return { client: values.client ?? "both", json: values.json === true, rewriteLauncher: values["rewrite-launcher"] === true };
+}
+
 export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(MCP_SETUP_ARGUMENTS, args);
-  const json = parsed.json === true;
-  let client: McpClient = "both";
-  if (parsed.client !== undefined) {
-    if (parsed.client !== "claude" && parsed.client !== "codex" && parsed.client !== "both") die("--client needs claude, codex or both");
-    client = parsed.client;
-  }
+  await runOnContext(MCP_SETUP, ctx, args);
+}
+
+async function runMcpSetup(ctx: Context, client: McpClient, json: boolean, rewriteLauncher: boolean): Promise<void> {
   const installed = await access(resolve(deploymentDir(), "clawforge")).then(() => true, () => false);
-  const rewriteLauncher = parsed["rewrite-launcher"] === true;
   const changedFiles = await setupProjectMcp(deploymentDir(), installed ? "installed" : "monorepo", client, { rewriteLauncher });
   if (json || isCaptured()) { emit(`${JSON.stringify({ client, changed: changedFiles.length > 0, files: changedFiles }, null, 2)}\n`); return; }
   log(`project MCP configured for ${client === "both" ? "Claude Code and Codex" : client}`);
@@ -91,12 +115,20 @@ export async function mcpSetup(ctx: Context, args: string[]): Promise<void> {
   info("trust this project in the client, then reconnect MCP servers; global settings were not changed");
 }
 
-/** Prints everything needed to connect a client. */
-export async function mcpCreds(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(MCP_CREDS_ARGUMENTS, args);
-  const jsonOnly = parsed.json === true;
-  const tokenOnly = parsed.token === true;
+/** The command body; mcpCreds(ctx, args) stays for callers that already hold a Context. */
+export const MCP_CREDS = commandBody({
+  effect: "read",
+  arguments: MCP_CREDS_ARGUMENTS,
+  async run(ctx, values) {
+    await runMcpCreds(ctx, values.json === true, values.token === true);
+  },
+});
 
+export async function mcpCreds(ctx: Context, args: string[]): Promise<void> {
+  await runOnContext(MCP_CREDS, ctx, args);
+}
+
+async function runMcpCreds(ctx: Context, jsonOnly: boolean, tokenOnly: boolean): Promise<void> {
   // Checked before anything prints: a not-yet-bootstrapped deployment must fail on that
   // fact alone, never after a token line holding nothing generated already went out.
   await requireBootstrapped(ctx);

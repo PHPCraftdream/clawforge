@@ -13,7 +13,39 @@ import { die, dieWithExitCode, info } from "#src/core/io/log.ts";
 import { emitRaw, shouldFollow } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecOptions } from "#src/runtime/transport/transport.ts";
+import { commandBody, parseCall, runOnContext, specShape } from "#src/core/command/index.ts";
+import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
+import { ArgumentError } from "#src/core/command/index.ts";
 import { probeHostIdentity, realHostEnvironment, resolveHostContext, type HostContextName, type HostEnvironment } from "./contexts.ts";
+
+export const HOST_ARGUMENTS = [
+  {
+    name: "context",
+    summary: "Where to run: target, engine, local",
+    description: "Where to run: target (the deployment's transport), engine (the container engine's machine), local (this machine)",
+    kind: "positional",
+    required: true,
+    choices: ["target", "engine", "local"],
+  },
+  {
+    name: "root",
+    summary: "Request root; one half of the elevation consent",
+    description: "Request root. On target/local: half of the elevation consent, dead without --confirm-root. On engine: half of the consent every command needs to run at all — the distro's only user is root (uid 0)",
+    kind: "flag",
+  },
+  {
+    name: "confirm-root",
+    summary: "Second consent; both flags together are required",
+    description: "Second consent; both flags together are required — to elevate on target/local, and for an engine command to run at all",
+    kind: "flag",
+  },
+  {
+    name: "args",
+    description: "Command and arguments to run, e.g. [\"resolvectl\", \"status\"]",
+    kind: "variadic",
+    required: true,
+  },
+] as const satisfies readonly ArgumentSpec[];
 
 export interface HostInvocation {
   readonly context: HostContextName;
@@ -22,57 +54,49 @@ export interface HostInvocation {
   readonly command: string[];
 }
 
-export function parseHostArgs(args: string[]): HostInvocation {
-  const [name, ...rest] = args;
-  if (name === undefined) {
-    die("usage: ./clawforge host <target|engine|local> [--root --confirm-root] -- <command> [args...], e.g. ./clawforge host engine -- cat /etc/resolv.conf");
-  }
-  if (name !== "target" && name !== "engine" && name !== "local") {
-    die(`unknown context: ${name} (expected target, engine or local)`);
-  }
-
-  // Our flags are only recognized before the first command token — exactly so a command's
-  // own --root-like flags after that point are passed through untouched.
-  let root = false;
-  let confirmRoot = false;
-  let at = 0;
-  for (; at < rest.length; at++) {
-    const token = rest[at];
-    if (token === "--") {
-      at += 1;
-      break;
-    }
-    if (token === "--root") {
-      root = true;
-    } else if (token === "--confirm-root") {
-      confirmRoot = true;
-    } else {
-      break;
-    }
-  }
-
-  const command = rest.slice(at);
-  if (command.length === 0) {
-    die("usage: ./clawforge host <target|engine|local> [--root --confirm-root] -- <command> [args...], e.g. ./clawforge host engine -- cat /etc/resolv.conf");
-  }
-
-  return { context: name, root, confirmRoot, command };
+/** The invocation the bound values describe. Our flags are only recognized before the first
+ *  command token — exactly so a command's own --root-like flags after that point are passed
+ *  through untouched; that order is the parser's (tokenize's verbatim tail), not re-derived
+ *  here. */
+export function invocationOf(values: Values<typeof HOST_ARGUMENTS>): HostInvocation {
+  return { context: values.context, root: values.root, confirmRoot: values["confirm-root"], command: [...values.args] };
 }
 
 export function rootElevationRequested(root: boolean, confirmRoot: boolean): boolean {
   // Deliberate double friction: one flag alone does nothing, so an accident needs two
   // mistakes instead of one.
   if (root && !confirmRoot) {
-    die("--root does not elevate on its own: add --confirm-root to run the command as root");
+    throw new ArgumentError("--root does not elevate on its own: add --confirm-root to run the command as root", "root");
   }
   if (!root && confirmRoot) {
-    die("--confirm-root does not elevate on its own: add --root to ask for elevation at all");
+    throw new ArgumentError("--confirm-root does not elevate on its own: add --root to ask for elevation at all", "confirm-root");
   }
   return root;
 }
 
+/** The command body; host(ctx, args) stays for callers that already hold a Context (and the
+ *  checks' injected HostEnvironment). */
+export const HOST = commandBody({
+  effect: "destroy",
+  arguments: HOST_ARGUMENTS,
+  prepare(call) {
+    const parsed = invocationOf(call.values as Values<typeof HOST_ARGUMENTS>);
+    rootElevationRequested(parsed.root, parsed.confirmRoot);
+    return parsed;
+  },
+  async run(ctx, plan) {
+    await runInvocation(ctx, plan as HostInvocation, realHostEnvironment);
+  },
+});
+
 export async function host(ctx: Context, args: string[], environment: HostEnvironment = realHostEnvironment): Promise<void> {
-  const parsed = parseHostArgs(args);
+  if (environment === realHostEnvironment) return runOnContext(HOST, ctx, args, "host");
+  // An injected environment (the checks): parse and run directly, as runOnContext would.
+  const call = parseCall(specShape(HOST), args, "host");
+  await runInvocation(ctx, invocationOf(call.values as Values<typeof HOST_ARGUMENTS>), environment);
+}
+
+async function runInvocation(ctx: Context, parsed: HostInvocation, environment: HostEnvironment): Promise<void> {
   const elevate = rootElevationRequested(parsed.root, parsed.confirmRoot);
   const execution = await resolveHostContext(ctx, parsed.context, environment);
   if (execution.note !== undefined) info(execution.note);

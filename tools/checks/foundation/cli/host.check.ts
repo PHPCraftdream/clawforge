@@ -4,8 +4,8 @@
 // containers. Everything here is hermetic: contexts are resolved against an injected
 // HostEnvironment, execution is recorded by a stub transport, and the one real process this file
 // spawns is `node -e` on the machine running the check. Covers:
-//   - parseHostArgs: where host's own flags stop and the command's verbatim tail begins, with
-//     and without the bare `--` the shell needs but MCP never sends;
+//   - the verbatim tail: where host's own flags stop and the command's literal remainder
+//     begins, with and without the bare `--` the shell needs but MCP never sends;
 //   - the root gate: --root and --confirm-root each refuse to act alone;
 //   - the engine privilege contract: a context can arrive as root (Docker Desktop's
 //     docker-desktop distro has no other login user), so the double-flag consent is demanded
@@ -20,12 +20,13 @@
 //     UTF-16 distro listing;
 //   - the streaming-vs-captured split in all three output worlds: a real terminal, a sink, a
 //     plain pipe;
-//   - the MCP schema/argv contract, including the toArgv -> parseHostArgs round trip;
+//   - the MCP schema/argv contract, including the toArgv -> parseCall round trip;
 //   - full dispatch through a recording transport, and one real bare-machine run.
 
-import { host, parseHostArgs, rootElevationRequested } from "#framework/commands/interface/host/index.ts";
+import { host, rootElevationRequested } from "#framework/commands/interface/host/index.ts";
 import { ENGINE_DISTRO, parseWslDistroListing, probeUidAnswer, realHostEnvironment, resolveHostContext, sudoCommand, wslEngineCommand, type HostEnvironment, type IdentityProbe } from "#framework/commands/interface/host/contexts.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { parseCall, specShape, specOf } from "#framework/core/command/index.ts";
 import { inputSchema, toArgv, toolDescription, validate } from "#framework/integration/mcp/server.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { CommandFailedError } from "#framework/core/io/log.ts";
@@ -82,41 +83,35 @@ function envWith(platform: NodeJS.Platform, distros: string[], localIdentity: Id
   return { platform, listWslDistros: async () => distros, localIdentity: async () => localIdentity };
 }
 
-// --- parseHostArgs: our flags end where the command begins -----------------------------------
+// --- the verbatim tail: our flags end where the command begins -------------------------------
+// The tail rule is the one parser's (tokenize's verbatim mode, driven by the declared
+// variadic), so these assert the dispatch the parsing produces.
 
 {
-  check("a bare -- marks the boundary and is dropped", parseHostArgs(["local", "--", "echo", "hi"]), {
-    context: "local",
-    root: false,
-    confirmRoot: false,
-    command: ["echo", "hi"],
+  const stub = recordingTransport();
+  await withOutputSink(() => {}, async () => {
+    await host(ctxWith(stub.transport), ["target", "--", "echo", "hi"]);
   });
-  check("without -- the command starts at the first non-flag token", parseHostArgs(["target", "curl", "-fsS", "http://x/healthz"]), {
-    context: "target",
-    root: false,
-    confirmRoot: false,
-    command: ["curl", "-fsS", "http://x/healthz"],
+  check("a bare -- marks the boundary and is dropped", stub.calls.at(-1), { command: "echo", args: ["hi"], options: { input: "", allowFailure: true } });
+
+  const second = recordingTransport();
+  await withOutputSink(() => {}, async () => {
+    await host(ctxWith(second.transport), ["target", "curl", "-fsS", "http://x/healthz"]);
   });
-  const withBoundary = parseHostArgs(["engine", "--root", "--confirm-root", "--", "whoami"]);
-  check("--root and --confirm-root are taken before the boundary", withBoundary, {
-    context: "engine",
-    root: true,
-    confirmRoot: true,
-    command: ["whoami"],
+  check("without -- the command starts at the first non-flag token", second.calls.at(-1), { command: "curl", args: ["-fsS", "http://x/healthz"], options: { input: "", allowFailure: true } });
+
+  const third = recordingTransport();
+  await withOutputSink(() => {}, async () => {
+    await host(ctxWith(third.transport), ["target", "--", "docker", "--root"]);
   });
-  check("a --root after the command starts is the command's own", parseHostArgs(["local", "--", "docker", "--root"]), {
-    context: "local",
-    root: false,
-    confirmRoot: false,
-    command: ["docker", "--root"],
-  });
+  check("a --root after the command starts is the command's own", third.calls.at(-1), { command: "docker", args: ["--root"], options: { input: "", allowFailure: true } });
 }
 
 {
-  check("no context at all is a usage error", (await deathOf(() => parseHostArgs([]))).includes("usage:"), true);
-  check("an unknown context is refused by name", (await deathOf(() => parseHostArgs(["vm", "whoami"]))).includes("unknown context: vm"), true);
-  check("and the refusal names the three valid contexts", (await deathOf(() => parseHostArgs(["vm", "whoami"]))).includes("target, engine or local"), true);
-  check("a context with nothing after it is a usage error", (await deathOf(() => parseHostArgs(["local"]))).includes("usage:"), true);
+  check("no context at all is refused by the parser", (await deathOf(() => host(ctxWith({}), []))).includes("<context>"), true);
+  const unknownContext = await deathOf(() => host(ctxWith({}), ["vm", "whoami"]));
+  check("an unknown context is refused with the three valid ones", unknownContext.includes("target, engine, local"), true);
+  check("a context with nothing after it refuses the missing command", (await deathOf(() => host(ctxWith({}), ["local"]))).includes("<args"), true);
 }
 
 // --- the root gate: either flag alone is a refusal, not a silent downgrade --------------------
@@ -486,17 +481,23 @@ check("host is declared destructive, so MCP requires a confirmation", openclawCo
   check("destructive with no read-only mode requires confirm", required.includes("confirm"), true);
 
   // The round trip the interface/index.ts header demands: what an MCP client sends must be
-  // exactly what the command's own parser accepts — one declaration, two consumers.
-  check("toArgv's argv parses back to the same invocation", parseHostArgs(toArgv(openclawCommands.host, { context: "engine", root: true, "confirm-root": true, args: ["resolvectl", "status"] })), {
-    context: "engine",
-    root: true,
-    confirmRoot: true,
-    command: ["resolvectl", "status"],
-  });
+  // exactly what the command's own parser accepts — one declaration, two consumers. The
+  // parser here is the body's own (parseCall over the materialized spec).
+  {
+    const argv = toArgv(openclawCommands.host, { context: "engine", root: true, "confirm-root": true, args: ["resolvectl", "status"] });
+    const call = parseCall(specShape(specOf(openclawCommands.host)!), argv, "host");
+    check("toArgv's argv parses back to the same invocation", call.values, {
+      context: "engine",
+      root: true,
+      "confirm-root": true,
+      args: ["resolvectl", "status"],
+    });
+  }
 
-  check("validate names the contexts for a bad one", validate(openclawCommands.host, { context: "vm" }).join("; ").includes("target, engine, local"), true);
-  const missing = validate(openclawCommands.host, {});
-  check("validate reports both required arguments", missing.includes("context is required") && missing.includes("args is required"), true);
+  // choices and required are the parser's for a spec command (design 4): MCP validate checks
+  // the shape only, and the refusals come from the body's own parse — covered above.
+  check("validate passes a bad context's shape through to the parser", validate(openclawCommands.host, { context: "vm" }), []);
+  check("validate leaves the missing arguments to the parser", validate(openclawCommands.host, {}), []);
   const hostDescription = toolDescription("host", openclawCommands.host);
   check("the schema shows the client the contexts; the description points to help for the rest", JSON.stringify(properties.context?.enum) === JSON.stringify(["target", "engine", "local"]) && hostDescription.includes("call help with command=host"), true);
   check("the schema exposes the root gate", (inputSchema(openclawCommands.host).properties as Record<string, unknown>)["confirm-root"] !== undefined, true);

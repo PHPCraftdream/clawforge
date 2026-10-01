@@ -12,17 +12,26 @@ import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
 import { unreachableProblem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
 import { summarizeExposure, exposureOneLiner } from "#src/commands/operate/expose/index.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
-/** Drives both status's own parser and its openclawCommands declaration. */
-export const STATUS_ARGUMENTS: CommandArgument[] = [
+export const STATUS_ARGUMENTS = [
   { name: "json", description: "Emit status as JSON instead of text", kind: "flag" },
-];
+] as const;
+
+/** The command body; status(ctx, args) stays for callers that already hold a Context. */
+export const STATUS = commandBody({
+  effect: "read",
+  arguments: STATUS_ARGUMENTS,
+  async run(ctx, { json }) {
+    await runStatus(ctx, json === true);
+  },
+});
 
 export async function status(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = parseDeclaredArgs(STATUS_ARGUMENTS, args).json === true;
+  await runOnContext(STATUS, ctx, args);
+}
 
+async function runStatus(ctx: Context, jsonOnly: boolean): Promise<void> {
   if (jsonOnly || isCaptured()) {
     await emitStatusReport(ctx);
     return;

@@ -16,13 +16,15 @@
 import { log, info, infoRaw } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import type { Values } from "#src/core/command/index.ts";
 import type { DeployPlan } from "./arguments.ts";
-import { frameworkSourceRoot, resolveDeployArguments } from "./arguments.ts";
+import { frameworkSourceRoot, resolveDeployArguments, DEPLOY_ARGUMENTS } from "./arguments.ts";
 import { assertDeployable } from "./refusals.ts";
 import { checkServerReady, prepareRemoteRoot } from "./server.ts";
 import { syncTrees, bootstrapAndReport } from "./sync.ts";
 
-export { DEPLOY_ARGUMENTS, frameworkSourceRoot, remoteRecipesPath, isDeployDryRun } from "./arguments.ts";
+export { DEPLOY_ARGUMENTS, frameworkSourceRoot, remoteRecipesPath } from "./arguments.ts";
 export { runRemote } from "./server.ts";
 export {
   collectSensitiveCheckoutNames,
@@ -72,11 +74,24 @@ async function deployDryRun(ctx: Context, sourceRoot: string, plan: DeployPlan):
   );
 }
 
+/** The command body; deploy(ctx, args) stays for callers that already hold a Context. */
+export const DEPLOY = commandBody({
+  effect: "destroy",
+  arguments: DEPLOY_ARGUMENTS,
+  async run(ctx, values) {
+    await runDeployCommand(ctx, values as Values<typeof DEPLOY_ARGUMENTS>);
+  },
+});
+
 export async function deploy(ctx: Context, args: string[]): Promise<void> {
+  await runOnContext(DEPLOY, ctx, args);
+}
+
+async function runDeployCommand(ctx: Context, values: Values<typeof DEPLOY_ARGUMENTS>): Promise<void> {
   // Before the arguments: no set of them makes this command work in the wrong mode.
   const sourceRoot = await frameworkSourceRoot();
 
-  const plan = resolveDeployArguments(ctx, args);
+  const plan = resolveDeployArguments(ctx, values);
 
   await assertDeployable(sourceRoot);
 

@@ -7,29 +7,23 @@ import { deploymentDir, deploymentName, recipesDir, applicationRecipesSetting } 
 import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
 import type { Context } from "#src/core/context.ts";
 import { isAbsolute, relative, sep, win32 } from "node:path";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
 
-/** Drives both deploy's own parser and its openclawCommands declaration. */
-export const DEPLOY_ARGUMENTS: CommandArgument[] = [
+export const DEPLOY_ARGUMENTS = [
   { name: "target", description: "user@host", kind: "positional", required: true },
   { name: "path", description: "Remote install directory (default: OC_REMOTE_PATH)", kind: "option", valueName: "path" },
   { name: "no-bootstrap", description: "Copy the files without starting anything", kind: "flag" },
   {
     name: "adopt",
+    summary: "Take over an existing, unmarked, non-empty remote root",
     description:
       "Take over an existing, unmarked, non-empty remote root: lists what --delete would " +
       "replace there before marking it as this deployment's",
     kind: "flag",
   },
-  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag" },
+  { name: "dry-run", description: "Show what would happen without touching the target", kind: "flag", effect: "read" },
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
-
-/** Whether argv requests --dry-run — same shape as restore's own isRestoreDryRun. */
-export function isDeployDryRun(args: readonly string[]): boolean {
-  return parseDeclaredArgs(DEPLOY_ARGUMENTS, args)["dry-run"] === true;
-}
+] as const satisfies readonly ArgumentSpec[];
 
 /** The tree this command mirrors, refusing rather than guessing when there is none.
  *
@@ -88,7 +82,9 @@ export function remoteRecipesPath(remoteApp: string): string {
   return `${remoteApp}/${remoteRelative}`;
 }
 
-/** Everything deploy() derives from argv before any tool check, connection or scan. */
+/** Everything deploy() derives from the bound arguments before any tool check, connection
+ *  or scan. The parser has already refused a missing target; what stays here needs the
+ *  Context's settings (the default remote path) and the local deployment layout. */
 export interface DeployPlan {
   target: string;
   remotePath: string;
@@ -102,19 +98,16 @@ export interface DeployPlan {
   remoteRecipes: string;
 }
 
-export function resolveDeployArguments(ctx: Context, args: string[]): DeployPlan {
-  const parsed = parseDeclaredArgs(DEPLOY_ARGUMENTS, args);
-  const target = parsed.target as string | undefined;
-  const requestedPath = parsed.path as string | undefined;
+export function resolveDeployArguments(ctx: Context, values: Values<typeof DEPLOY_ARGUMENTS>): DeployPlan {
+  const target = values.target as string;
+  const requestedPath = values.path as string | undefined;
   // An empty --path is caught below by validatedRemoteRoot(), which already names the
   // value and reason — no separate check needed here.
   let remotePath = requestedPath === undefined ? ctx.settings.remotePath : requestedPath;
-  const runBootstrap = parsed["no-bootstrap"] !== true;
-  const adopt = parsed.adopt === true;
-  const dryRun = parsed["dry-run"] === true;
-  const jsonOnly = parsed.json === true;
-
-  if (target === undefined) die("usage: ./clawforge deploy user@host [--path <dir>] [--adopt] [--no-bootstrap]");
+  const runBootstrap = values["no-bootstrap"] !== true;
+  const adopt = values.adopt === true;
+  const dryRun = values["dry-run"] === true;
+  const jsonOnly = values.json === true;
 
   // The destination of a --delete mirror gets its local examination before anything
   // remote runs — no connection, no mkdir, no rsync. The marker protocol asks the remote

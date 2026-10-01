@@ -34,16 +34,15 @@ import {
   compareExtensions,
 } from "./extensions.ts";
 import type { LockPlugin, LockSkill } from "./extensions.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import type { ArgumentSpec } from "#src/core/command/index.ts";
 
 export const LOCK_VERSION = 1;
 
-/** Drives both lock's own parser and its openclawCommands declaration. */
-export const LOCK_ARGUMENTS: CommandArgument[] = [
-  { name: "check", description: "Compare against the existing lock instead of writing one", kind: "flag" },
+export const LOCK_ARGUMENTS = [
+  { name: "check", description: "Compare against the existing lock instead of writing one", kind: "flag", effect: "read" },
   { name: "json", description: "Emit the lock, or the differences, as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 /** Printed once the lock is written. Its own constant so it stays consistent with
  *  scaffold.ts's git-init note: the deployment directory is meant to become its own git
@@ -295,11 +294,20 @@ function summarizeCheck(problems: readonly Problem[], inventoryProblems: readonl
   return { unread, differences, reason, summary: parts.length > 0 ? parts.join("; ") : undefined };
 }
 
-export async function lock(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(LOCK_ARGUMENTS, args);
-  const jsonOnly = parsed.json === true;
-  const checkOnly = parsed.check === true;
+/** The command body; lock(ctx, args) stays for callers that already hold a Context. */
+export const LOCK = commandBody({
+  effect: "change",
+  arguments: LOCK_ARGUMENTS,
+  async run(ctx, values) {
+    await runLock(ctx, values.check === true, values.json === true);
+  },
+});
 
+export async function lock(ctx: Context, args: string[]): Promise<void> {
+  await runOnContext(LOCK, ctx, args);
+}
+
+async function runLock(ctx: Context, checkOnly: boolean, jsonOnly: boolean): Promise<void> {
   const inventoryProblems: Problem[] = [];
   const current = await currentComposition(ctx, { includeExtensions: true, problems: inventoryProblems });
 

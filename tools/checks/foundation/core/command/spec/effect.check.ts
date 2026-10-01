@@ -5,7 +5,7 @@
 // fails here. Plus the shape rules of the model itself, on synthetic specs.
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { callFacts, callFactsFor, effectProfile, shapeProfile, type EffectShape } from "#framework/core/command/index.ts";
+import { ArgumentError, callFacts, callFactsFor, effectProfile, shapeProfile, type EffectShape } from "#framework/core/command/index.ts";
 import { destructiveSymbol, destructiveMarker, renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { inputSchema } from "#framework/integration/mcp/schema.ts";
@@ -69,7 +69,7 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
     [["import"], "destroy"], [["new"], "destroy"], [["verify"], "destroy"], [["verify", "--dry-run"], "destroy"],
     [["onboard"], "destroy"], [["diagnose"], "destroy"],
   ],
-  "provision-agent": [[[], "change"]],
+  "provision-agent": [[[], "change"], [["x"], "change"]],
   deploy: [[[], "destroy"], [["host"], "destroy"], [["host", "--dry-run"], "read"]],
   "mcp-serve": [[[], "change"]],
   "mcp-setup": [[[], "change"]],
@@ -83,15 +83,42 @@ const TABLE: Readonly<Record<string, readonly Row[]>> = {
 check("the table covers exactly the framework commands", Object.keys(TABLE).sort(), Object.keys(openclawCommands).sort());
 check("there are 41 commands", Object.keys(openclawCommands).length, 41);
 
+// The argv the spec parser now refuses by design — a bare variadic/positional command, a
+// flag another action owns — named EXPLICITLY, so a regression that makes any other row's
+// call refuse fails loudly instead of passing as "refused". Every command keeps a
+// positive row above.
+const REFUSED: readonly (readonly [name: string, argv: readonly string[]])[] = [
+  ["cli", []],
+  ["exec", []],
+  ["host", []],
+  ["deploy", []],
+  ["provision-agent", []],
+  ["recipe", ["verify", "--dry-run"]],
+];
+const refusedKey = (name: string, argv: readonly string[]): string => `${name} ${argv.join(" ")}`;
+const REFUSED_KEYS = new Set(REFUSED.map(([name, argv]) => refusedKey(name, argv)));
+
 for (const [name, rows] of Object.entries(TABLE)) {
   for (const [argv, effect, changed] of rows) {
     const label = `${name} ${argv.join(" ")}`.trim();
+    if (REFUSED_KEYS.has(refusedKey(name, argv))) {
+      let error: unknown;
+      try {
+        callFactsFor(openclawCommands[name], argv);
+      } catch (caught) {
+        error = caught;
+      }
+      checkTrue(`${label}: refused as an argument error before any effect`, error instanceof ArgumentError);
+      continue;
+    }
     const facts = callFactsFor(openclawCommands[name], argv);
     check(`${label}: effect`, facts.effect, effect);
-    check(`${label}: changed`, facts.changed, changed);
+    // For a spec command `changed` is the model's, not a predicate's: read → false,
+    // otherwise true — the same rule the MCP envelope applies. A legacy command reports
+    // its own changedWhen, which is what the row pinned.
+    check(`${label}: changed`, changed === undefined ? facts.changed : facts.changed ?? (facts.effect === "read" ? false : true), changed);
   }
 }
-
 // --- the static profile: literal, then against what the renderers print today ----------------
 
 const DESTRUCTIVE = [

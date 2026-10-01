@@ -3,12 +3,24 @@
 // Each recipe runs as its own compose project, so nothing here can disturb the gateway.
 // Building happens on the target: a Rust or Go build from scratch takes minutes, and the
 // output is streamed rather than swallowed — silent waiting looks like a hang.
+//
+// The body lives here; the action runs live in actions.ts. Actions are declared in
+// RECIPE_ACTION_GRAMMAR's order (list first, the default), so the word's choices read the
+// same order the usage message always named.
 
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { log, info, warn, die } from "#src/core/io/log.ts";
-import { dieUnknownAction } from "#src/core/command/index.ts";
+import { countValue } from "#src/core/values/value.ts";
+import {
+  defineAction,
+  multiActionBody,
+  runOnContext,
+} from "#src/core/command/index.ts";
+import type { ArgumentSpec } from "#src/core/command/index.ts";
+import { ArgumentError } from "#src/core/command/index.ts";
 import type { Context } from "#src/core/context.ts";
+import { log, info, warn } from "#src/core/io/log.ts";
+import { emit, isCaptured } from "#src/core/io/output.ts";
 import {
   listAgentBundleRecipes,
   listBrokenRecipes,
@@ -19,36 +31,21 @@ import {
   recipesDirectory,
   type Recipe,
 } from "#src/service/recipe.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
-import { isCaptured, emit } from "#src/core/io/output.ts";
-import { validateRecipeArgs } from "./arguments.ts";
-import { runRecipeAction, RECIPE_ACTIONS } from "./actions.ts";
-
-export { RECIPE_FLAG_ARGUMENTS } from "./arguments.ts";
-export { importHookModule } from "./hook-runtime.ts";
-
-/** The action a bare `recipe` runs. */
-export const RECIPE_DEFAULT_ACTION = "list";
-
-/** Actions that only report. One definition for the dispatcher below and the MCP gate's
- *  readOnlyWhen, so the two cannot disagree about bare `recipe`.
- *
- *  verify is deliberately absent, though usually a probe: it runs with the same Context
- *  prepare.ts gets, which may mutate the target, so the framework can't know a given hook
- *  is read-only. It gates like onboard; its envelope only says changed:false when the
- *  hook's own JSON says so. */
-const RECIPE_READ_ONLY_ACTIONS: readonly string[] = [RECIPE_DEFAULT_ACTION, "status", "logs"];
-
-/** install/remove --dry-run touches nothing on the target, reading as read-only the same
- *  way restore/rollback/deploy's own --dry-run does. */
-const RECIPE_DRY_RUNNABLE_ACTIONS: readonly string[] = ["install", "remove"];
-
-export function recipeActionIsReadOnly(argv: string[]): boolean {
-  const action = argv[0] ?? RECIPE_DEFAULT_ACTION;
-  if (RECIPE_READ_ONLY_ACTIONS.includes(action)) return true;
-  return RECIPE_DRY_RUNNABLE_ACTIONS.includes(action) && argv.includes("--dry-run");
-}
-
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
+import {
+  runDiagnoseAction,
+  runImportAction,
+  runInstallAction,
+  runInstallDryRun,
+  runLogsAction,
+  runNewAction,
+  runOnboardAction,
+  runRemoveAction,
+  runRemoveDryRun,
+  runStatusAction,
+  runVerifyAction,
+} from "./actions.ts";
 function describe(recipe: Recipe): void {
   const state = recipe.enabled ? "" : "  [disabled]";
   info(`${recipe.name.padEnd(16)} ${recipe.description}${state}`);
@@ -60,6 +57,219 @@ function describe(recipe: Recipe): void {
     const suffix = port.description === undefined ? "" : ` (${port.description})`;
     info(`${"".padEnd(16)} port ${port.host} -> ${port.container}${suffix}`);
   }
+}
+
+/** `recipe list` (also the default action): the catalog of service recipes, agent/MCP
+ *  bundles and broken manifests, as text or --json. */
+export async function runRecipeList(ctx: Context, jsonOnly: boolean): Promise<void> {
+  const recipes = await listRecipes();
+  // A recipe directory can also be an agent/MCP bundle — no recipe.json, so listRecipes
+  // drops it; shown here so "no recipes yet" doesn't contradict what inspect reports.
+  const bundles = await listAgentBundleRecipes();
+  // A recipe.json that exists but fails to load. listRecipes() drops these so one broken
+  // manifest can't take the working recipes down; this gives it a visible catalog entry.
+  const broken = await listBrokenRecipes();
+
+  if (jsonOnly || isCaptured()) {
+    emit(
+      `${JSON.stringify(
+        {
+          recipes: recipes.map((entry) => ({
+            name: entry.name,
+            description: entry.description,
+            enabled: entry.enabled,
+            disabledReason: entry.disabledReason ?? null,
+            source: entry.source ?? null,
+            ports: (entry.ports ?? []).map((port) => ({
+              host: port.host,
+              container: port.container,
+              description: port.description ?? null,
+            })),
+          })),
+          bundles,
+          broken: broken.map((entry) => ({ name: entry.name, error: entry.error })),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
+
+  if (recipes.length === 0 && bundles.length === 0 && broken.length === 0) {
+    info("no recipes yet — add one under recipes/<name>/");
+    return;
+  }
+  if (recipes.length === 0 && broken.length === 0) {
+    info("no service recipes yet — `recipe install` needs a recipes/<name>/recipe.json");
+  } else if (recipes.length > 0) {
+    log("available recipes");
+    for (const entry of recipes) describe(entry);
+    info("");
+    info("install with: ./clawforge recipe install <name>");
+  }
+  for (const name of bundles) {
+    info(`${name.padEnd(16)} agent/MCP bundle — not installable; visible with ./clawforge inspect, provisioned with ./clawforge provision-agent`);
+  }
+  for (const entry of broken) {
+    warn(`${entry.name.padEnd(16)} broken recipe.json: ${entry.error}`);
+  }
+}
+
+
+export { importHookModule } from "./hook-runtime.ts";
+
+/** The action a bare `recipe` runs. */
+export const RECIPE_DEFAULT_ACTION = "list";
+
+const NAME_ARGUMENT = {
+  name: "name",
+  description: "Recipe name; with import, the source directory to copy",
+  kind: "positional",
+} as const satisfies ArgumentSpec;
+
+/** The name every action but `list` runs on. Deliberately not `required`: the word's own
+ *  refusal is the usage line, and the schema shows <name> optional — bare `recipe status`
+ *  is an action word without its operand, not a schema error. */
+function recipeName(values: { readonly name?: string }, action: string): string {
+  if (values.name === undefined) throw new ArgumentError(`usage: ./clawforge recipe ${action} <name>`, "name");
+  return values.name;
+}
+
+const TAIL_ARGUMENT = {
+  name: "tail",
+  description: "With logs/diagnose: lines to return per service",
+  kind: "option",
+  valueName: "n",
+  parse: countValue("a number of lines"),
+} as const satisfies ArgumentSpec;
+
+const DRY_RUN_ARGUMENT = {
+  name: "dry-run",
+  description: "With install/remove: show what would happen",
+  kind: "flag",
+  effect: "read",
+} as const satisfies ArgumentSpec;
+
+/** The command body; recipe(ctx, args) stays for callers that already hold a Context. */
+export const RECIPE = multiActionBody({
+  effect: "destroy",
+  action: { description: "What to do with the recipe" },
+  defaultAction: RECIPE_DEFAULT_ACTION,
+  actions: {
+    list: defineAction({
+      summary: "List recipes, bundles and broken manifests",
+      effect: "read",
+      arguments: [
+        {
+          name: "json",
+          summary: "emit the catalog as JSON",
+          description: "With list: emit the catalog (recipes, agent/MCP bundles, broken manifests) as JSON",
+          kind: "flag",
+        },
+      ],
+      run: (ctx, values) => runRecipeList(ctx, values.json === true),
+    }),
+    import: defineAction({
+      summary: "Copy a recipe directory into recipes/",
+      arguments: [NAME_ARGUMENT, {
+        name: "new-name",
+        summary: "import under this name instead of the source directory's own name",
+        description: "With import: import under this name instead of the source directory's own name",
+        kind: "positional",
+      }],
+      // Repository-side only: no target, no lock — either works before bootstrap has
+      // prepared the lock home.
+      run: (_ctx, values) => runImportAction(recipeName(values, "import"), values["new-name"]),
+    }),
+    new: defineAction({
+      summary: "Scaffold a recipes/<name>/ skeleton",
+      arguments: [NAME_ARGUMENT, {
+        name: "with-hooks",
+        description: "With new: add commented prepare.ts/verify.ts stubs",
+        kind: "flag",
+      }],
+      // Repository-side only, like import.
+      run: (_ctx, values) => runNewAction(recipeName(values, "new"), values["with-hooks"] === true),
+    }),
+    verify: defineAction({
+      summary: "Run the recipe's verify.ts hook",
+      arguments: [NAME_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      run: (ctx, values) => runLocked(ctx, "verify", values, () => runVerifyAction(ctx, recipeName(values, "verify"))),
+    }),
+    onboard: defineAction({
+      summary: "Run the recipe's onboard.ts hook",
+      arguments: [NAME_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      run: (ctx, values) => runLocked(ctx, "onboard", values, () => runOnboardAction(ctx, recipeName(values, "onboard"))),
+    }),
+    diagnose: defineAction({
+      summary: "Bundle stack state, logs and the verify hook into one report",
+      arguments: [NAME_ARGUMENT, TAIL_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      run: (ctx, values) => runLocked(ctx, "diagnose", values, () => runDiagnoseAction(ctx, recipeName(values, "diagnose"), values.tail)),
+    }),
+    install: defineAction({
+      summary: "Build a recipe from source and start it",
+      arguments: [NAME_ARGUMENT, {
+        name: "force-disabled",
+        description: "With install: build a recipe marked disabled",
+        kind: "flag",
+      }, DRY_RUN_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      run: (ctx, values) => runLocked(ctx, "install", values, () => {
+        const name = recipeName(values, "install");
+        return values["dry-run"] === true
+          ? runInstallDryRun(ctx, name, values["force-disabled"] === true)
+          : runInstallAction(ctx, name, values["force-disabled"] === true);
+      }, values["dry-run"] !== true),
+    }),
+    remove: defineAction({
+      summary: "Stop and remove a recipe's stack",
+      arguments: [NAME_ARGUMENT, {
+        name: "volumes",
+        description: "With remove: delete its volumes too",
+        kind: "flag",
+      }, DRY_RUN_ARGUMENT, ...LOCK_TAKEOVER_ARGUMENTS],
+      run: (ctx, values) => runLocked(ctx, "remove", values, () => {
+        const name = recipeName(values, "remove");
+        return values["dry-run"] === true
+          ? runRemoveDryRun(ctx, name, values.volumes === true)
+          : runRemoveAction(ctx, name, values.volumes === true);
+      }, values["dry-run"] !== true),
+    }),
+    status: defineAction({
+      summary: "Show the recipe stack's compose status",
+      effect: "read",
+      arguments: [NAME_ARGUMENT],
+      run: (ctx, values) => runStatusAction(ctx, recipeName(values, "status")),
+    }),
+    logs: defineAction({
+      summary: "Read a recipe stack's logs",
+      effect: "read",
+      arguments: [NAME_ARGUMENT, TAIL_ARGUMENT],
+      run: (ctx, values) => runLogsAction(ctx, recipeName(values, "logs"), values.tail),
+    }),
+  },
+});
+
+/** install/remove --dry-run touch nothing on the target, reading as read-only the same way
+ *  restore/deploy's own --dry-run does — so they skip the instance lock, exactly as the
+ *  old readOnlyWhen said. Every other lifecycle action takes it. */
+async function runLocked(
+  ctx: Context,
+  action: string,
+  values: { readonly name?: string } & Parameters<typeof takeoverOf>[0],
+  body: () => Promise<void>,
+  gate = true,
+): Promise<void> {
+  const name = recipeName(values, action);
+  // R32-08 class: resolve the recipe purely locally before the lock or any transport call,
+  // so a typo dies here instead of as a lock failure or an unreachable-target error.
+  await loadRecipe(name);
+  if (!gate) return body();
+  await guardedWith(ctx, `recipe ${action} ${name}`, takeoverOf(values), body);
+}
+
+export async function recipe(ctx: Context, args: string[]): Promise<void> {
+  await runOnContext(RECIPE, ctx, args);
 }
 
 /** Installed recipes whose Compose stacks are currently running. A failed runtime probe
@@ -96,89 +306,4 @@ export async function runningRecipeStacks(ctx: Context): Promise<Recipe[]> {
     if (await stack.isRunning()) running.push(recipe);
   }
   return running;
-}
-
-export async function recipe(ctx: Context, args: string[]): Promise<void> {
-  const [action, name, ...rest] = args;
-
-  // Checked before anything else runs: an unknown action is a typo, not a lock failure or a
-  // missing name, and an unused token dies here too instead of being silently ignored.
-  if (action !== undefined && action !== RECIPE_DEFAULT_ACTION && !RECIPE_ACTIONS.includes(action)) {
-    dieUnknownAction(action, `unknown action: ${action} (expected ${RECIPE_ACTIONS.join(", ")})`, RECIPE_ACTIONS);
-  }
-  validateRecipeArgs(action ?? RECIPE_DEFAULT_ACTION, args.slice(1));
-
-  if (action === undefined || action === RECIPE_DEFAULT_ACTION) {
-    const recipes = await listRecipes();
-    // A recipe directory can also be an agent/MCP bundle — no recipe.json, so listRecipes
-    // drops it; shown here so "no recipes yet" doesn't contradict what inspect reports.
-    const bundles = await listAgentBundleRecipes();
-    // A recipe.json that exists but fails to load. listRecipes() drops these so one broken
-    // manifest can't take the working recipes down; this gives it a visible catalog entry.
-    const broken = await listBrokenRecipes();
-
-    // validateRecipeArgs above already refused anything but --json here.
-    if (args.slice(1).includes("--json") || isCaptured()) {
-      emit(
-        `${JSON.stringify(
-          {
-            recipes: recipes.map((entry) => ({
-              name: entry.name,
-              description: entry.description,
-              enabled: entry.enabled,
-              disabledReason: entry.disabledReason ?? null,
-              source: entry.source ?? null,
-              ports: (entry.ports ?? []).map((port) => ({
-                host: port.host,
-                container: port.container,
-                description: port.description ?? null,
-              })),
-            })),
-            bundles,
-            broken: broken.map((entry) => ({ name: entry.name, error: entry.error })),
-          },
-          null,
-          2,
-        )}\n`,
-      );
-      return;
-    }
-
-    if (recipes.length === 0 && bundles.length === 0 && broken.length === 0) {
-      info("no recipes yet — add one under recipes/<name>/");
-      return;
-    }
-    if (recipes.length === 0 && broken.length === 0) {
-      info("no service recipes yet — `recipe install` needs a recipes/<name>/recipe.json");
-    } else if (recipes.length > 0) {
-      log("available recipes");
-      for (const entry of recipes) describe(entry);
-      info("");
-      info("install with: ./clawforge recipe install <name>");
-    }
-    for (const name of bundles) {
-      info(`${name.padEnd(16)} agent/MCP bundle — not installable; visible with ./clawforge inspect, provisioned with ./clawforge provision-agent`);
-    }
-    for (const entry of broken) {
-      warn(`${entry.name.padEnd(16)} broken recipe.json: ${entry.error}`);
-    }
-    return;
-  }
-
-  if (name === undefined) die(`usage: ./clawforge recipe ${action} <name>`);
-
-  // R32-08 class: resolve the recipe purely locally before the lock or any transport call,
-  // so a typo dies here instead of as a lock failure or an unreachable-target error.
-  if (action !== "import" && action !== "new") await loadRecipe(name);
-
-  // One classification for MCP's confirmation gate and the instance lock, so an action
-  // can't be mutating for one and read-only for the other. Exceptions: `import`/`new` only
-  // write the repository's recipes/ directory, never touch the target, so a lock would
-  // make either the one action runnable before bootstrap has prepared the lock home.
-  // install holds the lock across the whole from-source build, minutes, on purpose. guarded()
-  // is the nesting-safe shape every mutating command uses.
-  if (action !== "import" && action !== "new" && !recipeActionIsReadOnly(args)) {
-    return guarded(ctx, `recipe ${action} ${name}`, args, () => runRecipeAction(ctx, action, name, rest));
-  }
-  return runRecipeAction(ctx, action, name, rest);
 }

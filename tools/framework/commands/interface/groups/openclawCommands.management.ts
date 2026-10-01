@@ -5,30 +5,24 @@
 import type { AppCommand } from "#src/core/app.ts";
 import { materializeCommands } from "#src/core/command/index.ts";
 
-import { status, STATUS_ARGUMENTS } from "#src/commands/interface/status.ts";
-import { cli } from "#src/commands/interface/cli.ts";
-import { exec } from "#src/commands/interface/exec.ts";
-import { host } from "#src/commands/interface/host/index.ts";
-import { cliStart, cliStop } from "#src/commands/interface/cli-helper.ts";
-import { configureProvider, CONFIGURE_PROVIDER_ARGUMENTS } from "#src/commands/management/credentials/provider.ts";
-import { mcpServe, mcpSetup, mcpCreds, MCP_SETUP_ARGUMENTS, MCP_CREDS_ARGUMENTS } from "#src/commands/management/credentials/mcp.ts";
-import { deploy, DEPLOY_ARGUMENTS, isDeployDryRun } from "#src/commands/management/deploy/index.ts";
-import { lock, LOCK_ARGUMENTS } from "#src/commands/management/lock.ts";
-import { secrets, SECRETS_ARGUMENTS } from "#src/commands/management/secrets.ts";
-import { recipe, recipeActionIsReadOnly, RECIPE_FLAG_ARGUMENTS } from "#src/commands/management/recipe/index.ts";
-import { provisionAgent, PROVISION_AGENT_ARGUMENTS } from "#src/commands/management/provision-agent/index.ts";
-
-function secretsWrites(args: string[]): boolean {
-  if (["--init-store", "--dump", "--apply"].some((flag) => args.includes(flag))) return true;
-  return args.includes("--template") && !args.includes("--print-template");
-}
+import { STATUS } from "#src/commands/interface/status.ts";
+import { CLI } from "#src/commands/interface/cli.ts";
+import { EXEC } from "#src/commands/interface/exec.ts";
+import { HOST } from "#src/commands/interface/host/index.ts";
+import { CLI_START, CLI_STOP } from "#src/commands/interface/cli-helper.ts";
+import { CONFIGURE_PROVIDER } from "#src/commands/management/credentials/provider.ts";
+import { MCP_SERVE, MCP_SETUP, MCP_CREDS } from "#src/commands/management/credentials/mcp.ts";
+import { DEPLOY } from "#src/commands/management/deploy/index.ts";
+import { LOCK } from "#src/commands/management/lock.ts";
+import { SECRETS } from "#src/commands/management/secrets.ts";
+import { RECIPE } from "#src/commands/management/recipe/index.ts";
+import { PROVISION_AGENT } from "#src/commands/management/provision-agent/index.ts";
 
 export const managementCommands: Record<string, AppCommand> = materializeCommands({
   status: {
     summary: "Show containers, image, health probes and data usage",
     group: "start-stop",
-    run: status,
-    readOnly: true,
+    ...STATUS,
     details:
       "Prints both health verdicts side by side — the HTTP probes (healthz/startupz/readyz) " +
       "and the runtime's own opinion —\n" +
@@ -37,12 +31,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "--json emits the same facts structured instead of the container table, since that " +
       "table is not machine-readable: target, runtime, exposure, bootstrapped, running, " +
       "image, health, serviceUrl, dataUsage.",
-    arguments: STATUS_ARGUMENTS,
   },
   lock: {
     summary: "Pin what this instance is made of, or check it still matches",
     group: "save-move",
-    run: lock,
+    ...LOCK,
     details:
       "Writes config/deployment.lock.json: the framework version, the image reference and " +
       "its resolved digest, a checksum per recipe file, a checksum of the declaration, and " +
@@ -57,14 +50,12 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "warnings, because an instance that drifted from its lock still works and it is the " +
       "reader who decides whether the difference was intended.\n" +
       "Meant to be committed.",
-    arguments: LOCK_ARGUMENTS,
     structured: true,
-    readOnlyWhen: (args) => args.includes("--check"),
   },
   cli: {
     summary: "Run the OpenClaw CLI in a throwaway container",
     group: "low-level",
-    run: cli,
+    ...CLI,
     details:
       "Everything after `cli` is passed straight through to OpenClaw's own CLI, e.g.\n" +
       "`./clawforge cli config get gateway.mode`.\n" +
@@ -79,20 +70,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     // anything OpenClaw's CLI can — including that CLI's own destructive subcommands. Over
     // MCP that earns the same confirmation push/restore/deploy need, rather than a second
     // mechanism invented for this one command.
-    destructive: true,
-    arguments: [
-      {
-        name: "args",
-        description: "Arguments passed to OpenClaw's CLI verbatim, e.g. [\"config\", \"get\", \"gateway.mode\"]",
-        kind: "variadic",
-        required: true,
-      },
-    ],
   },
   exec: {
     summary: "Run an arbitrary command in the same sidecar as ./clawforge cli",
     group: "low-level",
-    run: exec,
+    ...EXEC,
     details:
       "Unlike `cli`, which always runs OpenClaw's own CLI entrypoint, this runs whatever " +
       "command you give it, e.g. `./clawforge exec curl -fsS http://127.0.0.1:18789/healthz` " +
@@ -100,20 +82,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "Same container as `cli`: the OpenClaw image, the gateway's network namespace, the " +
       "same data mounts, the same one-off-vs-helper choice.",
     // Same reasoning as `cli`: it can run anything, so it gets the same MCP confirmation.
-    destructive: true,
-    arguments: [
-      {
-        name: "args",
-        description: "Command and arguments to run, e.g. [\"curl\", \"-fsS\", \"http://127.0.0.1:18789/healthz\"]",
-        kind: "variadic",
-        required: true,
-      },
-    ],
   },
   host: {
     summary: "Run one command on the operator's own machine, not in a container",
     group: "low-level",
-    run: host,
+    ...HOST,
     details:
       "Unlike exec/cli, which run inside the deployment's own containers, this reaches the " +
       "machine-side layers: a WSL distro's resolv.conf, Docker Desktop's own settings, the bare host.\n" +
@@ -137,29 +110,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     // Same reasoning as cli/exec: it can run anything the targeted machine allows, so it gets
     // the same MCP confirmation. --help shows this command's own help rather than passing
     // through, the same tradeoff exec makes.
-    destructive: true,
-    arguments: [
-      {
-        name: "context",
-        description: "Where to run: target (the deployment's transport), engine (the container engine's machine), local (this machine)",
-        kind: "positional",
-        required: true,
-        choices: ["target", "engine", "local"],
-      },
-      { name: "root", description: "Request root. On target/local: half of the elevation consent, dead without --confirm-root. On engine: half of the consent every command needs to run at all — the distro's only user is root (uid 0)", kind: "flag" },
-      { name: "confirm-root", description: "Second consent; both flags together are required — to elevate on target/local, and for an engine command to run at all", kind: "flag" },
-      {
-        name: "args",
-        description: "Command and arguments to run, e.g. [\"resolvectl\", \"status\"]",
-        kind: "variadic",
-        required: true,
-      },
-    ],
   },
   "cli-start": {
     summary: "Start the persistent CLI helper (no per-call container overhead)",
     group: "low-level",
-    run: cliStart,
+    ...CLI_START,
     details:
       "`./clawforge cli` and `./clawforge mcp-serve` normally pay for a fresh container on every call " +
       "(`docker compose run --rm`) — creating and tearing one down costs several seconds " +
@@ -174,24 +129,23 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
   "cli-stop": {
     summary: "Stop the persistent CLI helper",
     group: "low-level",
-    run: cliStop,
+    ...CLI_STOP,
     details: "`./clawforge cli`/`./clawforge mcp-serve` fall back to a one-off container once this is stopped.",
   },
   "configure-provider": {
     summary: "Configure model providers from target-side environment variables",
     group: "change",
-    run: configureProvider,
+    ...CONFIGURE_PROVIDER,
     details:
       "Provider ids come from models.providers/auth.profiles. A populated <ID>_API_KEY " +
       "entry in target config/.env opts into a new provider; --env selects a different " +
       "variable and explicit models.providers.<id>.apiKey SecretRefs are preserved. Keys " +
       "never enter openclaw.json. --provider and --env make any provider convention explicit.",
-    arguments: CONFIGURE_PROVIDER_ARGUMENTS,
   },
   secrets: {
     summary: "Show required secrets and whether they are in place",
     group: "change",
-    run: secrets,
+    ...SECRETS,
     details:
       "The manifest comes from two sources, not one: explicit SecretRefs in openclaw.json,\n" +
       "plus the conventional key each configured provider expects but never references " +
@@ -226,20 +180,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "and --dump require confirm: true. --force remains an explicit separate choice.\n" +
       "--json emits the default report (names/state/where-found, never values) as JSON — " +
       "refused together with --template/--print-template/--init-store/--apply/--dump.",
-    arguments: SECRETS_ARGUMENTS,
-    destructive: true,
-    readOnlyWhen: (args) => !secretsWrites(args),
-    changedWhen: secretsWrites,
-    requiresConfirmationWhen: (args) => ["--init-store", "--apply", "--dump"].some((flag) => args.includes(flag)),
   },
   recipe: {
     summary: "Deploy services next to the instance: install, verify, list, and more",
     group: "change",
-    run: recipe,
-    // Only lifecycle changes need confirmation; the read-only set is defined once, beside
-    // the dispatcher, so the gate and the command cannot drift apart again.
-    destructive: true,
-    readOnlyWhen: recipeActionIsReadOnly,
+    ...RECIPE,
     // One envelope for every action's answer, declared once as the tool's outputSchema:
     // verify, onboard and diagnose contribute their JSON, and the text actions carry
     // their text in `result` — no action's response falls outside the declared shape. A
@@ -302,22 +247,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "hooks by default — refuses an existing directory the same way import does; --with-hooks " +
       "also adds commented prepare.ts/verify.ts stubs. Repository-side only, like import: no " +
       "target, no lock.",
-    arguments: [
-      {
-        name: "action",
-        description: "What to do with the recipe",
-        kind: "positional",
-        choices: ["list", "import", "new", "install", "remove", "status", "logs", "verify", "onboard", "diagnose"],
-      },
-      { name: "name", description: "Recipe name; with import, the source directory to copy", kind: "positional" },
-      { name: "new-name", description: "With import: import under this name instead of the source directory's own name", kind: "positional" },
-      ...RECIPE_FLAG_ARGUMENTS,
-    ],
   },
   "provision-agent": {
     summary: "Wire a recipe's MCP server to its own OpenClaw agent, with optional cron",
     group: "change",
-    run: provisionAgent,
+    ...PROVISION_AGENT,
     details:
       "A scope upgrade never starts a model turn implicitly; use accept or set try with " +
       "--with-model when you explicitly authorize the exact request.\n" +
@@ -333,14 +267,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "is reported for manual approval through a trusted admin session or the Control UI; " +
       "only accept and set try offer --with-model for explicit model approval.\n" +
       "Requires the gateway to be running (./clawforge up).",
-    arguments: PROVISION_AGENT_ARGUMENTS,
   },
   deploy: {
     summary: "Deploy to a server over SSH and bootstrap it there",
     group: "save-move",
-    run: deploy,
-    destructive: true,
-    readOnlyWhen: isDeployDryRun,
+    ...DEPLOY,
     details:
       "Two separate deliveries, not one checkout copied wholesale.\n" +
       "The framework (code) is mirrored in full, deletions included, with everything " +
@@ -358,12 +289,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "Available only when the framework runs from a ClawForge checkout: there has to be " +
       "a checkout for \"mirror the framework\" to mean anything. Installed as a package it " +
       "refuses outright rather than mirroring whatever sits above the package.",
-    arguments: DEPLOY_ARGUMENTS,
   },
   "mcp-serve": {
     summary: "stdio MCP bridge to the service's own channels",
     group: "integrations",
-    run: mcpServe,
+    ...MCP_SERVE,
     details:
       "Runs OpenClaw's own `mcp serve` and speaks JSON-RPC straight through stdio —\n" +
       "this is the bridge an MCP client (Claude Code, Codex, Claude Desktop) uses to read and " +
@@ -381,7 +311,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
   "mcp-setup": {
     summary: "Configure project MCP servers for Claude Code and Codex",
     group: "integrations",
-    run: mcpSetup,
+    ...MCP_SETUP,
     details:
       "Registers `clawforge` (mcp-serve, the bridge to OpenClaw's own channels) and " +
       "`clawforge-control` —\n" +
@@ -392,14 +322,12 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "init and new-app do this automatically. Use --client claude or --client codex to update " +
       "only one client. Launch paths are resolved inside the project, without absolute host paths. " +
       "The client may still require project trust or server approval; reconnect it after setup.",
-    arguments: MCP_SETUP_ARGUMENTS,
     structured: true,
   },
   "mcp-creds": {
     summary: "Print service URL, token and MCP client config for both servers",
     group: "integrations",
-    run: mcpCreds,
-    readOnly: true,
+    ...MCP_CREDS,
     // Its whole job is handing over the credential: masking its healthy output (the
     // response redaction every other successful answer now goes through) would
     // answer with "***" where the caller asked for the token. The deliberate reveal is
@@ -408,6 +336,5 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     details:
       "The same information `./clawforge mcp-setup` writes to a file, printed instead —\n" +
       "useful for pasting into a client by hand or checking what --json/--token would produce.",
-    arguments: MCP_CREDS_ARGUMENTS,
   },
 });

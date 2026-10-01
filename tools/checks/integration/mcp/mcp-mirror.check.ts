@@ -168,13 +168,13 @@ try {
     (consoleRecipeHelp.stdout + consoleRecipeHelp.stderr).trim(),
   );
 
-  // A cut argument description is not a lost one: `recipe`'s `new-name` carries its full
-  // sentence in help, and only a shortened clause in the schema an agent pays for up front.
+  // `recipe`'s `new-name` now declares its summary (stage 3): the schema carries the full
+  // phrase instead of a heuristic cut, same sentence help shows.
   // (Help no longer repeats the "With import:" lead-in next to the action scope, R32-04.)
   const recipeTool = fullTools.find((tool) => tool.name === "recipe");
   const newNameSchemaDescription = recipeTool?.inputSchema?.properties?.["new-name"]?.description ?? "";
   const newNameFullDescription = "import under this name instead of the source directory's own name";
-  check("the schema description was actually shortened", newNameSchemaDescription.length < newNameFullDescription.length, true);
+  check("the schema description is the declared full phrase", newNameSchemaDescription === newNameFullDescription, true);
   check("the full argument description is still reachable through help", helpTextFor("recipe").includes(newNameFullDescription), true);
 
   const helpBareRun = await run(

@@ -16,20 +16,20 @@ import { loadSecrets, dumpSecrets } from "#src/commands/lifecycle/state.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { createPrivateFile, protectPrivateDirectory, protectPrivateFile, replacePrivateFile, unprotectedPrivateFile } from "#src/security/privacy/private-file.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
-import { guarded, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
-import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "#src/commands/orchestration/inspect/helpers.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
+import { ArgumentError } from "#src/core/command/index.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { prospectiveConfig, readLiveConfigOrThrow, readDeclaredConfig } from "#src/commands/orchestration/inspect/helpers.ts";
 
-/** Drives both secrets' own parser and its openclawCommands declaration. */
-export const SECRETS_ARGUMENTS: CommandArgument[] = [
-  { name: "template", description: "Write the secrets template into config/", kind: "flag" },
-  { name: "print-template", description: "Print the template instead of writing it", kind: "flag" },
-  { name: "init-store", description: "Create an empty store to fill in", kind: "flag" },
-  { name: "apply", description: "Fill the target from a local store", kind: "flag" },
-  { name: "dump", description: "Recover a local store from the running instance", kind: "flag" },
+export const SECRETS_ARGUMENTS = [
+  { name: "template", description: "Write the secrets template into config/", kind: "flag", effect: "change" },
+  { name: "print-template", description: "Print the template instead of writing it", kind: "flag", effect: "read" },
+  { name: "init-store", description: "Create an empty store to fill in", kind: "flag", effect: "destroy" },
+  { name: "apply", description: "Fill the target from a local store", kind: "flag", effect: "destroy" },
+  { name: "dump", description: "Recover a local store from the running instance", kind: "flag", effect: "destroy" },
   { name: "store", description: "Store name, e.g. local or prod", kind: "option", valueName: "name" },
   { name: "force", description: "Replace an existing store (with --init-store or --dump)", kind: "flag" },
   // Only --apply takes the lock; --break-lock stays unsupported, but an orphaned lock from
@@ -37,10 +37,11 @@ export const SECRETS_ARGUMENTS: CommandArgument[] = [
   BREAK_FOREIGN_LOCK_ARGUMENT,
   {
     name: "json",
+    summary: "Emit the default read-only report as JSON",
     description: "Emit the default read-only report as JSON (names/state/where-found only, never values) — refused with --template/--print-template/--init-store/--apply/--dump",
     kind: "flag",
   },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 /** The store `secrets` commands write and read when no --store is given — and the one
  *  store inspect's STORE_INCOMPLETE finding watches, since inspect takes no store name. */
@@ -293,8 +294,40 @@ async function runApplyAction(ctx: Context, store: string, breakForeignLockHost:
   // Local first: an invalid or missing store name must not cost a lock on the target.
   await readStoreOrDie(store);
   await requireBootstrapped(ctx);
-  const guardArgs = breakForeignLockHost === undefined ? [] : ["--break-foreign-lock", breakForeignLockHost];
-  await guarded(ctx, "secrets", guardArgs, () => applyStore(ctx, store), { breakLockSupported: false });
+  await guardedWith(ctx, "secrets", { breakLock: false, breakForeignLockHost }, () => applyStore(ctx, store), { breakLockSupported: false });
+}
+
+/** --init-store: creates an empty store locally, refusing to overwrite a filled one. */
+async function runInitStoreAction(ctx: Context, store: string, force: boolean): Promise<void> {
+  const path = secretStoreFile(store);
+
+  // An existing store holds filled-in keys, unrecoverable elsewhere if overwritten silently.
+  const exists = await access(path).then(
+    () => true,
+    () => false,
+  );
+  if (exists && !force) {
+    die(`${path} already exists — pass --force to replace it with an empty template`);
+  }
+
+  // secrets/ needs protecting too: an atomic-save editor's temp file in this directory
+  // inherits the DIRECTORY's access before renaming over the store.
+  await protectPrivateDirectory(secretsDir());
+  const needed = await requirements(ctx);
+  if (exists) {
+    // Atomic replacement: the old store stays whole and owner-only until the rename.
+    await replacePrivateFile(path, template(needed));
+  } else {
+    try {
+      await createPrivateFile(path, template(needed));
+    } catch (error) {
+      // Lost a creation race with a concurrent --init-store: protect what appeared.
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      await protectPrivateFile(path);
+    }
+  }
+  log(`wrote ${path}`);
+  info("fill in the values, then: ./clawforge secrets --apply --store " + store);
 }
 
 /** The default read-only report: every declared secret's presence, or the JSON mirror of
@@ -361,82 +394,75 @@ async function runStatusReport(ctx: Context, jsonOnly: boolean): Promise<void> {
   log("all required secrets are present");
 }
 
-export async function secrets(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(SECRETS_ARGUMENTS, args);
-  const writeTemplate = parsed.template === true;
-  const printTemplate = parsed["print-template"] === true;
-  const apply = parsed.apply === true;
-  const initStore = parsed["init-store"] === true;
-  const dump = parsed.dump === true;
-  const force = parsed.force === true;
-  const store = parsed.store === undefined ? DEFAULT_SECRET_STORE : parsed.store === "" ? die("--store needs a name, e.g. local or prod") : parsed.store as string;
-  const breakForeignLockHost = parseBreakForeignLockHost(args);
-  const jsonOnly = parsed.json === true;
+type SecretsAction = "report" | "template" | "print-template" | "init-store" | "apply" | "dump";
 
-  if (breakForeignLockHost !== undefined && !apply) {
-    die("--break-foreign-lock only applies with --apply — no other action takes the instance lock");
+interface SecretsPlan {
+  action: SecretsAction;
+  store: string;
+  force: boolean;
+  breakForeignLockHost: string | undefined;
+  jsonOnly: boolean;
+}
+
+/** Which single action the flags select, and the cross-flag refusals: both depend only on
+ *  the arguments, so they run in the prepare stage — before any contact, lock or .env write
+ *  on every host. */
+function secretsPlan(values: Values<typeof SECRETS_ARGUMENTS>): SecretsPlan {
+  const action: SecretsAction = values["init-store"] === true ? "init-store"
+    : values.dump === true ? "dump"
+    : values.apply === true ? "apply"
+    : values["print-template"] === true ? "print-template"
+    : values.template === true ? "template"
+    : "report";
+  const breakForeignLockHost = values["break-foreign-lock"];
+  if (breakForeignLockHost !== undefined && action !== "apply") {
+    throw new ArgumentError("--break-foreign-lock only applies with --apply — no other action takes the instance lock", "break-foreign-lock");
   }
   // --json structures only the default report; the other actions print, write or mutate.
-  if (jsonOnly && (writeTemplate || printTemplate || apply || initStore || dump)) {
-    die("--json only supports the default report — not with --template, --print-template, --init-store, --apply or --dump");
+  if (values.json === true && action !== "report") {
+    throw new ArgumentError("--json only supports the default report — not with --template, --print-template, --init-store, --apply or --dump", "json");
   }
+  return { action, store: values.store ?? DEFAULT_SECRET_STORE, force: values.force === true, breakForeignLockHost, jsonOnly: values.json === true };
+}
 
-  if (initStore) {
-    const path = secretStoreFile(store);
-
-    // An existing store holds filled-in keys, unrecoverable elsewhere if overwritten silently.
-    const exists = await access(path).then(
-      () => true,
-      () => false,
-    );
-    if (exists && !force) {
-      die(`${path} already exists — pass --force to replace it with an empty template`);
-    }
-
-    // secrets/ needs protecting too: an atomic-save editor's temp file in this directory
-    // inherits the DIRECTORY's access before renaming over the store.
-    await protectPrivateDirectory(secretsDir());
-    const needed = await requirements(ctx);
-    if (exists) {
-      // Atomic replacement: the old store stays whole and owner-only until the rename.
-      await replacePrivateFile(path, template(needed));
-    } else {
-      try {
-        await createPrivateFile(path, template(needed));
-      } catch (error) {
-        // Lost a creation race with a concurrent --init-store: protect what appeared.
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        await protectPrivateFile(path);
-      }
-    }
-    log(`wrote ${path}`);
-    info("fill in the values, then: ./clawforge secrets --apply --store " + store);
-    return;
-  }
-
-  if (dump) {
-    await runDumpAction(ctx, store, force);
-    return;
-  }
-
-  if (apply) {
-    await runApplyAction(ctx, store, breakForeignLockHost);
-    return;
-  }
-
-  if (writeTemplate || printTemplate) {
-    const content = template(await requirements(ctx));
-    if (printTemplate) {
-      emitRaw(content);
+/** The command body; secrets(ctx, args) stays for callers that already hold a Context. */
+export const SECRETS = commandBody({
+  effect: "read",
+  arguments: SECRETS_ARGUMENTS,
+  prepare(call) {
+    return secretsPlan(call.values as Values<typeof SECRETS_ARGUMENTS>);
+  },
+  async run(ctx, plan) {
+    const { action, store, force, breakForeignLockHost, jsonOnly } = plan as SecretsPlan;
+    if (action === "init-store") {
+      await runInitStoreAction(ctx, store, force);
       return;
     }
-    await writeFile(secretsTemplateFile(), content, "utf8");
-    log(`wrote ${secretsTemplateFile()}`);
-    info("values are absent by design — the template is safe to commit");
-    return;
-  }
+    if (action === "dump") {
+      await runDumpAction(ctx, store, force);
+      return;
+    }
+    if (action === "apply") {
+      await runApplyAction(ctx, store, breakForeignLockHost);
+      return;
+    }
+    if (action === "template" || action === "print-template") {
+      const content = template(await requirements(ctx));
+      if (action === "print-template") {
+        emitRaw(content);
+        return;
+      }
+      await writeFile(secretsTemplateFile(), content, "utf8");
+      log(`wrote ${secretsTemplateFile()}`);
+      info("values are absent by design — the template is safe to commit");
+      return;
+    }
+    return runStatusReport(ctx, jsonOnly);
+  },
+});
 
-  return runStatusReport(ctx, jsonOnly);
+export async function secrets(ctx: Context, args: string[]): Promise<void> {
+  await runOnContext(SECRETS, ctx, args);
 }
 
 /** Thrown by preflightSecrets specifically for missing secrets — the one case callers like

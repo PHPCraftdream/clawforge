@@ -1,27 +1,27 @@
 // Configure OpenClaw provider credentials without storing key values in JSON.
 
 import JSON5 from "json5";
-import { log, info, die } from "#src/core/io/log.ts";
+import { log, info } from "#src/core/io/log.ts";
 import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { secretsFileOnTarget } from "#src/runtime/datadir.ts";
 import { collectConfiguredProviders, providerEnvironmentVariable, providerSecretVariable, providerApiKeyExplicit } from "#src/service/secrets.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith, type LockTakeover } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import type { ArgumentSpec, Values } from "#src/core/command/index.ts";
+import { ArgumentError } from "#src/core/command/index.ts";
+import { BREAK_LOCK_ARGUMENT, BREAK_FOREIGN_LOCK_ARGUMENT, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
 
-/** Drives both configure-provider's own parser and its openclawCommands declaration. */
-export const CONFIGURE_PROVIDER_ARGUMENTS: CommandArgument[] = [
+export const CONFIGURE_PROVIDER_ARGUMENTS = [
   { name: "provider", description: "Provider id, for example openai", kind: "option", valueName: "id" },
   { name: "env", description: "Secret variable, for example OPENAI_API_KEY", kind: "option", valueName: "var" },
   { name: "force", description: "Replace an existing provider SecretRef", kind: "flag" },
   BREAK_LOCK_ARGUMENT,
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 /** Gateway flags used by headless onboarding. */
 function gatewayFlags(ctx: Context): string[] {
@@ -38,27 +38,44 @@ const SKIP_FLAGS = [
   "--skip-search", "--skip-hooks", "--skip-ui", "--suppress-gateway-token-output",
 ];
 
-function parseArgs(args: string[]): { force: boolean; provider?: string; env?: string; jsonOnly: boolean } {
-  const parsed = parseDeclaredArgs(CONFIGURE_PROVIDER_ARGUMENTS, args);
-  const force = parsed.force === true;
-  const provider = parsed.provider === "" ? die("--provider needs an id, e.g. openai") : parsed.provider as string | undefined;
-  const env = parsed.env === "" ? die("--env needs a variable name, e.g. OPENAI_API_KEY") : parsed.env as string | undefined;
-  if (env !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env)) die(`invalid environment variable: ${env}`);
-  if (provider !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(provider)) die(`invalid provider id: ${provider}`);
-  return { force, provider, env, jsonOnly: parsed.json === true };
+interface ProviderOptions {
+  force: boolean;
+  provider?: string;
+  env?: string;
+  jsonOnly: boolean;
+  takeover: LockTakeover;
 }
 
-/** Configure every selected provider using a target-side SecretRef. */
+/** The argument-only refusals: an id or variable name that cannot be right is refused in the
+ *  prepare stage, before the target is contacted and before the instance lock is even
+ *  attempted — never answered with "lock held" or a transport error. */
+function providerOptions(values: Values<typeof CONFIGURE_PROVIDER_ARGUMENTS>): ProviderOptions {
+  const { provider, env } = values;
+  if (env !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(env)) throw new ArgumentError(`invalid environment variable: ${env}`, "env");
+  if (provider !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(provider)) throw new ArgumentError(`invalid provider id: ${provider}`, "provider");
+  return { force: values.force === true, provider, env, jsonOnly: values.json === true, takeover: takeoverOf(values) };
+}
+
+/** The command body; configureProvider(ctx, args) stays for callers that already hold a Context. */
+export const CONFIGURE_PROVIDER = commandBody({
+  effect: "change",
+  arguments: CONFIGURE_PROVIDER_ARGUMENTS,
+  prepare(call) {
+    return providerOptions(call.values as Values<typeof CONFIGURE_PROVIDER_ARGUMENTS>);
+  },
+  async run(ctx, plan) {
+    await requireBootstrapped(ctx);
+    // Same shape as restore/apply: the takeover from the bound values, breakLockSupported
+    // defaults true.
+    return guardedWith(ctx, "configure-provider", plan.takeover, () => configureProviderLocked(ctx, plan));
+  },
+});
+
 export async function configureProvider(ctx: Context, args: string[]): Promise<void> {
-  // Arguments first: a typo is refused before the target is contacted and before the
-  // instance lock is even attempted — never answered with "lock held" or a transport error.
-  const options = parseArgs(args);
-  await requireBootstrapped(ctx);
-  // Same shape as restore/apply: real argv threaded through, breakLockSupported defaults true.
-  return guarded(ctx, "configure-provider", args, () => configureProviderLocked(ctx, options));
+  await runOnContext(CONFIGURE_PROVIDER, ctx, args);
 }
 
-async function configureProviderLocked(ctx: Context, options: ReturnType<typeof parseArgs>): Promise<void> {
+async function configureProviderLocked(ctx: Context, options: ProviderOptions): Promise<void> {
   const secretsPath = secretsFileOnTarget(ctx);
   if (!(await ctx.transport.exists(secretsPath))) {
     if (options.jsonOnly) {

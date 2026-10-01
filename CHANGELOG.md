@@ -16,6 +16,27 @@ All notable changes to `@clawforge/framework` will be documented here.
   `--operation`, `--limit`) are refused uniformly by the shared parser, and the two MCP
   argument descriptions that were cut off with an ellipsis (`rollback --previous-set`,
   `apply-config --dump`) now carry their full phrases.
+* The management commands (status, lock, cli, exec, host, cli-start, cli-stop,
+  configure-provider, secrets, recipe, provision-agent, deploy, mcp-serve, mcp-setup,
+  mcp-creds) declare their arguments, actions and effects as a spec, parsed by the one
+  shared parser. Refusals that depend only on the arguments — recipe's per-action flags,
+  secrets' cross-flag rules, host's --root/--confirm-root consent, configure-provider's
+  id/variable grammars, required arguments — now land in the parser's or prepare's own
+  words, before any contact with the target, the instance lock, or a .env write, on every
+  host. Visible wording changes that follow: `recipe <action>` without its <name> answers
+  `usage: ./clawforge recipe <action> <name>`; host's unknown or missing context and a
+  missing command are named argument errors (`<context>` takes one of target, engine,
+  local …); a missing deploy target, provision-agent recipe, or cli/exec command is
+  reported as such instead of a usage line; an empty option value (`--store ""`) is
+  refused uniformly as needing a value; MCP choices/required errors arrive in the same
+  parser's words. Effects are unchanged (the parity table pins them): the `secrets`
+  default report and `--print-template` read, `--template` changes, `--init-store`,
+  `--apply` and `--dump` destroy; `recipe` reads for list/status/logs and
+  install/remove --dry-run and destroys otherwise (`recipe verify --dry-run` is refused —
+  verify takes no --dry-run); `lock --check` and `deploy --dry-run` read; cli, exec and
+  host remain always-destroying. `recipe --json` still lists. `mcp-serve` now refuses
+  arguments instead of forwarding them to the gateway's `mcp serve` (it never declared
+  any).
 * A deployment command that is destructive and declares `requiresConfirmationWhen` without
   `readOnlyWhen` — confirmation is owed only for some calls — now reads as "destructive for
   some actions" on every surface (` *` in the command list, the tool description, the

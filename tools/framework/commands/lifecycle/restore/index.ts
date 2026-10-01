@@ -10,7 +10,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
-import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe, assertCanonicalAncestry } from "#src/runtime/datadir.ts";
+import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe, assertCanonicalAncestry, physicalPath } from "#src/runtime/datadir.ts";
 import {
   archiveRoot,
   inspectArchive,
@@ -139,11 +139,11 @@ async function verifyRestoredLayout(ctx: Context, dataDir: string): Promise<void
   if (await isLink(ctx, prefix, dataDir)) {
     die(`refusing the restored root ${dataDir}: it is a symlink, not an ordinary directory`);
   }
-  const root = await physicalPath(ctx, prefix, dataDir);
+  const root = await physicalPath(ctx, dataDir, prefix);
   for (const sub of DATA_SUBDIRS) {
     const path = `${dataDir}/${sub}`;
     if (!(await presenceOf(ctx, prefix, path))) continue;
-    const physical = await physicalPath(ctx, prefix, path);
+    const physical = await physicalPath(ctx, path, prefix);
     // Exact-boundary comparison, not a bare string prefix — a sibling like `…/dataEVIL` must be refused too.
     if (physical !== root && !physical.startsWith(`${root}/`)) {
       die(`refusing ${path}: it resolves to ${physical}, outside the restored tree ${root}`);
@@ -184,15 +184,6 @@ async function presenceOf(ctx: Context, prefix: string[], path: string): Promise
     );
   }
   return false;
-}
-
-async function physicalPath(ctx: Context, prefix: string[], path: string): Promise<string> {
-  const [head, ...rest] = [...prefix, "readlink", "-f", path];
-  const resolved = await ctx.transport.exec(head, rest, { allowFailure: true });
-  if (resolved.code !== 0 || resolved.stdout.trim() === "") {
-    die(`cannot resolve ${path} on the target: ${resolved.stderr.trim() || "the path does not resolve"}`);
-  }
-  return resolved.stdout.trim();
 }
 
 /** Refuses a data root whose existing ancestry is redirected before restore moves or

@@ -76,6 +76,24 @@ All notable changes to `@clawforge/framework` will be documented here.
   documented in the command reference: a command invoked with `--json` that fails after its
   arguments parsed prints `{ "error": { "message": … } }` on stdout and exits non-zero, so a
   script's `jq` never receives empty input.
+* More purely local refusals before any trip to the target: `recipe install|verify|onboard|diagnose`
+  with a misspelled or missing recipe, `provision-agent <typo>` and `secrets --apply` with an
+  invalid or missing `--store` name now die on the local check instead of taking the instance
+  lock or answering with a transport error — the same typo `--dry-run` already answered locally.
+* Re-running `bootstrap` on a live instance no longer suppresses apply-config's "restart to pick
+  it up" advice: `compose up --detach` leaves an already-running container untouched, so newly
+  written desired state reaches the gateway only on the next restart, which the help, the README
+  and the command reference now say plainly (a fresh instance keeps the advice suppressed — that
+  run starts the gateway itself).
+* Text and hygiene: the `--json` failure-contract paragraph in the command reference names the
+  real failure documents per command (no more `upgrade --dry-run` as a counterexample); the
+  incident guide says `--dry-run` exits non-zero when contain cannot reach the target, and the
+  dry-run's own contain note no longer claims "rotate proceeds regardless"; the sets guide states
+  which `set` actions run over MCP without a confirmation; `plan --set`/`accept --set` print
+  "checking …" instead of "installing from …" (only installers — `apply --set`, `rollback
+  --previous-set` — claim to install, and `apply --set --dry-run` checks); the "depending on the
+  action given" help line appears only on commands that have actions; and the target-side
+  `readlink -f` helper is one shared `physicalPath`, not three copies.
 * The checks now distinguish the fixes they cover: a scratch checkout deployment's `app.ts` importing
   `@clawforge/framework/app` must load through the gate, the watch cycle lock's start-time tolerance
   is asserted at absolute 14 s/16 s offsets, the upgrade `health-fail` scenario reaches the health
@@ -110,17 +128,11 @@ All notable changes to `@clawforge/framework` will be documented here.
   bootstrap` before. Artifact validation now runs the same recipe-completeness checks
   the working-tree validation runs (the artifact is unpacked when verified), so a tree with
   blocking findings can no longer build into an artifact that `set validate --set` calls coherent —
-  the unpack gate (also behind `apply --set`, `plan`, `rollback --previous-set`, `set try`,
-  `set diff`, `accept --set`) refuses it. `set validate --set` reports findings through the same
-  path as the tree (blocking findings print as `blocking:`, each failing code once in the summary)
-  and prints "checking …" rather than "installing from …".
+  the install-time unpack gate (behind `apply --set`, `rollback --previous-set`, `set try` and
+  `accept --set`) refuses it, while read-only `set diff` still accepts such artifacts.
 * `backup --help` (and MCP `help backup`) no longer promises "30m, 6h, 1d or a bare number of
   minutes" for `--interval` — an explicit unit is required, as the argument's own line already
   said.
-  `accept --set`) refuses it. `set validate --set` and `set diff` (read-only) hit only the gate's
-  integrity half: validate reports findings through the same path as the tree (blocking findings
-  print as `blocking:`, each failing code once, recipes named, `--json` emits the document) and
-  prints "checking …" rather than "installing from …".
 * Checkout help leftovers: `<command> <action> --help` at the checkout root answers with the
   command's help instead of "several deployments" (so does `--help` after the command's own
   flags); `help <checkout command>` in a checkout subfolder points to the checkout root instead of

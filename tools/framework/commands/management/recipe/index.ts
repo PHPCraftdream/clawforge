@@ -167,6 +167,10 @@ export async function recipe(ctx: Context, args: string[]): Promise<void> {
 
   if (name === undefined) die(`usage: ./clawforge recipe ${action} <name>`);
 
+  // R32-08 class: resolve the recipe purely locally before the lock or any transport call,
+  // so a typo dies here instead of as a lock failure or an unreachable-target error.
+  if (action !== "import" && action !== "new") await loadRecipe(name);
+
   // One classification for MCP's confirmation gate and the instance lock, so an action
   // can't be mutating for one and read-only for the other. Exceptions: `import`/`new` only
   // write the repository's recipes/ directory, never touch the target, so a lock would

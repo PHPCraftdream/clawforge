@@ -28,12 +28,12 @@ export const lifecycleCommands: Record<string, AppCommand> = {
       "baseline config (or the gateway crash-loops on \"Missing config\"), the provider " +
       "from config/.env, this deployment's desired-state.json, a secrets preflight, and " +
       "only then start.\n" +
-      "Safe to run again on a live instance: it refreshes the image and restarts, and never " +
-      "regenerates an existing token or touches data already on disk.\n" +
+      "Safe to run again on a live instance: re-pulls the image (digest pins stay) and " +
+      "rewrites desired-state, but does not restart a running gateway — restart afterwards " +
+      "to pick up changes. Never regenerates a token or touches data on disk.\n" +
       "--check runs none of that: a read-only prerequisite report (docker and compose v2, " +
-      "whether the data/backup/snapshot directories can be prepared without a sudo password, " +
-      "the gateway port, free disk space), one ok/WARN/FAIL line each, no lock and nothing " +
-      "created — run it before the first bootstrap on a new host.",
+      "the data/backup/snapshot directories, the gateway port, free disk space), one " +
+      "ok/WARN/FAIL line each, no lock and nothing created — run it before the first bootstrap.",
     arguments: BOOTSTRAP_ARGUMENTS,
   },
   up: {

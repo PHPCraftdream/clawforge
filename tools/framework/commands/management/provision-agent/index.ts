@@ -63,10 +63,11 @@ export async function provisionAgent(ctx: Context, args: string[]): Promise<void
   if (rawName === undefined) die("usage: ./clawforge provision-agent <recipe>");
   const recipeName = safeName("recipe", rawName);
 
+  // Local first: a typo in the recipe name must not cost a trip to the target.
+  const bundle = await loadRecipeAgentBundle(recipeName);
+
   await requireBootstrapped(ctx);
   if (!(await ctx.runtime.isRunning())) die("the gateway is not running. Start it with ./clawforge up");
-
-  const bundle = await loadRecipeAgentBundle(recipeName);
 
   // `apply` calls this as one of its steps and is already holding the lock; nested, the
   // second acquire would refuse the run its own caller started. Taken only when this is the

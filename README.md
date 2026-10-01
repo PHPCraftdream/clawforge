@@ -56,7 +56,9 @@ target through `wsl.exe`, so there is no need to install Node inside WSL.
 Web interface: `http://127.0.0.1:<OPENCLAW_GATEWAY_PORT>` — `new-app` picks the port (20000–32767)
 and writes it to `.env`; `./clawforge status` or `./clawforge mcp-creds` print the actual URL.
 Token in `.env` (`OPENCLAW_GATEWAY_TOKEN`).
-Running `./clawforge bootstrap` again is safe: it refreshes the image and restarts, and never
+Running `./clawforge bootstrap` again is safe: it re-pulls the image (a digest-pinned
+`OPENCLAW_IMAGE` is left alone) and rewrites desired-state, but does not restart an
+already-running gateway — run `./clawforge restart` afterwards to pick up changed settings. It never
 touches data already on disk. The first time it pulls a shared tag, it pins `OPENCLAW_IMAGE` in
 `.env` to `repo:tag@sha256:…` — the exact digest that pull just proved, alongside the tag it
 came from — so another deployment on this Docker daemon later pulling the same tag can no

@@ -348,7 +348,7 @@ check("...but the headline still confirms the write happened", appliedHeadline(f
   const bootstrapSource = await read("../../../framework/commands/lifecycle/bootstrap/index.ts");
   const setTrySource = await read("../../../framework/commands/sets/set-try.ts");
   const applySource = await read("../../../framework/commands/orchestration/apply.ts");
-  check("bootstrap suppresses the restart advice (it starts the gateway itself)", bootstrapSource.includes("applyConfig(live, [], { restartAdvice: false })"), true);
+  check("bootstrap suppresses the restart advice only for a gateway it is about to start", bootstrapSource.includes("await applyConfig(live, [], { restartAdvice: wasRunning })"), true);
   check("set try suppresses it too (same reason, a throwaway instance)", setTrySource.includes("applyConfig(tryCtx, [], { restartAdvice: false })"), true);
   check("apply's own plan runner suppresses it (always paired with up/restart in the same plan)", applySource.includes("applyConfig(ctx, [], { restartAdvice: false })"), true);
 }

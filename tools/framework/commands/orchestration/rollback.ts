@@ -228,7 +228,7 @@ async function rollbackSet(ctx: Context, options: RollbackOptions): Promise<void
     info("left alone: an agent's own memory, and anything else written to the data directory since — this is a set install, not a data restore");
 
     await rollbackSetUnderLock(ctx, options, installed, previous, artifact);
-  });
+  }, `installing from ${artifact}`);
 }
 
 /** Takes the run-level lock and reinstalls the previous set under it. One lock for the

@@ -25,6 +25,9 @@ import { smoke } from "#framework/commands/lifecycle/smoke/index.ts";
 import { configureProvider } from "#framework/commands/management/credentials/provider.ts";
 import { exposeSsh } from "#framework/commands/operate/expose/ssh.ts";
 import { runPhases, IncidentPhaseFailure } from "#framework/commands/operate/incident/index.ts";
+import { recipe } from "#framework/commands/management/recipe/index.ts";
+import { provisionAgent } from "#framework/commands/management/provision-agent/index.ts";
+import { secrets } from "#framework/commands/management/secrets.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { spawnLocal } from "#framework/runtime/transport/exec.ts";
 import { dieWithExitCode } from "#framework/core/io/log.ts";
@@ -262,6 +265,45 @@ try {
   process.exitCode = previousExit;
 } finally {
   await rm(deployDir, { recursive: true, force: true });
+}
+
+// --- recipe/provision-agent/secrets: a typo refuses locally, before lock or transport ---------
+// R33-07 (the R32-08 class): the purely local check for a bad recipe or store name must run
+// before requireBootstrapped/guarded/any transport call, so `--dry-run` and the real run
+// answer the same typo identically and no round trip is spent on it.
+
+{
+  for (const kase of [
+    { name: "recipe install", args: ["install", "nosuch"], expect: 'recipe "nosuch" not found' },
+    { name: "recipe install --dry-run", args: ["install", "nosuch", "--dry-run"], expect: 'recipe "nosuch" not found' },
+    { name: "recipe verify", args: ["verify", "nosuch"], expect: 'recipe "nosuch" not found' },
+    { name: "recipe onboard", args: ["onboard", "nosuch"], expect: 'recipe "nosuch" not found' },
+    { name: "recipe diagnose", args: ["diagnose", "nosuch"], expect: 'recipe "nosuch" not found' },
+  ] as const) {
+    const recording = unreachableContext();
+    const { error } = await capture(() => recipe(recording.ctx, [...kase.args]));
+    checkTrue(`${kase.name} with a typo is refused by the recipe lookup`, error.includes(kase.expect));
+    check(`${kase.name}: the target was never contacted`, recording.contacts, []);
+  }
+}
+
+{
+  const recording = unreachableContext();
+  const { error } = await capture(() => provisionAgent(recording.ctx, ["nosuch"]));
+  checkTrue("provision-agent with a typo is refused by the recipe lookup", error.includes('recipe "nosuch" not found') || error.includes("nosuch"));
+  check("provision-agent: the target was never contacted", recording.contacts, []);
+}
+
+{
+  for (const kase of [
+    { name: "secrets --apply --store ../x", store: "../x", expect: "invalid store name" },
+    { name: "secrets --apply --store nosuch", store: "nosuch", expect: "not found" },
+  ] as const) {
+    const recording = unreachableContext();
+    const { error } = await capture(() => secrets(recording.ctx, ["--apply", "--store", kase.store]));
+    checkTrue(`${kase.name} is refused locally`, error.includes(kase.expect));
+    check(`${kase.name}: the target was never contacted`, recording.contacts, []);
+  }
 }
 
 finish("failure order and --json contract");

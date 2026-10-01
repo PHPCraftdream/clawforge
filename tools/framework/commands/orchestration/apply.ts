@@ -253,7 +253,7 @@ async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
 
   await withUnpackedArtifact(artifact, (staging, verified) =>
     withSetSource(staging, () => applySetArtifact(ctx, args, artifact, verified)),
-  );
+  isApplyDryRun(args) ? `checking ${artifact}` : `installing from ${artifact}`);
 }
 
 /** The --set flow once the artifact is unpacked and its recipe files are the active source. */

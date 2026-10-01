@@ -171,7 +171,9 @@ export function renderFullCommandHelp(name: string, command: AppCommand): void {
     info("");
     info(command.readOnlyWhen === undefined
       ? "This command replaces or destroys state."
-      : "This command can replace or destroy state, depending on the action given.");
+      : (command.arguments ?? []).some((argument) => argument.actions !== undefined)
+        ? "This command can replace or destroy state, depending on the action given."
+        : "This command can replace or destroy state, depending on the flags given.");
   }
   if (command.structured === true) {
     info("");

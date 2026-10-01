@@ -261,7 +261,8 @@ produce a non-zero exit after the remaining phases have been attempted.
   `--keep-exposure` if it is already handled elsewhere. A contain failure (most commonly: this
   account is not the tailscale operator on the target) is reported as a note, never thrown —
   rotate runs regardless, since leaving a stale token in place is worse than leaving a stale
-  route.
+  route. In a `--dry-run`, whose contain step cannot fall back to a later phase, a failure to
+  reach the target ends the run with a non-zero exit instead.
 * **preserve** — before rotate can recreate the container (and take its `json-file` log with
   it), a log tail and an env-redacted `docker inspect` of the container running right now are
   written into this run's own evidence directory. Known secrets — including the gateway token
@@ -285,7 +286,9 @@ produce a non-zero exit after the remaining phases have been attempted.
   A collection failure does not claim a completed archive or replace an earlier preserve
   error; the failure still reaches the operator afterwards as a non-zero exit.
 
-`--dry-run` prints the plan and performs none of it, not even taking the instance lock.
+`--dry-run` prints the plan and performs none of it, not even taking the instance lock — but it
+still has to reach the target to build the plan, so a target it cannot reach ends the dry run
+with a non-zero exit (the contain failure is in the report, as a note).
 `--tail <n>` bounds how much log each of preserve/collect captures (default 500 lines).
 `--keep-exposure` proceeds past the publicly-bound refusal. `--json` emits the full report —
 every phase's actions and notes, preserve's confirmed `files`, any evidence-phase `error`,

@@ -357,7 +357,7 @@ export async function storeArtifactForRollback(artifact: string, verified: Verif
   if (await fileExists(destination)) {
     await withUnpackedArtifact(destination, async (_staging, cached) => {
       if (cached.id !== verified.id) throw new Error("cached rollback artifact has a different content id");
-    });
+    }, `storing a rollback copy of ${destination}`);
     return destination;
   }
   const temporary = resolve(directory, `.clawforge-artifact-${randomBytes(8).toString("hex")}.tmp`);
@@ -365,7 +365,7 @@ export async function storeArtifactForRollback(artifact: string, verified: Verif
     await copyFile(artifact, temporary);
     await withUnpackedArtifact(temporary, async (_staging, copied) => {
       if (copied.id !== verified.id) throw new Error("artifact changed before it could be stored for rollback");
-    });
+    }, `storing a rollback copy of ${artifact}`);
     await renameOverPrivateFile(temporary, destination);
   } finally {
     await rm(temporary, { force: true });
@@ -473,11 +473,12 @@ export function requirementProblems(manifest: SetManifest, present: { framework?
 
 /** Runs `body` with an artifact unpacked, removing the staging directory afterwards
  *  whatever happens — a half-installed set left unpacked invites confusion with the deployment.
- *  The line after verification is the caller's: validate reads an artifact it will not install. */
+ *  The line after verification is the caller's: validate reads an artifact it will not install,
+ *  so the default note is "checking" — pass "installing from …" where the caller installs. */
 export async function withUnpackedArtifact<T>(
   artifact: string,
   body: (staging: string, verified: VerifiedArtifact) => Promise<T>,
-  note = `installing from ${artifact}`,
+  note = `checking ${artifact}`,
 ): Promise<T> {
   const { staging, verified } = await unpackArtifactVerified(artifact);
   log(note);

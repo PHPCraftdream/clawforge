@@ -189,10 +189,12 @@ export async function answeredProbe(ctx: Context, command: string, args: string[
   throw new Error(`could not run \`${command} ${args.join(" ")}\` on the target (exit ${last.code}${last.stderr.trim() ? `: ${last.stderr.trim()}` : ""}) — the transport failed, not the check`);
 }
 
-/** Resolves `path` through every symlink on the target; dies when it can't. "Cannot verify"
- *  must never read as "verified" — every caller is about to act through this path. */
-async function physicalPath(ctx: Context, path: string): Promise<string> {
-  const resolved = await ctx.transport.exec("readlink", ["-f", path], { allowFailure: true });
+/** Resolves `path` through every symlink on the target, optionally through a privileged
+ *  `prefix`; dies when it can't. "Cannot verify" must never read as "verified" — every
+ *  caller is about to act through this path. */
+export async function physicalPath(ctx: Context, path: string, prefix: string[] = []): Promise<string> {
+  const [head, ...rest] = [...prefix, "readlink", "-f", path];
+  const resolved = await ctx.transport.exec(head, rest, { allowFailure: true });
   const canonical = resolved.stdout.trim();
   if (resolved.code !== 0 || canonical === "") {
     die(`cannot resolve ${path} on the target: ${resolved.stderr.trim() || "the path does not resolve"}`);
@@ -225,14 +227,9 @@ export async function assertCanonicalAncestry(
     if (parent === probe) break;
     probe = parent;
   }
-  const [head, ...rest] = [...(typeof prefix === "function" ? await prefix(probe) : prefix), "readlink", "-f", probe];
-  const resolved = await ctx.transport.exec(head, rest, { allowFailure: true });
-  const canonical = resolved.stdout.trim();
+  const canonical = await physicalPath(ctx, probe, typeof prefix === "function" ? await prefix(probe) : prefix);
   // An empty answer with exit 0 is a refusal, not a confirmation ("cannot verify" never
-  // reads as "verified").
-  if (resolved.code !== 0 || canonical === "") {
-    die(`cannot resolve ${probe} on the target: ${resolved.stderr.trim() || "the path does not resolve"}`);
-  }
+  // reads as "verified") — physicalPath died on it above.
   if (canonical !== probe) {
     die(
       `${dataDir} would act through ${canonical}: ${probe} sits behind a symlink, so creating or ` +

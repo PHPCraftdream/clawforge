@@ -1,5 +1,6 @@
 // `./clawforge bootstrap` — brings an instance up from nothing. Idempotent: re-running it on
-// a live instance refreshes the image and restarts, leaving data untouched.
+// a live instance re-pulls the image (a digest pin is left alone) and rewrites desired-state,
+// but does not restart the running gateway — changed settings need ./clawforge restart.
 //
 // Order matters:
 //   1. .env and the gateway token — compose interpolates them
@@ -161,8 +162,11 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
   // on any provider id it does not already know — writing just the apiKey first leaves that
   // entry incomplete and OpenClaw refuses it. Built-in providers are exempt, so this order
   // costs them nothing.
-  // restartAdvice: false — the gateway starts a few lines below, in this same run.
-  await applyConfig(live, [], { restartAdvice: false });
+  // Advice is suppressed only for a gateway this run is about to start; `compose up
+  // --detach` leaves an already-running container untouched, so a live instance must hear
+  // that the newly written desired state needs a restart to take effect.
+  const wasRunning = await live.runtime.isRunning();
+  await applyConfig(live, [], { restartAdvice: wasRunning });
   await configureProvider(live, []);
 
   await preflightSecrets(live);

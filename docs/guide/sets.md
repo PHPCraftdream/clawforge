@@ -88,8 +88,9 @@ rewritten by a read. `set try` does not run the security gate: its `verified` ve
 trial checks and runtime binding only and carries no security-gate certification.
 
 The command group is available through MCP using `action: "diff"` with `from`/`to`, or
-`action: "receipts"` with `set-id`/`receipt`. The group retains its conservative confirmation
-requirement because it also exposes mutating actions.
+`action: "receipts"` with `set-id`/`receipt`. `diff`, `receipts` and `validate` are declared
+read-only and run without a confirmation; the mutating actions still require one —
+`try` and `forget` over MCP (`action: "build"` writes only the repository's `sets/` directory).
 
 Validation includes real artifact diffs, receipt tamper/selection checks, acceptance
 integration with partial and unavailable checks, and running-image identity tests.

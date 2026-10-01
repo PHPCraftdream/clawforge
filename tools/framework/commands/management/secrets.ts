@@ -46,19 +46,25 @@ export const SECRETS_ARGUMENTS: CommandArgument[] = [
  *  store inspect's STORE_INCOMPLETE finding watches, since inspect takes no store name. */
 export const DEFAULT_SECRET_STORE = "local";
 
-/** Delivers a local store to each declared secret location, refusing incomplete input. */
-async function applyStore(ctx: Context, storeName: string): Promise<void> {
+/** Reads a local store file, dying with the store's own fix-it message — usable before any
+ *  lock or transport call, so a typo in --store refuses locally. */
+async function readStoreOrDie(storeName: string): Promise<string> {
   const path = secretStoreFile(storeName);
 
-  let raw: string;
   try {
-    raw = await readFile(path, "utf8");
+    return await readFile(path, "utf8");
   } catch {
     die(
       `${path} not found — create it with ./clawforge secrets --init-store --store ${storeName}, ` +
         "or pass a different --store <name>",
     );
   }
+}
+
+/** Delivers a local store to each declared secret location, refusing incomplete input. */
+async function applyStore(ctx: Context, storeName: string): Promise<void> {
+  const path = secretStoreFile(storeName);
+  const raw = await readStoreOrDie(storeName);
 
   // Reported, not refused: reading a store neither causes nor deepens an exposure, and
   // refusing would leave the keys uninstallable while the fix stays a manual step anyway.
@@ -284,6 +290,8 @@ async function runDumpAction(ctx: Context, store: string, force: boolean): Promi
  *  guard against, so it takes the same lock. No --break-lock support: breakLockSupported:
  *  false keeps a refusal from offering a flag it can't accept. */
 async function runApplyAction(ctx: Context, store: string, breakForeignLockHost: string | undefined): Promise<void> {
+  // Local first: an invalid or missing store name must not cost a lock on the target.
+  await readStoreOrDie(store);
   await requireBootstrapped(ctx);
   const guardArgs = breakForeignLockHost === undefined ? [] : ["--break-foreign-lock", breakForeignLockHost];
   await guarded(ctx, "secrets", guardArgs, () => applyStore(ctx, store), { breakLockSupported: false });

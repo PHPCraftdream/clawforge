@@ -268,10 +268,17 @@ try {
   const otherApp = await clawforge(["--app", "someone-else", "help"], appDir);
   check("a different --app there is a clear error, not an unknown command", otherApp.code === 1 && otherApp.output.includes("conflicts with this directory") && !otherApp.output.includes("unknown command"), true);
   // A named deployment is named in the hints unless the cwd already selects it.
+  const helpFromRoot = await clawforge(["--app", checkoutApp, "help"], monorepoRoot);
+  check("from the checkout root help hints keep the named deployment", helpFromRoot.output.includes(`clawforge --app ${checkoutApp} help <command>`), true);
+  // status needs a reachable target (Linux, WSL with docker, ssh); without one it fails before any hint.
   const fromRoot = await clawforge(["--app", checkoutApp, "status"], monorepoRoot);
-  check("from the checkout root hints keep the named deployment", fromRoot.output.includes(`clawforge --app ${checkoutApp} bootstrap`), true);
-  const fromApp = await clawforge(["status"], appDir);
-  check("from apps/<name> the cwd selects it, so hints stay plain", fromApp.output.includes("clawforge bootstrap") && !fromApp.output.includes("--app"), true);
+  if (fromRoot.output.includes("nothing deployed yet")) {
+    check("from the checkout root hints keep the named deployment", fromRoot.output.includes(`clawforge --app ${checkoutApp} bootstrap`), true);
+    const fromApp = await clawforge(["status"], appDir);
+    check("from apps/<name> the cwd selects it, so hints stay plain", fromApp.output.includes("clawforge bootstrap") && !fromApp.output.includes("--app"), true);
+  } else {
+    console.log("  skip status hints: no reachable target on this host");
+  }
 
   // The file system may not tell apps from APPS; the hand-over must not depend on the spelling.
   if (windows) {

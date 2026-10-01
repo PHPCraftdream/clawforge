@@ -12,6 +12,7 @@ import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink, emit } from "#framework/core/io/output.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+import { CHILD_NODE_DEADLINE_MS } from "#checks/kit/spawn.ts";
 
 useLinuxHost();
 
@@ -237,7 +238,7 @@ OPENCLAW_GATEWAY_TOKEN=synthetic-gateway-token
   `;
   const mcp = await spawnLocal(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", mcpScript], {
     input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "probe", arguments: {} } })}\n`,
-    timeoutMs: 5000,
+    timeoutMs: CHILD_NODE_DEADLINE_MS,
   });
   assert.equal(mcp.code, 0);
   const mcpResponse = JSON.parse(mcp.stdout.trim()) as { result: { content: [{ text: string }] } };

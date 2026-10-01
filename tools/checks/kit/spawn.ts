@@ -59,6 +59,10 @@ export function runCheckFile(file: string, label: string): Promise<CheckResult> 
   });
 }
 
+/** Deadline for a child Node that loads the framework (a gate, an MCP server): it catches a
+ *  hang, not a slow start — a cold start under parallel checks takes seconds, a hang forever. */
+export const CHILD_NODE_DEADLINE_MS = 45_000;
+
 export interface ProcessOptions {
   readonly cwd?: string;
   /** Defaults to this process's environment. */

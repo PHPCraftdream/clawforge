@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+import { CHILD_NODE_DEADLINE_MS } from "#checks/kit/spawn.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
 
 useLinuxHost();
@@ -31,7 +32,7 @@ try {
   `;
   const result = await spawnLocal(process.execPath, ["--input-type=module", "-e", script], {
     input: `${JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"check",arguments:{}}})}\n`,
-    timeoutMs: 5000,
+    timeoutMs: CHILD_NODE_DEADLINE_MS,
   });
   const response = JSON.parse(result.stdout.trim());
   assert.equal(response.result.structuredContent.result.marker, "result");
@@ -92,7 +93,7 @@ try {
     ];
     const result = await spawnLocal(process.execPath, ["--input-type=module", "-e", script], {
       input: `${requests.map((r) => JSON.stringify(r)).join("\n")}\n`,
-      timeoutMs: 8000,
+      timeoutMs: CHILD_NODE_DEADLINE_MS,
     });
     if (result.code !== 0) process.stderr.write(`concurrency server exited ${result.code}:\n${result.stderr}\n`);
     const responses = result.stdout.split("\n").filter((line) => line.trim() !== "").map((line) => JSON.parse(line));

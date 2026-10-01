@@ -35,7 +35,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { selectChecks } from "#checks/kit/discover.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { check, finish } from "#checks/kit/harness.ts";
-import { runProcess } from "#checks/kit/spawn.ts";
+import { CHILD_NODE_DEADLINE_MS, runProcess } from "#checks/kit/spawn.ts";
 
 /** Runs the real gate with a hard deadline, same as cli-help.check.ts: a hang and a slow
  *  success must not look the same to this check. `cwd` defaults to this process's own —
@@ -43,7 +43,7 @@ import { runProcess } from "#checks/kit/spawn.ts";
  *  lying around. */
 async function runGate(
   args: string[],
-  { timeoutMs = 8000, cwd }: { timeoutMs?: number; cwd?: string } = {},
+  { timeoutMs = CHILD_NODE_DEADLINE_MS, cwd }: { timeoutMs?: number; cwd?: string } = {},
 ): Promise<{ code: number | null; stdout: string; timedOut: boolean }> {
   const { code, output, timedOut } = await runProcess(
     process.execPath,

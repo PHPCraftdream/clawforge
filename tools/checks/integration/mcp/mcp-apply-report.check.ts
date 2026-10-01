@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
+import { CHILD_NODE_DEADLINE_MS } from "#checks/kit/spawn.ts";
 
 useLinuxHost();
 
@@ -52,7 +53,7 @@ try {
 
   const result = await spawnLocal(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
     input: `${requests}\n`,
-    timeoutMs: 5000,
+    timeoutMs: CHILD_NODE_DEADLINE_MS,
   });
   assert.equal(result.code, 0);
   const responses = result.stdout

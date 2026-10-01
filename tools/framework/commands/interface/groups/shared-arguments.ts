@@ -7,6 +7,7 @@ import type { LockTakeover } from "#src/runtime/lock/instance-lock.ts";
 
 export const PROFILE_ARGUMENT = {
   name: "profile",
+  summary: "full, migrate or share",
   description: "full (everything), migrate (no provider keys or recipe-declared private files) or share (no keys, identity, or recipe-declared private files)",
   kind: "option",
   valueName: "profile",
@@ -31,6 +32,7 @@ export const BREAK_LOCK_ARGUMENT = {
  *  docs/architecture.md's instance-lock runbook. */
 export const BREAK_FOREIGN_LOCK_ARGUMENT = {
   name: "break-foreign-lock",
+  summary: "Host id of an orphaned lock to take over",
   description: "Confirm <hostId> as the machine an orphaned lock guard is recorded on, and take it over",
   kind: "option",
   valueName: "hostId",

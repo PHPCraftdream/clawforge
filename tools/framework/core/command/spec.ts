@@ -288,9 +288,12 @@ export async function runOnContext(body: CommandBody, ctx: Context, args: readon
 const materialized = new WeakMap<object, CommandEntry>();
 
 /** The entry behind a command, only while its `run` is the materialized one: a spread keeps
- *  it, a replaced `run` drops it (the command is then read as a legacy one). */
-export function specOf(command: AppCommand): CommandEntry | undefined {
-  return materialized.get(command.run);
+ *  it, a replaced `run` drops it (the command is then read as a legacy one). Accepts any
+ *  declaration shape — a command without a `run` (MCP's synthetic `help` tool, bare
+ *  fixtures) has no entry by definition. */
+export function specOf(command: { readonly run?: unknown }): CommandEntry | undefined {
+  const run = command.run;
+  return typeof run === "function" ? materialized.get(run) : undefined;
 }
 
 function faceOf(name: string, entry: CommandEntry): AppCommand {

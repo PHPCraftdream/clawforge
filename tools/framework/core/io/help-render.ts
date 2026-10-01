@@ -4,7 +4,8 @@
 
 import { log, info } from "./log.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
-import { splitActionScoped } from "../command/index.ts";
+import type { EffectDeclaration } from "../command/index.ts";
+import { effectProfile, splitActionScoped } from "../command/index.ts";
 
 /** What renderCommandHelp needs from a command — the shape AppCommand and GateCommand both
  *  satisfy, without importing either (they live in entry/ and integration/, downstream of
@@ -74,24 +75,21 @@ export const GROUP_HEADINGS: Record<CommandGroup, string> = {
 export const GROUP_ORDER = Object.keys(GROUP_HEADINGS) as CommandGroup[];
 
 /** Precise, metadata-derived wording instead of a flat "(destructive)" that's only true for
- *  some invocations. Minimal shape, not AppCommand, so the MCP tool description
- *  (integration/mcp/schema.ts's Declared) reuses it without importing AppCommand. */
-export function destructiveMarker(command: {
-  readonly destructive?: boolean;
-  readonly readOnlyWhen?: (args: string[]) => boolean;
-}): string {
-  if (command.destructive !== true) return "";
-  return command.readOnlyWhen === undefined ? " (destructive)" : " (destructive for some actions)";
+ *  some invocations — derived from the command's effect profile, like every other surface.
+ *  Minimal structural shape: AppCommand, a gate command and the MCP tool's Declared all
+ *  satisfy it. */
+export function destructiveMarker(command: EffectDeclaration): string {
+  const { destructive, alwaysDestroys } = effectProfile(command);
+  if (!destructive) return "";
+  return alwaysDestroys ? " (destructive)" : " (destructive for some actions)";
 }
 
 /** Short list marker: `!` destructive, `*` destructive for some actions; renderUsage's
  *  legend line explains both. Empty for a command that is not destructive. */
-export function destructiveSymbol(command: {
-  readonly destructive?: boolean;
-  readonly readOnlyWhen?: (args: string[]) => boolean;
-}): string {
-  if (command.destructive !== true) return "";
-  return command.readOnlyWhen === undefined ? " !" : " *";
+export function destructiveSymbol(command: EffectDeclaration): string {
+  const { destructive, alwaysDestroys } = effectProfile(command);
+  if (!destructive) return "";
+  return alwaysDestroys ? " !" : " *";
 }
 
 /** Name column of every entry in the command list (commands, gate and built-in lines alike). */
@@ -167,11 +165,12 @@ export const STRUCTURED_ENVELOPE_HELP =
  *  path appends after it. */
 export function renderFullCommandHelp(name: string, command: AppCommand): void {
   renderCommandHelp(name, command);
-  if (command.destructive === true) {
+  const { destructive, alwaysDestroys, byAction } = effectProfile(command);
+  if (destructive) {
     info("");
-    info(command.readOnlyWhen === undefined
+    info(alwaysDestroys
       ? "This command replaces or destroys state."
-      : (command.arguments ?? []).some((argument) => argument.actions !== undefined)
+      : byAction
         ? "This command can replace or destroy state, depending on the action given."
         : "This command can replace or destroy state, depending on the flags given.");
   }

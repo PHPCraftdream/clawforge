@@ -4,7 +4,7 @@
 // A legacy command (run + the three argv predicates) is read exactly as the surfaces always
 // read it; a spec shape (effect on the body, an action or a flag) by the rules of the model.
 
-import type { AppCommand } from "#src/core/app.ts";
+import type { AppCommand, CommandArgument } from "#src/core/app.ts";
 import { parseCall, parseDeclaredArgs } from "#src/core/command/parse.ts";
 import { specOf, specShape } from "#src/core/command/spec.ts";
 import type { ArgumentSpec, Effect } from "#src/core/command/spec.ts";
@@ -42,8 +42,19 @@ export function callFactsFor(command: AppCommand, argv: readonly string[]): Call
   return changed === undefined ? { effect } : { effect, changed };
 }
 
+/** The effect-relevant part of a command declaration — an AppCommand, a gate command and the
+ *  MCP tool's Declared all satisfy it. `run` is only a marker: specOf answers a body only
+ *  while the command's run is a materialized one. */
+export interface EffectDeclaration {
+  readonly destructive?: boolean;
+  readonly readOnlyWhen?: (args: string[]) => boolean;
+  readonly requiresConfirmationWhen?: (args: string[]) => boolean;
+  readonly arguments?: readonly CommandArgument[];
+  readonly run?: unknown;
+}
+
 /** The static profile, as the list markers, the `--help` note and the `confirm` schema field read it. */
-export function effectProfile(command: AppCommand): EffectProfile {
+export function effectProfile(command: EffectDeclaration): EffectProfile {
   const entry = specOf(command);
   if (entry !== undefined) return shapeProfile(specShape(entry));
   const destructive = command.destructive === true;

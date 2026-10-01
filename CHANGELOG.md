@@ -6,6 +6,13 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* A deployment command that is destructive and declares `requiresConfirmationWhen` without
+  `readOnlyWhen` — confirmation is owed only for some calls — now reads as "destructive for
+  some actions" on every surface (` *` in the command list, the tool description, the
+  `--help` note, and an optional "Confirm a destructive action" `confirm` in the MCP schema)
+  instead of the flat always-destroys wording. Commands that refine destruction with
+  `readOnlyWhen` (all of the framework's own) are unaffected.
+
 * `./clawforge list` answers an unknown argument the standard way — the refusal plus a
   pointer to `list --help` — instead of its own bare "unknown argument" line.
 * A set is loaded and validated by one pipeline for the working tree and an artifact alike

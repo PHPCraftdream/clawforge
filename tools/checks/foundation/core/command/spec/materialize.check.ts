@@ -90,8 +90,10 @@ check(
 
 checkTrue("specOf finds a materialized command", specOf(commands.single) !== undefined);
 check("and returns its entry", specOf(commands.single)?.summary, "one");
-check("a spread keeps the spec (the symbol key is copied)", specOf({ ...commands.single, summary: "other" })?.summary, "one");
-check("replacing run drops it", specOf({ ...commands.single, run: async () => {} }), undefined);
+const spread = { ...commands.single, summary: "other" };
+check("a spread keeps the spec (the symbol key is copied)", specOf(spread)?.summary, "one");
+const replaced = { ...commands.single, run: async () => {} };
+check("replacing run drops it", specOf(replaced), undefined);
 check("a framework command that is still legacy has none", specOf(openclawCommands.up), undefined);
 
 // --- structural errors at load ---------------------------------------------------------------------------------

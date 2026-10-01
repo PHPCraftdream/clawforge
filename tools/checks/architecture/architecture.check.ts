@@ -12,6 +12,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { specOf } from "#framework/core/command/index.ts";
 import { checkTrue, finish } from "#checks/kit/harness.ts";
 
 interface PerFileMetric {
@@ -34,7 +35,9 @@ interface Baseline {
     readonly changedWhen: number;
     readonly requiresConfirmationWhen: number;
   };
-  readonly longArgumentDescriptions: { readonly comment: string; readonly total: number; readonly arguments: number };
+  readonly legacyCommands: { readonly comment: string; readonly total: number };
+  readonly unsummarizedDescriptions: { readonly comment: string; readonly total: number };
+  readonly declaredArguments: { readonly comment: string; readonly total: number };
   readonly imageStringOps: PerFileMetric;
   readonly prosePins: PerFileMetric;
 }
@@ -140,24 +143,29 @@ for (const name of OPT_OUTS) {
 let readOnlyWhen = 0;
 let changedWhen = 0;
 let requiresConfirmationWhen = 0;
+let legacyCount = 0;
+let unsummarized = 0;
 let argumentCount = 0;
-let longDescriptions = 0;
 for (const command of Object.values(openclawCommands)) {
   if (command.readOnlyWhen !== undefined) readOnlyWhen += 1;
   if (command.changedWhen !== undefined) changedWhen += 1;
   if (command.requiresConfirmationWhen !== undefined) requiresConfirmationWhen += 1;
+  // 4. Stage-3 (CommandSpec) counts, measured through the materialized declarations:
+  // legacyCommands — entries not yet carrying a spec body; unsummarizedDescriptions —
+  // arguments of the derived `arguments` view the MCP schema is built from whose text still
+  // needs the 60-character heuristic because no `summary` is declared.
+  if (specOf(command) === undefined) legacyCount += 1;
   for (const argument of command.arguments ?? []) {
     argumentCount += 1;
-    // 4. Long argument descriptions — stage 3: declared `summary` fields replace the MCP
-    // schema's 60-character heuristic shortening.
-    if (argument.description.length > 60) longDescriptions += 1;
+    if (argument.description.length > 60 && argument.summary === undefined) unsummarized += 1;
   }
 }
 report(ratchet("rawArgvPredicates.readOnlyWhen", baseline.rawArgvPredicates.readOnlyWhen, readOnlyWhen, [], []));
 report(ratchet("rawArgvPredicates.changedWhen", baseline.rawArgvPredicates.changedWhen, changedWhen, [], []));
 report(ratchet("rawArgvPredicates.requiresConfirmationWhen", baseline.rawArgvPredicates.requiresConfirmationWhen, requiresConfirmationWhen, [], []));
-report(ratchet("longArgumentDescriptions", baseline.longArgumentDescriptions.total, longDescriptions, [], []));
-report(ratchet("declaredArguments", baseline.longArgumentDescriptions.arguments, argumentCount, [], []));
+report(ratchet("legacyCommands", baseline.legacyCommands.total, legacyCount, [], []));
+report(ratchet("unsummarizedDescriptions", baseline.unsummarizedDescriptions.total, unsummarized, [], []));
+report(ratchet("declaredArguments", baseline.declaredArguments.total, argumentCount, [], []));
 
 // 5. String operations on image references outside runtime/docker/image-ref.ts — stage 1
 // (ImageRef): one module owns the grammar, call sites get values.

@@ -5,7 +5,7 @@
 
 import type { CommandArgument } from "../../core/app.ts";
 import { destructiveMarker } from "../../core/io/help-render.ts";
-import { splitActionScoped } from "../../core/command/index.ts";
+import { effectProfile, splitActionScoped } from "../../core/command/index.ts";
 
 /** What the functions below need from a command, and all they need: the description a
  *  client reads, and the arguments the schema, the validation and the argv are derived from.
@@ -152,20 +152,26 @@ function sharedSchemaDescription(argument: CommandArgument): string | undefined 
   return undefined;
 }
 
-/** The argument description in the MCP schema; `--help` and `help` keep it whole. */
+/** The argument description in the MCP schema; `--help` and `help` keep it whole. A declared
+ *  `summary` wins over the shared table and the heuristic shortening (design section 4; the
+ *  table stays as a fallback until stage 5 removes it). The summary replaces the shortened
+ *  text — including a composed description's per-part cuts — but not the ` (<actions>)` and
+ *  ` (value: <…>)` tails: those the schema appends either way, unless the summary came from
+ *  the shared table, whose texts are the whole description (break-foreign-lock). */
 export function schemaArgumentDescription(argument: CommandArgument): string | undefined {
   if (isTrivialDescription(argument.name, argument.description)) return undefined;
+  const summary = argument.summary;
   const shared = sharedSchemaDescription(argument);
-  if (shared !== undefined) return shared;
+  if (shared !== undefined && (summary === undefined || shared === summary)) return shared;
   // A composed description (scopeByAction: "X (build); Y (validate)") is shortened per part
   // so each part keeps its own actions — shortening the whole string first stripped every
   // part's action list and left one action's text standing for all (R31-03, R32-04).
-  const parts = splitActionScoped(argument.description, argument.actions);
-  const short = parts === undefined
+  const parts = summary === undefined ? splitActionScoped(argument.description, argument.actions) : undefined;
+  const short = summary ?? (parts === undefined
     // "With x:" is help-render's lead-in, not content — stripped BEFORE shortening, or it
     // eats the budget and the cut lands mid-phrase (R30-06: watch.interval "a bare number is").
     ? shortenDescription(argument.description.replace(/^With [\w/-]+: /, ""))
-    : parts.map(({ description, actions: own }) => `${shortenDescription(description)} (${own.join(", ")})`).join("; ");
+    : parts.map(({ description, actions: own }) => `${shortenDescription(description)} (${own.join(", ")})`).join("; "));
   // Without per-part actions: which action(s) of a multi-action command this argument belongs
   // to — same wording help-render.ts prints. `create` is backup's default (no action word
   // needed) and is labelled as such, so a client knows `hot` without an `action` still means
@@ -196,15 +202,16 @@ export function inputSchema(command: Declared): Record<string, unknown> {
   }
 
   // A destructive command needs an explicit confirmation: a tool call is far easier to
-  // trigger by accident than a typed command line.
-  if (command.destructive === true) {
+  // trigger by accident than a typed command line. The distinction comes from the effect
+  // profile, like every other surface: alwaysDestroys has no safe form, so confirm is
+  // required, not just declared.
+  const { destructive, alwaysDestroys } = effectProfile(command);
+  if (destructive) {
     properties.confirm = {
       type: "boolean",
-      description: command.readOnlyWhen === undefined
-        ? "Must be true: destroys state"
-        : "Confirm a destructive action",
+      description: alwaysDestroys ? "Must be true: destroys state" : "Confirm a destructive action",
     };
-    if (command.readOnlyWhen === undefined && command.requiresConfirmationWhen === undefined) required.push("confirm");
+    if (alwaysDestroys) required.push("confirm");
   }
 
   return { type: "object", properties, required };

@@ -120,10 +120,17 @@
     "changedWhen": 6,
     "requiresConfirmationWhen": 5
   },
-  "longArgumentDescriptions": {
-    "comment": "stage 3 (CommandArgument summary): MCP stops shortening heuristically when all summaries are declared",
-    "total": 61,
-    "arguments": 183
+  "legacyCommands": {
+    "comment": "stage 3 (CommandSpec): openclawCommands entries whose specOf is undefined — each migration turns one into a declared body",
+    "total": 41
+  },
+  "unsummarizedDescriptions": {
+    "comment": "stage 3 (CommandArgument summary): MCP stops shortening heuristically when all summaries are declared; arguments of the derived `arguments` view with a description longer than 60 and no summary",
+    "total": 37
+  },
+  "declaredArguments": {
+    "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",
+    "total": 183
   },
   "imageStringOps": {
     "comment": "stage 1 (ImageRef): image references are parsed by runtime/docker/image-ref.ts; the lines still counted are prose (help text, refusal messages, comments) that merely mentions the grammar",
@@ -283,8 +290,9 @@
       "tools/checks/sets/lifecycle/set-lifecycle/fixture.ts": 1,
       "tools/checks/sets/lifecycle/set-rollback.check.ts": 5,
       "tools/checks/sets/lifecycle/set-try.check.ts": 2,
-      "tools/checks/sets/lifecycle/set-validate.check.ts": 22
+      "tools/checks/sets/lifecycle/set-validate.check.ts": 22,
+      "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 855
+    "total": 857
   }
 }

@@ -111,7 +111,9 @@ each list findings that the matching session-task list works through.
 ## Plans, audits, feedback
 
 * [refactor-plan-2026-10-01.md](refactor-plan-2026-10-01.md) — refactoring plan against the source
-  of recurring P2–P3 findings (rounds 27–33 classified): invariants, stages 0–6, ratchets. Not started.
+  of recurring P2–P3 findings (rounds 27–33 classified): invariants, stages 0–6, ratchets. Stages 0–2 done.
+* [refactor-stage3-design.md](refactor-stage3-design.md) — stage 3 design: command spec, one parser,
+  effects instead of argv predicates, `executeCommand` for console and MCP, migration recipe, task split.
 * [host-audit-macos-windows.md](host-audit-macos-windows.md) — host code on macOS and Windows
   without WSL (2026-09-29): 9 items, no P0; three P2 left for a separate task.
 * [field-feedback-sidecar-round-13.md](field-feedback-sidecar-round-13.md) — field feedback on

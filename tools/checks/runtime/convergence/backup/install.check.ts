@@ -116,15 +116,15 @@ try {
   }
   {
     const message = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "not-a-duration"])));
-    check("a malformed --interval is refused, named", message.includes("number of minutes or look like 30m"), true);
+    check("a malformed --interval is refused, named", message.includes("an explicit unit is required"), true);
   }
   {
     calls.length = 0;
     const bare = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "30"])));
-    check("a bare number is refused — a backup cadence needs an explicit unit", bare.includes("30m for minutes or 30h for hours"), true);
+    check("a bare number is refused — a backup cadence needs an explicit unit", bare.includes("nearest valid: 30m"), true);
     check("...and never touches the crontab", calls.some((call) => call.command === "crontab"), false);
     const empty = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", ""])));
-    check("an empty --interval is refused instead of silently defaulting to 1d", empty.includes("number of minutes or look like 30m"), true);
+    check("an empty --interval is refused instead of silently defaulting to 1d", empty.includes("an explicit unit is required"), true);
     const nearest = await deathOf(() => withOutputSink(() => {}, () => backupInstall(ctx, ["--interval", "45m"])));
     check("--interval 45m suggests only values backup itself accepts", nearest.includes("nearest valid: 30m, 1h"), true);
   }

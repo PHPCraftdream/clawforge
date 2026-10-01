@@ -107,13 +107,17 @@ export function cronSchedule(minutes: number): string {
  *  would then refuse. An empty value is refused for every caller. */
 export function parseIntervalToMinutes(raw: string, options?: { bareMinutes?: boolean }): number {
   const bareMinutes = options?.bareMinutes ?? true;
-  if (raw.trim() === "") die(`--interval must be a number of minutes or look like 30m, 6h or 1d (minutes, hours or days) — got "${raw}"`);
+  const grammar = bareMinutes
+    ? `--interval must be a number of minutes or look like 30m, 6h or 1d (minutes, hours or days)`
+    : `--interval must look like 30m, 6h or 1d (an explicit unit is required)`;
+  if (raw.trim() === "") die(`${grammar} — got "${raw}"`);
   const match = /^(\d+)([mhd]?)$/.exec(raw.trim());
-  if (match === null) die(`--interval must be a number of minutes or look like 30m, 6h or 1d (minutes, hours or days) — got "${raw}"`);
+  if (match === null) die(`${grammar} — got "${raw}"`);
   const value = Number(match[1]);
   const unit = match[2];
   if (unit === "" && !bareMinutes) {
-    die(`--interval needs an explicit unit — ${value}m for minutes or ${value}h for hours; a bare number is minutes only for watch install — got "${raw}"`);
+    // Only spellings this command accepts: 1440 reads as 1d, 90 as 1h, 2h.
+    die(`--interval needs an explicit unit — nearest valid: ${nearestValidIntervals(value).join(", ")}; a bare number is minutes only for watch install — got "${raw}"`);
   }
   const minutes = unit === "h" ? value * 60 : unit === "d" ? value * 1440 : value;
   try {

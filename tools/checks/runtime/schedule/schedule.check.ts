@@ -113,7 +113,7 @@ check("1d -> 1440 minutes", parseIntervalToMinutes("1d"), 1440);
 check("a bare number is minutes (watch's historical form)", [parseIntervalToMinutes("30"), parseIntervalToMinutes("120"), parseIntervalToMinutes("1440")], [30, 120, 1440]);
 check("60m and 1h are the same interval", [parseIntervalToMinutes("60m"), parseIntervalToMinutes("1h")], [60, 60]);
 // backup install passes { bareMinutes: false }: a cadence that stops the gateway must carry a unit.
-check("a bare number is refused when bare minutes are disallowed, naming both unit spellings", (await deathOf(() => parseIntervalToMinutes("6", { bareMinutes: false }))).includes("6m for minutes or 6h for hours"), true);
+check("a bare number is refused when bare minutes are disallowed, naming valid explicit spellings", (await deathOf(() => parseIntervalToMinutes("6", { bareMinutes: false }))).includes("nearest valid: 6m"), true);
 check("an explicit unit is still accepted when bare minutes are disallowed", [parseIntervalToMinutes("6m", { bareMinutes: false }), parseIntervalToMinutes("6h", { bareMinutes: false })], [6, 360]);
 check("an empty value is refused even when bare minutes are allowed", (await deathOf(() => parseIntervalToMinutes(""))).includes("look like 30m"), true);
 for (const malformed of ["", "abc", "1.5h", "-5", "5 m", "10mm"]) {
@@ -130,6 +130,22 @@ for (const refused of ["10h", "45m", "45", "90", "1441", "7", "0", "2d", "100d"]
   const offered = /nearest valid: (.*)$/.exec(message)?.[1]?.split(", ") ?? [];
   check(`${refused}: a non-empty nearest list`, offered.length > 0, true);
   for (const value of offered) check(`${refused}: suggested ${value} is accepted`, await deathOf(() => parseIntervalToMinutes(value)), "");
+}
+
+// Both commands' refusals for the report's values: every suggestion in the message is itself
+// accepted by the same command (backup: explicit unit only; 1440 minutes reads as 1d).
+for (const bare of [true, false]) {
+  const options = bare ? undefined : { bareMinutes: false };
+  const label = bare ? "watch" : "backup";
+  for (const value of ["1440", "90", "0", "7h", "45m"]) {
+    const accepted = value === "1440" && bare; // only watch accepts bare minutes, and 1440 = 1d is valid
+    const message = await deathOf(() => parseIntervalToMinutes(value, options));
+    const offered = /nearest valid: (.*)$/.exec(message.replace(/; a bare number.*$/, ""))?.[1]?.split(", ") ?? [];
+    check(`${label} ${value}: ${accepted ? "accepted" : "a non-empty nearest list"}`, accepted ? message : offered.length > 0, accepted ? "" : true);
+    for (const suggestion of offered) {
+      check(`${label} ${value}: suggested ${suggestion} is accepted`, await deathOf(() => parseIntervalToMinutes(suggestion, options)), "");
+    }
+  }
 }
 
 // --- schedulingSupport(): a property of the transport, checked against THIS platform's own

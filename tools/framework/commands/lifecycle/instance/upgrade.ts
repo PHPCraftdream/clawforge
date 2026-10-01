@@ -7,6 +7,7 @@ import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { refreshContext, type Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
 import { envFile } from "#src/runtime/deployment.ts";
+import { parseEnv } from "#src/core/env.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { createBackup, NativeBackupUnsupportedError } from "#src/commands/lifecycle/backup/index.ts";
@@ -67,8 +68,8 @@ async function resolveUpgradeTarget(
       if (!channelHasTag(channel)) {
         die(
           `OPENCLAW_IMAGE is "${declared}" — a digest with no tag alongside it, so the channel it was ` +
-            "pulled from is unknown and cannot be re-resolved (an older pin, from before upgrade could keep " +
-            "the tag). Name the channel explicitly: ./clawforge upgrade --image <repo:tag>.",
+            "pulled from is unknown and cannot be re-resolved. Name the channel explicitly: " +
+            "./clawforge upgrade --image <repo:tag> (upgrade then keeps the tag alongside the digest).",
         );
       }
     }
@@ -141,6 +142,7 @@ export async function pinImageReference(digestReference: string): Promise<void> 
 async function rollbackUpgrade(
   ctx: Context,
   previousDigest: string,
+  previousReference: string,
   backupArchive: string,
   restoreData: boolean,
   cause: unknown,
@@ -161,7 +163,9 @@ async function rollbackUpgrade(
     if (!identity?.digests.some((digest) => digestHash(digest) === digestHash(previousDigest))) {
       throw new Error(`could not confirm the rollback gateway is running ${previousDigest}`);
     }
-    await pinImageReference(previousDigest);
+    // Restore the reference exactly as it was validated pre-upgrade — tag and digest, not the
+    // tagless RepoDigests form — so a rolled-back deployment is indistinguishable from before.
+    await pinImageReference(previousReference);
   } catch (compensationError) {
     const detail = compensationError instanceof Error ? compensationError.message : String(compensationError);
     throw new AggregateError(
@@ -176,6 +180,7 @@ async function upgradeLocked(
   ctx: Context,
   previousDigest: string,
   targetDigest: string,
+  previousReference: string,
   recreateWithImage: (reference: string, onMutationStart?: () => void) => Promise<void>,
 ): Promise<void> {
   log(`upgrading from ${previousDigest} to ${targetDigest}`);
@@ -220,7 +225,7 @@ async function upgradeLocked(
     if (!restoreData) {
       try { restoreData = (await ctx.runtime.lastExitCode?.()) === 78; } catch { /* unknown */ }
     }
-    await rollbackUpgrade(ctx, previousDigest, backupArchive, restoreData, error, recreateWithImage);
+    await rollbackUpgrade(ctx, previousDigest, previousReference, backupArchive, restoreData, error, recreateWithImage);
   }
   log(`upgrade complete: now running ${targetDigest}`);
   info("re-pin the deployment's own record of this: ./clawforge lock");
@@ -246,6 +251,7 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
 
   const target = await resolveUpgradeTarget(ctx, options.image, resolveImageDigest);
   const preparedEnv = await readFile(envFile(), "utf8");
+  const previousReference = parseEnv(preparedEnv).OPENCLAW_IMAGE ?? ctx.settings.image;
 
   const identity = await ctx.runtime.runningImageIdentity?.();
   if (identity === undefined || identity.digests.length === 0) {
@@ -303,7 +309,7 @@ export async function upgrade(ctx: Context, args: string[]): Promise<void> {
       return;
     }
     changed = true;
-    await upgradeLocked(ctx, current.digests[0], target.targetDigest, recreateWithImage);
+    await upgradeLocked(ctx, current.digests[0], target.targetDigest, previousReference, recreateWithImage);
   });
 
   if (options.jsonOnly) {

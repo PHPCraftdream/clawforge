@@ -187,6 +187,27 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string } = {}): {
   check("and rolls back to the previous digest", runningDigest(), PREVIOUS_DIGEST);
 }
 
+// --- a failed upgrade's rollback restores OPENCLAW_IMAGE byte-for-byte (tag + digest, exactly
+// what was validated pre-upgrade), so the next plain upgrade — even --dry-run — re-resolves the
+// channel instead of hitting the tagless-pin refusal -----------------------------------------
+
+{
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PINNED_WITH_TAG}\n`);
+  const { ctx } = makeUpgradeCtx("doctor-fail", { image: PINNED_WITH_TAG });
+  let failure: unknown;
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(ctx, []); } catch (error) { failure = error; }
+  });
+  check("a failed upgrade over a tagged pin is reported", failure instanceof Error, true);
+  check("the rollback restores the exact pre-upgrade pin, tag and digest", parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, PINNED_WITH_TAG);
+  let retry: unknown;
+  const dryCtx = makeUpgradeCtx("success", { image: PINNED_WITH_TAG }).ctx;
+  await withOutputSink(() => {}, async () => {
+    try { await upgrade(dryCtx, ["--dry-run"]); } catch (error) { retry = error; }
+  });
+  check("the next upgrade --dry-run succeeds against the restored pin", retry, undefined);
+}
+
 // --- upgrade with no --image, after a tag-preserving pin, re-resolves the CHANNEL (`repo:tag`),
 // never the stale digest already sitting in the pin — a moved tag must still be caught, or
 // `upgrade` silently stops doing anything the moment bootstrap/a prior upgrade pins.

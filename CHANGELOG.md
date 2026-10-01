@@ -6,6 +6,15 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Fixed
 
+* A failed `upgrade`'s rollback re-pins `OPENCLAW_IMAGE` to the exact reference the deployment
+  had before the upgrade (tag and digest), not the tagless `repo@sha256:…` form Docker reports —
+  so a rolled-back deployment is indistinguishable from before and the next plain `upgrade` (or
+  `--dry-run`) re-resolves the channel instead of refusing on a pin it blames on "older versions".
+  A genuinely tagless pin is still refused, with the `--image <repo:tag>` remedy and no blame.
+* `backup install --interval <bare number>` suggests only spellings the command itself accepts:
+  `1440` reads as `1d`, `90` as `1h, 2h`, `0` as `1m` (previously `1440m`/`1440h`, which backup
+  then refuses), and its general refusal no longer opens with "a number of minutes" — backup
+  requires an explicit unit. `watch install` still accepts bare minutes.
 * `set validate` on a working tree whose image is not pinned yet builds the manifest with the
   tag in `requires.image` and reports `SET_IMAGE_UNPINNED` as a blocking finding together with
   everything else it found — in `--json` too — instead of dying inside the manifest build with

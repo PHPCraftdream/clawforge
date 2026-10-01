@@ -23,6 +23,16 @@ All notable changes to `@clawforge/framework` will be documented here.
   (lock for another image, lock without digest, no lock) instead of disagreeing — `lock` no
   longer claims to record what the running gateway serves (it records the local image's
   digest), and a committed lock without an instance is no longer read as "deployed".
+* `set diff` no longer blames the good artifact when the second one is corrupt, and
+  `set validate --set` with blocking findings ends in the findings' summary again instead of
+  "<artifact> is not a valid set artifact: N blocking finding(s)": the read-only unpack gate
+  wraps only the artifact's own integrity failures, and a caller's error propagates unwrapped.
+* `set validate` parses each recipe's recipe.json with the same loader `recipe list` and
+  `recipe install` use, so a recipe the listing calls broken is a blocking finding (new
+  SET_RECIPE_INVALID code) in the tree and in a built artifact instead of failing only
+  mid-apply on the target — and each completeness gap carries the advice that closes that
+  gap (add server.ts, add agent/config.json, fix the tree and rebuild) rather than one
+  recipe.json-or-server.ts line for all of them.
 * PowerShell completion answers again with a typed prefix (`clawforge sta<Tab>`, `--ap<Tab>`,
   `backup l<Tab>`, `watch in<Tab>`), which the previous script lost by scanning the word being
   completed as a typed command; `--app <name> backup <Tab>` offers the default action's flags

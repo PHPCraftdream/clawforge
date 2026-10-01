@@ -217,7 +217,9 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
       acceptance: {},
     } as never);
     await mkdir(resolve(deployment, "recipes", "svc"), { recursive: true });
-    await writeFile(resolve(deployment, "recipes", "svc", "recipe.json"), "{}");
+    // A definition the recipe loader accepts: the rule under test is "no server.ts needed",
+    // not "any recipe.json content passes" (parse quality has its own check below).
+    await writeFile(resolve(deployment, "recipes", "svc", "recipe.json"), JSON.stringify({ description: "demo service" }));
     check("a service recipe with no agent needs no server.ts", codes(await validateSet(serviceOnly, { checkFiles: true })), []);
 
     await writeFile(resolve(deployment, "recipes", "demo", "server.ts"), "// server\n");
@@ -560,6 +562,133 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     }
     check("the install-time gate still refuses a broken artifact", refusal.includes("is not a valid set artifact"), true);
     check("the refusal dedupes the code and names the recipes", refusal.includes("SET_RECIPE_INCOMPLETE ×2") && refusal.includes("delta") && refusal.includes("eps"), true);
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
+}
+
+// --- recipe.json is parsed with the loader recipe list uses (R33-08) ------------------------
+//
+// Found by running `recipe list --json` and `set validate` on the same tree: the listing
+// said "needs a description", validate said "coherent", and the break surfaced only mid-apply
+// on the target. One gap per case, each with the edit that actually closes it.
+
+{
+  const deployment = await mkdtemp(join(tmpdir(), "clawforge-set-validate-recipe-json-"));
+  try {
+    await mkdir(resolve(deployment, "recipes", "demo"), { recursive: true });
+    await mkdir(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
+    await writeFile(resolve(deployment, "recipes", "demo", "server.ts"), "// server\n");
+    await writeFile(resolve(deployment, "recipes", "demo", "agent", "config.json"), "{}");
+    useDeployment(deployment);
+
+    // The tree files exist, so only the definition's content can still be wrong.
+    await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), "{not json");
+    let problems = await validateSet(coherent(), { checkFiles: true });
+    check("a recipe.json that is not JSON is a finding", codes(problems), ["SET_RECIPE_INVALID"]);
+    check("the finding is the loader's, naming the file", problems[0]?.detail.includes("recipes/demo/recipe.json"), true);
+    check("the remedy names the file to fix", problems[0]?.nextAction.includes("fixing recipes/demo/recipe.json"), true);
+
+    await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), "{}");
+    problems = await validateSet(coherent(), { checkFiles: true });
+    check("a recipe.json missing a required field is a finding too", codes(problems), ["SET_RECIPE_INVALID"]);
+    check("with the loader's own reason", problems[0]?.detail.includes("needs a description"), true);
+
+    // A valid definition leaves the recipe silent again.
+    await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), JSON.stringify({ description: "demo" }));
+    check("a recipe.json the loader accepts stays silent", codes(await validateSet(coherent(), { checkFiles: true })), []);
+
+    // Each completeness gap gets the advice that closes THAT gap, not one recipe.json-or-
+    // server.ts line for all five.
+    await rm(resolve(deployment, "recipes", "demo", "server.ts"));
+    const missingServer = await validateSet(coherent(), { checkFiles: true });
+    check("an agent recipe without server.ts is advised to add server.ts", missingServer[0]?.nextAction.includes("adding server.ts to recipes/demo"), true);
+    check("and not to add recipe.json, which would not fix it", missingServer[0]?.nextAction.includes("recipe.json or server.ts"), false);
+
+    await rm(resolve(deployment, "recipes", "demo", "agent", "config.json"));
+    const missingConfig = await validateSet(coherent(), { checkFiles: true });
+    check("a missing agent/config.json is advised by name", missingConfig.some((entry) => entry.nextAction.includes("adding agent/config.json to recipes/demo")), true);
+
+    await rm(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
+    await rm(resolve(deployment, "recipes", "demo"), { recursive: true });
+    const missingDir = await validateSet(coherent(), { checkFiles: true });
+    check("a missing recipe directory points at the tree and a rebuild", missingDir[0]?.nextAction.startsWith("./clawforge set build"), true);
+    check("and names the directory", missingDir[0]?.nextAction.includes("recipes/demo"), true);
+  } finally {
+    await rm(deployment, { recursive: true, force: true });
+    useDeployment(baseDeployment);
+  }
+}
+
+// --- the same broken recipe.json inside an artifact (R33-08, artifact side) ------------------
+//
+// validate --set runs the tree checks inside the unpacked staging, so an artifact carrying
+// a recipe.json recipe list refuses must be reported as a finding, not validate as coherent.
+
+{
+  const deployment = await createBuildDeployment();
+  try {
+    await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), "{}");
+    const bad = await buildSet(buildCtx, "demo-set");
+
+    let jsonOut = "";
+    let jsonFailed = false;
+    try {
+      await withOutputSink((chunk) => { jsonOut += chunk; }, () => set(buildCtx, ["validate", "--set", bad.artifact, "--json"]));
+    } catch {
+      jsonFailed = true;
+    }
+    const document = JSON.parse(jsonOut.slice(jsonOut.indexOf("{\n")));
+    check("an artifact carrying a broken recipe.json fails validation", [jsonFailed, document.valid], [true, false]);
+    check("the finding is the invalid-definition code, not coherence silence", document.problems.some((entry: { code: string }) => entry.code === "SET_RECIPE_INVALID"), true);
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
+}
+
+// --- a caller's failure is the caller's, not the artifact's (R33-03) -------------------------
+//
+// withArtifactInspected used to wrap body errors as "<artifact> is not a valid set
+// artifact": in a nested `set diff` the good first artifact was blamed for the broken
+// second one, and a blocking `validate --set` report ended in integrity wording.
+
+{
+  const deployment = await createBuildDeployment();
+  try {
+    const good = await buildSet(buildCtx, "demo-set");
+    const broken = resolve(deployment, "broken.tar.gz");
+    await writeFile(broken, "this is not a gzip stream");
+
+    let message = "";
+    try {
+      await set(buildCtx, ["diff", good.artifact, broken]);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    check("set diff refuses naming the broken artifact", message.includes("broken.tar.gz is not a valid set artifact"), true);
+    check("and does not blame the good one", message.includes(`${good.artifact} is not a valid set artifact`), false);
+
+    // The MCP path renders the same thrown message (the jsonrpc error's text); the
+    // --json failure document (entry/cli.ts) embeds it verbatim too — one message, three
+    // renderers, none of them may blame the good artifact.
+    check("the message is the broken artifact's refusal, nothing about the good one", message.startsWith(`${broken} is not a valid set artifact`), true);
+
+    // validate --set with blocking findings: the refusal is the findings' summary, not an
+    // integrity claim about the artifact. Same broken-tree shape as the earlier artifact
+    // section: an empty recipe dir and a private-file-only one, both invisible to the
+    // artifact, both blocking findings.
+    await mkdir(resolve(deployment, "recipes", "zeta"), { recursive: true });
+    await mkdir(resolve(deployment, "recipes", "eta"), { recursive: true });
+    await writeFile(resolve(deployment, "recipes", "eta", ".env"), "ETA_TOKEN=placeholder\n");
+    const incomplete = await buildSet(buildCtx, "demo-set");
+    let validateMessage = "";
+    try {
+      await set(buildCtx, ["validate", "--set", incomplete.artifact]);
+    } catch (error) {
+      validateMessage = error instanceof Error ? error.message : String(error);
+    }
+    check("validate --set ends in the blocking-findings summary", validateMessage.includes("blocking finding(s): SET_RECIPE_INCOMPLETE"), true);
+    check("and never in integrity wording", validateMessage.includes("not a valid set artifact"), false);
   } finally {
     await removeBuildDeployment(deployment);
   }

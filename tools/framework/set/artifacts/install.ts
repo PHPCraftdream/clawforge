@@ -404,13 +404,18 @@ export async function withArtifactInspected<T>(
   body: (staging: string, verified: VerifiedArtifact, problems: readonly Problem[]) => Promise<T>,
 ): Promise<T> {
   const staging = await mkdtemp(join(tmpdir(), "clawforge-set-inspect-"));
+  let verified: VerifiedArtifact & { problems?: Problem[] };
   try {
-    const verified = await verifyArtifact(artifact, staging, { collectFindings: true });
-    return await body(staging, verified, verified.problems ?? []);
+    verified = await verifyArtifact(artifact, staging, { collectFindings: true });
   } catch (error) {
-    // Same refusal shape as the strict unpack: an artifact that fails INTEGRITY is not a
-    // set, whatever the caller meant to do with it — only semantic findings are softened.
+    await rm(staging, { recursive: true, force: true });
     die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
+  }
+  try {
+    // The caller's own failures (a blocking report, a diff that throws) propagate unwrapped:
+    // wrapping them blames the artifact being read — in a nested `set diff`, the good one —
+    // and turns validate's "N blocking finding(s)" into integrity wording (R33-03).
+    return await body(staging, verified, verified.problems ?? []);
   } finally {
     await rm(staging, { recursive: true, force: true });
   }

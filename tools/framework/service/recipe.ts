@@ -248,6 +248,24 @@ function parseReadiness(recipe: string, value: unknown): RecipeReadiness | undef
   return { services: names, timeoutMs: typeof timeoutMs === "number" ? timeoutMs : undefined };
 }
 
+/** Parses and shape-checks a recipe.json's text — the same JSON.parse, assertShape and
+ *  description rule loadRecipe applies. Exported so set validate can report a broken
+ *  recipe.json through the same schema instead of a second one drifting apart (R33-08). */
+export function parseRecipeDefinition(name: string, raw: string): unknown {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    // JSON.parse's message alone ("Unexpected token ...") names no file; the other
+    // refusals below already carry the recipes/<name>/recipe.json prefix.
+    throw new Error(`recipes/${name}/recipe.json: ${(error as Error).message}`);
+  }
+  assertShape(parsed, name);
+  const description = typeof (parsed as { description?: unknown }).description === "string" ? (parsed as { description: string }).description : "";
+  if (description === "") throw new Error(`recipes/${name}/recipe.json needs a description`);
+  return parsed;
+}
+
 export async function loadRecipe(name: string): Promise<Recipe> {
   // The name arrives from the command line and becomes both a path and a compose project.
   safeName("recipe", name);
@@ -260,15 +278,10 @@ export async function loadRecipe(name: string): Promise<Recipe> {
     throw new Error(`recipe "${name}" not found — expected recipes/${name}/recipe.json`);
   }
 
-  const parsed: unknown = JSON.parse(raw);
-  assertShape(parsed, name);
-
-  const description = typeof parsed.description === "string" ? parsed.description : "";
-  if (description === "") throw new Error(`recipes/${name}/recipe.json needs a description`);
-
+  const parsed = parseRecipeDefinition(name, raw) as Record<string, unknown>;
   return {
     name,
-    description,
+    description: parsed.description as string,
     // Absent means enabled: a recipe is installable unless it says otherwise.
     enabled: parsed.enabled !== false,
     disabledReason: typeof parsed.disabledReason === "string" ? parsed.disabledReason : undefined,

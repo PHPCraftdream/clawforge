@@ -44,6 +44,7 @@ export type ProblemCode =
   | "IMAGE_UNPINNED"
   | "IMAGE_TAG_MOVED"
   | "SET_RECIPE_INCOMPLETE"
+  | "SET_RECIPE_INVALID"
   | "SET_REFERENCE_BROKEN"
   | "SET_SCHEDULE_INVALID"
   | "SET_SECRET_UNDECLARED"
@@ -255,6 +256,14 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     summary: "a recipe the set declares is absent, or lacks a file its own declaration implies",
     // The fix is an edit, not re-running the validator the finding came from (R32-05).
     nextAction: "./clawforge set validate  (after adding recipe.json or server.ts to the recipe's directory, or removing the directory)",
+  },
+  SET_RECIPE_INVALID: {
+    severity: "blocking",
+    // The recipe.json the set carries does not parse the way recipe list/install read it —
+    // invalid JSON or a missing required field. Separate from SET_RECIPE_INCOMPLETE: the
+    // files are all there, one of them says the wrong thing.
+    summary: "a recipe's recipe.json does not parse — the same recipe recipe list refuses",
+    nextAction: "./clawforge set validate  (after fixing the recipe's recipe.json)",
   },
   SET_REFERENCE_BROKEN: {
     severity: "blocking",

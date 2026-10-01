@@ -11,7 +11,7 @@
 
 import type { Env } from "#src/core/env.ts";
 import { composeProjectName, useComposeProjectOverride } from "#src/runtime/deployment.ts";
-import { createTransport, type Transport } from "#src/runtime/transport/transport.ts";
+import { type Transport } from "#src/runtime/transport/transport.ts";
 import { connectionFactsFromInspect, type ConnectionFacts } from "./facts.ts";
 
 // The two labels compose writes on every container it creates. `compose ps` filters by
@@ -19,16 +19,6 @@ import { connectionFactsFromInspect, type ConnectionFacts } from "./facts.ts";
 // and without the env file and project directory a compose invocation would demand.
 const PROJECT_LABEL = "com.docker.compose.project";
 const SERVICE_LABEL = "com.docker.compose.service";
-
-/** The transport recovery reaches its container through, selected from the same .env
- *  settings the context's own transport uses — the location trio needs no OC_DATA_DIR. */
-export async function createRecoveryTransport(env: Env): Promise<Transport> {
-  return createTransport({
-    location: env.OC_TARGET_LOCATION,
-    wslDistro: env.OC_WSL_DISTRO,
-    sshHost: env.OC_SSH_HOST,
-  });
-}
 
 /** Reads the running container's connection facts without a Context. Undefined means
  *  what runningConnectionFacts()' undefined means — not running, or the container could

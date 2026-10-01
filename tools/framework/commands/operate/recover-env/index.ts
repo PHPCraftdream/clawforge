@@ -7,35 +7,33 @@
 // values are reported, never overwritten, unless --adopt-runtime takes the container as
 // authoritative. The opposite direction (file is right) needs `./clawforge up` to recreate.
 // A wholly absent .env cannot be repaired: reaching the target requires the .env that names it.
-//
-// recoverEnv needs a full Context; recoverEnvBeforeContext (entry/cli.ts) works before one can
-// be built, when OC_DATA_DIR itself is missing — see ./bootstrap.ts.
+// Declared as a body with needs: "deployment": the pipeline (core/command/execute.ts) builds
+// the deployment scope — transport from .env, no Context — and refuses a missing .env in the
+// prepare stage. recoverEnv(ctx, args) stays for the apply step, which already has a Context.
 
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit } from "#src/core/io/output.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { envFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
-import type { Transport } from "#src/runtime/transport/transport.ts";
+import { commandBody, parseDeclaredArgs } from "#src/core/command/index.ts";
 import { replacePrivateFile } from "#src/security/privacy/private-file.ts";
 import { upsertEnvValue } from "#src/security/privacy/private-config.ts";
 import { CONNECTION_FACTS, connectionFactDiffs, unrecoverableConnectionFacts } from "./facts.ts";
 import type { ConnectionFactDiff, ConnectionFacts } from "./facts.ts";
-import { createRecoveryTransport, runningConnectionFactsWithoutContext } from "./bootstrap.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import { runningConnectionFactsWithoutContext } from "./bootstrap.ts";
 
-/** Drives both recover-env's own parser and its openclawCommands declaration. */
-export const RECOVER_ENV_ARGUMENTS: CommandArgument[] = [
-  { name: "dry-run", description: "Print what would change without writing", kind: "flag" },
+export const RECOVER_ENV_ARGUMENTS = [
+  { name: "dry-run", description: "Print what would change without writing", kind: "flag", effect: "read" },
   {
     name: "adopt-runtime",
+    summary: "Take the running container as authoritative",
     description: "Take the running container as authoritative: merge its facts over the file's existing values too, not just fill the names it is missing",
     kind: "flag",
   },
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
+] as const;
 
 /** Reports the facts Docker's own answer did not carry — left as they are, never guessed.
  *  Shared by every exit path, so a dry run names exactly the gaps a real write would. */
@@ -59,29 +57,25 @@ function reportDirectionChoice(diverged: ConnectionFactDiff[]): void {
   info("keep .env's values (the edit is the intent): ./clawforge up recreates the container from the file as it now reads");
 }
 
-/** The one argument grammar, parsed once for both entry points: a dry run names what would
- *  change and writes nothing; --adopt-runtime takes the container as the authoritative
- *  side; anything else is refused rather than guessed at. */
+/** The one argument grammar, parsed for the apply step's entry point (the pipeline parses
+ *  the body's own declaration): a dry run names what would change and writes nothing;
+ *  --adopt-runtime takes the container as the authoritative side; anything else is refused
+ *  rather than guessed at. */
 function parseRecoveryArgs(args: string[]): { dryRun: boolean; adoptRuntime: boolean; jsonOnly: boolean } {
   const parsed = parseDeclaredArgs(RECOVER_ENV_ARGUMENTS, args);
   return { dryRun: parsed["dry-run"] === true, adoptRuntime: parsed["adopt-runtime"] === true, jsonOnly: parsed.json === true };
 }
 
 /** A wholly absent .env is the command's one stated limit: reaching the target to inspect
- *  its container already requires the .env that says which target and transport to use. */
-async function readEnvFile(path: string): Promise<string> {
-  const exists = await access(path).then(
-    () => true,
-    () => false,
+ *  its container already requires the .env that says which target and transport to use.
+ *  The pipeline's prepare stage refuses here, before any contact. */
+function refuseWithoutEnvFile(raw: string | undefined, path: string): string {
+  if (raw !== undefined) return raw;
+  die(
+    `${path} does not exist, and recovery cannot create it: reaching the target to inspect ` +
+      "its container already requires the .env that says which target and transport to use — " +
+      "a missing .env has nothing to recover against. Run ./clawforge bootstrap to create one.",
   );
-  if (!exists) {
-    die(
-      `${path} does not exist, and recovery cannot create it: reaching the target to inspect ` +
-        "its container already requires the .env that says which target and transport to use — " +
-        "a missing .env has nothing to recover against. Run ./clawforge bootstrap to create one.",
-    );
-  }
-  return readFile(path, "utf8");
 }
 
 /** The merge both entry points share: the running container's facts classified against the
@@ -185,14 +179,20 @@ async function mergeRecoveredFacts(
   reportUnrecoverable(unrecoverable);
 }
 
-/** The full-context entry point: facts from the Context's own runtime. Refusals are the
- *  established ones — a runtime that cannot introspect, and a container that is not
- *  running. */
+/** The full-context entry point, for the apply step (orchestration/apply.ts), which already
+ *  holds a Context. Refusals are the established ones — a runtime that cannot introspect,
+ *  and a container that is not running. */
 export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
   const { dryRun, adoptRuntime, jsonOnly } = parseRecoveryArgs(args);
 
   const path = envFile();
-  const raw = await readEnvFile(path);
+  let raw: string | undefined;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  refuseWithoutEnvFile(raw, path);
 
   if (typeof ctx.runtime.runningConnectionFacts !== "function") {
     die(`${ctx.runtime.description} cannot introspect its running container, so the connection facts cannot be recovered here`);
@@ -207,44 +207,51 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
     );
   }
 
-  await mergeRecoveredFacts(facts, path, raw, dryRun, adoptRuntime, jsonOnly);
+  await mergeRecoveredFacts(facts, path, raw as string, dryRun, adoptRuntime, jsonOnly);
 }
 
-export interface RecoveryBootstrapOptions {
-  /** The compose service the deployment operates; the context defaults an application's
-   *  unnamed service to "app", and so does this. */
-  service?: string;
-  /** The checks' seam, the way ContextOptions.transport is: a stubbed transport answering
-   *  for Docker instead of one selected from .env. */
-  transport?: Transport;
+interface RecoveryPlan {
+  readonly dryRun: boolean;
+  readonly adoptRuntime: boolean;
+  readonly jsonOnly: boolean;
 }
 
-/** The recovery-first entry point: everything the container read genuinely needs,
- *  built without the validated Context the dispatcher would otherwise demand first. Where
- *  the missing fact is OC_DATA_DIR, that Context cannot be constructed at all — dying in
- *  the settings parser before the one command that could fill it runs was the bug. The
- *  file is read here rather than inherited from a Context, so the run merges against the
- *  file as it is on disk, and the facts land in it before any later context is built. */
-export async function recoverEnvBeforeContext(args: string[], options: RecoveryBootstrapOptions = {}): Promise<void> {
-  const { dryRun, adoptRuntime, jsonOnly } = parseRecoveryArgs(args);
+/** The command body. The run needs only a DeploymentScope: the transport selected from the
+ *  .env location settings, the service name, and the file itself — never a Context (with
+ *  OC_DATA_DIR missing, the Context the dispatcher would demand cannot be built at all). */
+export const RECOVER_ENV = commandBody({
+  effect: "change",
+  needs: "deployment",
+  arguments: RECOVER_ENV_ARGUMENTS,
+  async prepare(call, local) {
+    const path = envFile();
+    refuseWithoutEnvFile(await local.readText(path), path);
+    const values = call.values as { "dry-run"?: boolean; "adopt-runtime"?: boolean; json?: boolean };
+    return {
+      dryRun: values["dry-run"] === true,
+      adoptRuntime: values["adopt-runtime"] === true,
+      jsonOnly: values.json === true,
+    } satisfies RecoveryPlan;
+  },
+  async run(scope, plan) {
+    const { dryRun, adoptRuntime, jsonOnly } = plan as RecoveryPlan;
+    const path = envFile();
+    const raw = await readFile(path, "utf8");
+    const env = parseEnv(raw);
 
-  const path = envFile();
-  const raw = await readEnvFile(path);
-  const env = parseEnv(raw);
+    const facts = await runningConnectionFactsWithoutContext({
+      env,
+      transport: await scope.transport(),
+      service: scope.service,
+    });
+    if (facts === undefined) {
+      die(
+        "docker is not running, or its container could not be inspected — the connection " +
+          "facts are recoverable only from a running container, since that is where compose's resolved " +
+          "values live. Start it and try again: ./clawforge up",
+      );
+    }
 
-  const transport = options.transport ?? (await createRecoveryTransport(env));
-  const facts = await runningConnectionFactsWithoutContext({
-    env,
-    transport,
-    service: options.service ?? "app",
-  });
-  if (facts === undefined) {
-    die(
-      "docker is not running, or its container could not be inspected — the connection " +
-        "facts are recoverable only from a running container, since that is where compose's resolved " +
-        "values live. Start it and try again: ./clawforge up",
-    );
-  }
-
-  await mergeRecoveredFacts(facts, path, raw, dryRun, adoptRuntime, jsonOnly);
-}
+    await mergeRecoveredFacts(facts, path, raw, dryRun, adoptRuntime, jsonOnly);
+  },
+});

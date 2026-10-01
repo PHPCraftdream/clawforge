@@ -12,7 +12,9 @@ All notable changes to `@clawforge/framework` will be documented here.
   `--help` note, and an optional "Confirm a destructive action" `confirm` in the MCP schema)
   instead of the flat always-destroys wording. Commands that refine destruction with
   `readOnlyWhen` (all of the framework's own) are unaffected.
-
+* recover-env's MCP argument refusals now read exactly as the console's — the shared
+  argument parser's own words instead of schema-side ones; as before, they land before any
+  contact with the target.
 * `./clawforge list` answers an unknown argument the standard way — the refusal plus a
   pointer to `list --help` — instead of its own bare "unknown argument" line.
 * A set is loaded and validated by one pipeline for the working tree and an artifact alike

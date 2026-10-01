@@ -4,14 +4,9 @@
 // declares its commands. Adding a command to an application must not require touching any
 // file in framework/ — that is the property this module exists to guarantee.
 
-import { reportError, UserError, CommandFailedError, info, maskSecrets } from "../core/io/log.ts";
-import { UnknownArgumentError, preparesEnvironmentFor } from "../core/command/index.ts";
-import { emit, machineWritesCount, stdoutBytesWritten } from "../core/io/output.ts";
-import { createContext } from "../core/context.ts";
-import { recoverEnv, recoverEnvBeforeContext } from "../commands/operate/recover-env/index.ts";
-import { clearRecipesDir } from "../service/recipe.ts";
-import { useApplicationRecipesDir } from "../runtime/deployment.ts";
-import { ensureEnvironment } from "../integration/provision.ts";
+import { reportError, UserError, CommandFailedError, info } from "../core/io/log.ts";
+import { UnknownArgumentError } from "../core/command/index.ts";
+import { executeCommand } from "../core/command/execute.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
 import { knownCommandNames, reportUnknownCommand, renderHelp, controlMcpHelp, type GateCommand } from "../integration/gate.ts";
 import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, helpEntryLine, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
@@ -87,62 +82,16 @@ export async function runApp(
     return 0;
   }
 
-  // Configure this before building the context; set sources still take precedence in recipesDir().
-  useApplicationRecipesDir(app.recipesDir);
-  clearRecipesDir();
-
-  // Recovery repairs the very facts a Context is validated from, so it can't owe its own
-  // dispatch to a built one — with OC_DATA_DIR absent, createContext dies in the settings
-  // parser before recover-env could even start. Its own bootstrap builds only what the
-  // container read needs: transport and project identity (recover-env/bootstrap.ts).
-  // Compared by identity so the declaration stays the single source of truth.
-  if (command.run === recoverEnv) {
-    try {
-      await recoverEnvBeforeContext(args, { service: app.service?.name });
-    } catch (error) {
-      // Same answer as every other command's unknown flag, though recovery parses outside
-      // the command.run try below.
-      if (error instanceof UnknownArgumentError) {
-        reportUnknownArgument(name, error);
-        return 1;
-      }
-      throw error;
-    }
-    return 0;
+  // The one pipeline (parse → confirm → prepare → environment → context → run), shared with
+  // the MCP surface. Only an argument error is reported here; anything else rethrows so
+  // main() reports it — the contract the app-hooks checks rely on.
+  const execution = await executeCommand(app, name, args, { surface: "terminal" });
+  if (execution.error === undefined) return 0;
+  if (execution.error instanceof UnknownArgumentError) {
+    reportUnknownArgument(name, execution.error);
+    return 1;
   }
-
-  // Before the context: it parses .env and builds the runtime around it, so a command
-  // meant to create that file cannot run after it exists. Only a mutating call prepares it.
-  try {
-    if (preparesEnvironmentFor(command, args)) await ensureEnvironment();
-  } catch (error) {
-    if (error instanceof UnknownArgumentError) {
-      reportUnknownArgument(name, error);
-      return 1;
-    }
-    throw error;
-  }
-
-  // Built here, not by the command: an application never constructs a transport itself.
-  const ctx = await createContext({
-    mounts: app.mounts,
-    service: app.service,
-    settings: app.settings,
-    secrets: app.secrets,
-    afterBackup: app.afterBackup,
-    beforeRestore: app.beforeRestore,
-  });
-
-  try {
-    await command.run(ctx, args);
-  } catch (error) {
-    if (error instanceof UnknownArgumentError) {
-      reportUnknownArgument(name, error);
-      return 1;
-    }
-    throw error;
-  }
-  return 0;
+  throw execution.error;
 }
 
 /** The standard answer to a token no declared argument matches: the refusal (already
@@ -151,27 +100,6 @@ export async function runApp(
 export function reportUnknownArgument(commandName: string, error: UnknownArgumentError): void {
   reportError(error);
   info(`run ./clawforge ${commandName} --help for its full argument list`);
-}
-
-/** The one --json failure contract: a command invoked with its OWN declared --json flag that
- *  fails after its arguments parsed still prints a machine-readable answer — an error
- *  document on stdout — so a script's jq never receives empty input. Skipped when the command
- *  already printed a document of its own (status/doctor/upgrade --dry-run report their
- *  failures as JSON) or streamed anything to real stdout, and never for a non-JSON
- *  invocation, whose human-readable reporting is unchanged.
- *
- *  By declaration, not by argv shape: `cli`/`exec`/`host` pass their whole tail to a child,
- *  so a `--json` in there belongs to that child — its own streamed output is the answer,
- *  and no second document may follow it. */
-function reportJsonFailure(app: AppDefinition, argv: string[], error: unknown): void {
-  const command = app.commands[argv[0]];
-  if (command?.arguments?.some((argument) => argument.name === "json" && argument.kind === "flag") !== true) return;
-  const sep = argv.indexOf("--");
-  const scope = sep === -1 ? argv : argv.slice(0, sep);
-  if (!scope.slice(1).includes("--json")) return;
-  if (machineWritesCount() > 0 || stdoutBytesWritten() > 0) return;
-  const message = maskSecrets(error instanceof Error ? error.message : String(error));
-  emit(`${JSON.stringify({ error: { message } }, null, 2)}\n`);
 }
 
 /** Wraps runApp with the error handling every entry point needs, so an application's own
@@ -185,7 +113,6 @@ export async function main(
   try {
     process.exitCode = await runApp(app, argv, gateHelp, gateCommands);
   } catch (error) {
-    reportJsonFailure(app, argv, error);
     reportError(error);
     // A UserError is an expected, explained failure; anything else is a bug worth a trace.
     if (!(error instanceof UserError) && process.env.OC_DEBUG === "1") {

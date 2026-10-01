@@ -3,16 +3,30 @@
 // keeps the tool description and input schema; server.ts re-exports both modules.
 
 import { maskSecrets } from "../../core/io/log.ts";
+import { specOf, specShape } from "../../core/command/index.ts";
+import type { CallFacts } from "../../core/command/effect.ts";
 import type { Declared, StructuredResult } from "./schema.ts";
 
 function isWarning(problem: unknown): boolean {
   return (problem as { severity?: unknown } | null)?.severity === "warning";
 }
 
+/** The envelope's `changed`. With the pipeline's facts: the command's own changedWhen first
+ *  (a legacy command), then `read` → false, else the document's boolean, else true. Without
+ *  them (a direct call), the old declaration-only rule. */
+function changedFact(command: Declared, fields: { changed?: unknown }, args: string[], facts?: CallFacts): boolean {
+  if (facts !== undefined) {
+    if (facts.changed !== undefined) return facts.changed;
+    if (facts.effect === "read") return false;
+    return typeof fields.changed === "boolean" ? fields.changed : true;
+  }
+  return command.changedWhen?.(args) ?? (command.readOnly === true ? false : (typeof fields.changed === "boolean" ? fields.changed : true));
+}
+
 /** Builds the envelope from what a structured command emitted. Returns undefined when the
  *  output is not the single JSON document promised — the text result still stands, so a
  *  broken promise degrades rather than turning a working call into an error. */
-export function structuredResult(command: Declared, output: string, operationId: string, args: string[] = []): StructuredResult | undefined {
+export function structuredResult(command: Declared, output: string, operationId: string, args: string[] = [], facts?: CallFacts): StructuredResult | undefined {
   let payload: unknown;
   try {
     payload = JSON.parse(output);
@@ -31,7 +45,7 @@ export function structuredResult(command: Declared, output: string, operationId:
     operationId: commandOperationId,
     // A read-only command changes nothing by declaration. Anything else defaults to
     // "changed" when unsaid: an unneeded re-check costs less than a skipped one that was needed.
-    changed: command.changedWhen?.(args) ?? (command.readOnly === true ? false : (typeof fields.changed === "boolean" ? fields.changed : true)),
+    changed: changedFact(command, fields, args, facts),
     healthy: typeof fields.healthy === "boolean" ? fields.healthy : undefined,
     problems,
     warnings: problems.filter(isWarning),
@@ -46,10 +60,10 @@ export function structuredResult(command: Declared, output: string, operationId:
  *  returned bare, since the tool declares one outputSchema for all its actions. A text
  *  action's envelope stays silent where a structured one speaks — no healthy, no problems,
  *  no nextActions — a gap can be seen, a guess cannot be trusted. */
-export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = []): StructuredResult {
-  return structuredResult(command, machineOutput ?? output, operationId, args) ?? {
+export function toolEnvelope(command: Declared, output: string, machineOutput: string | undefined, operationId: string, args: string[] = [], facts?: CallFacts): StructuredResult {
+  return structuredResult(command, machineOutput ?? output, operationId, args, facts) ?? {
     operationId,
-    changed: command.changedWhen?.(args) ?? (command.readOnly === true ? false : true),
+    changed: changedFact(command, {}, args, facts),
     problems: [],
     warnings: [],
     nextActions: [],
@@ -93,9 +107,14 @@ export function maskStructuredOutput(output: string, machineOutput: string | und
 
 /** Checks tool arguments against the declaration. The client's schema is a courtesy, not a
  *  guarantee: anything may arrive on this stream, and a command's own parser sees argv, not
- *  types. Returns the problems, empty when the call is acceptable. */
+ *  types. For a spec command only the SHAPE is checked here — unknown property and value
+ *  types; choices, required and value grammars are the parser's, one stage later, so they
+ *  are refused in one voice with the console. Returns the problems, empty when the call is
+ *  acceptable. */
 export function validate(command: Declared, args: Record<string, unknown>): string[] {
   const declared = new Map((command.arguments ?? []).map((argument) => [argument.name, argument]));
+  // specOf keys on the console run function: a gate command's argv-run is never in it.
+  const spec = specOf(command as { readonly run?: unknown });
   const problems: string[] = [];
 
   for (const [name, value] of Object.entries(args)) {
@@ -120,10 +139,12 @@ export function validate(command: Declared, args: Record<string, unknown>): stri
       problems.push(`${name} takes a string`);
       continue;
     }
-    if (argument.choices !== undefined && !argument.choices.includes(value)) {
+    if (spec === undefined && argument.choices !== undefined && !argument.choices.includes(value)) {
       problems.push(`${name} must be one of: ${argument.choices.join(", ")}`);
     }
   }
+
+  if (spec !== undefined) return problems;
 
   for (const argument of declared.values()) {
     if (argument.required !== true) continue;
@@ -158,6 +179,23 @@ export function toArgv(command: Declared, args: Record<string, unknown>): string
 
   if (command.forceOnConfirmation === true && args.confirm === true && declared.some((argument) => argument.name === "force")) {
     if (!named.includes("--force")) named.push("--force");
+  }
+
+  // A spec command's confirmation-set flags ride the confirmation instead of the caller:
+  // the same append forceOnConfirmation does, read back from the action the call selects
+  // (the action word, or the body's default) — never another action's flags.
+  const entry = args.confirm === true ? specOf(command as { readonly run?: unknown }) : undefined;
+  if (entry !== undefined) {
+    const shape = specShape(entry);
+    const action = typeof args.action === "string" && shape.actions?.[args.action] !== undefined
+      ? args.action
+      : shape.defaultAction;
+    const slice = shape.actions === undefined
+      ? shape.arguments
+      : action === undefined ? [] : shape.actions[action]?.arguments;
+    for (const argument of slice ?? []) {
+      if (argument.kind === "flag" && argument.setByConfirm === true && !named.includes(`--${argument.name}`)) named.push(`--${argument.name}`);
+    }
   }
 
   return [...positional, ...named, ...(trailing.length === 0 ? [] : ["--", ...trailing])];

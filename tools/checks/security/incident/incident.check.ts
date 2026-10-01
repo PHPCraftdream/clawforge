@@ -440,4 +440,47 @@ await withDeployment(async (dir) => {
   check("unparseable inspect output is withheld, not written raw", redactInspectEnv("not json tok-123").includes("tok-123"), false);
 }
 
+// --- incident --dry-run: a plan that could not check the target is not a plan -------------------
+// (moved here from the pipeline check: it pins runPhases' own dry-run contract, not the
+// pipeline's staging)
+
+{
+  // contain is not injectable — the real containExposure runs, and a transport whose every
+  // exec throws (the unreachable-target case) makes its tailscale probe fail the phase.
+  const stubOperations = {
+    preserve: async () => ({ phase: "preserve" as const, actions: ["kept"], notes: [], files: [] }),
+    rotate: async () => ({ phase: "rotate" as const, actions: ["rotated"], notes: [] }),
+    audit: async () => ({ phase: "audit" as const, actions: [], notes: [] }),
+    collect: async () => ({ phase: "collect" as const, actions: [], notes: [] }),
+    // audit's security/doctorLint only feed the report; a successful stub needs neither.
+  } as unknown as Parameters<typeof runPhases>[2];
+
+  await withDeployment(async (dir) => {
+    const unreachable: Context["transport"]["exec"] = async () => {
+      throw new Error("ssh:incident-unreachable.invalid: connection refused");
+    };
+    const ctx = stubContext({ transportExec: unreachable });
+    let failure: unknown;
+    try {
+      await runPhases(ctx, { dryRun: true, keepExposure: false, tail: "500" }, stubOperations);
+    } catch (caught) {
+      failure = caught;
+    }
+    checkTrue("incident --dry-run with an unreachable target fails", failure instanceof IncidentPhaseFailure);
+    checkTrue("the failure names the contain phase's transport error", (failure as Error).message.includes("unreachable"));
+    const report = (failure as IncidentPhaseFailure).report;
+    check("the report still reaches the caller", report.phases[0].notes.some((note) => note.includes("contain failed unexpectedly")), true);
+
+    // The control: a real run still proceeds to rotate over the same contain failure.
+    let realRunFailed = false;
+    try {
+      await runPhases(ctx, { dryRun: false, keepExposure: false, tail: "500" }, stubOperations);
+    } catch {
+      realRunFailed = true;
+    }
+    check("a real run still proceeds over a noted contain failure", realRunFailed, false);
+    void dir;
+  });
+}
+
 finish("incident");

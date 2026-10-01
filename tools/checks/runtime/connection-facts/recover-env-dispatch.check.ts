@@ -21,8 +21,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { runApp } from "#framework/entry/cli.ts";
+import { executeCommand } from "#framework/core/command/execute.ts";
+import { callFactsFor } from "#framework/core/command/index.ts";
 import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
-import { recoverEnvBeforeContext } from "#framework/commands/operate/recover-env/index.ts";
 import { inputSchema } from "#framework/integration/mcp/schema.ts";
 import { validate } from "#framework/integration/mcp/call.ts";
 import { useDeployment, deploymentDir, envFile } from "#framework/runtime/deployment.ts";
@@ -30,7 +31,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal, type ExecResult, type Transport } from "#framework/runtime/transport/transport.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import { useLinuxHost } from "#checks/foundation/hygiene/linux-host.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 useLinuxHost();
 
@@ -109,6 +110,7 @@ const recoverDeclaration = operateCommands["recover-env"];
 const recoverApp: AppDefinition = {
   name: "dispatch-fixture",
   description: "dispatcher fixture",
+  service: { name: "gateway" },
   commands: { "recover-env": recoverDeclaration },
 };
 
@@ -159,7 +161,7 @@ try {
   {
     await writeFile(envFile(), seedWithoutDataDir, "utf8");
     const { transport, dockerCalls } = recoveryTransport();
-    const { output, error } = await capture(() => recoverEnvBeforeContext([], { transport, service: "gateway" }));
+    const { output, error } = await capture(() => executeCommand(recoverApp, "recover-env", [], { surface: "terminal", transport }));
     check("the bootstrap run succeeds against a stubbed container", error, "");
     const merged = await readFile(envFile(), "utf8");
     check("the missing OC_DATA_DIR is filled from the container", merged.includes("OC_DATA_DIR=/srv/data"), true);
@@ -194,7 +196,7 @@ try {
   {
     await writeFile(envFile(), seedWithoutDataDir, "utf8");
     const { transport } = recoveryTransport();
-    const { error } = await capture(() => recoverEnvBeforeContext(["--adopt-runtime"], { transport, service: "gateway" }));
+    const { error } = await capture(() => executeCommand(recoverApp, "recover-env", ["--adopt-runtime"], { surface: "terminal", transport }));
     check("the adopt-runtime bootstrap run succeeds", error, "");
     const merged = await readFile(envFile(), "utf8");
     check("a diverged port IS written under --adopt-runtime", merged.includes("OPENCLAW_GATEWAY_PORT=18790"), true);
@@ -212,7 +214,7 @@ try {
   {
     await writeFile(envFile(), seedWithoutDataDir, "utf8");
     const { transport } = recoveryTransport();
-    const { output, error } = await capture(() => recoverEnvBeforeContext(["--dry-run"], { transport, service: "gateway" }));
+    const { output, error } = await capture(() => executeCommand(recoverApp, "recover-env", ["--dry-run"], { surface: "terminal", transport }));
     check("the dry-run bootstrap run succeeds", error, "");
     check("a dry run leaves .env byte-identical", await readFile(envFile(), "utf8"), seedWithoutDataDir);
     check("the dry run names the fact it would fill", output.includes("OC_DATA_DIR=/srv/data"), true);
@@ -230,7 +232,7 @@ try {
         Mounts: [{ Destination: "/home/node/.openclaw", Source: "/srv/live-data/config" }],
       },
     });
-    const { error } = await capture(() => recoverEnvBeforeContext([], { transport, service: "gateway" }));
+    const { error } = await capture(() => executeCommand(recoverApp, "recover-env", [], { surface: "terminal", transport }));
     check("a stopped matching container does not prevent recovery", error, "");
     check("the running container supplies the recovered data directory", (await readFile(envFile(), "utf8")).includes("OC_DATA_DIR=/srv/live-data"), true);
     check("all matching IDs are inspected until a running one is found", dockerCalls.filter((args) => args[0] === "inspect").map((args) => args[3]), ["stopped-id", "running-id"]);
@@ -250,8 +252,9 @@ try {
     check("validate accepts both flags together", validate(recoverDeclaration, { "dry-run": true, "adopt-runtime": true }), []);
     check("validate still rejects an undeclared argument", validate(recoverDeclaration, { "no-such-arg": true }), ["unknown argument: no-such-arg"]);
     check("validate rejects adopt-runtime given a value instead of a flag", validate(recoverDeclaration, { "adopt-runtime": "yes" }), ["adopt-runtime takes true or false"]);
-    check("adopt-runtime alone is not read-only", recoverDeclaration.readOnlyWhen?.(["--adopt-runtime"]), false);
-    check("dry-run alone is still read-only", recoverDeclaration.readOnlyWhen?.(["--dry-run"]), true);
+    check("adopt-runtime alone is not read-only", callFactsFor(recoverDeclaration, ["--adopt-runtime"]).effect === "read", false);
+    check("dry-run alone is still read-only", callFactsFor(recoverDeclaration, ["--dry-run"]).effect, "read");
+    check("a plain call is neither read-only nor destructive", callFactsFor(recoverDeclaration, []).effect, "change");
     check("the command details name the flag's meaning", (recoverDeclaration.details ?? "").includes("--adopt-runtime"), true);
   }
 
@@ -261,13 +264,24 @@ try {
     const moduleUrl = (name: string) => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
     const mcpScript = `
       const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
+      const { commandBody, materializeCommands } = await import(${JSON.stringify(moduleUrl("core/command/index"))});
       const { operateCommands } = await import(${JSON.stringify(moduleUrl("commands/interface/groups/openclawCommands.operate"))});
       const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
       useDeployment(${JSON.stringify(deployDir)});
+      // A spec command with choices, so the MCP refusal comes from the shared parser and
+      // not from the schema's own check.
+      const PICK = commandBody({
+        effect: "change",
+        arguments: [{ name: "action", description: "which one", kind: "positional", required: true, choices: ["a", "b"] }],
+        run: async () => {},
+      });
       await serveMcp({
         name: "recover-fixture",
         description: "MCP fixture",
-        commands: { "recover-env": operateCommands["recover-env"] },
+        commands: {
+          "recover-env": operateCommands["recover-env"],
+          ...materializeCommands({ pick: { summary: "picks", group: "low-level", ...PICK } }),
+        },
       });
     `;
     await writeFile(
@@ -283,7 +297,9 @@ try {
       input:
         `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })}\n` +
         `${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "recover-env", arguments: { "adopt-runtime": true } } })}\n` +
-        `${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "recover-env", arguments: { "no-such": true } } })}\n`,
+        `${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "recover-env", arguments: { "no-such": true } } })}\n` +
+        `${JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "pick", arguments: { action: "zzz" } } })}\n` +
+        `${JSON.stringify({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "pick", arguments: {} } })}\n`,
       timeoutMs: 30000,
     });
     check("the MCP session exits cleanly", mcp.code, 0);
@@ -312,6 +328,53 @@ try {
     const rejected = responses.find((response) => response.id === 3);
     const rejectedText = rejected?.result?.content?.[0]?.text ?? "";
     check("tools/call with an undeclared argument IS still rejected", rejectedText.includes("unknown argument: no-such"), true);
+
+    // A spec command's choices and required refusals come from the parser, in one voice
+    // with the console — and as a bare tool error, without an envelope (the call never ran).
+    interface RpcResult { result?: { isError?: boolean; content?: Array<{ text?: string }>; structuredContent?: unknown } }
+    const badChoice = responses.find((response) => response.id === 4) as (RpcResponse & RpcResult) | undefined;
+    const badChoiceText = badChoice?.result?.content?.[0]?.text ?? "";
+    check("a spec command's bad choice is refused in the parser's own words", badChoiceText, "pick: <action> takes one of a, b, not \"zzz\"");
+    checkTrue("the parser refusal is a tool error", badChoice?.result?.isError === true);
+    check("the parser refusal carries no envelope", badChoice?.result?.structuredContent, undefined);
+    const missing = responses.find((response) => response.id === 5) as (RpcResponse & RpcResult) | undefined;
+    check("a spec command's missing required argument is refused by the parser", missing?.result?.content?.[0]?.text, "pick: pick needs <action>");
+  }
+
+  // --- (3) a throw past the pipeline is still an ordinary masked tool error ---------------
+  //
+  // captureRun runs inside handleAppToolCall's catch: a command whose own declaration
+  // predicate throws while the pipeline reads its facts must answer as a masked isError
+  // tool result — never as a JSON-RPC error that skips the caller's content handling.
+  {
+    const moduleUrl = (name: string) => new URL(`../../../framework/${name}.ts`, import.meta.url).href;
+    const mcpScript = `
+      const { serveMcp } = await import(${JSON.stringify(moduleUrl("integration/mcp/server"))});
+      const { useDeployment } = await import(${JSON.stringify(moduleUrl("runtime/deployment"))});
+      useDeployment(${JSON.stringify(deployDir)});
+      await serveMcp({
+        name: "predicate-fixture",
+        description: "MCP fixture",
+        commands: {
+          jinxed: {
+            summary: "a declaration predicate that explodes",
+            changedWhen: () => { throw new Error("predicate exploded"); },
+            run: async () => {},
+          },
+        },
+      });
+    `;
+    await writeFile(envFile(), ["OC_TARGET_LOCATION=local", `OPENCLAW_GATEWAY_TOKEN=${TOKEN}`, ""].join("\n"), "utf8");
+    const mcp = await spawnLocal(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", mcpScript], {
+      input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "jinxed", arguments: {} } })}\n`,
+      timeoutMs: 30000,
+    });
+    check("the jinxed session exits cleanly", mcp.code, 0);
+    const responses = mcp.stdout.trim().split("\n").filter((line) => line !== "").map((line) => JSON.parse(line) as Record<string, unknown>);
+    check("one reply for the call", responses.length, 1);
+    const reply = responses[0]?.result as { isError?: boolean; content?: Array<{ text?: string }> } | undefined;
+    checkTrue("a throw past the pipeline is a tool error reply, not a JSON-RPC error", reply?.isError === true);
+    checkTrue("the tool error carries the masked failure text", (reply?.content?.[0]?.text ?? "").includes("predicate exploded"));
   }
 } finally {
   if (previous !== undefined) useDeployment(previous);

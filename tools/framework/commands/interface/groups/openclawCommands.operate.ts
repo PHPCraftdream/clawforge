@@ -5,7 +5,7 @@
 import type { AppCommand } from "#src/core/app.ts";
 import { materializeCommands } from "#src/core/command/index.ts";
 
-import { recoverEnv, RECOVER_ENV_ARGUMENTS } from "#src/commands/operate/recover-env/index.ts";
+import { RECOVER_ENV } from "#src/commands/operate/recover-env/index.ts";
 import { expose, exposeActionIsReadOnly, EXPOSE_FLAG_ARGUMENTS } from "#src/commands/operate/expose/index.ts";
 import { watch, watchActionIsReadOnly, WATCH_FLAG_ARGUMENTS } from "#src/commands/operate/watch/index.ts";
 import { incident, INCIDENT_ARGUMENTS } from "#src/commands/operate/incident/index.ts";
@@ -219,7 +219,6 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
   "recover-env": {
     summary: "Repair .env's connection facts from the running instance",
     group: "integrations",
-    run: recoverEnv,
     details:
       "OC_DATA_DIR, OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT and OPENCLAW_IMAGE are plumbing, not " +
       "secrets, and compose resolved them from this same .env at container-creation time, so one " +
@@ -237,7 +236,6 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "the ones both sides carry differently without writing over them; --adopt-runtime is the " +
       "container-authoritative direction that also merges those over the file's existing values.\n" +
       "--dry-run prints what would change and writes nothing.",
-    arguments: RECOVER_ENV_ARGUMENTS,
-    readOnlyWhen: (args) => args.includes("--dry-run"),
+    ...RECOVER_ENV,
   },
 });

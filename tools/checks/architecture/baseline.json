@@ -116,17 +116,17 @@
   },
   "rawArgvPredicates": {
     "comment": "stage 3 (CommandSpec effect): confirmation comes from declared effect, not raw argv",
-    "readOnlyWhen": 17,
+    "readOnlyWhen": 16,
     "changedWhen": 6,
     "requiresConfirmationWhen": 5
   },
   "legacyCommands": {
     "comment": "stage 3 (CommandSpec): openclawCommands entries whose specOf is undefined — each migration turns one into a declared body",
-    "total": 41
+    "total": 40
   },
   "unsummarizedDescriptions": {
     "comment": "stage 3 (CommandArgument summary): MCP stops shortening heuristically when all summaries are declared; arguments of the derived `arguments` view with a description longer than 60 and no summary",
-    "total": 37
+    "total": 36
   },
   "declaredArguments": {
     "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",
@@ -154,7 +154,7 @@
       "tools/checks/foundation/cli/help-groups.check.ts": 6,
       "tools/checks/foundation/cli/host.check.ts": 22,
       "tools/checks/foundation/core/archive.check.ts": 1,
-      "tools/checks/foundation/core/command/pipeline/execute.check.ts": 4,
+      "tools/checks/foundation/core/command/pipeline/execute.check.ts": 3,
       "tools/checks/foundation/core/command/spec/parse.check.ts": 3,
       "tools/checks/foundation/core/command/spec/view.check.ts": 14,
       "tools/checks/foundation/core/env.check.ts": 1,
@@ -191,7 +191,7 @@
       "tools/checks/release/release/system-install.check.ts": 32,
       "tools/checks/runtime/connection-facts/bootstrap-image-pin.check.ts": 3,
       "tools/checks/runtime/connection-facts/recover-env-command.check.ts": 10,
-      "tools/checks/runtime/connection-facts/recover-env-dispatch.check.ts": 7,
+      "tools/checks/runtime/connection-facts/recover-env-dispatch.check.ts": 8,
       "tools/checks/runtime/connection-facts/upgrade/pin-and-digest.check.ts": 9,
       "tools/checks/runtime/connection-facts/upgrade/upgrade.check.ts": 6,
       "tools/checks/runtime/convergence/apply/apply-recovery.check.ts": 8,
@@ -282,7 +282,7 @@
       "tools/checks/security/expose/ssh.check.ts": 14,
       "tools/checks/security/expose/status.check.ts": 16,
       "tools/checks/security/expose/tailscale.check.ts": 9,
-      "tools/checks/security/incident/incident.check.ts": 25,
+      "tools/checks/security/incident/incident.check.ts": 26,
       "tools/checks/security/incident/preserve-failure.check.ts": 3,
       "tools/checks/sets/artifact/set-build/refusals.check.ts": 5,
       "tools/checks/sets/artifact/set-evidence.check.ts": 2,
@@ -293,6 +293,6 @@
       "tools/checks/sets/lifecycle/set-validate.check.ts": 22,
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 857
+    "total": 858
   }
 }

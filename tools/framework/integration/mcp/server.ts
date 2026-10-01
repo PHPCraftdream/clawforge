@@ -19,17 +19,13 @@
 import { createInterface } from "node:readline";
 import { mcpCommands, type AppCommand, type AppDefinition } from "../../core/app.ts";
 import { renderHelp, type GateCommand } from "../gate.ts";
-import { createContext } from "../../core/context.ts";
-import { clearRecipesDir } from "../../service/recipe.ts";
-import { useApplicationRecipesDir } from "../../runtime/deployment.ts";
-import { ensureEnvironment } from "../provision.ts";
-import { preparesEnvironmentFor } from "../../core/command/index.ts";
+import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import { maskSecrets, UserError } from "../../core/io/log.ts";
 import { localizeHints } from "../../core/io/invocation/index.ts";
 import { withOutputSink } from "../../core/io/output.ts";
+import { executeCommand, type Execution } from "../../core/command/execute.ts";
 import { toolDescription, inputSchema, STRUCTURED_OUTPUT_SCHEMA, type Declared } from "./schema.ts";
 import { maskStructuredOutput, maskStructuredResult, toolEnvelope, validate, toArgv } from "./call.ts";
-import { recoverEnv, recoverEnvBeforeContext } from "../../commands/operate/recover-env/index.ts";
 import { frameworkVersion } from "../../commands/management/lock.ts";
 
 export * from "./schema.ts";
@@ -69,15 +65,18 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-/** Runs a command with its output captured, so the caller sees it as the tool result and
- *  stdout stays a pure JSON-RPC stream. A failure returns rather than throws, carrying what
- *  the command had already said — losing those lines would leave a tool call with only the
- *  last sentence of a story it could otherwise tell in full. */
+/** Runs a command through the shared pipeline with its output captured, so the caller sees
+ *  it as the tool result and stdout stays a pure JSON-RPC stream. A failure returns rather
+ *  than throws, carrying what the command had already said — losing those lines would leave
+ *  a tool call with only the last sentence of a story it could otherwise tell in full. The
+ *  Execution rides along: a parse/confirm refusal is answered like a validate refusal, and
+ *  the facts drive the envelope. */
 async function captureRun(
   app: AppDefinition,
-  command: AppCommand,
+  name: string,
   argv: string[],
-): Promise<{ output: string; machineOutput?: string; failure?: string }> {
+  confirmed: boolean,
+): Promise<{ output: string; machineOutput?: string; failure?: string; execution: Execution }> {
   const chunks: string[] = [];
   const emitted: string[] = [];
 
@@ -86,37 +85,15 @@ async function captureRun(
       chunks.push(chunk);
     },
     async () => {
-      try {
-        // Same order as the console path: environment completed before the context is
-        // built, deployment's own recipes in scope. Gated by preparesEnvironmentFor the
-        // same way cli.ts's console path is.
-        useApplicationRecipesDir(app.recipesDir);
-        clearRecipesDir();
-        if (preparesEnvironmentFor(command, argv)) await ensureEnvironment();
-
-        // recover-env repairs OC_DATA_DIR itself, so its MCP path must not build the
-        // Context that would reject that missing value before the command can run.
-        if (command.run === recoverEnv) {
-          await recoverEnvBeforeContext(argv, { service: app.service?.name });
-          return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined };
-        }
-
-        const ctx = await createContext({
-          mounts: app.mounts,
-          service: app.service,
-          settings: app.settings,
-          secrets: app.secrets,
-          afterBackup: app.afterBackup,
-          beforeRestore: app.beforeRestore,
-        });
-        await command.run(ctx, argv);
-        return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined };
-      } catch (error) {
-        const failure = maskSecrets(error instanceof UserError || error instanceof Error
-          ? localizeHints(error.message)
-          : String(error));
-        return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined, failure };
+      const execution = await executeCommand(app, name, argv, { surface: "mcp", confirmed });
+      if (execution.error === undefined) {
+        return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined, execution };
       }
+      const error = execution.error;
+      const failure = maskSecrets(error instanceof UserError || error instanceof Error
+        ? localizeHints(error.message)
+        : String(error));
+      return { output: chunks.join("").trim(), machineOutput: emitted.join("").trim() || undefined, failure, execution };
     },
     (chunk) => { emitted.push(chunk); },
   );
@@ -290,26 +267,28 @@ async function handleAppToolCall(
   }
 
   const argv = toArgv(command, args);
-  const readOnly = command.readOnly === true || command.readOnlyWhen?.(argv) === true;
-  const requiresConfirmation = command.requiresConfirmationWhen?.(argv) ?? !readOnly;
-  if (command.destructive === true && requiresConfirmation && args.confirm !== true) {
-    reply(id, {
-      isError: true,
-      content: [{ type: "text", text: maskSecrets(`${name} replaces or destroys state — pass confirm: true`) }],
-    });
-    return;
-  }
-
   try {
-    const { output, machineOutput, failure } = await captureRun(app, command, argv);
-    const effectiveCommand = { ...command, readOnly };
+    const confirmed = args.confirm === true;
+    const { output, machineOutput, failure, execution } = await captureRun(app, name, argv, confirmed);
+
+    // A parse or confirmation refusal answers like a validate refusal: a bare tool error with
+    // the parser's (or confirmation phrase's) own text, no envelope — the call never ran.
+    if (execution.error !== undefined && (execution.stage === "parse" || execution.stage === "confirm")) {
+      const message = execution.error instanceof ConfirmationRequiredError
+        ? execution.error.message
+        : `${name}: ${(execution.error as Error).message}`;
+      reply(id, { isError: true, content: [{ type: "text", text: maskSecrets(message) }] });
+      return;
+    }
+
     // Built from the output alone, never output plus failure text: a command that reports
     // findings and then fails on them (doctor does) still emitted a valid document, and
     // that is what the caller needs most in exactly that case. A structured command wraps
     // EVERY action's output in its declared envelope — text included — so the schema stays
-    // true of each response rather than of the actions someone remembered to list.
+    // true of each response rather than of the actions someone remembered to list. The
+    // pipeline's facts (effect, changedWhen) drive `changed`.
     const structured = command.structured === true
-      ? toolEnvelope(effectiveCommand, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv)
+      ? toolEnvelope(command, output, machineOutput, `${name}-${Date.now().toString(36)}`, argv, execution.facts)
       : undefined;
     // Redaction is not an error-path courtesy: a successful diagnostic prints the same
     // logs, hook output and machine JSON a failure would have, so registered values are
@@ -344,9 +323,9 @@ async function handleAppToolCall(
     });
   } catch (error) {
     // Left for what captureRun cannot catch: a failure while building the sink itself.
-    const message = maskSecrets(error instanceof UserError || error instanceof Error
-      ? localizeHints(error.message)
-      : String(error));
+    const message = maskSecrets(localizeHints(error instanceof UserError || error instanceof Error
+      ? error.message
+      : String(error)));
     reply(id, { isError: true, content: [{ type: "text", text: message }] });
   }
 }

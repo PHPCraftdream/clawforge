@@ -6,6 +6,9 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* `./clawforge list` answers an unknown argument the standard way — the refusal plus a
+  pointer to `list --help` — instead of its own bare "unknown argument" line.
+
 * Deployments hand the invocation between processes as versioned JSON in `CLAWFORGE_INVOCATION`:
   the committed `./clawforge` shim `init` and `new-app` write, and the monorepo MCP launcher,
   now set it — alongside `CLAWFORGE_INVOKED_AS`, which they keep exporting so the shim and

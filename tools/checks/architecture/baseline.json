@@ -75,7 +75,7 @@
       "tools/framework/core/io/help-render.ts": 4,
       "tools/framework/core/io/invocation/index.ts": 4,
       "tools/framework/core/io/log.ts": 3,
-      "tools/framework/entry/bin.ts": 5,
+      "tools/framework/entry/bin.ts": 2,
       "tools/framework/entry/cli.ts": 3,
       "tools/framework/entry/delegate.ts": 1,
       "tools/framework/entry/root.ts": 2,
@@ -99,9 +99,11 @@
       "tools/framework/service/openclaw-cli.ts": 2,
       "tools/framework/service/operations.ts": 3,
       "tools/framework/set/artifacts/model.ts": 1,
-      "tools/framework/set/ownership/validate.ts": 4
+      "tools/framework/set/ownership/validate.ts": 4,
+      "tools/framework/entry/resolve.ts": 3,
+      "tools/framework/entry/checkout-gate.ts": 7
     },
-    "total": 458
+    "total": 465
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
@@ -127,9 +129,10 @@
       "tools/framework/commands/lifecycle/bootstrap/index.ts": 1,
       "tools/framework/commands/lifecycle/instance/upgrade.ts": 2,
       "tools/framework/commands/operate/recover-env/facts.ts": 1,
-      "tools/framework/commands/sets/set-manifest.ts": 2
+      "tools/framework/commands/sets/set-manifest.ts": 2,
+      "tools/framework/entry/checkout-gate.ts": 1
     },
-    "total": 10
+    "total": 11
   },
   "prosePins": {
     "comment": "stage 5 + cross-cutting (I9): checks assert structure, prose lives in goldens",

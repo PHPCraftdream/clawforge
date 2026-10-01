@@ -19,6 +19,8 @@ export type CompletionShell = "bash" | "zsh" | "pwsh";
 
 export const COMPLETION_SHELLS: readonly CompletionShell[] = ["bash", "zsh", "pwsh"];
 
+export const COMPLETION_COMMAND_NAME = "completion";
+
 export const COMPLETION_ARGUMENTS: CommandArgument[] = [
   { name: "shell", description: "bash, zsh or pwsh", kind: "positional", required: true, choices: COMPLETION_SHELLS },
 ];
@@ -436,7 +438,7 @@ export function renderCompletion(shell: CompletionShell, commands: readonly Comm
  *  selector (the monorepo gate does; the installed single-deployment one doesn't). */
 export function makeCompletionGateCommand(siblingGateCommands: readonly GateCommand[], appFlag: boolean): GateCommand {
   return {
-    name: "completion",
+    name: COMPLETION_COMMAND_NAME,
     summary: "Print a shell completion script (bash, zsh or pwsh) to stdout",
     details:
       "Generated from the live command declarations — names, flags, and a multi-action " +

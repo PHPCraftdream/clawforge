@@ -11,26 +11,28 @@
 // strip-types flag explicit (re-executing this file, see below) rather than in the
 // shebang, since busybox `env` has no -S — on Alpine, the common Node base image, the
 // npm-linked bin would fail before a single line of this ran.
+//
+// Where the deployment is, whether init may write here and which framework copy runs are
+// one pure decision (entry/resolve.ts); this file only performs its side effects.
 
 import { access } from "node:fs/promises";
-import { readdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { main } from "./cli.ts";
-import { runGateCommand, gateHelpLines, helpWithoutDeployment, checkoutSubfolderReport, type GateCommand } from "../integration/gate.ts";
+import { runGateCommand, gateHelpLines, helpWithoutDeployment, type GateCommand } from "../integration/gate.ts";
 import { info, reportError, reportErrorVerbatim } from "../core/io/log.ts";
-import { INVOCATION_ENV, cli, invocation, invocationPrefix, serializeInvocation, setInvocation, takeInvocationFromEnv } from "../core/io/invocation/index.ts";
+import { INVOCATION_ENV, invocation, serializeInvocation, setInvocation, takeInvocationFromEnv } from "../core/io/invocation/index.ts";
 import { useDeployment } from "../runtime/deployment.ts";
-import { safeName } from "../core/values/names.ts";
 import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";
 import { renderFullCommandHelp } from "../core/io/help-render.ts";
-import { normalizeVersionAlias, makeVersionGateCommand } from "../integration/version.ts";
+import { makeVersionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
-import { delegateToOwnFramework, findCheckoutRoot, importsCheckoutSources, refuseStrayCheckoutApp, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
-import { defaultInvocation, findAppRoot } from "./root.ts";
+import { delegateToOwnFramework, refuseStrayCheckoutApp, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
+import { defaultInvocation } from "./root.ts";
+import { missingAppDecision, nodeFs, resolveInstalledEntry } from "./resolve.ts";
 import type { AppDefinition } from "../core/app.ts";
 
 // First, before anything can spawn: the flag covers this hand-over only, not descendants.
@@ -39,59 +41,26 @@ const handedOver = takeDelegationFlag();
 const handed = takeInvocationFromEnv();
 setInvocation(handed ?? { program: "clawforge", mode: "installed", audience: "terminal" });
 const rawArgv = process.argv.slice(2);
-const scheduled = rawArgv[0] === "--project-root";
-if (scheduled && (rawArgv[1] === undefined || !isAbsolute(rawArgv[1]))) {
-  reportError("--project-root requires an absolute directory");
-  process.exit(1);
-}
-const argv = normalizeVersionAlias(scheduled ? rawArgv.slice(2) : rawArgv);
 
-// Without --project-root the deployment is the nearest app.ts at or above the cwd. `init` is
-// the exception: it always initialises the cwd itself, and refuses under an existing deployment.
-const cwd = process.cwd();
-const initializing = argv[0] === "init" && !argv.includes("--help") && !argv.includes("-h");
-const ancestor = scheduled ? undefined : findAppRoot(cwd);
-// `init --local` writes nothing, so from a subfolder it only prints the editor-types line.
-const localTypesOnly = initializing && argv.includes("--local") && ancestor !== undefined;
-if (initializing && !scheduled && ancestor !== undefined && ancestor !== cwd && !localTypesOnly) {
-  reportError(`${ancestor} already holds app.ts — this directory is inside that deployment; init here would nest a second one`);
-  process.exit(1);
+const entry = resolveInstalledEntry({ cwd: process.cwd(), rawArgv, platform: process.platform, fs: nodeFs });
+switch (entry.kind) {
+  case "refuse": {
+    for (const line of entry.lines) reportError(line);
+    process.exit(1);
+  }
+  case "refuse-verbatim": {
+    for (const line of entry.lines) reportErrorVerbatim(line);
+    process.exit(1);
+  }
+  case "checkout-types-note": {
+    info(entry.line);
+    process.exit(0);
+  }
 }
-// A checkout deployment reads the framework from the checkout's sources: nothing to install.
-if (localTypesOnly && ancestor !== undefined && importsCheckoutSources(ancestor)) {
-  info("editor types: this deployment imports the framework from its ClawForge checkout, so they already resolve there — nothing to install (npm ci in the checkout root is enough)");
-  process.exit(0);
-}
-const checkout = scheduled ? undefined : findCheckoutRoot(cwd);
-if (initializing && ancestor === undefined && checkout !== undefined) {
-  // new-app only takes over an empty apps/<name> directly under the checkout — and only a
-  // name new-app would accept; hidden or invalid names get the plain advice instead.
-  const reusable =
-    readdirSync(cwd).length === 0 &&
-    sameDirectory(dirname(cwd), resolve(checkout, "apps")) &&
-    (() => {
-      try {
-        safeName("deployment", basename(cwd));
-        return true;
-      } catch {
-        return false;
-      }
-    })();
-  // Verbatim: the bash form must stay `./clawforge`, not be localized to this invocation.
-  reportErrorVerbatim(
-    `${checkout} is a ClawForge checkout — init writes an installed-style deployment (its own committed ` +
-      `clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one ` +
-      `is new-app under apps/. From the checkout root run: ${cli("new-app <name>")} (in bash also ./clawforge new-app <name>)` +
-      (reusable ? `; new-app ${basename(cwd)} takes over this empty directory, or remove it` : ""),
-  );
-  process.exit(1);
-}
-function sameDirectory(a: string, b: string): boolean {
-  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
-}
-const appRoot = scheduled ? resolve(rawArgv[1]) : initializing ? cwd : (ancestor ?? cwd);
-// A hand-over target may predate the walk, so the found root is passed explicitly.
-const launchArgv = scheduled || appRoot === cwd ? rawArgv : ["--project-root", appRoot, ...rawArgv];
+const { appRoot, localTypesOnly, ancestor, checkout } = entry;
+// Mutable copies: the executors below take string[].
+const argv = [...entry.argv];
+const launchArgv = [...entry.launchArgv];
 
 if (handed === undefined) setInvocation({ ...(await defaultInvocation(appRoot)), audience: "terminal" });
 
@@ -116,7 +85,7 @@ const gateCommands: GateCommand[] = [
       "`init --local` in an already initialised directory only prints the editor-types npm line and writes nothing.",
     arguments: INIT_ARGUMENTS,
     run: async (args) => {
-      if (localTypesOnly && ancestor !== cwd) {
+      if (localTypesOnly && ancestor !== appRoot) {
         for (const line of await localTypesLines()) info(line);
         return 0;
       }
@@ -139,26 +108,35 @@ const appFile = resolve(appRoot, "app.ts");
 try {
   await access(appFile);
 } catch {
-  const subfolder = checkout !== undefined ? checkoutSubfolderReport(argv[0] ?? "", checkout) : undefined;
-  if (subfolder !== undefined) {
-    reportError(`no app.ts in ${appRoot}`);
-    for (const line of subfolder) reportErrorVerbatim(line);
+  const missing = missingAppDecision({
+    appRoot,
+    argv,
+    checkout,
+    gateCommandNames: gateCommands.map((command) => command.name),
+    deploymentCommands: Object.keys(openclawCommands),
+  });
+  if (missing.kind === "subfolder-report") {
+    reportError(missing.headline);
+    for (const line of missing.verbatim) reportErrorVerbatim(line);
     process.exit(1);
   }
-  // Help for a deployment command answers without a deployment, from the built-in
-  // declarations — the same way the checkout root's gate answers (R32-09).
-  const helpExit = helpWithoutDeployment(gateCommands, argv, {
-    deploymentCommands: Object.keys(openclawCommands),
-    checkout,
-    deploymentHelp: (name) => {
-      const declared = openclawCommands[name];
-      if (declared !== undefined) renderFullCommandHelp(name, declared);
-    },
-  });
-  if (helpExit !== undefined) process.exit(helpExit);
-  reportError(`no app.ts in ${appRoot}`);
-  if (checkout !== undefined) reportErrorVerbatim(`this is a ClawForge checkout (${checkout}) — run ${invocationPrefix()} from its root (in bash also ./clawforge)`);
-  else reportError(`this directory has not been initialised as an OpenClaw deployment yet — run: ${cli("init")}`);
+  if (missing.kind === "help") {
+    // Help for a deployment command answers without a deployment, from the built-in
+    // declarations — the same way the checkout root's gate answers (R32-09).
+    const helpExit = helpWithoutDeployment(gateCommands, argv, {
+      deploymentCommands: Object.keys(openclawCommands),
+      checkout,
+      deploymentHelp: (name) => {
+        const declared = openclawCommands[name];
+        if (declared !== undefined) renderFullCommandHelp(name, declared);
+      },
+    });
+    if (helpExit !== undefined) process.exit(helpExit);
+  }
+  const { headline, plain, verbatim } = missing.kind === "help" ? missing.fallback : missing;
+  reportError(headline);
+  for (const line of plain) reportError(line);
+  for (const line of verbatim) reportErrorVerbatim(line);
   process.exit(1);
 }
 

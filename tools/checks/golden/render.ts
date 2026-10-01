@@ -19,13 +19,13 @@
 // stable across machines. A developer whose apps/ already holds that name gets a loud
 // createApp refusal rather than a silent snapshot.
 //
-// Known machine dependence, recorded instead of papered over: the checkout gate's own
-// declarations (tools/clawforge.ts) dispatch on import and are not importable, so gate
-// command help, completion scripts, tools/list and the top-level help are rendered by
-// spawning the real gate script as a subprocess (the same path mcp-mirror uses). Surfaces
-// reached only past deployment resolution would depend on the developer's apps/ — those
-// are rendered in-process from the importable declarations through the same renderers the
-// entries call.
+// Known machine dependence, recorded instead of papered over: the checkout gate's top-level
+// help, MCP tools/list and the completion scripts are rendered by spawning the real gate
+// script as a subprocess (the same path mcp-mirror uses). The gate's own declarations are
+// importable since entry/checkout-gate.ts (no side effects at import), so the golden name
+// lists come from there. Surfaces reached only past deployment resolution would depend on
+// the developer's apps/ — those are rendered in-process from the importable declarations
+// through the same renderers the entries call.
 
 import { reportError, reportErrorVerbatim } from "#framework/core/io/log.ts";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
@@ -35,10 +35,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { COMPLETION_SHELLS } from "#framework/integration/completion.ts";
+import { COMPLETION_COMMAND_NAME, COMPLETION_SHELLS } from "#framework/integration/completion.ts";
+import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { checkoutSubfolderReport, missingDeploymentReport, reportUnknownCommand } from "#framework/integration/gate.ts";
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
+import { VERSION_COMMAND_NAME } from "#framework/integration/version.ts";
 import { renderEntryMatrix } from "./matrix.ts";
 import { runApp } from "#framework/entry/cli.ts";
 import { renderFullCommandHelp } from "#framework/core/io/help-render.ts";
@@ -50,6 +52,11 @@ import { runProcess } from "#checks/kit/spawn.ts";
 const GATE_SCRIPT = resolve(monorepoRoot, "tools", "clawforge.ts");
 const BIN_SCRIPT = resolve(monorepoRoot, "tools", "framework", "entry", "bin.ts");
 const FIXTURE_APP = "golden-fixture";
+
+// The gate surfaces that list commands agree on one list: the declared checkout commands
+// (entry/checkout-gate.ts) plus the two wired in tools/clawforge.ts.
+const CHECKOUT_GATE_HELP_ORDER = checkoutGateCommands.map((command) => command.name);
+const CHECKOUT_GATE_SURFACE_ORDER = [...CHECKOUT_GATE_HELP_ORDER, VERSION_COMMAND_NAME, COMPLETION_COMMAND_NAME];
 
 /** Invocations the refusal matrix is rendered under, in the order they appear in refusals.txt. */
 const INVOCATIONS: readonly [string, Invocation][] = [
@@ -151,11 +158,12 @@ async function refusals(): Promise<string> {
   };
 
   // The candidate lists mirror the entries: tools/clawforge.ts's baseCommandNames and
-  // bin.ts's helpWithoutDeployment candidates. The gate command names are hand-listed
-  // (the gate script cannot be imported); the ratchet checks own keeping that honest.
+  // bin.ts's helpWithoutDeployment candidates. The gate command names come from the
+  // declarations module (entry/checkout-gate.ts), not a hand list.
   const checkoutCandidates = [
     ...Object.keys(openclawCommands),
-    "check", "new-app", "remove-app", "list", "version", "completion", "help", "control-mcp",
+    ...CHECKOUT_GATE_SURFACE_ORDER,
+    "help", "control-mcp",
   ];
   const unknownCommand = () => reportUnknownCommand("frobnicate", checkoutCandidates);
   parts.push(await underEveryInvocation("unknown command: frobnicate", unknownCommand));
@@ -171,6 +179,12 @@ async function refusals(): Promise<string> {
     }
   };
   parts.push(await underEveryInvocation("unknown argument: status --bogus", unknownArgument));
+
+  const listCommand = checkoutGateCommands.find((command) => command.name === "list");
+  const unknownListArgument = async () => {
+    await listCommand?.run(["--bogus"]);
+  };
+  parts.push(await underEveryInvocation("unknown argument: list --bogus", unknownListArgument));
 
   const genericApp = {
     name: "clawforge",
@@ -215,7 +229,7 @@ export async function renderGolden(): Promise<Record<string, string>> {
     // included) with the scratch deployment selected, and each gate command's --help.
     const topHelp = await runGate(GATE_SCRIPT, ["help"], { env: fixtureEnv() });
     const checkoutParts = [section("./clawforge help", topHelp.stderr + topHelp.stdout)];
-    for (const gateCommand of ["check", "new-app", "remove-app", "list", "version", "completion"]) {
+    for (const gateCommand of CHECKOUT_GATE_SURFACE_ORDER) {
       const help = await runGate(GATE_SCRIPT, [gateCommand, "--help"], { env: fixtureEnv() });
       checkoutParts.push(section(`./clawforge ${gateCommand} --help`, help.stderr + help.stdout));
     }

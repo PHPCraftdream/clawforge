@@ -5,11 +5,14 @@
 // wording is pinned by the entry matrix under tools/checks/golden/.
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { isWithin } from "../core/paths.ts";
 import { safeName } from "../core/values/names.ts";
 import type { InvocationApp } from "../core/io/invocation/index.ts";
+import { cli, invocationPrefix } from "../core/io/invocation/index.ts";
+import { normalizeVersionAlias } from "../integration/version.ts";
 import {
+  checkoutSubfolderReport,
   isDeploymentHelpRequest,
   misplacedAppFlag,
   missingDeploymentReport,
@@ -307,4 +310,152 @@ export function strayCheckoutApp(input: StrayInput): { readonly checkout: string
   const checkout = findCheckoutRootIn(appRoot, fs);
   if (checkout === undefined) return undefined;
   return isWithin(fs.realpath(checkout), fs.realpath(self)) ? undefined : { checkout };
+}
+
+// --- the installed entry: placement decisions ----------------------------------------------------
+
+export interface InstalledEntryInput {
+  readonly cwd: string;
+  /** process.argv.slice(2) as it arrived — `--project-root` is decided before anything else. */
+  readonly rawArgv: readonly string[];
+  readonly platform: NodeJS.Platform;
+  readonly fs: FsProbe;
+}
+
+export type InstalledEntryDecision =
+  /** reportError lines: the --project-root refusal and init nesting inside a deployment. */
+  | { readonly kind: "refuse"; readonly lines: readonly string[] }
+  /** reportErrorVerbatim: init inside a ClawForge checkout — the bash spelling must stay. */
+  | { readonly kind: "refuse-verbatim"; readonly lines: readonly string[] }
+  /** info + exit 0: `init --local` whose deployment already imports the checkout's sources. */
+  | { readonly kind: "checkout-types-note"; readonly line: string }
+  | {
+      readonly kind: "run";
+      readonly appRoot: string;
+      /** argv with the version aliases normalised and --project-root consumed. */
+      readonly argv: readonly string[];
+      /** The re-exec argv: as typed, or with the found app root passed explicitly. */
+      readonly launchArgv: readonly string[];
+      readonly initializing: boolean;
+      /** `init --local` in an already initialised directory: prints the editor-types line only. */
+      readonly localTypesOnly: boolean;
+      /** The deployment found at or above the cwd, when the cwd is not itself one. */
+      readonly ancestor: string | undefined;
+      /** The ClawForge checkout at or above the cwd, when the directory is in one. */
+      readonly checkout: string | undefined;
+    };
+
+function sameDirectory(platform: NodeJS.Platform, a: string, b: string): boolean {
+  return platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+/** The installed entry's placement decisions (plan stage 2, item 2 — what bin.ts used to
+ *  decide inline): `--project-root <abs>`, where init may write, which directory is the
+ *  app root, and the argv a re-exec needs. Pure: same fs-probe discipline as the gate. */
+export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntryDecision {
+  const { cwd, rawArgv, platform, fs } = input;
+
+  const scheduled = rawArgv[0] === "--project-root";
+  if (scheduled && (rawArgv[1] === undefined || !isAbsolute(rawArgv[1]))) {
+    return { kind: "refuse", lines: ["--project-root requires an absolute directory"] };
+  }
+  const argv = normalizeVersionAlias(scheduled ? rawArgv.slice(2) : [...rawArgv]);
+  // The entries pass an already-resolved cwd; resolving again keeps the comparisons below
+  // spelling-independent (the matrix's fake paths are relative to a fake root).
+  const here = resolve(cwd);
+
+  // Without --project-root the deployment is the nearest app.ts at or above the cwd. `init` is
+  // the exception: it always initialises the cwd itself, and refuses under an existing deployment.
+  const initializing = argv[0] === "init" && !argv.includes("--help") && !argv.includes("-h");
+  const ancestor = scheduled ? undefined : findAppRootIn(cwd, fs);
+  // `init --local` writes nothing, so from a subfolder it only prints the editor-types line.
+  const localTypesOnly = initializing && argv.includes("--local") && ancestor !== undefined;
+  if (initializing && !scheduled && ancestor !== undefined && ancestor !== here && !localTypesOnly) {
+    return { kind: "refuse", lines: [`${ancestor} already holds app.ts — this directory is inside that deployment; init here would nest a second one`] };
+  }
+  // A checkout deployment reads the framework from the checkout's sources: nothing to install.
+  if (localTypesOnly && ancestor !== undefined && importsCheckoutSourcesIn(ancestor, fs)) {
+    return { kind: "checkout-types-note", line: "editor types: this deployment imports the framework from its ClawForge checkout, so they already resolve there — nothing to install (npm ci in the checkout root is enough)" };
+  }
+  const checkout = scheduled ? undefined : findCheckoutRootIn(cwd, fs);
+  if (initializing && ancestor === undefined && checkout !== undefined) {
+    // new-app only takes over an empty apps/<name> directly under the checkout — and only a
+    // name new-app would accept; hidden or invalid names get the plain advice instead.
+    const reusable =
+      fs.readdir(cwd).length === 0 &&
+      // Both sides resolved, so the comparison does not depend on how the caller spelled cwd.
+      sameDirectory(platform, dirname(here), resolve(checkout, "apps")) &&
+      isValidDeploymentName(basename(here));
+    // Verbatim: the bash form must stay `./clawforge`, not be localized to this invocation.
+    return {
+      kind: "refuse-verbatim",
+      lines: [
+        `${checkout} is a ClawForge checkout — init writes an installed-style deployment (its own committed ` +
+          `clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one ` +
+          `is new-app under apps/. From the checkout root run: ${cli("new-app <name>")} (in bash also ./clawforge new-app <name>)` +
+          (reusable ? `; new-app ${basename(cwd)} takes over this empty directory, or remove it` : ""),
+      ],
+    };
+  }
+  const appRoot = scheduled ? resolve(rawArgv[1]) : initializing ? here : (ancestor ?? here);
+  // A hand-over target may predate the walk, so the found root is passed explicitly.
+  const launchArgv = scheduled || appRoot === here ? [...rawArgv] : ["--project-root", appRoot, ...rawArgv];
+  return { kind: "run", appRoot, argv, launchArgv, initializing, localTypesOnly, ancestor, checkout };
+}
+
+function isValidDeploymentName(name: string): boolean {
+  try {
+    safeName("deployment", name);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The "no app.ts here" branches of the installed entry, as data. The executor checks
+ *  app.ts, then renders this decision: a checkout-subfolder report, the deployment-less
+ *  help (which always exits), or the not-initialised refusal — in that order, as today. */
+export interface MissingAppInput {
+  readonly appRoot: string;
+  readonly argv: readonly string[];
+  readonly checkout: string | undefined;
+  /** The installed gate's own commands (init, version, completion). */
+  readonly gateCommandNames: readonly string[];
+  readonly deploymentCommands: readonly string[];
+}
+
+interface NotInitialised {
+  readonly headline: string;
+  readonly plain: readonly string[];
+  readonly verbatim: readonly string[];
+}
+
+export type MissingAppDecision =
+  | { readonly kind: "subfolder-report"; readonly headline: string; readonly verbatim: readonly string[] }
+  /** helpWithoutDeployment answers; `fallback` renders when it declines. */
+  | { readonly kind: "help"; readonly fallback: NotInitialised }
+  | ({ readonly kind: "not-initialised" } & NotInitialised);
+
+export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
+  const { appRoot, argv, checkout, gateCommandNames, deploymentCommands } = input;
+  const subfolder = checkout !== undefined ? checkoutSubfolderReport(argv[0] ?? "", checkout) : undefined;
+  if (subfolder !== undefined) {
+    return { kind: "subfolder-report", headline: `no app.ts in ${appRoot}`, verbatim: subfolder };
+  }
+  const refusal: NotInitialised = {
+    headline: `no app.ts in ${appRoot}`,
+    plain: checkout === undefined ? [`this directory has not been initialised as an OpenClaw deployment yet — run: ${cli("init")}`] : [],
+    verbatim: checkout === undefined ? [] : [`this is a ClawForge checkout (${checkout}) — run ${invocationPrefix()} from its root (in bash also ./clawforge)`],
+  };
+  const first = argv[0];
+  const offered = checkout === undefined ? gateCommandNames : gateCommandNames.filter((name) => name !== "init");
+  const candidates = [...deploymentCommands, ...offered, "help"];
+  // helpWithoutDeployment declines only an option, control-mcp or a name something declares;
+  // every other word is a typo it reports itself, and help requests it answers.
+  const isHelpRequest =
+    first === undefined || first === "help" || first === "--help" || first === "-h" || isDeploymentHelpRequest(argv, deploymentCommands);
+  const declined = !isHelpRequest && (first.startsWith("-") || first === "control-mcp" || candidates.includes(first));
+  const handledByHelp = !declined;
+  if (handledByHelp) return { kind: "help", fallback: refusal };
+  return { kind: "not-initialised", ...refusal };
 }

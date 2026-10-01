@@ -22,6 +22,18 @@ error: unknown argument: --bogus
 error: unknown argument: --bogus
     run clawforge status --help for its full argument list
 
+=== unknown argument: list --bogus — checkout root (./clawforge) ===
+error: unknown argument: --bogus
+    run ./clawforge list --help for its full argument list
+
+=== unknown argument: list --bogus — named deployment (./clawforge --app demo) ===
+error: unknown argument: --bogus
+    run ./clawforge --app demo list --help for its full argument list
+
+=== unknown argument: list --bogus — installed command (clawforge) ===
+error: unknown argument: --bogus
+    run clawforge list --help for its full argument list
+
 === <command> --help without a deployment: status --help — checkout root (./clawforge) ===
 ==> status — Show containers, image, health probes and data usage
     Usage: ./clawforge status [--json]

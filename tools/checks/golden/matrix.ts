@@ -6,11 +6,18 @@
 
 import { basename, dirname } from "node:path";
 import { invocationPrefix, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
+import { COMPLETION_COMMAND_NAME } from "#framework/integration/completion.ts";
+import { VERSION_COMMAND_NAME } from "#framework/integration/version.ts";
 import {
   resolveCheckoutEntry,
+  resolveInstalledEntry,
   frameworkOwner,
   strayCheckoutApp,
+  missingAppDecision,
   type FsProbe,
+  type InstalledEntryDecision,
+  type MissingAppDecision,
 } from "#framework/entry/resolve.ts";
 
 /** The fake checkout root. Path-shaped so node's resolve/relative see a normal tree; the
@@ -62,7 +69,7 @@ const BASE_FILES: Record<string, string> = {
   [`${APP_LOCAL}/config/desired-state.json`]: "{}\n",
   [LOCAL_ENTRY]: "// local package entry\n",
 };
-const BASE_DIRS = [`${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`, `${ROOT}/docs`, `${ROOT}/tools`, `${ROOT}/tools/framework`, dirname(STRAY), STRAY, `${APP}/config`, `${APP}/recipes`, `${APP}/recipes/sub`, `${APP_LOCAL}/config`, EMPTY];
+const BASE_DIRS = [`${ROOT}/apps`, `${ROOT}/apps/openclaw`, `${ROOT}/apps/demo`, `${ROOT}/apps/fresh`, `${ROOT}/docs`, `${ROOT}/tools`, `${ROOT}/tools/framework`, dirname(STRAY), STRAY, `${APP}/config`, `${APP}/recipes`, `${APP}/recipes/sub`, `${APP_LOCAL}/config`, EMPTY];
 /** Windows case: the same deployment typed as APPS/<name>. */
 const WIN_REAL: Record<string, string> = {
   [`${ROOT}/APPS/openclaw`]: `${ROOT}/apps/openclaw`,
@@ -74,21 +81,25 @@ interface CaseLayout {
   /** cwd for the gate decision; undefined — the gate is not the process for this layout. */
   readonly gate?: { readonly cwd: string; readonly handedOver: boolean };
   readonly handover: { readonly appRoot: string; readonly localEntry?: string };
+  /** cwd for the installed entry's own decisions; undefined — the installed command is
+   *  not the process for this layout. */
+  readonly installed?: { readonly cwd: string };
 }
 
 const LAYOUTS: readonly CaseLayout[] = [
-  { id: "checkout-root", gate: { cwd: ROOT, handedOver: false }, handover: { appRoot: ROOT } },
+  { id: "checkout-root", gate: { cwd: ROOT, handedOver: false }, handover: { appRoot: ROOT }, installed: { cwd: ROOT } },
   { id: "apps-openclaw", gate: { cwd: `${ROOT}/apps/openclaw`, handedOver: true }, handover: { appRoot: `${ROOT}/apps/openclaw` } },
   // APPS/<name> typed case: the hand-over's canonicalisation is decided here; whether the
   // handed-over gate process then sees its own cwd as inside is the host path module's case
   // rule, not resolver logic — covered end to end by system-install on Windows.
   { id: "apps-upper", handover: { appRoot: `${ROOT}/APPS/openclaw` } },
-  { id: "checkout-subfolder", handover: { appRoot: `${ROOT}/docs` } },
-  { id: "installed-app", handover: { appRoot: APP } },
-  { id: "installed-app-local", handover: { appRoot: APP_LOCAL, localEntry: LOCAL_ENTRY } },
-  { id: "stray-checkout-app", handover: { appRoot: STRAY } },
-  { id: "empty-directory", handover: { appRoot: EMPTY } },
-  { id: "nested-app", handover: { appRoot: `${APP}/recipes/sub` } },
+  { id: "checkout-subfolder", handover: { appRoot: `${ROOT}/docs` }, installed: { cwd: `${ROOT}/docs` } },
+  { id: "checkout-fresh-apps", handover: { appRoot: `${ROOT}/apps/fresh` }, installed: { cwd: `${ROOT}/apps/fresh` } },
+  { id: "installed-app", handover: { appRoot: APP }, installed: { cwd: APP } },
+  { id: "installed-app-local", handover: { appRoot: APP_LOCAL, localEntry: LOCAL_ENTRY }, installed: { cwd: APP_LOCAL } },
+  { id: "stray-checkout-app", handover: { appRoot: STRAY }, installed: { cwd: STRAY } },
+  { id: "empty-directory", handover: { appRoot: EMPTY }, installed: { cwd: EMPTY } },
+  { id: "nested-app", handover: { appRoot: `${APP}/recipes/sub` }, installed: { cwd: `${APP}/recipes/sub` } },
 ];
 
 const ARGVS: readonly (readonly string[])[] = [
@@ -109,9 +120,29 @@ const ENVS: readonly (readonly [string, string | undefined])[] = [
 
 const PLATFORMS: readonly NodeJS.Platform[] = ["linux", "win32", "darwin"];
 
-const GATE_COMMANDS = ["check", "list", "new-app", "remove-app", "version", "completion"];
+const GATE_COMMANDS = [...CHECKOUT_GATE_COMMANDS, VERSION_COMMAND_NAME, COMPLETION_COMMAND_NAME];
 const DEPLOYMENT_COMMANDS = ["status", "bootstrap"];
 const VARIADIC_COMMANDS = ["exec"];
+
+/** The installed entry decides on the raw argv: --project-root, init placements and help
+ *  requests. OC_APP plays no part here — an installed deployment is the cwd's. */
+const INSTALLED_ARGVS: readonly (readonly string[])[] = [
+  [],
+  ["help"],
+  ["status"],
+  ["status", "--help"],
+  ["init"],
+  ["init", "--local"],
+  ["init", "--help"],
+  ["--project-root"],
+  ["--project-root", APP],
+  ["--project-root", "relative/dir"],
+  ["frobnicate"],
+  ["control-mcp"],
+  ["--bogus"],
+];
+/** The installed gate's own commands: the executor answers them before the app.ts check. */
+const INSTALLED_GATE_COMMANDS = ["init", "version", "completion"];
 
 /** Host-independent path text: this machine's path module may prefix a drive and prefer
  *  backslashes; the fake world spells everything with forward slashes from /. */
@@ -141,6 +172,40 @@ function gateDecisionLine(input: Parameters<typeof resolveCheckoutEntry>[0]): st
   }
 }
 
+function fakeJson(values: readonly string[]): string {
+  return JSON.stringify(values.map(fakePath));
+}
+
+function installedDecisionLine(decision: InstalledEntryDecision): string {
+  switch (decision.kind) {
+    case "refuse":
+      return `refuse: ${decision.lines.map(fakePath).join(" | ")}`;
+    case "refuse-verbatim":
+      return `refuse-verbatim: ${decision.lines.map(fakePath).join(" | ")}`;
+    case "checkout-types-note":
+      return "checkout-types-note";
+    case "run":
+      return `run appRoot=${fakePath(decision.appRoot)} argv=${fakeJson(decision.argv)} launchArgv=${fakeJson(decision.launchArgv)}` +
+        (decision.initializing ? " initializing" : "") +
+        (decision.localTypesOnly ? " local-types-only" : "") +
+        (decision.ancestor === undefined ? "" : ` ancestor=${fakePath(decision.ancestor)}`) +
+        (decision.checkout === undefined ? "" : ` checkout=${fakePath(decision.checkout)}`);
+  }
+}
+
+function missingDecisionLine(decision: MissingAppDecision): string {
+  const detail = (entry: { readonly headline: string; readonly plain: readonly string[]; readonly verbatim: readonly string[] }): string =>
+    `${fakePath(entry.headline)} | ${fakeJson(entry.plain)} | ${fakeJson(entry.verbatim)}`;
+  switch (decision.kind) {
+    case "subfolder-report":
+      return `subfolder-report: ${fakePath(decision.headline)} | ${fakeJson(decision.verbatim)}`;
+    case "help":
+      return `help (fallback: ${detail(decision.fallback)})`;
+    case "not-initialised":
+      return `not-initialised: ${detail(decision)}`;
+  }
+}
+
 function handoverDecisionLine(input: Parameters<typeof frameworkOwner>[0]): string {
   const decision = frameworkOwner(input);
   switch (decision.kind) {
@@ -157,8 +222,10 @@ function handoverDecisionLine(input: Parameters<typeof frameworkOwner>[0]): stri
 export function renderEntryMatrix(): string {
   const lines: string[] = [
     "// Entry decisions (plan stage 2, invariant I3): resolveCheckoutEntry (gate) where the gate",
-    "// is the process, frameworkOwner (installed command hand-over) everywhere, plus the stray",
-    "// app.ts predicate. Fake fs, no processes. Paths are fake-root relative.",
+    "// is the process, frameworkOwner (installed command hand-over) everywhere, the installed",
+    "// entry's own placement decisions (resolveInstalledEntry, plus missingAppDecision where",
+    "// app.ts is absent), and the stray app.ts predicate. Fake fs, no processes. Paths are",
+    "// fake-root relative.",
     "",
   ];
   for (const platform of PLATFORMS) {
@@ -194,6 +261,30 @@ export function renderEntryMatrix(): string {
           const stray = strayCheckoutApp({ self: SELF, appRoot: layout.handover.appRoot, fs });
           lines.push(`stray: ${stray === undefined ? "none" : `checkout=${fakePath(stray.checkout)}`}`);
         }
+      }
+    }
+  }
+  // The installed entry: placement decisions on the raw argv, per layout and platform.
+  for (const platform of PLATFORMS) {
+    const fs = fakeFs(BASE_FILES, BASE_DIRS, platform === "win32" ? WIN_REAL : {});
+    for (const layout of LAYOUTS) {
+      if (layout.installed === undefined) continue;
+      for (const installedArgv of INSTALLED_ARGVS) {
+        const label = `platform=${platform} layout=${layout.id} argv=${installedArgv.length === 0 ? "<none>" : JSON.stringify(installedArgv)}`;
+        lines.push(`== installed ${label}`);
+        const decision = resolveInstalledEntry({ cwd: layout.installed.cwd, rawArgv: installedArgv, platform, fs });
+        lines.push(`installed: ${installedDecisionLine(decision)}`);
+        if (decision.kind !== "run") continue;
+        if (fs.exists(`${decision.appRoot}/app.ts`)) continue;
+        if (INSTALLED_GATE_COMMANDS.includes(installedArgv[0])) continue;
+        const missing = missingAppDecision({
+          appRoot: decision.appRoot,
+          argv: decision.argv,
+          checkout: decision.checkout,
+          gateCommandNames: INSTALLED_GATE_COMMANDS,
+          deploymentCommands: DEPLOYMENT_COMMANDS,
+        });
+        lines.push(`missing: ${missingDecisionLine(missing)}`);
       }
     }
   }

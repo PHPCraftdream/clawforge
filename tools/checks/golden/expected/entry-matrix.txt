@@ -1,6 +1,8 @@
 // Entry decisions (plan stage 2, invariant I3): resolveCheckoutEntry (gate) where the gate
-// is the process, frameworkOwner (installed command hand-over) everywhere, plus the stray
-// app.ts predicate. Fake fs, no processes. Paths are fake-root relative.
+// is the process, frameworkOwner (installed command hand-over) everywhere, the installed
+// entry's own placement decisions (resolveInstalledEntry, plus missingAppDecision where
+// app.ts is absent), and the stray app.ts predicate. Fake fs, no processes. Paths are
+// fake-root relative.
 
 == platform=linux layout=checkout-root argv=<none> env=none
 gate: run app=openclaw fact=openclaw/default argv=[] prefix=./clawforge
@@ -224,6 +226,54 @@ stray: none
 handover: run-here
 stray: none
 == platform=linux layout=checkout-subfolder argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=<none> env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=linux layout=checkout-fresh-apps argv=["status","--app","x"] env=OC_APP=x
 handover: run-here
 stray: none
 == platform=linux layout=installed-app argv=<none> env=none
@@ -690,6 +740,54 @@ stray: none
 == platform=win32 layout=checkout-subfolder argv=["status","--app","x"] env=OC_APP=x
 handover: run-here
 stray: none
+== platform=win32 layout=checkout-fresh-apps argv=<none> env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=win32 layout=checkout-fresh-apps argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
 == platform=win32 layout=installed-app argv=<none> env=none
 handover: run-here
 stray: none
@@ -1154,6 +1252,54 @@ stray: none
 == platform=darwin layout=checkout-subfolder argv=["status","--app","x"] env=OC_APP=x
 handover: run-here
 stray: none
+== platform=darwin layout=checkout-fresh-apps argv=<none> env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["status","--help"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["--app","x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["--app=x","status"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["--app"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["status","--app","x"] env=none
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=<none> env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["status","--help"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["--app","x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["--app=x","status"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["--app"] env=OC_APP=x
+handover: run-here
+stray: none
+== platform=darwin layout=checkout-fresh-apps argv=["status","--app","x"] env=OC_APP=x
+handover: run-here
+stray: none
 == platform=darwin layout=installed-app argv=<none> env=none
 handover: run-here
 stray: none
@@ -1394,3 +1540,711 @@ stray: none
 == platform=darwin layout=nested-app argv=["status","--app","x"] env=OC_APP=x
 handover: run-here
 stray: none
+== installed platform=linux layout=checkout-root argv=<none>
+installed: run appRoot=clawforge-checkout argv=[] launchArgv=[] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-root argv=["help"]
+installed: run appRoot=clawforge-checkout argv=["help"] launchArgv=["help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-root argv=["status"]
+installed: run appRoot=clawforge-checkout argv=["status"] launchArgv=["status"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=linux layout=checkout-root argv=["status","--help"]
+installed: run appRoot=clawforge-checkout argv=["status","--help"] launchArgv=["status","--help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-root argv=["init"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=linux layout=checkout-root argv=["init","--local"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=linux layout=checkout-root argv=["init","--help"]
+installed: run appRoot=clawforge-checkout argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=linux layout=checkout-root argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=checkout-root argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=linux layout=checkout-root argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=checkout-root argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout argv=["frobnicate"] launchArgv=["frobnicate"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-root argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout argv=["control-mcp"] launchArgv=["control-mcp"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=linux layout=checkout-root argv=["--bogus"]
+installed: run appRoot=clawforge-checkout argv=["--bogus"] launchArgv=["--bogus"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=linux layout=checkout-subfolder argv=<none>
+installed: run appRoot=clawforge-checkout/docs argv=[] launchArgv=[] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-subfolder argv=["help"]
+installed: run appRoot=clawforge-checkout/docs argv=["help"] launchArgv=["help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-subfolder argv=["status"]
+installed: run appRoot=clawforge-checkout/docs argv=["status"] launchArgv=["status"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=linux layout=checkout-subfolder argv=["status","--help"]
+installed: run appRoot=clawforge-checkout/docs argv=["status","--help"] launchArgv=["status","--help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-subfolder argv=["init"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=linux layout=checkout-subfolder argv=["init","--local"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=linux layout=checkout-subfolder argv=["init","--help"]
+installed: run appRoot=clawforge-checkout/docs argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=linux layout=checkout-subfolder argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=checkout-subfolder argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=linux layout=checkout-subfolder argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=checkout-subfolder argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout/docs argv=["frobnicate"] launchArgv=["frobnicate"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-subfolder argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout/docs argv=["control-mcp"] launchArgv=["control-mcp"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=linux layout=checkout-subfolder argv=["--bogus"]
+installed: run appRoot=clawforge-checkout/docs argv=["--bogus"] launchArgv=["--bogus"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=linux layout=checkout-fresh-apps argv=<none>
+installed: run appRoot=clawforge-checkout/apps/fresh argv=[] launchArgv=[] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-fresh-apps argv=["help"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["help"] launchArgv=["help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-fresh-apps argv=["status"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["status"] launchArgv=["status"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=linux layout=checkout-fresh-apps argv=["status","--help"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["status","--help"] launchArgv=["status","--help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-fresh-apps argv=["init"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>); new-app fresh takes over this empty directory, or remove it
+== installed platform=linux layout=checkout-fresh-apps argv=["init","--local"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>); new-app fresh takes over this empty directory, or remove it
+== installed platform=linux layout=checkout-fresh-apps argv=["init","--help"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=linux layout=checkout-fresh-apps argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=checkout-fresh-apps argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=linux layout=checkout-fresh-apps argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=checkout-fresh-apps argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["frobnicate"] launchArgv=["frobnicate"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=linux layout=checkout-fresh-apps argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["control-mcp"] launchArgv=["control-mcp"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=linux layout=checkout-fresh-apps argv=["--bogus"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["--bogus"] launchArgv=["--bogus"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=linux layout=installed-app argv=<none>
+installed: run appRoot=home/u/app argv=[] launchArgv=[] ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["help"]
+installed: run appRoot=home/u/app argv=["help"] launchArgv=["help"] ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["status"]
+installed: run appRoot=home/u/app argv=["status"] launchArgv=["status"] ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["status","--help"]
+installed: run appRoot=home/u/app argv=["status","--help"] launchArgv=["status","--help"] ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["init"]
+installed: run appRoot=home/u/app argv=["init"] launchArgv=["init"] initializing ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["init","--local"]
+installed: run appRoot=home/u/app argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["init","--help"]
+installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=installed-app argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=linux layout=installed-app argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=installed-app argv=["frobnicate"]
+installed: run appRoot=home/u/app argv=["frobnicate"] launchArgv=["frobnicate"] ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["control-mcp"]
+installed: run appRoot=home/u/app argv=["control-mcp"] launchArgv=["control-mcp"] ancestor=home/u/app
+== installed platform=linux layout=installed-app argv=["--bogus"]
+installed: run appRoot=home/u/app argv=["--bogus"] launchArgv=["--bogus"] ancestor=home/u/app
+== installed platform=linux layout=installed-app-local argv=<none>
+installed: run appRoot=home/u/app-local argv=[] launchArgv=[] ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["help"]
+installed: run appRoot=home/u/app-local argv=["help"] launchArgv=["help"] ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["status"]
+installed: run appRoot=home/u/app-local argv=["status"] launchArgv=["status"] ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["status","--help"]
+installed: run appRoot=home/u/app-local argv=["status","--help"] launchArgv=["status","--help"] ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["init"]
+installed: run appRoot=home/u/app-local argv=["init"] launchArgv=["init"] initializing ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["init","--local"]
+installed: run appRoot=home/u/app-local argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["init","--help"]
+installed: run appRoot=home/u/app-local argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=installed-app-local argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=linux layout=installed-app-local argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=installed-app-local argv=["frobnicate"]
+installed: run appRoot=home/u/app-local argv=["frobnicate"] launchArgv=["frobnicate"] ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["control-mcp"]
+installed: run appRoot=home/u/app-local argv=["control-mcp"] launchArgv=["control-mcp"] ancestor=home/u/app-local
+== installed platform=linux layout=installed-app-local argv=["--bogus"]
+installed: run appRoot=home/u/app-local argv=["--bogus"] launchArgv=["--bogus"] ancestor=home/u/app-local
+== installed platform=linux layout=stray-checkout-app argv=<none>
+installed: run appRoot=clawforge-checkout/stray-sub argv=[] launchArgv=[] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=stray-checkout-app argv=["help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["help"] launchArgv=["help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=stray-checkout-app argv=["status"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["status"] launchArgv=["status"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=stray-checkout-app argv=["status","--help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["status","--help"] launchArgv=["status","--help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=stray-checkout-app argv=["init"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["init"] launchArgv=["init"] initializing ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=stray-checkout-app argv=["init","--local"]
+installed: checkout-types-note
+== installed platform=linux layout=stray-checkout-app argv=["init","--help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["init","--help"] launchArgv=["init","--help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=stray-checkout-app argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=stray-checkout-app argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=linux layout=stray-checkout-app argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=stray-checkout-app argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["frobnicate"] launchArgv=["frobnicate"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=stray-checkout-app argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["control-mcp"] launchArgv=["control-mcp"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=stray-checkout-app argv=["--bogus"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["--bogus"] launchArgv=["--bogus"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=linux layout=empty-directory argv=<none>
+installed: run appRoot=home/u/empty argv=[] launchArgv=[]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=linux layout=empty-directory argv=["help"]
+installed: run appRoot=home/u/empty argv=["help"] launchArgv=["help"]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=linux layout=empty-directory argv=["status"]
+installed: run appRoot=home/u/empty argv=["status"] launchArgv=["status"]
+missing: not-initialised: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | []
+== installed platform=linux layout=empty-directory argv=["status","--help"]
+installed: run appRoot=home/u/empty argv=["status","--help"] launchArgv=["status","--help"]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=linux layout=empty-directory argv=["init"]
+installed: run appRoot=home/u/empty argv=["init"] launchArgv=["init"] initializing
+== installed platform=linux layout=empty-directory argv=["init","--local"]
+installed: run appRoot=home/u/empty argv=["init","--local"] launchArgv=["init","--local"] initializing
+== installed platform=linux layout=empty-directory argv=["init","--help"]
+installed: run appRoot=home/u/empty argv=["init","--help"] launchArgv=["init","--help"]
+== installed platform=linux layout=empty-directory argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=empty-directory argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=linux layout=empty-directory argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=empty-directory argv=["frobnicate"]
+installed: run appRoot=home/u/empty argv=["frobnicate"] launchArgv=["frobnicate"]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=linux layout=empty-directory argv=["control-mcp"]
+installed: run appRoot=home/u/empty argv=["control-mcp"] launchArgv=["control-mcp"]
+missing: not-initialised: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | []
+== installed platform=linux layout=empty-directory argv=["--bogus"]
+installed: run appRoot=home/u/empty argv=["--bogus"] launchArgv=["--bogus"]
+missing: not-initialised: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | []
+== installed platform=linux layout=nested-app argv=<none>
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","home/u/app"] ancestor=home/u/app
+== installed platform=linux layout=nested-app argv=["help"]
+installed: run appRoot=home/u/app argv=["help"] launchArgv=["--project-root","home/u/app","help"] ancestor=home/u/app
+== installed platform=linux layout=nested-app argv=["status"]
+installed: run appRoot=home/u/app argv=["status"] launchArgv=["--project-root","home/u/app","status"] ancestor=home/u/app
+== installed platform=linux layout=nested-app argv=["status","--help"]
+installed: run appRoot=home/u/app argv=["status","--help"] launchArgv=["--project-root","home/u/app","status","--help"] ancestor=home/u/app
+== installed platform=linux layout=nested-app argv=["init"]
+installed: refuse: home/u/app already holds app.ts — this directory is inside that deployment; init here would nest a second one
+== installed platform=linux layout=nested-app argv=["init","--local"]
+installed: run appRoot=home/u/app/recipes/sub argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
+== installed platform=linux layout=nested-app argv=["init","--help"]
+installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["--project-root","home/u/app","init","--help"] ancestor=home/u/app
+== installed platform=linux layout=nested-app argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=nested-app argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=linux layout=nested-app argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=linux layout=nested-app argv=["frobnicate"]
+installed: run appRoot=home/u/app argv=["frobnicate"] launchArgv=["--project-root","home/u/app","frobnicate"] ancestor=home/u/app
+== installed platform=linux layout=nested-app argv=["control-mcp"]
+installed: run appRoot=home/u/app argv=["control-mcp"] launchArgv=["--project-root","home/u/app","control-mcp"] ancestor=home/u/app
+== installed platform=linux layout=nested-app argv=["--bogus"]
+installed: run appRoot=home/u/app argv=["--bogus"] launchArgv=["--project-root","home/u/app","--bogus"] ancestor=home/u/app
+== installed platform=win32 layout=checkout-root argv=<none>
+installed: run appRoot=clawforge-checkout argv=[] launchArgv=[] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-root argv=["help"]
+installed: run appRoot=clawforge-checkout argv=["help"] launchArgv=["help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-root argv=["status"]
+installed: run appRoot=clawforge-checkout argv=["status"] launchArgv=["status"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=win32 layout=checkout-root argv=["status","--help"]
+installed: run appRoot=clawforge-checkout argv=["status","--help"] launchArgv=["status","--help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-root argv=["init"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=win32 layout=checkout-root argv=["init","--local"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=win32 layout=checkout-root argv=["init","--help"]
+installed: run appRoot=clawforge-checkout argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=win32 layout=checkout-root argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=checkout-root argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=win32 layout=checkout-root argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=checkout-root argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout argv=["frobnicate"] launchArgv=["frobnicate"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-root argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout argv=["control-mcp"] launchArgv=["control-mcp"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=win32 layout=checkout-root argv=["--bogus"]
+installed: run appRoot=clawforge-checkout argv=["--bogus"] launchArgv=["--bogus"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=win32 layout=checkout-subfolder argv=<none>
+installed: run appRoot=clawforge-checkout/docs argv=[] launchArgv=[] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-subfolder argv=["help"]
+installed: run appRoot=clawforge-checkout/docs argv=["help"] launchArgv=["help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-subfolder argv=["status"]
+installed: run appRoot=clawforge-checkout/docs argv=["status"] launchArgv=["status"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=win32 layout=checkout-subfolder argv=["status","--help"]
+installed: run appRoot=clawforge-checkout/docs argv=["status","--help"] launchArgv=["status","--help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-subfolder argv=["init"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=win32 layout=checkout-subfolder argv=["init","--local"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=win32 layout=checkout-subfolder argv=["init","--help"]
+installed: run appRoot=clawforge-checkout/docs argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=win32 layout=checkout-subfolder argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=checkout-subfolder argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=win32 layout=checkout-subfolder argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=checkout-subfolder argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout/docs argv=["frobnicate"] launchArgv=["frobnicate"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-subfolder argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout/docs argv=["control-mcp"] launchArgv=["control-mcp"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=win32 layout=checkout-subfolder argv=["--bogus"]
+installed: run appRoot=clawforge-checkout/docs argv=["--bogus"] launchArgv=["--bogus"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=win32 layout=checkout-fresh-apps argv=<none>
+installed: run appRoot=clawforge-checkout/apps/fresh argv=[] launchArgv=[] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-fresh-apps argv=["help"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["help"] launchArgv=["help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-fresh-apps argv=["status"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["status"] launchArgv=["status"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=win32 layout=checkout-fresh-apps argv=["status","--help"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["status","--help"] launchArgv=["status","--help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-fresh-apps argv=["init"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>); new-app fresh takes over this empty directory, or remove it
+== installed platform=win32 layout=checkout-fresh-apps argv=["init","--local"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>); new-app fresh takes over this empty directory, or remove it
+== installed platform=win32 layout=checkout-fresh-apps argv=["init","--help"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=win32 layout=checkout-fresh-apps argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=checkout-fresh-apps argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=win32 layout=checkout-fresh-apps argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=checkout-fresh-apps argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["frobnicate"] launchArgv=["frobnicate"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=win32 layout=checkout-fresh-apps argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["control-mcp"] launchArgv=["control-mcp"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=win32 layout=checkout-fresh-apps argv=["--bogus"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["--bogus"] launchArgv=["--bogus"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=win32 layout=installed-app argv=<none>
+installed: run appRoot=home/u/app argv=[] launchArgv=[] ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["help"]
+installed: run appRoot=home/u/app argv=["help"] launchArgv=["help"] ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["status"]
+installed: run appRoot=home/u/app argv=["status"] launchArgv=["status"] ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["status","--help"]
+installed: run appRoot=home/u/app argv=["status","--help"] launchArgv=["status","--help"] ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["init"]
+installed: run appRoot=home/u/app argv=["init"] launchArgv=["init"] initializing ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["init","--local"]
+installed: run appRoot=home/u/app argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["init","--help"]
+installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=installed-app argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=win32 layout=installed-app argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=installed-app argv=["frobnicate"]
+installed: run appRoot=home/u/app argv=["frobnicate"] launchArgv=["frobnicate"] ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["control-mcp"]
+installed: run appRoot=home/u/app argv=["control-mcp"] launchArgv=["control-mcp"] ancestor=home/u/app
+== installed platform=win32 layout=installed-app argv=["--bogus"]
+installed: run appRoot=home/u/app argv=["--bogus"] launchArgv=["--bogus"] ancestor=home/u/app
+== installed platform=win32 layout=installed-app-local argv=<none>
+installed: run appRoot=home/u/app-local argv=[] launchArgv=[] ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["help"]
+installed: run appRoot=home/u/app-local argv=["help"] launchArgv=["help"] ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["status"]
+installed: run appRoot=home/u/app-local argv=["status"] launchArgv=["status"] ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["status","--help"]
+installed: run appRoot=home/u/app-local argv=["status","--help"] launchArgv=["status","--help"] ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["init"]
+installed: run appRoot=home/u/app-local argv=["init"] launchArgv=["init"] initializing ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["init","--local"]
+installed: run appRoot=home/u/app-local argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["init","--help"]
+installed: run appRoot=home/u/app-local argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=installed-app-local argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=win32 layout=installed-app-local argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=installed-app-local argv=["frobnicate"]
+installed: run appRoot=home/u/app-local argv=["frobnicate"] launchArgv=["frobnicate"] ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["control-mcp"]
+installed: run appRoot=home/u/app-local argv=["control-mcp"] launchArgv=["control-mcp"] ancestor=home/u/app-local
+== installed platform=win32 layout=installed-app-local argv=["--bogus"]
+installed: run appRoot=home/u/app-local argv=["--bogus"] launchArgv=["--bogus"] ancestor=home/u/app-local
+== installed platform=win32 layout=stray-checkout-app argv=<none>
+installed: run appRoot=clawforge-checkout/stray-sub argv=[] launchArgv=[] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=stray-checkout-app argv=["help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["help"] launchArgv=["help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=stray-checkout-app argv=["status"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["status"] launchArgv=["status"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=stray-checkout-app argv=["status","--help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["status","--help"] launchArgv=["status","--help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=stray-checkout-app argv=["init"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["init"] launchArgv=["init"] initializing ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=stray-checkout-app argv=["init","--local"]
+installed: checkout-types-note
+== installed platform=win32 layout=stray-checkout-app argv=["init","--help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["init","--help"] launchArgv=["init","--help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=stray-checkout-app argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=stray-checkout-app argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=win32 layout=stray-checkout-app argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=stray-checkout-app argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["frobnicate"] launchArgv=["frobnicate"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=stray-checkout-app argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["control-mcp"] launchArgv=["control-mcp"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=stray-checkout-app argv=["--bogus"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["--bogus"] launchArgv=["--bogus"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=win32 layout=empty-directory argv=<none>
+installed: run appRoot=home/u/empty argv=[] launchArgv=[]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=win32 layout=empty-directory argv=["help"]
+installed: run appRoot=home/u/empty argv=["help"] launchArgv=["help"]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=win32 layout=empty-directory argv=["status"]
+installed: run appRoot=home/u/empty argv=["status"] launchArgv=["status"]
+missing: not-initialised: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | []
+== installed platform=win32 layout=empty-directory argv=["status","--help"]
+installed: run appRoot=home/u/empty argv=["status","--help"] launchArgv=["status","--help"]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=win32 layout=empty-directory argv=["init"]
+installed: run appRoot=home/u/empty argv=["init"] launchArgv=["init"] initializing
+== installed platform=win32 layout=empty-directory argv=["init","--local"]
+installed: run appRoot=home/u/empty argv=["init","--local"] launchArgv=["init","--local"] initializing
+== installed platform=win32 layout=empty-directory argv=["init","--help"]
+installed: run appRoot=home/u/empty argv=["init","--help"] launchArgv=["init","--help"]
+== installed platform=win32 layout=empty-directory argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=empty-directory argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=win32 layout=empty-directory argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=empty-directory argv=["frobnicate"]
+installed: run appRoot=home/u/empty argv=["frobnicate"] launchArgv=["frobnicate"]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=win32 layout=empty-directory argv=["control-mcp"]
+installed: run appRoot=home/u/empty argv=["control-mcp"] launchArgv=["control-mcp"]
+missing: not-initialised: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | []
+== installed platform=win32 layout=empty-directory argv=["--bogus"]
+installed: run appRoot=home/u/empty argv=["--bogus"] launchArgv=["--bogus"]
+missing: not-initialised: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | []
+== installed platform=win32 layout=nested-app argv=<none>
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","home/u/app"] ancestor=home/u/app
+== installed platform=win32 layout=nested-app argv=["help"]
+installed: run appRoot=home/u/app argv=["help"] launchArgv=["--project-root","home/u/app","help"] ancestor=home/u/app
+== installed platform=win32 layout=nested-app argv=["status"]
+installed: run appRoot=home/u/app argv=["status"] launchArgv=["--project-root","home/u/app","status"] ancestor=home/u/app
+== installed platform=win32 layout=nested-app argv=["status","--help"]
+installed: run appRoot=home/u/app argv=["status","--help"] launchArgv=["--project-root","home/u/app","status","--help"] ancestor=home/u/app
+== installed platform=win32 layout=nested-app argv=["init"]
+installed: refuse: home/u/app already holds app.ts — this directory is inside that deployment; init here would nest a second one
+== installed platform=win32 layout=nested-app argv=["init","--local"]
+installed: run appRoot=home/u/app/recipes/sub argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
+== installed platform=win32 layout=nested-app argv=["init","--help"]
+installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["--project-root","home/u/app","init","--help"] ancestor=home/u/app
+== installed platform=win32 layout=nested-app argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=nested-app argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=win32 layout=nested-app argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=win32 layout=nested-app argv=["frobnicate"]
+installed: run appRoot=home/u/app argv=["frobnicate"] launchArgv=["--project-root","home/u/app","frobnicate"] ancestor=home/u/app
+== installed platform=win32 layout=nested-app argv=["control-mcp"]
+installed: run appRoot=home/u/app argv=["control-mcp"] launchArgv=["--project-root","home/u/app","control-mcp"] ancestor=home/u/app
+== installed platform=win32 layout=nested-app argv=["--bogus"]
+installed: run appRoot=home/u/app argv=["--bogus"] launchArgv=["--project-root","home/u/app","--bogus"] ancestor=home/u/app
+== installed platform=darwin layout=checkout-root argv=<none>
+installed: run appRoot=clawforge-checkout argv=[] launchArgv=[] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-root argv=["help"]
+installed: run appRoot=clawforge-checkout argv=["help"] launchArgv=["help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-root argv=["status"]
+installed: run appRoot=clawforge-checkout argv=["status"] launchArgv=["status"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=darwin layout=checkout-root argv=["status","--help"]
+installed: run appRoot=clawforge-checkout argv=["status","--help"] launchArgv=["status","--help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-root argv=["init"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=darwin layout=checkout-root argv=["init","--local"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=darwin layout=checkout-root argv=["init","--help"]
+installed: run appRoot=clawforge-checkout argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=darwin layout=checkout-root argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=checkout-root argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=darwin layout=checkout-root argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=checkout-root argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout argv=["frobnicate"] launchArgv=["frobnicate"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-root argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout argv=["control-mcp"] launchArgv=["control-mcp"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=darwin layout=checkout-root argv=["--bogus"]
+installed: run appRoot=clawforge-checkout argv=["--bogus"] launchArgv=["--bogus"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=darwin layout=checkout-subfolder argv=<none>
+installed: run appRoot=clawforge-checkout/docs argv=[] launchArgv=[] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-subfolder argv=["help"]
+installed: run appRoot=clawforge-checkout/docs argv=["help"] launchArgv=["help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-subfolder argv=["status"]
+installed: run appRoot=clawforge-checkout/docs argv=["status"] launchArgv=["status"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=darwin layout=checkout-subfolder argv=["status","--help"]
+installed: run appRoot=clawforge-checkout/docs argv=["status","--help"] launchArgv=["status","--help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-subfolder argv=["init"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=darwin layout=checkout-subfolder argv=["init","--local"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>)
+== installed platform=darwin layout=checkout-subfolder argv=["init","--help"]
+installed: run appRoot=clawforge-checkout/docs argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=darwin layout=checkout-subfolder argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=checkout-subfolder argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=darwin layout=checkout-subfolder argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=checkout-subfolder argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout/docs argv=["frobnicate"] launchArgv=["frobnicate"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-subfolder argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout/docs argv=["control-mcp"] launchArgv=["control-mcp"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=darwin layout=checkout-subfolder argv=["--bogus"]
+installed: run appRoot=clawforge-checkout/docs argv=["--bogus"] launchArgv=["--bogus"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/docs | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=darwin layout=checkout-fresh-apps argv=<none>
+installed: run appRoot=clawforge-checkout/apps/fresh argv=[] launchArgv=[] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-fresh-apps argv=["help"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["help"] launchArgv=["help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-fresh-apps argv=["status"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["status"] launchArgv=["status"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=darwin layout=checkout-fresh-apps argv=["status","--help"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["status","--help"] launchArgv=["status","--help"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-fresh-apps argv=["init"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>); new-app fresh takes over this empty directory, or remove it
+== installed platform=darwin layout=checkout-fresh-apps argv=["init","--local"]
+installed: refuse-verbatim: clawforge-checkout is a ClawForge checkout — init writes an installed-style deployment (its own committed clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one is new-app under apps/. From the checkout root run: ./clawforge new-app <name> (in bash also ./clawforge new-app <name>); new-app fresh takes over this empty directory, or remove it
+== installed platform=darwin layout=checkout-fresh-apps argv=["init","--help"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["init","--help"] launchArgv=["init","--help"] checkout=clawforge-checkout
+== installed platform=darwin layout=checkout-fresh-apps argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=checkout-fresh-apps argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=darwin layout=checkout-fresh-apps argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=checkout-fresh-apps argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["frobnicate"] launchArgv=["frobnicate"] checkout=clawforge-checkout
+missing: help (fallback: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"])
+== installed platform=darwin layout=checkout-fresh-apps argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["control-mcp"] launchArgv=["control-mcp"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=darwin layout=checkout-fresh-apps argv=["--bogus"]
+installed: run appRoot=clawforge-checkout/apps/fresh argv=["--bogus"] launchArgv=["--bogus"] checkout=clawforge-checkout
+missing: not-initialised: no app.ts in clawforge-checkout/apps/fresh | [] | ["this is a ClawForge checkout (clawforge-checkout) — run ./clawforge from its root (in bash also ./clawforge)"]
+== installed platform=darwin layout=installed-app argv=<none>
+installed: run appRoot=home/u/app argv=[] launchArgv=[] ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["help"]
+installed: run appRoot=home/u/app argv=["help"] launchArgv=["help"] ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["status"]
+installed: run appRoot=home/u/app argv=["status"] launchArgv=["status"] ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["status","--help"]
+installed: run appRoot=home/u/app argv=["status","--help"] launchArgv=["status","--help"] ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["init"]
+installed: run appRoot=home/u/app argv=["init"] launchArgv=["init"] initializing ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["init","--local"]
+installed: run appRoot=home/u/app argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["init","--help"]
+installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=installed-app argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=darwin layout=installed-app argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=installed-app argv=["frobnicate"]
+installed: run appRoot=home/u/app argv=["frobnicate"] launchArgv=["frobnicate"] ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["control-mcp"]
+installed: run appRoot=home/u/app argv=["control-mcp"] launchArgv=["control-mcp"] ancestor=home/u/app
+== installed platform=darwin layout=installed-app argv=["--bogus"]
+installed: run appRoot=home/u/app argv=["--bogus"] launchArgv=["--bogus"] ancestor=home/u/app
+== installed platform=darwin layout=installed-app-local argv=<none>
+installed: run appRoot=home/u/app-local argv=[] launchArgv=[] ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["help"]
+installed: run appRoot=home/u/app-local argv=["help"] launchArgv=["help"] ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["status"]
+installed: run appRoot=home/u/app-local argv=["status"] launchArgv=["status"] ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["status","--help"]
+installed: run appRoot=home/u/app-local argv=["status","--help"] launchArgv=["status","--help"] ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["init"]
+installed: run appRoot=home/u/app-local argv=["init"] launchArgv=["init"] initializing ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["init","--local"]
+installed: run appRoot=home/u/app-local argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["init","--help"]
+installed: run appRoot=home/u/app-local argv=["init","--help"] launchArgv=["init","--help"] ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=installed-app-local argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=darwin layout=installed-app-local argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=installed-app-local argv=["frobnicate"]
+installed: run appRoot=home/u/app-local argv=["frobnicate"] launchArgv=["frobnicate"] ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["control-mcp"]
+installed: run appRoot=home/u/app-local argv=["control-mcp"] launchArgv=["control-mcp"] ancestor=home/u/app-local
+== installed platform=darwin layout=installed-app-local argv=["--bogus"]
+installed: run appRoot=home/u/app-local argv=["--bogus"] launchArgv=["--bogus"] ancestor=home/u/app-local
+== installed platform=darwin layout=stray-checkout-app argv=<none>
+installed: run appRoot=clawforge-checkout/stray-sub argv=[] launchArgv=[] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=stray-checkout-app argv=["help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["help"] launchArgv=["help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=stray-checkout-app argv=["status"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["status"] launchArgv=["status"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=stray-checkout-app argv=["status","--help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["status","--help"] launchArgv=["status","--help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=stray-checkout-app argv=["init"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["init"] launchArgv=["init"] initializing ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=stray-checkout-app argv=["init","--local"]
+installed: checkout-types-note
+== installed platform=darwin layout=stray-checkout-app argv=["init","--help"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["init","--help"] launchArgv=["init","--help"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=stray-checkout-app argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=stray-checkout-app argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=darwin layout=stray-checkout-app argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=stray-checkout-app argv=["frobnicate"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["frobnicate"] launchArgv=["frobnicate"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=stray-checkout-app argv=["control-mcp"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["control-mcp"] launchArgv=["control-mcp"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=stray-checkout-app argv=["--bogus"]
+installed: run appRoot=clawforge-checkout/stray-sub argv=["--bogus"] launchArgv=["--bogus"] ancestor=clawforge-checkout/stray-sub checkout=clawforge-checkout
+== installed platform=darwin layout=empty-directory argv=<none>
+installed: run appRoot=home/u/empty argv=[] launchArgv=[]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=darwin layout=empty-directory argv=["help"]
+installed: run appRoot=home/u/empty argv=["help"] launchArgv=["help"]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=darwin layout=empty-directory argv=["status"]
+installed: run appRoot=home/u/empty argv=["status"] launchArgv=["status"]
+missing: not-initialised: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | []
+== installed platform=darwin layout=empty-directory argv=["status","--help"]
+installed: run appRoot=home/u/empty argv=["status","--help"] launchArgv=["status","--help"]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=darwin layout=empty-directory argv=["init"]
+installed: run appRoot=home/u/empty argv=["init"] launchArgv=["init"] initializing
+== installed platform=darwin layout=empty-directory argv=["init","--local"]
+installed: run appRoot=home/u/empty argv=["init","--local"] launchArgv=["init","--local"] initializing
+== installed platform=darwin layout=empty-directory argv=["init","--help"]
+installed: run appRoot=home/u/empty argv=["init","--help"] launchArgv=["init","--help"]
+== installed platform=darwin layout=empty-directory argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=empty-directory argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=darwin layout=empty-directory argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=empty-directory argv=["frobnicate"]
+installed: run appRoot=home/u/empty argv=["frobnicate"] launchArgv=["frobnicate"]
+missing: help (fallback: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | [])
+== installed platform=darwin layout=empty-directory argv=["control-mcp"]
+installed: run appRoot=home/u/empty argv=["control-mcp"] launchArgv=["control-mcp"]
+missing: not-initialised: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | []
+== installed platform=darwin layout=empty-directory argv=["--bogus"]
+installed: run appRoot=home/u/empty argv=["--bogus"] launchArgv=["--bogus"]
+missing: not-initialised: no app.ts in home/u/empty | ["this directory has not been initialised as an OpenClaw deployment yet — run: ./clawforge init"] | []
+== installed platform=darwin layout=nested-app argv=<none>
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","home/u/app"] ancestor=home/u/app
+== installed platform=darwin layout=nested-app argv=["help"]
+installed: run appRoot=home/u/app argv=["help"] launchArgv=["--project-root","home/u/app","help"] ancestor=home/u/app
+== installed platform=darwin layout=nested-app argv=["status"]
+installed: run appRoot=home/u/app argv=["status"] launchArgv=["--project-root","home/u/app","status"] ancestor=home/u/app
+== installed platform=darwin layout=nested-app argv=["status","--help"]
+installed: run appRoot=home/u/app argv=["status","--help"] launchArgv=["--project-root","home/u/app","status","--help"] ancestor=home/u/app
+== installed platform=darwin layout=nested-app argv=["init"]
+installed: refuse: home/u/app already holds app.ts — this directory is inside that deployment; init here would nest a second one
+== installed platform=darwin layout=nested-app argv=["init","--local"]
+installed: run appRoot=home/u/app/recipes/sub argv=["init","--local"] launchArgv=["init","--local"] initializing local-types-only ancestor=home/u/app
+== installed platform=darwin layout=nested-app argv=["init","--help"]
+installed: run appRoot=home/u/app argv=["init","--help"] launchArgv=["--project-root","home/u/app","init","--help"] ancestor=home/u/app
+== installed platform=darwin layout=nested-app argv=["--project-root"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=nested-app argv=["--project-root","/home/u/app"]
+installed: run appRoot=home/u/app argv=[] launchArgv=["--project-root","/home/u/app"]
+== installed platform=darwin layout=nested-app argv=["--project-root","relative/dir"]
+installed: refuse: --project-root requires an absolute directory
+== installed platform=darwin layout=nested-app argv=["frobnicate"]
+installed: run appRoot=home/u/app argv=["frobnicate"] launchArgv=["--project-root","home/u/app","frobnicate"] ancestor=home/u/app
+== installed platform=darwin layout=nested-app argv=["control-mcp"]
+installed: run appRoot=home/u/app argv=["control-mcp"] launchArgv=["--project-root","home/u/app","control-mcp"] ancestor=home/u/app
+== installed platform=darwin layout=nested-app argv=["--bogus"]
+installed: run appRoot=home/u/app argv=["--bogus"] launchArgv=["--project-root","home/u/app","--bogus"] ancestor=home/u/app

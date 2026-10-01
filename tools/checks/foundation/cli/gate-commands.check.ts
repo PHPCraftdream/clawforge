@@ -13,6 +13,9 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { normalizeVersionAlias, versionGateCommand } from "#framework/integration/version.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { buildCompletionModel, renderCompletion, makeCompletionGateCommand, COMPLETION_SHELLS } from "#framework/integration/completion.ts";
+import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
+import { reportUnknownArgument } from "#framework/entry/cli.ts";
+import { parseDeclaredArgs, UnknownArgumentError } from "#framework/core/arguments.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
@@ -315,7 +318,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
     true,
   );
   check("and the cd hint quotes a path with spaces", helpedSubfolder.text.includes('cd "/some/checkout with spaces"'), true);
-  for (const command of ["new-app", "remove-app", "check"]) {
+  for (const command of CHECKOUT_GATE_COMMANDS) {
     const helped = await help(["help", command], { checkout: "/some/checkout" });
     check(`help ${command} in a subfolder points to the checkout root too`, helped.code === 1 && helped.text.includes("checkout command"), true);
   }
@@ -325,7 +328,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
 
 {
   const checkout = "/some/checkout";
-  for (const command of ["list", "new-app", "remove-app", "check"]) {
+  for (const command of CHECKOUT_GATE_COMMANDS) {
     const report = checkoutSubfolderReport(command, checkout);
     check(`${command} from a checkout subfolder is answered as a checkout command, not unknown`, report !== undefined && report.join("\n").includes("checkout root") && report.join("\n").includes(checkout), true);
   }
@@ -346,6 +349,36 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
 
   const empty = missingDeploymentReport(true, "emptyx", "/some/checkout/apps/emptyx", [], true);
   check("an existing directory without app.ts is offered to new-app, not told to gain an app.ts by hand", empty.join(" ").includes("new-app emptyx takes it over") && !empty.join(" ").includes("add one there"), true);
+}
+
+// --- the declared checkout commands and the derived name list ---------------------------------
+
+{
+  // The names every surface reads are derived from the declarations (entry/checkout-gate.ts):
+  // there is no second hand list to keep in step with tools/clawforge.ts.
+  check("CHECKOUT_GATE_COMMANDS is the declarations' names, sorted", CHECKOUT_GATE_COMMANDS, checkoutGateCommands.map((command) => command.name).sort());
+  for (const command of checkoutGateCommands) {
+    check(`${command.name} declares the arguments its run parses`, command.arguments !== undefined, true);
+  }
+}
+
+{
+  // `list` parses through parseDeclaredArgs and answers an unknown argument the standard
+  // way — the same reporter the dispatcher uses, pointing at the command's own --help.
+  const list = checkoutGateCommands.find((command) => command.name === "list");
+  if (list === undefined) throw new Error("list is not declared in entry/checkout-gate.ts");
+  const actual: string[] = [];
+  const code = await withOutputSink((chunk) => actual.push(chunk), async () => list.run(["--bogus"]));
+  let reference: string[] = [];
+  try {
+    parseDeclaredArgs(list.arguments ?? [], ["--bogus"]);
+  } catch (error) {
+    if (error instanceof UnknownArgumentError) {
+      await withOutputSink((chunk) => reference.push(chunk), async () => reportUnknownArgument("list", error));
+    } else throw error;
+  }
+  check("list --bogus is refused", code, 1);
+  check("list --bogus answers exactly the standard unknown-argument report", actual, reference);
 }
 
 finish("gate-command");

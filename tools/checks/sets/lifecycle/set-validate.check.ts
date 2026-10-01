@@ -90,13 +90,51 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
   const lockPath = resolve(baseDeployment, "config", "deployment.lock.json");
   await writeFile(lockPath, JSON.stringify({ version: 1, image: { reference: "x:y", digest: "x@sha256:z" } }));
   try {
-    // A lock exists only once a live instance was recorded — there bootstrap would
-    // re-resolve the tag and recreate the gateway, so the remedy is lock instead.
+    // A lock's EXISTENCE is not "deployed" — a lock is meant to be committed, so a fresh
+    // clone has one with no instance behind it. The advice follows the lock's CONTENT: a
+    // lock for another image means the deployment was last pinned elsewhere, and the honest
+    // path is the upgrade one — lock only after the gateway really runs the declared tag.
     const locked = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
-    check("on a recorded deployment, the remedy is lock", locked[0]?.nextAction, "./clawforge lock");
-    check("and the detail says why not bootstrap", locked[0]?.detail.includes("bootstrap"), true);
+    check("a lock for another image advises the upgrade path", locked[0]?.nextAction, "./clawforge upgrade --image ghcr.io/openclaw/openclaw:extended-stable to move the deployment to the image now declared — ./clawforge lock afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's)");
+    check("the detail no longer claims lock records what the running gateway serves", locked[0]?.detail.includes("the running gateway already serves"), false);
+    check("the detail names the reference the lock was taken for", locked[0]?.detail.includes("x:y"), true);
+
+    // A committed lock that carries no digest: neither bootstrap NOR lock is decided for
+    // the reader — both pull paths are named, with what lock actually records.
+    await writeFile(lockPath, JSON.stringify({ version: 1, image: { reference: "ghcr.io/openclaw/openclaw:extended-stable" } }));
+    const digestless = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
+    check("a digestless lock is still a finding", codes(digestless), ["SET_IMAGE_UNPINNED"]);
+    check("its advice names bootstrap AND upgrade as the pull paths", digestless[0]?.nextAction.includes("./clawforge bootstrap") && digestless[0]?.nextAction.includes("./clawforge upgrade --image"), true);
+    check("and says lock pins the LOCAL image of the tag, not the container", digestless[0]?.detail.includes("local image that OPENCLAW_IMAGE names"), true);
   } finally {
     await rm(lockPath);
+  }
+
+  // set build answers for the SAME state with the SAME advice: its refusal must carry
+  // validate's nextAction verbatim, so the two commands cannot drift apart again.
+  {
+    const deployment = await createBuildDeployment();
+    try {
+      const buildLockPath = resolve(deployment, "config", "deployment.lock.json");
+      await writeFile(buildLockPath, JSON.stringify({
+        version: 1,
+        image: { reference: "old.example/old-image:stable", digest: `old.example/old-image@sha256:${"a".repeat(64)}` },
+      }));
+      const { manifest } = await collectManifest(buildCtx, "demo", { tolerateUnpinnedImage: true });
+      const problems = await validateSet(manifest, { checkFiles: true });
+      const advice = problems.find((entry) => entry.code === "SET_IMAGE_UNPINNED")?.nextAction ?? "";
+      let refusal = "";
+      try {
+        await collectManifest(buildCtx, "demo");
+      } catch (error) {
+        refusal = error instanceof Error ? error.message : String(error);
+      }
+      check("set build refuses a lock for another image", refusal.includes("does not belong to"), true);
+      check("the refusal carries validate's exact advice", advice !== "" && refusal.includes(advice), true);
+    } finally {
+      await removeBuildDeployment(deployment);
+      useDeployment(baseDeployment);
+    }
   }
 }
 

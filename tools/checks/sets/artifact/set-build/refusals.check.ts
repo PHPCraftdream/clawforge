@@ -129,6 +129,26 @@ try {
     } finally {
       await writeFile(lockPath, originalLock);
     }
+
+    // A committed lock that names the declared tag but carries no digest (a pre-pinning
+    // lock, or one written where the tag was never pulled): the pull paths — bootstrap
+    // before the first deployment, upgrade --image on a deployed instance — are named, not
+    // a bare `lock` that would record no digest all over again.
+    await writeFile(lockPath, JSON.stringify({
+      version: 1,
+      deployment: "set-build-check",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      image: { reference: declared },
+      recipes: {},
+      secrets: [],
+    }));
+    try {
+      const digestless = await buildRefusal();
+      check("a digestless lock for the declared tag still refuses", digestless.includes("no image digest to pin the set to"), true);
+      check("its advice names both pull paths, then lock", digestless.includes("./clawforge bootstrap") && digestless.includes(`./clawforge upgrade --image ${declared}`) && digestless.includes("./clawforge lock"), true);
+    } finally {
+      await writeFile(lockPath, originalLock);
+    }
   }
 
   // --- an unreadable secret source aborts the build instead of shrinking the scan ------------

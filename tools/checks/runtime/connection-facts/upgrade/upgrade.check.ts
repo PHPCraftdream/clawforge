@@ -22,6 +22,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { toSettings, parseEnv } from "#framework/core/env.ts";
 import type { Transport, ExecOptions } from "#framework/runtime/transport/transport.ts";
+import { DATA_DIR, SHARED_TAG, TARGET_DIGEST, PREVIOUS_DIGEST, PINNED_WITH_TAG, PINNED_NO_TAG, makeUpgradeCtx } from "./stub.ts";
 
 // pinImageReference (instance/upgrade.ts) writes the deployment's OWN .env on success — a real
 // repo-side file, not one ctx.transport can stand in for — so a real temporary deployment
@@ -30,114 +31,6 @@ const deploymentDir = await mkdtemp(join(tmpdir(), "clawforge-upgrade-check-"));
 useDeployment(deploymentDir);
 await writeFile(envFile(), "OC_DATA_DIR=/srv/clawforge/data\nOPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:extended-stable\n", "utf8");
 
-const DATA_DIR = "/srv/clawforge/data";
-const SHARED_TAG = "ghcr.io/openclaw/openclaw:extended-stable";
-const TARGET_DIGEST = `${SHARED_TAG.split(":")[0]}@sha256:target00000000000000000000000000000000000000000000000000000000`;
-const PREVIOUS_DIGEST = `${SHARED_TAG.split(":")[0]}@sha256:previous0000000000000000000000000000000000000000000000000000`;
-// A pin left by a healthy bootstrap/upgrade under the tag-preserving form — the exact digest
-// here is never resolved again; only its channel (SHARED_TAG) is.
-const PINNED_WITH_TAG = `${SHARED_TAG}@sha256:pinned000000000000000000000000000000000000000000000000000000`;
-// A pin with no tag alongside the digest — the channel it came from cannot be recovered
-// without guessing.
-const PINNED_NO_TAG = `${SHARED_TAG.split(":")[0]}@sha256:pinned000000000000000000000000000000000000000000000000000000`;
-
-type Scenario = "success" | "health-fail" | "exit78" | "doctor-fail";
-
-/** A backup/restore-compatible POSIX stub, permissive by default (matching the proven shape
- *  restore.check.ts's own makeCtx() and backup.check.ts's stubBackupCtx() already use), plus
- *  the runtime primitives ./clawforge upgrade itself asks for. `image` overrides the
- *  deployment's own OPENCLAW_IMAGE, for the pinned-channel scenarios below. */
-function makeUpgradeCtx(scenario: Scenario, options: { image?: string; running?: string } = {}): { ctx: Context; calls: string[]; runningDigest: () => string } {
-  const calls: string[] = [];
-  const files = new Set([DATA_DIR]);
-  let runningDigest = options.running ?? PREVIOUS_DIGEST;
-  const holder = JSON.stringify({ operationId: "op", what: "x", by: "a@b pid 1", takenAt: new Date().toISOString() });
-
-  const mounts = mountPoints(DATA_DIR);
-  const ctx = {
-    settings: { dataDir: DATA_DIR, backupDir: "/srv/clawforge/backups", env: {}, image: options.image ?? SHARED_TAG },
-    paths: {
-      toContainer: (path: string) => toContainerPath(path, mounts),
-      fromContainer: (path: string) => fromContainerPath(path, mounts),
-    },
-    transport: {
-      description: "stub",
-      async exists(path: string): Promise<boolean> { return files.has(path) || path === DATA_DIR; },
-      async readFile(path: string): Promise<string> {
-        if (path.endsWith("holder.json")) return holder;
-        return "{}";
-      },
-      async writeFile(): Promise<void> {},
-      async mkdirp(): Promise<void> {},
-      async remove(): Promise<void> {},
-      async exec(command: string, args: string[]): Promise<ExecResult> {
-        calls.push(`exec ${command} ${args.join(" ")}`);
-        if (command === "test" && args[0] === "-L") return { code: 1, stdout: "", stderr: "" };
-        if (command === "readlink" && args[0] === "-f") return { code: 0, stdout: args[1] ?? "", stderr: "" };
-        if (command === "stat") return { code: 0, stdout: "1000:1000", stderr: "" };
-        if (command === "test") return { code: files.has(args[1] ?? "") || args[0] !== "-e" ? 0 : 1, stdout: "", stderr: "" };
-        if (command === "mkdir" && args.length === 1) return { code: 0, stdout: "", stderr: "" };
-        if (command === "tar" && args.includes("-tzf")) return { code: 0, stdout: "data/\ndata/config/openclaw.json\n", stderr: "" };
-        if (command === "tar" && args.includes("-tvzf")) return { code: 0, stdout: "", stderr: "" };
-        if (command === "tar" && args.includes("-czf")) { files.add(args[args.indexOf("-czf") + 1] ?? ""); return { code: 0, stdout: "", stderr: "" }; }
-        if (command === "mv") {
-          const source = args.at(-2) ?? "";
-          const destination = args.at(-1) ?? "";
-          if (files.has(source)) { files.delete(source); files.add(destination); }
-          return { code: 0, stdout: "", stderr: "" };
-        }
-        if (command === "find") return { code: 0, stdout: "", stderr: "" };
-        if (command === "rm") return { code: 0, stdout: "", stderr: "" };
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    },
-    runtime: {
-      description: "docker",
-      async isRunning(): Promise<boolean> { return runningDigest === PREVIOUS_DIGEST || (scenario !== "health-fail" && scenario !== "exit78") || (scenario === "health-fail"); },
-      async pause(): Promise<void> {},
-      // Migration compensation restores while stopped, then recreates the previous image.
-      async start(): Promise<void> { runningDigest = PREVIOUS_DIGEST; },
-      async stop(): Promise<void> {},
-      // Health fails only for the freshly recreated gateway: the restart after the stopped
-      // pre-upgrade backup must succeed, so the scenario reaches the health gate it exists
-      // to test instead of dying inside the backup.
-      async waitForHealth(): Promise<void> {
-        if (scenario === "health-fail" && runningDigest === TARGET_DIGEST) throw new Error("the service did not become healthy");
-      },
-      async probe(): Promise<number> { return scenario === "exit78" ? 0 : 200; },
-      async lastExitCode(): Promise<number | undefined> {
-        if (scenario === "exit78") return 78;
-        return scenario === "health-fail" ? 1 : 0;
-      },
-      async resolveImageDigest(reference: string): Promise<string | undefined> {
-        calls.push(`resolveImageDigest ${reference}`);
-        return reference === SHARED_TAG ? TARGET_DIGEST : undefined;
-      },
-      async recreateWithImage(reference: string, onMutationStart?: () => void): Promise<void> {
-        calls.push(`recreateWithImage ${reference}`);
-        onMutationStart?.();
-        runningDigest = reference;
-      },
-      async runningImageIdentity(): Promise<{ imageId: string; digests: string[]; containerId: string }> {
-        return { imageId: "id", digests: [runningDigest], containerId: "c" };
-      },
-      async runOneOff(_service: string, cliArgs: string[]): Promise<ExecResult> {
-        calls.push(`runOneOff ${cliArgs.join(" ")}`);
-        if (cliArgs[0] === "backup" && cliArgs[1] === "create") {
-          // Simulates an image without native support: createBackup() falls back to its
-          // classic stopped path, which this stub's transport already knows how to drive.
-          return { code: 1, stdout: "", stderr: "error: unknown command 'backup'" };
-        }
-        if (cliArgs[0] === "doctor") {
-          const findings = scenario === "doctor-fail" ? [{ severity: "error", checkId: "x", message: "broken" }] : [];
-          return { code: findings.length > 0 ? 1 : 0, stdout: JSON.stringify({ ok: findings.length === 0, findings }), stderr: "" };
-        }
-        return { code: 0, stdout: "", stderr: "" };
-      },
-    },
-  } as unknown as Context;
-  return { ctx, calls, runningDigest: () => runningDigest };
-}
 
 // --- success path ----------------------------------------------------------------------------
 
@@ -153,7 +46,10 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string; running?:
 
 // --- a generic health failure rolls back to the previous digest, without restoring data ------
 
+const TAGGED_PREVIOUS = `${SHARED_TAG}@${PREVIOUS_DIGEST.split("@")[1]}`;
+
 {
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\n`);
   const { ctx, calls, runningDigest } = makeUpgradeCtx("health-fail");
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
@@ -164,13 +60,15 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string; running?:
   // target first, and the reported reason must be the health failure itself.
   check("the failure comes after recreation onto the target", calls.some((call) => call === `recreateWithImage ${TARGET_DIGEST}`), true);
   check("the reported reason is the health failure", failure instanceof Error && failure.message.includes("the service did not become healthy"), true);
-  check("it rolls back to the previous digest", runningDigest(), PREVIOUS_DIGEST);
+  check("it rolls back onto the pinned string, tag and proven digest", runningDigest(), TAGGED_PREVIOUS);
   check("a non-migration failure never restores the backup", calls.some((call) => call.includes("-xzf")), false);
+  check("and the rollback recreates on the exact string .env records", calls.includes(`recreateWithImage ${await readFile(envFile(), "utf8").then((content) => parseEnv(content).OPENCLAW_IMAGE)}`), true);
 }
 
 // --- exit 78 (migration failure) rolls back AND restores the pre-upgrade backup --------------
 
 {
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\n`);
   const { ctx, calls, runningDigest } = makeUpgradeCtx("exit78");
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
@@ -186,13 +84,14 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string; running?:
 // --- a blocking doctor --lint finding rolls back like any other health failure ---------------
 
 {
+  await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${SHARED_TAG}\n`);
   const { ctx, runningDigest } = makeUpgradeCtx("doctor-fail");
   let failure: unknown;
   await withOutputSink(() => {}, async () => {
     try { await upgrade(ctx, []); } catch (error) { failure = error; }
   });
   check("a blocking doctor finding fails the upgrade", failure instanceof Error, true);
-  check("and rolls back to the previous digest", runningDigest(), PREVIOUS_DIGEST);
+  check("and rolls back onto the pinned string", runningDigest(), TAGGED_PREVIOUS);
 }
 
 // --- a failed upgrade's rollback restores the OPENCLAW_IMAGE VALUE (tag + digest, exactly
@@ -323,12 +222,15 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
   let restored = false;
   const ok = (stdout = ""): ExecResult => ({ code: 0, stdout, stderr: "" });
   const settings = toSettings(parseEnv(await readFile(envFile(), "utf8")));
+  // The success pin keeps the deployment's tag alongside the requested digest, so the
+  // recreated container's image is that tagged string, not the tagless --image argument.
+  const pinnedTarget = `${SHARED_TAG}@${TARGET_DIGEST.split("@")[1]}`;
   const transport = {
     ...delegate,
     async listFiles(): Promise<string[]> { return []; },
     async writeFile(path: string, content: string | Uint8Array): Promise<void> {
       envFiles.set(path, typeof content === "string" ? content : Buffer.from(content).toString("utf8"));
-      if (scenario === "prepare" && path.endsWith("compose.env") && envFiles.get(path)?.includes(TARGET_DIGEST)) {
+      if (scenario === "prepare" && path.endsWith("compose.env") && envFiles.get(path)?.includes(TARGET_DIGEST.split("@")[1])) {
         throw new Error("target environment write denied");
       }
     },
@@ -340,17 +242,20 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
     },
     async exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult> {
       if (command === "curl") {
-        if (running === TARGET_DIGEST && scenario === "migration-exception") throw new Error("probe transport lost");
+        if (running === pinnedTarget && scenario === "migration-exception") throw new Error("probe transport lost");
         return ok("200");
       }
       if (command === "docker") {
+        if (args[0] === "buildx" && args[1] === "imagetools" && args[2] === "inspect") {
+          return ok(`Digest: sha256:${(args[3] ?? "").split("@")[1] ?? ""}`);
+        }
         if (args[0] === "ps") return ok("gateway-container");
         if (args[0] === "inspect") {
-          if (args.includes("{{.State.ExitCode}}")) return ok(running === TARGET_DIGEST && scenario === "migration-exception" ? "78" : "0");
+          if (args.includes("{{.State.ExitCode}}")) return ok(running === pinnedTarget && scenario === "migration-exception" ? "78" : "0");
           return ok(JSON.stringify({ Image: running, State: { Running: true } }));
         }
         if (args[0] === "image") {
-          if (doctorDone && running === TARGET_DIGEST && scenario === "pin" && !pinFileHidden) {
+          if (doctorDone && running === pinnedTarget && scenario === "pin" && !pinFileHidden) {
             await rename(envFile(), `${envFile()}.saved`);
             pinFileHidden = true;
           }
@@ -361,7 +266,7 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
           const image = parseEnv(envFiles.get(envPath) ?? "").OPENCLAW_IMAGE;
           if (args.includes("up")) {
             recreations.push(image);
-            if (image === PREVIOUS_DIGEST && recreations.includes(TARGET_DIGEST)) {
+            if (image === PREVIOUS_DIGEST && recreations.includes(pinnedTarget)) {
               if (scenario === "rollback") throw new Error("previous image recreation denied");
               if (pinFileHidden) {
                 await rename(`${envFile()}.saved`, envFile());
@@ -369,7 +274,7 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
               }
             }
             running = image;
-            if (image === TARGET_DIGEST && scenario === "cleanup") cleanupFailure = true;
+            if (image === pinnedTarget && scenario === "cleanup") cleanupFailure = true;
             return ok();
           }
           if (args.includes("run")) {
@@ -379,7 +284,7 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
               check(`${scenario}: durable pin stays A throughout doctor`, parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, PREVIOUS_DIGEST);
               doctorDone = true;
               if (scenario === "validator" || scenario === "rollback") throw new Error("validator transport lost");
-              const findings = scenario === "reject-b" && image === TARGET_DIGEST ? [{ severity: "error", checkId: "schema", message: "B rejects configuration" }] : [];
+              const findings = scenario === "reject-b" && image === pinnedTarget ? [{ severity: "error", checkId: "schema", message: "B rejects configuration" }] : [];
               return ok(JSON.stringify({ findings }));
             }
           }
@@ -403,9 +308,9 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
   });
   if (scenario === "success") {
     check("Docker success returns without failure", failure, undefined);
-    check("Docker success running identity is B", running, TARGET_DIGEST);
+    check("Docker success running identity is B", running, pinnedTarget);
     // An explicit --image digest of the tracked repository keeps the deployment's tag in the pin.
-    check("Docker success publishes B alongside the deployment's tag", parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, `${SHARED_TAG}@${TARGET_DIGEST.split("@")[1]}`);
+    check("Docker success publishes B alongside the deployment's tag", parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, pinnedTarget);
   } else {
     check(`${scenario}: upgrade reports failure`, failure instanceof Error, true);
     check(`${scenario}: B is not durably pinned`, parseEnv(await readFile(envFile(), "utf8")).OPENCLAW_IMAGE, PREVIOUS_DIGEST);
@@ -432,7 +337,7 @@ async function dockerUpgradeScenario(scenario: DockerScenario): Promise<void> {
       check(`${scenario}: compensation outcome is reported`, failure instanceof Error && failure.message.includes("was rolled back") && failure.message.includes("pre-upgrade backup:"), true);
     }
   }
-  if (doctors.length > 0) check(`${scenario}: actual Compose doctor image is B`, doctors, [TARGET_DIGEST]);
+  if (doctors.length > 0) check(`${scenario}: actual Compose doctor image is B`, doctors, [pinnedTarget]);
   check(`${scenario}: backup restoration is restricted to migration failure`, restored, scenario === "migration-exception");
 }
 
@@ -484,6 +389,9 @@ async function predecessorScenario(scenario: PredecessorScenario): Promise<void>
     async exec(command, args) {
       if (command === "curl") return ok(stopped ? "000" : "200");
       if (command === "docker") {
+        if (args[0] === "buildx" && args[1] === "imagetools" && args[2] === "inspect") {
+          return ok(`Digest: sha256:${(args[3] ?? "").split("@")[1] ?? ""}`);
+        }
         if (args[0] === "ps") return ok(unknown || (stopped && !args.includes("--all")) ? "" : "gateway-container");
         if (args[0] === "inspect") {
           if (unreadable) throw new Error("current container read unavailable");

@@ -13,6 +13,16 @@ All notable changes to `@clawforge/framework` will be documented here.
   tool) now prints control-mcp's help from the same declaration `control-mcp --help` uses,
   instead of failing with "unknown command: control-mcp / did you mean: control-mcp", and an
   exact name is never offered as its own did-you-mean suggestion.
+* `upgrade` recreates the gateway on the exact reference it pins into `.env` — on success
+  with an explicit `--image` digest of the tracked repository and on rollback over a bare-tag
+  pin — so the next `up`/`apply` no longer recreates the gateway again over a spelling
+  difference; `--json`'s `pinnedImage` and the `--dry-run` plan name that same string.
+  An explicit `--image repo@sha256:…` is now format-checked (64 hex) and verified at the
+  registry before `--dry-run` reports it and before a real run takes its pre-upgrade backup.
+* `set validate` and `set build` give one image-pin advice decided from the lock's content
+  (lock for another image, lock without digest, no lock) instead of disagreeing — `lock` no
+  longer claims to record what the running gateway serves (it records the local image's
+  digest), and a committed lock without an instance is no longer read as "deployed".
 * PowerShell completion answers again with a typed prefix (`clawforge sta<Tab>`, `--ap<Tab>`,
   `backup l<Tab>`, `watch in<Tab>`), which the previous script lost by scanning the word being
   completed as a typed command; `--app <name> backup <Tab>` offers the default action's flags

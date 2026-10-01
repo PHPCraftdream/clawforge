@@ -292,8 +292,8 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     severity: "blocking",
     summary: "the set pins an image tag rather than a digest, so what it installs depends on the day",
     // Default for a deployment no lock was ever recorded for — there `bootstrap` is the only
-    // command that can pin. set validate overrides to ./clawforge lock once a lock exists:
-    // on a live instance bootstrap would re-resolve the tag and recreate the gateway.
+    // command that can pin. set validate overrides via lock.ts's imagePinAdvice, decided from
+    // the lock's CONTENT (a committed lock does not imply a deployed instance).
     nextAction: "./clawforge bootstrap",
   },
   SET_OBJECT_ORPHANED: {

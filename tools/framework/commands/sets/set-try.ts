@@ -17,9 +17,8 @@ import { useDeployment, deploymentDir, envFile, composeProjectOverride, useCompo
 import { createContext } from "#src/core/context.ts";
 import type { Context } from "#src/core/context.ts";
 import { mountPoints } from "#src/runtime/mounts.ts";
-import { useSetSource, clearSetSource, setSourceDir, withSetSource } from "#src/set/artifacts/source.ts";
-import { recordInstalledSet } from "#src/set/artifacts/install.ts";
-import { validateSet } from "#src/set/ownership/validate.ts";
+import { useSetSource, clearSetSource, setSourceDir } from "#src/set/artifacts/source.ts";
+import { recordInstalledSet, unpackArtifactVerified } from "#src/set/artifacts/install.ts";
 // From its own module, not set.ts: set.ts reads SET_TRY_ARGUMENTS at load, so importing it
 // back here is a cycle that fails with a TDZ error when set-try is the entry.
 import { localSecretValues } from "./set-secrets-guard.ts";
@@ -36,7 +35,7 @@ import { withModelApproval } from "#src/service/openclaw-cli.ts";
 import type { AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 import { observeRuntime, runtimeMatches, saveEvidence } from "#src/set/artifacts/evidence.ts";
 import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
-import { unpackForTry, findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
+import { findFreePort, tryDeploymentName, targetSiblingRoot, buildEnv, tryTargetProblem } from "./set-try-env.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs, type ActionScope } from "#src/core/arguments.ts";
 
@@ -191,7 +190,7 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   // deploymentName() derives the compose project name from the directory basename, so
   // tryName must already be lowercase-and-hyphens (unlike mkdtemp's random suffix, which
   // can contain uppercase and compose rejects).
-  const unpacked = await unpackForTry(artifact);
+  const unpacked = await unpackArtifactVerified(artifact);
   const staging = unpacked.staging;
   const tryName = tryDeploymentName();
   // Under the checkout: a WSL/SSH path bridge can express this location on the target,
@@ -211,19 +210,9 @@ async function setTryInScope(ctx: Context, options: SetTryOptions, dependencies:
   try {
     const { manifest, id } = unpacked.verified;
 
-    let problems;
-    try {
-      problems = await withSetSource(staging, () => validateSet(manifest, { checkFiles: false }));
-    } catch (error) {
-      die(`this set has an invalid manifest: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    const blocking = problems.filter((entry) => entry.severity === "blocking");
-    if (blocking.length > 0) {
-      die(
-        `this set is not coherent — ${blocking.length} blocking finding(s), fix them first:\n` +
-          blocking.map((entry) => `  ${entry.code}  ${entry.detail}`).join("\n"),
-      );
-    }
+    // No second validateSet here: the unpack gate already ran every check, with the files
+    // present — this subset re-ran it with checkFiles: false and its die branch was
+    // unreachable (R32-05).
 
     if (manifest.acceptance === null || typeof manifest.acceptance !== "object" || Array.isArray(manifest.acceptance)) {
       die("this set has an invalid acceptance section: expected an object keyed by recipe");

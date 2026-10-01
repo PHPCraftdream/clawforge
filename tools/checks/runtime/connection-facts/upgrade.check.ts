@@ -195,9 +195,10 @@ function makeUpgradeCtx(scenario: Scenario, options: { image?: string; running?:
   check("and rolls back to the previous digest", runningDigest(), PREVIOUS_DIGEST);
 }
 
-// --- a failed upgrade's rollback restores OPENCLAW_IMAGE byte-for-byte (tag + digest, exactly
+// --- a failed upgrade's rollback restores the OPENCLAW_IMAGE VALUE (tag + digest, exactly
 // what was validated pre-upgrade), so the next plain upgrade — even --dry-run — re-resolves the
-// channel instead of hitting the tagless-pin refusal -----------------------------------------
+// channel instead of hitting the tagless-pin refusal. The parsed value is what is compared:
+// upsertEnvLine rewrites the file (LF, no quotes), so the bytes are not byte-identical.
 
 {
   await writeFile(envFile(), `OC_DATA_DIR=${DATA_DIR}\nOPENCLAW_IMAGE=${PINNED_WITH_TAG}\n`);

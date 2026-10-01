@@ -7,6 +7,7 @@ import type { CommandArgument } from "#framework/core/app.ts";
 import { NO_ACTION } from "#framework/core/arguments.ts";
 import { inputSchema, schemaArgumentDescription } from "#framework/integration/mcp/server.ts";
 import { buildCompletionModel, renderCompletion } from "#framework/integration/completion.ts";
+import { splitActionScoped } from "#framework/core/arguments.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 
 // --- R30-04: set's actions each parse their own slice of the declaration --------------------
@@ -116,38 +117,84 @@ import { check, finish } from "#checks/kit/harness.ts";
 {
   const DANGLING = new Set(["of", "is", "are", "a", "an", "the", "or", "and", "to", "for", "with", "than", "that", "from", "by", "at", "as", "be"]);
   const BOUNDARIES = new Set([".", ";", ":", ",", "—"]);
-  // These two names get fixed schema texts regardless of their declaration (the override is
-  // data, not cut logic); asserted directly below instead of through the oracle.
-  const SHARED_OVERRIDE_NAMES = new Set(["break-lock", "break-foreign-lock"]);
+  // These names get fixed schema texts regardless of their declaration (the override is
+  // data, not cut logic); asserted directly below instead of through the oracle. A table
+  // value keys a description prefix: the same name carries different meanings per command.
+  const SHARED_OVERRIDE_NAMES = new Set(["break-lock", "break-foreign-lock", "jobs", "root"]);
+  const SHARED_OVERRIDE_PREFIXES: Readonly<Record<string, readonly string[]>> = {
+    args: ["Arguments passed to OpenClaw's CLI verbatim", "Command and arguments to run"],
+    json: ["Emit restored data"],
+  };
+  const isSharedOverride = (argument: { name: string; description: string }): boolean =>
+    SHARED_OVERRIDE_NAMES.has(argument.name) ||
+    (SHARED_OVERRIDE_PREFIXES[argument.name]?.some((prefix) => argument.description.startsWith(prefix)) ?? false);
+
+  function oracleShort(description: string): string {
+    // Nested parentheticals, stripped to a fixed point like the implementation.
+    let stripped = description.replace(/^With [\w/-]+: /, "");
+    for (;;) {
+      const next = stripped.replace(/\s*\([^()]*\)/g, "");
+      if (next === stripped) break;
+      stripped = next;
+    }
+    stripped = stripped.replace(/\s{2,}/g, " ").trim();
+    if (stripped.length <= 60) return stripped;
+    const head = stripped.slice(0, 60);
+    // Boundaries inside (), [] or quotes do not count — a "," inside a JSON example is
+    // not a clause edge (R32-04).
+    let depth = 0;
+    let quote: string | undefined;
+    let cut = -1;
+    for (let i = 0; i < head.length; i++) {
+      const character = head[i];
+      if (quote !== undefined) { if (character === quote) quote = undefined; continue; }
+      if (character === "\"") { quote = character; continue; }
+      if (character === "(" || character === "[") { depth += 1; continue; }
+      if (character === ")" || character === "]") { depth = Math.max(0, depth - 1); continue; }
+      if (depth > 0) continue;
+      // "e.g." / "i.e." periods are not boundaries — same exclusion the implementation makes.
+      const abbrev = head.slice(Math.max(0, i - 3), i + 1);
+      if (BOUNDARIES.has(character) && abbrev !== "e.g." && abbrev !== "i.e." && (i + 1 >= head.length || head[i + 1] === " ")) cut = i;
+    }
+    if (cut >= 8) return stripped.slice(0, cut).trim();
+    const lastSpace = head.lastIndexOf(" ");
+    return `${(lastSpace > 24 ? head.slice(0, lastSpace) : head).trim()}…`;
+  }
 
   const offenders: string[] = [];
   for (const [name, command] of Object.entries(openclawCommands)) {
     for (const argument of command.arguments ?? []) {
-      if (SHARED_OVERRIDE_NAMES.has(argument.name)) continue;
+      if (isSharedOverride(argument)) continue;
       const actual = schemaArgumentDescription(argument);
       if (actual === undefined) continue;
-      // The schema appends structural suffixes after the short form — strip them, then judge
-      // the short form against the declaration's own text, not against a recomputation.
-      let core = actual;
-      for (;;) {
-        const stripped = core.replace(/\s*\([^()]*\)$/, "");
-        if (stripped === core) break;
-        core = stripped;
+      // Suffixes are appended after shortening — rebuild them structurally, not by regex.
+      // A composed description ("X (build); Y (forget)") is shortened per part, each part
+      // keeping its own actions (R32-04).
+      const parts = splitActionScoped(argument.description, argument.actions);
+      const short = parts === undefined
+        ? (() => {
+          const single = oracleShort(argument.description);
+          return argument.actions === undefined ? single : `${single} (${argument.actions.join(", ")})`;
+        })()
+        : parts.map(({ description, actions }) => `${oracleShort(description)} (${actions.join(", ")})`).join("; ");
+      const expected = argument.kind === "option" && argument.valueName !== undefined
+        ? `${short} (value: <${argument.valueName}>)`
+        : short;
+      if (actual !== expected) offenders.push(`${name}.${argument.name}: ${actual} (expected ${expected})`);
+      const lastWord = actual.replace(/\s*\([^()]*\)$/, "").trim().split(" ").pop()!.toLowerCase();
+      if (DANGLING.has(lastWord)) offenders.push(`${name}.${argument.name} ends on a dangling word: ${actual}`);
+      // Structural invariant: brackets and quotes stay balanced, so no cut lands inside
+      // a JSON example or a nested parenthetical.
+      let depth = 0;
+      let quote: string | undefined;
+      for (const character of actual) {
+        if (quote !== undefined) { if (character === quote) quote = undefined; continue; }
+        if (character === "\"") { quote = character; continue; }
+        if (character === "(" || character === "[") depth += 1;
+        if (character === ")" || character === "]") depth -= 1;
+        if (depth < 0) { offenders.push(`${name}.${argument.name} closes an unopened bracket: ${actual}`); break; }
       }
-      const source = argument.description.replace(/^With [\w/-]+: /, "").replace(/\s*\([^()]*\)/g, "").replace(/\s{2,}/g, " ").trim();
-      const partial = core.endsWith("…");
-      const shown = partial ? core.slice(0, -1).trimEnd() : core;
-      if (!source.startsWith(shown)) offenders.push(`${name}.${argument.name}: "${shown}" is not a prefix of the declaration's text "${source}"`);
-      else if (shown !== source) {
-        const next = source[shown.length];
-        // The cut lands on a clause boundary — the boundary itself kept or dropped, but never
-        // inside a word; a mid-phrase cut must be marked with an ellipsis.
-        if (!partial && next !== undefined && !BOUNDARIES.has(next) && next !== " ") offenders.push(`${name}.${argument.name}: cut mid-clause before "${next}": ${actual}`);
-      }
-      if (core.length > 61) offenders.push(`${name}.${argument.name}: short form over budget: ${actual}`);
-      // A partial cut cannot control where the budget runs out, so a dangling word is only
-      // rejected on a boundary cut.
-      if (!partial && DANGLING.has(shown.split(" ").pop()!.toLowerCase())) offenders.push(`${name}.${argument.name} ends on a dangling word: ${actual}`);
+      if (depth !== 0 || quote !== undefined) offenders.push(`${name}.${argument.name} leaves brackets or quotes open: ${actual}`);
     }
   }
   check("every schema description is a clean prefix of its declaration's text", offenders, []);
@@ -162,7 +209,12 @@ import { check, finish } from "#checks/kit/harness.ts";
   check("set.keep is a complete phrase", schemaOf("set", "keep").startsWith("keep the throwaway instance running instead of removing it"), true);
   check("pull.migrate is a complete phrase", schemaOf("pull", "migrate").startsWith("Migrate profile"), true);
   check("accept.set is a complete phrase", schemaOf("accept", "set").startsWith("Check the verified artifact and save an acceptance receipt"), true);
-  check("cli.args is a complete phrase", schemaOf("cli", "args").startsWith("Arguments passed to OpenClaw's CLI verbatim"), true);
+  check("cli.args is the fixed text, not a cut inside the JSON example", schemaOf("cli", "args"), "Arguments passed to OpenClaw's CLI verbatim");
+  check("exec.args is the fixed text", schemaOf("exec", "args"), "Command and arguments to run");
+  check("host.args is the fixed text", schemaOf("host", "args"), "Command and arguments to run");
+  check("host.root is a complete phrase, not a cut at the colon", schemaOf("host", "root"), "Request root; one half of the elevation consent");
+  check("check.jobs keeps the parenthetical closed (a gate command's declared text)", schemaArgumentDescription({ name: "jobs", description: "Concurrent check-file processes (default: OC_CHECK_JOBS, else min(4, cores/2))", kind: "flag" }), "Concurrent check-file processes");
+  check("restore.json fits the budget whole", schemaOf("restore", "json"), "Emit restored data and the gateway startup outcome as JSON");
   check(
     "check.filter (a gate command, not openclawCommands) is a complete phrase",
     schemaArgumentDescription({ name: "filter", description: "Only run checks whose relative path (e.g. foundation/cli/gate-commands.check.ts) contains this text — repeatable, matches any", kind: "option", valueName: "text" }),
@@ -191,12 +243,12 @@ import { check, finish } from "#checks/kit/harness.ts";
   check(
     "set.name names the object for forget and the set for build/validate",
     setSchema.properties.name.description,
-    "Set name; The object's name (build, validate, forget) (value: <name>)",
+    "Set name (build, validate); Object name (forget) (value: <name>)",
   );
   check(
-    "set.json's schema line is the shortened first action text, not one action's claim for all",
+    "set.json's schema line keeps each part's own action, not one action's claim for all",
     setSchema.properties.json.description,
-    "Emit the manifest and its id as JSON (build, validate, diff, receipts, try)",
+    "Emit the manifest and its id as JSON (build); Emit the findings as JSON (validate); Emit JSON (diff); Emit the receipts as JSON (receipts); Emit the trial report as JSON (try)",
   );
   const watchSchema = inputSchema(openclawCommands.watch) as { properties: Record<string, { description?: string }> };
   check("watch.json no longer carries the 'With check/status:' lead-in", watchSchema.properties.json.description, "Emit JSON instead of text (check, status, test)");

@@ -128,14 +128,22 @@ async function checkImagePinned(manifest: SetManifest, problems: Problem[]): Pro
 async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, problems: Problem[]): Promise<void> {
   for (const [name, recipe] of Object.entries(manifest.recipes)) {
     const declaresAgent = recipe.agent !== undefined;
+    // The remedy is a concrete edit, not "run the validator you are already running" (R32-05).
+    const incomplete = (detail: string): Problem =>
+      problem("SET_RECIPE_INCOMPLETE", detail, `add recipe.json or server.ts to recipes/${name}, or remove the directory`);
 
     if (checkFiles) {
       const dir = resolve(recipesDir(), name);
       if (!(await exists(dir))) {
-        // An unpacked artifact has a directory only where the manifest lists files in it;
-        // a recipe carrying nothing unpacks to nothing, and must not read as incomplete.
-        if (Object.keys(recipe.files).length > 0 || declaresAgent) {
-          problems.push(problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" is declared but ${dir} does not exist`));
+        // An unpacked artifact has a directory only where the manifest lists files in it.
+        // A recipe that carries no portable content unpacks to nothing — and the tree it
+        // was built from answers for that (the dir-exists branch below), so the artifact
+        // must give the same answer, not a weaker one (R32-05: the tree reported three
+        // blocking recipes, its own artifact one).
+        if (declaresAgent || Object.keys(recipe.files).length > 0) {
+          problems.push(incomplete(`recipe "${name}" is declared but ${dir} does not exist`));
+        } else {
+          problems.push(incomplete(`recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
         }
         continue;
       }
@@ -143,13 +151,13 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
       // it an MCP recipe. A recipe without one is a plain service (its own compose stack,
       // recipe.json); demanding server.ts of it was a false positive against a real deployment.
       if (declaresAgent && !(await exists(resolve(dir, "server.ts")))) {
-        problems.push(problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" declares an agent but has no server.ts — that is the file the gateway is registered to spawn`));
+        problems.push(incomplete(`recipe "${name}" declares an agent but has no server.ts — that is the file the gateway is registered to spawn`));
       }
       if (!declaresAgent && !(await exists(resolve(dir, "recipe.json"))) && !(await exists(resolve(dir, "server.ts")))) {
-        problems.push(problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
+        problems.push(incomplete(`recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
       }
       if (declaresAgent && !(await exists(resolve(dir, "agent", "config.json")))) {
-        problems.push(problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" declares an agent but has no agent/config.json`));
+        problems.push(incomplete(`recipe "${name}" declares an agent but has no agent/config.json`));
       }
     }
 
@@ -157,7 +165,7 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
     // legitimate), so only an empty checksum map WITH an agent bundle is reported.
     if (declaresAgent && Object.keys(recipe.files).length === 0) {
       problems.push(
-        problem("SET_RECIPE_INCOMPLETE", `recipe "${name}" declares an agent but serves no content — the agent would have nothing to read`),
+        incomplete(`recipe "${name}" declares an agent but serves no content — the agent would have nothing to read`),
       );
     }
   }

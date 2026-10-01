@@ -253,7 +253,8 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   SET_RECIPE_INCOMPLETE: {
     severity: "blocking",
     summary: "a recipe the set declares is absent, or lacks a file its own declaration implies",
-    nextAction: "./clawforge set validate",
+    // The fix is an edit, not re-running the validator the finding came from (R32-05).
+    nextAction: "add recipe.json or server.ts to the recipe's directory, or remove the directory",
   },
   SET_REFERENCE_BROKEN: {
     severity: "blocking",

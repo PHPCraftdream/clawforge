@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { die, info, log } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
-import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
+import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
 import type { SetManifest, SetRecipe } from "#src/set/artifacts/model.ts";
 import type { Context } from "#src/core/context.ts";
@@ -340,11 +340,14 @@ function humanChange(change: SetDiffChange): string {
   return `${symbol} ${change.kind} ${target}${values}`;
 }
 
-/** `./clawforge set diff A.tar.gz B.tar.gz`; both artifacts are fully verified before comparison. */
+/** `./clawforge set diff A.tar.gz B.tar.gz`; both artifacts are fully verified before comparison.
+ *  Read-only, so the verification gate's semantic findings are ignored here — a diff between a
+ *  broken and a good build is exactly what a reader may want to ask (R32-05); the integrity
+ *  checks still refuse a corrupt archive. */
 export async function setDiff(_ctx: Context, args: string[], scope?: ActionScope): Promise<void> {
   const parsed = parseArgs(args, scope);
-  await withUnpackedArtifact(parsed.from, async (fromStaging, fromVerified) => {
-    await withUnpackedArtifact(parsed.to, async (toStaging, toVerified) => {
+  await withArtifactInspected(parsed.from, async (fromStaging, fromVerified) => {
+    await withArtifactInspected(parsed.to, async (toStaging, toVerified) => {
       const result = diffManifests(
         { ...fromVerified, staging: fromStaging },
         { ...toVerified, staging: toStaging },

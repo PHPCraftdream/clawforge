@@ -6,6 +6,7 @@
 import type { CommandArgument } from "../../core/app.ts";
 import { maskSecrets } from "../../core/io/log.ts";
 import { destructiveMarker } from "../../core/io/help-render.ts";
+import { splitActionScoped } from "../../core/arguments.ts";
 
 /** What the functions below need from a command, and all they need: the description a
  *  client reads, and the arguments the schema, the validation and the argv are derived from.
@@ -163,43 +164,102 @@ function isTrivialDescription(name: string, description: string): boolean {
   return normalizedDescription === normalizedName;
 }
 
+/** Nested parentheticals stripped to a fixed point: "(default: OC_CHECK_JOBS, else min(4,
+ *  cores/2))" left an unclosed outer pair behind when only the inner one was removed. */
+function stripParentheticals(description: string): string {
+  let stripped = description;
+  for (;;) {
+    const next = stripped.replace(/\s*\([^()]*\)/g, "");
+    if (next === stripped) return stripped.replace(/\s{2,}/g, " ").trim();
+    stripped = next;
+  }
+}
+
 /** First sentence or clause, cut ONLY at a clause boundary (`.`, `;`, `:`, `,`, `—`) within
  *  the budget — never mid-phrase, since a cut like "— refused" flips meaning (R30-06, R31-02).
  *  No boundary in reach → cut at a word and mark the truncation with an ellipsis, so a client
  *  can see the text is partial. `:` is a boundary here, not before: the "With x: " lead-in is
- *  stripped by the caller first. `help <command>` keeps the full text. */
+ *  stripped by the caller first. Boundary characters inside (), [] or quotes do not count —
+ *  a "," inside a JSON example is not a clause edge (R32-04). `help <command>` keeps the
+ *  full text. */
 function shortenDescription(description: string): string {
-  const stripped = description.replace(/\s*\([^()]*\)/g, "").replace(/\s{2,}/g, " ").trim();
+  const stripped = stripParentheticals(description);
   if (stripped.length <= SHORT_DESCRIPTION_LIMIT) return stripped;
   const head = stripped.slice(0, SHORT_DESCRIPTION_LIMIT);
-  // Not "e.g." / "i.e." — an abbreviation's period is not a clause boundary either.
-  const boundaries = [...head.matchAll(/(?<!\be\.g)(?<!\bi\.e)[.;:,—](?=\s|$)/g)];
-  const last = boundaries[boundaries.length - 1];
-  if (last !== undefined && last.index >= 8) return stripped.slice(0, last.index).trim();
+  let depth = 0;
+  let quote: string | undefined;
+  let last = -1;
+  for (let index = 0; index < head.length; index += 1) {
+    const character = head[index];
+    if (quote !== undefined) {
+      if (character === quote) quote = undefined;
+      continue;
+    }
+    if (character === '"') { quote = character; continue; }
+    if (character === "(" || character === "[") { depth += 1; continue; }
+    if (character === ")" || character === "]") { depth = Math.max(0, depth - 1); continue; }
+    if (depth > 0) continue;
+    // Not "e.g." / "i.e." — an abbreviation's period is not a clause boundary either.
+    const abbrev = head.slice(Math.max(0, index - 3), index + 1);
+    if (".;:,—".includes(character) && abbrev !== "e.g." && abbrev !== "i.e." && (index + 1 >= head.length || head[index + 1] === " ")) {
+      last = index;
+    }
+  }
+  if (last >= 8) return stripped.slice(0, last).trim();
   const cut = head.lastIndexOf(" ") > SHORT_DESCRIPTION_LIMIT * 0.4 ? head.slice(0, head.lastIndexOf(" ")) : head;
   return `${cut.trim()}…`;
 }
 
-/** Arguments repeated on many tools: one terse schema line each (`help` keeps the full text). */
-const SHARED_SCHEMA_DESCRIPTIONS: Readonly<Record<string, string>> = {
+/** Arguments repeated on many tools: one terse schema line each (`help` keeps the full text).
+ *  A string is the fixed text for every argument of that name; a table keys a description
+ *  prefix — the same name on different commands carries different meanings (cli/exec/host's
+ *  `args`). These replace the cut, they are not cut: an explicit short sentence is worth more
+ *  than a phrase trimmed mid-example (R32-04). */
+const SHARED_SCHEMA_DESCRIPTIONS: Readonly<Record<string, string | Readonly<Record<string, string>>>> = {
   "break-lock": "Take over a held instance lock",
   "break-foreign-lock": "Host id of an orphaned lock to take over",
+  jobs: "Concurrent check-file processes",
+  root: "Request root; one half of the elevation consent",
+  args: {
+    "Arguments passed to OpenClaw's CLI verbatim": "Arguments passed to OpenClaw's CLI verbatim",
+    "Command and arguments to run": "Command and arguments to run",
+  },
+  json: {
+    "Emit restored data": "Emit restored data and the gateway startup outcome as JSON",
+  },
 };
+
+function sharedSchemaDescription(argument: CommandArgument): string | undefined {
+  const shared = SHARED_SCHEMA_DESCRIPTIONS[argument.name];
+  if (shared === undefined) return undefined;
+  if (typeof shared === "string") return shared;
+  for (const [prefix, text] of Object.entries(shared)) {
+    if (argument.description.startsWith(prefix)) return text;
+  }
+  return undefined;
+}
 
 /** The argument description in the MCP schema; `--help` and `help` keep it whole. */
 export function schemaArgumentDescription(argument: CommandArgument): string | undefined {
   if (isTrivialDescription(argument.name, argument.description)) return undefined;
-  const shared = SHARED_SCHEMA_DESCRIPTIONS[argument.name];
+  const shared = sharedSchemaDescription(argument);
   if (shared !== undefined) return shared;
-  // "With x:" is help-render's lead-in, not content — stripped BEFORE shortening, or it
-  // eats the budget and the cut lands mid-phrase (R30-06: watch.interval "a bare number is").
-  const short = shortenDescription(argument.description.replace(/^With [\w/-]+: /, ""));
-  // Which action(s) of a multi-action command this argument belongs to — same wording
-  // help-render.ts prints. `create` is backup's default (no action word needed) and is
-  // labelled as such, so a client knows `hot` without an `action` still means a create.
-  const scoped = argument.actions === undefined
-    ? short
-    : `${short} (${argument.actions.join(", ")})`;
+  // A composed description (scopeByAction: "X (build); Y (validate)") is shortened per part
+  // so each part keeps its own actions — shortening the whole string first stripped every
+  // part's action list and left one action's text standing for all (R31-03, R32-04).
+  const parts = splitActionScoped(argument.description, argument.actions);
+  const short = parts === undefined
+    // "With x:" is help-render's lead-in, not content — stripped BEFORE shortening, or it
+    // eats the budget and the cut lands mid-phrase (R30-06: watch.interval "a bare number is").
+    ? shortenDescription(argument.description.replace(/^With [\w/-]+: /, ""))
+    : parts.map(({ description, actions: own }) => `${shortenDescription(description)} (${own.join(", ")})`).join("; ");
+  // Without per-part actions: which action(s) of a multi-action command this argument belongs
+  // to — same wording help-render.ts prints. `create` is backup's default (no action word
+  // needed) and is labelled as such, so a client knows `hot` without an `action` still means
+  // a create.
+  const scoped = parts === undefined && argument.actions !== undefined
+    ? `${short} (${argument.actions.join(", ")})`
+    : short;
   return argument.kind === "option" && argument.valueName !== undefined
     ? `${scoped} (value: <${argument.valueName}>)`
     : scoped;

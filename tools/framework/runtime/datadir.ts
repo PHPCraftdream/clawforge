@@ -204,8 +204,14 @@ async function physicalPath(ctx: Context, path: string): Promise<string> {
  *  dataDir` sees only the final component: a symlink one level UP redirects every later
  *  mkdir/chown/chmod while the configured path still looks harmless. So the ancestry is
  *  walked up to the deepest existing ancestor, resolved, and required to equal the
- *  configured one. */
-async function assertCanonicalAncestry(ctx: Context, dataDir: string): Promise<void> {
+ *  configured one. `prefix` — or a callback making it from the probe — is prepended to the
+ *  readlink, so a caller that acts privileged (restore) verifies through the same privileges.
+ *  One implementation for datadir and restore: the two copies had already diverged (R32-11). */
+export async function assertCanonicalAncestry(
+  ctx: Context,
+  dataDir: string,
+  prefix: string[] | ((probe: string) => Promise<string[]>) = [],
+): Promise<void> {
   let probe = dataDir;
   for (;;) {
     let present: boolean;
@@ -219,7 +225,14 @@ async function assertCanonicalAncestry(ctx: Context, dataDir: string): Promise<v
     if (parent === probe) break;
     probe = parent;
   }
-  const canonical = await physicalPath(ctx, probe);
+  const [head, ...rest] = [...(typeof prefix === "function" ? await prefix(probe) : prefix), "readlink", "-f", probe];
+  const resolved = await ctx.transport.exec(head, rest, { allowFailure: true });
+  const canonical = resolved.stdout.trim();
+  // An empty answer with exit 0 is a refusal, not a confirmation ("cannot verify" never
+  // reads as "verified").
+  if (resolved.code !== 0 || canonical === "") {
+    die(`cannot resolve ${probe} on the target: ${resolved.stderr.trim() || "the path does not resolve"}`);
+  }
   if (canonical !== probe) {
     die(
       `${dataDir} would act through ${canonical}: ${probe} sits behind a symlink, so creating or ` +

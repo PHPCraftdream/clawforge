@@ -121,6 +121,27 @@ export function scopeByAction(slices: Readonly<Record<string, readonly CommandAr
   }));
 }
 
+/** One composed description split into the segments scopeByAction wrote when the slices
+ *  describe one name differently: every segment must end with its own action list, all of
+ *  them within the argument's overall actions. Undefined otherwise — a plain description
+ *  (or one whose parenthetical is not an action list, like "(default: …)") is not scoped. */
+export function splitActionScoped(
+  description: string,
+  actions: readonly string[] | undefined,
+): readonly { description: string; actions: readonly string[] }[] | undefined {
+  if (actions === undefined) return undefined;
+  const parts = description.split(";").map((part) => part.trim()).filter((part) => part !== "");
+  if (parts.length < 2) return undefined;
+  const split: { description: string; actions: readonly string[] }[] = [];
+  for (const part of parts) {
+    const match = /\s*\(([^()]*)\)$/.exec(part);
+    const own = match === null ? undefined : match[1].split(",").map((token) => token.trim());
+    if (own === undefined || !own.every((token) => actions.includes(token))) return undefined;
+    split.push({ description: part.slice(0, part.length - match![0].length).trim(), actions: own });
+  }
+  return split;
+}
+
 /** One value per declared argument, keyed by its name (not its `--flag` spelling):
  *   flag        true once seen, otherwise absent
  *   option      the value once seen (from `--opt value` or `--opt=value`); otherwise absent

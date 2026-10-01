@@ -12,6 +12,8 @@ import { problem } from "#framework/service/inspection.ts";
 import { buildSetManifest } from "#framework/set/artifacts/model.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { toolEnvelope } from "#framework/integration/mcp/server.ts";
+import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { createBuildDeployment, removeBuildDeployment, ctx as buildCtx } from "#checks/sets/artifact/set-build/fixture.ts";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -404,6 +406,122 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     const document = JSON.parse(captured.slice(captured.indexOf("{\n")));
     check("validate --set --json carries the artifact's id", document.id, good.id);
     check("and the source and validity", [document.source, document.valid], [good.artifact, true]);
+  } finally {
+    await removeBuildDeployment(deployment);
+  }
+}
+
+// --- validate --set on a broken artifact reports, it does not die in the unpack gate ----------
+//
+// Found on a tree with an empty recipe directory and a recipe carrying only a private file:
+// the blocking findings were caught by the unpack verification and thrown as one bare error
+// before the report ran — no `blocking:` lines, no JSON, and an MCP client reading
+// structuredContent saw `problems: []` with `result: ""`. Recipes invisible to the artifact
+// (no portable files) were skipped entirely: the tree said 3 blocking, its own artifact 1.
+{
+  const deployment = await createBuildDeployment();
+  try {
+    // An empty recipe directory and one carrying only a private file — neither survives the
+    // portable-content policy, so the artifact has no directory for either.
+    await mkdir(resolve(deployment, "recipes", "delta"), { recursive: true });
+    await mkdir(resolve(deployment, "recipes", "eps"), { recursive: true });
+    await writeFile(resolve(deployment, "recipes", "eps", ".env"), "EPS_TOKEN=placeholder\n");
+    const bad = await buildSet(buildCtx, "demo-set");
+
+    // Text: findings through the same report the tree uses, recipes named.
+    let text = "";
+    let failed = false;
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stderr.write as any) = (chunk: string | Uint8Array): boolean => {
+      text += String(chunk);
+      return true;
+    };
+    try {
+      try {
+        await set(buildCtx, ["validate", "--set", bad.artifact]);
+      } catch {
+        failed = true;
+      }
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+    check("validate --set on a broken artifact fails", failed, true);
+    check("it reports the findings instead of dying in the gate", text.includes("blocking: SET_RECIPE_INCOMPLETE"), true);
+    check("the gate's bare error text is gone", text.includes("is not a valid set artifact"), false);
+    check("the recipes are named", text.includes("delta") && text.includes("eps"), true);
+
+    // --json: the document exists and carries every problem.
+    let jsonOut = "";
+    let jsonFailed = false;
+    try {
+      await withOutputSink((chunk) => { jsonOut += chunk; }, () => set(buildCtx, ["validate", "--set", bad.artifact, "--json"]));
+    } catch {
+      jsonFailed = true;
+    }
+    const badDocument = JSON.parse(jsonOut.slice(jsonOut.indexOf("{\n")));
+    check("validate --set --json on a broken artifact emits a document and fails", [jsonFailed, badDocument.valid], [true, false]);
+    check(
+      "every finding is reported, including the recipes the artifact cannot carry",
+      badDocument.problems.length === 2 && badDocument.problems.every((entry: { code: string }) => entry.code === "SET_RECIPE_INCOMPLETE"),
+      true,
+    );
+    check(
+      "the advice is a concrete edit, not the validator itself",
+      badDocument.nextActions.some((action: string) => action.includes("recipes/delta")) &&
+        badDocument.nextActions.every((action: string) => action !== "./clawforge set validate"),
+      true,
+    );
+
+    // MCP-captured mode: the same captured document must reach the envelope as problems,
+    // not `problems: []` with an empty result.
+    let capturedBroken = "";
+    await withOutputSink((chunk) => { capturedBroken += chunk; }, async () => {
+      // The document is emitted before the command throws on its own blockers; the throw
+      // after emission is expected here — only the captured document matters.
+      try { await set(buildCtx, ["validate", "--set", bad.artifact]); } catch { /* reported above */ }
+    });
+    const envelope = toolEnvelope(
+      openclawCommands.set,
+      capturedBroken,
+      capturedBroken.slice(capturedBroken.indexOf("{\n")),
+      "check-op",
+      ["validate"],
+    );
+    check("an MCP client sees the artifact's findings, not an empty problems list", (envelope.problems as unknown[]).length, 2);
+    check("the envelope keeps the command's own document as its result", typeof envelope.result, "object");
+
+    // The artifact answers exactly as its tree: both recipes invisible to the artifact
+    // (an empty directory; a private file only) reported, same count on both sides.
+    let treeDocument = "";
+    await withOutputSink((chunk) => { treeDocument += chunk; }, async () => {
+      // Same shape as the artifact path: the document is emitted, then the blockers throw.
+      try { await set(buildCtx, ["validate", "--json"]); } catch { /* reported above */ }
+    });
+    const tree = JSON.parse(treeDocument.slice(treeDocument.indexOf("{\n")));
+    check("the artifact answers as its tree does", [tree.valid, tree.problems.length], [false, 2]);
+
+    // set diff (read-only) can still ask what changed between a broken and a good build.
+    let diffOut = "";
+    let diffFailed = false;
+    try {
+      await withOutputSink((chunk) => { diffOut += chunk; }, () => set(buildCtx, ["diff", bad.artifact, bad.artifact, "--json"]));
+    } catch {
+      diffFailed = true;
+    }
+    const diff = JSON.parse(diffOut.slice(diffOut.indexOf("{\n")));
+    check("set diff between a broken artifact and itself still answers", [diffFailed, diff.noChanges], [false, true]);
+
+    // Install-time callers stay strict: the gate refuses, codes deduped, recipes named.
+    let refusal = "";
+    try {
+      const unpacked = await unpackArtifactVerified(bad.artifact);
+      await rm(unpacked.staging, { recursive: true, force: true });
+    } catch (error) {
+      refusal = error instanceof Error ? error.message : String(error);
+    }
+    check("the install-time gate still refuses a broken artifact", refusal.includes("is not a valid set artifact"), true);
+    check("the refusal dedupes the code and names the recipes", refusal.includes("SET_RECIPE_INCOMPLETE ×2") && refusal.includes("delta") && refusal.includes("eps"), true);
   } finally {
     await removeBuildDeployment(deployment);
   }

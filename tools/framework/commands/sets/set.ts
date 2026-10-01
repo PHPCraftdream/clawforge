@@ -19,7 +19,7 @@ import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shar
 import { setTry } from "./set-try.ts";
 import { setDiff } from "./set-diff.ts";
 import { setReceipts } from "./set-receipts.ts";
-import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
+import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import type { SetManifest } from "#src/set/artifacts/model.ts";
 import { buildSet, collectManifest, defaultSetName } from "./set-manifest.ts";
@@ -48,7 +48,7 @@ export const SET_VALIDATE_ARGUMENTS: CommandArgument[] = [
 
 export const SET_FORGET_ARGUMENTS: CommandArgument[] = [
   { name: "kind", description: "agent, mcp-server, or cron-job", kind: "option", valueName: "kind", choices: ["agent", "mcp-server", "cron-job"] },
-  { name: "name", description: "The object's name", kind: "option", valueName: "name" },
+  { name: "name", description: "Object name", kind: "option", valueName: "name" },
   { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
 ];
@@ -79,7 +79,7 @@ async function validateAction(
   // Both sources answer through one report, so the artifact path cannot drift from the
   // tree path: blocking findings print as blocking (doctor's verb, not warning:), the
   // summary names each failing code once, and non-zero exit comes from the blockers alone.
-  const report = async (manifest: SetManifest, source: string, problems: Problem[], coherentNote = "", id?: string): Promise<void> => {
+  const report = async (manifest: SetManifest, source: string, problems: readonly Problem[], coherentNote = "", id?: string): Promise<void> => {
     const blocking = problems.filter((entry) => entry.severity === "blocking");
     if (options.jsonOnly || isCaptured()) {
       emit(
@@ -112,9 +112,14 @@ async function validateAction(
 
   if (options.artifact !== undefined) {
     const artifact = options.artifact;
-    return withUnpackedArtifact(artifact, (staging, verified) => withSetSource(staging, async () => {
-      await report(verified.manifest, artifact, await validateSet(verified.manifest, { checkFiles: true }), " and its artifact contents match", verified.id);
-    }), `checking ${artifact}`);
+    log(`checking ${artifact}`);
+    // Read-only: the unpack gate's integrity checks still refuse a corrupt archive, but
+    // blocking semantic findings come back and go through the same report as the tree —
+    // blocking: lines, the JSON document, MCP problems — instead of dying as one bare
+    // error string before anything was printed (R32-05).
+    return withArtifactInspected(artifact, (staging, verified, problems) => withSetSource(staging, async () => {
+      await report(verified.manifest, artifact, problems, " and its artifact contents match", verified.id);
+    }));
   }
   // The tag is kept in requires.image rather than dying here: validate reports the gap
   // itself (SET_IMAGE_UNPINNED) together with everything else it found.

@@ -10,7 +10,7 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { guarded } from "#src/runtime/lock/instance-lock.ts";
-import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe } from "#src/runtime/datadir.ts";
+import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe, assertCanonicalAncestry } from "#src/runtime/datadir.ts";
 import {
   archiveRoot,
   inspectArchive,
@@ -189,26 +189,17 @@ async function presenceOf(ctx: Context, prefix: string[], path: string): Promise
 async function physicalPath(ctx: Context, prefix: string[], path: string): Promise<string> {
   const [head, ...rest] = [...prefix, "readlink", "-f", path];
   const resolved = await ctx.transport.exec(head, rest, { allowFailure: true });
-  if (resolved.code !== 0) {
+  if (resolved.code !== 0 || resolved.stdout.trim() === "") {
     die(`cannot resolve ${path} on the target: ${resolved.stderr.trim() || "the path does not resolve"}`);
   }
   return resolved.stdout.trim();
 }
 
 /** Refuses a data root whose existing ancestry is redirected before restore moves or
- * creates anything. Re-run this at each destructive boundary to catch changed parents. */
-async function verifyDataDirAncestry(ctx: Context, dataDir: string): Promise<void> {
-  let probe = dataDir;
-  while (!(await ctx.transport.exists(probe))) {
-    const parent = probe.slice(0, Math.max(probe.lastIndexOf("/"), 1));
-    if (parent === probe) break;
-    probe = parent;
-  }
-  const prefix = await sudoFor(ctx, probe);
-  const resolved = await physicalPath(ctx, prefix, probe);
-  if (resolved !== probe) {
-    die(`refusing restore: ${probe} resolves to ${resolved}; data directory ancestry must not pass through a symlink`);
-  }
+ * creates anything. Re-run this at each destructive boundary to catch changed parents.
+ * The one shared helper (datadir.ts), taken through restore's own privileges. */
+function verifyDataDirAncestry(ctx: Context, dataDir: string): Promise<void> {
+  return assertCanonicalAncestry(ctx, dataDir, async (probe) => sudoFor(ctx, probe));
 }
 
 /** Brings the archive's privacy history back to the deployment-side ledger, before anything

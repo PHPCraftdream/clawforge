@@ -259,8 +259,10 @@ async function tar(args: string[]): Promise<{ code: number; stdout: string; stde
   return result;
 }
 
-/** Verifies archive structure, extracts only after that verification, then verifies every byte. */
-async function verifyArtifact(artifact: string, staging: string): Promise<VerifiedArtifact> {
+/** Verifies archive structure, extracts only after that verification, then verifies every
+ *  byte. With `collectFindings`, blocking semantic findings come back instead of throwing —
+ *  the read-only path (validate --set, set diff) reports them; installers stay strict. */
+async function verifyArtifact(artifact: string, staging: string, options: { collectFindings?: boolean } = {}): Promise<VerifiedArtifact & { problems?: Problem[] }> {
   const listing = await tar(["-tzf", artifact]);
   if (listing.code !== 0) throw new Error(`could not inspect ${artifact}: ${(listing.stderr || listing.stdout).trim()}`);
   const verbose = await tar(["-tvzf", artifact]);
@@ -326,8 +328,22 @@ async function verifyArtifact(artifact: string, staging: string): Promise<Verifi
   // blocking findings must not build into an artifact that verifies as coherent.
   const semanticProblems = await withSetSource(staging, () => validateSet(manifest, { checkFiles: true }));
   const blocking = semanticProblems.filter((entry) => entry.severity === "blocking");
-  if (blocking.length > 0) throw new Error(`artifact set is not coherent: ${blocking.map((entry) => entry.code).join(", ")}`);
-  return { manifest, id: setManifestId(manifest) };
+  if (blocking.length > 0 && options.collectFindings !== true) {
+    throw new Error(`artifact set is not coherent: ${coherenceSummary(blocking)}`);
+  }
+  return options.collectFindings === true
+    ? { manifest, id: setManifestId(manifest), problems: semanticProblems }
+    : { manifest, id: setManifestId(manifest) };
+}
+
+/** One line for the install-time refusal: each failing code once with a count when it repeats,
+ *  plus the recipes named, so "SET_RECIPE_INCOMPLETE, SET_RECIPE_INCOMPLETE" says which broke. */
+export function coherenceSummary(problems: readonly Problem[]): string {
+  const counts = new Map<string, number>();
+  for (const entry of problems) counts.set(entry.code, (counts.get(entry.code) ?? 0) + 1);
+  const codes = [...counts.entries()].map(([code, count]) => (count > 1 ? `${code} ×${count}` : code)).join(", ");
+  const recipes = [...new Set(problems.map((entry) => /recipe "([^"]+)"/.exec(entry.detail)?.[1]).filter((name): name is string => name !== undefined))];
+  return recipes.length === 0 ? codes : `${codes} (recipes: ${recipes.join(", ")})`;
 }
 
 /** Keeps a validated artifact in the deployment so rollback does not depend on its original
@@ -377,6 +393,27 @@ export async function unpackArtifactVerified(artifact: string): Promise<{ stagin
 
 export async function unpackArtifact(artifact: string): Promise<string> {
   return (await unpackArtifactVerified(artifact)).staging;
+}
+
+/** Read-only unpack for inspection — validate --set and set diff. Integrity still refuses
+ *  (a corrupt archive is not a set), but blocking semantic findings come back instead of
+ *  dying inside the gate, so the caller reports them through its own report/JSON path and
+ *  an MCP client sees the problems rather than "error, no problems" (R32-05). */
+export async function withArtifactInspected<T>(
+  artifact: string,
+  body: (staging: string, verified: VerifiedArtifact, problems: readonly Problem[]) => Promise<T>,
+): Promise<T> {
+  const staging = await mkdtemp(join(tmpdir(), "clawforge-set-inspect-"));
+  try {
+    const verified = await verifyArtifact(artifact, staging, { collectFindings: true });
+    return await body(staging, verified, verified.problems ?? []);
+  } catch (error) {
+    // Same refusal shape as the strict unpack: an artifact that fails INTEGRITY is not a
+    // set, whatever the caller meant to do with it — only semantic findings are softened.
+    die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
+  } finally {
+    await rm(staging, { recursive: true, force: true });
+  }
 }
 
 /** The digest of the image the CONTAINER actually runs, not what a tag currently resolves

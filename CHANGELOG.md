@@ -32,7 +32,7 @@ All notable changes to `@clawforge/framework` will be documented here.
   `@clawforge/framework/app` must load through the gate, the watch cycle lock's start-time tolerance
   is asserted at absolute 14 s/16 s offsets, the upgrade `health-fail` scenario reaches the health
   gate (the stub's post-backup restart succeeds and the failure names health after recreation), and
-  every module of all three known import cycles loads as a first import. Hygiene: the package-export
+  each module of the two known import cycles loads as a first import. Hygiene: the package-export
   map moved from the recipe-hook module to `core/env.ts` (with a both-directions check against
   `package.json`), the `regexEscape` copy in a check is gone and the single-definition audit covers
   `tools/checks` too, and the identity `actionLabel` indirection was removed.
@@ -69,6 +69,10 @@ All notable changes to `@clawforge/framework` will be documented here.
 * `backup --help` (and MCP `help backup`) no longer promises "30m, 6h, 1d or a bare number of
   minutes" for `--interval` — an explicit unit is required, as the argument's own line already
   said.
+  `accept --set`) refuses it. `set validate --set` and `set diff` (read-only) hit only the gate's
+  integrity half: validate reports findings through the same path as the tree (blocking findings
+  print as `blocking:`, each failing code once, recipes named, `--json` emits the document) and
+  prints "checking …" rather than "installing from …".
 * Checkout help leftovers: `<command> <action> --help` at the checkout root answers with the
   command's help instead of "several deployments" (so does `--help` after the command's own
   flags); `help <checkout command>` in a checkout subfolder points to the checkout root instead of
@@ -87,6 +91,27 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Shell completion offers a default-action command's own flags on the first position too, in
   bash/zsh (`clawforge backup --h` completes `--hot`, not only `--help`) and in PowerShell,
   where a trailing space is now treated as starting a new token instead of extending the last.
+* MCP schema descriptions are shortened per action: a composed description keeps each part's
+  own action list (`set --json` in `tools/list` names all five actions' texts, `set --name`
+  stays bound to its actions), boundary characters inside brackets or quotes no longer end a
+  clause (the `cli.args`/`exec.args` JSON examples survive whole), nested parentheticals are
+  stripped to a fixed point (`check.jobs` keeps no unclosed bracket), and `cli.args`,
+  `exec.args`, `host.args`, `host.root`, `check.jobs` and `restore.json` carry short explicit
+  schema lines. `--help` no longer appends the whole-command action list when every part of a
+  composed description already carries its own.
+* `set validate --set` on an artifact with blocking findings reports them instead of dying
+  inside the unpack gate: `blocking:` lines with the recipes named, the `--json` document,
+  and non-empty `problems` for an MCP client. `set diff` (read-only) accepts such artifacts
+  too; the artifact answers exactly as its tree (a recipe with no portable content is
+  reported, not skipped). Install-time callers (`apply --set`, `rollback --previous-set`,
+  `set try`, `accept --set`) stay strict, with each failing code once (counted) and the
+  recipes named in the refusal. `SET_RECIPE_INCOMPLETE` advice names the concrete edit; the
+  unreachable second validation in `set try` is gone.
+* Hygiene: the data-directory ancestry walk lives once (`runtime/datadir.ts`, with the
+  `sudo` prefix as a parameter) for both `restore` and `datadir`, keeping the stricter
+  checks; the pointless `unpackForTry` alias is gone; five CHANGELOG claims were corrected
+  to what the code does, and the upgrade rollback check no longer calls a parsed-value
+  comparison "byte-for-byte".
 * `set validate` on a working tree whose image is not pinned yet builds the manifest with the
   tag in `requires.image` and reports `SET_IMAGE_UNPINNED` as a blocking finding together with
   everything else it found — in `--json` too — instead of dying inside the manifest build with

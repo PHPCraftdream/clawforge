@@ -108,10 +108,16 @@ try {
   check("every tool description is at most 400 characters", overLong, []);
 
   // Every argument description in the schema is a short clause, not the `--help` paragraph
-  // it was cut from — guards the shortening itself, not just the total it adds up to.
+  // it was cut from — guards the shortening itself, not just the total it adds up to. A
+  // composed description is the exception by design (R32-04): one clause per action, each
+  // carrying its own action list, so `set.json` reads whole instead of one action's claim.
+  const perActionComposite = /^[^;()]+ \([a-z, -]+\)(; [^;()]+ \([a-z, -]+\))*$/;
   const overLongArguments = fullTools.flatMap((tool) =>
     Object.entries(tool.inputSchema?.properties ?? {})
-      .filter(([, property]) => (property.description ?? "").length > 90)
+      .filter(([, property]) => {
+        const description = property.description ?? "";
+        return description.length > 90 && !perActionComposite.test(description);
+      })
       .map(([argumentName]) => `${tool.name}.${argumentName}`));
   check("every argument description in the schema is a short clause", overLongArguments, []);
 
@@ -164,9 +170,10 @@ try {
 
   // A cut argument description is not a lost one: `recipe`'s `new-name` carries its full
   // sentence in help, and only a shortened clause in the schema an agent pays for up front.
+  // (Help no longer repeats the "With import:" lead-in next to the action scope, R32-04.)
   const recipeTool = fullTools.find((tool) => tool.name === "recipe");
   const newNameSchemaDescription = recipeTool?.inputSchema?.properties?.["new-name"]?.description ?? "";
-  const newNameFullDescription = "With import: import under this name instead of the source directory's own name";
+  const newNameFullDescription = "import under this name instead of the source directory's own name";
   check("the schema description was actually shortened", newNameSchemaDescription.length < newNameFullDescription.length, true);
   check("the full argument description is still reachable through help", helpTextFor("recipe").includes(newNameFullDescription), true);
 

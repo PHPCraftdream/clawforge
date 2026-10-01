@@ -4,6 +4,7 @@
 
 import { log, info } from "./log.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
+import { splitActionScoped } from "../arguments.ts";
 
 /** What renderCommandHelp needs from a command — the shape AppCommand and GateCommand both
  *  satisfy, without importing either (they live in entry/ and integration/, downstream of
@@ -46,9 +47,13 @@ export function renderCommandHelp(name: string, command: HelpDeclaration): void 
     const required = argument.required === true ? " (required)" : "";
     const choices = argument.choices === undefined ? "" : ` [${argument.choices.join("|")}]`;
     // A multi-action command's argument that belongs to only some of its actions (backup's
-    // own --keep, install-only) — see CommandArgument's `actions`.
-    const scope = argument.actions === undefined ? "" : ` (${argument.actions.join(", ")})`;
-    info(`  ${argumentLabel(argument).padEnd(USAGE_COLUMN)} ${argument.description}${scope}${choices}${required}`);
+    // own --keep, install-only) — see CommandArgument's `actions`. A composed description
+    // whose every part already ends with its own action list must not get the whole-command
+    // list added again (R32-04: the scope was printed twice).
+    const scoped = splitActionScoped(argument.description, argument.actions);
+    const description = argument.description.replace(/^With [\w/-]+: /, "");
+    const scope = argument.actions === undefined || scoped !== undefined ? "" : ` (${argument.actions.join(", ")})`;
+    info(`  ${argumentLabel(argument).padEnd(USAGE_COLUMN)} ${description}${scope}${choices}${required}`);
   }
   if (command.details !== undefined) {
     info("");

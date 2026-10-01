@@ -6,19 +6,6 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { die } from "#src/core/io/log.ts";
-import { unpackArtifactVerified } from "#src/set/artifacts/install.ts";
-import type { SetManifest } from "#src/set/artifacts/model.ts";
-
-export interface VerifiedArtifact {
-  readonly staging: string;
-  readonly verified: { readonly manifest: SetManifest; readonly id: string };
-}
-
-/** Set try must use the verified installer: accepting a merely parseable set.json would make
- * the reported id unrelated to the artifact's actual file bytes. */
-export async function unpackForTry(artifact: string): Promise<VerifiedArtifact> {
-  return unpackArtifactVerified(artifact);
-}
 
 /** A port nothing on this host is listening on yet. Docker still might refuse it for a
  *  reason this cannot see (another compose project mid-teardown, a reserved range) — this

@@ -12,7 +12,7 @@
 // root. This file does not need to know which mode produced the directory.
 
 import { basename, resolve } from "node:path";
-import { safeName } from "../core/names.ts";
+import { safeName } from "../core/values/names.ts";
 import { setSourceDir } from "../set/artifacts/source.ts";
 
 let activeDir: string | undefined;

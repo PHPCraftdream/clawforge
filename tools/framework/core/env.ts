@@ -12,6 +12,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomInt } from "node:crypto";
 import { die, log, warn } from "./io/log.ts";
+import { durationMs } from "./values/durations.ts";
 import { envFile } from "../runtime/deployment.ts";
 
 // Two roots, kept apart on purpose (tools/framework/ also ships as an installed npm
@@ -26,6 +27,10 @@ import { envFile } from "../runtime/deployment.ts";
 // This module lives in core/ so the package root is one level above it in source and dist.
 export const frameworkRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const monorepoRoot = resolve(frameworkRoot, "..", "..");
+
+/** The WSL distro every default target assumes; one owner — layout.check.ts's single-
+ *  definition audit refuses a second literal default elsewhere. */
+export const DEFAULT_WSL_DISTRO = "Ubuntu-24.04";
 
 /** The framework package this process runs: its version and directory (frameworkRoot in
  *  source, its parent in dist/). */
@@ -213,9 +218,6 @@ export function parseRetention(name: string, raw: string | undefined, fallback: 
   return value;
 }
 
-const DURATION_PATTERN = /^(\d+)(m|h|d)$/;
-const DURATION_UNIT_MS: Readonly<Record<string, number>> = { m: 60_000, h: 3_600_000, d: 86_400_000 };
-
 /** Parses a duration threshold (OC_BACKUP_MAX_AGE): unset -> fallbackMs; "0" or "off"
  *  (case-insensitive) -> 0, "this finding is disabled" reported; anything but Nm/Nh/Nd ->
  *  warning and fallbackMs. Mirrors parseRetention's shape for a duration instead of a count. */
@@ -226,12 +228,12 @@ export function parseDurationThreshold(name: string, raw: string | undefined, fa
     log(`${name}=${trimmed} — disabled, this finding will never be reported`);
     return 0;
   }
-  const match = DURATION_PATTERN.exec(trimmed);
-  if (match === null) {
+  const parsed = durationMs(trimmed);
+  if (parsed === undefined) {
     warn(`${name}=${JSON.stringify(raw)} is not a duration like 2d or 36h, nor 0/off — using the default of ${fallbackLabel}`);
     return fallbackMs;
   }
-  return Number(match[1]) * DURATION_UNIT_MS[match[2]];
+  return parsed;
 }
 
 /** Parses a free-space floor in MB (OC_DISK_MIN_FREE_MB): unset -> fallback; 0 -> disabled,
@@ -442,7 +444,7 @@ export function toSettings(env: Env): Settings {
     serviceUrl: `http://${bindAddress}:${gatewayPort}`,
     image: env.OPENCLAW_IMAGE ?? "ghcr.io/openclaw/openclaw:extended-stable",
     location: env.OC_TARGET_LOCATION ?? "auto",
-    wslDistro: env.OC_WSL_DISTRO ?? "Ubuntu-24.04",
+    wslDistro: env.OC_WSL_DISTRO ?? DEFAULT_WSL_DISTRO,
     sshHost: env.OC_SSH_HOST ?? "",
     remotePath: env.OC_REMOTE_PATH ?? "/opt/openclaw",
   };

@@ -5,10 +5,11 @@
 // self-hosted runner.
 
 import { WslTransport } from "#framework/runtime/transport/transport.ts";
+import { DEFAULT_WSL_DISTRO } from "#framework/core/env.ts";
 import { runTransportScenarios } from "./scenarios/contract.ts";
 import { finish } from "#checks/kit/harness.ts";
 
-const distro = process.env.OC_WSL_DISTRO ?? "Ubuntu-24.04";
+const distro = process.env.OC_WSL_DISTRO ?? DEFAULT_WSL_DISTRO;
 
 await runTransportScenarios("wsl", () => new WslTransport(distro), {
   // wsl.exe's `--exec` bypasses the target's shell entirely (see wsl.ts's own header comment);

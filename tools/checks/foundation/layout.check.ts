@@ -68,6 +68,10 @@ process.stderr.write("no second readdir of the recipes directory outside listRec
 const SINGLE_DEFINITION: Record<string, RegExp> = {
   shellQuote: /(?:export )?function shellQuote\(/g,
   regexEscape: /\[\.\*\+\?\^\$\{\}\(\)\|\[\\\]\\\\\]/g,
+  // core/env.ts's DEFAULT_WSL_DISTRO: a literal default (`?? "Ubuntu-24.04"` or a second
+  // `= "Ubuntu-24.04"` constant) in another module is the drift this refuses. Comparisons
+  // (`=== "Ubuntu-24.04"`) are data, not defaults, and stay allowed.
+  wslDistroDefault: /(?:\?\?|(?:^|[^=!<>+\-*/&|^])=)\s*"Ubuntu-24\.04"/g,
 };
 async function auditSingleDefinitionSites(dir: string, counts: Map<string, string[]>): Promise<void> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -97,4 +101,4 @@ for (const [name, sites] of definitionSites) {
     `expected exactly one definition of ${name} in tools/framework and tools/checks, found ${sites.length}: ${sites.join(", ")}`,
   );
 }
-process.stderr.write("shellQuote and regexEscape each have exactly one definition\n");
+process.stderr.write("shellQuote, regexEscape and the WSL distro default each have exactly one definition\n");

@@ -22,7 +22,7 @@ import { runGateCommand, gateHelpLines, helpWithoutDeployment, checkoutSubfolder
 import { info, reportError, reportErrorVerbatim } from "../core/io/log.ts";
 import { INVOKED_AS_ENV, cli, invocation, setInvocation, takeInvokedAs } from "../core/io/invocation.ts";
 import { useDeployment } from "../runtime/deployment.ts";
-import { safeName } from "../core/names.ts";
+import { safeName } from "../core/values/names.ts";
 import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import { parseDeclaredArgs } from "../core/arguments.ts";

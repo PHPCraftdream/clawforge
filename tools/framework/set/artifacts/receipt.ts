@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import { checksumOf } from "#src/service/checksums.ts";
 import { canonicalJson } from "./model.ts";
-import { safeName } from "#src/core/names.ts";
+import { safeName } from "#src/core/values/names.ts";
 import type { AcceptanceStatus, AcceptanceResult } from "#src/commands/orchestration/accept.ts";
 
 export const RECEIPT_VERSION = 1;

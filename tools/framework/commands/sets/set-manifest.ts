@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { die } from "#src/core/io/log.ts";
 import { parseEnv } from "#src/core/env.ts";
-import { safeName } from "#src/core/names.ts";
+import { safeName } from "#src/core/values/names.ts";
 import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentDir, desiredStateFile, recipesDir, secretsTemplateFile } from "#src/runtime/deployment.ts";

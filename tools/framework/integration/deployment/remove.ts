@@ -8,7 +8,7 @@
 import { readdir, rm, lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die } from "../../core/io/log.ts";
-import { safeName } from "../../core/names.ts";
+import { safeName } from "../../core/values/names.ts";
 import { humanSize } from "../../core/io/size.ts";
 import { listDeployments, type ListDeploymentsOptions } from "../list.ts";
 import { appsDir } from "./scaffold.ts";

@@ -7,6 +7,7 @@
 // A capability check must never be the reason a run crashes instead of skipping cleanly.
 
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
+import { DEFAULT_WSL_DISTRO } from "#framework/core/env.ts";
 
 export const CAPABILITIES = [
   "docker", "wsl", "posix-sh", "rsync", "linux-host", "windows-host", "ssh-loopback", "gnu-userland", "auto-target",
@@ -89,8 +90,7 @@ export async function hasAutoTarget(): Promise<boolean> {
   if (process.platform === "linux") return hasDocker();
   if (process.platform === "win32") {
     if (!(await hasWsl())) return false;
-    // The default mirrors core/env.ts's; a later step gives it a single owner.
-    const distro = process.env.OC_WSL_DISTRO ?? "Ubuntu-24.04";
+    const distro = process.env.OC_WSL_DISTRO ?? DEFAULT_WSL_DISTRO;
     return swallow(async () => (await spawnLocal(
       "wsl.exe",
       ["-d", distro, "docker", "info"],

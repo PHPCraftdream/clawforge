@@ -14,7 +14,7 @@ import { resolve, basename, dirname, relative } from "node:path";
 import { frameworkPackage, frameworkRoot } from "../../core/env.ts";
 import type { CommandArgument } from "../../core/app.ts";
 import { log, info, die } from "../../core/io/log.ts";
-import { safeName } from "../../core/names.ts";
+import { safeName } from "../../core/values/names.ts";
 import { parseEnv } from "../../core/env.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";

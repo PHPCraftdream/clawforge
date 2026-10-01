@@ -1,6 +1,7 @@
 // `logs`: bounded read or live follow, with --tail/--since/--grep.
 
 import { die } from "#src/core/io/log.ts";
+import { validSince } from "#src/core/values/durations.ts";
 import { shouldFollow, emitRaw, withOutputSink } from "#src/core/io/output.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
@@ -27,7 +28,10 @@ export async function logs(ctx: Context, args: string[]): Promise<void> {
   const tail = parsed.tail as string | undefined;
   if (tail !== undefined && !/^\d+$/.test(tail)) die(`--tail takes a number of lines, not "${tail}"`);
   const since = parsed.since as string | undefined;
-  if (since !== undefined && !isValidSince(since)) {
+  // --since is forwarded to compose as-is — the only piece of logs's own argv that reaches
+  // the runtime at all — so a typo is refused here instead of quietly changing what compose
+  // thinks "since" means. The spellings are the shared grammar's since-mode.
+  if (since !== undefined && !validSince(since)) {
     die(`--since takes a duration (10m, 2h, 1h30m) or an RFC3339/ISO date-time, not "${since}"`);
   }
   const grep = parsed.grep as string | undefined;
@@ -60,21 +64,6 @@ export function takeTail(args: string[]): { tail?: string; rest: string[] } {
   if (!/^\d+$/.test(value)) die(`--tail takes a number of lines, not "${value}"`);
 
   return { tail: value, rest: [...args.slice(0, at), ...args.slice(at + (inline ? 1 : 2))] };
-}
-
-// A Go-style duration (docker compose's own --since grammar): at least one of hours,
-// minutes, seconds, each a bare integer plus its unit, in that order.
-const SINCE_DURATION = /^(?:\d+h)?(?:\d+m)?(?:\d+s)?$/;
-// RFC3339/ISO: a date, optionally followed by a time with optional fractional seconds and
-// an offset or "Z". Deliberately not node:util's Date.parse, which accepts far more than
-// compose's own --since does and would let an otherwise-meaningless string through.
-const SINCE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})?)?$/;
-
-/** `--since` is forwarded to compose as-is — the only piece of `logs`'s own argv that
- *  reaches the runtime at all — so a typo is refused here with a clear reason instead of
- *  quietly changing what compose thinks "since" means. */
-function isValidSince(value: string): boolean {
-  return (SINCE_DURATION.test(value) && /\d/.test(value)) || SINCE_TIMESTAMP.test(value);
 }
 
 function compileGrep(pattern: string): RegExp {

@@ -16,7 +16,7 @@ import {
   type RecipeReadiness,
 } from "#src/service/recipe.ts";
 import { collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
-import { safeName } from "#src/core/names.ts";
+import { safeName } from "#src/core/values/names.ts";
 import { sleep, type Stack, type StackServiceState } from "#src/runtime/runtime.ts";
 import { isCaptured, shouldFollow, emit, emitRaw } from "#src/core/io/output.ts";
 import { takeTail } from "#src/commands/lifecycle/instance/logs.ts";

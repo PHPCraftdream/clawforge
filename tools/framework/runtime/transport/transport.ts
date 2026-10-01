@@ -13,6 +13,7 @@
 // target may not share a filesystem with us. Go through the transport.
 
 import { die } from "../../core/io/log.ts";
+import { DEFAULT_WSL_DISTRO } from "../../core/env.ts";
 import type { Transport } from "./exec.ts";
 import { LocalTransport } from "./local.ts";
 import { WslTransport } from "./wsl.ts";
@@ -68,7 +69,7 @@ function refuseLocalTarget(platform: string): never {
  *  setting wins over auto-detection, but not over the local-target refusal. */
 export async function createTransport(config: TransportConfig = {}): Promise<Transport> {
   const location = (config.location ?? "auto").toLowerCase();
-  const distro = config.wslDistro ?? "Ubuntu-24.04";
+  const distro = config.wslDistro ?? DEFAULT_WSL_DISTRO;
   const platform = config.platform ?? hostPlatform.current;
 
   switch (location) {

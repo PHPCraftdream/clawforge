@@ -16,7 +16,7 @@ import { deploymentDir } from "#src/runtime/deployment.ts";
 import { checksumOf, checksumOfFileMap } from "#src/service/checksums.ts";
 import { parseAgentConfig } from "#src/commands/management/provision-agent/index.ts";
 import { acceptanceSpecError } from "#src/commands/orchestration/accept.ts";
-import { safeName } from "#src/core/names.ts";
+import { safeName } from "#src/core/values/names.ts";
 import { problem } from "#src/service/inspection.ts";
 import { writeFileAtomic } from "#src/set/ownership/ledger.ts";
 import { validateSet } from "#src/set/ownership/validate.ts";

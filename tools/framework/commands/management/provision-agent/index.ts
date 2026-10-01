@@ -21,7 +21,7 @@ import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { CommandArgument } from "#src/core/app.ts";
 import { parseDeclaredArgs } from "#src/core/arguments.ts";
-import { safeName } from "#src/core/names.ts";
+import { safeName } from "#src/core/values/names.ts";
 import { withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { newOperationId } from "#src/service/operations.ts";

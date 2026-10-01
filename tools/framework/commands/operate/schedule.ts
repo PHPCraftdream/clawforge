@@ -19,6 +19,7 @@ import { createHash } from "node:crypto";
 import { posix, resolve } from "node:path";
 import { die, info, infoRaw, regexEscape } from "../../core/io/log.ts";
 import { monorepoRoot } from "../../core/env.ts";
+import { parseInterval } from "../../core/values/durations.ts";
 import { deploymentDir, deploymentName } from "../../runtime/deployment.ts";
 import { spawnLocal, SshTransport } from "../../runtime/transport/transport.ts";
 import type { Context } from "../../core/context.ts";
@@ -101,31 +102,21 @@ export function cronSchedule(minutes: number): string {
   );
 }
 
-/** One `--interval` grammar for every scheduled job: "30m" / "6h" / "1d", or — unless
- *  bareMinutes is false — a bare number of minutes ("10" = "10m", watch's historical form).
- *  Range-checked through cronSchedule() so no job accepts an interval the cron line itself
- *  would then refuse. An empty value is refused for every caller. */
+/** One `--interval` grammar for every scheduled job — the spellings live in
+ *  core/values/durations.ts; this adds the scheduler's own rule: an interval is range-checked
+ *  through cronSchedule() so no job accepts an interval the cron line itself would then
+ *  refuse. */
 export function parseIntervalToMinutes(raw: string, options?: { bareMinutes?: boolean }): number {
-  const bareMinutes = options?.bareMinutes ?? true;
-  const grammar = bareMinutes
-    ? `--interval must be a number of minutes or look like 30m, 6h or 1d (minutes, hours or days)`
-    : `--interval must look like 30m, 6h or 1d (an explicit unit is required)`;
-  if (raw.trim() === "") die(`${grammar} — got "${raw}"`);
-  const match = /^(\d+)([mhd]?)$/.exec(raw.trim());
-  if (match === null) die(`${grammar} — got "${raw}"`);
-  const value = Number(match[1]);
-  const unit = match[2];
-  if (unit === "" && !bareMinutes) {
-    // Only spellings this command accepts: 1440 reads as 1d, 90 as 1h, 2h.
-    die(`--interval needs an explicit unit — nearest valid: ${nearestValidIntervals(value).join(", ")}; a bare number is minutes only for watch install — got "${raw}"`);
-  }
-  const minutes = unit === "h" ? value * 60 : unit === "d" ? value * 1440 : value;
+  const result = parseInterval(raw, {
+    requireUnit: options?.bareMinutes === false,
+    nearestUnit: (value) => nearestValidIntervals(value).join(", "),
+  });
   try {
-    cronSchedule(minutes);
+    cronSchedule(result.minutes);
   } catch (error) {
     die((error as Error).message); // cronSchedule's message already names the flag.
   }
-  return minutes;
+  return result.minutes;
 }
 
 export function cronLine(minutes: number, invocation: ScheduledInvocation, job: string, name: string): string {

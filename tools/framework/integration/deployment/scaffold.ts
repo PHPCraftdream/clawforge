@@ -15,7 +15,7 @@ import { mkdir, writeFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, die } from "../../core/io/log.ts";
 import { monorepoRoot, parseEnv } from "../../core/env.ts";
-import { safeName } from "../../core/names.ts";
+import { safeName } from "../../core/values/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
 import { deploymentEnv as templateEnv, gitignoreLines, nextStepsLines, updateGitignore } from "./deployment-template.ts";

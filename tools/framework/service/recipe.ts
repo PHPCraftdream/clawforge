@@ -17,7 +17,7 @@ import { readdir, readFile, access } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { safeName } from "../core/names.ts";
+import { safeName } from "../core/values/names.ts";
 import { die } from "../core/io/log.ts";
 import { composeProjectName, deploymentName, recipesDir, selectedDeployment } from "../runtime/deployment.ts";
 import type { Context } from "../core/context.ts";

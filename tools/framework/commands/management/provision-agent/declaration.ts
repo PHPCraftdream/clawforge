@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { die } from "#src/core/io/log.ts";
 import { recipesDir } from "#src/runtime/deployment.ts";
 import { containerPaths } from "#src/runtime/mounts.ts";
-import { safeName } from "#src/core/names.ts";
+import { safeName } from "#src/core/values/names.ts";
 import { collectPortableAgentBundleFiles, collectPortableRecipeFiles } from "#src/security/privacy/recipe-portable-content.ts";
 
 const DEFAULT_CRON_SCHEDULE = "17 3 * * *"; // daily, off-peak, off the :00/:30 pileup minutes

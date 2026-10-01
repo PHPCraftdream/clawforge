@@ -6,6 +6,7 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { die } from "#src/core/io/log.ts";
+import { DEFAULT_WSL_DISTRO } from "#src/core/env.ts";
 
 /** A port nothing on this host is listening on yet. Docker still might refuse it for a
  *  reason this cannot see (another compose project mid-teardown, a reserved range) — this
@@ -58,7 +59,7 @@ export function buildEnv(opts: {
   return [
     `OPENCLAW_IMAGE=${opts.image}`,
     `OC_TARGET_LOCATION=${c.OC_TARGET_LOCATION ?? "auto"}`,
-    `OC_WSL_DISTRO=${c.OC_WSL_DISTRO ?? "Ubuntu-24.04"}`,
+    `OC_WSL_DISTRO=${c.OC_WSL_DISTRO ?? DEFAULT_WSL_DISTRO}`,
     `OC_SSH_HOST=${c.OC_SSH_HOST ?? ""}`,
     `OC_REMOTE_PATH=${c.OC_REMOTE_PATH ?? "/opt/openclaw"}`,
     `OC_DATA_DIR=${opts.dataRoot}/data`,

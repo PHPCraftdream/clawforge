@@ -13,6 +13,7 @@
 // Rule for the rest of the codebase: no string surgery on paths outside this module.
 
 import { isAbsolute, relative, resolve } from "node:path";
+import { DEFAULT_WSL_DISTRO } from "./env.ts";
 
 /** Where a path is meaningful. */
 export type PathSpace = "tool" | "target" | "container";
@@ -116,7 +117,7 @@ export async function createPathBridge(options: {
   const automountRoot = await readAutomountRoot(options.readFile);
   return new WslPathBridge({
     mounts: options.mounts,
-    distro: options.distro ?? "Ubuntu-24.04",
+    distro: options.distro ?? DEFAULT_WSL_DISTRO,
     automountRoot,
     onWindows: process.platform === "win32",
   });

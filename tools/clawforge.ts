@@ -39,7 +39,7 @@ import { createApp } from "./framework/integration/deployment/scaffold.ts";
 import { removeApp } from "./framework/integration/deployment/remove.ts";
 import { listDeployments, printDeploymentList } from "./framework/integration/list.ts";
 import { deploymentNames } from "./framework/integration/deployment/names.ts";
-import { safeName } from "./framework/core/names.ts";
+import { safeName } from "./framework/core/values/names.ts";
 import { parseDeclaredArgs } from "./framework/core/arguments.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
 import { normalizeVersionAlias, versionGateCommand } from "./framework/integration/version.ts";

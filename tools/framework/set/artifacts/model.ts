@@ -18,7 +18,7 @@
 // ones (gateway.bind); it goes into the set whole for now.
 
 import { checksumOf } from "#src/service/checksums.ts";
-import { safeName } from "#src/core/names.ts";
+import { safeName } from "#src/core/values/names.ts";
 import type { AgentConfig } from "#src/commands/management/provision-agent/index.ts";
 import type { AcceptanceCheck } from "#src/commands/orchestration/accept.ts";
 

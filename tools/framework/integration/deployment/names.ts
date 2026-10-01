@@ -4,7 +4,7 @@
 
 import { readdir, access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { safeName } from "../../core/names.ts";
+import { safeName } from "../../core/values/names.ts";
 
 export interface AppsScan {
   /** Deployments, sorted. */

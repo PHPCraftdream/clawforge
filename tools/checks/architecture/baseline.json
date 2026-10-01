@@ -116,17 +116,17 @@
   },
   "rawArgvPredicates": {
     "comment": "stage 3 (CommandSpec effect): confirmation comes from declared effect, not raw argv",
-    "readOnlyWhen": 16,
+    "readOnlyWhen": 14,
     "changedWhen": 6,
     "requiresConfirmationWhen": 5
   },
   "legacyCommands": {
     "comment": "stage 3 (CommandSpec): openclawCommands entries whose specOf is undefined — each migration turns one into a declared body",
-    "total": 40
+    "total": 32
   },
   "unsummarizedDescriptions": {
     "comment": "stage 3 (CommandArgument summary): MCP stops shortening heuristically when all summaries are declared; arguments of the derived `arguments` view with a description longer than 60 and no summary",
-    "total": 36
+    "total": 30
   },
   "declaredArguments": {
     "comment": "stage 3 invariant: no stage-3 task may change the declared argument count — another number means the arguments view is wrong",

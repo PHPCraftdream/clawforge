@@ -6,6 +6,16 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
+* The eight orchestration commands (inspect, doctor, plan, apply, accept, rollback,
+  operations, apply-config) declare their arguments and effect in one command spec, so an
+  argument error — a bad value, an empty option value, a cross-flag conflict such as
+  `apply-config --dry-run --dump` or `rollback --previous-set --operation ...` — is refused
+  before any contact with the target, lock, or .env write, on every host (previously the
+  refusal could be answered by a target error such as LOCAL_TARGET_UNSUPPORTED on hosts
+  where the transport could not be built). Empty option values (`--set`, `--expect`,
+  `--operation`, `--limit`) are refused uniformly by the shared parser, and the two MCP
+  argument descriptions that were cut off with an ellipsis (`rollback --previous-set`,
+  `apply-config --dump`) now carry their full phrases.
 * A deployment command that is destructive and declares `requiresConfirmationWhen` without
   `readOnlyWhen` — confirmation is owed only for some calls — now reads as "destructive for
   some actions" on every surface (` *` in the command list, the tool description, the

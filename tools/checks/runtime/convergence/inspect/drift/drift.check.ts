@@ -8,7 +8,7 @@ import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
 import { prospectiveConfig, valueAt } from "#framework/commands/orchestration/inspect/helpers.ts";
-import { apply } from "#framework/commands/orchestration/apply.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { formatBatchStub } from "#framework/service/openclaw-cli.ts";
 import { createFixture } from "#checks/sets/lifecycle/set-lifecycle/fixture.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runtime/convergence/inspect/fixture.ts";
@@ -85,14 +85,14 @@ try {
         const original = JSON.stringify(scenario.live);
         fixture.files.set(configPath, original);
         await writeFile(declarationPath, JSON.stringify(scenario.declared));
-        const result = await fixture.captured(() => apply(fixture.ctx, ["--json"]));
+        const result = await fixture.captured(() => orchestrationCommands.apply.run(fixture.ctx, ["--json"]));
         check(`apply accepts ${scenario.name}`, result.error?.message, undefined);
         check(`apply leaves ${scenario.name} unchanged`, fixture.files.get(configPath), original);
         check(`apply does not restart for ${scenario.name}`, restarts, 0);
       }
       fixture.files.set(configPath, JSON.stringify({ ...PROVIDER, gateway: { mode: "remote" } }));
       await writeFile(declarationPath, JSON.stringify(cases[0].declared));
-      const repaired = await fixture.captured(() => apply(fixture.ctx, ["--json"]));
+      const repaired = await fixture.captured(() => orchestrationCommands.apply.run(fixture.ctx, ["--json"]));
       check("a different final value still applies successfully", repaired.error?.message, undefined);
       check("apply writes the final assignment", JSON.parse(fixture.files.get(configPath)!).gateway.mode, "local");
       check("real drift still restarts the instance", restarts, 1);
@@ -209,7 +209,7 @@ try {
         },
       } as unknown as Context;
       let message = "";
-      try { await apply(ctx, []); }
+      try { await orchestrationCommands.apply.run(ctx, []); }
       catch (error) { message = (error as Error).message; }
       check(`${label} agent bundle blocks full apply`, message.includes("agent"), true);
       check(`${label} bundle does not reach MCP cleanup`, mcpUnset, 0);

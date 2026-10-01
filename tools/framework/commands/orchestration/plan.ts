@@ -11,7 +11,7 @@
 // silently accept whatever drifted; overwriting the secret store would discard whatever
 // recovery cannot reach).
 
-import { log, info, warn, die } from "#src/core/io/log.ts";
+import { log, info, warn } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum } from "#src/commands/management/lock.ts";
@@ -21,14 +21,13 @@ import { withSetSource } from "#src/set/artifacts/source.ts";
 import { withUnpackedArtifact } from "#src/set/artifacts/install.ts";
 import type { Inspection, Problem, ProblemCode } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import type { ArgumentSpec } from "#src/core/command/spec.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
-/** Drives both plan's own parser and its openclawCommands declaration. */
-export const PLAN_ARGUMENTS: CommandArgument[] = [
+export const PLAN_ARGUMENTS = [
   { name: "set", description: "Plan from a built set artifact instead of the working tree", kind: "option", valueName: "artifact" },
   { name: "json", description: "Emit the plan as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 export interface PlanAction {
   /** Stable identifier, so a report about a step can name it: "apply-config",
@@ -354,40 +353,45 @@ export async function computePlan(ctx: Context): Promise<Plan> {
   };
 }
 
-export async function plan(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(PLAN_ARGUMENTS, args);
-  const jsonOnly = parsed.json === true;
-  const artifact = parsed.set === undefined
-    ? undefined
-    : parsed.set === "" ? die("--set needs an artifact path") : parsed.set as string;
+export const PLAN = commandBody({
+  effect: "read",
+  arguments: PLAN_ARGUMENTS,
+  async run(ctx, plan) {
+    const jsonOnly = plan.json;
+    const artifact = plan.set;
 
-  // One engine, two sources: with --set the declaration comes from the artifact and
-  // everything about the machine keeps coming from the deployment. Without it, nothing
-  // changes.
-  const computed = artifact === undefined
-    ? await computePlan(ctx)
-    : await withUnpackedArtifact(artifact, (staging) => withSetSource(staging, () => computePlan(ctx)));
+    // One engine, two sources: with --set the declaration comes from the artifact and
+    // everything about the machine keeps coming from the deployment. Without it, nothing
+    // changes.
+    const computed = artifact === undefined
+      ? await computePlan(ctx)
+      : await withUnpackedArtifact(artifact, (staging) => withSetSource(staging, () => computePlan(ctx)));
 
-  if (jsonOnly || isCaptured()) {
-    emit(`${JSON.stringify(computed, null, 2)}\n`);
-    return;
-  }
+    if (jsonOnly || isCaptured()) {
+      emit(`${JSON.stringify(computed, null, 2)}\n`);
+      return;
+    }
 
-  if (planIsClean(computed)) {
-    log(`${computed.deployment} is what this repository declares — nothing to do`);
-    return;
-  }
+    if (planIsClean(computed)) {
+      log(`${computed.deployment} is what this repository declares — nothing to do`);
+      return;
+    }
 
-  if (computed.actions.length === 0) {
-    // Unhealthy with no step: never claim the deployment matches its declaration.
-    warn(`${computed.deployment}: ${computed.problems.length} problem(s) found, but plan has no step for any of them — this is a gap in planActions()`);
-    for (const entry of computed.problems) info(`  ${entry.code}  ${entry.detail}`);
-    return;
-  }
+    if (computed.actions.length === 0) {
+      // Unhealthy with no step: never claim the deployment matches its declaration.
+      warn(`${computed.deployment}: ${computed.problems.length} problem(s) found, but plan has no step for any of them — this is a gap in planActions()`);
+      for (const entry of computed.problems) info(`  ${entry.code}  ${entry.detail}`);
+      return;
+    }
 
-  printPlanActions(computed.actions);
-  log(planNextStepLine(computed.actions));
-}
+    printPlanActions(computed.actions);
+    log(planNextStepLine(computed.actions));
+  },
+});
+
+/** The full-context entry for callers outside this group (transport, connectivity
+ *  fixtures): the same declaration, parsed and run on a context they already hold. */
+export const plan = (ctx: Context, args: string[]): Promise<void> => runOnContext(PLAN, ctx, args);
 
 /** The step list `plan` and `apply --dry-run` both print; the executable count is the filter
  *  `apply` runs. */

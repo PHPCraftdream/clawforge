@@ -730,7 +730,7 @@
           },
           "previous-set": {
             "type": "boolean",
-            "description": "Reinstall the previously installed set instead of restoring…"
+            "description": "Reinstall the previously installed set instead of restoring one config file"
           },
           "break-lock": {
             "type": "boolean",
@@ -858,7 +858,7 @@
           },
           "dump": {
             "type": "boolean",
-            "description": "Reconstruct desired-state.json from the live instance's…"
+            "description": "Reconstruct desired-state.json from the live instance's config"
           },
           "force": {
             "type": "boolean",

@@ -29,19 +29,15 @@ import type { ObservedRuntime } from "#src/set/artifacts/evidence.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { isHealthy, blockingProblems } from "#src/service/inspection.ts";
 import { runSecurityAudit, type SecurityFinding, type SecurityAuditReport } from "#src/security/audit.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import type { ArgumentSpec } from "#src/core/command/spec.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
-/** Drives both accept's own parser and its openclawCommands declaration. */
-export const ACCEPT_ARGUMENTS: CommandArgument[] = [
+export const ACCEPT_ARGUMENTS = [
   { name: "recipe", description: "Recipe to check (default: every recipe that declares checks)", kind: "positional" },
   { name: "set", description: "Check the verified artifact and save an acceptance receipt", kind: "option", valueName: "artifact" },
   { name: "with-model", description: "Include the checks that call the model, and pay for them", kind: "flag" },
   { name: "json", description: "Emit the report as JSON", kind: "flag" },
-];
-
-/** The slice acceptFromSource re-parses once --set has already been stripped out. */
-const ACCEPT_FROM_SOURCE_ARGUMENTS: CommandArgument[] = ACCEPT_ARGUMENTS.filter((argument) => argument.name !== "set");
+] as const satisfies readonly ArgumentSpec[];
 
 /** One declared check. `kind` selects what the framework does; everything else is that
  *  kind's own arguments, kept loose because each kind reads different ones. */
@@ -359,20 +355,37 @@ export async function runCheck(ctx: Context, recipe: string, check: AcceptanceCh
   }
 }
 
-export async function accept(ctx: Context, args: string[]): Promise<void> {
-  const parsed = parseDeclaredArgs(ACCEPT_ARGUMENTS, args);
-  const artifact = parsed.set as string | undefined;
-  const withModel = parsed["with-model"] === true;
-  if (artifact === undefined) return withModelApproval(withModel, () => acceptFromSource(ctx, args));
-  if (artifact === "") die("--set needs an artifact path");
-  const rest = [
-    ...(withModel ? ["--with-model"] : []),
-    ...(parsed.json === true ? ["--json"] : []),
-    ...(parsed.recipe === undefined ? [] : ["--", parsed.recipe as string]),
-  ];
-  return withModelApproval(withModel, () =>
-    withUnpackedArtifact(artifact, (staging, verified) => withSetSource(staging, () => acceptFromSource(ctx, rest, verified))),
-  );
+//** Everything the run needs, decided from the arguments alone in the prepare stage. */
+interface AcceptPlan {
+  readonly recipe?: string;
+  readonly set?: string;
+  readonly withModel: boolean;
+  readonly json: boolean;
+}
+
+export const ACCEPT = commandBody({
+  effect: "change",
+  arguments: ACCEPT_ARGUMENTS,
+  prepare: ({ values }) => ({
+    recipe: values.recipe,
+    set: values.set,
+    withModel: values["with-model"],
+    json: values.json,
+  }) satisfies AcceptPlan,
+  run: (ctx, plan) => acceptPlan(ctx, plan),
+});
+
+/** The full-context entry for callers outside this group (the set evidence and MCP CLI
+ *  checks): the same declaration, parsed and run on a context they already hold. */
+export const accept = (ctx: Context, args: string[]): Promise<void> => runOnContext(ACCEPT, ctx, args);
+
+/** With --set, the checks run against the verified artifact and its recipe files for the
+ *  whole run — so a receipt never describes the working tree while naming the set's id. */
+async function acceptPlan(ctx: Context, plan: AcceptPlan): Promise<void> {
+  const { set: artifact } = plan;
+  if (artifact === undefined) return withModelApproval(plan.withModel, () => acceptFromSource(ctx, plan));
+  return withModelApproval(plan.withModel, () =>
+    withUnpackedArtifact(artifact, (staging, verified) => withSetSource(staging, () => acceptFromSource(ctx, plan, verified))));
 }
 
 /** Tallies one accept run across every selected recipe's declared checks. */
@@ -514,12 +527,11 @@ function printAcceptanceReport(
   if (notChecked > 0 && !withModel) info("the not-checked ones call the model: ./clawforge accept --with-model");
 }
 
-async function acceptFromSource(ctx: Context, args: string[], verified?: VerifiedArtifact): Promise<void> {
+async function acceptFromSource(ctx: Context, plan: AcceptPlan, verified?: VerifiedArtifact): Promise<void> {
   const startedAt = new Date().toISOString();
-  const parsed = parseDeclaredArgs(ACCEPT_FROM_SOURCE_ARGUMENTS, args);
-  const jsonOnly = parsed.json === true;
-  const withModel = parsed["with-model"] === true;
-  const wanted = parsed.recipe as string | undefined;
+  const jsonOnly = plan.json;
+  const withModel = plan.withModel;
+  const wanted = plan.recipe;
 
   const recipes = wanted === undefined ? await recipesWithAcceptance() : [wanted];
   if (recipes.length === 0) {

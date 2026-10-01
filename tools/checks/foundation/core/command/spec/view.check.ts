@@ -165,6 +165,9 @@ import { check, finish } from "#checks/kit/harness.ts";
   for (const [name, command] of Object.entries(openclawCommands)) {
     for (const argument of command.arguments ?? []) {
       if (isSharedOverride(argument)) continue;
+      // A declared summary reaches the schema verbatim; the oracle only judges arguments
+      // the shortener still decides for.
+      if (argument.summary !== undefined) continue;
       const actual = schemaArgumentDescription(argument);
       if (actual === undefined) continue;
       // Suffixes are appended after shortening — rebuild them structurally, not by regex.

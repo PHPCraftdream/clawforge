@@ -5,7 +5,8 @@
 // instance fail for no reason — so it must not write that shared file: a dry run concurrent
 // with a real apply would replace the payload the real one is about to hand to the CLI.
 
-import { applyConfig, appliedHeadline, stagedFileName } from "#framework/commands/orchestration/config.ts";
+import { appliedHeadline, stagedFileName } from "#framework/commands/orchestration/config.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
@@ -67,7 +68,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
       () => {},
       async () => {
         try {
-          await applyConfig(ctx, ["--dry-run"]);
+          await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]);
         } catch {
           threw = true;
         }
@@ -108,14 +109,14 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     } as unknown as Context;
 
     await withOutputSink(() => {}, async () => {
-      try { await applyConfig(ctx, ["--dry-run"]); } catch { /* expected */ }
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch { /* expected */ }
     });
     check("a failed mount mapping never stages the dry-run payload", writes, 0);
     check("a failed mount mapping never enters the container", oneOffs, 0);
 
     ctx.paths.toContainer = (path: string) => path;
     await withOutputSink(() => {}, async () => {
-      try { await applyConfig(ctx, ["--dry-run"]); } catch { /* expected */ }
+      try { await orchestrationCommands["apply-config"].run(ctx, ["--dry-run"]); } catch { /* expected */ }
     });
     check("a partial staging failure removes the dry-run payload", [...staged], []);
     check("a partial staging failure never enters the container", oneOffs, 0);
@@ -169,7 +170,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
           output += chunk;
         },
         async () => {
-          await applyConfig(ctx, args);
+          await orchestrationCommands["apply-config"].run(ctx, args);
         },
       );
       return output;
@@ -269,7 +270,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
         () => {},
         async () => {
           try {
-            await applyConfig(ctx, args);
+            await orchestrationCommands["apply-config"].run(ctx, args);
           } catch (error) {
             message = (error as Error).message;
           }
@@ -318,7 +319,7 @@ check("and stays a .json file", dry.endsWith(".json"), true);
     await withOutputSink(
       () => {},
       async () => {
-        await applyConfig(ctx, ["--dump", "--force"]);
+        await orchestrationCommands["apply-config"].run(ctx, ["--dump", "--force"]);
       },
     );
     const overwritten = await untouched();

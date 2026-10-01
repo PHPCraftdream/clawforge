@@ -10,7 +10,8 @@
 
 import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { resolve } from "node:path";
-import { gatherInspection, renderJson, doctor } from "#framework/commands/orchestration/inspect/gather.ts";
+import { gatherInspection, renderJson } from "#framework/commands/orchestration/inspect/gather.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { recipeFileChecksums } from "#framework/service/checksums.ts";
 import { nextActions } from "#framework/service/inspection.ts";
 import type { Problem } from "#framework/service/inspection.ts";
@@ -52,7 +53,7 @@ try {
         (chunk) => {
           output += chunk;
         },
-        () => doctor(stubContext(spec), ["--json"]),
+        () => orchestrationCommands.doctor.run(stubContext(spec), ["--json"]),
       );
       return { failed: false, output };
     } catch {

@@ -1,6 +1,7 @@
-import { gatherInspection, inspect, doctor } from "#framework/commands/orchestration/inspect/gather.ts";
+import { gatherInspection } from "#framework/commands/orchestration/inspect/gather.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { redactEndpoint, redactEndpointText, publicConfigValue } from "#framework/commands/orchestration/inspect/helpers.ts";
-import { computePlan, plan } from "#framework/commands/orchestration/plan.ts";
+import { computePlan } from "#framework/commands/orchestration/plan.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { fileURLToPath } from "node:url";
 import { credentialCases, unknownDiagnosticUrl } from "./credential-consumer.fixture.ts";
@@ -99,18 +100,18 @@ try {
     const findings = inspection.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE");
     check(`${state}: failures retain their findings`, findings.length, state === "ok" ? 0 : 2);
 
-    const terminalText = await terminalOutput(() => inspect(ctx, []));
-    const terminalJson = await terminalOutput(() => inspect(ctx, ["--json"]));
+    const terminalText = await terminalOutput(() => orchestrationCommands.inspect.run(ctx, []));
+    const terminalJson = await terminalOutput(() => orchestrationCommands.inspect.run(ctx, ["--json"]));
     const doctorText = await terminalOutput(async () => {
-      try { await doctor(ctx, []); }
+      try { await orchestrationCommands.doctor.run(ctx, []); }
       catch { /* Fixture-only blocking findings are still printed. */ }
     });
     const doctorJson = await terminalOutput(async () => {
-      try { await doctor(ctx, ["--json"]); }
+      try { await orchestrationCommands.doctor.run(ctx, ["--json"]); }
       catch { /* Fixture-only blocking findings are still printed. */ }
     });
-    const planText = await terminalOutput(() => plan(ctx, []));
-    const planJson = await terminalOutput(() => plan(ctx, ["--json"]));
+    const planText = await terminalOutput(() => orchestrationCommands.plan.run(ctx, []));
+    const planJson = await terminalOutput(() => orchestrationCommands.plan.run(ctx, ["--json"]));
     const computed = await computePlan(ctx);
     const doctorPayload = JSON.parse(doctorJson) as { problems: { code: string }[] };
     check(`${state}: doctor JSON retains failed endpoint diagnostics`, doctorPayload.problems.filter((entry) => entry.code === "EGRESS_UNREACHABLE").length, findings.length);

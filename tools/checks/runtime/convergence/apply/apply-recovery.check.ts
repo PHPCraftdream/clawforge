@@ -2,13 +2,13 @@
 // the --force refusals of the declaration and store dumps, --dry-run writing nothing, and the
 // step renderer apply's dry run shares with `plan`.
 
-import { runSteps, apply } from "#framework/commands/orchestration/apply.ts";
+import { runSteps } from "#framework/commands/orchestration/apply.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { planActions, printPlanActions } from "#framework/commands/orchestration/plan.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
 import { problem } from "#framework/service/inspection.ts";
 import { Journal } from "#framework/service/operations.ts";
 import type { OperationRecord } from "#framework/service/operations.ts";
-import { operations } from "#framework/commands/orchestration/operations.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runtime/convergence/inspect/fixture.ts";
 import { mkdir, mkdtemp, readFile, readdir, writeFile, access, rm } from "node:fs/promises";
@@ -116,7 +116,7 @@ function localTransport(): {
 
     // One operation id for the whole run, readable back through the operations command.
     let listed = "";
-    await withOutputSink((chunk) => { listed += chunk; }, async () => { await operations(ctx, [journal.id, "--json"]); });
+    await withOutputSink((chunk) => { listed += chunk; }, async () => { await orchestrationCommands.operations.run(ctx, [journal.id, "--json"]); });
     const record = JSON.parse(listed) as OperationRecord;
     check("operations reads the run back under the one operation id", record.id, journal.id);
     check("the recorded steps are the run's steps, in order", record.steps.map((step) => ({ id: step.id, status: step.status })), outcomes.map((step) => ({ id: step.id, status: step.status })));
@@ -172,7 +172,7 @@ function localTransport(): {
     let output = "";
     let threw = false;
     await withOutputSink((chunk) => { output += chunk; }, async () => {
-      try { await apply(ctx, ["--dry-run"]); } catch { threw = true; }
+      try { await orchestrationCommands.apply.run(ctx, ["--dry-run"]); } catch { threw = true; }
     });
     check("a dry run over a three-finding folder does not throw", threw, false);
     check("it names all three recovery steps as what would run", [output.includes("recover-env"), output.includes("secrets-dump"), output.includes("apply-config-dump")], [true, true, true]);

@@ -14,35 +14,52 @@ import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentName, deploymentDir } from "#src/runtime/deployment.ts";
 import { Journal, readOperation, latestRollbackable, newOperationId } from "#src/service/operations.ts";
 import { restart } from "#src/commands/lifecycle/instance/control.ts";
-import { runOwning, takeLock, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
+import { runOwning, takeLock } from "#src/runtime/lock/instance-lock.ts";
 import { readInstalledSet, withUnpackedArtifact, requirementProblems, runningImageDigest } from "#src/set/artifacts/install.ts";
 import type { InstalledSet, PreviousSet, VerifiedArtifact } from "#src/set/artifacts/install.ts";
 import { frameworkVersion } from "#src/commands/management/lock.ts";
 import { apply } from "./apply.ts";
 import type { OperationRecord } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import type { ArgumentSpec } from "#src/core/command/spec.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import { LOCK_TAKEOVER_ARGUMENTS } from "#src/commands/interface/groups/shared-arguments.ts";
+import { ValueError, type ValueParser } from "#src/core/values/value.ts";
 import { publishPrivateTargetFile } from "#src/security/privacy/private-target-file.ts";
 
-/** Drives both rollback's own parser and its openclawCommands declaration. */
-export const ROLLBACK_ARGUMENTS: CommandArgument[] = [
-  { name: "operation", description: "Operation id to undo (default: the most recent one with a snapshot)", kind: "option", valueName: "id" },
+/** `--operation`'s grammar: a recorded operation id — neither empty nor another flag. */
+function operationIdValue(): ValueParser<string> {
+  return {
+    expected: "an operation id", example: "apply-1", invalidExample: "-x",
+    parse(raw) {
+      if (raw === "" || raw.startsWith("-")) throw new ValueError("needs an operation id");
+      return raw;
+    },
+  };
+}
+
+export const ROLLBACK_ARGUMENTS = [
+  {
+    name: "operation",
+    summary: "Operation id to undo",
+    description: "Operation id to undo (default: the most recent one with a snapshot)",
+    kind: "option",
+    valueName: "id",
+    parse: operationIdValue(),
+  },
   { name: "no-restart", description: "Restore the file without restarting the instance", kind: "flag" },
   // A flag, not `--set <artifact>`: rollback names no artifact of its own, it reinstalls
   // whichever one `apply --set` installed before the current one.
-  { name: "previous-set", description: "Reinstall the previously installed set instead of restoring one config file", kind: "flag" },
-  { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
-  BREAK_FOREIGN_LOCK_ARGUMENT,
+  {
+    name: "previous-set",
+    summary: "Reinstall the previously installed set instead of restoring one config file",
+    description: "Reinstall the previously installed set instead of restoring one config file",
+    kind: "flag",
+  },
+  ...LOCK_TAKEOVER_ARGUMENTS,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-  { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag" },
-];
-
-/** Whether argv requests --dry-run — same shape as restore's own isRestoreDryRun. */
-export function isRollbackDryRun(args: readonly string[]): boolean {
-  return parseDeclaredArgs(ROLLBACK_ARGUMENTS, args)["dry-run"] === true;
-}
+  { name: "dry-run", description: "Show what would happen without touching anything", kind: "flag", effect: "read" },
+] as const satisfies readonly ArgumentSpec[];
 
 /** The operation to undo, and why that one. Exported for the checks: choosing the wrong
  *  operation is the failure that matters here, and it is worth asserting without a target. */
@@ -81,20 +98,19 @@ interface RollbackOptions {
   readonly applyArgs: string[];
 }
 
-/** Parse every rollback argument before reading or changing instance state. */
-export function parseRollbackArgs(args: string[]): RollbackOptions {
-  const parsed = parseDeclaredArgs(ROLLBACK_ARGUMENTS, args);
-  const previousSet = parsed["previous-set"] === true;
-  const jsonOnly = parsed.json === true;
-  const dryRun = parsed["dry-run"] === true;
-  const breakLock = parsed["break-lock"] === true;
-  const breakForeignLockHost = parseBreakForeignLockHost(args);
-  const restartAfter = parsed["no-restart"] !== true;
-  const operationValue = parsed.operation as string | undefined;
-  if (operationValue !== undefined && (operationValue.length === 0 || operationValue.startsWith("-"))) {
-    die("--operation needs an operation id");
-  }
-  const operation = operationValue;
+/** Every rollback argument validated before reading or changing instance state; the
+ *  cross-flag rule lives here, in the prepare stage. */
+function rollbackOptions(values: {
+  operation?: string; "no-restart": boolean; "previous-set": boolean;
+  json: boolean; "dry-run": boolean; "break-lock": boolean; "break-foreign-lock"?: string;
+}): RollbackOptions {
+  const previousSet = values["previous-set"];
+  const jsonOnly = values.json;
+  const dryRun = values["dry-run"];
+  const breakLock = values["break-lock"];
+  const breakForeignLockHost = values["break-foreign-lock"];
+  const restartAfter = values["no-restart"] !== true;
+  const operation = values.operation;
 
   if (previousSet && (operation !== undefined || !restartAfter)) {
     die("--previous-set rolls back the whole set through ./clawforge apply — --operation and --no-restart belong to the single-file path only");
@@ -106,6 +122,17 @@ export function parseRollbackArgs(args: string[]): RollbackOptions {
   if (breakForeignLockHost !== undefined) applyArgs.push("--break-foreign-lock", breakForeignLockHost);
   return { previousSet, jsonOnly, dryRun, breakLock, breakForeignLockHost, restartAfter, operation, applyArgs };
 }
+
+export const ROLLBACK = commandBody({
+  effect: "destroy",
+  arguments: ROLLBACK_ARGUMENTS,
+  prepare: ({ values }) => rollbackOptions(values as Parameters<typeof rollbackOptions>[0]),
+  run: (ctx, plan) => rollbackRun(ctx, plan),
+});
+
+/** The full-context entry for callers outside this group (the set lifecycle checks): the
+ *  same declaration, parsed and run on a context they already hold. */
+export const rollback = (ctx: Context, args: string[]): Promise<void> => runOnContext(ROLLBACK, ctx, args);
 
 /** `--dry-run`: names the operation/snapshot (or --previous-set's artifact) a real rollback
  *  would use and whether it's usable, plus whether a restart would follow — nothing beyond
@@ -313,8 +340,7 @@ async function restoreConfigBeforeCurrentSet(ctx: Context, installed: InstalledS
   );
 }
 
-export async function rollback(ctx: Context, args: string[]): Promise<void> {
-  const options = parseRollbackArgs(args);
+async function rollbackRun(ctx: Context, options: RollbackOptions): Promise<void> {
   if (options.dryRun) return rollbackDryRun(ctx, options);
   if (options.previousSet) return rollbackSet(ctx, options);
 

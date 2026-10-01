@@ -35,13 +35,12 @@ import { observeConfig, observeConnectionFacts, observeSecretStore } from "./dri
 import { observeLive } from "./live.ts";
 import { observeBackupHealth, observeDiskSpace } from "./upkeep.ts";
 import { runSecurityAudit } from "#src/security/audit.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import type { ArgumentSpec } from "#src/core/command/spec.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
-/** Shared by inspect and doctor: both take only --json. */
-export const JSON_ONLY_ARGUMENTS: CommandArgument[] = [
+export const INSPECT_ARGUMENTS = [
   { name: "json", description: "Emit the whole inspection as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 /** gatherInspection's opt-in extras; a caller that omits this gets the inspection it always did. */
 export interface GatherInspectionOptions {
@@ -326,18 +325,24 @@ async function gatherReachedInspection(
   return gatherRunningInspection(ctx, declared, problems, configState, liveConfig, secrets, secretStore, options);
 }
 
-export async function inspect(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = parseDeclaredArgs(JSON_ONLY_ARGUMENTS, args).json === true;
+export const INSPECT = commandBody({
+  effect: "read",
+  arguments: INSPECT_ARGUMENTS,
+  async run(ctx, plan) {
+    const inspection = await gatherInspection(ctx);
 
-  const inspection = await gatherInspection(ctx);
+    if (plan.json || isCaptured()) {
+      emit(`${JSON.stringify(renderJson(inspection), null, 2)}\n`);
+      return;
+    }
 
-  if (jsonOnly || isCaptured()) {
-    emit(`${JSON.stringify(renderJson(inspection), null, 2)}\n`);
-    return;
-  }
+    renderText(inspection);
+  },
+});
 
-  renderText(inspection);
-}
+/** The full-context entry for callers outside this group (connectivity fixtures): the
+ *  same declaration, parsed and run on a context they already hold. */
+export const inspect = (ctx: Context, args: string[]): Promise<void> => runOnContext(INSPECT, ctx, args);
 
 /** The machine-readable answer. Its own shape rather than the Inspection struct verbatim:
  *  what a caller needs first is the verdict and what to do about it, and burying those under
@@ -367,53 +372,63 @@ export function printProblem(entry: Problem): void {
  *  answer a script or a CI step can act on without reading the text. Warnings do not fail
  *  it: an instance with no lock file works, and a command that fails on everything it has
  *  an opinion about stops being consulted. */
-export async function doctor(ctx: Context, args: string[]): Promise<void> {
-  const jsonOnly = parseDeclaredArgs(JSON_ONLY_ARGUMENTS, args).json === true;
+export const DOCTOR_ARGUMENTS = [
+  { name: "json", description: "Emit the verdict, problems and next actions as JSON", kind: "flag" },
+] as const satisfies readonly ArgumentSpec[];
 
-  const inspection = await gatherInspection(ctx);
-  // The security gate: only doctor and accept run it — a container exec per audit, twice —
-  // so its findings are merged in here rather than gathered inside gatherInspection() itself.
-  const security = await runSecurityAudit(ctx);
-  const problems = [...inspection.problems, ...security.problems];
-  const blocking = blockingProblems(problems);
-  const warnings = problems.filter((entry) => entry.severity === "warning");
+export const DOCTOR = commandBody({
+  effect: "read",
+  arguments: DOCTOR_ARGUMENTS,
+  async run(ctx, plan) {
+    const jsonOnly = plan.json;
 
-  if (jsonOnly || isCaptured()) {
-    emit(
-      `${JSON.stringify(
-        {
-          deployment: inspection.declared.deployment,
-          healthy: isHealthy(inspection) && blockingProblems(security.problems).length === 0,
-          problems,
-          security: security.findings,
-          nextActions: nextActions(problems),
-        },
-        null,
-        2,
-      )}\n`,
-    );
-  } else if (problems.length === 0) {
-    log(`${inspection.declared.deployment} is what this repository declares`);
-    info(`state  running (${inspection.observed.health ?? "unknown"})`);
-  } else {
-    // Reported before the failure below, not instead of it: a reader who only sees "3
-    // problems" learns nothing, and the whole point of the codes is that they travel.
-    log(`${inspection.declared.deployment}: ${blocking.length} blocking, ${warnings.length} warning(s)`);
-    for (const entry of problems) printProblem(entry);
-    const suppressed = security.findings.filter((finding) => finding.suppressed);
-    for (const finding of suppressed) {
-      info(`SUPPRESSED  ${finding.source} ${finding.checkId}: ${finding.message} (${finding.suppressedReason})`);
+    const inspection = await gatherInspection(ctx);
+    // The security gate: only doctor and accept run it — a container exec per audit, twice —
+    // so its findings are merged in here rather than gathered inside gatherInspection() itself.
+    const security = await runSecurityAudit(ctx);
+    const problems = [...inspection.problems, ...security.problems];
+    const blocking = blockingProblems(problems);
+    const warnings = problems.filter((entry) => entry.severity === "warning");
+
+    if (jsonOnly || isCaptured()) {
+      emit(
+        `${JSON.stringify(
+          {
+            deployment: inspection.declared.deployment,
+            healthy: isHealthy(inspection) && blockingProblems(security.problems).length === 0,
+            problems,
+            security: security.findings,
+            nextActions: nextActions(problems),
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    } else if (problems.length === 0) {
+      log(`${inspection.declared.deployment} is what this repository declares`);
+      info(`state  running (${inspection.observed.health ?? "unknown"})`);
+    } else {
+      // Reported before the failure below, not instead of it: a reader who only sees "3
+      // problems" learns nothing, and the whole point of the codes is that they travel.
+      log(`${inspection.declared.deployment}: ${blocking.length} blocking, ${warnings.length} warning(s)`);
+      for (const entry of problems) printProblem(entry);
+      const suppressed = security.findings.filter((finding) => finding.suppressed);
+      for (const finding of suppressed) {
+        info(`SUPPRESSED  ${finding.source} ${finding.checkId}: ${finding.message} (${finding.suppressedReason})`);
+      }
+      if (blocking.length === 0) info("nothing blocking — the instance is doing its job");
     }
-    if (blocking.length === 0) info("nothing blocking — the instance is doing its job");
-  }
 
-  if (blocking.length > 0) {
-    throw new Error(
-      `${blocking.length} blocking problem(s): ${blocking.map((entry) => entry.code).join(", ")}. ` +
-        `Next: ${nextActions(blocking).join(", ")}`,
-    );
-  }
-}
+    if (blocking.length > 0) {
+      throw new Error(
+        `${blocking.length} blocking problem(s): ${blocking.map((entry) => entry.code).join(", ")}. ` +
+          `Next: ${nextActions(blocking).join(", ")}`,
+      );
+    }
+  },
+});
+
+export const doctor = (ctx: Context, args: string[]): Promise<void> => runOnContext(DOCTOR, ctx, args);
 
 function renderText(inspection: Inspection): void {
   const { declared, observed, problems } = inspection;

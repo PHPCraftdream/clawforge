@@ -6,7 +6,9 @@
 // perform an advisory step. Recovery steps in a real run are apply-recovery.check.ts, the
 // context refresh across a composite run apply-refresh.check.ts.
 
-import { runSteps, blockingRemainder, isApplyDryRun, runnerFor, apply } from "#framework/commands/orchestration/apply.ts";
+import { runSteps, blockingRemainder, APPLY_ARGUMENTS, runnerFor } from "#framework/commands/orchestration/apply.ts";
+import { parseDeclaredArgs } from "#framework/core/command/index.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { planActions } from "#framework/commands/orchestration/plan.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
 import { problem, PROBLEM_CODES } from "#framework/service/inspection.ts";
@@ -17,7 +19,7 @@ import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 const ctx = {} as unknown as Context;
 
-/** isApplyDryRun/parseDeclaredArgs throw rather than return, so the message is the observable. */
+/** The declaration's parser throws rather than returns, so the message is the observable. */
 function deathOf(run: () => unknown): string {
   try {
     run();
@@ -27,13 +29,15 @@ function deathOf(run: () => unknown): string {
   return "";
 }
 
-check("apply recognizes a standalone dry-run flag", isApplyDryRun(["--dry-run"]), true);
+const dryRunGiven = (argv: string[]): boolean => parseDeclaredArgs(APPLY_ARGUMENTS, argv)["dry-run"] === true;
+
+check("apply recognizes a standalone dry-run flag", dryRunGiven(["--dry-run"]), true);
 // --expect/--set with nothing after but another of apply's own flags used to swallow it as
 // a bogus value (a checksum/artifact literally "--dry-run") and silently drop the flag —
 // now that value option refuses to swallow a declared flag and names which one needs a value.
-check("--expect right before --dry-run needs a value, not a swallowed flag", deathOf(() => isApplyDryRun(["--expect", "--dry-run"])), "--expect needs a value");
-check("--set right before --dry-run needs a value, not a swallowed flag", deathOf(() => isApplyDryRun(["--set", "--dry-run"])), "--set needs a value");
-check("apply still recognizes dry-run after an option value", isApplyDryRun(["--expect", "checksum", "--dry-run"]), true);
+check("--expect right before --dry-run needs a value, not a swallowed flag", deathOf(() => dryRunGiven(["--expect", "--dry-run"])), "--expect needs a value");
+check("--set right before --dry-run needs a value, not a swallowed flag", deathOf(() => dryRunGiven(["--set", "--dry-run"])), "--set needs a value");
+check("apply still recognizes dry-run after an option value", dryRunGiven(["--expect", "checksum", "--dry-run"]), true);
 
 {
   const { deployment, goodChecksums, stubContext } = await setupFixtureDeployment();
@@ -55,7 +59,7 @@ check("apply still recognizes dry-run after an option value", isApplyDryRun(["--
     } as Context;
     let error = "";
     await withOutputSink(() => {}, async () => {
-      try { await apply(ctx, []); } catch (caught) { error = caught instanceof Error ? caught.message : String(caught); }
+      try { await orchestrationCommands.apply.run(ctx, []); } catch (caught) { error = caught instanceof Error ? caught.message : String(caught); }
     });
     check("apply refuses uncertain CLI state before config drift could mutate", error.includes("apply stopped before changes") && error.includes("mcp list"), true);
     check("apply performs no target writes after a failed read", mutations, 0);

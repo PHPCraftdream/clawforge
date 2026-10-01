@@ -5,19 +5,19 @@
 import type { AppCommand } from "#src/core/app.ts";
 import { materializeCommands } from "#src/core/command/index.ts";
 
-import { applyConfig, APPLY_CONFIG_ARGUMENTS } from "#src/commands/orchestration/config.ts";
-import { inspect, doctor } from "#src/commands/orchestration/inspect/gather.ts";
-import { plan, PLAN_ARGUMENTS } from "#src/commands/orchestration/plan.ts";
-import { apply, isApplyDryRun, APPLY_ARGUMENTS } from "#src/commands/orchestration/apply.ts";
-import { operations, OPERATIONS_ARGUMENTS } from "#src/commands/orchestration/operations.ts";
-import { rollback, ROLLBACK_ARGUMENTS, isRollbackDryRun } from "#src/commands/orchestration/rollback.ts";
-import { accept, ACCEPT_ARGUMENTS } from "#src/commands/orchestration/accept.ts";
+import { APPLY_CONFIG } from "#src/commands/orchestration/config.ts";
+import { INSPECT, DOCTOR } from "#src/commands/orchestration/inspect/gather.ts";
+import { PLAN } from "#src/commands/orchestration/plan.ts";
+import { APPLY } from "#src/commands/orchestration/apply.ts";
+import { OPERATIONS } from "#src/commands/orchestration/operations.ts";
+import { ROLLBACK } from "#src/commands/orchestration/rollback.ts";
+import { ACCEPT } from "#src/commands/orchestration/accept.ts";
 
 export const orchestrationCommands: Record<string, AppCommand> = materializeCommands({
   inspect: {
     summary: "What is declared, what is actually running, and where they disagree",
     group: "check",
-    run: inspect,
+    ...INSPECT,
     details:
       "One answer instead of the several commands whose results a coder otherwise has to " +
       "combine: gateway state and both health verdicts, the image and its digest, every " +
@@ -49,14 +49,12 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "into actions.\n" +
       "The live agent/MCP/cron lists come from OpenClaw's own CLI, a container per call — " +
       "`./clawforge cli-start` first makes this noticeably faster.",
-    arguments: [{ name: "json", description: "Emit the whole inspection as JSON", kind: "flag" }],
     structured: true,
-    readOnly: true,
   },
   doctor: {
     summary: "Say whether anything is wrong and what to run about it",
     group: "check",
-    run: doctor,
+    ...DOCTOR,
     details:
       "The same inspection as `./clawforge inspect`, read for its problems rather than its " +
       "inventory — one gatherer, so the two can never disagree.\n" +
@@ -77,14 +75,12 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "Never every ./clawforge inspect/plan call — each audit is a container exec — only " +
       "doctor and accept. Suppress a finding by upstream checkId in " +
       "config/security-suppressions.json; it stays visible but stops counting.",
-    arguments: [{ name: "json", description: "Emit the verdict, problems and next actions as JSON", kind: "flag" }],
     structured: true,
-    readOnly: true,
   },
   plan: {
     summary: "The ordered actions the declaration implies, without performing them",
     group: "change",
-    run: plan,
+    ...PLAN,
     details:
       "Turns what `./clawforge inspect` found into steps, in the order the dependencies actually " +
       "require — a never-bootstrapped deployment first, secrets before anything starts, " +
@@ -109,15 +105,12 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "\"nothing to do\" prints only once inspect finds this deployment healthy with no " +
       "problems at all — never merely because plan has no step for what it found.\n" +
       "Changes nothing. `./clawforge apply` runs exactly this list.",
-    arguments: PLAN_ARGUMENTS,
     structured: true,
-    readOnly: true,
   },
   apply: {
     summary: "Run the plan, then confirm what the instance actually is",
     group: "change",
-    run: apply,
-    destructive: true,
+    ...APPLY,
     details:
       "Runs exactly the steps `./clawforge plan` lists, in that order, and stops at the first " +
       "failure — the steps depend on each other, so continuing would report success for an " +
@@ -144,14 +137,12 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "schema. `./clawforge apply-config --dry-run` does: a real (lockless) `config set " +
       "--batch-file --dry-run` against the target, usable even before the instance is " +
       "healthy.",
-    arguments: APPLY_ARGUMENTS,
     structured: true,
-    readOnlyWhen: isApplyDryRun,
   },
   accept: {
     summary: "Run the acceptance checks this deployment's recipes declare",
     group: "check",
-    run: accept,
+    ...ACCEPT,
     structured: true,
     details:
       "`./clawforge smoke` proves the instance is healthy. It cannot say whether the wiki a recipe " +
@@ -172,15 +163,12 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "blocking finding the same way a failed check does.\n" +
       "Exits non-zero when a check fails, could not be checked, or the security gate finds a " +
       "blocking issue.",
-    arguments: ACCEPT_ARGUMENTS,
   },
   rollback: {
     summary: "Put back the configuration an operation replaced",
     group: "change",
-    run: rollback,
-    destructive: true,
+    ...ROLLBACK,
     structured: true,
-    readOnlyWhen: isRollbackDryRun,
     details:
       "`./clawforge apply` copies the live configuration aside before its first mutating step. " +
       "This puts that copy back and restarts, because a configuration the instance has not " +
@@ -199,13 +187,11 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "Refuses if no previous set is on record, or if its artifact is no longer in sets/.\n" +
       "Neither path replaces the other: a deployment never installed from a set still has " +
       "only the config-snapshot path above.",
-    arguments: ROLLBACK_ARGUMENTS,
   },
   operations: {
     summary: "What mutating runs did to this instance, and what they left behind",
     group: "check",
-    run: operations,
-    readOnly: true,
+    ...OPERATIONS,
     structured: true,
     details:
       "Every run that changes the instance writes a journal entry on the target as it goes " +
@@ -216,12 +202,11 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "snapshot was taken that `./clawforge rollback` can put back.\n" +
       "An operation with no outcome did not reach its own end — killed, disconnected or " +
       "still running. That is reported as unfinished rather than dressed up as a result.",
-    arguments: OPERATIONS_ARGUMENTS,
   },
   "apply-config": {
     summary: "Apply the deployment's desired-state.json",
     group: "change",
-    run: applyConfig,
+    ...APPLY_CONFIG,
     details:
       "The declaration in config/desired-state.json is the source of truth:\n" +
       "this pushes it onto the running instance via OpenClaw's own `config set --batch-file`, " +
@@ -243,6 +228,5 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "Kept separate from `apply`: its --dry-run really validates against the target (lockless, " +
       "even before the instance is healthy), and --dump --force deliberately overwrites an " +
       "existing declaration — `apply` does neither.",
-    arguments: APPLY_CONFIG_ARGUMENTS,
   },
 });

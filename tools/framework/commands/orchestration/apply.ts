@@ -22,7 +22,7 @@ import { readLedgerStrict } from "#src/set/ownership/ledger.ts";
 import type { OwnedKind } from "#src/set/ownership/ledger.ts";
 import { Journal, snapshotConfig, newOperationId } from "#src/service/operations.ts";
 import type { StepStatus } from "#src/service/operations.ts";
-import { runOwning, takeLock, withLockUnlessHeld, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
+import { runOwning, takeLock, withLockUnlessHeld } from "#src/runtime/lock/instance-lock.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
 import { withSetSource } from "#src/set/artifacts/source.ts";
 import { withUnpackedArtifact, recordInstalledSet, storeArtifactForRollback, requirementProblems, runningImageDigest, readInstalledSetStrict } from "#src/set/artifacts/install.ts";
@@ -30,19 +30,29 @@ import type { VerifiedArtifact } from "#src/set/artifacts/install.ts";
 import type { PlanAction, Plan } from "./plan.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
-import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
+import type { ArgumentSpec } from "#src/core/command/spec.ts";
+import { commandBody, runOnContext } from "#src/core/command/index.ts";
+import { LOCK_TAKEOVER_ARGUMENTS, takeoverOf } from "#src/commands/interface/groups/shared-arguments.ts";
+import { ValueError, type ValueParser } from "#src/core/values/value.ts";
 
-/** Drives both apply's own parser and its openclawCommands declaration. */
-export const APPLY_ARGUMENTS: CommandArgument[] = [
+/** `--expect`'s grammar: the checksum `plan` printed with the plan. */
+function checksumValue(): ValueParser<string> {
+  return {
+    expected: "a declaration checksum", example: "9f86d081", invalidExample: "",
+    parse(raw) {
+      if (raw === "") throw new ValueError("needs a declaration checksum");
+      return raw;
+    },
+  };
+}
+
+export const APPLY_ARGUMENTS = [
   { name: "set", description: "Install this built set artifact instead of the working tree", kind: "option", valueName: "artifact" },
-  { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option", valueName: "checksum" },
-  { name: "dry-run", description: "Show the steps without running any of them", kind: "flag" },
-  { name: "break-lock", description: "Take over the instance lock held by another operation", kind: "flag" },
-  BREAK_FOREIGN_LOCK_ARGUMENT,
+  { name: "expect", description: "Declaration checksum the plan was computed against", kind: "option", valueName: "checksum", parse: checksumValue() },
+  { name: "dry-run", description: "Show the steps without running any of them", kind: "flag", effect: "read" },
+  ...LOCK_TAKEOVER_ARGUMENTS,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 /** Whether the container is running but its image could not be resolved to any digest at
  *  all. requirementProblems() treats an undefined imageDigest as "nothing to compare, no
@@ -148,9 +158,64 @@ export class TargetChangedError extends Error {
   }
 }
 
-/** Whether argv requests --dry-run (an option value is never mistaken for the flag). */
-export function isApplyDryRun(args: readonly string[]): boolean {
-  return parseDeclaredArgs(APPLY_ARGUMENTS, args)["dry-run"] === true;
+/** Everything the run needs, decided from the arguments alone in the prepare stage. */
+interface ApplyPlan {
+  readonly set?: string;
+  readonly expect?: string;
+  readonly dryRun: boolean;
+  readonly json: boolean;
+  readonly takeover: { readonly breakLock: boolean; readonly breakForeignLockHost?: string };
+}
+
+export const APPLY = commandBody({
+  effect: "destroy",
+  arguments: APPLY_ARGUMENTS,
+  prepare: ({ values }) => ({
+    set: values.set,
+    expect: values.expect,
+    dryRun: values["dry-run"],
+    json: values.json,
+    takeover: takeoverOf(values),
+  }) satisfies ApplyPlan,
+  run: (ctx, plan) => applyPlan(ctx, plan),
+});
+
+/** The full-context entry for callers outside this group (the set lifecycle checks): the
+ *  same declaration, parsed and run on a context they already hold. */
+export const apply = (ctx: Context, args: string[]): Promise<void> => runOnContext(APPLY, ctx, args);
+
+async function applyPlan(ctx: Context, plan: ApplyPlan): Promise<void> {
+  const { set: artifact } = plan;
+  if (artifact === undefined) {
+    await applyFromSource(ctx, plan);
+    return;
+  }
+
+  await withUnpackedArtifact(artifact, (staging, verified) =>
+    withSetSource(staging, () => applySetArtifact(ctx, plan, artifact, verified)),
+  plan.dryRun ? `checking ${artifact}` : `installing from ${artifact}`);
+}
+
+/** The --set flow once the artifact is unpacked and its recipe files are the active source. */
+async function applySetArtifact(ctx: Context, plan: ApplyPlan, artifact: string, verified: VerifiedArtifact): Promise<void> {
+  if (plan.dryRun) {
+    await applyFromSource(ctx, plan);
+    return;
+  }
+
+  // Refused before anything is touched: up/restart start whatever this deployment's OWN
+  // .env already names, since applying this artifact never pulls or switches images.
+  // Recording the set as installed while the runtime runs a different image would be
+  // false, not merely optimistic — same check as inspect's SET_REQUIREMENT_UNMET.
+  const framework = await frameworkVersion();
+  await refuseUnmetRequirements(ctx, verified, framework);
+
+  const operationId = newOperationId("apply");
+  // Nesting-safe: a caller (rollback --previous-set) already holding the lock must not have
+  // this acquire refuse itself as "another operation changing this instance".
+  await withLockUnlessHeld(ctx, "apply set", operationId, { breakLock: plan.takeover.breakLock, breakForeignLockHost: plan.takeover.breakForeignLockHost }, () =>
+    installSetUnderLock(ctx, plan, artifact, verified, framework, operationId),
+  );
 }
 
 /** Runs the executable steps in order, stopping at the first failure — steps depend on each
@@ -237,47 +302,6 @@ export async function runSteps(
   return outcomes;
 }
 
-export async function apply(ctx: Context, args: string[]): Promise<void> {
-  return applyWithSource(ctx, args);
-}
-
-/** With --set, the declaration and recipe files come from the artifact for the whole run —
- *  planning AND every step — so an install never reports the set's id while having
- *  mirrored uncommitted working-tree edits. */
-async function applyWithSource(ctx: Context, args: string[]): Promise<void> {
-  const artifact = parseDeclaredArgs(APPLY_ARGUMENTS, args).set as string | undefined;
-  if (artifact === undefined) {
-    await applyFromSource(ctx, args);
-    return;
-  }
-
-  await withUnpackedArtifact(artifact, (staging, verified) =>
-    withSetSource(staging, () => applySetArtifact(ctx, args, artifact, verified)),
-  isApplyDryRun(args) ? `checking ${artifact}` : `installing from ${artifact}`);
-}
-
-/** The --set flow once the artifact is unpacked and its recipe files are the active source. */
-async function applySetArtifact(ctx: Context, args: string[], artifact: string, verified: VerifiedArtifact): Promise<void> {
-  if (isApplyDryRun(args)) {
-    await applyFromSource(ctx, args);
-    return;
-  }
-
-  // Refused before anything is touched: up/restart start whatever this deployment's OWN
-  // .env already names, since applying this artifact never pulls or switches images.
-  // Recording the set as installed while the runtime runs a different image would be
-  // false, not merely optimistic — same check as inspect's SET_REQUIREMENT_UNMET.
-  const framework = await frameworkVersion();
-  await refuseUnmetRequirements(ctx, verified, framework);
-
-  const operationId = newOperationId("apply");
-  // Nesting-safe: a caller (rollback --previous-set) already holding the lock must not have
-  // this acquire refuse itself as "another operation changing this instance".
-  await withLockUnlessHeld(ctx, "apply set", operationId, { breakLock: args.includes("--break-lock"), breakForeignLockHost: parseBreakForeignLockHost(args) }, () =>
-    installSetUnderLock(ctx, args, artifact, verified, framework, operationId),
-  );
-}
-
 /** Refused before anything is touched — see applySetArtifact's own comment for why. */
 async function refuseUnmetRequirements(ctx: Context, verified: VerifiedArtifact, framework: string | undefined): Promise<void> {
   const requirementIssues = requirementProblems(verified.manifest, {
@@ -296,7 +320,7 @@ async function refuseUnmetRequirements(ctx: Context, verified: VerifiedArtifact,
  *  operation if nothing ran, confirm the result matches, then record the set as installed. */
 async function installSetUnderLock(
   ctx: Context,
-  args: string[],
+  plan: ApplyPlan,
   artifact: string,
   verified: VerifiedArtifact,
   framework: string | undefined,
@@ -307,7 +331,7 @@ async function installSetUnderLock(
   await preflightControlMarkers(ctx);
   refuseUnreliableCliRead(await computePlan(ctx));
   await storeArtifactForRollback(artifact, verified);
-  const ranSteps = await applyFromSource(ctx, args, operationId);
+  const ranSteps = await applyFromSource(ctx, plan, operationId);
 
   // applyFromSource's "nothing to apply" fast path never opens a Journal or takes a
   // snapshot for operationId. But recordInstalledSet() below writes
@@ -355,37 +379,34 @@ async function refuseUnconfirmedResult(ctx: Context, verified: VerifiedArtifact,
 }
 
 /** Returns whether it actually ran executable steps, as opposed to a dry run or the
- *  "nothing to apply" fast path — what applyWithSource's --set branch needs to decide
+ *  "nothing to apply" fast path — what applyPlan's --set branch needs to decide
  *  whether a no-op transition still needs a snapshot taken on its behalf. */
-async function applyFromSource(ctx: Context, args: string[], heldOperationId?: string): Promise<boolean> {
-  const jsonOnly = args.includes("--json");
-  // Recognizes --set too (already consumed above; read here only so the generic parser
-  // doesn't mistake it for an unknown flag).
-  const parsed = parseDeclaredArgs(APPLY_ARGUMENTS, args);
-  const dryRun = parsed["dry-run"] === true;
-  const expected = parsed.expect === "" ? die("--expect needs a declaration checksum") : parsed.expect as string | undefined;
+async function applyFromSource(ctx: Context, plan: ApplyPlan, heldOperationId?: string): Promise<boolean> {
+  const jsonOnly = plan.json;
+  const dryRun = plan.dryRun;
+  const expected = plan.expect;
 
-  const plan = await computePlan(ctx);
-  refuseStaleDeclaration(expected, plan);
+  const computed = await computePlan(ctx);
+  refuseStaleDeclaration(expected, computed);
 
   if (dryRun) {
     // Same renderer as `plan`, so the two never disagree.
-    emitOrPrint(jsonOnly, plan, () => {
-      printPlanActions(plan.actions);
+    emitOrPrint(jsonOnly, computed, () => {
+      printPlanActions(computed.actions);
       log("dry run — nothing was applied");
     });
     return false;
   }
 
-  refuseUnreliableCliRead(plan);
+  refuseUnreliableCliRead(computed);
 
-  const executable = plan.actions.filter((action) => action.advisory !== true);
+  const executable = computed.actions.filter((action) => action.advisory !== true);
   if (executable.length === 0) {
-    await reportNoExecutableActions(ctx, jsonOnly, plan);
+    await reportNoExecutableActions(ctx, jsonOnly, computed);
     return false;
   }
 
-  await runPlan(ctx, args, jsonOnly, plan, heldOperationId);
+  await runPlan(ctx, plan, jsonOnly, computed, heldOperationId);
   return true;
 }
 
@@ -427,9 +448,8 @@ async function reportNoExecutableActions(ctx: Context, jsonOnly: boolean, plan: 
 
 /** Takes the run-level lock (unless a caller already holds it), executes the plan under it,
  *  reports the result and throws for whichever way the run did not fully succeed. */
-async function runPlan(ctx: Context, args: string[], jsonOnly: boolean, plan: Plan, heldOperationId?: string): Promise<void> {
-  const breakLock = args.includes("--break-lock");
-  const breakForeignLockHost = parseBreakForeignLockHost(args);
+async function runPlan(ctx: Context, requested: ApplyPlan, jsonOnly: boolean, plan: Plan, heldOperationId?: string): Promise<void> {
+  const { breakLock, breakForeignLockHost } = requested.takeover;
 
   // Lock first, journal only once held: a run refused here never started, and a journal
   // entry with no outcome should mean "began and we don't know how it ended", not "refused".

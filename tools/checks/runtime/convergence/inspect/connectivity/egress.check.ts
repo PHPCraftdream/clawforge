@@ -11,7 +11,8 @@ import { createServer as createNetServer } from "node:net";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { EGRESS_EXEC_TIMEOUT_MS, egressProbeScript } from "#framework/commands/orchestration/inspect/egress-probe.ts";
-import { gatherInspection, renderJson, doctor, inspect, printProblem } from "#framework/commands/orchestration/inspect/gather.ts";
+import { gatherInspection, renderJson, printProblem } from "#framework/commands/orchestration/inspect/gather.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { computePlan } from "#framework/commands/orchestration/plan.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -72,7 +73,7 @@ const { deployment, goodChecksums, stubContext } = await setupFixtureDeployment(
 async function doctorOutcome(ctx: Context): Promise<{ failed: boolean; output: string }> {
   let output = "";
   try {
-    await withOutputSink((chunk) => { output += chunk; }, () => doctor(ctx, ["--json"]));
+    await withOutputSink((chunk) => { output += chunk; }, () => orchestrationCommands.doctor.run(ctx, ["--json"]));
     return { failed: false, output };
   } catch {
     return { failed: true, output };
@@ -269,9 +270,9 @@ try {
       check("plan remains aware of both config drift paths", plan.problems.filter((entry) => entry.code === "CONFIG_DRIFT").length, 2);
       check("plan JSON excludes config credentials", JSON.stringify(plan).includes("demo-pass"), false);
       const output: string[] = [];
-      await withOutputSink((chunk) => output.push(chunk), () => inspect(ctx, ["--json"]));
+      await withOutputSink((chunk) => output.push(chunk), () => orchestrationCommands.inspect.run(ctx, ["--json"]));
       await withOutputSink((chunk) => output.push(chunk), async () => {
-        try { await doctor(ctx, ["--json"]); }
+        try { await orchestrationCommands.doctor.run(ctx, ["--json"]); }
         catch { /* Config drift makes doctor fail after reporting it. */ }
       });
       for (const entry of drift) await withOutputSink((chunk) => output.push(chunk), async () => printProblem(entry));

@@ -5,9 +5,10 @@ import { createContext } from "#framework/core/context.ts";
 import type { Context } from "#framework/core/context.ts";
 import type { AppCommand } from "#framework/core/app.ts";
 import { hostPlatform } from "#framework/runtime/transport/transport.ts";
-import { inspect, doctor } from "#framework/commands/orchestration/inspect/gather.ts";
-import { plan } from "#framework/commands/orchestration/plan.ts";
+import { INSPECT, DOCTOR } from "#framework/commands/orchestration/inspect/gather.ts";
+import { PLAN } from "#framework/commands/orchestration/plan.ts";
 import { serveMcp } from "#framework/integration/mcp/server.ts";
+import { runOnContext } from "#framework/core/command/index.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "../fixture.ts";
 
 // Fictional authorities only. The controlled runtime below never performs a probe.
@@ -64,10 +65,10 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(
       });
       return ctx;
     };
-    const commands: Record<string, AppCommand> = Object.fromEntries(Object.entries({ inspect, doctor, plan }).map(([name, run]) => [name, {
+    const commands: Record<string, AppCommand> = Object.fromEntries(Object.entries({ inspect: INSPECT, doctor: DOCTOR, plan: PLAN }).map(([name, body]) => [name, {
       summary: name, readOnly: true, structured: true,
       arguments: [{ name: "json", kind: "flag", description: "JSON output" }],
-      run: (ctx: Context, args: string[]) => run(controlled(ctx), args),
+      run: (ctx: Context, args: string[]) => runOnContext(body, controlled(ctx), args),
     }]));
     const mode = process.argv[2] ?? "inspect";
     if (mode === "control-mcp") await serveMcp({ name: "credential-fixture", description: "Offline credential diagnostic fixture", commands });

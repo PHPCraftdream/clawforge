@@ -25,7 +25,9 @@ try {
     const {emit}=await import(${JSON.stringify(moduleUrl("core/io/output"))});
     const {registerSecret}=await import(${JSON.stringify(moduleUrl("core/io/log"))});
     let target=0;
-    const apply={...openclawCommands.apply,run:async(_ctx,args)=>{
+    // Replacing run drops the spread onto the legacy path, so the fixture carries the
+    // dry-run predicate the migration removed from the real declaration.
+    const apply={...openclawCommands.apply,changedWhen:(args)=>!args.includes("--dry-run"),run:async(_ctx,args)=>{
       if (args.includes("--dry-run")) {
         emit(JSON.stringify({deployment:"fixture",target,healthy:true,problems:[],actions:[]})+"\\n");
         return;

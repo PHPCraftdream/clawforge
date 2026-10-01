@@ -10,22 +10,21 @@ import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit } from "#src/core/io/output.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
-import { guarded, parseBreakForeignLockHost } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { readLiveConfigOrThrow, valueAt } from "./inspect/helpers.ts";
-import type { CommandArgument } from "#src/core/app.ts";
-import { parseDeclaredArgs } from "#src/core/command/index.ts";
+import type { ArgumentSpec, ParsedCall } from "#src/core/command/spec.ts";
+import { commandBody, parseCall, specShape } from "#src/core/command/index.ts";
 import { BREAK_FOREIGN_LOCK_ARGUMENT } from "#src/commands/interface/groups/shared-arguments.ts";
 
-/** Drives both apply-config's own parser and its openclawCommands declaration. */
-export const APPLY_CONFIG_ARGUMENTS: CommandArgument[] = [
-  { name: "dry-run", description: "Validate the apply without writing; refused together with --dump", kind: "flag" },
-  { name: "dump", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
-  { name: "force", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag" },
-  { name: "break-lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
+export const APPLY_CONFIG_ARGUMENTS = [
+  { name: "dry-run", summary: "Validate the apply without writing", description: "Validate the apply without writing; refused together with --dump", kind: "flag" },
+  { name: "dump", summary: "Reconstruct desired-state.json from the live instance's config", description: "Reconstruct desired-state.json from the live instance's config", kind: "flag" },
+  { name: "force", summary: "Overwrite an existing desired-state.json; refused without it", description: "Overwrite an existing desired-state.json (with --dump); refused without it", kind: "flag" },
+  { name: "break-lock", summary: "Take over a held instance lock", description: "Take over the instance lock held by another operation (real apply only)", kind: "flag" },
   BREAK_FOREIGN_LOCK_ARGUMENT,
   { name: "json", description: "Emit the outcome as JSON", kind: "flag" },
-];
+] as const satisfies readonly ArgumentSpec[];
 
 
 
@@ -52,28 +51,61 @@ export function appliedHeadline(restartAdvice: boolean): string {
     : "desired state applied";
 }
 
-export async function applyConfig(
-  ctx: Context,
-  args: string[],
-  options: { restartAdvice?: boolean } = {},
-): Promise<void> {
-  const parsed = parseDeclaredArgs(APPLY_CONFIG_ARGUMENTS, args);
-  const dryRun = parsed["dry-run"] === true;
-  const dump = parsed.dump === true;
-  const force = parsed.force === true;
-  const breakLock = parsed["break-lock"] === true;
-  const breakForeignLockHost = parseBreakForeignLockHost(args);
-  const jsonOnly = parsed.json === true;
+/** Which flags mean anything is decided from the mode here, not branch order: order alone
+ *  would let --dry-run --dump --force reach the dump branch with the dry run never
+ *  consulted, replacing a declaration with the recovered file's RECOVERABLE_PATHS subset.
+ *  These refusals depend on the arguments alone, so they run in the prepare stage — before
+ *  any contact with the target, on every host. */
+function applyConfigPlan(call: ParsedCall<Record<string, unknown>>): ConfigPlan {
+  const values = call.values as {
+    "dry-run"?: boolean; dump?: boolean; force?: boolean;
+    "break-lock"?: boolean; "break-foreign-lock"?: string; json?: boolean;
+  };
+  const dryRun = values["dry-run"] === true;
+  const dump = values.dump === true;
+  const force = values.force === true;
+  const breakLock = values["break-lock"] === true;
+  const breakForeignLockHost = values["break-foreign-lock"];
+  const jsonOnly = values.json === true;
 
-  // Which flags mean anything is decided from the mode here, not branch order: order alone
-  // would let --dry-run --dump --force reach the dump branch with the dry run never
-  // consulted, replacing a declaration with the recovered file's RECOVERABLE_PATHS subset.
   if (dump && dryRun) die("--dry-run cannot be combined with --dump — a dump has no dry-run form: it writes the recovered declaration or it does nothing");
   if (dump && breakLock) die("--break-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
   if (dump && breakForeignLockHost !== undefined) die("--break-foreign-lock cannot be combined with --dump — a dump takes no instance lock, so there is no lock to break");
   if (!dump && dryRun && breakLock) die("--break-lock cannot be combined with --dry-run — a dry run takes no instance lock, so there is no lock to break");
   if (!dump && dryRun && breakForeignLockHost !== undefined) die("--break-foreign-lock cannot be combined with --dry-run — a dry run takes no instance lock, so there is no lock to break");
   if (!dump && force) die("--force only applies to --dump — a real apply overwrites the instance config regardless, and its preview is --dry-run");
+
+  return { dryRun, dump, force, jsonOnly, takeover: { breakLock, breakForeignLockHost } };
+}
+
+interface ConfigPlan {
+  readonly dryRun: boolean;
+  readonly dump: boolean;
+  readonly force: boolean;
+  readonly jsonOnly: boolean;
+  readonly takeover: { readonly breakLock: boolean; readonly breakForeignLockHost?: string };
+}
+
+export const APPLY_CONFIG = commandBody({
+  effect: "change",
+  arguments: APPLY_CONFIG_ARGUMENTS,
+  prepare: (call) => applyConfigPlan(call),
+  run: (ctx, plan) => runApplyConfig(ctx, plan, true),
+});
+
+/** The full-context entry for callers inside other groups (bootstrap, smoke, set try, the
+ *  apply step): the same declaration, parsed and run on a context they already hold. */
+export async function applyConfig(
+  ctx: Context,
+  args: string[],
+  options: { restartAdvice?: boolean } = {},
+): Promise<void> {
+  const call = parseCall(specShape(APPLY_CONFIG), args, "apply-config");
+  return runApplyConfig(ctx, applyConfigPlan(call), options.restartAdvice ?? true);
+}
+
+async function runApplyConfig(ctx: Context, plan: ConfigPlan, restartAdvice: boolean): Promise<void> {
+  const { dryRun, dump, force, jsonOnly, takeover } = plan;
 
   await requireBootstrapped(ctx);
 
@@ -86,11 +118,11 @@ export async function applyConfig(
 
   // A dry run changes no applied config, so it needs no lock. Its isolated staging file
   // is removed after the container reads it.
-  if (dryRun) return writeDesiredState(ctx, true, options.restartAdvice, jsonOnly);
+  if (dryRun) return writeDesiredState(ctx, true, restartAdvice, jsonOnly);
   if (jsonOnly) {
     let caught: unknown;
     try {
-      await guarded(ctx, "apply-config", args, () => writeDesiredState(ctx, false, options.restartAdvice, false));
+      await guardedWith(ctx, "apply-config", takeover, () => writeDesiredState(ctx, false, restartAdvice, false));
     } catch (error) {
       caught = error;
     }
@@ -102,7 +134,7 @@ export async function applyConfig(
     emit(`${JSON.stringify({ ok: true, changed: true, source: desiredStateFile() }, null, 2)}\n`);
     return;
   }
-  return guarded(ctx, "apply-config", args, () => writeDesiredState(ctx, false, options.restartAdvice, false));
+  return guardedWith(ctx, "apply-config", takeover, () => writeDesiredState(ctx, false, restartAdvice, false));
 }
 
 async function writeDesiredState(ctx: Context, dryRun: boolean, restartAdvice = true, jsonOnly = false): Promise<void> {

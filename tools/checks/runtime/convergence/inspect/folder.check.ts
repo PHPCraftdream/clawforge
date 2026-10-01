@@ -9,7 +9,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { gatherInspection, renderJson, doctor, printProblem } from "#framework/commands/orchestration/inspect/gather.ts";
+import { gatherInspection, renderJson, printProblem } from "#framework/commands/orchestration/inspect/gather.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import { status } from "#framework/commands/interface/status.ts";
 import { DockerRuntime } from "#framework/runtime/docker/runtime-docker.ts";
 import { blockingProblems, problem } from "#framework/service/inspection.ts";
@@ -39,7 +40,7 @@ const { deployment, goodChecksums, stubContext } = await setupFixtureDeployment(
 async function doctorOutcome(ctx: Context): Promise<{ failed: boolean; output: string }> {
   let output = "";
   try {
-    await withOutputSink((chunk) => { output += chunk; }, () => doctor(ctx, ["--json"]));
+    await withOutputSink((chunk) => { output += chunk; }, () => orchestrationCommands.doctor.run(ctx, ["--json"]));
     return { failed: false, output };
   } catch {
     return { failed: true, output };
@@ -482,7 +483,7 @@ check("no .env value reached any doctor output", allOutput.includes(TOKEN), fals
       let doctorOutput = "";
       let doctorError = "";
       try {
-        await withOutputSink((chunk) => { doctorOutput += chunk; }, () => doctor(ctx, ["--json"]));
+        await withOutputSink((chunk) => { doctorOutput += chunk; }, () => orchestrationCommands.doctor.run(ctx, ["--json"]));
       } catch (caught) {
         doctorError = caught instanceof Error ? caught.message : String(caught);
       }

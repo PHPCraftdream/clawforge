@@ -2,12 +2,12 @@
 // Context after recover-env / secrets --apply, stops when a step moves the deployment target,
 // and refreshContext() counts a changed Compose project as a moved target.
 
-import { runSteps, apply, TargetChangedError } from "#framework/commands/orchestration/apply.ts";
+import { runSteps, TargetChangedError } from "#framework/commands/orchestration/apply.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
 import type { ApplyOutcome, StepOutcome } from "#framework/commands/orchestration/apply.ts";
 import type { PlanAction } from "#framework/commands/orchestration/plan.ts";
 import { Journal } from "#framework/service/operations.ts";
 import type { OperationRecord } from "#framework/service/operations.ts";
-import { operations } from "#framework/commands/orchestration/operations.ts";
 import { useComposeProjectOverride } from "#framework/runtime/deployment.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment, DATA } from "#checks/runtime/convergence/inspect/fixture.ts";
 import { refreshCheckTransport, refreshLiveConfig } from "#checks/runtime/connection-facts/apply-driver.ts";
@@ -52,7 +52,7 @@ import { check, finish } from "#checks/kit/harness.ts";
     let machine = "";
     let threw: unknown;
     await withOutputSink(() => {}, async () => {
-      try { await apply(ctx, []); } catch (error) { threw = error; }
+      try { await orchestrationCommands.apply.run(ctx, []); } catch (error) { threw = error; }
     }, (chunk) => { machine += chunk; });
     check("the whole run does not throw", threw === undefined, true);
     const outcome = JSON.parse(machine) as ApplyOutcome;
@@ -77,7 +77,7 @@ import { check, finish } from "#checks/kit/harness.ts";
     check("the env composed before the rewrite had no token — the context was stale", state.composeEnvWrites[0]?.includes("stored-refresh-token-value") ?? true, false);
 
     let recordJson = "";
-    await withOutputSink(() => {}, async () => { await operations(ctx, [outcome.operationId, "--json"]); }, (chunk) => { recordJson += chunk; });
+    await withOutputSink(() => {}, async () => { await orchestrationCommands.operations.run(ctx, [outcome.operationId, "--json"]); }, (chunk) => { recordJson += chunk; });
     const record = JSON.parse(recordJson) as OperationRecord;
     check("operations reads the run back as succeeded", record.outcome, "succeeded");
     check("its recorded steps are the run's steps, in order", record.steps.map((step) => [step.id, step.status]), [["secrets", "done"], ["up", "done"], ["problem:IMAGE_UNPINNED", "advisory"], ["problem:BACKUP_MISSING", "advisory"]]);
@@ -176,7 +176,7 @@ import { check, finish } from "#checks/kit/harness.ts";
 
     // The journal was written under the ORIGINAL dataDir path, so the original ctx reads it.
     let recordJson = "";
-    await withOutputSink(() => {}, async () => { await operations(ctx, [journal.id, "--json"]); }, (chunk) => { recordJson += chunk; });
+    await withOutputSink(() => {}, async () => { await orchestrationCommands.operations.run(ctx, [journal.id, "--json"]); }, (chunk) => { recordJson += chunk; });
     const record = JSON.parse(recordJson) as OperationRecord;
     check("operations reads the stopped run back as failed", record.outcome, "failed");
     check("and its note says why", record.note?.includes("the deployment target changed") ?? false, true);

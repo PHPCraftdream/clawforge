@@ -8,7 +8,9 @@
 
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 
-export const CAPABILITIES = ["docker", "wsl", "posix-sh", "rsync", "linux-host", "windows-host", "ssh-loopback", "gnu-userland"] as const;
+export const CAPABILITIES = [
+  "docker", "wsl", "posix-sh", "rsync", "linux-host", "windows-host", "ssh-loopback", "gnu-userland", "auto-target",
+] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
 export function isCapability(value: string): value is Capability {
@@ -79,8 +81,26 @@ export async function hasGnuUserland(): Promise<boolean> {
   });
 }
 
-const SSH_LOOPBACK_TIMEOUT_MS = 8_000;
+/** The target OC_TARGET_LOCATION=auto picks on this host answers docker: a local daemon on
+ *  Linux, docker inside the WSL distro on Windows. macOS has no auto target at all, and a
+ *  WSL distro without docker answers "absent" — wsl.exe alone is not enough for a check that
+ *  needs the target to answer. */
+export async function hasAutoTarget(): Promise<boolean> {
+  if (process.platform === "linux") return hasDocker();
+  if (process.platform === "win32") {
+    if (!(await hasWsl())) return false;
+    // The default mirrors core/env.ts's; a later step gives it a single owner.
+    const distro = process.env.OC_WSL_DISTRO ?? "Ubuntu-24.04";
+    return swallow(async () => (await spawnLocal(
+      "wsl.exe",
+      ["-d", distro, "docker", "info"],
+      { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS },
+    )).code === 0);
+  }
+  return false;
+}
 
+const SSH_LOOPBACK_TIMEOUT_MS = 8_000;
 /** A real, reachable, key-based loopback ssh target at OC_CHECK_SSH_HOST (default localhost):
  *  `ssh -o BatchMode=yes -o ConnectTimeout=5 <host> true` succeeds — the exact command the CI
  *  job that provisions this sshd is contracted to make pass, and the exact one a check gated
@@ -106,6 +126,7 @@ export const DEFAULT_PROBES: ProbeMap = {
   "windows-host": isWindowsHost,
   "ssh-loopback": hasSshLoopback,
   "gnu-userland": hasGnuUserland,
+  "auto-target": hasAutoTarget,
 };
 
 /** Probes each capability at most once per instance, regardless of how many files ask —

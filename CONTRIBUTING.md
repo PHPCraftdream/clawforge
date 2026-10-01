@@ -86,9 +86,24 @@ never via wsl.exe), `rsync` (a real rsync binary), `linux-host` (`process.platfo
 BatchMode=yes -o ConnectTimeout=5 ${OC_CHECK_SSH_HOST:-localhost} true` succeeds — key-based,
 non-interactive; BatchMode refuses instead of prompting, so a host with no key set up answers
 "absent" instead of hanging), `gnu-userland` (this process's own `mkdir`, `mv` and `tar` are GNU-compatible
-— macOS ships BSD ones, a stock Windows runner has no `mkdir`). Each is probed at most once per run, only when some selected file
+— macOS ships BSD ones, a stock Windows runner has no `mkdir`), `auto-target` (the target
+`OC_TARGET_LOCATION=auto` picks on this host answers docker: `docker info` on Linux,
+`wsl -d ${OC_WSL_DISTRO:-Ubuntu-24.04} docker info` on Windows — a WSL distro without docker
+answers "absent", so a case that needs the target to answer, not merely wsl.exe, gates on this
+one). Each is probed at most once per run, only when some selected file
 actually requires it, and a probe failure (missing tool, timeout, anything) reads as "absent"
 rather than crashing the run.
+
+A single case inside an otherwise runnable file can gate the same way: `await requires("docker", "<case name>", body)`
+(`kit/harness.ts`) runs `body` when the capability is present, prints `  SKIP <case name> — needs <cap>`
+(counted in the closing summary) when absent, and fails the case instead when the capability is
+in `--require`/`OC_CHECK_REQUIRE`. Prefer it over ad-hoc output sniffing for host-dependent
+assertions.
+
+A check run must also leave the checkout as it found it (no leftover apps/<name>, no modified or
+newly untracked tracked files): the runner snapshots `apps/` and `git status --porcelain` before
+and after a run and fails it, listing the differences, if either changed. Ignored output (dist/)
+never shows; when git is unavailable the comparison is skipped with a note.
 
 `tools/checks/runtime/transport/scenarios/contract.ts` defines the transport contract once
 (`runTransportScenarios`) and three thin files — `local.check.ts` (`requires linux-host`),

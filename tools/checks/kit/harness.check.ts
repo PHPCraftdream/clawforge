@@ -8,8 +8,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { check, finish } from "./harness.ts";
+import { check, checkTrue, requires, setCaseProbe, finish } from "./harness.ts";
 import { runProcess } from "./spawn.ts";
+import { CapabilityProbe, CAPABILITIES } from "./capabilities/capabilities.ts";
 
 const harnessUrl = pathToFileURL(resolve(import.meta.dirname, "harness.ts")).href;
 
@@ -18,11 +19,24 @@ interface Ran {
   readonly output: string;
 }
 
-async function runScript(dir: string, source: string): Promise<Ran> {
+async function runScript(dir: string, source: string, prologue = ""): Promise<Ran> {
   const file = join(dir, `${Math.random().toString(36).slice(2)}.ts`);
-  await writeFile(file, `import { check, checkTrue, finish } from "${harnessUrl}";\n${source}`);
+  await writeFile(file, `import { check, checkTrue, requires, setCaseProbe, finish } from "${harnessUrl}";\n${prologue}\n${source}`);
   const { code, output } = await runProcess(process.execPath, ["--experimental-strip-types", file]);
   return { code, output };
+}
+
+/** A probe whose every capability answers per `present`, injectable into a scenario script
+ *  (which imports only the harness, so it carries its own capabilities import). */
+function fakeProbeScript(present: Record<string, boolean | string[]>): string {
+  return [
+    `import { CapabilityProbe, CAPABILITIES } from "${pathToFileURL(resolve(import.meta.dirname, "capabilities", "capabilities.ts")).href}";`,
+    `const present = ${JSON.stringify(present)};`,
+    `const answers = Object.fromEntries(CAPABILITIES.map((c) => [c, present[c] ?? true]));`,
+    `const probes = Object.fromEntries(CAPABILITIES.map((c) => [c, async () => answers[c]]));`,
+    `setCaseProbe(new CapabilityProbe(probes), new Set(present.forced ?? []));`,
+    "",
+  ].join("\n");
 }
 
 const dir = await mkdtemp(join(tmpdir(), "clawforge-harness-check-"));
@@ -63,6 +77,79 @@ try {
   const nanEquality = await runScript(dir, 'check("NaN equals itself", NaN, NaN);\nfinish("demo");\n');
   check("NaN compares equal to NaN under deepStrictEqual", nanEquality.output.includes("  ok   NaN equals itself\n"), true);
   check("...so the suite passes", nanEquality.code, 0);
+
+  // --- requires(): case-level capability gating ------------------------------------------------
+
+  const ranBody = await runScript(dir, [
+    `let ran = false;`,
+    `await requires("docker", "host-dependent case", async () => { ran = true; check("inside the body", 1, 1); });`,
+    `checkTrue("the body ran", ran);`,
+    `finish("demo");`,
+  ].join("\n"), fakeProbeScript({ docker: true }));
+  checkTrue("a present capability runs the body", ranBody.output.includes("  ok   inside the body\n"));
+  check("a present capability is neither skip nor failure", ranBody.code, 0);
+
+  const skippedCase = await runScript(dir, [
+    `await requires("docker", "the status hints case", async () => { check("never runs", 1, 2); });`,
+    `check("a later check still runs", 1, 1);`,
+    `finish("demo");`,
+  ].join("\n"), fakeProbeScript({ docker: false }));
+  check(
+    "an absent capability skips the case, naming it and the capability, like a file-level skip",
+    skippedCase.output.includes("  SKIP the status hints case — needs docker\n"),
+    true,
+  );
+  checkTrue("a skipped case's body never ran", !skippedCase.output.includes("never runs"));
+  check("a skipped case's summary counts it with a breakdown", skippedCase.output.includes("all demo checks passed, 1 skipped (needs docker: 1)\n"), true);
+  check("a skipped case still exits 0", skippedCase.code, 0);
+
+  const forcedCase = await runScript(dir, [
+    `await requires("docker", "the status hints case", async () => {});`,
+    `check("a later check still runs", 1, 1);`,
+    `finish("demo");`,
+  ].join("\n"), fakeProbeScript({ docker: false, forced: ["docker"] }));
+  check(
+    "an absent but required capability fails the case instead of skipping",
+    forcedCase.output.includes("  FAIL the status hints case\n    required capability absent: docker\n"),
+    true,
+  );
+  check("the forced failure reaches the summary and the exit code", forcedCase.output.includes("1 failed\n") && forcedCase.code === 0, false);
+  checkTrue("the surrounding suite keeps running after a forced failure", forcedCase.output.includes("  ok   a later check still runs\n"));
+
+  // An unknown capability in OC_CHECK_REQUIRE fails loudly in a directly-run file, exactly
+  // like run.ts refuses it — not silently "require nothing".
+  const absentProbe = () => {
+    const probes = Object.fromEntries(CAPABILITIES.map((c) => [c, async () => false]));
+    return new CapabilityProbe(probes as never);
+  };
+
+  // An unknown capability in OC_CHECK_REQUIRE fails loudly in a directly-run file, exactly
+  // like run.ts refuses it — not silently "require nothing".
+  const previous = process.env.OC_CHECK_REQUIRE;
+  process.env.OC_CHECK_REQUIRE = "docker,ssh";
+  // A docker-absent probe, so requires() reaches the forced-set parsing at all.
+  setCaseProbe(absentProbe());
+  try {
+    let message = "";
+    try {
+      await requires("docker", "unreachable while the env is bad", async () => {});
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    checkTrue(
+      "an unknown capability in OC_CHECK_REQUIRE throws, naming it",
+      message.includes(`unknown capability in --require/OC_CHECK_REQUIRE: "ssh"`),
+    );
+  } finally {
+    setCaseProbe(undefined);
+    if (previous === undefined) delete process.env.OC_CHECK_REQUIRE;
+    else process.env.OC_CHECK_REQUIRE = previous;
+  }
+  const envRestored = await runScript(dir, [
+    `await requires("docker", "after the env was restored", async () => { check("body ran", 1, 1); });`,
+    `finish("demo");`,
+  ].join("\n"), fakeProbeScript({}));
+  checkTrue("restoring the env un-breaks requires()", envRestored.output.includes("  ok   body ran\n"));
 } finally {
   await rm(dir, { recursive: true, force: true });
 }

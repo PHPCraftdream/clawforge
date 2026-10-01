@@ -4,8 +4,50 @@
 
 import { deepStrictEqual } from "node:assert/strict";
 import { inspect } from "node:util";
+import { CapabilityProbe, isCapability, type Capability } from "./capabilities/capabilities.ts";
+import { parseRequireList } from "./capabilities/gate.ts";
 
 let failed = 0;
+const skippedByCapability = new Map<Capability, number>();
+
+// Injectable so a check (harness.check.ts) can prove the gating with fake probes instead of
+// the real host; defaults probe lazily and honor OC_CHECK_REQUIRE, like a file-level gate.
+let caseProbe: CapabilityProbe | undefined;
+let forcedCapabilities: ReadonlySet<Capability> | undefined;
+
+export function setCaseProbe(probe: CapabilityProbe | undefined, forced?: ReadonlySet<Capability>): void {
+  caseProbe = probe;
+  forcedCapabilities = forced;
+}
+
+function forcedSet(): ReadonlySet<Capability> {
+  if (forcedCapabilities === undefined) {
+    // Same loud failure as run.ts: a typo in OC_CHECK_REQUIRE must not silently require
+    // nothing in a directly-run check file.
+    forcedCapabilities = new Set(parseRequireList(process.env.OC_CHECK_REQUIRE, isCapability));
+  }
+  return forcedCapabilities;
+}
+
+/**
+ * Runs `body` when the host has `capability`; otherwise reports the case as skipped —
+ * `  SKIP <name> — needs <cap>`, counted by finish() and folded into the runner's summary —
+ * or, when that capability is in --require/OC_CHECK_REQUIRE, as a failure instead.
+ */
+export async function requires(capability: Capability, name: string, body: () => Promise<void> | void): Promise<void> {
+  const present = await (caseProbe ??= new CapabilityProbe()).has(capability);
+  if (present) {
+    await body();
+    return;
+  }
+  if (forcedSet().has(capability)) {
+    failed += 1;
+    process.stderr.write(`  FAIL ${name}\n    required capability absent: ${capability}\n`);
+    return;
+  }
+  skippedByCapability.set(capability, (skippedByCapability.get(capability) ?? 0) + 1);
+  process.stderr.write(`  SKIP ${name} — needs ${capability}\n`);
+}
 
 function describe(value: unknown): string {
   return inspect(value, { depth: null, breakLength: Infinity, compact: true, sorted: false });
@@ -30,8 +72,13 @@ export function checkTrue(name: string, condition: boolean): void {
   check(name, condition, true);
 }
 
-/** Prints the suite's summary line and sets process.exitCode. Call once, after every check(). */
+/** Prints the suite's summary line and sets process.exitCode. Call once, after every check()
+ *  and requires(). Case-level capability skips are counted like the runner counts skipped
+ *  files: named in a breakdown after the unchanged base wording. */
 export function finish(suite: string): void {
-  process.stderr.write(failed === 0 ? `all ${suite} checks passed\n` : `${failed} failed\n`);
+  const skippedTotal = [...skippedByCapability.values()].reduce((sum, count) => sum + count, 0);
+  const breakdown = [...skippedByCapability.entries()].map(([capability, count]) => `${capability}: ${count}`).join(", ");
+  const skipNote = skippedTotal === 0 ? "" : `, ${skippedTotal} skipped (needs ${breakdown})`;
+  process.stderr.write(failed === 0 ? `all ${suite} checks passed${skipNote}\n` : `${failed} failed${skipNote}\n`);
   process.exitCode = failed === 0 ? 0 : 1;
 }

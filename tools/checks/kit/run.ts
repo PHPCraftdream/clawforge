@@ -5,12 +5,15 @@
 // `./clawforge smoke` covers a live instance instead.
 
 import { availableParallelism } from "node:os";
+import { readdir } from "node:fs/promises";
+import { resolve } from "node:path";
+import { monorepoRoot } from "#framework/core/env.ts";
 import { reportError } from "#framework/core/io/log.ts";
 import { emit } from "#framework/core/io/output.ts";
 import { discoverChecks, selectChecks, splitExclusive, type LabeledCheck } from "./discover.ts";
-import { runCheckFile, type CheckResult } from "./spawn.ts";
+import { runCheckFile, runProcess, type CheckResult } from "./spawn.ts";
 import { CapabilityProbe, isCapability, type Capability } from "./capabilities/capabilities.ts";
-import { gateFor, parseRequireList, skipLine, summaryLine } from "./capabilities/gate.ts";
+import { gateFor, parseCaseSkips, parseRequireList, skipLine, summaryLine } from "./capabilities/gate.ts";
 
 export { selectChecks } from "./discover.ts";
 
@@ -31,6 +34,44 @@ function defaultJobs(): number {
   const fromEnv = Number(process.env.OC_CHECK_JOBS ?? "");
   if (Number.isInteger(fromEnv) && fromEnv > 0) return fromEnv;
   return Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)));
+}
+
+// --- the checkout is left as the run found it (R33-02) ----------------------------------------
+
+export interface CheckoutSnapshot {
+  readonly apps: readonly string[];
+  /** `git status --porcelain`, empty when git is unavailable (then it is not compared). */
+  readonly gitStatus: string | undefined;
+}
+
+export function diffSnapshots(before: CheckoutSnapshot, after: CheckoutSnapshot): readonly string[] {
+  const changes: string[] = [];
+  const appeared = after.apps.filter((name) => !before.apps.includes(name));
+  const disappeared = before.apps.filter((name) => !after.apps.includes(name));
+  if (appeared.length > 0) changes.push(`apps/ gained: ${appeared.join(", ")}`);
+  if (disappeared.length > 0) changes.push(`apps/ lost: ${disappeared.join(", ")}`);
+  if (before.gitStatus !== undefined && after.gitStatus !== undefined && before.gitStatus !== after.gitStatus) {
+    const beforeLines = new Set(before.gitStatus.split("\n"));
+    const afterLines = new Set(after.gitStatus.split("\n"));
+    const gained = [...afterLines].filter((line) => line !== "" && !beforeLines.has(line)).sort();
+    const lost = [...beforeLines].filter((line) => line !== "" && !afterLines.has(line)).sort();
+    for (const line of gained) changes.push(`git status gained: ${line}`);
+    for (const line of lost) changes.push(`git status lost: ${line}`);
+  }
+  return changes;
+}
+
+async function snapshotCheckout(): Promise<CheckoutSnapshot> {
+  let apps: string[] = [];
+  try {
+    apps = (await readdir(resolve(monorepoRoot, "apps"), { withFileTypes: true })).map((entry) => entry.name).sort();
+  } catch {
+    apps = [];
+  }
+  // Ignored output (dist/ rebuilds, scratch prefixes) never shows in --porcelain; an absent
+  // git only means the comparison is skipped, with a visible note below.
+  const git = await runProcess("git", ["status", "--porcelain"], { cwd: monorepoRoot, timeoutMs: 30_000 });
+  return { apps, gitStatus: git.error === undefined ? git.stdout : undefined };
 }
 
 /** The outcome of deciding + (maybe) running one entry: `skipped` names why when the file was
@@ -116,17 +157,21 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
   }
 
   let failed = 0;
+  let skippedFiles = 0;
   const skippedByCapability = new Map<Capability, number>();
-  let skippedTotal = 0;
   const report = (result: Outcome): void => {
     if (result.skipped !== undefined) {
-      skippedTotal += 1;
+      skippedFiles += 1;
       for (const capability of result.skipped) skippedByCapability.set(capability, (skippedByCapability.get(capability) ?? 0) + 1);
       process.stderr.write(skipLine(result.label, result.skipped));
       return;
     }
     process.stderr.write(`\n${result.label}\n`);
     process.stderr.write(result.output);
+    // A ran file's own case-level skips count toward the same breakdown as file-level ones.
+    for (const skip of parseCaseSkips(result.output)) {
+      for (const capability of skip.capabilities) skippedByCapability.set(capability, (skippedByCapability.get(capability) ?? 0) + 1);
+    }
     if (!result.ok) {
       failed += 1;
       process.stderr.write(`  FAIL ${result.label}${result.reason === undefined ? "" : ` — ${result.reason}`}\n`);
@@ -136,10 +181,20 @@ export async function runChecks(options: RunChecksOptions = {}): Promise<number>
   // whose requirement is unmet is never started, in either group.
   const probe = new CapabilityProbe();
   const run = (entry: LabeledCheck): Promise<Outcome> => runEntry(entry, probe, forced);
+  const before = await snapshotCheckout();
   const { pooled, alone } = splitExclusive(selected);
   await runPooled(pooled, jobs, run, report);
   await runPooled(alone, 1, run, report);
+  const after = await snapshotCheckout();
+  const changed = diffSnapshots(before, after);
+  if (before.gitStatus === undefined || after.gitStatus === undefined) {
+    process.stderr.write("  note: git unavailable — the checkout was not compared against the pre-run snapshot\n");
+  }
+  if (changed.length > 0) {
+    failed += 1;
+    process.stderr.write(`  FAIL the run changed the checkout\n    ${changed.join("\n    ")}\n`);
+  }
 
-  process.stderr.write(summaryLine(selected.length - skippedTotal, failed, skippedByCapability));
+  process.stderr.write(summaryLine(selected.length - skippedFiles, failed, skippedByCapability));
   return failed === 0 ? 0 : 1;
 }

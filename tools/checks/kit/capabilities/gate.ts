@@ -3,7 +3,7 @@
 // capabilities.ts (the probes) and run.ts (the process spawning) so both can be pinned without
 // a real docker/wsl.exe/sh and without spawning a single check file.
 
-import type { Capability } from "./capabilities.ts";
+import { isCapability, type Capability } from "./capabilities.ts";
 
 export type Gate =
   | { readonly kind: "run" }
@@ -44,4 +44,17 @@ export function summaryLine(ran: number, failed: number, skippedByCapability: Re
   if (skippedTotal === 0) return `\n${base}\n`;
   const breakdown = [...skippedByCapability.entries()].map(([capability, count]) => `${capability}: ${count}`).join(", ");
   return `\n${base}, ${skippedTotal} skipped (needs ${breakdown})\n`;
+}
+
+/** Case-level skips a ran file printed (harness `requires()`): the same `  SKIP … — needs …`
+ *  shape as skipLine, with the case name where a file label would be. Folded into the same
+ *  breakdown so a skipped case is counted, not just printed. Unrecognizable lines (the
+ *  lowercase ad-hoc skips some checks print) are ignored. */
+export function parseCaseSkips(output: string): { readonly name: string; readonly capabilities: readonly Capability[] }[] {
+  const found: { name: string; capabilities: Capability[] }[] = [];
+  for (const match of output.matchAll(/^ {2}SKIP (.+) — needs (.+)$/gm)) {
+    const capabilities = match[2].split(",").map((entry) => entry.trim()).filter(isCapability);
+    if (capabilities.length > 0) found.push({ name: match[1], capabilities });
+  }
+  return found;
 }

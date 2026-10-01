@@ -173,14 +173,14 @@
       "tools/checks/integration/recipe/recipe-import-portable.check.ts": 7,
       "tools/checks/integration/recipe/recipe-lifecycle-hooks.check.ts": 13,
       "tools/checks/integration/recipe/recipe-new.check.ts": 4,
-      "tools/checks/kit/harness.check.ts": 7,
+      "tools/checks/kit/harness.check.ts": 15,
       "tools/checks/kit/spawn.ts": 1,
       "tools/checks/release/release/installed-consumer.check.ts": 1,
       "tools/checks/release/release/lock.check.ts": 26,
       "tools/checks/release/release/operations.check.ts": 3,
       "tools/checks/release/release/package-release.check.ts": 1,
       "tools/checks/release/release/rollback.check.ts": 4,
-      "tools/checks/release/release/system-install.check.ts": 33,
+      "tools/checks/release/release/system-install.check.ts": 32,
       "tools/checks/runtime/connection-facts/bootstrap-image-pin.check.ts": 3,
       "tools/checks/runtime/connection-facts/recover-env-command.check.ts": 10,
       "tools/checks/runtime/connection-facts/recover-env-dispatch.check.ts": 7,
@@ -284,6 +284,6 @@
       "tools/checks/sets/lifecycle/set-try.check.ts": 2,
       "tools/checks/sets/lifecycle/set-validate.check.ts": 22
     },
-    "total": 846
+    "total": 853
   }
 }

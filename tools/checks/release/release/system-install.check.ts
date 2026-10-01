@@ -14,7 +14,7 @@ import { delimiter, join, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, projectMcpEntries } from "#framework/integration/mcp/project.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, requires, finish } from "#checks/kit/harness.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 const windows = process.platform === "win32";
@@ -270,15 +270,14 @@ try {
   // A named deployment is named in the hints unless the cwd already selects it.
   const helpFromRoot = await clawforge(["--app", checkoutApp, "help"], monorepoRoot);
   check("from the checkout root help hints keep the named deployment", helpFromRoot.output.includes(`clawforge --app ${checkoutApp} help <command>`), true);
-  // status needs a reachable target (Linux, WSL with docker, ssh); without one it fails before any hint.
-  const fromRoot = await clawforge(["--app", checkoutApp, "status"], monorepoRoot);
-  if (fromRoot.output.includes("nothing deployed yet")) {
+  // status needs a reachable target (Linux, WSL with docker, ssh); without one it fails before
+  // any hint — gated by a declared capability, not an ad-hoc output sniff (plan stage 0.3).
+  await requires("auto-target", "status hints name the named deployment", async () => {
+    const fromRoot = await clawforge(["--app", checkoutApp, "status"], monorepoRoot);
     check("from the checkout root hints keep the named deployment", fromRoot.output.includes(`clawforge --app ${checkoutApp} bootstrap`), true);
     const fromApp = await clawforge(["status"], appDir);
     check("from apps/<name> the cwd selects it, so hints stay plain", fromApp.output.includes("clawforge bootstrap") && !fromApp.output.includes("--app"), true);
-  } else {
-    console.log("  skip status hints: no reachable target on this host");
-  }
+  });
 
   // The file system may not tell apps from APPS; the hand-over must not depend on the spelling.
   if (windows) {

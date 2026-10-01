@@ -42,6 +42,7 @@ import { checkoutSubfolderReport, missingDeploymentReport, reportUnknownCommand 
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { VERSION_COMMAND_NAME } from "#framework/integration/version.ts";
 import { renderEntryMatrix } from "./matrix.ts";
+import { renderAdviceMatrix } from "./advice.ts";
 import { runApp } from "#framework/entry/cli.ts";
 import { renderFullCommandHelp } from "#framework/core/io/help-render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -294,6 +295,10 @@ export async function renderGolden(): Promise<Record<string, string>> {
     await rm(emptyDir, { recursive: true, force: true });
   }
   snapshots["completion-scripts.txt"] = completionParts.join("");
+
+  // --- advice matrix -------------------------------------------------------------------------
+
+  snapshots["advice-matrix.txt"] = renderAdviceMatrix();
 
   // --- problem codes ----------------------------------------------------------------------
 

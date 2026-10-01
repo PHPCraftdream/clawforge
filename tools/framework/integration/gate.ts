@@ -243,7 +243,7 @@ export function knownCommandNames(app: AppDefinition, gateCommands: readonly Gat
 /** The details body shared by `help control-mcp` and `control-mcp --help` — control-mcp is
  *  dispatched by runApp (entry/cli.ts) before the app.commands lookup, so no AppCommand
  *  carries it, but both help paths must answer from this one declaration (R33-09). */
-const CONTROL_MCP_DETAILS = [
+export const CONTROL_MCP_DETAILS = [
   "stdio JSON-RPC server, same shape as mcp-serve but for this deployment's own",
   "commands instead of OpenClaw's channels — status, backup, secrets, and the",
   "rest, with arguments checked against the same declarations --help reads.",

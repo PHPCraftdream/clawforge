@@ -23,6 +23,7 @@ import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, helpWithoutDeployment, type GateCommand } from "../integration/gate.ts";
 import { info, reportError, reportErrorVerbatim } from "../core/io/log.ts";
 import { INVOCATION_ENV, invocation, serializeInvocation, setInvocation, takeInvocationFromEnv } from "../core/io/invocation/index.ts";
+import { useGateCommands } from "../core/io/invocation/render.ts";
 import { useDeployment } from "../runtime/deployment.ts";
 import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
@@ -98,6 +99,9 @@ const gateCommands: GateCommand[] = [
 // Pushed after the literal above so the closure sees the finished array, itself included —
 // see completion.ts. No --app here: an installed deployment is always the current directory.
 gateCommands.push(makeCompletionGateCommand(gateCommands, false));
+// Registered before any command runs, so the renderer omits --app from these (they run before
+// a deployment is resolved).
+useGateCommands(gateCommands.map((command) => command.name));
 
 const gateExit = await runGateCommand(gateCommands, argv);
 if (gateExit !== undefined) process.exit(gateExit);

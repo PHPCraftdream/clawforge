@@ -24,6 +24,7 @@ import {
 import { helpEntryLine } from "./framework/core/io/help-render.ts";
 import { reportError, info } from "./framework/core/io/log.ts";
 import { invocation, setInvocation, takeInvocationFromEnv } from "./framework/core/io/invocation/index.ts";
+import { useGateCommands } from "./framework/core/io/invocation/render.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
@@ -51,6 +52,9 @@ const gateCommands: GateCommand[] = [...checkoutGateCommands, versionGateCommand
 // Pushed after the literal above, not inside it: the closure needs the finished array
 // (itself included), which is only true once this line has run — see completion.ts.
 gateCommands.push(makeCompletionGateCommand(gateCommands, true));
+// Registered before any command runs, so the renderer omits --app from these (they run before
+// a deployment is resolved).
+useGateCommands(gateCommands.map((command) => command.name));
 
 // The command list in `./clawforge help`: the gate's own commands, plus the one line here that is
 // not a command at all.

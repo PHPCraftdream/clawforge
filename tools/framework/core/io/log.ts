@@ -2,6 +2,8 @@
 // and anyone reading logs sees the same shape before and after the migration.
 
 import { outputSink } from "./output.ts";
+import type { Advice } from "./invocation/advice.ts";
+import { renderAdvice } from "./invocation/render.ts";
 import { localizeHints } from "./invocation/index.ts";
 
 const useColour = process.stderr.isTTY === true;
@@ -71,7 +73,7 @@ function secretPattern(secret: string): RegExp {
 }
 
 /** Progress line. Goes to stderr so stdout stays usable for machine-readable output.
- *  Not masked: printing a credential here is a deliberate act (`./clawforge mcp-creds`), unlike a
+ *  Not masked: printing a credential here is a deliberate act (`mcp-creds`), unlike a
  *  failure that drags a whole command line into the output. */
 export function log(message: string): void {
   write(`${C.green}==>${C.off} ${message}\n`);
@@ -83,7 +85,7 @@ export function info(message: string): void {
 }
 
 /** info() for a line copied into another shell, host or scheduler: printed verbatim, its
- *  `./clawforge` never rewritten to this terminal's invocation. */
+ *  checkout spelling never rewritten to this terminal's invocation. */
 export function infoRaw(message: string): void {
   write(`${C.dim}    ${message}${C.off}\n`, true);
 }
@@ -98,13 +100,23 @@ export function reportBlocking(message: string): void {
   write(`${C.red}blocking:${C.off} ${message}\n`);
 }
 
-/** Thrown rather than exiting, so callers can clean up; main() turns it into exit 1. */
-export class UserError extends Error {
-  name = "UserError";
+export interface UserErrorOptions {
+  readonly advice?: readonly Advice[];
+  readonly cause?: unknown;
 }
 
-export function die(message: string): never {
-  throw new UserError(message);
+/** Thrown rather than exiting, so callers can clean up; main() turns it into exit 1. */
+export class UserError extends Error {
+  readonly advice: readonly Advice[];
+  constructor(message: string, options?: UserErrorOptions) {
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
+    this.name = "UserError";
+    this.advice = options?.advice ?? [];
+  }
+}
+
+export function die(message: string, ...advice: readonly Advice[]): never {
+  throw new UserError(message, advice.length === 0 ? undefined : { advice });
 }
 
 /** A UserError carrying the wrapped command's own exit status, for a caller (host, exec,
@@ -124,13 +136,22 @@ export function dieWithExitCode(message: string, exitCode: number): never {
   throw new CommandFailedError(message, exitCode);
 }
 
-export function reportError(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  write(`${C.red}error:${C.off} ${maskSecrets(message)}\n`);
+/** The error message plus, per piece of advice a UserError carries, a rendered line. The
+ *  message keeps its transitional localizeHints pass (exactly like write()); advice lines
+ *  are rendered fresh by this invocation and left un-localized. All masked once. */
+export function formatError(error: unknown): string {
+  const message = localizeHints(error instanceof Error ? error.message : String(error));
+  const advice = error instanceof UserError ? error.advice : [];
+  const lines = advice.map((entry) => `\n    → ${renderAdvice(entry)}`).join("");
+  return maskSecrets(message + lines);
 }
 
-/** reportError() for a message that names a literal `./clawforge` (another shell's form)
- *  next to the localized one: printed verbatim, nothing rewritten. */
+export function reportError(error: unknown): void {
+  write(`${C.red}error:${C.off} ${formatError(error)}\n`, true);
+}
+
+/** reportError() for a message that names another shell's checkout spelling next to the
+ *  localized one: printed verbatim, nothing rewritten. */
 export function reportErrorVerbatim(message: string): void {
   write(`${C.red}error:${C.off} ${maskSecrets(message)}\n`, true);
 }

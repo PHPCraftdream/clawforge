@@ -1,9 +1,11 @@
 // How this process was invoked, for the commands its messages tell a user to run: the
-// monorepo gate and the committed shim use the checkout spelling (CHECKOUT_PREFIX below);
+// monorepo gate and the committed shim use the checkout spelling (SHIM_PROGRAM, render.ts);
 // the system-wide command is plain `clawforge`, where the checkout spelling does not even
 // run in cmd.exe or PowerShell. Entry points set it once, from the environment or their
 // own default, before any command runs; the value is read everywhere through the
 // accessors, never re-derived from strings.
+
+import { commandLine, SHIM_PROGRAM } from "./render.ts";
 
 /** The invocation travels to child gate processes as versioned JSON (see serializeInvocation). */
 export const INVOCATION_ENV = "CLAWFORGE_INVOCATION";
@@ -32,8 +34,7 @@ export interface Invocation {
   readonly audience: InvocationAudience;
 }
 
-const CHECKOUT_PREFIX = "./clawforge";
-let current: Invocation = { program: CHECKOUT_PREFIX, mode: "checkout", audience: "terminal" };
+let current: Invocation | undefined;
 
 /** Set once per process, at the entry, before any command runs. */
 export function setInvocation(value: Invocation): void {
@@ -41,19 +42,12 @@ export function setInvocation(value: Invocation): void {
 }
 
 export function invocation(): Invocation {
-  return current;
+  return current ??= { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" };
 }
 
-/** The command prefix hints render with. The `--app` suffix is part of the value itself —
- *  the ONE place the printing rule lives: name the deployment exactly when the pasted
- *  command would not re-select it. The default deployment (openclaw) is selected by doing
- *  nothing, and `cwd` re-selects itself; flag/env/sole would be lost, so they are spelled
- *  out. Pinned by the entry matrix (tools/checks/golden/expected/entry-matrix.txt). */
+/** The command prefix hints render with; the `--app` rule and quoting live in render.ts. */
 export function invocationPrefix(): string {
-  const { app } = current;
-  return app === undefined || app.name === "openclaw" || app.selectedBy === "cwd"
-    ? current.program
-    : `${current.program} --app ${app.name}`;
+  return commandLine([]);
 }
 
 export function serializeInvocation(value: Invocation): string {
@@ -135,11 +129,11 @@ export function cli(rest: string): string {
   return rest === "" ? prefix : `${prefix} ${rest}`;
 }
 
-// A bare `./clawforge` word: not part of a path, an escaped regex, or a quoted argv element
-// (`'./clawforge'` is a real command line, not a hint).
+// A bare checkout-spelling word: not part of a path, an escaped regex, or a quoted argv
+// element — a quoted shim spelling is a real command line, not a hint.
 const HINT = /(?<![\w./\\'-])\.\/clawforge(?![\w/'"-])/g;
 
-/** Rewrites the `./clawforge` hints already written into a message to this invocation.
+/** Rewrites the checkout-spelling hints already written into a message to this invocation.
  *  Identity under the default prefix. A hint that names its own `--app` keeps that one.
  *
  *  The `--app` rule the prefix encodes (stage 4's renderer owns it; today only this
@@ -154,8 +148,8 @@ const HINT = /(?<![\w./\\'-])\.\/clawforge(?![\w/'"-])/g;
  */
 export function localizeHints(text: string): string {
   const full = invocationPrefix();
-  if (full === CHECKOUT_PREFIX || !text.includes(CHECKOUT_PREFIX)) return text;
+  if (full === SHIM_PROGRAM || !text.includes(SHIM_PROGRAM)) return text;
   return text.replace(HINT, (match, offset: number, whole: string) =>
-    whole.startsWith(" --app ", offset + match.length) ? current.program : full,
+    whole.startsWith(" --app ", offset + match.length) ? invocation().program : full,
   );
 }

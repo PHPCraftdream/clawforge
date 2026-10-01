@@ -12,6 +12,15 @@ import { readdir, readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { lifecycleCommands } from "#framework/commands/interface/groups/openclawCommands.lifecycle.ts";
+import { managementCommands } from "#framework/commands/interface/groups/openclawCommands.management.ts";
+import { orchestrationCommands } from "#framework/commands/interface/groups/openclawCommands.orchestration.ts";
+import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
+import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
+import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
+import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
+import { versionGateCommand } from "#framework/integration/version.ts";
+import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { specOf } from "#framework/core/command/index.ts";
 import { checkTrue, finish } from "#checks/kit/harness.ts";
 
@@ -20,9 +29,16 @@ interface PerFileMetric {
   readonly total: number;
   readonly files: Record<string, number>;
 }
+/** Lines the literal metric does not count, kept exact so the table cannot rot in either
+ *  direction: an entry whose line no longer exists, and an occurrence left over once the
+ *  recorded multiplicity ran out, are both failures. */
+interface ExemptLines {
+  readonly reason: string;
+  readonly lines: Record<string, number>;
+}
 interface Baseline {
   readonly about: string;
-  readonly dotClawforgeLiterals: PerFileMetric;
+  readonly dotClawforgeLiterals: PerFileMetric & { readonly exempt: Record<string, ExemptLines> };
   readonly localizeOptOuts: {
     readonly comment: string;
     readonly infoRaw: number;
@@ -40,6 +56,7 @@ interface Baseline {
   readonly declaredArguments: { readonly comment: string; readonly total: number };
   readonly imageStringOps: PerFileMetric;
   readonly prosePins: PerFileMetric;
+  readonly proseFlags: PerFileMetric;
 }
 
 const root = monorepoRoot;
@@ -109,15 +126,41 @@ function report(result: Ratchet): void {
   for (const line of result.details) process.stderr.write(`    ${line}\n`);
 }
 
-// 1. `./clawforge` literals in tools/framework — stage 4 (Advice): the command name must
-// reach output only through one renderer, so this goes to 0 outside it.
+// 1. `./clawforge` literals in tools/framework and in the checkout entry — stage 4
+// (Advice): the command name must reach output only through one renderer, so this goes to 0
+// outside it. An occurrence on an `exempt` line (the shim naming itself, the completion
+// registration) is left out of the per-file counts but still counted in the total, and the
+// table fails in both directions: a line it names that no longer exists, and an occurrence
+// left once the recorded multiplicity ran out.
+const LITERAL = "./clawforge";
+const exemptLeft = new Map<string, Map<string, number>>(
+  Object.entries(baseline.dotClawforgeLiterals.exempt).map(([file, entry]) => [file, new Map(Object.entries(entry.lines))]),
+);
 const literalAfter = new Map<string, number>();
-for (const full of frameworkFiles) {
+let literalTotal = 0;
+for (const full of [...frameworkFiles, resolve(root, "tools", "clawforge.ts")]) {
   const content = await readFile(full, "utf8");
-  const count = content.split("./clawforge").length - 1;
-  if (count > 0) literalAfter.set(rel(full), count);
+  const left = exemptLeft.get(rel(full));
+  let counted = 0;
+  for (const line of content.split("\n")) {
+    const occurrences = line.split(LITERAL).length - 1;
+    if (occurrences === 0) continue;
+    literalTotal += occurrences;
+    const remaining = left?.get(line.trim()) ?? 0;
+    const exempt = Math.min(remaining, occurrences);
+    if (exempt > 0 && left !== undefined) left.set(line.trim(), remaining - exempt);
+    counted += occurrences - exempt;
+  }
+  if (counted > 0) literalAfter.set(rel(full), counted);
+}
+for (const [file, lines] of exemptLeft) {
+  for (const [line, unmatched] of lines) {
+    if (unmatched === 0) continue;
+    checkTrue(`dotClawforgeLiterals.exempt names a line ${file} no longer has (${unmatched} left): ${line}`, false);
+  }
 }
 report(perFileRatchet("dotClawforgeLiterals", baseline.dotClawforgeLiterals.files, literalAfter));
+report(ratchet("dotClawforgeLiterals.total", baseline.dotClawforgeLiterals.total, literalTotal, [], []));
 
 // 2. Raw-output opt-outs — stage 4: `infoRaw`/`reportErrorVerbatim`/`localizeHints` call
 // sites. Imports carry no parentheses; each function's own definition is the one site to
@@ -137,6 +180,76 @@ for (const name of OPT_OUTS) {
   const result = ratchet(`localizeOptOuts.${name}`, expected, count, [], []);
   report(result);
 }
+
+// 3. Flag spellings in help prose — stage 4 (design 2.3): a `--name` the declaration itself
+// declares, spelled in its own `details` outside a token and outside a code span quoting
+// another tool. Each one is prose that belongs in a `{--name}` token, so the ratchet counts
+// down to 0 as the groups are migrated.
+interface ProseSource {
+  readonly details?: string;
+  readonly arguments?: readonly { readonly name: string }[];
+}
+/** The files that own a proseFlags count: the five command groups plus the two gate
+ *  declarations whose details are read from a module rather than a group file. */
+const PROSE_SOURCES: Record<string, readonly ProseSource[]> = {
+  "tools/framework/commands/interface/groups/openclawCommands.lifecycle.ts": Object.values(lifecycleCommands),
+  "tools/framework/commands/interface/groups/openclawCommands.management.ts": Object.values(managementCommands),
+  "tools/framework/commands/interface/groups/openclawCommands.orchestration.ts": Object.values(orchestrationCommands),
+  "tools/framework/commands/interface/groups/openclawCommands.operate.ts": Object.values(operateCommands),
+  "tools/framework/commands/interface/groups/openclawCommands.sets.ts": Object.values(setsCommands),
+  "tools/framework/entry/checkout-gate.ts": checkoutGateCommands,
+  "tools/framework/integration/version.ts": [versionGateCommand],
+};
+/** Every name the dispatcher can resolve: a code span quoting one of them is our own prose,
+ *  anything else (`openclaw channels status --json`, `tailscale status --json`) belongs to
+ *  another tool and its flags are not ours to count. */
+const commandNames = new Set([
+  ...Object.keys(openclawCommands),
+  ...checkoutGateCommands.map((command) => command.name),
+  versionGateCommand.name,
+  makeCompletionGateCommand([], true).name,
+  "help",
+  "control-mcp",
+  "init",
+]);
+const TOKEN_SPAN = /\{[^{}]*\}/g;
+const CODE_SPAN = /`[^`]*`/g;
+const FLAG_MENTION = /(?<![\w-])--([A-Za-z][A-Za-z0-9-]*)/g;
+/** A leading program word is not the command: `./clawforge apply-config --dry-run` reads as
+ *  apply-config's own --dry-run, not as another tool's line. */
+const PROGRAM_WORD = /^\.?\/?clawforge$/;
+
+function proseFlagCount(details: string, declared: ReadonlySet<string>): number {
+  // Tokens first: a recognized span becomes one space, so the words around it stay apart.
+  const text = details.replace(TOKEN_SPAN, (span) => (parseProse(span).length === 1 ? " " : span));
+  const foreign = new Set<number>();
+  for (const span of text.matchAll(CODE_SPAN)) {
+    const words = span[0].slice(1, -1).trim().split(/\s+/);
+    const first = words.find((word) => !PROGRAM_WORD.test(word)) ?? "";
+    if (commandNames.has(first) || first.startsWith("--") || first.startsWith("{")) continue;
+    const start = span.index ?? 0;
+    for (let at = start; at < start + span[0].length; at += 1) foreign.add(at);
+  }
+  let count = 0;
+  for (const mention of text.matchAll(FLAG_MENTION)) {
+    const name = mention[1];
+    if (name === undefined || !declared.has(name)) continue;
+    if (foreign.has(mention.index ?? 0)) continue;
+    count += 1;
+  }
+  return count;
+}
+
+const proseFlagsAfter = new Map<string, number>();
+for (const [file, sources] of Object.entries(PROSE_SOURCES)) {
+  let count = 0;
+  for (const source of sources) {
+    if (source.details === undefined) continue;
+    count += proseFlagCount(source.details, new Set((source.arguments ?? []).map((argument) => argument.name)));
+  }
+  if (count > 0) proseFlagsAfter.set(file, count);
+}
+report(perFileRatchet("proseFlags", baseline.proseFlags.files, proseFlagsAfter));
 
 // 3. Raw-argv predicates — stage 3 (CommandSpec effect): MCP confirmation must come from the
 // declared effect, not from 28 predicates re-parsing argv beside the real parser.

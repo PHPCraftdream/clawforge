@@ -19,7 +19,9 @@ import {
   takeInvocationFromEnv,
   type Invocation,
 } from "#framework/core/io/invocation/index.ts";
-import { reportError, info, infoRaw } from "#framework/core/io/log.ts";
+import { command, manual, shellLine } from "#framework/core/io/invocation/advice.ts";
+import { renderAdvice, shimInvocation, useGateCommands } from "#framework/core/io/invocation/render.ts";
+import { die, formatError, registerSecret, UserError, reportError, info, infoRaw } from "#framework/core/io/log.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
 import { structuredResult } from "#framework/integration/mcp/server.ts";
 import { cronLine, displayCommandLine, posixTargetInvocation, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
@@ -230,6 +232,129 @@ try {
     if (typeof text === "string") check(`global: ${name} has no ./clawforge`, text.includes(HINT), false);
   }
   check("global: MCP nextActions have no ./clawforge", global.nextActions.some((entry) => entry.includes(HINT)), false);
+
+  // --- the advice renderer --------------------------------------------------------------------
+  // One renderer turns advice — a clawforge command, a shell line, a manual step — into the
+  // exact text a user pastes. The `--app` rule and the argument quoting live there and only
+  // there; advice.ts is data.
+
+  const SELECTIONS: readonly { readonly label: string; readonly on: Invocation; readonly named: boolean }[] = [
+    { label: "no app", on: MONO, named: false },
+    { label: "openclaw", on: { ...MONO, app: { name: "openclaw", selectedBy: "flag" } }, named: false },
+    { label: "flag", on: { ...MONO, app: { name: "demo", selectedBy: "flag" } }, named: true },
+    { label: "env", on: { ...MONO, app: { name: "demo", selectedBy: "env" } }, named: true },
+    { label: "sole", on: { ...MONO, app: { name: "demo", selectedBy: "sole" } }, named: true },
+    { label: "cwd", on: { ...MONO, app: { name: "demo", selectedBy: "cwd" } }, named: false },
+    { label: "default", on: { ...MONO, app: { name: "demo", selectedBy: "default" } }, named: false },
+  ];
+  const STATUS = `${HINT} status`;
+  const DEMO_STATUS = `${HINT} --app demo status`;
+  const DEMO_LOGS = `${HINT} --app demo logs`;
+  const NEW_APP_LINE = `${HINT} new-app <name>`;
+  const CHECK_LINE = `${HINT} check`;
+  const DEMO_CHECK = `${HINT} --app demo check`;
+  const SPACED_LOGS = `${HINT} logs 'a b'`;
+  const NOTED_UP = `${HINT} up  (after the change)`;
+  const MANUAL_TEXT = "reconnect the MCP client (in Claude Code: /mcp)";
+  const SHELL_TEXT = "cd /srv && ./clawforge backup";
+  const SHELL_NOTE = "on the target";
+  const NOTED_SHELL = `${SHELL_TEXT}  (${SHELL_NOTE})`;
+  const ARROW = "\n    → ";
+
+  // 1. The `--app` rule per selectedBy: the pasted command names the deployment exactly when the
+  //    invocation on screen would not re-select it by itself.
+  for (const { label, on, named } of SELECTIONS) {
+    setInvocation(on);
+    check(`a status advice line under ${label}`, renderAdvice(command(["status"])), named ? DEMO_STATUS : STATUS);
+  }
+
+  // 2. Gate commands run before a deployment is resolved, so they never receive an --app — the
+  //    same names both entries register before any command runs.
+  const GATE_NAMES = ["new-app", "check", "list", "remove-app", "version", "completion", "init"];
+  useGateCommands(GATE_NAMES);
+  const FLAG_DEMO: Invocation = { ...MONO, app: { name: "demo", selectedBy: "flag" } };
+  setInvocation(FLAG_DEMO);
+  check("a gate command never gets an --app", renderAdvice(command(["new-app", "<name>"])), NEW_APP_LINE);
+  check("the check runner itself never gets one", renderAdvice(command(["check"])), CHECK_LINE);
+
+  // 3. An explicit app on the advice wins over the invocation, gate command or not.
+  setInvocation(MONO);
+  check("an explicit app under no app", renderAdvice(command(["status"], { app: "demo" })), DEMO_STATUS);
+  check("an explicit app on a gate command", renderAdvice(command(["check"], { app: "demo" })), DEMO_CHECK);
+
+  // 4. Quoting follows the program's shape, not the shell's: a path spelling is a POSIX shell
+  //    (single quotes), the bare system-wide command is cmd/PowerShell (double quotes). A
+  //    placeholder <…> stays bare under both.
+  check("a spaced word under a path spelling", renderAdvice(command(["logs", "a b"])), SPACED_LOGS);
+  check("a placeholder stays bare under a path spelling", renderAdvice(command(["new-app", "<name>"])), NEW_APP_LINE);
+  setInvocation(GLOBAL);
+  check("a spaced word under the bare program", renderAdvice(command(["logs", "a b"])), `clawforge logs "a b"`);
+  check("a placeholder stays bare under the bare program", renderAdvice(command(["new-app", "<name>"])), "clawforge new-app <name>");
+
+  // 5. A note trails the line, after two spaces.
+  setInvocation(MONO);
+  check("a note trails the command", renderAdvice(command("up", { note: "after the change" })), NOTED_UP);
+
+  // 6. A shell line is its own text, byte for byte, under every invocation; only a note appends.
+  for (const shell of ["posix", "cmd", "pwsh"] as const) {
+    for (const { label, on } of SELECTIONS) {
+      setInvocation(on);
+      check(`a ${shell} line is verbatim under ${label}`, renderAdvice(shellLine(shell, SHELL_TEXT)), SHELL_TEXT);
+      check(`a ${shell} line keeps its note under ${label}`, renderAdvice(shellLine(shell, SHELL_TEXT, { note: SHELL_NOTE })), NOTED_SHELL);
+    }
+  }
+
+  // 7. A manual step is its own text.
+  setInvocation(MONO);
+  check("a manual step is its text", renderAdvice(manual(MANUAL_TEXT)), MANUAL_TEXT);
+
+  // 8. shimInvocation: text that leaves the terminal spells the shim program itself, and a
+  //    bare-program invocation is untouched by it.
+  setInvocation(GLOBAL);
+  check("the shim invocation spells the checkout program", renderAdvice(command(["status"]), shimInvocation()), STATUS);
+  check("the shim invocation names its app", renderAdvice(command(["status"]), shimInvocation("demo")), DEMO_STATUS);
+  check("a bare-program invocation is untouched by the shim", renderAdvice(command(["status"])), "clawforge status");
+
+  // 9. The error path: die and UserError carry advice, formatError appends one rendered line
+  //    per piece, and reportError prints the whole thing verbatim through the output sink.
+  let failure: unknown;
+  try {
+    die("bootstrap failed", command(["logs"]));
+  } catch (error) {
+    failure = error;
+  }
+  setInvocation(MONO);
+  check("formatError appends the advice line under the checkout prefix", formatError(failure), `bootstrap failed${ARROW}${HINT} logs`);
+  setInvocation(GLOBAL);
+  check("the advice line follows the bare program", formatError(failure), `bootstrap failed${ARROW}clawforge logs`);
+  setInvocation(FLAG_DEMO);
+  check("the advice line names the deployment", formatError(failure), `bootstrap failed${ARROW}${DEMO_LOGS}`);
+  setInvocation(MONO);
+  check(
+    "a manual step trails the message",
+    formatError(new UserError("bad", { advice: [manual("see the guide")] })),
+    `bad${ARROW}see the guide`,
+  );
+
+  // A registered secret is masked in the message and in the advice. There is no unregister, so
+  // the value is unique to this file and nothing below asserts on unrelated text.
+  const SECRET = "token-value-1234567890";
+  registerSecret(SECRET);
+  check(
+    "a secret is masked in the message and the advice",
+    formatError(new UserError(`gateway rejected ${SECRET}`, { advice: [manual(`put ${SECRET} in .env`)] })),
+    `gateway rejected ***${ARROW}put *** in .env`,
+  );
+  const reported = await capture(() => reportError(new UserError("nope", { advice: [command("up")] })));
+  const plainText = reported.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
+  check("reportError prints the error and its advice line", plainText, `error: nope${ARROW}${HINT} up\n`);
+
+  // 10. localizeHints, the transitional rewriting, is a fixed point on every line the renderer
+  //     produced under a checkout program. (Under a selected deployment a gate command's line
+  //     is rewritten — the documented exception the stage-4 flip removes.)
+  const checkoutRenderings = [STATUS, DEMO_STATUS, NEW_APP_LINE, CHECK_LINE, DEMO_CHECK, SPACED_LOGS, NOTED_UP, SHELL_TEXT, NOTED_SHELL, MANUAL_TEXT];
+  for (const line of checkoutRenderings) check(`localizeHints leaves "${line}" alone`, localizeHints(line), line);
+  setInvocation(MONO);
 } finally {
   setInvocation(MONO);
   await teardownFixtureDeployment(deployment);

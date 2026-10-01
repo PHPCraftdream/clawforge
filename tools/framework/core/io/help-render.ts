@@ -6,6 +6,8 @@ import { log, info } from "./log.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
 import type { EffectDeclaration } from "../command/index.ts";
 import { effectProfile, splitActionScoped } from "../command/index.ts";
+import { commandLine } from "./invocation/render.ts";
+import { renderProse } from "./invocation/prose.ts";
 
 /** What renderCommandHelp needs from a command — the shape AppCommand and GateCommand both
  *  satisfy, without importing either (they live in entry/ and integration/, downstream of
@@ -43,7 +45,7 @@ export function argumentsSignature(args: readonly CommandArgument[] | undefined)
 export function renderCommandHelp(name: string, command: HelpDeclaration): void {
   log(`${name} — ${command.summary}`);
   const signature = argumentsSignature(command.arguments);
-  if (signature !== "") info(`Usage: ./clawforge ${name} ${signature}`);
+  if (signature !== "") info(`Usage: ${commandLine([name])} ${signature}`);
   for (const argument of command.arguments ?? []) {
     const required = argument.required === true ? " (required)" : "";
     const choices = argument.choices === undefined ? "" : ` [${argument.choices.join("|")}]`;
@@ -58,7 +60,7 @@ export function renderCommandHelp(name: string, command: HelpDeclaration): void 
   }
   if (command.details !== undefined) {
     info("");
-    for (const line of command.details.split("\n")) info(line);
+    for (const line of renderProse(command.details).split("\n")) info(line);
   }
 }
 
@@ -113,7 +115,7 @@ function builtinHelpLines(appName: string): string[] {
 export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
   log(`${app.name} — ${app.description}`);
   info("");
-  info("Usage: ./clawforge <command> [options]");
+  info(`Usage: ${commandLine(["<command>"])} [options]`);
   info("");
 
   const byGroup = new Map<CommandGroup, [string, AppCommand][]>();
@@ -150,7 +152,7 @@ export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
   info("");
   info("  ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)");
   info("");
-  info("Run `./clawforge help <command>` or `./clawforge <command> --help` for its full description.");
+  info(`Run \`${commandLine(["help", "<command>"])}\` or \`${commandLine(["<command>", "--help"])}\` for its full description.`);
 }
 
 /** The envelope every structured tool call answers in (mcp/schema.ts's StructuredResult) —

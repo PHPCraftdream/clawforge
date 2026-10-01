@@ -185,6 +185,15 @@ directory of the same name as the module it happens to import. `tools/framework/
 no source files of its own directly under it, so the cap does not apply at that root — new
 top-level groupings still need a name that describes what belongs there, not "wherever fits".
 
+A command a message, an error or a `details` text tells the user to run goes through the advice model and its one
+renderer (`tools/framework/core/io/invocation/` — `command`/`shellLine`/`manual` as data, `renderAdvice`/`commandLine`
+as text); a hand-written program spelling freezes one invocation into every other one. A line for another shell, host
+or scheduler is `shellLine` and nothing rewrites it — cron, `schtasks` and a remote `deploy` line reach the output layer
+exactly as built. Help prose names a command as a `{clawforge …}` token and its own flags as `{--flag}`, so one text
+reads right under every invocation. The ratchets in `tools/checks/architecture/` enforce this: a literal program
+spelling outside the renderer fails `check architecture` (`dotClawforgeLiterals`), and
+`tools/framework/core/io/invocation/render.ts` is the only exemption that table names.
+
 ## Pull requests
 
 Explain the user-visible behavior, security implications, and validation performed. Keep

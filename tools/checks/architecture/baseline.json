@@ -73,20 +73,16 @@
       "tools/framework/commands/sets/set.ts": 5,
       "tools/framework/core/app.ts": 1,
       "tools/framework/core/env.ts": 1,
-      "tools/framework/core/io/help-render.ts": 4,
-      "tools/framework/core/io/invocation/index.ts": 4,
-      "tools/framework/core/io/log.ts": 3,
       "tools/framework/entry/bin.ts": 2,
       "tools/framework/entry/cli.ts": 3,
       "tools/framework/entry/delegate.ts": 1,
       "tools/framework/entry/root.ts": 2,
-      "tools/framework/integration/completion.ts": 9,
-      "tools/framework/integration/deployment/init.ts": 9,
+      "tools/framework/integration/completion.ts": 5,
+      "tools/framework/integration/deployment/init.ts": 5,
       "tools/framework/integration/deployment/remove.ts": 3,
       "tools/framework/integration/deployment/scaffold.ts": 3,
       "tools/framework/integration/gate.ts": 15,
       "tools/framework/integration/list.ts": 4,
-      "tools/framework/integration/mcp/project.ts": 2,
       "tools/framework/integration/mcp/server.ts": 4,
       "tools/framework/runtime/datadir.ts": 1,
       "tools/framework/runtime/docker/image-ref.ts": 1,
@@ -104,15 +100,48 @@
       "tools/framework/set/artifacts/model.ts": 1,
       "tools/framework/set/ownership/validate.ts": 1,
       "tools/framework/entry/resolve.ts": 3,
-      "tools/framework/entry/checkout-gate.ts": 7
+      "tools/framework/entry/checkout-gate.ts": 7,
+      "tools/clawforge.ts": 7
     },
-    "total": 448
+    "exempt": {
+      "tools/framework/core/io/invocation/render.ts": {
+        "reason": "the one renderer: the program spelling every advice renders",
+        "lines": {
+          "export const SHIM_PROGRAM = \"./clawforge\";": 1
+        }
+      },
+      "tools/framework/integration/deployment/init.ts": {
+        "reason": "the committed shim names itself: its own comments and the two invocation variables",
+        "lines": {
+          "# Delegates to the installed @clawforge/framework CLI. Committed so ./clawforge <command> works": 1,
+          "# Hints in the CLI say \"./clawforge\" for this entry, \"clawforge\" for the system-wide command.": 1,
+          "export CLAWFORGE_INVOCATION='{\"version\":${INVOCATION_VERSION},\"program\":\"./clawforge\",\"mode\":\"installed\",\"audience\":\"terminal\"}'": 1,
+          "export CLAWFORGE_INVOKED_AS=./clawforge": 1
+        }
+      },
+      "tools/framework/integration/mcp/project.ts": {
+        "reason": "generator of the checkout's own launcher, like the shim; the text is under a hash",
+        "lines": {
+          "process.env.CLAWFORGE_INVOCATION = JSON.stringify({ version: ${INVOCATION_VERSION}, program: \"../../clawforge\", mode: \"checkout\", app: { name: basename(root), selectedBy: \"flag\" }, audience: \"mcp\" });": 1,
+          "process.env.CLAWFORGE_INVOKED_AS = \"../../clawforge --app \" + basename(root);": 1
+        }
+      },
+      "tools/framework/integration/completion.ts": {
+        "reason": "registration of the command names in the generated completion scripts",
+        "lines": {
+          "\"complete -F _clawforge_complete ./clawforge\\n\"": 2,
+          "\"#compdef clawforge ./clawforge\\n\" +": 1,
+          "Register-ArgumentCompleter -Native -CommandName clawforge, ./clawforge -ScriptBlock {": 1
+        }
+      }
+    },
+    "total": 445
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
     "infoRaw": 7,
     "reportErrorVerbatim": 3,
-    "localizeHints": 5
+    "localizeHints": 3
   },
   "rawArgvPredicates": {
     "comment": "stage 3 done, guard at 0: confirmation comes from declared effect, not raw argv; the AppCommand predicates stay only for commands an application declares",
@@ -294,5 +323,18 @@
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
     "total": 854
+  },
+  "proseFlags": {
+    "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",
+    "files": {
+      "tools/framework/commands/interface/groups/openclawCommands.lifecycle.ts": 38,
+      "tools/framework/commands/interface/groups/openclawCommands.management.ts": 36,
+      "tools/framework/commands/interface/groups/openclawCommands.orchestration.ts": 17,
+      "tools/framework/commands/interface/groups/openclawCommands.operate.ts": 13,
+      "tools/framework/commands/interface/groups/openclawCommands.sets.ts": 8,
+      "tools/framework/entry/checkout-gate.ts": 5,
+      "tools/framework/integration/version.ts": 2
+    },
+    "total": 119
   }
 }

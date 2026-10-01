@@ -182,6 +182,12 @@ confirmation behavior need a focused regression check and a security review.
 `tsgo` provides the fast native TypeScript check and Oxlint keeps the source consistent.
 Run `npm run format:check` before sending a change; generated `dist/` files stay ignored.
 
+A change is handed over only with a green `npm run gate` (`npm run typecheck && npm run lint
+&& npm run check`). The architecture ratchets (`tools/checks/architecture/`) pin the counts of
+known duplication patterns: a number may go down only together with the code change that
+lowers it — edit `baseline.json` in the same commit, since the check fails on both growth and
+an unrecorded decrease.
+
 ## Licensing contributions
 
 Unless a separate written agreement says otherwise, contributions are accepted under the

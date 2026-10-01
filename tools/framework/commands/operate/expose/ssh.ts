@@ -23,7 +23,9 @@ function parseArgs(args: string[]): { localPort?: string; run: boolean } {
   const parsed = parseDeclaredArgs(EXPOSE_SSH_ARGUMENTS, args);
   const run = parsed.run === true;
   const localPort = parsed["local-port"] === "" ? die("--local-port needs a port number") : parsed["local-port"] as string | undefined;
-  if (localPort !== undefined && !PORT.test(localPort)) die(`--local-port must be a plain port number, got: ${localPort}`);
+  if (localPort !== undefined && (!PORT.test(localPort) || Number(localPort) > 65535)) {
+    die(`--local-port must be a port number between 1 and 65535, got: ${localPort}`);
+  }
   return { localPort, run };
 }
 

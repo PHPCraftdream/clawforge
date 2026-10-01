@@ -13,6 +13,7 @@ type Sink = (chunk: string) => void;
 
 let sink: Sink | undefined;
 let machineSink: Sink | undefined;
+let machineWrites = 0;
 
 /** Runs `body` with every line of output handed to `collect` instead of the terminal. */
 export async function withOutputSink<T>(collect: Sink, body: () => Promise<T>, collectMachine?: Sink): Promise<T> {
@@ -53,9 +54,17 @@ export function emit(text: string): void {
   emitRaw(localizeHints(text));
 }
 
+/** How many chunks of machine-readable output (emit/emitRaw) have been produced so far.
+ *  entry/cli.ts uses the delta to keep its one --json failure contract honest: an error
+ *  document is printed only when the command printed no document of its own first. */
+export function machineWritesCount(): number {
+  return machineWrites;
+}
+
 /** emit() without hint rewriting: for data that must arrive byte for byte (a container's
  *  stdout, a secret, a log, a shell completion script). */
 export function emitRaw(text: string): void {
+  machineWrites += 1;
   machineSink?.(text);
   if (sink !== undefined) sink(text);
   else process.stdout.write(text);

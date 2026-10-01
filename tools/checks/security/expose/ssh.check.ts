@@ -111,7 +111,11 @@ checkTrue(
 
 checkTrue(
   "a non-numeric --local-port is refused",
-  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "abc"]))).includes("must be a plain port number"),
+  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "abc"]))).includes("must be a port number between 1 and 65535"),
+);
+checkTrue(
+  "a --local-port above 65535 is refused",
+  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "99999"]))).includes("must be a port number between 1 and 65535"),
 );
 checkTrue(
   "an unknown argument is refused",

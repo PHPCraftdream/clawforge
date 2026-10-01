@@ -4,8 +4,9 @@
 // declares its commands. Adding a command to an application must not require touching any
 // file in framework/ — that is the property this module exists to guarantee.
 
-import { reportError, UserError, CommandFailedError, log, info } from "../core/io/log.ts";
+import { reportError, UserError, CommandFailedError, log, info, maskSecrets } from "../core/io/log.ts";
 import { UnknownArgumentError, preparesEnvironmentFor } from "../core/arguments.ts";
+import { emit, machineWritesCount } from "../core/io/output.ts";
 import { createContext } from "../core/context.ts";
 import { recoverEnv, recoverEnvBeforeContext } from "../commands/operate/recover-env/index.ts";
 import { clearRecipesDir } from "../service/recipe.ts";
@@ -102,7 +103,17 @@ export async function runApp(
   // container read needs: transport and project identity (recover-env/bootstrap.ts).
   // Compared by identity so the declaration stays the single source of truth.
   if (command.run === recoverEnv) {
-    await recoverEnvBeforeContext(args, { service: app.service?.name });
+    try {
+      await recoverEnvBeforeContext(args, { service: app.service?.name });
+    } catch (error) {
+      // Same answer as every other command's unknown flag, though recovery parses outside
+      // the command.run try below.
+      if (error instanceof UnknownArgumentError) {
+        reportUnknownArgument(name, error);
+        return 1;
+      }
+      throw error;
+    }
     return 0;
   }
 
@@ -148,6 +159,20 @@ export function reportUnknownArgument(commandName: string, error: UnknownArgumen
   info(`run ./clawforge ${commandName} --help for its full argument list`);
 }
 
+/** The one --json failure contract: a command invoked with --json that fails after its
+ *  arguments parsed still prints a machine-readable answer — an error document on stdout —
+ *  so a script's jq never receives empty input. Skipped when the command already printed a
+ *  document of its own (status/doctor/upgrade --dry-run report their failures as JSON), and
+ *  never for a non-JSON invocation, whose human-readable reporting is unchanged. */
+function reportJsonFailure(argv: string[], error: unknown): void {
+  const sep = argv.indexOf("--");
+  const scope = sep === -1 ? argv : argv.slice(0, sep);
+  if (!scope.slice(1).includes("--json")) return;
+  if (machineWritesCount() > 0) return;
+  const message = maskSecrets(error instanceof Error ? error.message : String(error));
+  emit(`${JSON.stringify({ error: { message } }, null, 2)}\n`);
+}
+
 /** Wraps runApp with the error handling every entry point needs, so an application's own
  *  entry file stays a single call. */
 export async function main(
@@ -159,6 +184,7 @@ export async function main(
   try {
     process.exitCode = await runApp(app, argv, gateHelp, gateCommands);
   } catch (error) {
+    reportJsonFailure(argv, error);
     reportError(error);
     // A UserError is an expected, explained failure; anything else is a bug worth a trace.
     if (!(error instanceof UserError) && process.env.OC_DEBUG === "1") {

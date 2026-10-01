@@ -365,11 +365,15 @@ export async function runPhases(
   options: IncidentOptions,
   operations: IncidentOperations = incidentOperations,
 ): Promise<IncidentReport> {
-  const contain = await containExposure(ctx, options).catch((error: unknown): IncidentPhase => ({
-    phase: "contain",
-    actions: [],
-    notes: [`contain failed unexpectedly: ${(error as Error).message} — rotate proceeds regardless`],
-  }));
+  let containError: unknown;
+  const contain = await containExposure(ctx, options).catch((error: unknown): IncidentPhase => {
+    containError = error;
+    return {
+      phase: "contain",
+      actions: [],
+      notes: [`contain failed unexpectedly: ${(error as Error).message} — rotate proceeds regardless`],
+    };
+  });
 
   const dir = incidentDir(new Date().toISOString().replaceAll(/[:.]/g, "-"));
   const preserve = await operations.preserve(ctx, options, dir).catch((error: unknown) => {
@@ -424,7 +428,10 @@ export async function runPhases(
     archive: collect.archive,
   };
 
-  const failure = preserve.failure ?? rotateError ?? auditError ?? collectError;
+  // A real run proceeds to rotate over a noted contain failure — leaving a stale exposure
+  // noted beats skipping rotation. A dry-run has no rotate to save: a plan whose contain
+  // phase could not even reach the target is not a plan worth printing, so it fails too.
+  const failure = preserve.failure ?? rotateError ?? auditError ?? collectError ?? (options.dryRun ? containError : undefined);
   if (failure !== undefined) throw new IncidentPhaseFailure(report, failure);
   return report;
 }

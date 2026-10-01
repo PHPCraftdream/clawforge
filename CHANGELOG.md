@@ -28,6 +28,15 @@ All notable changes to `@clawforge/framework` will be documented here.
   refuses to adopt an existing directory, sweeps its stale fixtures) and asserts the app
   actually loaded. The module-load check lists the two import cycles the graph shows, not
   the broken `set` one.
+* Failure paths run their checks in the right order: `logs`, `smoke` and `configure-provider`
+  parse (and refuse) their arguments before contacting the target or taking the instance lock,
+  `recover-env`'s unknown-flag refusal points at `--help` like every other command's,
+  `expose ssh --local-port` is bounded to 1–65535, and `incident --dry-run` exits non-zero when
+  its contain phase could not reach the target instead of printing a plan built from failure
+  notes (a real run still rotates over a noted contain failure). One `--json` failure contract,
+  documented in the command reference: a command invoked with `--json` that fails after its
+  arguments parsed prints `{ "error": { "message": … } }` on stdout and exits non-zero, so a
+  script's `jq` never receives empty input.
 * The checks now distinguish the fixes they cover: a scratch checkout deployment's `app.ts` importing
   `@clawforge/framework/app` must load through the gate, the watch cycle lock's start-time tolerance
   is asserted at absolute 14 s/16 s offsets, the upgrade `health-fail` scenario reaches the health

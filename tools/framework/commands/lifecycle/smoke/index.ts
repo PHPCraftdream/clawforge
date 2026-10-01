@@ -239,8 +239,9 @@ export function report(summary: SmokeSummary, quick: boolean): void {
 }
 
 export async function smoke(ctx: Context, args: string[]): Promise<void> {
-  await requireBootstrapped(ctx);
+  // Arguments first: a typo is refused before the target is contacted at all.
   const parsed = parseDeclaredArgs(SMOKE_ARGUMENTS, args);
+  await requireBootstrapped(ctx);
   const quick = parsed.quick === true;
   const jsonOnly = parsed.json === true;
   const selected = quick ? checks.filter((check) => check.name !== ROUND_TRIP_CHECK) : checks;

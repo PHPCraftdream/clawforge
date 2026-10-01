@@ -22,7 +22,7 @@ export const LOGS_ARGUMENTS: CommandArgument[] = [
  *  makes the same choice. Only the validated `--since` reaches the runtime; any other token
  *  is refused, never passed to compose as a service name. */
 export async function logs(ctx: Context, args: string[]): Promise<void> {
-  await requireBootstrapped(ctx);
+  // Arguments first: every refusal below happens before the target is contacted at all.
   const parsed = parseDeclaredArgs(LOGS_ARGUMENTS, args);
   const tail = parsed.tail as string | undefined;
   if (tail !== undefined && !/^\d+$/.test(tail)) die(`--tail takes a number of lines, not "${tail}"`);
@@ -32,6 +32,7 @@ export async function logs(ctx: Context, args: string[]): Promise<void> {
   }
   const grep = parsed.grep as string | undefined;
   const pattern = grep === undefined ? undefined : compileGrep(grep);
+  await requireBootstrapped(ctx);
   const rest = since === undefined ? [] : ["--since", since];
 
   if (shouldFollow()) {

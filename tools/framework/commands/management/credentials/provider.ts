@@ -50,13 +50,15 @@ function parseArgs(args: string[]): { force: boolean; provider?: string; env?: s
 
 /** Configure every selected provider using a target-side SecretRef. */
 export async function configureProvider(ctx: Context, args: string[]): Promise<void> {
+  // Arguments first: a typo is refused before the target is contacted and before the
+  // instance lock is even attempted — never answered with "lock held" or a transport error.
+  const options = parseArgs(args);
   await requireBootstrapped(ctx);
   // Same shape as restore/apply: real argv threaded through, breakLockSupported defaults true.
-  return guarded(ctx, "configure-provider", args, () => configureProviderLocked(ctx, args));
+  return guarded(ctx, "configure-provider", args, () => configureProviderLocked(ctx, options));
 }
 
-async function configureProviderLocked(ctx: Context, args: string[]): Promise<void> {
-  const options = parseArgs(args);
+async function configureProviderLocked(ctx: Context, options: ReturnType<typeof parseArgs>): Promise<void> {
   const secretsPath = secretsFileOnTarget(ctx);
   if (!(await ctx.transport.exists(secretsPath))) {
     if (options.jsonOnly) {

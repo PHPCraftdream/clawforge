@@ -35,6 +35,14 @@ pass those subsequent tokens (including inline options) unchanged to the child p
 flags (`--keep`, `--interval`) are refused by name when given to the wrong action, e.g.
 `backup list --keep 3` names `prune-replaced` rather than calling `--keep` unknown.
 
+`--json` has one failure contract: when an invocation with `--json` fails after its arguments
+parsed — an unreachable target, a refused lock, a failed check — it still prints one
+machine-readable answer, `{ "error": { "message": … } }` on stdout, and exits non-zero, so a
+script's `jq` never receives empty input. Commands that already report their failures as a
+JSON document of their own (`status`, `doctor`, `upgrade --dry-run`) keep doing so; the error
+document covers only the cases that would otherwise fail with empty stdout. Diagnostics stay
+on stderr either way, and a non-`--json` invocation's output is unchanged.
+
 | Command | Arguments | Purpose |
 | --- | --- | --- |
 | `bootstrap` | `[--check] [--no-pull] [--break-lock] [--break-foreign-lock <hostId>] [--json]` | Bring an instance up from nothing: token → directories → image → baseline config → provider → desired state → secrets check → start. Safe to repeat on a live instance. A fresh pull of a tag is pinned to the digest it just proved, in `.env` — an already digest-pinned deployment is left alone; `./clawforge upgrade` moves it from there. `--check` runs none of that: a read-only prerequisite report (docker, compose v2, the data/backup/snapshot directories, the gateway port, free disk space), one `ok`/`WARN`/`FAIL` line each, no lock, nothing created — run it once on a new host before the first real bootstrap |

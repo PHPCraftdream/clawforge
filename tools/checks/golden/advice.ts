@@ -11,8 +11,10 @@ import { setInvocation, type Invocation } from "#framework/core/io/invocation/in
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { makeVersionGateCommand } from "#framework/integration/version.ts";
+import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
+import { entryRefusalAdvice } from "./matrix.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { imagePinAdvice, provisionRemedy, forgetRemedy, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#framework/set/advice.ts";
 import { pluginReinstall, skillReinstall } from "#framework/commands/management/extensions.ts";
@@ -32,7 +34,7 @@ useGateCommands(GATE_COMMAND_NAMES);
 
 /** The tools a nextStep can name: the declared commands and the gate's own — the surface
  *  an MCP client called, so a remedy names a tool it can actually call. */
-const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand()];
+const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand(), makeInitGateCommand("<app-root>")];
 gateCommands.push(makeCompletionGateCommand(gateCommands, true));
 const toolByName = new Map<string, Declared>([
   ...Object.entries(openclawCommands).map(([name, declared]): [string, Declared] => [name, declared as Declared]),
@@ -84,6 +86,9 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   { label: "manual", advice: manual("reconnect the MCP client (in Claude Code: /mcp)") },
   ...CODE_ROWS,
   ...REFINEMENT_ROWS,
+  // Group 3 (rf4-sweep-core): the refusals the entry decisions build, on golden/matrix.ts's
+  // fake layouts, plus the pointers the unknown-command/argument reporters print.
+  ...entryRefusalAdvice(),
 ];
 
 /** One matrix column: the invocation every row renders under. */

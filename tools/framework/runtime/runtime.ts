@@ -37,7 +37,7 @@ export async function requireBootstrapped(ctx: Context): Promise<void> {
     await ctx.runtime.isRunning();
   } catch (error) {
     if (!(error instanceof NotBootstrapped)) throw error;
-    die(`${error.message} — run ./clawforge bootstrap`);
+    die(`${error.message} — run ${commandLine(["bootstrap"])}`);
   }
 }
 
@@ -221,3 +221,4 @@ export async function safeConnectionFacts(
     return undefined;
   }
 }
+import { commandLine } from "../core/io/invocation/render.ts";

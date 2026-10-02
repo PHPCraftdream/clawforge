@@ -66,15 +66,15 @@ error: unknown argument: --bogus
 
 === missing deployment, no others available: --app demo — checkout root (./clawforge) ===
 error: deployment "demo" not found at <root>/apps/demo
-error: create one with: ./clawforge new-app <name>
+    → ./clawforge new-app <name>
 
 === missing deployment, no others available: --app demo — named deployment (./clawforge --app demo) ===
 error: deployment "demo" not found at <root>/apps/demo
-error: create one with: ./clawforge --app demo new-app <name>
+    → ./clawforge new-app <name>
 
 === missing deployment, no others available: --app demo — installed command (clawforge) ===
 error: deployment "demo" not found at <root>/apps/demo
-error: create one with: clawforge new-app <name>
+    → clawforge new-app <name>
 
 === missing deployment, others available: openclaw — checkout root (./clawforge) ===
 error: several deployments (demo, staging) — pick one with --app <name> or OC_APP
@@ -88,15 +88,15 @@ error: several deployments (demo, staging) — pick one with --app <name> or OC_
 === checkout gate command from a checkout subfolder: check — checkout root (./clawforge) ===
 error: no app.ts in <root>
 error: check is a checkout command — run it from the checkout root:
-error:     cd "<checkout>"
+    → cd "<checkout>"
 
 === checkout gate command from a checkout subfolder: check — named deployment (./clawforge --app demo) ===
 error: no app.ts in <root>
 error: check is a checkout command — run it from the checkout root:
-error:     cd "<checkout>"
+    → cd "<checkout>"
 
 === checkout gate command from a checkout subfolder: check — installed command (clawforge) ===
 error: no app.ts in <root>
 error: check is a checkout command — run it from the checkout root:
-error:     cd "<checkout>"
+    → cd "<checkout>"
 

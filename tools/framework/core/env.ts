@@ -6,6 +6,7 @@
 // The shell version used `source .env`, which executes whatever the file contains; here it
 // is parsed as data.
 
+import { commandLine } from "./io/invocation/render.ts";
 import { existsSync } from "node:fs";
 import { readFile, access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -327,7 +328,7 @@ export async function loadEnv(): Promise<Env> {
   try {
     await access(file);
   } catch {
-    die(`${file} not found. Run ./clawforge bootstrap first.`);
+    die(`${file} not found. Run ${commandLine(["bootstrap"])} first.`);
   }
   const env = parseEnv(await readFile(file, "utf8"));
   if (!shellOnlyEnvWarned) {

@@ -71,6 +71,14 @@ All notable changes to `@clawforge/framework` will be documented here.
   and clears both. Shims and launchers already committed in your repository keep working, and
   `mcp-setup` rewrites a launcher carrying the old spelling as it rewrites its other retired
   texts. No command output changes.
+* Advice for a gate command (`new-app`, `list`, `check` …) no longer carries `--app <name>`:
+  those commands run before a deployment is resolved, so the suggested command is now runnable
+  as printed under every invocation. The same holds for the `--app must come before the
+  command` refusal, whose suggested command line now uses the program as typed (`clawforge`,
+  not the checkout spelling that does not run in cmd.exe or PowerShell).
+* Entry refusals print their advice as an indented `→` line under the message instead of an
+  `error:` line per sentence, and the bash spelling of a suggested command is offered as a
+  separate line marked `(in bash)` instead of a parenthetical inside the sentence.
 
 ### Fixed
 

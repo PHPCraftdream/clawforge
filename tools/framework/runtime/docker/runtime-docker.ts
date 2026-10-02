@@ -228,10 +228,11 @@ export class DockerRuntime implements Runtime {
     while (Date.now() < deadline) {
       if ((await this.probe("healthz")) === 200) return;
       if (!(await this.isRunning())) {
-        throw new Error("the service container stopped while starting up — check ./clawforge logs");
+        throw new Error(`the service container stopped while starting up — check ${commandLine(["logs"])}`);
       }
       await sleep(2000);
     }
     throw new Error(`the service did not become healthy within ${timeoutSeconds}s`);
   }
 }
+import { commandLine } from "../../core/io/invocation/render.ts";

@@ -9,7 +9,10 @@ import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { isWithin } from "../core/paths.ts";
 import { safeName } from "../core/values/names.ts";
 import type { InvocationApp } from "../core/io/invocation/index.ts";
-import { cli, invocationPrefix } from "../core/io/invocation/index.ts";
+import { manual } from "../core/io/invocation/advice.ts";
+import { command, shellLine, type Advice } from "../core/io/invocation/advice.ts";
+import { renderAdvice, shimInvocation } from "../core/io/invocation/render.ts";
+import { UserError } from "../core/io/log.ts";
 import { normalizeVersionAlias } from "../integration/version.ts";
 import {
   checkoutSubfolderReport,
@@ -83,7 +86,7 @@ export interface CheckoutEntryInput {
 }
 
 export type CheckoutEntryDecision =
-  | { readonly kind: "refuse"; readonly lines: readonly string[] }
+  | { readonly kind: "refuse"; readonly refusals: readonly UserError[] }
   /** Rendered by the gate: "--app must come before the command". */
   | { readonly kind: "refuse-misplaced-app-flag" }
   | { readonly kind: "refuse-unknown-command"; readonly name: string; readonly candidates: readonly string[] }
@@ -133,7 +136,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
   let name = ocApp ?? "openclaw";
   let selectedBy: InvocationApp["selectedBy"] = ocApp !== undefined ? "env" : "default";
   const appFlag = splitLeadingAppFlag([...argv]);
-  if (appFlag.missingValue) return { kind: "refuse", lines: ["--app needs a deployment name"] };
+  if (appFlag.missingValue) return { kind: "refuse", refusals: [new UserError("--app needs a deployment name")] };
   if (appFlag.value !== undefined) {
     name = appFlag.value;
     selectedBy = "flag";
@@ -152,7 +155,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
   try {
     safeName("deployment", name);
   } catch (error) {
-    return { kind: "refuse", lines: [(error as Error).message] };
+    return { kind: "refuse", refusals: [new UserError((error as Error).message)] };
   }
 
   const baseCommandNames = [...deploymentCommands, ...gateCommands, "help", "control-mcp"];
@@ -176,7 +179,7 @@ export function resolveCheckoutEntry(input: CheckoutEntryInput): CheckoutEntryDe
     }
     return {
       kind: "refuse",
-      lines: missingDeploymentReport(ocApp !== undefined || appFlag.value !== undefined, name, deploymentDir, available, fs.exists(deploymentDir)),
+      refusals: [missingDeploymentReport(ocApp !== undefined || appFlag.value !== undefined, name, deploymentDir, available, fs.exists(deploymentDir))],
     };
   }
 
@@ -323,10 +326,9 @@ export interface InstalledEntryInput {
 }
 
 export type InstalledEntryDecision =
-  /** reportError lines: the --project-root refusal and init nesting inside a deployment. */
-  | { readonly kind: "refuse"; readonly lines: readonly string[] }
-  /** reportErrorVerbatim: init inside a ClawForge checkout — the bash spelling must stay. */
-  | { readonly kind: "refuse-verbatim"; readonly lines: readonly string[] }
+  /** reportError refusals: the --project-root refusal, init nesting inside a deployment,
+   *  and init inside a ClawForge checkout (its bash spelling rides as shell advice). */
+  | { readonly kind: "refuse"; readonly refusals: readonly UserError[] }
   /** info + exit 0: `init --local` whose deployment already imports the checkout's sources. */
   | { readonly kind: "checkout-types-note"; readonly line: string }
   | {
@@ -357,7 +359,7 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
 
   const scheduled = rawArgv[0] === "--project-root";
   if (scheduled && (rawArgv[1] === undefined || !isAbsolute(rawArgv[1]))) {
-    return { kind: "refuse", lines: ["--project-root requires an absolute directory"] };
+    return { kind: "refuse", refusals: [new UserError("--project-root requires an absolute directory")] };
   }
   const argv = normalizeVersionAlias(scheduled ? rawArgv.slice(2) : [...rawArgv]);
   // The entries pass an already-resolved cwd; resolving again keeps the comparisons below
@@ -371,7 +373,7 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
   // `init --local` writes nothing, so from a subfolder it only prints the editor-types line.
   const localTypesOnly = initializing && argv.includes("--local") && ancestor !== undefined;
   if (initializing && !scheduled && ancestor !== undefined && ancestor !== here && !localTypesOnly) {
-    return { kind: "refuse", lines: [`${ancestor} already holds app.ts — this directory is inside that deployment; init here would nest a second one`] };
+    return { kind: "refuse", refusals: [new UserError(`${ancestor} already holds app.ts — this directory is inside that deployment; init here would nest a second one`)] };
   }
   // A checkout deployment reads the framework from the checkout's sources: nothing to install.
   if (localTypesOnly && ancestor !== undefined && importsCheckoutSourcesIn(ancestor, fs)) {
@@ -386,14 +388,24 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
       // Both sides resolved, so the comparison does not depend on how the caller spelled cwd.
       sameDirectory(platform, dirname(here), resolve(checkout, "apps")) &&
       isValidDeploymentName(basename(here));
-    // Verbatim: the bash form must stay `./clawforge`, not be localized to this invocation.
+    // The main advice is this invocation's spelling; the bash variant is shell advice, so
+    // nothing rewrites it to the program that was typed.
+    const advice: Advice[] = [
+      command(["new-app", "<name>"]),
+      shellLine("posix", renderAdvice(command(["new-app", "<name>"]), shimInvocation()), { note: "in bash" }),
+    ];
+    if (reusable) {
+      advice.push(manual(`new-app ${basename(cwd)} takes over this empty directory, or remove it`));
+    }
     return {
-      kind: "refuse-verbatim",
-      lines: [
-        `${checkout} is a ClawForge checkout — init writes an installed-style deployment (its own committed ` +
-          `clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one ` +
-          `is new-app under apps/. From the checkout root run: ${cli("new-app <name>")} (in bash also ./clawforge new-app <name>)` +
-          (reusable ? `; new-app ${basename(cwd)} takes over this empty directory, or remove it` : ""),
+      kind: "refuse",
+      refusals: [
+        new UserError(
+          `${checkout} is a ClawForge checkout — init writes an installed-style deployment (its own committed ` +
+            `clawforge entrypoint, package.json and MCP launcher), not a checkout deployment; a checkout one ` +
+            `is new-app under apps/. From the checkout root, run the gate from its root:`,
+          { advice },
+        ),
       ],
     };
   }
@@ -426,12 +438,11 @@ export interface MissingAppInput {
 
 interface NotInitialised {
   readonly headline: string;
-  readonly plain: readonly string[];
-  readonly verbatim: readonly string[];
+  readonly refusals: readonly UserError[];
 }
 
 export type MissingAppDecision =
-  | { readonly kind: "subfolder-report"; readonly headline: string; readonly verbatim: readonly string[] }
+  | { readonly kind: "subfolder-report"; readonly headline: string; readonly refusal: UserError }
   /** helpWithoutDeployment answers; `fallback` renders when it declines. */
   | { readonly kind: "help"; readonly fallback: NotInitialised }
   | ({ readonly kind: "not-initialised" } & NotInitialised);
@@ -440,12 +451,21 @@ export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
   const { appRoot, argv, checkout, gateCommandNames, deploymentCommands } = input;
   const subfolder = checkout !== undefined ? checkoutSubfolderReport(argv[0] ?? "", checkout) : undefined;
   if (subfolder !== undefined) {
-    return { kind: "subfolder-report", headline: `no app.ts in ${appRoot}`, verbatim: subfolder };
+    return { kind: "subfolder-report", headline: `no app.ts in ${appRoot}`, refusal: subfolder };
   }
+  const refusals: readonly UserError[] = checkout === undefined
+    ? [new UserError("this directory has not been initialised as an OpenClaw deployment yet", { advice: [command(["init"])] })]
+    : [
+        new UserError(`this is a ClawForge checkout (${checkout}) — run the gate from its root:`, {
+          advice: [
+            command([]),
+            shellLine("posix", renderAdvice(command([]), shimInvocation()), { note: "in bash" }),
+          ],
+        }),
+      ];
   const refusal: NotInitialised = {
     headline: `no app.ts in ${appRoot}`,
-    plain: checkout === undefined ? [`this directory has not been initialised as an OpenClaw deployment yet — run: ${cli("init")}`] : [],
-    verbatim: checkout === undefined ? [] : [`this is a ClawForge checkout (${checkout}) — run ${invocationPrefix()} from its root (in bash also ./clawforge)`],
+    refusals,
   };
   const first = argv[0];
   const offered = checkout === undefined ? gateCommandNames : gateCommandNames.filter((name) => name !== "init");

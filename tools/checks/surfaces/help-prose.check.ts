@@ -5,9 +5,6 @@
 // set, the gate's own commands, version/completion built the way tools/clawforge.ts builds
 // them, and control-mcp's shared body.
 //
-// The installed entry's `init` is not importable without side effects yet; rf4-sweep-core
-// adds it here once the declaration moves to integration/deployment/init.ts.
-
 import { readdir, readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
@@ -20,11 +17,12 @@ import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { makeVersionGateCommand } from "#framework/integration/version.ts";
 import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
 import { CONTROL_MCP_DETAILS, type GateCommand } from "#framework/integration/gate.ts";
+import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import { parseProse, type ProseToken } from "#framework/core/io/invocation/prose.ts";
 import { checkTrue, finish } from "#checks/kit/harness.ts";
 
 // The gate as the checkout root builds it — completion closes over the finished array.
-const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand()];
+const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand(), makeInitGateCommand("<app-root>")];
 gateCommands.push(makeCompletionGateCommand(gateCommands, true));
 
 interface ProseDeclaration {

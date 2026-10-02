@@ -51,7 +51,7 @@ export function makeVersionGateCommand(appRoot?: string): GateCommand {
     summary: "Print clawforge's own version (also: --version, -v)",
     details:
       "Reads the framework's package.json, as `inspect` does. No deployment is resolved, no .env is read, no lock is touched. " +
-      "--verbose / --json also say which copy runs: global, local (the app's own dependency) or checkout, and its path.",
+      "{--verbose} / {--json} also say which copy runs: global, local (the app's own dependency) or checkout, and its path.",
     arguments: VERSION_ARGUMENTS,
     run: async (args) => {
       const parsed = parseDeclaredArgs(VERSION_ARGUMENTS, args);

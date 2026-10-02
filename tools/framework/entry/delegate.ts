@@ -13,7 +13,8 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { INVOCATION_ENV, invocation, serializeInvocation } from "../core/io/invocation/index.ts";
 import { checkoutFrameworkSource } from "../core/env.ts";
-import { reportError } from "../core/io/log.ts";
+import { reportError, UserError } from "../core/io/log.ts";
+import { command } from "../core/io/invocation/advice.ts";
 import { nodeFs, checkoutGateIn, findCheckoutRootIn, frameworkOwner, strayCheckoutApp, importsCheckoutSourcesIn } from "./resolve.ts";
 
 const PACKAGE = "@clawforge/framework";
@@ -70,7 +71,7 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
     reportError("--app needs a deployment name");
     process.exit(1);
   }
-  reportError(`--app ${decision.typed} conflicts with this directory, deployment ${decision.app} of the checkout — run ./clawforge --app ${decision.typed} from the checkout root`);
+  reportError(new UserError(`--app ${decision.typed} conflicts with this directory, deployment ${decision.app} of the checkout — run this from the checkout root:`, { advice: [command([], { app: decision.typed })] }));
   process.exit(1);
 }
 

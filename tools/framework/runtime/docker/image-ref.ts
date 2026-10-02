@@ -2,7 +2,7 @@
 // [@sha256:<64 lowercase hex>]. A registry port's colon is always followed by a slash, never
 // read as a tag. Call sites parse once and pass the value on; .env, the recreated container
 // and every report get the same format() string. Also registry digest resolution and
-// exit-code readback for ./clawforge upgrade.
+// exit-code readback for the `upgrade` command.
 
 import { UserError } from "../../core/io/log.ts";
 import { ValueError, type ValueParser } from "../../core/values/value.ts";

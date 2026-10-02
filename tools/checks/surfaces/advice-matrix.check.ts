@@ -4,9 +4,7 @@
 // by `npm run golden:update`. The snapshot comparison itself stays in golden.check.ts.
 //
 // The declarations are read where the help check reads them: the command set, the checkout
-// gate's own commands, version/completion built the way tools/clawforge.ts builds them.
-// The installed entry's `init` is not importable without side effects yet (help-prose.check.ts
-// records the same); its NAME is what matters here, and only as a registered gate command.
+// gate's own commands, and version/completion/init built the way the entries build them.
 
 import type { CommandArgument } from "#framework/core/app.ts";
 import {
@@ -17,6 +15,7 @@ import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
 import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
 import { makeVersionGateCommand } from "#framework/integration/version.ts";
+import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
@@ -66,11 +65,9 @@ function withoutNote(line: string, advice: CommandAdvice): string {
 
 // The gate as the checkout root builds it — completion closes over the finished array, and
 // the matrix registers the same names (see below).
-const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand()];
+const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand(), makeInitGateCommand("<app-root>")];
 gateCommands.push(makeCompletionGateCommand(gateCommands, true));
 const gateWords = new Set(gateCommands.map((command) => command.name));
-// The installed entry's own gate command; its declaration is not importable yet.
-gateWords.add("init");
 check(
   "the matrix registers exactly the gate names the entries do",
   [...gateWords].sort(),
@@ -179,11 +176,23 @@ function parseProblem(parse: () => unknown, declared: readonly CommandArgument[]
 for (const { label, advice } of ADVICE_ROWS) {
   if (advice.kind !== CLAWFORGE_KIND) continue;
   const filled = advice.argv.map((word) => (PLACEHOLDER_WORD.test(word) ? EXAMPLE : word));
-  const [word, ...rest] = filled;
+  const [word, ...allRest] = filled;
   if (word === undefined) {
     checkTrue(`${label}: names a command word`, false);
     continue;
   }
+  // `help` and control-mcp are dispatched by runApp before any declaration lookup (the same
+  // special cases help-prose.check.ts makes), and `--help` is the dispatcher's own flag —
+  // it answers before the command's argument spec runs.
+  if (word === "help") {
+    checkTrue(`${label}: help takes one known command name`, allRest.length <= 1 && (allRest.length === 0 || openclawCommands[allRest[0]] !== undefined));
+    continue;
+  }
+  if (word === "control-mcp") {
+    checkTrue(`${label}: control-mcp takes no arguments`, allRest.length === 0);
+    continue;
+  }
+  const rest = allRest.includes("--help") ? allRest.filter((entry) => entry !== "--help") : allRest;
   const app = openclawCommands[word];
   const gate = gateByName.get(word);
   const problem = app !== undefined
@@ -230,18 +239,21 @@ for (const { label, advice } of ADVICE_ROWS) {
     checkTrue(`${label}: no tool, no step`, cell === PLACEHOLDER);
     continue;
   }
-  check(`${label}: the cell is the step the lookup produces`, cell, JSON.stringify({ tool, arguments: toolArguments(declared, advice.argv) }));
+  const directStep = toolArguments(declared, advice.argv);
+  check(`${label}: the cell is the step the lookup produces`, cell, directStep === undefined ? PLACEHOLDER : JSON.stringify({ tool, arguments: directStep }));
   const filled = advice.argv.map((word) => (PLACEHOLDER_WORD.test(word) ? EXAMPLE : word));
   const stepArguments = toolArguments(declared, filled);
   if (stepArguments === undefined) {
-    checkTrue(`${label}: the filled argv builds no step`, false);
-    continue;
-  }
+    // An argv the tool form cannot carry (--help in a pointer's advice, for one) stays on
+    // the placeholder: the step is not guessed.
+    checkTrue(`${label}: no carryable argv, no step`, cell === PLACEHOLDER);
+  } else {
   const round = toArgv(declared, stepArguments);
   const verbatim = (declared.arguments ?? []).some((argument) => "verbatim" in argument && argument.verbatim === true);
   const direct = parsedValues(declared.arguments, filled.slice(1), verbatim);
   const reparsed = parsedValues(declared.arguments, round, verbatim);
   check(`${label}: the step's argv reparses to the same values`, canon(reparsed), canon(direct));
+  }
 }
 
 finish("advice matrix");

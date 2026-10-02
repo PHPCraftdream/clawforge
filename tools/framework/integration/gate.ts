@@ -3,7 +3,7 @@
 // `check` describes the framework, `new-app`/`init` create the thing every other command
 // needs — none can be an AppCommand (that type takes a Context, built from a deployment's
 // .env). Dispatched by the gate (tools/clawforge.ts, framework/entry/bin.ts), not cli.ts's
-// dispatcher, but still declared like a capability of `./clawforge`: one declaration feeds
+// dispatcher, but still declared like a capability of the gate: one declaration feeds
 // dispatch, `--help` and the MCP tool list, so help text lives in the declaration, not as
 // literal strings at each call site.
 //
@@ -11,7 +11,10 @@
 // the installed one (exactly one deployment, at the repo root), `check` needs this
 // repository's own test suite, which the npm package doesn't ship. Each gate builds its own list.
 
-import { info, log, reportError } from "../core/io/log.ts";
+import { info, log, reportError, UserError } from "../core/io/log.ts";
+import { command, manual } from "../core/io/invocation/advice.ts";
+import { commandLine } from "../core/io/invocation/render.ts";
+import { shellLine } from "../core/io/invocation/advice.ts";
 import { closestCommand } from "../core/command/index.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
 import type { AppDefinition, CommandArgument } from "../core/app.ts";
@@ -37,7 +40,7 @@ export function gateCommandHelp(command: GateCommand): void {
   renderCommandHelp(command.name, command);
 }
 
-/** Lines for the command list in `./clawforge help`, so a gate command appears beside the rest. */
+/** Lines for the command list in the gate's `help`, so a gate command appears beside the rest. */
 export function gateHelpLines(commands: GateCommand[]): string[] {
   if (commands.length === 0) return [];
   return commands.map((command) => helpEntryLine(command.name, command.summary));
@@ -105,12 +108,12 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   if (target === undefined || target === "--help" || target === "-h" || target === "help") {
     log("clawforge — manage self-hosted OpenClaw deployments");
     info("");
-    info("Usage: ./clawforge <command> [options]");
+    info(`Usage: ${commandLine(["<command>"])} [options]`);
     info("");
     for (const line of gateHelpLines(offered)) info(line);
     info("");
-    if (checkout === undefined) info("The full command list appears inside an initialised app folder (create one with: ./clawforge init).");
-    else info(`This is a ClawForge checkout (${checkout}): ./clawforge help at its root lists every command, apps/<name> holds the deployments.`);
+    if (checkout === undefined) info(`The full command list appears inside an initialised app folder (create one with: ${commandLine(["init"])})`);
+    else info(`This is a ClawForge checkout (${checkout}): ${commandLine(["help"])} at its root lists every command, apps/<name> holds the deployments.`);
     return 0;
   }
   const command = commands.find((entry) => entry.name === target);
@@ -123,7 +126,7 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   if (checkout !== undefined) {
     const fromRoot = checkoutSubfolderReport(target, checkout);
     if (fromRoot !== undefined) {
-      for (const line of fromRoot) reportError(line);
+      reportError(fromRoot);
       return 1;
     }
   }
@@ -138,8 +141,8 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   if (context.deploymentCommands.includes(target)) {
     reportError(
       checkout === undefined
-        ? `"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — run: ./clawforge init`
-        : `"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — this is a ClawForge checkout; run it from apps/<name> or with ./clawforge at the checkout root`,
+        ? `"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — run: ${commandLine(["init"])}`
+        : `"${target}" is a deployment command: it needs an app folder, and there is no app.ts here — this is a ClawForge checkout; run it from apps/<name> or with ${commandLine([])} at the checkout root`,
     );
     return 1;
   }
@@ -153,8 +156,8 @@ function deploymentHelpNote(name: string, checkout: string | undefined): void {
   info("");
   info(
     checkout === undefined
-      ? `"${name}" runs inside an app folder — there is no app.ts here; run: ./clawforge init`
-      : `"${name}" runs inside an app folder — this is a ClawForge checkout; run it from apps/<name> or with ./clawforge at the checkout root`,
+      ? `"${name}" runs inside an app folder — there is no app.ts here; run: ${commandLine(["init"])}`
+      : `"${name}" runs inside an app folder — this is a ClawForge checkout; run it from apps/<name> or with ${commandLine([])} at the checkout root`,
   );
 }
 
@@ -165,16 +168,16 @@ function deploymentHelpNote(name: string, checkout: string | undefined): void {
 export { CHECKOUT_GATE_COMMANDS } from "../entry/checkout-gate.ts";
 import { CHECKOUT_GATE_COMMANDS } from "../entry/checkout-gate.ts";
 
-/** Report lines for a checkout gate command typed from a checkout subfolder: the command is
- *  real there too, it just runs at the root — not an unknown command. */
-export function checkoutSubfolderReport(first: string, checkout: string): string[] | undefined {
+/** The refusal for a checkout gate command typed from a checkout subfolder: the command is
+ *  real there too, it just runs at the root — not an unknown command. The cd line is for
+ *  another shell, so it is shell advice: nothing rewrites it. */
+export function checkoutSubfolderReport(first: string, checkout: string): UserError | undefined {
   if (!CHECKOUT_GATE_COMMANDS.includes(first)) return undefined;
   // Quoted: a path with spaces breaks unquoted in any shell, and Windows backslashes read
   // as escapes in the Git Bash this hint is most likely pasted into.
-  return [
-    `${first} is a checkout command — run it from the checkout root:`,
-    `    cd "${checkout}"`,
-  ];
+  return new UserError(`${first} is a checkout command — run it from the checkout root:`, {
+    advice: [shellLine("posix", `cd "${checkout}"`)],
+  });
 }
 
 /** `<command> [<any arguments up to a bare --> --help>` for a deployment command: help must
@@ -232,7 +235,7 @@ export function reportUnknownCommand(name: string, candidates: string[]): void {
   reportError(`unknown command: ${name}`);
   const suggestion = closestCommand(name, candidates);
   if (suggestion !== undefined) info(`did you mean: ${suggestion}`);
-  info("run ./clawforge help to list every command");
+  info(`run ${commandLine(["help"])} to list every command`);
 }
 
 /** Every name the dispatcher can resolve: app commands, gate commands and its own aliases. */
@@ -248,7 +251,7 @@ export const CONTROL_MCP_DETAILS = [
   "commands instead of OpenClaw's channels — status, backup, secrets, and the",
   "rest, with arguments checked against the same declarations --help reads.",
   "Destructive commands (push, restore, deploy) need confirm: true.",
-  "Registered for a client automatically by ./clawforge mcp-setup; not meant to be run",
+  "Registered for a client automatically by {clawforge mcp-setup}; not meant to be run",
   "by hand outside of testing.",
 ].join("\n");
 
@@ -260,7 +263,7 @@ export function controlMcpHelp(appName: string): void {
   });
 }
 
-/** Renders `./clawforge help [<command>]`; false for an unknown command. Shared by the console
+/** Renders `help [<command>]`; false for an unknown command. Shared by the console
  *  and the MCP `help` tool. */
 export function renderHelp(
   target: string | undefined,
@@ -299,8 +302,9 @@ export function soleDeploymentFallback(explicit: boolean, available: readonly st
   return !explicit && available.length === 1 ? available[0] : undefined;
 }
 
-/** Report lines for an unresolved deployment: several with none selected names the ambiguity;
- *  a missing explicit name (or none at all) keeps the "not found" wording. */
+/** The refusal for an unresolved deployment: several with none selected names the ambiguity;
+ *  a missing explicit name (or none at all) keeps the "not found" wording. new-app is a gate
+ *  command, so its advice never carries this run's `--app`. */
 export function missingDeploymentReport(
   explicit: boolean,
   name: string,
@@ -308,20 +312,21 @@ export function missingDeploymentReport(
   available: readonly string[],
   /** The directory is there but holds no app.ts: new-app would refuse it as non-empty. */
   directoryExists = false,
-): string[] {
+): UserError {
   if (!explicit && available.length > 1) {
-    return [`several deployments (${available.join(", ")}) — pick one with --app <name> or OC_APP`];
+    return new UserError(`several deployments (${available.join(", ")}) — pick one with --app <name> or OC_APP`);
   }
   if (directoryExists) {
-    return [
-      `${deploymentDir} exists but holds no app.ts — if the directory is empty, ./clawforge new-app ${name} takes it over`,
-      `otherwise remove it or pick another name${available.length === 0 ? "" : ` (available: ${available.join(", ")})`}`,
-    ];
+    return new UserError(`${deploymentDir} exists but holds no app.ts — if the directory is empty:`, {
+      advice: [
+        command(["new-app", name]),
+        manual(`otherwise remove it or pick another name${available.length === 0 ? "" : ` (available: ${available.join(", ")})`}`),
+      ],
+    });
   }
-  return [
-    `deployment "${name}" not found at ${deploymentDir}`,
-    available.length === 0
-      ? "create one with: ./clawforge new-app <name>"
-      : `available: ${available.join(", ")} — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>`,
-  ];
+  return new UserError(`deployment "${name}" not found at ${deploymentDir}`, {
+    advice: available.length === 0
+      ? [command(["new-app", "<name>"])]
+      : [manual(`available: ${available.join(", ")} — pick one with --app <name> (or OC_APP), or create one with:`), command(["new-app", "<name>"])],
+  });
 }

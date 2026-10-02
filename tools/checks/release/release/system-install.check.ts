@@ -85,7 +85,7 @@ try {
   const verbose = await clawforge(["version", "--verbose"], outside);
   check("version --verbose adds the source and path lines", verbose.output.trim().split("\n").map((line) => line.trim()), [`clawforge ${expected}`, "source: global", `path: ${await realpath(globalPackage)}`]);
   const outsideStatus = await clawforge(["status"], outside);
-  check("outside any app the advice stays: run clawforge init", outsideStatus.code === 1 && outsideStatus.output.includes("run: clawforge init"), true);
+  check("outside any app the advice stays: run clawforge init", outsideStatus.code === 1 && outsideStatus.output.includes("initialised as an OpenClaw deployment yet") && outsideStatus.output.includes("→ clawforge init"), true);
 
   // Outside an app, help lists the gate commands instead of failing.
   for (const args of [["help"], ["--help"], ["-h"]]) {
@@ -251,7 +251,7 @@ try {
   await mkdir(emptyApp, { recursive: true });
   try {
     const emptyStatus = await clawforge(["--app", `${checkoutApp}-empty`, "status"], monorepoRoot);
-    check("--app at an empty apps/<name> offers new-app to take it over", emptyStatus.code === 1 && emptyStatus.output.includes(`new-app ${checkoutApp}-empty takes it over`) && !emptyStatus.output.includes("add one there"), true);
+    check("--app at an empty apps/<name> offers new-app to take it over", emptyStatus.code === 1 && emptyStatus.output.includes(`→ clawforge new-app ${checkoutApp}-empty`) && !emptyStatus.output.includes("add one there"), true);
   } finally {
     await rm(emptyApp, { recursive: true, force: true });
   }
@@ -328,7 +328,7 @@ try {
   await mkdir(emptyDocs, { recursive: true });
   try {
     const nested = await clawforge(["init"], emptyDocs);
-    check("an empty folder that is not apps/<name> is not offered for reuse", nested.code === 1 && nested.output.includes("(in bash also ./clawforge new-app <name>)") && !nested.output.includes("takes over"), true);
+    check("an empty folder that is not apps/<name> is not offered for reuse", nested.code === 1 && nested.output.includes("(in bash)") && !nested.output.includes("takes over"), true);
   } finally {
     await rm(emptyDocs, { recursive: true, force: true });
   }
@@ -336,7 +336,7 @@ try {
   await mkdir(freshApp, { recursive: true });
   try {
     const initInCheckout = await clawforge(["init"], freshApp);
-    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes("clawforge new-app <name>") && initInCheckout.output.includes("(in bash also ./clawforge new-app <name>)") && initInCheckout.output.includes(`new-app ${checkoutApp}-new takes over`), true);
+    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes("clawforge new-app <name>") && initInCheckout.output.includes("(in bash)") && initInCheckout.output.includes(`new-app ${checkoutApp}-new takes over`), true);
     check("and writes nothing", existsSync(join(freshApp, "app.ts")), false);
   } finally {
     await rm(freshApp, { recursive: true, force: true });

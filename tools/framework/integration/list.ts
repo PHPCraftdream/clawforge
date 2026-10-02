@@ -1,4 +1,4 @@
-// Listing every deployment under apps/ — `./clawforge list`. Shares deployment/scaffold.ts's appsDir;
+// Listing every deployment under apps/ — the gate's `list` command. Shares deployment/scaffold.ts's appsDir;
 // creating a deployment is that file's job, reading what several of them add up to is this
 // one's.
 
@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { log, info, maskSecrets } from "../core/io/log.ts";
+import { commandLine } from "../core/io/invocation/render.ts";
 import { parseEnv, toSettings, type Settings } from "../core/env.ts";
 import { createContext, type Context } from "../core/context.ts";
 import { useDeployment, selectedDeployment } from "../runtime/deployment.ts";
@@ -82,7 +83,7 @@ async function summarizeDeployment(
   try {
     env = parseEnv(await readFile(resolve(directory, ".env"), "utf8"));
   } catch {
-    return { name, state: "error", reason: `no .env — run ./clawforge --app ${name} bootstrap` };
+    return { name, state: "error", reason: `no .env — run ${commandLine(["bootstrap"], { app: name })}` };
   }
 
   let settings: Settings;
@@ -153,11 +154,11 @@ function displayState(state: DeploymentSummary["state"]): string {
   return state;
 }
 
-/** `./clawforge list`'s console rendering — kept beside listDeployments() rather than in the gate
+/** The `list` command's console rendering — kept beside listDeployments() rather than in the gate
  *  script, the same split createApp's own log/info calls already draw. */
 export function printDeploymentList(summaries: DeploymentSummary[]): void {
   if (summaries.length === 0) {
-    info("no deployments under apps/ — create one with ./clawforge new-app <name>");
+    info(`no deployments under apps/ — create one with ${commandLine(["new-app", "<name>"])}`);
     return;
   }
   for (const entry of summaries) {

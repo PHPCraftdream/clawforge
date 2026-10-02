@@ -150,8 +150,3 @@ export function reportError(error: unknown): void {
   write(`${C.red}error:${C.off} ${formatError(error)}\n`, true);
 }
 
-/** reportError() for a message that names another shell's checkout spelling next to the
- *  localized one: printed verbatim, nothing rewritten. */
-export function reportErrorVerbatim(message: string): void {
-  write(`${C.red}error:${C.off} ${maskSecrets(message)}\n`, true);
-}

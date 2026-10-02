@@ -1,4 +1,4 @@
-// Pre-mutation evidence for ./clawforge incident's "preserve" phase.
+// Pre-mutation evidence for the `incident` command's "preserve" phase.
 
 import type { Transport } from "../transport/transport.ts";
 

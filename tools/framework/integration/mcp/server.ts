@@ -3,7 +3,7 @@
 // Not the bridge to the managed service's own channels — that belongs to the application.
 // This server offers *control* of the instance: bootstrap, status, backup, secrets.
 //
-// The surface is a mirror: what `./clawforge` can do from a terminal, a tool call can do.
+// The surface is a mirror: what the gate can do from a terminal, a tool call can do.
 // Three tiers reach the console and all three are mirrored — the application's own commands
 // (app.commands, dispatched in cli.ts); the dispatcher's (help, control-mcp); the gate's,
 // which run before a deployment is resolved (check, new-app / init). A command whose
@@ -41,14 +41,14 @@ const PROTOCOL_VERSION = "2025-06-18";
  *  every other tool's shrunk description points at instead of carrying its own `--help`
  *  text whole. */
 export const MCP_EXEMPTIONS: Record<string, string> = {
-  "mcp-serve": "it is a stdio JSON-RPC server; a client registers it directly (./clawforge mcp-setup does), rather than starting it through another one",
+  "mcp-serve": "it is a stdio JSON-RPC server; a client registers it directly (clawforge mcp-setup does), rather than starting it through another one",
   "control-mcp": "it is this server — a tool that starts the server it runs inside answers nothing",
   "--app": "it selects which deployment this server serves, which is settled when the client launches it (mcp-setup writes the flag into .mcp.json); switching mid-session would change what every other tool in the list refers to",
   "version": "answers a human filing a bug report; a tool would only spend the tools/list byte budget",
   "completion": "prints a shell script for a human's own shell profile; a tool call has no shell to register it in, and the byte budget is better spent on tools an agent actually calls",
 };
 
-/** The `help` tool: not a command, answered through renderHelp like `./clawforge help`. */
+/** The `help` tool: not a command, answered through renderHelp like the console's help. */
 const HELP_TOOL: Declared = {
   summary: "Full description, usage and argument list for one command, or the command list when none is given",
   arguments: [
@@ -359,7 +359,7 @@ async function handleToolsCall(
 
 export async function serveMcp(app: AppDefinition, gateCommands: GateCommand[] = [], gateHelp: string[] = []): Promise<void> {
   const tools = mcpCommands(app);
-  // Presented as one list: a client sees what `./clawforge` can do, not which layer
+  // Presented as one list: a client sees what the deployment can do, not which layer
   // dispatches what. Kept apart here only because they are invoked differently — a gate
   // command takes no Context, having to run before there is one.
   const gateTools = gateCommands.filter((command) => MCP_EXEMPTIONS[command.name] === undefined);

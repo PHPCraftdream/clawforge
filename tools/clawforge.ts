@@ -7,9 +7,9 @@
 // A deployment is a directory under apps/ holding .env, config/, secrets/, recipes/ and
 // an app.ts naming its service. Several can sit side by side:
 //
-//   ./clawforge status                    the default deployment
-//   OC_APP=staging ./clawforge status     another one
-//   ./clawforge --app staging status      same, as an argument
+//   clawforge status                    the default deployment
+//   OC_APP=staging clawforge status     another one
+//   clawforge --app staging status      same, as an argument
 //
 // With neither set and no "openclaw" deployment, a checkout with exactly one deployment
 // under apps/ uses it automatically.
@@ -22,7 +22,9 @@ import {
   type GateCommand,
 } from "./framework/integration/gate.ts";
 import { helpEntryLine } from "./framework/core/io/help-render.ts";
-import { reportError, info } from "./framework/core/io/log.ts";
+import { reportError, info, UserError } from "./framework/core/io/log.ts";
+import { command } from "./framework/core/io/invocation/advice.ts";
+import { SHIM_PROGRAM } from "./framework/core/io/invocation/render.ts";
 import { invocation, setInvocation, takeInvocationFromEnv } from "./framework/core/io/invocation/index.ts";
 import { useGateCommands } from "./framework/core/io/invocation/render.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
@@ -40,9 +42,9 @@ import { checkoutGateCommands } from "./framework/entry/checkout-gate.ts";
 resolveFrameworkFromSources();
 
 // A hand-over from the system-wide command or a launcher names itself; otherwise this is
-// the ./clawforge gate.
+// the checkout's committed gate script.
 const handedOver = takeInvocationFromEnv();
-setInvocation(handedOver ?? { program: "./clawforge", mode: "checkout", audience: "terminal" });
+setInvocation(handedOver ?? { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" });
 const argv = normalizeVersionAlias(process.argv.slice(2));
 
 // The gate's own commands are declared without side effects in entry/checkout-gate.ts —
@@ -56,7 +58,7 @@ gateCommands.push(makeCompletionGateCommand(gateCommands, true));
 // a deployment is resolved).
 useGateCommands(gateCommands.map((command) => command.name));
 
-// The command list in `./clawforge help`: the gate's own commands, plus the one line here that is
+// The command list in the gate's `help`: the gate's own commands, plus the one line here that is
 // not a command at all.
 const monorepoGateHelp = [
   ...gateHelpLines(gateCommands),
@@ -81,11 +83,13 @@ const decision = resolveCheckoutEntry({
 
 switch (decision.kind) {
   case "refuse": {
-    for (const line of decision.lines) reportError(line);
+    for (const refusal of decision.refusals) reportError(refusal);
     process.exit(1);
   }
   case "refuse-misplaced-app-flag": {
-    reportError("--app must come before the command: ./clawforge --app <name> <command> …");
+    // The advice renders with the program as typed — `clawforge`, not the checkout spelling,
+    // which a global (cmd/pwsh) invocation could not run.
+    reportError(new UserError("--app must come before the command", { advice: [command(["<command>"], { app: "<name>" })] }));
     process.exit(1);
   }
   case "refuse-unknown-command": {

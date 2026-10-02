@@ -21,13 +21,12 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { main } from "./cli.ts";
 import { runGateCommand, gateHelpLines, helpWithoutDeployment, type GateCommand } from "../integration/gate.ts";
-import { info, reportError, reportErrorVerbatim } from "../core/io/log.ts";
+import { info, reportError } from "../core/io/log.ts";
 import { INVOCATION_ENV, invocation, serializeInvocation, setInvocation, takeInvocationFromEnv } from "../core/io/invocation/index.ts";
 import { useGateCommands } from "../core/io/invocation/render.ts";
 import { useDeployment } from "../runtime/deployment.ts";
-import { initApp, localTypesLines, INIT_ARGUMENTS } from "../integration/deployment/init.ts";
+import { makeInitGateCommand } from "../integration/deployment/init.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
-import { parseDeclaredArgs } from "../core/command/index.ts";
 import { renderFullCommandHelp } from "../core/io/help-render.ts";
 import { makeVersionGateCommand } from "../integration/version.ts";
 import { makeCompletionGateCommand } from "../integration/completion.ts";
@@ -46,11 +45,7 @@ const rawArgv = process.argv.slice(2);
 const entry = resolveInstalledEntry({ cwd: process.cwd(), rawArgv, platform: process.platform, fs: nodeFs });
 switch (entry.kind) {
   case "refuse": {
-    for (const line of entry.lines) reportError(line);
-    process.exit(1);
-  }
-  case "refuse-verbatim": {
-    for (const line of entry.lines) reportErrorVerbatim(line);
+    for (const refusal of entry.refusals) reportError(refusal);
     process.exit(1);
   }
   case "checkout-types-note": {
@@ -72,28 +67,9 @@ resolveFrameworkFromSelf();
 // Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
 // consumer repo. `check` is absent: it needs this repository's own test suite, unshipped.
 const gateCommands: GateCommand[] = [
-  {
-    name: "init",
-    summary: "Initialise this directory as an OpenClaw deployment",
-    details:
-      "Writes app.ts, config/desired-state.json and .env (own data directory and project-specific port) " +
-      "directly into the current directory, plus config/, secrets/, recipes/, .gitignore " +
-      "entries for the deployment state and node_modules/, and a committed ./clawforge entrypoint " +
-      "that delegates to this package's CLI. Project MCP settings for Claude Code and Codex " +
-      "are created automatically, without changing global client settings.\n" +
-      "The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
-      "Refuses if app.ts already exists — run this once, then ./clawforge bootstrap. " +
-      "`init --local` in an already initialised directory only prints the editor-types npm line and writes nothing.",
-    arguments: INIT_ARGUMENTS,
-    run: async (args) => {
-      if (localTypesOnly && ancestor !== appRoot) {
-        for (const line of await localTypesLines()) info(line);
-        return 0;
-      }
-      await initApp(appRoot, { local: parseDeclaredArgs(INIT_ARGUMENTS, args).local === true });
-      return 0;
-    },
-  },
+  // The declaration (and its run) live in integration/deployment/init.ts, like version's and
+  // completion's; the placement decision this entry made rides along.
+  makeInitGateCommand(appRoot, { localTypesOnly, ancestor }),
   makeVersionGateCommand(appRoot),
 ];
 // Pushed after the literal above so the closure sees the finished array, itself included —
@@ -121,7 +97,7 @@ try {
   });
   if (missing.kind === "subfolder-report") {
     reportError(missing.headline);
-    for (const line of missing.verbatim) reportErrorVerbatim(line);
+    reportError(missing.refusal);
     process.exit(1);
   }
   if (missing.kind === "help") {
@@ -137,10 +113,9 @@ try {
     });
     if (helpExit !== undefined) process.exit(helpExit);
   }
-  const { headline, plain, verbatim } = missing.kind === "help" ? missing.fallback : missing;
+  const { headline, refusals } = missing.kind === "help" ? missing.fallback : missing;
   reportError(headline);
-  for (const line of plain) reportError(line);
-  for (const line of verbatim) reportErrorVerbatim(line);
+  for (const refusal of refusals) reportError(refusal);
   process.exit(1);
 }
 

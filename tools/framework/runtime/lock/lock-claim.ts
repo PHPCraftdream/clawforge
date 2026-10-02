@@ -238,7 +238,7 @@ function humanShortAge(ms: number): string {
 function breakLockAdvice(breakLockSupported: boolean): string {
   return breakLockSupported
     ? "take it over with --break-lock"
-    : "this command does not accept --break-lock — run one that does (for example ./clawforge up --break-lock) to take it over";
+    : `this command does not accept --break-lock — run one that does (for example ${commandLine(["up", "--break-lock"])}) to take it over`;
 }
 
 /** The message a blocked run gets. Exported so the checks can assert what it tells the
@@ -267,7 +267,7 @@ export function refusalMessage(holder: LockHolder, now = Date.now(), breakLockSu
     // recently-refreshed holder is never told to break its own lock.
     stale || deadHere
       ? `If you are sure nothing is running, ${breakLockAdvice(breakLockSupported)}.`
-      : `Wait for it to finish, or run ./clawforge operations ${holder.operationId} to see what it is doing.`,
+      : `Wait for it to finish, or run ${commandLine(["operations", holder.operationId])} to see what it is doing.`,
   );
   return lines.join("\n");
 }
@@ -302,7 +302,7 @@ export async function acquireOrTakeOver(ctx: Context, options: LockOptions): Pro
     die(
       `could not take the instance lock at ${lockPath(ctx)}: ${claim.detail === "" ? "mkdir failed" : claim.detail}\n` +
         `Nothing holds it — the directory is not there. ${lockHome(ctx)} has to exist and be writable ` +
-        "by whoever runs this tooling; ./clawforge bootstrap prepares it.",
+        `by whoever runs this tooling; ${commandLine(["bootstrap"])} prepares it.`,
     );
   }
 
@@ -393,3 +393,4 @@ export async function writeHolderOrRollback(ctx: Context, generation: string, ho
     throw error;
   }
 }
+import { commandLine } from "../../core/io/invocation/render.ts";

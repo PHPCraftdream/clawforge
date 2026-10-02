@@ -27,7 +27,7 @@
 // the developer's apps/ — those are rendered in-process from the importable declarations
 // through the same renderers the entries call.
 
-import { reportError, reportErrorVerbatim } from "#framework/core/io/log.ts";
+import { reportError } from "#framework/core/io/log.ts";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -196,18 +196,19 @@ async function refusals(): Promise<string> {
   parts.push(await underEveryInvocation("<command> --help without a deployment: status --help", helpWithoutApp));
 
   const missingNoOthers = () => {
-    for (const line of missingDeploymentReport(true, "demo", "<root>/apps/demo", [], false)) reportError(line);
+    reportError(missingDeploymentReport(true, "demo", "<root>/apps/demo", [], false));
   };
   parts.push(await underEveryInvocation("missing deployment, no others available: --app demo", missingNoOthers));
 
   const missingWithOthers = () => {
-    for (const line of missingDeploymentReport(false, "openclaw", "<root>/apps/openclaw", ["demo", "staging"], false)) reportError(line);
+    reportError(missingDeploymentReport(false, "openclaw", "<root>/apps/openclaw", ["demo", "staging"], false));
   };
   parts.push(await underEveryInvocation("missing deployment, others available: openclaw", missingWithOthers));
 
   const subfolder = () => {
     reportError(`no app.ts in <root>`);
-    for (const line of checkoutSubfolderReport("check", "<checkout>") ?? []) reportErrorVerbatim(line);
+    const report = checkoutSubfolderReport("check", "<checkout>");
+    if (report !== undefined) reportError(report);
   };
   parts.push(await underEveryInvocation("checkout gate command from a checkout subfolder: check", subfolder));
 

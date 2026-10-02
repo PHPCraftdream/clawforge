@@ -8,6 +8,7 @@
 // request). Failure is read from the complete output, not a thrown message truncated
 // before `docker compose`'s own progress lines are past.
 
+import { commandLine } from "../core/io/invocation/render.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { log } from "../core/io/log.ts";
 import { shellQuote } from "../core/io/shell.ts";
@@ -83,8 +84,8 @@ export async function openclawCli(ctx: Context, args: string[]): Promise<ExecRes
       "the \"cli\" client needs a scope upgrade, but the Gateway did not name the request id " +
         "in its refusal, and approving whatever is newest could approve another device's " +
         "request. Approve this one by hand:\n" +
-        "  ./clawforge cli devices list --json          # the pending entry whose clientId is \"cli\"\n" +
-        "  ./clawforge cli devices approve <requestId>\n" +
+        `  ${commandLine(["cli", "devices", "list", "--json"])}          # the pending entry whose clientId is "cli"\n` +
+        `  ${commandLine(["cli", "devices", "approve", "<requestId>"])}` + "\n" +
         `refusal: ${(first.stderr || first.stdout).trim()}`,
     );
   }

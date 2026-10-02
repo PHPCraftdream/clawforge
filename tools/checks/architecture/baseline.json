@@ -68,32 +68,7 @@
       "tools/framework/commands/sets/set-receipts.ts": 1,
       "tools/framework/commands/sets/set-try-env.ts": 1,
       "tools/framework/commands/sets/set-try.ts": 2,
-      "tools/framework/commands/sets/set.ts": 5,
-      "tools/framework/core/app.ts": 1,
-      "tools/framework/core/env.ts": 1,
-      "tools/framework/entry/bin.ts": 2,
-      "tools/framework/entry/cli.ts": 3,
-      "tools/framework/entry/delegate.ts": 1,
-      "tools/framework/entry/root.ts": 2,
-      "tools/framework/integration/completion.ts": 5,
-      "tools/framework/integration/deployment/init.ts": 5,
-      "tools/framework/integration/deployment/remove.ts": 3,
-      "tools/framework/integration/deployment/scaffold.ts": 3,
-      "tools/framework/integration/gate.ts": 15,
-      "tools/framework/integration/list.ts": 4,
-      "tools/framework/integration/mcp/server.ts": 4,
-      "tools/framework/runtime/datadir.ts": 1,
-      "tools/framework/runtime/docker/image-ref.ts": 1,
-      "tools/framework/runtime/docker/incident-snapshot.ts": 1,
-      "tools/framework/runtime/docker/runtime-docker.ts": 1,
-      "tools/framework/runtime/lock/lock-claim.ts": 3,
-      "tools/framework/runtime/runtime.ts": 1,
-      "tools/framework/security/privacy/deploy-boundary.ts": 1,
-      "tools/framework/service/openclaw-cli.ts": 2,
-      "tools/framework/service/operations.ts": 3,
-      "tools/framework/entry/resolve.ts": 3,
-      "tools/framework/entry/checkout-gate.ts": 7,
-      "tools/clawforge.ts": 7
+      "tools/framework/commands/sets/set.ts": 5
     },
     "exempt": {
       "tools/framework/core/io/invocation/render.ts": {
@@ -127,12 +102,12 @@
         }
       }
     },
-    "total": 365
+    "total": 285
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
     "infoRaw": 7,
-    "reportErrorVerbatim": 3,
+    "reportErrorVerbatim": 0,
     "localizeHints": 3
   },
   "rawArgvPredicates": {
@@ -323,10 +298,8 @@
       "tools/framework/commands/interface/groups/openclawCommands.management.ts": 36,
       "tools/framework/commands/interface/groups/openclawCommands.orchestration.ts": 17,
       "tools/framework/commands/interface/groups/openclawCommands.operate.ts": 13,
-      "tools/framework/commands/interface/groups/openclawCommands.sets.ts": 8,
-      "tools/framework/entry/checkout-gate.ts": 5,
-      "tools/framework/integration/version.ts": 2
+      "tools/framework/commands/interface/groups/openclawCommands.sets.ts": 8
     },
-    "total": 119
+    "total": 112
   }
 }

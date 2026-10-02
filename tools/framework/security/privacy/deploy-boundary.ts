@@ -1,4 +1,4 @@
-// The privacy/destructive-write boundary for `./clawforge deploy`. Lives in security/privacy/
+// The privacy/destructive-write boundary for the `deploy` command. Lives in security/privacy/
 // beside the other privacy-boundary modules (private-config.ts, recipe-portable-content.ts,
 // private-paths-ledger.ts) it is conceptually closest to.
 

@@ -17,7 +17,7 @@ import { checkoutGateCommands, CHECKOUT_GATE_COMMANDS } from "#framework/entry/c
 import { reportUnknownArgument } from "#framework/entry/cli.ts";
 import { parseDeclaredArgs, UnknownArgumentError } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
 function sample(overrides: Partial<GateCommand> = {}): GateCommand {
   return {
@@ -330,10 +330,10 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   const checkout = "/some/checkout";
   for (const command of CHECKOUT_GATE_COMMANDS) {
     const report = checkoutSubfolderReport(command, checkout);
-    check(`${command} from a checkout subfolder is answered as a checkout command, not unknown`, report !== undefined && report.join("\n").includes("checkout root") && report.join("\n").includes(checkout), true);
+    check(`${command} from a checkout subfolder is answered as a checkout command, not unknown`, report !== undefined && report.message.includes("checkout root") && JSON.stringify(report.advice).includes(checkout), true);
   }
-  check("an unknown word gets no checkout-subfolder report", checkoutSubfolderReport("stauts", checkout), undefined);
-  check("neither does a deployment command", checkoutSubfolderReport("status", checkout), undefined);
+  checkTrue("an unknown word gets no checkout-subfolder report", checkoutSubfolderReport("stauts", checkout) === undefined);
+  checkTrue("neither does a deployment command", checkoutSubfolderReport("status", checkout) === undefined);
 
   const deployment = Object.keys(openclawCommands)[0];
   check("a deployment command's --help is a help request without a deployment", isDeploymentHelpRequest([deployment, "--help"], Object.keys(openclawCommands)), true);
@@ -348,7 +348,7 @@ check("an unrelated first token is untouched", normalizeVersionAlias(["status"])
   check("but -- beyond it ends the scan, like requestsHelp", isDeploymentHelpRequest([deployment, "--", "--help"], Object.keys(openclawCommands)), false);
 
   const empty = missingDeploymentReport(true, "emptyx", "/some/checkout/apps/emptyx", [], true);
-  check("an existing directory without app.ts is offered to new-app, not told to gain an app.ts by hand", empty.join(" ").includes("new-app emptyx takes it over") && !empty.join(" ").includes("add one there"), true);
+  check("an existing directory without app.ts is offered to new-app, not told to gain an app.ts by hand", empty.message.includes("exists but holds no app.ts") && JSON.stringify(empty.advice).includes("new-app") && JSON.stringify(empty.advice).includes("emptyx"), true);
 }
 
 // --- the declared checkout commands and the derived name list ---------------------------------

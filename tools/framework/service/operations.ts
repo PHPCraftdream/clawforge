@@ -1,6 +1,6 @@
 // What a mutating run did, written down while it happens.
 //
-// `./clawforge apply` reports its steps, and the report is gone: the terminal scrolls, an
+// The `apply` command reports its steps, and the report is gone: the terminal scrolls, an
 // MCP result is read once, and a run that died halfway leaves nothing behind. So the
 // record lives on the target beside the instance, and each step is written as it finishes
 // — a killed run still leaves everything up to that step.
@@ -38,7 +38,7 @@ export interface OperationRecord {
   readonly finishedAt?: string;
   readonly outcome?: "succeeded" | "failed" | "abandoned";
   /** Where the configuration was copied before the first mutating step, when one was
-   *  taken — what `./clawforge rollback` restores. */
+   *  taken — what the `rollback` command restores. */
   readonly configSnapshot?: string;
   readonly steps: JournalStep[];
   /** Free-form closing note: why it failed, or what it left behind. */
@@ -198,7 +198,7 @@ export async function readOperation(ctx: Context, id: string): Promise<Operation
   return undefined;
 }
 
-/** The newest operation that took a configuration snapshot — what `./clawforge rollback` uses when
+/** The newest operation that took a configuration snapshot — what the `rollback` command uses when
  *  it is not told which one to undo. */
 export async function latestRollbackable(ctx: Context): Promise<OperationRecord | undefined> {
   for (const id of await listOperations(ctx)) {

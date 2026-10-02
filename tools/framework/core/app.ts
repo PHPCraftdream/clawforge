@@ -60,7 +60,7 @@ export interface AppCommand {
   /** Grouped `--help` section. Optional on the type for bare test fixtures; the real command
    *  set cannot skip it — foundation/cli/help-groups.check.ts fails on a missing/unknown group. */
   readonly group?: CommandGroup;
-  /** Longer explanation for `./clawforge help <command>` and the MCP tool description.
+  /** Longer explanation for `help <command>` and the MCP tool description.
    *  Plain paragraphs, wrapped by nothing here. Optional when summary says it all. */
   readonly details?: string;
   readonly run: (ctx: Context, args: string[]) => Promise<void>;

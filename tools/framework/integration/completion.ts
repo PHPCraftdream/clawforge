@@ -5,11 +5,11 @@
 //
 // Every shell calls `<invoked name> list --json --no-status` lazily, from inside the completer,
 // only once a shell asks for `--app`'s value — never baked into the generated text, and via
-// whichever of `clawforge`/`./clawforge` was typed. Output never carries a machine path.
+// whichever of the system-wide command or the checkout shim was typed. Output never carries a machine path.
 
 import { parseDeclaredArgs, NO_ACTION } from "../core/command/index.ts";
 import { reportError } from "../core/io/log.ts";
-import { cli } from "../core/io/invocation/index.ts";
+import { commandLine } from "../core/io/invocation/render.ts";
 import { emitRaw } from "../core/io/output.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import type { CommandArgument } from "../core/app.ts";
@@ -282,7 +282,7 @@ ${choiceArms}\n  esac\n`;
 function renderBash(commands: readonly CommandCompletionSpec[], appFlag: boolean): string {
   return (
     "# clawforge bash completion — generated from the live command declarations.\n" +
-    `# Install: source <(${cli("completion bash")})\n` +
+    `# Install: source <(${commandLine(["completion", "bash"])})\n` +
     `${bashFunctionBody(commands, appFlag)}` +
     "complete -F _clawforge_complete clawforge\n" +
     "complete -F _clawforge_complete ./clawforge\n"
@@ -294,8 +294,8 @@ function renderZsh(commands: readonly CommandCompletionSpec[], appFlag: boolean)
     "#compdef clawforge ./clawforge\n" +
     "# clawforge zsh completion — generated from the live command declarations, via bash's\n" +
     "# completion protocol (bashcompinit), so this cannot drift from the bash script's own\n" +
-    `# grammar. Install: ${cli("completion zsh")} > "\${fpath[1]}/_clawforge" (new shell), or\n` +
-    `# source <(${cli("completion zsh")}) in the current one.\n` +
+    `# grammar. Install: ${commandLine(["completion", "zsh"])} > "\${fpath[1]}/_clawforge" (new shell), or\n` +
+    `# source <(${commandLine(["completion", "zsh"])}) in the current one.\n` +
     "autoload -Uz bashcompinit\n" +
     "bashcompinit\n" +
     `${bashFunctionBody(commands, appFlag)}` +
@@ -337,7 +337,7 @@ function renderPwsh(commands: readonly CommandCompletionSpec[], appFlag: boolean
   const appSkip = appFlag ? "    if ($scan[$i] -eq '--app') { $skip = $true; continue }\n" : "";
 
   return `# clawforge PowerShell completion — generated from the live command declarations.
-# Install: ${cli("completion pwsh")} | Out-String | Invoke-Expression
+# Install: ${commandLine(["completion", "pwsh"])} | Out-String | Invoke-Expression
 $clawforgeCommands = @(${names})
 $clawforgeFlags = @{
 ${flagTable}
@@ -443,9 +443,9 @@ export function makeCompletionGateCommand(siblingGateCommands: readonly GateComm
     details:
       "Generated from the live command declarations — names, flags, and a multi-action " +
       "command's own flags under the right action — so it cannot drift from --help.\n" +
-      "Install: source <(./clawforge completion bash); " +
-      './clawforge completion zsh > "${fpath[1]}/_clawforge"; or ' +
-      "./clawforge completion pwsh | Out-String | Invoke-Expression.\n" +
+      "Install: source <({clawforge completion bash}); " +
+      '{clawforge completion zsh} > "${fpath[1]}/_clawforge"; or ' +
+      "{clawforge completion pwsh} | Out-String | Invoke-Expression.\n" +
       (appFlag ? "--app's own value completion calls `<the name you typed> list --json --no-status` lazily, only once a shell actually asks for it — never baked into the script.\n" : "") +
       "No deployment is resolved, no .env is read, no lock is touched.",
     arguments: COMPLETION_ARGUMENTS,
@@ -453,7 +453,7 @@ export function makeCompletionGateCommand(siblingGateCommands: readonly GateComm
       const parsed = parseDeclaredArgs(COMPLETION_ARGUMENTS, args);
       const shell = parsed.shell as string | undefined;
       if (shell === undefined || !COMPLETION_SHELLS.includes(shell as CompletionShell)) {
-        reportError(`usage: ./clawforge completion <${COMPLETION_SHELLS.join("|")}>`);
+        reportError(`usage: ${commandLine(["completion", `<${COMPLETION_SHELLS.join("|")}>`])}`);
         return 1;
       }
       const model = buildCompletionModel(siblingGateCommands);

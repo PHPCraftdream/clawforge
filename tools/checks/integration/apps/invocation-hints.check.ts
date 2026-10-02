@@ -8,9 +8,7 @@ import { renderUsage, renderFullCommandHelp } from "#framework/core/io/help-rend
 import {
   INVOKED_AS_ENV,
   INVOCATION_ENV,
-  cli,
   invocation,
-  invocationPrefix,
   localizeHints,
   parseInvocation,
   parseLegacyInvokedAs,
@@ -20,6 +18,7 @@ import {
   type Invocation,
 } from "#framework/core/io/invocation/index.ts";
 import { command, manual, shellLine } from "#framework/core/io/invocation/advice.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { renderAdvice, shimInvocation, useGateCommands } from "#framework/core/io/invocation/render.ts";
 import { die, formatError, registerSecret, UserError, reportError, info, infoRaw } from "#framework/core/io/log.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
@@ -72,15 +71,15 @@ try {
   // --- the helper -----------------------------------------------------------------------------
 
   check("nothing set: the monorepo prefix", invocation(), MONO);
-  check("cli() renders the prefix and the rest", cli("bootstrap --check"), "./clawforge bootstrap --check");
+  check("commandLine renders the prefix and the rest", commandLine(["bootstrap", "--check"]), "./clawforge bootstrap --check");
   setInvocation(GLOBAL);
-  check("cli() follows the prefix", cli("bootstrap --check"), "clawforge bootstrap --check");
+  check("commandLine follows the prefix", commandLine(["bootstrap", "--check"]), "clawforge bootstrap --check");
   check("a bare hint is rewritten", localizeHints("run ./clawforge up, then `./clawforge logs`."), "run clawforge up, then `clawforge logs`.");
   check("a hint naming its own --app keeps it", localizeHints("run ./clawforge --app x bootstrap"), "run clawforge --app x bootstrap");
   check("a quoted argv element is left alone", localizeHints("&& './clawforge' 'backup'"), "&& './clawforge' 'backup'");
   check("a path and a regex source are left alone", localizeHints("apps/x/./clawforge y \\./clawforge z"), "apps/x/./clawforge y \\./clawforge z");
   setInvocation(NAMED);
-  check("the app part is in the prefix", invocationPrefix(), "./clawforge --app staging");
+  check("the app part is in the prefix", commandLine([]), "./clawforge --app staging");
   check("a non-default deployment is named", localizeHints("run ./clawforge up"), "run ./clawforge --app staging up");
   check("and not twice", localizeHints("run ./clawforge --app x up"), "run ./clawforge --app x up");
   check("emitRaw never rewrites data", await capture(() => emitRaw("./clawforge up\n")), "./clawforge up\n");
@@ -96,7 +95,7 @@ try {
   ];
   for (const value of [GLOBAL, { ...MONO, app: { name: "x", selectedBy: "flag" } }] as const) {
     setInvocation(value);
-    const prefix = invocationPrefix();
+    const prefix = commandLine([]);
     for (const line of [cron, ...remote]) {
       check(`infoRaw keeps the line verbatim under "${prefix}"`, await capture(() => infoRaw(line)).then((text) => text.includes(line)), true);
     }
@@ -132,7 +131,7 @@ try {
 
   for (const value of [GLOBAL, { ...MONO, app: { name: "x", selectedBy: "flag" } }] as const) {
     setInvocation(value);
-    const at = `under "${invocationPrefix()}"`;
+    const at = `under "${commandLine([])}"`;
     for (const { label, run, job, jobArgs, minutes } of jobs) {
       const crontab = cronLine(minutes, await posixTargetInvocation(sshCtx, jobArgs), job, await schedulerIdentity(sshCtx));
       check(`${label} prints the crontab line it would install ${at}`, (await capture(() => run(sshCtx, []))).includes(crontab), true);
@@ -160,7 +159,7 @@ try {
   }
 
   setInvocation(MONO);
-  check("the entry default is the monorepo prefix, without an app part", invocationPrefix(), HINT);
+  check("the entry default is the monorepo prefix, without an app part", commandLine([]), HINT);
   check("the default names no deployment", invocation().app, undefined);
 
   // --- the value between processes: versioned JSON in CLAWFORGE_INVOCATION -------------------

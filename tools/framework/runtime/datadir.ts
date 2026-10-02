@@ -446,5 +446,6 @@ export async function ensureSecretsFile(ctx: Context): Promise<void> {
     "600",
   );
   await runMaybePrivileged(ctx, path, "chown", [OWNER, path], { force: await needsOwnerEscalation(ctx, OWNER) });
-  info("put provider keys there, then run ./clawforge configure-provider");
+  info(`put provider keys there, then run ${commandLine(["configure-provider"])}`);
 }
+import { commandLine } from "../core/io/invocation/render.ts";

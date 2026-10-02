@@ -45,11 +45,6 @@ export function invocation(): Invocation {
   return current ??= { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" };
 }
 
-/** The command prefix hints render with; the `--app` rule and quoting live in render.ts. */
-export function invocationPrefix(): string {
-  return commandLine([]);
-}
-
 export function serializeInvocation(value: Invocation): string {
   return JSON.stringify({ version: INVOCATION_VERSION, ...value });
 }
@@ -123,12 +118,6 @@ export function takeInvocationFromEnv(): Invocation | undefined {
   return parseLegacyInvokedAs(legacy ?? "");
 }
 
-/** A command hint: `cli("bootstrap --check")` is the invocation prefix plus the rest. */
-export function cli(rest: string): string {
-  const prefix = invocationPrefix();
-  return rest === "" ? prefix : `${prefix} ${rest}`;
-}
-
 // A bare checkout-spelling word: not part of a path, an escaped regex, or a quoted argv
 // element — a quoted shim spelling is a real command line, not a hint.
 const HINT = /(?<![\w./\\'-])\.\/clawforge(?![\w/'"-])/g;
@@ -147,7 +136,7 @@ const HINT = /(?<![\w./\\'-])\.\/clawforge(?![\w/'"-])/g;
  *  | app, selectedBy cwd                        | never written this way   | —                         |
  */
 export function localizeHints(text: string): string {
-  const full = invocationPrefix();
+  const full = commandLine([]);
   if (full === SHIM_PROGRAM || !text.includes(SHIM_PROGRAM)) return text;
   return text.replace(HINT, (match, offset: number, whole: string) =>
     whole.startsWith(" --app ", offset + match.length) ? invocation().program : full,

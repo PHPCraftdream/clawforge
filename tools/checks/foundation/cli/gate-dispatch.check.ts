@@ -32,6 +32,8 @@ import {
   missingDeploymentReport,
 } from "#framework/integration/gate.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
+import { command, manual } from "#framework/core/io/invocation/advice.ts";
+import { UserError } from "#framework/core/io/log.ts";
 import { selectChecks } from "#checks/kit/discover.ts";
 import { frameworkVersion } from "#framework/commands/management/lock.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -257,32 +259,41 @@ check("never when there are none", soleDeploymentFallback(false, []), undefined)
 // for; a deployment named explicitly (or none existing at all) keeps naming it — there, "not
 // found" is the accurate story.
 
+// The refusal is a UserError now: the message, plus the remedy as advice values (rendered
+// as "→" lines by reportError) instead of error-prefixed lines.
+function refusalShape(error: UserError): unknown {
+  return { message: error.message, advice: error.advice };
+}
+
 check(
   "several deployments with none selected names the ambiguity, not a default",
-  missingDeploymentReport(false, "openclaw", "/apps/openclaw", ["a", "b"]),
-  ['several deployments (a, b) — pick one with --app <name> or OC_APP'],
+  refusalShape(missingDeploymentReport(false, "openclaw", "/apps/openclaw", ["a", "b"])),
+  { message: "several deployments (a, b) — pick one with --app <name> or OC_APP", advice: [] },
 );
 check(
   "an explicitly named deployment that is missing keeps the old wording, even among several",
-  missingDeploymentReport(true, "staging", "/apps/staging", ["a", "b"]),
-  [
-    'deployment "staging" not found at /apps/staging',
-    'available: a, b — pick one with --app <name> (or OC_APP), or create one with ./clawforge new-app <name>',
-  ],
+  refusalShape(missingDeploymentReport(true, "staging", "/apps/staging", ["a", "b"])),
+  {
+    message: 'deployment "staging" not found at /apps/staging',
+    advice: [
+      manual("available: a, b — pick one with --app <name> (or OC_APP), or create one with:"),
+      command(["new-app", "<name>"]),
+    ],
+  },
 );
 check(
   "no deployments at all keeps the old wording regardless of --app",
-  missingDeploymentReport(false, "openclaw", "/apps/openclaw", []),
-  ['deployment "openclaw" not found at /apps/openclaw', "create one with: ./clawforge new-app <name>"],
+  refusalShape(missingDeploymentReport(false, "openclaw", "/apps/openclaw", [])),
+  { message: 'deployment "openclaw" not found at /apps/openclaw', advice: [command(["new-app", "<name>"])] },
 );
 
 check(
   "a directory without app.ts is not reported as missing; new-app is advised only for an empty one",
-  missingDeploymentReport(true, "x", "/apps/x", ["a"], true),
-  [
-    "/apps/x exists but holds no app.ts — if the directory is empty, ./clawforge new-app x takes it over",
-    "otherwise remove it or pick another name (available: a)",
-  ],
+  refusalShape(missingDeploymentReport(true, "x", "/apps/x", ["a"], true)),
+  {
+    message: "/apps/x exists but holds no app.ts — if the directory is empty:",
+    advice: [command(["new-app", "x"]), manual("otherwise remove it or pick another name (available: a)")],
+  },
 );
 
 finish("gate-dispatch");

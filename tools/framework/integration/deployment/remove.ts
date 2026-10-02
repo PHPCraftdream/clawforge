@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 import { log, info, warn, die } from "../../core/io/log.ts";
 import { safeName } from "../../core/values/names.ts";
 import { humanSize } from "../../core/io/size.ts";
+import { commandLine } from "../../core/io/invocation/render.ts";
 import { listDeployments, type ListDeploymentsOptions } from "../list.ts";
 import { appsDir } from "./scaffold.ts";
 
@@ -62,7 +63,7 @@ async function resolveTargetDirectory(name: string, appsRoot: string): Promise<s
   return directory;
 }
 
-/** The same state `./clawforge list` reports, read through listDeployments() rather than a
+/** The same state the gate's `list` command reports, read through listDeployments() rather than a
  *  second detector — a running/stopped verdict here means exactly what it means there. */
 async function currentState(
   name: string,
@@ -82,7 +83,7 @@ async function hasOwnGitHistory(directory: string): Promise<boolean> {
   }
 }
 
-/** `./clawforge remove-app <name>` — deletes apps/<name>/. Default is a dry run: lists what
+/** The gate's `remove-app <name>` — deletes apps/<name>/. Default is a dry run: lists what
  *  would go and exits 0. A real run needs --yes, and refuses while the deployment still has
  *  a bootstrapped instance (running or stopped-but-bootstrapped) — destroy that first. */
 export async function removeApp(name: string, args: string[], options: RemoveAppOptions = {}): Promise<number> {
@@ -95,7 +96,7 @@ export async function removeApp(name: string, args: string[], options: RemoveApp
   const state = await currentState(name, appsRoot, options.buildContext, options.listDeployments ?? listDeployments);
   if (state === "running" || state === "stopped") {
     die(
-      `${name} still has a bootstrapped instance (${state}) — run ./clawforge --app ${name} destroy first ` +
+      `${name} still has a bootstrapped instance (${state}) — run ${commandLine(["destroy"], { app: name })} first ` +
         "(and --data if the data should go too)",
     );
   }

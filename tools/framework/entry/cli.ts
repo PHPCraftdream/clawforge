@@ -10,13 +10,14 @@ import { executeCommand } from "../core/command/execute.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
 import { knownCommandNames, reportUnknownCommand, renderHelp, controlMcpHelp, type GateCommand } from "../integration/gate.ts";
 import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, helpEntryLine, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
+import { commandLine } from "../core/io/invocation/render.ts";
 import type { AppDefinition } from "../core/app.ts";
 
 // Re-exported for tools/checks/foundation/cli/help-groups.check.ts, which asserts the console
 // listing against the real grouping and wording rather than a copy that could drift from it.
 export { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol };
 
-/** Lines shown between the command list and the closing "Run ./clawforge help ..." hint —
+/** Lines shown between the command list and the closing "Run the gate's help ..." hint —
  *  gate-specific (monorepo: --app/new-app; installed: init), not something an AppDefinition
  *  could know. tools/clawforge.ts and bin.ts each pass their own; this default is tools/clawforge.ts's. */
 const DEFAULT_GATE_HELP = [
@@ -65,7 +66,7 @@ export async function runApp(
       controlMcpHelp(app.name);
       return 0;
     }
-    // Gate commands travel with the application's — the surface mirrors what `./clawforge`
+    // Gate commands travel with the application's — the surface mirrors what the gate
     // can do. gateHelp rides along too, for the MCP `help` tool's no-argument form.
     await serveMcp(app, gateCommands, gateHelp);
     return 0;
@@ -99,7 +100,7 @@ export async function runApp(
  *  own --help. Mirrors reportUnknownCommand (integration/gate.ts) for the sibling case. */
 export function reportUnknownArgument(commandName: string, error: UnknownArgumentError): void {
   reportError(error);
-  info(`run ./clawforge ${commandName} --help for its full argument list`);
+  info(`run ${commandLine([commandName, "--help"])} for its full argument list`);
 }
 
 /** Wraps runApp with the error handling every entry point needs, so an application's own

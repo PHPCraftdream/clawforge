@@ -14,6 +14,8 @@
 import { mkdir, writeFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, die } from "../../core/io/log.ts";
+import { command } from "../../core/io/invocation/advice.ts";
+import { commandLine, renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
 import { monorepoRoot, parseEnv } from "../../core/env.ts";
 import { safeName } from "../../core/values/names.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
@@ -28,7 +30,7 @@ function declarationFor(name: string): string {
 // Says which service this deployment manages and which framework commands it exposes.
 // Its configuration lives next to this file: .env, config/, secrets/, recipes/.
 //
-// Run it with:  ./clawforge --app ${name} status
+// Run it with:  ${renderAdvice(command(["status"], { app: name }), shimInvocation())}
 
 import { defineApp } from "../../tools/framework/core/app.ts";
 import { mountPoints } from "../../tools/framework/runtime/mounts.ts";
@@ -75,7 +77,7 @@ async function writeGitignore(directory: string): Promise<void> {
 export function gitInitAdvice(name: string): string {
   return (
     `apps/ is entirely in this repository's own .gitignore, so apps/${name} has no git history ` +
-    `of its own — make it one if you want "./clawforge lock" committed: cd apps/${name} && git init ` +
+    `of its own — make it one if you want "${commandLine(["lock"])}" committed: cd apps/${name} && git init ` +
     "(the .gitignore just written here already keeps .env and secrets/ out of it)"
   );
 }
@@ -110,7 +112,7 @@ export async function createApp(name: string): Promise<void> {
 
   log(`created ${directory}`);
   info("next:");
-  for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", `./clawforge --app ${name} bootstrap`)) info(line);
+  for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", commandLine(["bootstrap"], { app: name }))) info(line);
   info(
     `if ${name} is the only deployment under apps/, later commands pick it automatically; ` +
       `alongside others, select it with --app ${name} or export OC_APP=${name}`,

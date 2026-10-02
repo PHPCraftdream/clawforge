@@ -13,9 +13,14 @@ import { mkdir, writeFile, access, readFile, chmod, readdir } from "node:fs/prom
 import { resolve, basename, dirname, relative } from "node:path";
 import { frameworkPackage, frameworkRoot } from "../../core/env.ts";
 import { INVOCATION_VERSION } from "../../core/io/invocation/index.ts";
+import { renderAdvice, shimInvocation } from "../../core/io/invocation/render.ts";
+import { command } from "../../core/io/invocation/advice.ts";
+import { commandLine, SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
 import type { CommandArgument } from "../../core/app.ts";
+import type { GateCommand } from "../gate.ts";
 import { log, info, die } from "../../core/io/log.ts";
 import { safeName } from "../../core/values/names.ts";
+import { parseDeclaredArgs } from "../../core/command/index.ts";
 import { parseEnv } from "../../core/env.ts";
 import { setupProjectMcp } from "../mcp/project.ts";
 import { createPrivateFile, wslBoundaryNote } from "../../security/privacy/private-file.ts";
@@ -27,7 +32,7 @@ function declarationFor(name: string): string {
 // Says which service this deployment manages and which framework commands it exposes.
 // Its configuration lives next to this file: .env, config/, secrets/, recipes/.
 //
-// Run it with: ./clawforge status
+// Run it with: ${renderAdvice(command(["status"]), shimInvocation())}
 
 import { defineApp } from "@clawforge/framework/app";
 import { mountPoints } from "@clawforge/framework/mounts";
@@ -53,9 +58,9 @@ const DESIRED_STATE = `[
 ]
 `;
 
-// The committed ./clawforge — invokes the installed
+// The committed clawforge shim — invokes the installed
 // package directly so Git Bash under WSL works even when only `node.exe` is on PATH.
-// Bash-only, same as this monorepo's own ./clawforge; Windows users can use npm's
+// Bash-only, same as this monorepo's own; Windows users can use npm's
 // generated node_modules/.bin/clawforge.cmd or .ps1 instead. Without a local install it
 // hands over to a system-wide `clawforge`.
 const SHIM = `#!/usr/bin/env bash
@@ -252,6 +257,40 @@ export const INIT_ARGUMENTS: CommandArgument[] = [
   { name: "local", description: "Print the npm command for editor types (also in an already initialised directory)", kind: "flag" },
 ];
 
+/** The installed entry's own gate command, declared without side effects — the same shape
+ *  makeVersionGateCommand and makeCompletionGateCommand offer, so the help surfaces and the
+ *  checks read the declaration straight from here. `options.localTypesOnly`/`options.ancestor`
+ *  carry the placement decision the entry already made (see resolveInstalledEntry). */
+export function makeInitGateCommand(
+  appRoot: string,
+  options: { readonly localTypesOnly?: boolean; readonly ancestor?: string } = {},
+): GateCommand {
+  return {
+    name: "init",
+    summary: "Initialise this directory as an OpenClaw deployment",
+    details:
+      "Writes app.ts, config/desired-state.json and .env (own data directory and project-specific port) " +
+      "directly into the current directory, plus config/, secrets/, recipes/, .gitignore " +
+      "entries for the deployment state and node_modules/, and a committed clawforge entrypoint " +
+      "that delegates to this package's CLI. Project MCP settings for Claude Code and Codex " +
+      "are created automatically, without changing global client settings.\n" +
+      "The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
+      "Refuses if app.ts already exists — run this once, then {clawforge bootstrap}. " +
+      "`init {--local}` in an already initialised directory only prints the editor-types npm line and writes nothing.",
+    arguments: INIT_ARGUMENTS,
+    run: async (args) => {
+      const localTypesOnly = options.localTypesOnly === true;
+      const ancestor = options.ancestor;
+      if (localTypesOnly && ancestor !== appRoot) {
+        for (const line of await localTypesLines()) info(line);
+        return 0;
+      }
+      await initApp(appRoot, { local: parseDeclaredArgs(INIT_ARGUMENTS, args).local === true });
+      return 0;
+    },
+  };
+}
+
 /** `--local`: editors resolve `@clawforge/framework` only from a node_modules the app has.
  *  The package is unpublished, so a registry spec would fail; the running copy's own directory
  *  works today. --no-save: `--save-dev <dir>` would commit a machine path (file:…) into
@@ -320,9 +359,9 @@ export async function initApp(root: string, options: { local?: boolean } = {}): 
 
   log(`initialised ${root} as an OpenClaw deployment`);
   info("next:");
-  for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", "./clawforge bootstrap")) info(line);
+  for (const line of nextStepsLines(envFile, parseEnv(env).OC_DATA_DIR ?? "", commandLine(["bootstrap"]))) info(line);
   info("Claude Code and Codex project MCP settings are ready; trust the project and reconnect the clients.");
-  info("secrets stay inside this directory (snapshots go to the snapshot directory, OC_SNAPSHOT_DIR); commit ./clawforge, mcp-launch.mjs, app.ts,");
+  info(`secrets stay inside this directory (snapshots go to the snapshot directory, OC_SNAPSHOT_DIR); commit ${SHIM_PROGRAM}, mcp-launch.mjs, app.ts,`);
   info("package.json, config/ and recipes/ — .gitignore keeps .env, secrets/, state/ and sets/ out");
   // Types resolve already when this CLI runs from the app's own node_modules.
   const ownInstall = frameworkRoot.startsWith(resolve(root, "node_modules"));

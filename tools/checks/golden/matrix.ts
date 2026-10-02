@@ -5,8 +5,12 @@
 // builders the entries render, and the file is a golden diff like the other surfaces.
 
 import { basename, dirname } from "node:path";
-import { invocationPrefix, setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { commandLine, renderAdvice, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { command, type Advice } from "#framework/core/io/invocation/advice.ts";
+import { UserError } from "#framework/core/io/log.ts";
 import { CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
+import { checkoutSubfolderReport, missingDeploymentReport } from "#framework/integration/gate.ts";
 import { COMPLETION_COMMAND_NAME } from "#framework/integration/completion.ts";
 import { VERSION_COMMAND_NAME } from "#framework/integration/version.ts";
 import {
@@ -150,11 +154,61 @@ function fakePath(text: string): string {
   return text.replaceAll("\\", "/").replace(/[A-Za-z]:\//g, "");
 }
 
+/** Group 3 of the advice matrix (design 4.2): the refusals the pure entry decisions build,
+ *  on the same fake layouts the matrix itself uses, as advice values — never rendered
+ *  strings frozen at build time. A clawforge advice with an empty argv (the bare "run the
+ *  gate" pointer) is left out: the matrix's P4 has no command word to check it against. */
+export function entryRefusalAdvice(): { label: string; advice: Advice }[] {
+  const rows: { label: string; advice: Advice }[] = [];
+  const push = (label: string, error: UserError | undefined): void => {
+    if (error === undefined) return;
+    error.advice.forEach((advice, index) => {
+      if (advice.kind === "clawforge" && advice.argv.length === 0) return;
+      rows.push({ label: index === 0 ? label : `${label} (${index + 1})`, advice });
+    });
+  };
+  push("refusal: missing deployment, nothing available", missingDeploymentReport(true, "demo", `${ROOT}/apps/demo`, [], false));
+  push("refusal: missing deployment, others available", missingDeploymentReport(true, "openclaw", `${ROOT}/apps/openclaw`, ["demo", "staging"], false));
+  push("refusal: several deployments, none selected", missingDeploymentReport(false, "openclaw", `${ROOT}/apps/openclaw`, ["demo", "staging", "third"], false));
+  push("refusal: empty directory without app.ts", missingDeploymentReport(true, "demo", `${ROOT}/apps/demo`, [], true));
+  push("refusal: checkout gate command from a subfolder", checkoutSubfolderReport("check", ROOT));
+  const fs = fakeFs(BASE_FILES, BASE_DIRS);
+  // The installed entry: init inside the checkout, and the not-initialised refusal.
+  const inCheckout = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["init"], platform: "linux", fs });
+  if (inCheckout.kind === "refuse") inCheckout.refusals.forEach((refusal) => push("refusal: init inside a ClawForge checkout", refusal));
+  const outside = resolveInstalledEntry({ cwd: EMPTY, rawArgv: ["status"], platform: "linux", fs });
+  if (outside.kind === "run") {
+    const missing = missingAppDecision({
+      appRoot: outside.appRoot,
+      argv: outside.argv,
+      checkout: outside.checkout,
+      gateCommandNames: INSTALLED_GATE_COMMANDS,
+      deploymentCommands: DEPLOYMENT_COMMANDS,
+    });
+    if (missing.kind === "not-initialised") missing.refusals.forEach((refusal) => push("refusal: not initialised (installed)", refusal));
+  }
+  const inSubfolder = resolveInstalledEntry({ cwd: `${ROOT}/docs`, rawArgv: ["status"], platform: "linux", fs });
+  if (inSubfolder.kind === "run") {
+    const missing = missingAppDecision({
+      appRoot: inSubfolder.appRoot,
+      argv: inSubfolder.argv,
+      checkout: inSubfolder.checkout,
+      gateCommandNames: INSTALLED_GATE_COMMANDS,
+      deploymentCommands: DEPLOYMENT_COMMANDS,
+    });
+    if (missing.kind === "not-initialised") missing.refusals.forEach((refusal) => push("refusal: not initialised (in a checkout)", refusal));
+  }
+  // The pointers the two unknown-X reporters print (their info line renders this advice).
+  rows.push({ label: "pointer: unknown command", advice: command(["help"]) });
+  rows.push({ label: "pointer: unknown argument", advice: command(["status", "--help"]) });
+  return rows;
+}
+
 function gateDecisionLine(input: Parameters<typeof resolveCheckoutEntry>[0]): string {
   const decision = resolveCheckoutEntry(input);
   switch (decision.kind) {
     case "refuse":
-      return `refuse: ${decision.lines.map(fakePath).join(" | ")}`;
+      return `refuse: ${decision.refusals.map(refusalLine).join(" | ")}`;
     case "refuse-misplaced-app-flag":
       return "refuse-misplaced-app-flag";
     case "refuse-unknown-command":
@@ -167,7 +221,7 @@ function gateDecisionLine(input: Parameters<typeof resolveCheckoutEntry>[0]): st
       // The prefix through the real renderer, not a restatement of the rule.
       const invocation: Invocation = { program: "./clawforge", mode: "checkout", audience: "terminal", ...(decision.app === undefined ? {} : { app: decision.app }) };
       setInvocation(invocation);
-      return `run app=${decision.appName} fact=${decision.app === undefined ? "-" : decision.app.name}/${decision.app?.selectedBy} argv=${JSON.stringify(decision.argv)} prefix=${invocationPrefix()}${decision.soleNote === undefined ? "" : ` sole=${decision.soleNote}`}`;
+      return `run app=${decision.appName} fact=${decision.app === undefined ? "-" : decision.app.name}/${decision.app?.selectedBy} argv=${JSON.stringify(decision.argv)} prefix=${commandLine([])}${decision.soleNote === undefined ? "" : ` sole=${decision.soleNote}`}`;
     }
   }
 }
@@ -176,12 +230,19 @@ function fakeJson(values: readonly string[]): string {
   return JSON.stringify(values.map(fakePath));
 }
 
+/** One refusal as deterministic text: the message plus its advice rendered under the
+ *  checkout-root invocation, so the line does not depend on the process's own call. */
+function refusalLine(error: UserError): string {
+  const rendered = error.advice.length === 0
+    ? []
+    : error.advice.map((entry) => renderAdvice(entry, { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" }));
+  return fakePath(rendered.length === 0 ? error.message : `${error.message} => ${rendered.join(" | ")}`);
+}
+
 function installedDecisionLine(decision: InstalledEntryDecision): string {
   switch (decision.kind) {
     case "refuse":
-      return `refuse: ${decision.lines.map(fakePath).join(" | ")}`;
-    case "refuse-verbatim":
-      return `refuse-verbatim: ${decision.lines.map(fakePath).join(" | ")}`;
+      return `refuse: ${decision.refusals.map(refusalLine).join(" | ")}`;
     case "checkout-types-note":
       return "checkout-types-note";
     case "run":
@@ -194,11 +255,11 @@ function installedDecisionLine(decision: InstalledEntryDecision): string {
 }
 
 function missingDecisionLine(decision: MissingAppDecision): string {
-  const detail = (entry: { readonly headline: string; readonly plain: readonly string[]; readonly verbatim: readonly string[] }): string =>
-    `${fakePath(entry.headline)} | ${fakeJson(entry.plain)} | ${fakeJson(entry.verbatim)}`;
+  const detail = (entry: { readonly headline: string; readonly refusals: readonly UserError[] }): string =>
+    `${fakePath(entry.headline)} | ${entry.refusals.map(refusalLine).join(" | ")}`;
   switch (decision.kind) {
     case "subfolder-report":
-      return `subfolder-report: ${fakePath(decision.headline)} | ${fakeJson(decision.verbatim)}`;
+      return `subfolder-report: ${fakePath(decision.headline)} | ${refusalLine(decision.refusal)}`;
     case "help":
       return `help (fallback: ${detail(decision.fallback)})`;
     case "not-initialised":

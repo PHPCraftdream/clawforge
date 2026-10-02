@@ -6,6 +6,7 @@
 
 import { parseDeclaredArgs, type UnknownArgumentError } from "../core/command/index.ts";
 import { reportError } from "../core/io/log.ts";
+import { commandLine } from "../core/io/invocation/render.ts";
 import { emit } from "../core/io/output.ts";
 import { createApp } from "../integration/deployment/scaffold.ts";
 import { removeApp } from "../integration/deployment/remove.ts";
@@ -67,15 +68,15 @@ export const checkoutGateCommands: readonly GateCommand[] = [
     summary: "Run the framework's own checks (no instance needed)",
     details:
       "Paths, archives, the argument contract, what a server delivery contains, secret " +
-      "masking — the parts where a mistake is silent. `./clawforge smoke` covers a live instance " +
+      "masking — the parts where a mistake is silent. `{clawforge smoke}` covers a live instance " +
       "instead.\n" +
       "With no filter, every check runs. One or more substrings narrow that down to checks " +
-      "whose path contains at least one of them, e.g. `./clawforge check gate` or " +
-      "`npm run check -- foundation runtime`. `--list` prints the matching paths (and, where " +
+      "whose path contains at least one of them, e.g. `{clawforge check gate}` or " +
+      "`npm run check -- foundation runtime`. `{--list}` prints the matching paths (and, where " +
       "one is declared, the host capabilities a file needs) without running them. A filter " +
       "matching nothing is refused rather than silently running everything.\n" +
       "A file naming a capability it cannot run without (docker, wsl, posix-sh, rsync, " +
-      "linux-host) is skipped, not failed, when this host lacks it. `--require` (or " +
+      "linux-host) is skipped, not failed, when this host lacks it. `{--require}` (or " +
       "OC_CHECK_REQUIRE) names capabilities this host is expected to have, turning a skip " +
       "into a failure for those.",
     arguments: checkArguments,
@@ -102,12 +103,12 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "Bootstrap checks active Docker deployments AND raw listening sockets (ss/netstat) on the target " +
       "before preparing data or pulling an image.\n" +
       "Refuses an existing directory unless it is empty — run this once per deployment, then " +
-      "./clawforge --app <name> bootstrap.",
+      "{clawforge --app <name> bootstrap}.",
     arguments: NEW_APP_ARGUMENTS,
     run: async (args) => {
       const target = parseDeclaredArgs(NEW_APP_ARGUMENTS, args).name as string | undefined;
       if (target === undefined) {
-        reportError("usage: ./clawforge new-app <name>");
+        reportError(`usage: ${commandLine(["new-app", "<name>"])}`);
         return 1;
       }
       await createApp(target);
@@ -124,10 +125,10 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "Default is a dry run: lists the top-level entries and total size, and warns when the " +
       "directory carries its own `.git` history (apps/<name> is not tracked by this " +
       "repository's own git — see new-app's gitInitAdvice), then exits 0 without removing " +
-      "anything. --yes performs the removal.\n" +
+      "anything. {--yes} performs the removal.\n" +
       "Refuses while the deployment still has a bootstrapped instance (running or " +
-      "stopped-but-bootstrapped, read the same way ./clawforge list reads it) — " +
-      "./clawforge --app <name> destroy first (and --data if the data should go too).\n" +
+      "stopped-but-bootstrapped, read the same way {clawforge list} reads it) — " +
+      "{clawforge --app <name> destroy} first (and --data if the data should go too).\n" +
       "Refuses a name that is not a plain deployment name (the same rule new-app enforces), " +
       "and refuses when the directory is itself a symlink.",
     arguments: REMOVE_APP_ARGUMENTS,
@@ -135,7 +136,7 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       const parsed = parseDeclaredArgs(REMOVE_APP_ARGUMENTS, args);
       const target = parsed.name as string | undefined;
       if (target === undefined) {
-        reportError("usage: ./clawforge remove-app <name> [--yes]");
+        reportError(`usage: ${commandLine(["remove-app", "<name>"])} [--yes]`);
         return 1;
       }
       return removeApp(target, parsed.yes === true ? ["--yes"] : []);
@@ -150,9 +151,9 @@ export const checkoutGateCommands: readonly GateCommand[] = [
       "running.\n" +
       "A deployment this cannot fully read — no .env yet, a broken app.ts, an unreachable " +
       "target — gets its own line naming why instead of failing the whole listing.\n" +
-      "--no-status skips asking the target altogether, for a fast read of configuration " +
+      "{--no-status} skips asking the target altogether, for a fast read of configuration " +
       "alone; state then reads \"not checked\".\n" +
-      "--json prints the same rows as an array of objects instead.",
+      "{--json} prints the same rows as an array of objects instead.",
     arguments: LIST_ARGUMENTS,
     run: async (args) => {
       let parsed;

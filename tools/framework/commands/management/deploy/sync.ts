@@ -5,6 +5,8 @@
 // unlock it.
 
 import { log, info, infoRaw, die } from "#src/core/io/log.ts";
+import { renderAdvice, shimInvocation, SHIM_PROGRAM } from "#src/core/io/invocation/render.ts";
+import { command } from "#src/core/io/invocation/advice.ts";
 import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";
 import {
   EXCLUDES, FRAMEWORK_EXCLUDES, MARKER_FILE, directoryGuardScript, directoryPrepareScript,
@@ -138,7 +140,7 @@ export async function bootstrapAndReport(
 ): Promise<void> {
   if (!runBootstrap) {
     log(`files synced to ${target}:${remotePath} (bootstrap skipped)`);
-    infoRaw(`bring it up there with: cd ${remotePath} && ./clawforge --app ${name} bootstrap`);
+    infoRaw(`bring it up there with: cd ${remotePath} && ${renderAdvice(command("bootstrap", { app: name }), shimInvocation(name))}`);
     if (remotePathNote !== undefined) info(remotePathNote);
     return;
   }
@@ -146,7 +148,7 @@ export async function bootstrapAndReport(
   log(`bootstrapping ${name} on ${target}`);
   // The deployment is named: the server's default would otherwise be a different one.
   // -t only when we have a terminal to give it.
-  await runRemote(ctx, target, `cd ${quoted(remotePath)} && ./clawforge --app ${quoted(name)} bootstrap`, {
+  await runRemote(ctx, target, `cd ${quoted(remotePath)} && ${SHIM_PROGRAM} --app ${quoted(name)} bootstrap`, {
     stream: true,
     tty: process.stdout.isTTY === true,
   });
@@ -154,6 +156,6 @@ export async function bootstrapAndReport(
   log("deployed");
   info("the gateway listens on the remote loopback only. Open a tunnel from here:");
   info(`  ssh -N -L ${ctx.settings.gatewayPort}:127.0.0.1:${ctx.settings.gatewayPort} ${target}`);
-  infoRaw(`provider keys are not copied — install them there: ./clawforge --app ${name} secrets --apply`);
+  infoRaw(`provider keys are not copied — install them there: ${renderAdvice(command(["secrets", "--apply"], { app: name }), shimInvocation(name))}`);
   if (remotePathNote !== undefined) info(remotePathNote);
 }

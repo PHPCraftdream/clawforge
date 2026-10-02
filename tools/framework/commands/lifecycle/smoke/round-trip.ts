@@ -1,4 +1,4 @@
-// The backup/restore round-trip and privacy-check phase of `./clawforge smoke`.
+// The backup/restore round-trip and privacy-check phase of `clawforge smoke`.
 //
 // The round-trip check is the heaviest: a FULL backup with the gateway held down, restored
 // into an isolated scratch root beside the data directory (never over live data) and compared

@@ -1,4 +1,4 @@
-// `./clawforge restore` — puts an archive back onto the instance.
+// `clawforge restore` — puts an archive back onto the instance.
 //
 // Two properties matter and are preserved:
 //   - the current data is moved aside, never deleted, so a wrong restore is recoverable
@@ -7,6 +7,7 @@
 import { randomBytes } from "node:crypto";
 import { createInterface } from "node:readline/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { DATA_SUBDIRS, OWNER, ensureDataDirs, sudoFor, runMaybePrivileged, needsOwnerEscalation, answeredProbe, assertCanonicalAncestry, physicalPath } from "#src/runtime/datadir.ts";
@@ -493,19 +494,19 @@ async function reportRestoreOutcome(ctx: Context, archive: string, aside: string
         (aside !== undefined ? ` (kept at ${aside})` : ""),
     );
     for (const recipe of sidecars) {
-      info(`to point ${recipe.name} at the restored tree: ./clawforge recipe remove ${recipe.name} && ./clawforge recipe install ${recipe.name}`);
+      info(`to point ${recipe.name} at the restored tree: ${commandLine(["recipe", "remove", recipe.name])} && ${commandLine(["recipe", "install", recipe.name])}`);
     }
   }
 
   if (options.noStart === true) {
     log(`restore complete from ${archive} (gateway not started)`);
     if (aside !== undefined) info(`previous data kept at ${aside}`);
-    return { restored: true, started: false, reason: "no-start", nextAction: "./clawforge up" };
+    return { restored: true, started: false, reason: "no-start", nextAction: commandLine("up") };
   }
 
   // The restored config can reference variables nothing on this instance has yet — push()
   // works around this by always restoring with noStart and doing its own preflight after
-  // installing keys, but a direct `./clawforge restore` has no such second step. Without this, an
+  // installing keys, but a direct `clawforge restore` has no such second step. Without this, an
   // archive missing its secrets starts straight into a SecretRefResolutionError crash-loop.
   try {
     await preflightSecrets(ctx);
@@ -513,13 +514,13 @@ async function reportRestoreOutcome(ctx: Context, archive: string, aside: string
     if (!(error instanceof MissingSecretsError)) throw error;
     warn(error.message);
     info(`restore complete from ${archive} (gateway left stopped)`);
-    info("supply the keys with: ./clawforge secrets --apply --store <name>, then ./clawforge up");
+    info(`supply the keys with: ${commandLine(["secrets", "--apply", "--store", "<name>"])}, then ${commandLine("up")}`);
     if (aside !== undefined) info(`previous data kept at ${aside}`);
     return {
       restored: true,
       started: false,
       reason: "missing-secrets",
-      nextAction: "./clawforge secrets --apply --store <name>, then ./clawforge up",
+      nextAction: `${commandLine(["secrets", "--apply", "--store", "<name>"])}, then ${commandLine("up")}`,
     };
   }
 
@@ -576,7 +577,7 @@ export const RESTORE = commandBody({
           die(
             `no full archives in ${ctx.settings.backupDir} — the ${skipped.length} archive(s) there are profile-limited ` +
               `(${skipped[0]}) and restoring one replaces this instance with something that cannot start. ` +
-              "Run ./clawforge backup first, or pass the archive explicitly if that is really what you want.",
+              `Run ${commandLine("backup")} first, or pass the archive explicitly if that is really what you want.`,
           );
         }
         die(`no archives found in ${ctx.settings.backupDir} — pass one explicitly`);

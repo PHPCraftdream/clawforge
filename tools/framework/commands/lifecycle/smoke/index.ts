@@ -1,4 +1,4 @@
-// `./clawforge smoke` — acceptance run for an instance. Checks the properties that actually
+// `clawforge smoke` — acceptance run for an instance. Checks the properties that actually
 // cost debugging time:
 //   - the gateway is healthy by BOTH criteria (HTTP probe and the runtime's own verdict)
 //   - the agent answers end to end, i.e. the provider key really resolved
@@ -14,6 +14,7 @@
 import { readFile } from "node:fs/promises";
 import JSON5 from "json5";
 import { log, info, warn } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { CouldNotCheck, NotChecked } from "#src/commands/check-outcome.ts";
@@ -78,7 +79,7 @@ export const checks: Check[] = [
         // configures none (best effort: noProviderConfigured() never replaces a real failure
         // with an unrelated guess).
         if (!(await noProviderConfigured(ctx))) throw error;
-        const message = `no model provider is configured — run ./clawforge configure-provider (${describeError(error)})`;
+        const message = `no model provider is configured — run ${commandLine("configure-provider")} (${describeError(error)})`;
         throw error instanceof CouldNotCheck ? new CouldNotCheck(message) : new Error(message);
       }
     },
@@ -128,7 +129,7 @@ export const checks: Check[] = [
         // not just the symptom.
         await applyConfig(ctx, []).catch((error: unknown) => {
           const message = error instanceof Error ? error.message : String(error);
-          throw new Error(`restoring the declaration failed — ${subject.path} may still hold the drifted value; repair with ./clawforge apply-config: ${message}`);
+          throw new Error(`restoring the declaration failed — ${subject.path} may still hold the drifted value; repair with ${commandLine("apply-config")}: ${message}`);
         });
       }
     },

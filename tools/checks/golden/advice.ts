@@ -7,6 +7,7 @@
 
 import { command, manual, shellLine, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { renderAdvice, SHIM_PROGRAM, useGateCommands } from "#framework/core/io/invocation/render.ts";
+import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
@@ -71,6 +72,17 @@ const REFINEMENT_ROWS: readonly AdviceRow[] = [
   { label: "audit fallback: cli security audit", advice: command(["cli", "security", "audit", "--json"]) },
 ];
 
+/** Group 5 (rf4-sweep-cmds1): every {clawforge …} command token the declared help prose
+ *  carries, collected from the declarations themselves — new prose needs no edit here. */
+const PROSE_ROWS: readonly AdviceRow[] = Object.entries(openclawCommands).flatMap(([name, declared]) => {
+  const details = (declared as { details?: string }).details;
+  if (details === undefined) return [];
+  return parseProse(details).flatMap((token) => {
+    if (token.kind !== "command") return [];
+    return [{ label: `help prose: ${name} ${token.argv.join(" ")}`, advice: command(token.argv, token.app === undefined ? undefined : { app: token.app }) }];
+  });
+});
+
 /** This task's synthetic rows (design 5.2: rf4-advice renders the synthetic group, rf4-codes
  *  and the sweeps append their own). Every row is only a `command`/`shellLine`/`manual`
  *  value: no rendering at module load, where it would freeze the default invocation. */
@@ -89,6 +101,11 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   // Group 3 (rf4-sweep-core): the refusals the entry decisions build, on golden/matrix.ts's
   // fake layouts, plus the pointers the unknown-command/argument reporters print.
   ...entryRefusalAdvice(),
+  // Group 4 (rf4-sweep-cmds1): the lines deploy builds for the remote server.
+  { label: "deploy: remote bootstrap hint (shell)", advice: shellLine("posix", "cd <remotePath> && ./clawforge --app <name> bootstrap") },
+  { label: "deploy: remote bootstrap command", advice: command(["bootstrap"], { app: "<name>" }) },
+  { label: "deploy: remote secrets --apply command", advice: command(["secrets", "--apply"], { app: "<name>" }) },
+  ...PROSE_ROWS,
 ];
 
 /** One matrix column: the invocation every row renders under. */

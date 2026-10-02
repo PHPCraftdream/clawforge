@@ -1,4 +1,4 @@
-// Reconciliation for `./clawforge provision-agent`: mirroring a recipe's files onto the
+// Reconciliation for `clawforge provision-agent`: mirroring a recipe's files onto the
 // target, and creating/replacing/removing the agent, MCP server and cron job it declares.
 // declaration.ts has the argv/comparison functions these call; index.ts is the top-level
 // command and its barrel re-export.

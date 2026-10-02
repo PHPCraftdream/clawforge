@@ -1,4 +1,4 @@
-// `./clawforge secrets` — which secrets this instance needs and whether they are in place.
+// `clawforge secrets` — which secrets this instance needs and whether they are in place.
 //
 // Answers the question that otherwise only surfaces as a crash-loop: the gateway refuses to
 // start when a referenced variable is missing, and the reason is buried in its log as
@@ -6,6 +6,7 @@
 
 import { writeFile, readFile, access } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, emitRaw, isCaptured } from "#src/core/io/output.ts";
 import { parseEnv, serializeEnvLine } from "#src/core/env.ts";
 import { envFile, secretsTemplateFile, secretStoreFile, secretsDir } from "#src/runtime/deployment.ts";
@@ -56,7 +57,7 @@ async function readStoreOrDie(storeName: string): Promise<string> {
     return await readFile(path, "utf8");
   } catch {
     die(
-      `${path} not found — create it with ./clawforge secrets --init-store --store ${storeName}, ` +
+      `${path} not found — create it with ${commandLine(["secrets", "--init-store", "--store", storeName])}, ` +
         "or pass a different --store <name>",
     );
   }
@@ -130,9 +131,9 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
     // picking it up.
     const target = secretsFileOnTarget(ctx);
     if (await ctx.runtime.isRunning()) {
-      info(`${target} holds the new values, but the running instance has not read them — restart to pick them up: ./clawforge restart`);
+      info(`${target} holds the new values, but the running instance has not read them — restart to pick them up: ${commandLine("restart")}`);
     } else {
-      info(`${target} holds the new values, and the instance is stopped — the next start reads them: ./clawforge up`);
+      info(`${target} holds the new values, and the instance is stopped — the next start reads them: ${commandLine("up")}`);
     }
   }
 
@@ -156,13 +157,13 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
 /** Puts rotated repo-env values in force, and says what was done either way. */
 async function deliverRepositoryValues(ctx: Context, entries: SecretRequirement[], values: Record<string, string | undefined>): Promise<void> {
   if (!(await ctx.runtime.isRunning())) {
-    info(`${envFile()} holds the new values, and the instance is stopped — the next start creates the container with them: ./clawforge up`);
+    info(`${envFile()} holds the new values, and the instance is stopped — the next start creates the container with them: ${commandLine("up")}`);
     return;
   }
   // A runtime that cannot recreate gets the correct instruction, not the old lie.
   if (typeof ctx.runtime.reconcile !== "function") {
     info(`${envFile()} holds the new values, but the running container keeps the environment it was created with — a restart does not apply them`);
-    info("recreate the container so compose interpolates the new values: ./clawforge up");
+    info(`recreate the container so compose interpolates the new values: ${commandLine("up")}`);
     return;
   }
   info("recreating the container so compose interpolates the new values — it is replaced, not merely signalled: connections drop and the service starts fresh");
@@ -182,12 +183,12 @@ async function confirmRepositoryValues(ctx: Context, entries: SecretRequirement[
   }
   const environment = await ctx.runtime.runningEnvironment();
   if (environment === undefined) {
-    warn("could not read the running container's environment to confirm the new values — ./clawforge status or ./clawforge inspect says whether the instance is serving");
+    warn(`could not read the running container's environment to confirm the new values — ${commandLine("status")} or ${commandLine("inspect")} says whether the instance is serving`);
     return;
   }
   const stale = entries.filter((entry) => environment[entry.name] !== values[entry.name]).map((entry) => entry.name);
   if (stale.length > 0) {
-    warn(`the running container does not hold the new value(s) for ${stale.join(", ")} — recreate with ./clawforge up`);
+    warn(`the running container does not hold the new value(s) for ${stale.join(", ")} — recreate with ${commandLine("up")}`);
     return;
   }
   log(entries.length === 1
@@ -327,7 +328,7 @@ async function runInitStoreAction(ctx: Context, store: string, force: boolean): 
     }
   }
   log(`wrote ${path}`);
-  info("fill in the values, then: ./clawforge secrets --apply --store " + store);
+  info(`fill in the values, then: ${commandLine(["secrets", "--apply", "--store", store])}`);
 }
 
 /** The default read-only report: every declared secret's presence, or the JSON mirror of
@@ -341,7 +342,7 @@ async function runStatusReport(ctx: Context, jsonOnly: boolean): Promise<void> {
       emit(`${JSON.stringify({ secrets: [], missing: [] }, null, 2)}\n`);
       return;
     }
-    info("no configuration on the target yet — run ./clawforge bootstrap first");
+    info(`no configuration on the target yet — run ${commandLine("bootstrap")} first`);
     return;
   }
 
@@ -385,7 +386,7 @@ async function runStatusReport(ctx: Context, jsonOnly: boolean): Promise<void> {
     // whether an instance is there to restart.
     info(
       `target-env → add to <data>/config/.env on the target, then ${
-        (await ctx.runtime.isRunning()) ? "./clawforge restart" : "./clawforge up"
+        (await ctx.runtime.isRunning()) ? commandLine("restart") : commandLine("up")
       }`,
     );
     throw new Error(`missing: ${absent.map((entry) => entry.name).join(", ")}`);
@@ -470,7 +471,7 @@ export async function secrets(ctx: Context, args: string[]): Promise<void> {
  *  genuine failure (corrupted config, read error) underneath it. */
 export class MissingSecretsError extends Error {
   constructor(count: number) {
-    super(`cannot start: ${count} required secret(s) missing — run ./clawforge secrets for details`);
+    super(`cannot start: ${count} required secret(s) missing — run ${commandLine("secrets")} for details`);
     this.name = "MissingSecretsError";
   }
 }

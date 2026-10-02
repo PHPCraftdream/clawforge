@@ -1,4 +1,4 @@
-// `./clawforge bootstrap --check` — a read-only prerequisite report for a deployment
+// `clawforge bootstrap --check` — a read-only prerequisite report for a deployment
 // bootstrap has never touched: no lock, no mutation, no directory created. Everything real
 // bootstrap otherwise discovers mid-mutation (docker missing, compose v2 absent, a data
 // directory that needs root, the port already taken, a nearly-full disk) is answered here
@@ -8,6 +8,7 @@
 // contract.
 
 import { log, info } from "../../../core/io/log.ts";
+import { commandLine } from "../../../core/io/invocation/render.ts";
 import { emit } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
 import { TransportUnreachableError } from "../../../runtime/transport/transport.ts";
@@ -23,7 +24,7 @@ function renderLine(result: PrereqResult): void {
   info(`${label} ${result.what}${result.next === undefined ? "" : ` — ${result.next}`}`);
 }
 
-/** `./clawforge bootstrap --check`'s own run: prints one `ok`/`WARN`/`FAIL` line per prerequisite
+/** `clawforge bootstrap --check`'s own run: prints one `ok`/`WARN`/`FAIL` line per prerequisite
  *  and exits non-zero only when at least one FAILed. A transport that never reaches the
  *  target is reported through the same TARGET_UNREACHABLE finding every other command uses,
  *  rather than propagating as a stack trace. */
@@ -54,7 +55,7 @@ export async function bootstrapCheck(ctx: Context, jsonOnly = false): Promise<vo
   for (const result of results) renderLine(result);
 
   if (failed.length === 0) {
-    log("no blocking prerequisites — ./clawforge bootstrap should proceed without a sudo password prompt");
+    log(`no blocking prerequisites — ${commandLine("bootstrap")} should proceed without a sudo password prompt`);
     return;
   }
   throw new Error(`${failed.length} prerequisite(s) failed: ${failed.map((result) => result.what).join("; ")}`);

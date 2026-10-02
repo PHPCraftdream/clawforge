@@ -1,6 +1,6 @@
-// `./clawforge bootstrap` — brings an instance up from nothing. Idempotent: re-running it on
+// `clawforge bootstrap` — brings an instance up from nothing. Idempotent: re-running it on
 // a live instance re-pulls the image (a digest pin is left alone) and rewrites desired-state,
-// but does not restart the running gateway — changed settings need ./clawforge restart.
+// but does not restart the running gateway — changed settings need clawforge restart.
 //
 // Order matters:
 //   1. .env and the gateway token — compose interpolates them
@@ -14,6 +14,7 @@
 
 import JSON5 from "json5";
 import { log, info, warn } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { refreshContext } from "#src/core/context.ts";
@@ -41,7 +42,7 @@ export const BOOTSTRAP_ARGUMENTS = [
 /** After a fresh pull, repoints this deployment's OWN OPENCLAW_IMAGE from the moving tag to
  *  the exact digest just pulled — so a later pull of the same shared tag by another
  *  deployment can no longer silently switch what THIS one recreates onto next. Already-pinned
- *  deployments (`image` carries "@sha256:") are left alone: only ./clawforge upgrade moves
+ *  deployments (`image` carries "@sha256:") are left alone: only clawforge upgrade moves
  *  those.
  *
  *  Best effort: a runtime that cannot resolve the digest just pulled leaves it a tag rather
@@ -63,7 +64,7 @@ async function pinFreshPull(ctx: Context, image: string): Promise<Context> {
   }
   const pinned = format(withDigest(ref, digest));
   await pinImageReference(pinned);
-  info(`pinned OPENCLAW_IMAGE to ${pinned} in .env — another deployment pulling ${image} on this Docker daemon can no longer move this one; ./clawforge upgrade is how to move it from here`);
+  info(`pinned OPENCLAW_IMAGE to ${pinned} in .env — another deployment pulling ${image} on this Docker daemon can no longer move this one; ${commandLine("upgrade")} is how to move it from here`);
   const refreshed = await refreshContext(ctx);
   return refreshed?.context ?? ctx;
 }
@@ -152,7 +153,7 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
     const resolved = hasDigest(fresh.image) ? undefined : await live.runtime.resolveImageDigest?.(fresh.image);
     if (resolved !== undefined) {
       await pinImageReference(resolved);
-      info(`pinned OPENCLAW_IMAGE to ${resolved} in .env — pulled by digest, the shared ${fresh.image} tag stays where it is; ./clawforge upgrade moves it from here`);
+      info(`pinned OPENCLAW_IMAGE to ${resolved} in .env — pulled by digest, the shared ${fresh.image} tag stays where it is; ${commandLine("upgrade")} moves it from here`);
       live = (await refreshContext(live))?.context ?? live;
       log(`pulling ${resolved}`);
       await live.runtime.pullImage();
@@ -191,8 +192,8 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
   log("OpenClaw is up");
   info(`gateway: ${fresh.serviceUrl}`);
   // Named, not printed: control-mcp hands this output back to an agent, so a token printed
-  // here would land in a transcript. `./clawforge mcp-creds --token` prints it on request.
-  info(`token:   ${token === "" ? "(not generated)" : "in .env — print it with ./clawforge mcp-creds --token"}`);
+  // here would land in a transcript. `clawforge mcp-creds --token` prints it on request.
+  info(`token:   ${token === "" ? "(not generated)" : `in .env — print it with ${commandLine(["mcp-creds", "--token"])}`}`);
   info(`data:    ${fresh.dataDir}`);
 
   // "up" and "healthy" are not the job: answering a prompt is. Read the same way inspect does
@@ -204,7 +205,7 @@ async function bootstrapLocked(ctx: Context, noPull: boolean): Promise<Bootstrap
     const liveConfig = JSON5.parse(await live.transport.readFile(`${fresh.dataDir}/config/openclaw.json`)) as unknown;
     providerConfigured = collectConfiguredProviders(liveConfig).length > 0;
     if (!providerConfigured) {
-      info("provider: none configured yet — an agent cannot answer until one is: ./clawforge configure-provider");
+      info(`provider: none configured yet — an agent cannot answer until one is: ${commandLine("configure-provider")}`);
     }
   } catch {
     // Doctor's own read of the same file reports a broken config; this is only a bonus hint.

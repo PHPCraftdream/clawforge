@@ -1,4 +1,4 @@
-// `./clawforge lock` — pin what this instance is made of, so the same composition can be
+// `clawforge lock` — pin what this instance is made of, so the same composition can be
 // brought up again and the difference noticed when it is not.
 //
 // config/desired-state.json reproduces the *settings*, not which framework wrote them,

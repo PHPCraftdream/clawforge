@@ -1,4 +1,4 @@
-// `./clawforge provision-agent <recipe>` — wires a recipe's MCP server to a dedicated OpenClaw
+// `clawforge provision-agent <recipe>` — wires a recipe's MCP server to a dedicated OpenClaw
 // agent: isolated agent, own workspace prompt files, the recipe's stdio MCP server, and
 // (optionally) a cron job that sends the agent a recurring message.
 //
@@ -17,6 +17,7 @@
 // re-exports — the single import point other modules use).
 
 import { log, info, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
@@ -76,7 +77,7 @@ async function runProvisionAgent(ctx: Context, values: Values<typeof PROVISION_A
   const bundle = await loadRecipeAgentBundle(recipeName);
 
   await requireBootstrapped(ctx);
-  if (!(await ctx.runtime.isRunning())) die("the gateway is not running. Start it with ./clawforge up");
+  if (!(await ctx.runtime.isRunning())) die(`the gateway is not running. Start it with ${commandLine("up")}`);
 
   // `apply` calls this as one of its steps and is already holding the lock; nested, the
   // second acquire would refuse the run its own caller started. Taken only when this is the
@@ -159,5 +160,5 @@ function reportProvisioned(
       `(${mirror.written} file(s)${mirror.removed.length === 0 ? "" : `, ${mirror.removed.length} removed`})`,
   );
   for (const rel of mirror.removed) info(`  removed  ${rel}`);
-  info(`try it: ./clawforge cli agent --agent ${bundle.config.agentId} -m "hello"`);
+  info(`try it: ${commandLine(["cli", "agent", "--agent", bundle.config.agentId])} -m "hello"`);
 }

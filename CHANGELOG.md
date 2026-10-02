@@ -79,6 +79,7 @@ All notable changes to `@clawforge/framework` will be documented here.
 * Entry refusals print their advice as an indented `→` line under the message instead of an
   `error:` line per sentence, and the bash spelling of a suggested command is offered as a
   separate line marked `(in bash)` instead of a parenthetical inside the sentence.
+* The `exec` entry in the command list and its MCP tool description names `cli` without the program.
 
 ### Fixed
 

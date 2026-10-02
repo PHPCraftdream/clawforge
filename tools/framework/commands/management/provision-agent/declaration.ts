@@ -1,4 +1,4 @@
-// Pure declaration pieces for `./clawforge provision-agent`: the agent/config.json shape,
+// Pure declaration pieces for `clawforge provision-agent`: the agent/config.json shape,
 // path builders, and the argv/comparison functions used both to REGISTER an agent/MCP
 // server/cron job and to check whether one already matches. index.ts's barrel re-export
 // keeps every import site unchanged.

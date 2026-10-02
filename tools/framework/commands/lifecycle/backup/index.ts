@@ -1,4 +1,4 @@
-// `./clawforge backup` — a consistent snapshot of the data directory.
+// `clawforge backup` — a consistent snapshot of the data directory.
 //
 // The gateway is stopped for the duration by default: OpenClaw keeps state in SQLite
 // databases with multi-megabyte -wal files, and a copy taken mid-write is not restorable.
@@ -7,7 +7,7 @@
 // Split into four files: this one keeps the creation path (BACKUP_ARGUMENTS, createBackup
 // and the dispatcher below); list.ts is the read-only archive/replaced-copy inventory;
 // prune-replaced.ts is the explicit, --apply-gated cleanup of `<dataDir>.replaced-*` copies
-// restore leaves behind; install.ts wires `./clawforge backup` onto a schedule (crontab, or
+// restore leaves behind; install.ts wires `clawforge backup` onto a schedule (crontab, or
 // a printed/applyable `schtasks` entry on Windows). `list`/`prune-replaced`/`install`/
 // `uninstall` are additional first positional actions; no action still creates an archive.
 
@@ -139,7 +139,7 @@ export interface BackupOptions {
 }
 
 /** Thrown when native mode cannot be attempted at all — the caller (createBackup itself for
- *  a direct `--native` request, and ./clawforge upgrade for its pre-upgrade backup) falls
+ *  a direct `--native` request, and clawforge upgrade for its pre-upgrade backup) falls
  *  back to the classic stopped tar path rather than treating it as a hard failure. Any other
  *  error out of the native path is a real failure and propagates as-is. */
 export class NativeBackupUnsupportedError extends Error {}

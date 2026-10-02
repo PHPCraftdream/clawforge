@@ -7,6 +7,7 @@
 import { TransportUnreachableError } from "../../../runtime/transport/transport.ts";
 import type { ExecResult } from "../../../runtime/transport/transport.ts";
 import { die, warn as logWarn, regexEscape } from "../../../core/io/log.ts";
+import { commandLine } from "../../../core/io/invocation/render.ts";
 import { parseDfAvailableKb } from "../../operate/watch/health.ts";
 import type { Context } from "../../../core/context.ts";
 
@@ -157,7 +158,7 @@ async function targetUserIdentity(ctx: Context): Promise<{ user: string; group: 
 async function readyLine(ctx: Context, path: string): Promise<string> {
   const identity = await targetUserIdentity(ctx);
   return identity === undefined
-    ? `sudo install -d ${path}  (then hand it to whoever runs ./clawforge bootstrap)`
+    ? `sudo install -d ${path}  (then hand it to whoever runs ${commandLine("bootstrap")})`
     : `sudo install -d -o ${identity.user} -g ${identity.group} ${path}`;
 }
 
@@ -193,7 +194,7 @@ async function dockerProbe(ctx: Context): Promise<PrereqResult> {
     result = await ctx.transport.exec("docker", ["info", "--format", "{{.ServerVersion}}"], { allowFailure: true });
   } catch (error) {
     if (error instanceof TransportUnreachableError) throw error;
-    return fail("docker is not on PATH on the target", "install Docker Engine, then re-run ./clawforge bootstrap --check");
+    return fail("docker is not on PATH on the target", `install Docker Engine, then re-run ${commandLine(["bootstrap", "--check"])}`);
   }
   return parseDockerInfo(result);
 }
@@ -330,7 +331,7 @@ export function parseGnuUserlandCheck(result: Pick<ExecResult, "code" | "stdout"
   if (reported.size === 0) {
     return warn(
       "could not determine the target's GNU userland capabilities — the probe produced no output",
-      "re-run ./clawforge bootstrap --check; verify a POSIX sh is on the target's PATH",
+      `re-run ${commandLine(["bootstrap", "--check"])}; verify a POSIX sh is on the target's PATH`,
     );
   }
 

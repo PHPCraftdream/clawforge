@@ -1,4 +1,4 @@
-// `./clawforge verify <archive>` — checks a snapshot for credentials before it is shared.
+// `clawforge verify <archive>` — checks a snapshot for credentials before it is shared.
 //
 // Exclusion lists are a promise; this is a check.
 // The archive is unpacked into a temporary directory on the target and searched — binary

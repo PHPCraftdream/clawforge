@@ -4,6 +4,7 @@
 // transport in the context decide how the instance is actually started.
 
 import { log, info, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
 import { preflightSecrets } from "#src/commands/management/secrets.ts";
@@ -57,7 +58,7 @@ export const RESTART = commandBody({
 
 async function restartInstance(ctx: Context): Promise<void> {
   if (!(await ctx.runtime.isRunning())) {
-    die("the gateway is not running — start it with ./clawforge up");
+    die(`the gateway is not running — start it with ${commandLine("up")}`);
   }
   await preflightSecrets(ctx);
   log("restarting the gateway");

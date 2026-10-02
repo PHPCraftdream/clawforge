@@ -28,7 +28,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "and the runtime's own opinion —\n" +
       "because they can disagree: an image whose healthcheck binary is missing\n" +
       "reports \"unhealthy\" forever while the gateway is serving traffic fine.\n" +
-      "--json emits the same facts structured instead of the container table, since that " +
+      "{--json} emits the same facts structured instead of the container table, since that " +
       "table is not machine-readable: target, runtime, exposure, bootstrapped, running, " +
       "image, health, serviceUrl, dataUsage.",
   },
@@ -46,7 +46,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "The boundary, since it is easy to over-promise: this pins the composition, not the " +
       "behaviour. The same lock brought up twice is the same code, image and content — and " +
       "the model can still answer differently.\n" +
-      "--check compares without writing; `./clawforge inspect` reports the same differences as " +
+      "{--check} compares without writing; `{clawforge inspect}` reports the same differences as " +
       "warnings, because an instance that drifted from its lock still works and it is the " +
       "reader who decides whether the difference was intended.\n" +
       "Meant to be committed.",
@@ -58,27 +58,27 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     ...CLI,
     details:
       "Everything after `cli` is passed straight through to OpenClaw's own CLI, e.g.\n" +
-      "`./clawforge cli config get gateway.mode`.\n" +
+      "`{clawforge cli config get gateway.mode}`.\n" +
       "By default each call is a fresh one-off container sharing the gateway's network " +
       "namespace, paying for its create/destroy on every call.\n" +
-      "Run `./clawforge cli-start` once and this execs into that container instead, skipping that " +
+      "Run `{clawforge cli-start}` once and this execs into that container instead, skipping that " +
       "cost — noticeably faster, though both paths go through the WSL2/Docker Desktop " +
       "boundary either way and neither is instant.\n" +
-      "`./clawforge cli --help` prints this text, same as `./clawforge help cli`; to reach OpenClaw's " +
-      "own --help instead, put it after a bare --: `./clawforge cli -- --help`.",
+      "`{clawforge cli --help}` prints this text, same as `{clawforge help cli}`; to reach OpenClaw's " +
+      "own --help instead, put it after a bare --: `{clawforge cli -- --help}`.",
     // Declared destructive not because it destroys anything itself, but because it can run
     // anything OpenClaw's CLI can — including that CLI's own destructive subcommands. Over
     // MCP that earns the same confirmation push/restore/deploy need, rather than a second
     // mechanism invented for this one command.
   },
   exec: {
-    summary: "Run an arbitrary command in the same sidecar as ./clawforge cli",
+    summary: "Run an arbitrary command in the same sidecar as `cli`",
     group: "low-level",
     ...EXEC,
     details:
       "Unlike `cli`, which always runs OpenClaw's own CLI entrypoint, this runs whatever " +
-      "command you give it, e.g. `./clawforge exec curl -fsS http://127.0.0.1:18789/healthz` " +
-      "or `./clawforge exec cat /app/docs/channels/telegram.md`.\n" +
+      "command you give it, e.g. `{clawforge exec curl -fsS http://127.0.0.1:18789/healthz}` " +
+      "or `{clawforge exec cat /app/docs/channels/telegram.md}`.\n" +
       "Same container as `cli`: the OpenClaw image, the gateway's network namespace, the " +
       "same data mounts, the same one-off-vs-helper choice.",
     // Same reasoning as `cli`: it can run anything, so it gets the same MCP confirmation.
@@ -97,8 +97,8 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "yet for this platform), it says so and runs in the same place as local;\n" +
       "  local   this machine, unwrapped.\n" +
       "Privilege is stated where it arrives, not where it is named. target and local run as the " +
-      "operator's own user; there --root --confirm-root together elevate (--root alone and " +
-      "--confirm-root alone do nothing): sudo -n, so a required password fails fast instead of " +
+      "operator's own user; there {--root} {--confirm-root} together elevate ({--root} alone and " +
+      "{--confirm-root} alone do nothing): sudo -n, so a required password fails fast instead of " +
       "hanging; wsl -u root in the engine distro, where WSL grants it without a password; refused " +
       "outright where there is no root concept.\n" +
       "engine is the exception: Docker Desktop's docker-desktop distro has no login user but root, " +
@@ -116,21 +116,21 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     group: "low-level",
     ...CLI_START,
     details:
-      "`./clawforge cli` and `./clawforge mcp-serve` normally pay for a fresh container on every call " +
+      "`{clawforge cli}` and `{clawforge mcp-serve}` normally pay for a fresh container on every call " +
       "(`docker compose run --rm`) — creating and tearing one down costs several seconds " +
       "even with a warm image.\n" +
       "This starts a long-lived container instead (same image, mounts and network as the " +
       "one-off), so both commands `docker exec` into it instead of creating a new one — " +
       "consistently faster, though the exact saving depends on how busy Docker Desktop's " +
       "WSL2 VM is at the time.\n" +
-      "Idempotent. Not started by `./clawforge up`; `./clawforge down` removes it along with anything " +
+      "Idempotent. Not started by `{clawforge up}`; `{clawforge down}` removes it along with anything " +
       "else under the \"cli\" profile.",
   },
   "cli-stop": {
     summary: "Stop the persistent CLI helper",
     group: "low-level",
     ...CLI_STOP,
-    details: "`./clawforge cli`/`./clawforge mcp-serve` fall back to a one-off container once this is stopped.",
+    details: "`{clawforge cli}`/`{clawforge mcp-serve}` fall back to a one-off container once this is stopped.",
   },
   "configure-provider": {
     summary: "Configure model providers from target-side environment variables",
@@ -138,9 +138,9 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     ...CONFIGURE_PROVIDER,
     details:
       "Provider ids come from models.providers/auth.profiles. A populated <ID>_API_KEY " +
-      "entry in target config/.env opts into a new provider; --env selects a different " +
+      "entry in target config/.env opts into a new provider; {--env} selects a different " +
       "variable and explicit models.providers.<id>.apiKey SecretRefs are preserved. Keys " +
-      "never enter openclaw.json. --provider and --env make any provider convention explicit.",
+      "never enter openclaw.json. {--provider} and {--env} make any provider convention explicit.",
   },
   secrets: {
     summary: "Show required secrets and whether they are in place",
@@ -152,22 +152,22 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "directly (scanning the config alone misses the provider key entirely).\n" +
       "Each variable is delivered to one of two runtime locations — repo-env (.env next to " +
       "the repository) or target-env (<data>/config/.env on the target). The local store " +
-      "under secrets/ is the source of truth and --apply delivers each value to its declared " +
+      "under secrets/ is the source of truth and {--apply} delivers each value to its declared " +
       "location.\n" +
-      "--template writes config/secrets.template.env (safe to commit: names only, no " +
+      "{--template} writes config/secrets.template.env (safe to commit: names only, no " +
       "values).\n" +
-      "--init-store --store <name> creates apps/<deployment>/secrets/<name>.env to fill " +
+      "{--init-store} {--store} <name> creates apps/<deployment>/secrets/<name>.env to fill " +
       "in by hand —\n" +
-      "it refuses to overwrite an existing store unless --force is given, since the " +
+      "it refuses to overwrite an existing store unless {--force} is given, since the " +
       "values it would destroy exist nowhere else.\n" +
-      "--apply --store <name> installs that store's values into both runtime locations, and " +
+      "{--apply} {--store} <name> installs that store's values into both runtime locations, and " +
       "the two locations take different paths from there: target-env values are re-read by " +
       "the gateway on restart, while repo-env values were interpolated into the container's " +
       "environment at creation —\n" +
-      "so with an instance running, --apply recreates the container itself (it is replaced, " +
+      "so with an instance running, {--apply} recreates the container itself (it is replaced, " +
       "not merely signalled), waits for health, and confirms the new values are in force " +
       "without printing them; a stopped instance picks them up on the next start.\n" +
-      "--dump --store <name> is the reverse: recovers what an already-running instance " +
+      "{--dump} {--store} <name> is the reverse: recovers what an already-running instance " +
       "actually holds — target-env from the target's own config/.env, repo-env (the " +
       "gateway token) from the running container's own environment, since it is never " +
       "written to the target's filesystem at all —\n" +
@@ -176,10 +176,10 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "report, never guessed.\n" +
       "up/bootstrap refuse to start when something required is missing, rather than let " +
       "the gateway crash-loop.\n" +
-      "Over MCP, status and template operations need no confirmation; --apply, --init-store " +
-      "and --dump require confirm: true. --force remains an explicit separate choice.\n" +
-      "--json emits the default report (names/state/where-found, never values) as JSON — " +
-      "refused together with --template/--print-template/--init-store/--apply/--dump.",
+      "Over MCP, status and template operations need no confirmation; {--apply}, {--init-store} " +
+      "and {--dump} require confirm: true. {--force} remains an explicit separate choice.\n" +
+      "{--json} emits the default report (names/state/where-found, never values) as JSON — " +
+      "refused together with {--template}/{--print-template}/{--init-store}/{--apply}/{--dump}.",
   },
   recipe: {
     summary: "Deploy services next to the instance: install, verify, list, and more",
@@ -198,7 +198,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "or volumes.\n" +
       "Building happens on the target (a fresh Rust or Go build takes minutes and streams " +
       "rather than hangs silently); a recipe kept in the repository but marked disabled " +
-      "refuses `install` unless --force-disabled is given.\n" +
+      "refuses `install` unless {--force-disabled} is given.\n" +
       "install, remove, verify, onboard and diagnose take the instance lock for their whole run — " +
       "install across its build, so minutes — during which other mutating operations are refused " +
       "with the holder named, and a caller that already holds the lock runs them as its own steps " +
@@ -242,9 +242,9 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "recipe's stack is running, a bounded tail of every service in it (not just one), " +
       "and the verify.ts hook's own result if it has one — gated like verify itself, since " +
       "it runs that same hook and the framework cannot know it is read-only.\n" +
-      "list --json emits {recipes, bundles, broken} instead of the text catalog.\n" +
+      "list {--json} emits {recipes, bundles, broken} instead of the text catalog.\n" +
       "new scaffolds recipes/<name>/ — a minimal recipe.json and compose.yml skeleton, no " +
-      "hooks by default — refuses an existing directory the same way import does; --with-hooks " +
+      "hooks by default — refuses an existing directory the same way import does; {--with-hooks} " +
       "also adds commented prepare.ts/verify.ts stubs. Repository-side only, like import: no " +
       "target, no lock.",
   },
@@ -266,7 +266,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "A cron job needing a scope this deployment's \"cli\" client does not have yet " +
       "is reported for manual approval through a trusted admin session or the Control UI; " +
       "only accept and set try offer --with-model for explicit model approval.\n" +
-      "Requires the gateway to be running (./clawforge up).",
+      "Requires the gateway to be running ({clawforge up}).",
   },
   deploy: {
     summary: "Deploy to a server over SSH and bootstrap it there",
@@ -298,11 +298,11 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "Runs OpenClaw's own `mcp serve` and speaks JSON-RPC straight through stdio —\n" +
       "this is the bridge an MCP client (Claude Code, Codex, Claude Desktop) uses to read and " +
       "send messages in OpenClaw's channels.\n" +
-      "Set up a client with `./clawforge mcp-setup`; this command is what the generated config " +
+      "Set up a client with `{clawforge mcp-setup}`; this command is what the generated config " +
       "actually invokes, not something to run by hand.\n" +
-      "Not the same thing as `./clawforge control-mcp`, which exposes this deployment's own " +
+      "Not the same thing as `{clawforge control-mcp}`, which exposes this deployment's own " +
       "commands as MCP tools instead — mcp-setup registers both.\n" +
-      "By default this is a one-off container; run `./clawforge cli-start` first and it execs into " +
+      "By default this is a one-off container; run `{clawforge cli-start}` first and it execs into " +
       "that container instead, cutting the wait before the client's first response — paid " +
       "once per connection either way.",
     // Owns stdin/stdout for JSON-RPC; cannot be a tool itself.
@@ -319,7 +319,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
       "and the rest), so they don't have to be typed by hand.\n" +
       "Writes project .mcp.json for Claude Code and .codex/config.toml for Codex. " +
       "Other servers and settings are preserved; invalid or ambiguous configuration is refused.\n" +
-      "init and new-app do this automatically. Use --client claude or --client codex to update " +
+      "init and new-app do this automatically. Use {--client} claude or {--client} codex to update " +
       "only one client. Launch paths are resolved inside the project, without absolute host paths. " +
       "The client may still require project trust or server approval; reconnect it after setup.",
     structured: true,
@@ -334,7 +334,7 @@ export const managementCommands: Record<string, AppCommand> = materializeCommand
     // declared here, not left as an implicit hole in the dispatcher.
     exportsSecrets: true,
     details:
-      "The same information `./clawforge mcp-setup` writes to a file, printed instead —\n" +
-      "useful for pasting into a client by hand or checking what --json/--token would produce.",
+      "The same information `{clawforge mcp-setup}` writes to a file, printed instead —\n" +
+      "useful for pasting into a client by hand or checking what {--json}/{--token} would produce.",
   },
 });

@@ -1,5 +1,5 @@
-// `./clawforge backup install` / `backup uninstall` — a scheduler entry that runs
-// `./clawforge backup` on an interval, mirroring `watch install`/`watch uninstall` exactly:
+// `clawforge backup install` / `backup uninstall` — a scheduler entry that runs
+// `clawforge backup` on an interval, mirroring `watch install`/`watch uninstall` exactly:
 // same crontab conventions, same Windows fallback, both built on schedule.ts.
 //
 // OC_BACKUP_KEEP (.env.example) presumes backups happen on a schedule; this command supplies
@@ -10,6 +10,7 @@
 // cronSchedule() validates, so the two commands cannot drift.
 
 import { info, infoRaw, log, warn } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import type { Context } from "#src/core/context.ts";
 import { scheduleIntervalValue } from "#src/commands/operate/schedule.ts";
 import type { ArgumentSpec, Values } from "#src/core/command/spec.ts";
@@ -90,7 +91,7 @@ export async function backupInstall(ctx: Context, values: InstallValues): Promis
   infoRaw(line);
   info(`marked "${jobMarker(JOB, identity)}" — re-running this replaces only that line; backup uninstall removes only it`);
   if (ctx.transport.description.startsWith("ssh:")) {
-    info(`assumes this deployment was mirrored to ${ctx.settings.remotePath} by ./clawforge deploy (set OC_REMOTE_PATH if --path differed)`);
+    info(`assumes this deployment was mirrored to ${ctx.settings.remotePath} by ${commandLine("deploy")} (set OC_REMOTE_PATH if --path differed)`);
   }
 
   if (!apply) {

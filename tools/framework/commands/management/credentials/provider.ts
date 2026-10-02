@@ -2,6 +2,7 @@
 
 import JSON5 from "json5";
 import { log, info } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv } from "#src/core/env.ts";
@@ -140,7 +141,7 @@ async function configureProviderLocked(ctx: Context, options: ProviderOptions): 
     emit(`${JSON.stringify({ ok: true, changed, configured: configuredIds, skipped }, null, 2)}\n`);
     return;
   }
-  if (changed) log("provider configuration updated — restart to apply: ./clawforge restart");
+  if (changed) log(`provider configuration updated — restart to apply: ${commandLine("restart")}`);
   else info("no provider changes");
 }
 

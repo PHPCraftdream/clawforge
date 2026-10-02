@@ -2,6 +2,7 @@
 // parsed --target/--path/--adopt/--no-bootstrap, and the two remote paths derived from them.
 
 import { die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { monorepoRoot, isMonorepoCheckout } from "#src/core/env.ts";
 import { deploymentDir, deploymentName, recipesDir, applicationRecipesSetting } from "#src/runtime/deployment.ts";
 import { validatedRemoteRoot } from "#src/security/privacy/deploy-boundary.ts";
@@ -37,7 +38,7 @@ export async function frameworkSourceRoot(root: string = monorepoRoot): Promise<
         "Deploying in this mode means installing @clawforge/framework on the server and " +
         "sending only this deployment's own files, which is a different command and does " +
         "not exist yet. Deploy from a checkout, or copy this deployment's directory across " +
-        "and run ./clawforge bootstrap there.",
+        `and run ${commandLine("bootstrap")} there.`,
     );
   }
   return root;

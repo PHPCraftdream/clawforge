@@ -1,4 +1,4 @@
-// `./clawforge recipe` — deploying third-party services next to the instance.
+// `clawforge recipe` — deploying third-party services next to the instance.
 //
 // Each recipe runs as its own compose project, so nothing here can disturb the gateway.
 // Building happens on the target: a Rust or Go build from scratch takes minutes, and the
@@ -20,6 +20,7 @@ import type { ArgumentSpec } from "#src/core/command/index.ts";
 import { ArgumentError } from "#src/core/command/index.ts";
 import type { Context } from "#src/core/context.ts";
 import { log, info, warn } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import {
   listAgentBundleRecipes,
@@ -106,10 +107,10 @@ async function runRecipeList(ctx: Context, jsonOnly: boolean): Promise<void> {
     log("available recipes");
     for (const entry of recipes) describe(entry);
     info("");
-    info("install with: ./clawforge recipe install <name>");
+    info(`install with: ${commandLine(["recipe", "install", "<name>"])}`);
   }
   for (const name of bundles) {
-    info(`${name.padEnd(16)} agent/MCP bundle — not installable; visible with ./clawforge inspect, provisioned with ./clawforge provision-agent`);
+    info(`${name.padEnd(16)} agent/MCP bundle — not installable; visible with ${commandLine("inspect")}, provisioned with ${commandLine("provision-agent")}`);
   }
   for (const entry of broken) {
     warn(`${entry.name.padEnd(16)} broken recipe.json: ${entry.error}`);
@@ -132,7 +133,7 @@ const NAME_ARGUMENT = {
  *  refusal is the usage line, and the schema shows <name> optional — bare `recipe status`
  *  is an action word without its operand, not a schema error. */
 function recipeName(values: { readonly name?: string }, action: string): string {
-  if (values.name === undefined) throw new ArgumentError(`usage: ./clawforge recipe ${action} <name>`, "name");
+  if (values.name === undefined) throw new ArgumentError(`usage: ${commandLine(["recipe", action, "<name>"])}`, "name");
   return values.name;
 }
 

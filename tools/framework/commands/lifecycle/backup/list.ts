@@ -1,7 +1,7 @@
-// `./clawforge backup list` — read-only inventory: every backup archive in
+// `clawforge backup list` — read-only inventory: every backup archive in
 // ctx.settings.backupDir, and every `<dataDir>.replaced-*` copy restore left next to the
 // data directory, both from the target through ctx.transport. Marks which archive a bare
-// `./clawforge restore` would pick by default.
+// `clawforge restore` would pick by default.
 //
 // What is not shown: WHY an archive was created (backup/pull/upgrade — BackupPurpose,
 // core/app.ts). That is a runtime option passed to createBackup for the afterBackup hook;
@@ -9,6 +9,7 @@
 // there is nothing here to read it back from — omitted rather than guessed.
 
 import { log, info, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { humanSize } from "#src/core/io/size.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
@@ -94,6 +95,6 @@ export async function backupList(ctx: Context, values: BackupListValues): Promis
     info("none found");
   } else {
     for (const entry of replaced) info(replacedLine(entry));
-    info("remove with: ./clawforge backup prune-replaced --apply");
+    info(`remove with: ${commandLine(["backup", "prune-replaced", "--apply"])}`);
   }
 }

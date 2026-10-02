@@ -1,4 +1,4 @@
-// `./clawforge backup --dry-run`'s report: the same refusals and archive-name computation
+// `clawforge backup --dry-run`'s report: the same refusals and archive-name computation
 // createBackupLocked runs, reported instead of acted on. Nothing here stops the gateway,
 // quiesces a recipe stack, or writes anything — see index.ts's validateBackupTarget/
 // createBackupLocked, which this deliberately mirrors rather than re-derives.

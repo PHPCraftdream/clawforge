@@ -1195,7 +1195,7 @@
     },
     {
       "name": "exec",
-      "description": "Run an arbitrary command in the same sidecar as ./clawforge cli (destructive)\n\nFull text: call help with command=exec.",
+      "description": "Run an arbitrary command in the same sidecar as `cli` (destructive)\n\nFull text: call help with command=exec.",
       "inputSchema": {
         "type": "object",
         "properties": {

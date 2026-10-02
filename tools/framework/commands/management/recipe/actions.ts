@@ -1,10 +1,11 @@
-// Implementations of the individual `./clawforge recipe <action>` actions. index.ts's
+// Implementations of the individual `clawforge recipe <action>` actions. index.ts's
 // recipe() picks the action, gates it through the instance lock, then calls runRecipeAction
 // here to dispatch to one of these.
 
 import { access, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { docsUrl } from "#src/core/io/docs-url.ts";
 import type { Context } from "#src/core/context.ts";
 import {
@@ -294,7 +295,7 @@ export async function runNewAction(name: string, withHooks: boolean): Promise<vo
   }
   log(`created recipe "${name}"`);
   info(`directory: ${destination}`);
-  info("edit recipe.json and compose.yml, then: ./clawforge recipe install " + name);
+  info(`edit recipe.json and compose.yml, then: ${commandLine(["recipe", "install", name])}`);
   if (withHooks) info("prepare.ts and verify.ts are commented stubs — uncomment and edit before they run");
 }
 
@@ -412,7 +413,7 @@ export async function runInstallAction(ctx: Context, name: string, forceDisabled
   if (!spec.enabled && !forceDisabled) {
     warn(`recipe ${spec.name} is disabled`);
     if (spec.disabledReason !== undefined) info(spec.disabledReason);
-    die(`install it anyway with: ./clawforge recipe install ${spec.name} --force-disabled`);
+    die(`install it anyway with: ${commandLine(["recipe", "install", spec.name, "--force-disabled"])}`);
   }
 
   // Declared variables must exist before the service starts: a container that starts and
@@ -451,7 +452,7 @@ export async function runInstallAction(ctx: Context, name: string, forceDisabled
   if (readiness.status !== "ready") {
     if (isCaptured()) emit(`${JSON.stringify(report)}\n`);
     warn(`${spec.name} started but is not ready (${readiness.status}): ${readiness.detail}`);
-    info(`diagnose with: ./clawforge recipe diagnose ${spec.name}`);
+    info(`diagnose with: ${commandLine(["recipe", "diagnose", spec.name])}`);
     die(`recipe ${spec.name} did not reach a ready state — afterStart was skipped`);
   }
 

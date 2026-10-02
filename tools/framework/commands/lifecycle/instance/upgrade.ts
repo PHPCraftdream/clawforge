@@ -2,6 +2,7 @@
 
 import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
 import { sleep, requireBootstrapped } from "#src/runtime/runtime.ts";
 import { refreshContext, type Context } from "#src/core/context.ts";
@@ -78,7 +79,7 @@ async function resolveUpgradeTarget(
       die(
         `OPENCLAW_IMAGE is "${ctx.settings.image}" — a digest with no tag alongside it, so the channel it was ` +
           "pulled from is unknown and cannot be re-resolved. Name the channel explicitly: " +
-          "./clawforge upgrade --image <repo:tag> (upgrade then keeps the tag alongside the digest).",
+          `${commandLine(["upgrade", "--image", "<repo:tag>"])} (upgrade then keeps the tag alongside the digest).`,
       );
     }
     channelRef = { ...declared, digest: undefined };
@@ -251,10 +252,10 @@ async function upgradeLocked(
     await rollbackUpgrade(ctx, previousDigest, previousReference, backupArchive, restoreData, error, recreateWithImage);
   }
   log(`upgrade complete: now running ${targetDigest}`);
-  info("re-pin the deployment's own record of this: ./clawforge lock");
+  info(`re-pin the deployment's own record of this: ${commandLine("lock")}`);
 }
 
-/** `./clawforge upgrade` — pulls the target image by digest (never moving a shared local tag),
+/** `clawforge upgrade` — pulls the target image by digest (never moving a shared local tag),
  *  takes a consistent pre-upgrade backup, recreates the gateway on it, and rolls back to the
  *  digest it was running before on any failure — restoring that backup too when the failure
  *  was a migration (exit 78) that may already have changed the data.
@@ -270,7 +271,7 @@ export const UPGRADE = commandBody({
     await requireBootstrapped(ctx);
 
   if (ctx.runtime.resolveImageDigest === undefined || ctx.runtime.recreateWithImage === undefined) {
-    die(`${ctx.runtime.description} does not support ./clawforge upgrade`);
+    die(`${ctx.runtime.description} does not support ${commandLine("upgrade")}`);
   }
   const resolveImageDigest = ctx.runtime.resolveImageDigest.bind(ctx.runtime);
   const recreateWithImage = ctx.runtime.recreateWithImage.bind(ctx.runtime);
@@ -283,7 +284,7 @@ export const UPGRADE = commandBody({
 
   const identity = await ctx.runtime.runningImageIdentity?.();
   if (identity === undefined || identity.digests.length === 0) {
-    die("could not determine the currently running image digest — refusing to upgrade with no rollback target. Is the gateway running (./clawforge up)?");
+    die(`could not determine the currently running image digest — refusing to upgrade with no rollback target. Is the gateway running (${commandLine("up")})?`);
   }
   const previousDigest = identity.digests[0];
   const upToDate = sameContent(target.targetDigest, previousDigest);

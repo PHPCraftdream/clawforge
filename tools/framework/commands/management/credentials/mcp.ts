@@ -7,6 +7,7 @@
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, emitRaw, isCaptured } from "#src/core/io/output.ts";
 import { deploymentDir } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
@@ -59,7 +60,7 @@ async function runMcpServe(ctx: Context, args: string[]): Promise<void> {
   }
 
   if (!(await ctx.runtime.isRunning())) {
-    die("the gateway is not running. Start it with ./clawforge up");
+    die(`the gateway is not running. Start it with ${commandLine("up")}`);
   }
   // The container can be running while the gateway is still warming up; wait before handing
   // over stdio so the first JSON-RPC request can't race the service startup.
@@ -146,8 +147,8 @@ async function runMcpCreds(ctx: Context, jsonOnly: boolean, tokenOnly: boolean):
 
   log("OpenClaw access");
   info(`gateway  ${ctx.settings.serviceUrl}`);
-  info(`token    ${token === "" ? "(not generated — run ./clawforge bootstrap)" : token}`);
-  info(`state    ${(await ctx.runtime.isRunning()) ? "running" : "not running — ./clawforge up"}`);
+  info(`token    ${token === "" ? `(not generated — run ${commandLine("bootstrap")})` : token}`);
+  info(`state    ${(await ctx.runtime.isRunning()) ? "running" : `not running — ${commandLine("up")}`}`);
 
   log("Project MCP client config (.mcp.json and .codex/config.toml)");
   for (const line of (await mcpConfig(ctx)).trimEnd().split("\n")) info(line);
@@ -157,5 +158,5 @@ async function runMcpCreds(ctx: Context, jsonOnly: boolean, tokenOnly: boolean):
   info("events_wait, attachments_fetch, permissions_list_open, permissions_respond");
 
   log(`${CLAWFORGE_CONTROL_MCP_NAME} — this deployment's own commands (bootstrap, status, backup, secrets, …)`);
-  info("full list: ./clawforge help — destructive commands (push, restore, deploy) need confirm: true");
+  info(`full list: ${commandLine("help")} — destructive commands (push, restore, deploy) need confirm: true`);
 }

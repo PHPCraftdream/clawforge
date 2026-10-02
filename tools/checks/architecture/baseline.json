@@ -6,8 +6,6 @@
       "tools/framework/commands/interface/cli-helper.ts": 5,
       "tools/framework/commands/interface/cli.ts": 4,
       "tools/framework/commands/interface/exec.ts": 6,
-      "tools/framework/commands/interface/groups/openclawCommands.lifecycle.ts": 8,
-      "tools/framework/commands/interface/groups/openclawCommands.management.ts": 20,
       "tools/framework/commands/interface/groups/openclawCommands.operate.ts": 5,
       "tools/framework/commands/interface/groups/openclawCommands.orchestration.ts": 19,
       "tools/framework/commands/interface/groups/openclawCommands.sets.ts": 1,
@@ -15,33 +13,6 @@
       "tools/framework/commands/interface/host/index.ts": 1,
       "tools/framework/commands/interface/index.ts": 1,
       "tools/framework/commands/interface/status.ts": 3,
-      "tools/framework/commands/lifecycle/backup/index.ts": 3,
-      "tools/framework/commands/lifecycle/backup/install.ts": 3,
-      "tools/framework/commands/lifecycle/backup/list.ts": 3,
-      "tools/framework/commands/lifecycle/backup/plan.ts": 1,
-      "tools/framework/commands/lifecycle/backup/prune-replaced.ts": 1,
-      "tools/framework/commands/lifecycle/bootstrap/check.ts": 3,
-      "tools/framework/commands/lifecycle/bootstrap/index.ts": 8,
-      "tools/framework/commands/lifecycle/bootstrap/prereqs.ts": 3,
-      "tools/framework/commands/lifecycle/instance/control.ts": 1,
-      "tools/framework/commands/lifecycle/instance/upgrade.ts": 5,
-      "tools/framework/commands/lifecycle/restore/index.ts": 10,
-      "tools/framework/commands/lifecycle/smoke/index.ts": 3,
-      "tools/framework/commands/lifecycle/smoke/round-trip.ts": 1,
-      "tools/framework/commands/lifecycle/state.ts": 5,
-      "tools/framework/commands/lifecycle/verify.ts": 1,
-      "tools/framework/commands/management/credentials/mcp.ts": 4,
-      "tools/framework/commands/management/credentials/provider.ts": 1,
-      "tools/framework/commands/management/deploy/arguments.ts": 1,
-      "tools/framework/commands/management/deploy/index.ts": 2,
-      "tools/framework/commands/management/deploy/sync.ts": 3,
-      "tools/framework/commands/management/lock.ts": 1,
-      "tools/framework/commands/management/provision-agent/declaration.ts": 1,
-      "tools/framework/commands/management/provision-agent/index.ts": 3,
-      "tools/framework/commands/management/provision-agent/reconcile.ts": 1,
-      "tools/framework/commands/management/recipe/actions.ts": 4,
-      "tools/framework/commands/management/recipe/index.ts": 5,
-      "tools/framework/commands/management/secrets.ts": 14,
       "tools/framework/commands/operate/expose/index.ts": 1,
       "tools/framework/commands/operate/expose/ssh.ts": 3,
       "tools/framework/commands/operate/expose/status.ts": 8,
@@ -102,7 +73,7 @@
         }
       }
     },
-    "total": 285
+    "total": 166
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
@@ -294,12 +265,10 @@
   "proseFlags": {
     "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",
     "files": {
-      "tools/framework/commands/interface/groups/openclawCommands.lifecycle.ts": 38,
-      "tools/framework/commands/interface/groups/openclawCommands.management.ts": 36,
       "tools/framework/commands/interface/groups/openclawCommands.orchestration.ts": 17,
       "tools/framework/commands/interface/groups/openclawCommands.operate.ts": 13,
       "tools/framework/commands/interface/groups/openclawCommands.sets.ts": 8
     },
-    "total": 112
+    "total": 38
   }
 }

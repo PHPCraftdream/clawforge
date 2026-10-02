@@ -53,7 +53,7 @@
     
     Low-level:
       cli                  Run the OpenClaw CLI in a throwaway container !
-      exec                 Run an arbitrary command in the same sidecar as clawforge cli !
+      exec                 Run an arbitrary command in the same sidecar as `cli` !
       host                 Run one command on the operator's own machine, not in a container !
       cli-start            Start the persistent CLI helper (no per-call container overhead)
       cli-stop             Stop the persistent CLI helper

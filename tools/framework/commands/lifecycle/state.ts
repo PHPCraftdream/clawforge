@@ -1,4 +1,4 @@
-// `./clawforge pull` and `./clawforge push` — moving an instance's whole state around.
+// `clawforge pull` and `clawforge push` — moving an instance's whole state around.
 //
 // Both are thin layers over backup/restore rather than a second implementation: those
 // already stop the gateway before touching sqlite and move existing data aside instead of
@@ -6,6 +6,7 @@
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
 import { emit, withOutputSink } from "#src/core/io/output.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { randomBytes } from "node:crypto";
 import type { Context } from "#src/core/context.ts";
 import { parseEnv, parseRetention } from "#src/core/env.ts";
@@ -550,7 +551,7 @@ export async function resolvePushArchive(ctx: Context, archiveArg: string | unde
   if (archive !== undefined) return archive;
 
   const found = (await listSnapshotArchives(ctx, snapshotDir))[0];
-  if (found === undefined) die(`no snapshots in ${snapshotDir} — run ./clawforge pull first`);
+  if (found === undefined) die(`no snapshots in ${snapshotDir} — run ${commandLine("pull")} first`);
   return found;
 }
 
@@ -635,7 +636,7 @@ async function restoreFromSnapshot(ctx: Context, values: Values<typeof PUSH_ARGU
     if (!(error instanceof MissingSecretsError)) throw error;
     warn(error.message);
     info("the instance is restored but left stopped");
-    info("supply the keys with: ./clawforge secrets --apply --store <name>, then ./clawforge up");
+    info(`supply the keys with: ${commandLine(["secrets", "--apply", "--store", "<name>"])}, then ${commandLine("up")}`);
     return { archive, secretsInstalled: hasSecrets, started: false };
   }
 

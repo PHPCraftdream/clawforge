@@ -1,4 +1,4 @@
-// `./clawforge backup prune-replaced` — deletes `<dataDir>.replaced-*` copies restore leaves
+// `clawforge backup prune-replaced` — deletes `<dataDir>.replaced-*` copies restore leaves
 // next to the data directory once it has moved the previous data aside. Preview by default;
 // only --apply deletes.
 //

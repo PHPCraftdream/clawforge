@@ -1,4 +1,4 @@
-// `./clawforge watch` — health monitoring with a webhook alert on state change, so an operator
+// `clawforge watch` — health monitoring with a webhook alert on state change, so an operator
 // learns the instance stopped doing its job without polling by hand.
 //
 // Lives in commands/operate/ with expose/, incident/ and recover-env/ — see expose/index.ts's

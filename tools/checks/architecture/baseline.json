@@ -2,45 +2,7 @@
   "about": "Architecture ratchets (refactor plan docs/internal/refactor-plan-2026-10-01.md, stage 0 item 2). Each number is measured from the working tree (never git) and must EQUAL the recorded value: higher fails, lower fails too — lower the baseline in the same commit as the change that reduced it.",
   "dotClawforgeLiterals": {
     "comment": "stage 4 (Advice): ./clawforge must reach output only through one renderer",
-    "files": {
-      "tools/framework/commands/interface/cli-helper.ts": 5,
-      "tools/framework/commands/interface/cli.ts": 4,
-      "tools/framework/commands/interface/exec.ts": 6,
-      "tools/framework/commands/interface/groups/openclawCommands.operate.ts": 5,
-      "tools/framework/commands/interface/groups/openclawCommands.orchestration.ts": 19,
-      "tools/framework/commands/interface/groups/openclawCommands.sets.ts": 1,
-      "tools/framework/commands/interface/host/contexts.ts": 1,
-      "tools/framework/commands/interface/host/index.ts": 1,
-      "tools/framework/commands/interface/index.ts": 1,
-      "tools/framework/commands/interface/status.ts": 3,
-      "tools/framework/commands/operate/expose/index.ts": 1,
-      "tools/framework/commands/operate/expose/ssh.ts": 3,
-      "tools/framework/commands/operate/expose/status.ts": 8,
-      "tools/framework/commands/operate/expose/tailscale.ts": 3,
-      "tools/framework/commands/operate/incident/index.ts": 6,
-      "tools/framework/commands/operate/recover-env/index.ts": 7,
-      "tools/framework/commands/operate/schedule.ts": 5,
-      "tools/framework/commands/operate/watch/check.ts": 1,
-      "tools/framework/commands/operate/watch/index.ts": 1,
-      "tools/framework/commands/operate/watch/install.ts": 2,
-      "tools/framework/commands/operate/watch/status.ts": 5,
-      "tools/framework/commands/operate/watch/webhook.ts": 1,
-      "tools/framework/commands/orchestration/accept.ts": 3,
-      "tools/framework/commands/orchestration/apply.ts": 9,
-      "tools/framework/commands/orchestration/config.ts": 3,
-      "tools/framework/commands/orchestration/inspect/declared.ts": 1,
-      "tools/framework/commands/orchestration/inspect/drift.ts": 1,
-      "tools/framework/commands/orchestration/inspect/gather.ts": 4,
-      "tools/framework/commands/orchestration/operations.ts": 3,
-      "tools/framework/commands/orchestration/plan.ts": 16,
-      "tools/framework/commands/orchestration/rollback.ts": 11,
-      "tools/framework/commands/sets/set-diff.ts": 5,
-      "tools/framework/commands/sets/set-manifest.ts": 1,
-      "tools/framework/commands/sets/set-receipts.ts": 1,
-      "tools/framework/commands/sets/set-try-env.ts": 1,
-      "tools/framework/commands/sets/set-try.ts": 2,
-      "tools/framework/commands/sets/set.ts": 5
-    },
+    "files": {},
     "exempt": {
       "tools/framework/core/io/invocation/render.ts": {
         "reason": "the one renderer: the program spelling every advice renders",
@@ -73,13 +35,13 @@
         }
       }
     },
-    "total": 166
+    "total": 11
   },
   "localizeOptOuts": {
     "comment": "stage 4: raw-output opt-outs vanish when localizeHints does",
-    "infoRaw": 7,
+    "infoRaw": 0,
     "reportErrorVerbatim": 0,
-    "localizeHints": 3
+    "localizeHints": 0
   },
   "rawArgvPredicates": {
     "comment": "stage 3 done, guard at 0: confirmation comes from declared effect, not raw argv; the AppCommand predicates stay only for commands an application declares",
@@ -264,11 +226,7 @@
   },
   "proseFlags": {
     "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",
-    "files": {
-      "tools/framework/commands/interface/groups/openclawCommands.orchestration.ts": 17,
-      "tools/framework/commands/interface/groups/openclawCommands.operate.ts": 13,
-      "tools/framework/commands/interface/groups/openclawCommands.sets.ts": 8
-    },
-    "total": 38
+    "files": {},
+    "total": 0
   }
 }

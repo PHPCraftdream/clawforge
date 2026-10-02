@@ -4,7 +4,7 @@
 // snapshots stay here — the server generates its own token, so a leaked local one cannot
 // unlock it.
 
-import { log, info, infoRaw, die } from "#src/core/io/log.ts";
+import { log, info, die } from "#src/core/io/log.ts";
 import { renderAdvice, shimInvocation, SHIM_PROGRAM } from "#src/core/io/invocation/render.ts";
 import { command } from "#src/core/io/invocation/advice.ts";
 import { deploymentDir, recipesDir } from "#src/runtime/deployment.ts";
@@ -140,7 +140,7 @@ export async function bootstrapAndReport(
 ): Promise<void> {
   if (!runBootstrap) {
     log(`files synced to ${target}:${remotePath} (bootstrap skipped)`);
-    infoRaw(`bring it up there with: cd ${remotePath} && ${renderAdvice(command("bootstrap", { app: name }), shimInvocation(name))}`);
+    info(`bring it up there with: cd ${remotePath} && ${renderAdvice(command("bootstrap", { app: name }), shimInvocation(name))}`);
     if (remotePathNote !== undefined) info(remotePathNote);
     return;
   }
@@ -156,6 +156,6 @@ export async function bootstrapAndReport(
   log("deployed");
   info("the gateway listens on the remote loopback only. Open a tunnel from here:");
   info(`  ssh -N -L ${ctx.settings.gatewayPort}:127.0.0.1:${ctx.settings.gatewayPort} ${target}`);
-  infoRaw(`provider keys are not copied — install them there: ${renderAdvice(command(["secrets", "--apply"], { app: name }), shimInvocation(name))}`);
+  info(`provider keys are not copied — install them there: ${renderAdvice(command(["secrets", "--apply"], { app: name }), shimInvocation(name))}`);
   if (remotePathNote !== undefined) info(remotePathNote);
 }

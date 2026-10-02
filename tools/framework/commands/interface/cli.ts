@@ -1,7 +1,8 @@
-// `./clawforge cli …` — runs the OpenClaw CLI in a throwaway container that shares the gateway's
+// `clawforge cli …` — runs the OpenClaw CLI in a throwaway container that shares the gateway's
 // network namespace and data mounts.
 
 import { die, dieWithExitCode } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { isCaptured, emitRaw } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
@@ -37,7 +38,7 @@ export async function cli(ctx: Context, args: string[]): Promise<void> {
 
 async function runCli(ctx: Context, passed: string[]): Promise<void> {
   if (passed.length === 0) {
-    die("usage: ./clawforge cli <openclaw arguments>, e.g. ./clawforge cli agent --agent main -m 'hi'");
+    die(`usage: ${commandLine("cli")} <openclaw arguments>, e.g. ${commandLine([])} cli agent --agent main -m 'hi'`);
   }
 
   // Under a sink the child's own stdout would land in the middle of a JSON-RPC message, so
@@ -70,7 +71,7 @@ async function runCli(ctx: Context, passed: string[]): Promise<void> {
   }
 
   if (!(await ctx.runtime.isRunning())) {
-    die("the gateway is not running. Start it with ./clawforge up");
+    die(`the gateway is not running. Start it with ${commandLine("up")}`);
   }
 
   // Disposable by design: everything it touches lives in the bind mounts.

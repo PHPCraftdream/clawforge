@@ -295,6 +295,34 @@ A finding's severity is what "healthy" means: blocking findings say the instance
 doing its job, warnings are differences worth naming that still work. `./clawforge doctor` fails on
 the first kind and not the second — a check that objects to everything stops being consulted.
 
+## Advice is data
+
+Most of what a command says at the end is advice: the remedy a problem code carries, the way
+out of a refusal, the scheduler line `watch install` offers. That text used to be written as
+a string at each of those places and rewritten on the way out to the invocation it printed
+under — `./clawforge` back to `clawforge` under a global install, `--app <name>` added for a
+non-default deployment — and the rewriting did not stop at JSON documents, so a document
+could describe a call the user never made and a cron line could come back spelled for a
+shell it was not written for.
+
+Advice is now a value: a clawforge command (its arguments, and the deployment when it has to
+be named), a line for another shell, host or scheduler (cron, `schtasks`, a command on a
+server), or an action with no command in it. One renderer (`core/io/invocation/render.ts`)
+turns a value into text, and it is the only place the `--app` rule and the program spelling
+live. That is the invariant worth stating: **a clawforge command reaches output only through
+the renderer, from data; a line written for another shell, host or scheduler is its own
+advice, and nothing rewrites it.** A `schtasks` line, a server command and a JSON document
+come out exactly as built under every invocation — including one they were not built for.
+
+What the user sees is one command in one set of words wherever it appears — an error's `→`
+line, a problem code's remedy, `nextActions` in a document — spelled for the invocation that
+printed it, with the remedy carried as data as well: `next` on the problems and documents
+that name one, `nextSteps` in the MCP envelope. Help prose names a command by a token
+(`{clawforge …}`, a flag by `{--flag}`) that only the help renderer fills in, checked against
+the specification by `tools/checks/surfaces/help-prose.check.ts`, so a renamed flag breaks
+the check rather than the help. An application's own `details` — its own `./clawforge`
+included — is no longer rewritten either: what the declaration says is what prints.
+
 ## Structured results for the MCP surface
 
 A tool result carries text for a person and, for commands declared `structured`, a

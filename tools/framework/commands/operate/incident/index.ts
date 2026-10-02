@@ -1,11 +1,11 @@
-// `./clawforge incident` — contain, preserve, rotate, audit, collect: the incident runbook.
+// `clawforge incident` — contain, preserve, rotate, audit, collect: the incident runbook.
 //
 // contain turns off only tailscale serve route(s) proxying to THIS gateway (never `serve
 // reset`, which drops other services' routes). A publicly-exposed gateway refuses the run
 // first, before the lock, unless --keep-exposure. Contain failures are noted, not thrown.
 //
 // rotate recreates the container after writing a new token — env vars are fixed at creation
-// time, a restart alone would not apply it. Paired clients need `./clawforge mcp-creds` after.
+// time, a restart alone would not apply it. Paired clients need `mcp-creds` after.
 // collect masks and archives logs, both audit outputs and a status summary unconditionally,
 // even on failure, into apps/<name>/incidents/<ts>/ (private, gitignored).
 //
@@ -14,6 +14,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die, registerSecret, maskSecrets } from "../../../core/io/log.ts";
+import { commandLine } from "../../../core/io/invocation/render.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
 import { commandBody, runOnContext, type ArgumentSpec, type Values } from "../../../core/command/index.ts";
@@ -108,7 +109,7 @@ export async function refuseIfPubliclyExposed(ctx: Context, options: IncidentOpt
     die(
       `the gateway is published on ${summary.bindAddress}:${summary.port} — reachable from every interface on ` +
         "this host. Refusing to run an incident response while it may still be reachable from outside. To fix " +
-        `it: set OC_BIND_ADDRESS=127.0.0.1 in ${envFile()}, then run ./clawforge up to recreate the gateway on ` +
+        `it: set OC_BIND_ADDRESS=127.0.0.1 in ${envFile()}, then run ${commandLine("up")} to recreate the gateway on ` +
         "loopback. Or pass --keep-exposure if this exposure is already handled elsewhere (a reverse proxy, a " +
         "security group, ...).",
     );
@@ -191,9 +192,9 @@ export async function rotateToken(ctx: Context, options: IncidentOptions): Promi
   actions.push(`rotated OPENCLAW_GATEWAY_TOKEN in ${path}`);
 
   if (!(await ctx.runtime.isRunning())) {
-    notes.push("the instance is stopped — the next ./clawforge up will carry the new token");
+    notes.push(`the instance is stopped — the next ${commandLine("up")} will carry the new token`);
   } else if (typeof ctx.runtime.reconcile !== "function") {
-    notes.push(`${ctx.runtime.description} cannot recreate the container — run ./clawforge up to apply the new token`);
+    notes.push(`${ctx.runtime.description} cannot recreate the container — run ${commandLine("up")} to apply the new token`);
   } else {
     actions.push("recreating the gateway so the new token takes effect");
     await ctx.runtime.reconcile();
@@ -212,7 +213,7 @@ export async function rotateToken(ctx: Context, options: IncidentOptions): Promi
     }
   }
 
-  notes.push("every MCP client paired against the old token needs new credentials: ./clawforge mcp-creds");
+  notes.push(`every MCP client paired against the old token needs new credentials: ${commandLine("mcp-creds")}`);
   return { phase: "rotate", actions, notes };
 }
 

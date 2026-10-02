@@ -24,15 +24,15 @@ export const setsCommands: Record<string, AppCommand> = materializeCommands({
       "appears anywhere in it.\n" +
       "validate checks a whole set with no running instance — recipe completeness, agent/MCP " +
       "references, cron field shape, secret-name coverage, image pinning.\n" +
-      "diff <A> <B> compares verified artifacts semantically; --from and --to provide the same inputs over MCP.\n" +
-      "receipts lists saved acceptance evidence; --set-id filters it and --receipt shows one record.\n" +
-      "try --set <artifact> installs it into a throwaway instance this creates on the spot — " +
+      "diff <A> <B> compares verified artifacts semantically; {--from} and {--to} provide the same inputs over MCP.\n" +
+      "receipts lists saved acceptance evidence; {--set-id} filters it and {--receipt} shows one record.\n" +
+      "try {--set} <artifact> installs it into a throwaway instance this creates on the spot — " +
       "its own directory, data path and free port, never the real deployment's — runs " +
       "whatever acceptance the set declares, and tears the instance down afterwards unless " +
-      "--keep is given. One operation: a coder gets back whether the set actually works " +
+      "{--keep} is given. One operation: a coder gets back whether the set actually works " +
       "without touching their own instance to find out.\n" +
-        "forget --kind <agent|mcp-server|cron-job> --name <name> removes an object this framework created and " +
-      "stops tracking it — what ./clawforge plan proposes on its own for an orphaned MCP server or " +
+        "forget {--kind} <agent|mcp-server|cron-job> {--name} <name> removes an object this framework created and " +
+      "stops tracking it — what {clawforge plan} proposes on its own for an orphaned MCP server or " +
       "cron job, and what a coder runs by hand for an orphaned agent, since deleting one also " +
       "prunes its workspace and memory.",
     structured: true,

@@ -1,4 +1,4 @@
-// `./clawforge set receipts` — inspect durable acceptance evidence written for a set.
+// `clawforge set receipts` — inspect durable acceptance evidence written for a set.
 
 import { info, log } from "#src/core/io/log.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";

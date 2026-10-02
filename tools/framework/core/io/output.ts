@@ -6,8 +6,10 @@
 //
 // So there is a mode — a module-level sink, not a threaded parameter, because the thing
 // that must not write to stdout is arbitrarily deep: a command, a helper, a spawned process.
-
-import { localizeHints } from "./invocation/index.ts";
+//
+// Nothing here rewrites what it is given: emit() is the framework's own document path and
+// emitRaw() carries byte streams that belong to someone else (a container's output, a token,
+// a completion script). Both print the text exactly as it was built.
 
 type Sink = (chunk: string) => void;
 
@@ -50,9 +52,10 @@ export function shouldFollow(): boolean {
 }
 
 /** Machine-readable output: JSON, a token, a path. Goes to stdout on a terminal so it can
- *  be piped, and into the sink when captured. */
+ *  be piped, and into the sink when captured — the framework's own documents, written the
+ *  way they were built. */
 export function emit(text: string): void {
-  emitRaw(localizeHints(text));
+  emitRaw(text);
 }
 
 /** How many chunks of machine-readable output (emit/emitRaw) have been produced so far.
@@ -62,8 +65,9 @@ export function machineWritesCount(): number {
   return machineWrites;
 }
 
-/** emit() without hint rewriting: for data that must arrive byte for byte (a container's
- *  stdout, a secret, a log, a shell completion script). */
+/** A foreign byte stream: a container's stdout, a secret, a log, a shell completion
+ *  script — data that must arrive byte for byte, which is also why emit() and this are the
+ *  same write and differ only in what a caller puts through them. */
 export function emitRaw(text: string): void {
   machineWrites += 1;
   machineSink?.(text);

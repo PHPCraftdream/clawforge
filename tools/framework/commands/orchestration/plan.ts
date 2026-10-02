@@ -1,4 +1,4 @@
-// `./clawforge plan` — what the declaration implies, as an ordered list of actions, without
+// `plan` — what the declaration implies, as an ordered list of actions, without
 // doing any of it.
 //
 // The dependencies are real (config is read at startup so it precedes a restart;
@@ -12,6 +12,7 @@
 // recovery cannot reach).
 
 import { log, info, warn } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { gatherInspection } from "./inspect/gather.ts";
 import { currentComposition, declarationChecksum } from "#src/commands/management/lock.ts";
@@ -38,7 +39,7 @@ export interface PlanAction {
   readonly command?: string;
   /** Which findings this step resolves — why it is in the list at all. */
   readonly because: ProblemCode[];
-  /** True when `./clawforge apply` cannot or must not perform it. */
+  /** True when `clawforge apply` cannot or must not perform it. */
   readonly advisory?: boolean;
 }
 
@@ -113,7 +114,7 @@ function orphanActions(inspection: Inspection): PlanAction[] {
       actions.push({
         id: `remove-owned:${kind}:${name}`,
         summary: `remove the ${kind} "${name}", created for a recipe no longer in the set`,
-        command: `./clawforge set forget --kind ${kind} --name ${name}`,
+        command: commandLine(["set", "forget", "--kind", kind, "--name", name]),
         because: ["SET_OBJECT_ORPHANED"],
       });
     }
@@ -172,8 +173,8 @@ function pushOperatorRecoveryActions(problems: readonly Problem[], actions: Plan
       id: "recover-env",
       summary:
         "connection facts in .env differ from the running container — decide the direction: " +
-        "./clawforge recover-env --adopt-runtime keeps the container's values; " +
-        "./clawforge up recreates the container from the edited .env",
+        `${commandLine(["recover-env", "--adopt-runtime"])} keeps the container's values; ` +
+        `${commandLine("up")} recreates the container from the edited .env`,
       because: found(problems, "ENV_STALE"),
       advisory: true,
     });
@@ -185,7 +186,7 @@ function pushOperatorRecoveryActions(problems: readonly Problem[], actions: Plan
     actions.push({
       id: "secrets-dump",
       summary:
-        "recover the target's secret values into the local store — ./clawforge secrets --dump refuses to overwrite the existing store without --force, and whether its contents matter is the decision this step leaves with you",
+        `recover the target's secret values into the local store — ${commandLine(["secrets", "--dump"])} refuses to overwrite the existing store without --force, and whether its contents matter is the decision this step leaves with you`,
       because: found(problems, "STORE_INCOMPLETE"),
       advisory: true,
     });
@@ -198,7 +199,7 @@ function pushOperatorRecoveryActions(problems: readonly Problem[], actions: Plan
     actions.push({
       id: "apply-config-dump",
       summary: "reconstruct config/desired-state.json from the live config",
-      command: "./clawforge apply-config --dump",
+      command: commandLine(["apply-config", "--dump"]),
       because: found(problems, "DECLARATION_MISSING"),
     });
   }
@@ -211,7 +212,7 @@ function pushSecretsAction(problems: readonly Problem[], actions: PlanAction[]):
     actions.push({
       id: "secrets",
       summary: "install the missing secrets on the target",
-      command: "./clawforge secrets --apply",
+      command: commandLine(["secrets", "--apply"]),
       because: found(problems, "SECRET_MISSING"),
     });
   }
@@ -224,7 +225,7 @@ function pushConfigAction(problems: readonly Problem[], actions: PlanAction[]): 
     actions.push({
       id: "apply-config",
       summary: "push config/desired-state.json onto the instance",
-      command: "./clawforge apply-config",
+      command: commandLine("apply-config"),
       because: found(problems, "CONFIG_DRIFT"),
     });
   }
@@ -237,7 +238,7 @@ function pushLifecycleAction(inspection: Inspection, problems: readonly Problem[
     actions.push({
       id: "up",
       summary: "start the gateway",
-      command: "./clawforge up",
+      command: commandLine("up"),
       because: found(problems, "GATEWAY_DOWN"),
     });
   } else if (has(problems, "RESTART_REQUIRED", "CONFIG_DRIFT") ||
@@ -247,7 +248,7 @@ function pushLifecycleAction(inspection: Inspection, problems: readonly Problem[
     actions.push({
       id: "restart",
       summary: "restart so the instance reads the configuration on disk",
-      command: "./clawforge restart",
+      command: commandLine("restart"),
       because: found(problems, "RESTART_REQUIRED", "CONFIG_DRIFT", "SECRET_MISSING"),
     });
   }
@@ -259,7 +260,7 @@ function pushRecipeActions(inspection: Inspection, actions: PlanAction[]): void 
     actions.push({
       id: `provision-agent:${recipe}`,
       summary: `re-provision recipe "${recipe}" (files, agent, MCP server, cron)`,
-      command: `./clawforge provision-agent ${recipe}`,
+      command: commandLine(["provision-agent", recipe]),
       because: codes,
     });
   }
@@ -285,7 +286,7 @@ function pushLockAction(problems: readonly Problem[], actions: PlanAction[]): vo
   if (has(problems, "LOCK_MISSING", "LOCK_DRIFT")) {
     actions.push({
       id: "lock",
-      summary: "review the difference from the lock, then run ./clawforge lock to re-pin it deliberately",
+      summary: `review the difference from the lock, then run ${commandLine("lock")} to re-pin it deliberately`,
       because: found(problems, "LOCK_MISSING", "LOCK_DRIFT"),
       advisory: true,
     });
@@ -402,7 +403,7 @@ export const plan = (ctx: Context, args: string[]): Promise<void> => runOnContex
  *  `apply` runs. */
 export function printPlanActions(actions: readonly PlanAction[]): void {
   const executable = actions.filter((action) => action.advisory !== true);
-  log(`${actions.length} step(s) — ${executable.length} that ./clawforge apply will run`);
+  log(`${actions.length} step(s) — ${executable.length} that ${commandLine("apply")} will run`);
   actions.forEach((action, index) => {
     info(`${index + 1}. ${action.summary}`);
     info(`     ${action.advisory === true ? "(you)" : action.command}   because ${action.because.join(", ")}`);
@@ -421,6 +422,6 @@ export function planIsClean(computed: Pick<Plan, "healthy" | "problems">): boole
 export function planNextStepLine(actions: readonly PlanAction[]): string {
   const executable = actions.filter((action) => action.advisory !== true);
   return executable.length > 0
-    ? "apply it: ./clawforge apply"
-    : "every step above is advisory — ./clawforge apply would run nothing; carry them out yourself";
+    ? `apply it: ${commandLine("apply")}`
+    : `every step above is advisory — ${commandLine("apply")} would run nothing; carry them out yourself`;
 }

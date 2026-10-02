@@ -1,4 +1,4 @@
-// `./clawforge set build` — collect everything a deployment installs into ONE artifact.
+// `clawforge set build` — collect everything a deployment installs into ONE artifact.
 // The vocabulary (manifest, the three entities set/instance/state, content id) lives in
 // set/model.ts; the collection itself is the loader in set/load.ts (one pipeline for tree
 // and artifact alike), and this is the packer that feeds it, written to sets/<name>-<id>.tar.gz.

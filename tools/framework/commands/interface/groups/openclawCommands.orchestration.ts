@@ -45,10 +45,10 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "reproducing it.\n" +
       "observed.connectionFacts and observed.secretStore carry the per-fact comparison " +
       "and the store's missing names; absent means not checked, never checked-and-fine.\n" +
-      "Read-only: it starts, writes and registers nothing. `./clawforge plan` turns its findings " +
+      "Read-only: it starts, writes and registers nothing. `{clawforge plan}` turns its findings " +
       "into actions.\n" +
       "The live agent/MCP/cron lists come from OpenClaw's own CLI, a container per call — " +
-      "`./clawforge cli-start` first makes this noticeably faster.",
+      "`{clawforge cli-start}` first makes this noticeably faster.",
     structured: true,
   },
   doctor: {
@@ -56,7 +56,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     group: "check",
     ...DOCTOR,
     details:
-      "The same inspection as `./clawforge inspect`, read for its problems rather than its " +
+      "The same inspection as `{clawforge inspect}`, read for its problems rather than its " +
       "inventory — one gatherer, so the two can never disagree.\n" +
       "Exits non-zero when a blocking problem was found, which is the part a CI step or an " +
       "agent can act on without reading the text.\n" +
@@ -72,7 +72,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "every interface (blocking unless acknowledged in config/security-suppressions.json), " +
       "a public port that Docker's DOCKER-USER chain may let bypass an active UFW, and the " +
       "deployment's own secret file permissions.\n" +
-      "Never every ./clawforge inspect/plan call — each audit is a container exec — only " +
+      "Never every {clawforge} inspect/plan call — each audit is a container exec — only " +
       "doctor and accept. Suppress a finding by upstream checkId in " +
       "config/security-suppressions.json; it stays visible but stops counting.",
     structured: true,
@@ -82,7 +82,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     group: "change",
     ...PLAN,
     details:
-      "Turns what `./clawforge inspect` found into steps, in the order the dependencies actually " +
+      "Turns what `{clawforge inspect}` found into steps, in the order the dependencies actually " +
       "require — a never-bootstrapped deployment first, secrets before anything starts, " +
       "configuration before the restart that reads it, the gateway up before provisioning " +
       "talks to it, recipes last.\n" +
@@ -95,16 +95,16 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "and any other problem this framework has no specific step for yet still gets one — " +
       "named advisory rather than left out, so a problem plan cannot act on is still a " +
       "problem the reader sees, never one \"nothing to do\" quietly absorbs.\n" +
-      "Recovery steps appear early too: a stale .env plans ./clawforge recover-env " +
-      "and a missing desired-state.json plans ./clawforge apply-config --dump, both run " +
+      "Recovery steps appear early too: a stale .env plans {clawforge recover-env} " +
+      "and a missing desired-state.json plans {clawforge apply-config --dump}, both run " +
       "exactly as planned — the dump's --force refusal protects an existing declaration, and " +
       "this one is absent.\n" +
-      "An incomplete local store plans ./clawforge secrets --dump as advisory instead: it " +
+      "An incomplete local store plans {clawforge secrets --dump} as advisory instead: it " +
       "refuses to overwrite an existing store without --force, and whether the store's " +
       "contents matter is the reader's decision, not a step.\n" +
       "\"nothing to do\" prints only once inspect finds this deployment healthy with no " +
       "problems at all — never merely because plan has no step for what it found.\n" +
-      "Changes nothing. `./clawforge apply` runs exactly this list.",
+      "Changes nothing. `{clawforge apply}` runs exactly this list.",
     structured: true,
   },
   apply: {
@@ -112,29 +112,29 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     group: "change",
     ...APPLY,
     details:
-      "Runs exactly the steps `./clawforge plan` lists, in that order, and stops at the first " +
+      "Runs exactly the steps `{clawforge plan}` lists, in that order, and stops at the first " +
       "failure — the steps depend on each other, so continuing would report success for an " +
       "instance nobody has. Every step lands in the operation journal as done, failed, " +
       "advisory (never this command's job) or blocked (an earlier step already failed) — " +
-      "the words `./clawforge operations` reads back, nothing left out.\n" +
+      "the words `{clawforge operations}` reads back, nothing left out.\n" +
       "Then it inspects again and reports what it found. \"Applied\" and \"working\" are " +
       "different claims and this command makes the stronger one: every step can succeed and " +
       "the instance still be broken for a reason no step was looking at.\n" +
-      "--expect <checksum> refuses to run if the declaration changed since that plan was " +
+      "{--expect} <checksum> refuses to run if the declaration changed since that plan was " +
       "computed (the plan's declarationChecksum). Checked before the first step, because " +
       "the whole value of the refusal is that it happens first.\n" +
       "Advisory steps are never performed: reconnecting an MCP client is the client's to do, " +
       "re-pinning the lock file is a decision, not a repair, and so is the store recovery a " +
-      "plan lists when the local secret store is incomplete — ./clawforge secrets --dump " +
+      "plan lists when the local secret store is incomplete — {clawforge secrets --dump} " +
       "would overwrite it only with --force, so apply reports the step as advisory and " +
       "leaves the decision where it belongs.\n" +
       "The operator-side recovery steps that are executable — recover-env, apply-config " +
       "--dump — run under the same rules as every step: one operation id, a journal entry " +
       "each, stop at the first failure; they write to the deployment folder rather than the " +
       "instance, so their runners take no instance lock of their own.\n" +
-      "--dry-run only lists what the plan computed — it touches nothing, so it cannot tell " +
+      "{--dry-run} only lists what the plan computed — it touches nothing, so it cannot tell " +
       "you whether desired-state.json would actually validate against the target's own " +
-      "schema. `./clawforge apply-config --dry-run` does: a real (lockless) `config set " +
+      "schema. `{clawforge apply-config --dry-run}` does: a real (lockless) `config set " +
       "--batch-file --dry-run` against the target, usable even before the instance is " +
       "healthy.",
     structured: true,
@@ -145,21 +145,21 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     ...ACCEPT,
     structured: true,
     details:
-      "`./clawforge smoke` proves the instance is healthy. It cannot say whether the wiki a recipe " +
+      "`{clawforge smoke}` proves the instance is healthy. It cannot say whether the wiki a recipe " +
       "serves is reachable, whether the agent built from that recipe has the tools it was " +
       "given, or whether its cron job matches what the recipe declares — those are " +
       "properties of this deployment, not of the framework.\n" +
       "So a recipe declares them in recipes/<name>/acceptance.json and this runs them. The " +
       "check kinds are the framework's (mcp_responds, mcp_tool, agent_has_tools, " +
       "cron_matches, agent_answers); no code travels from a deployment into the framework.\n" +
-      "Checks marked usesModel are never run without --with-model: they cost tokens and take " +
+      "Checks marked usesModel are never run without {--with-model}: they cost tokens and take " +
       "an agent turn, which writes to that agent's own workspace. They are always reported " +
       "as \"not-checked\" and counted — a suite that silently drops what it did not run reads as " +
       "coverage it does not have.\n" +
       "A check that was attempted but got no verdict — the server would not start, the " +
       "instance refused the call — is reported as \"could-not-check\" with the reason, never " +
       "as passed.\n" +
-      "Also runs the security gate — see `./clawforge doctor`'s own description — and fails on a " +
+      "Also runs the security gate — see `{clawforge doctor}`'s own description — and fails on a " +
       "blocking finding the same way a failed check does.\n" +
       "Exits non-zero when a check fails, could not be checked, or the security gate finds a " +
       "blocking issue.",
@@ -170,19 +170,19 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
     ...ROLLBACK,
     structured: true,
     details:
-      "`./clawforge apply` copies the live configuration aside before its first mutating step. " +
+      "`{clawforge apply}` copies the live configuration aside before its first mutating step. " +
       "This puts that copy back and restarts, because a configuration the instance has not " +
       "read is not in force.\n" +
-      "Not the same operation as `./clawforge push`, and the difference matters at exactly the " +
+      "Not the same operation as `{clawforge push}`, and the difference matters at exactly the " +
       "wrong moment: push replaces the whole data directory from a snapshot — every " +
       "workspace, every agent's memory, every transcript written since. This replaces one " +
       "file. Undoing a bad configuration should not cost an agent its notes.\n" +
-      "Without --operation it undoes the most recent run that took a snapshot. A run that " +
+      "Without {--operation} it undoes the most recent run that took a snapshot. A run that " +
       "changed nothing took none and is not offered.\n" +
       "The rollback is itself recorded as an operation.\n" +
-      "--previous-set is a different path entirely: reinstalls the set that was installed " +
+      "{--previous-set} is a different path entirely: reinstalls the set that was installed " +
       "here before the one currently in force — prompts, MCP registrations, schedules and " +
-      "gateway settings together, through ./clawforge apply --set, not this command's own " +
+      "gateway settings together, through {clawforge apply --set}, not this command's own " +
       "single-file restore.\n" +
       "Refuses if no previous set is on record, or if its artifact is no longer in sets/.\n" +
       "Neither path replaces the other: a deployment never installed from a set still has " +
@@ -199,7 +199,7 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "the record exists for.\n" +
       "Without an id this lists the most recent ones; with one it shows that run in full: " +
       "which steps ran, which failed, which never started, and whether a configuration " +
-      "snapshot was taken that `./clawforge rollback` can put back.\n" +
+      "snapshot was taken that `{clawforge rollback}` can put back.\n" +
       "An operation with no outcome did not reach its own end — killed, disconnected or " +
       "still running. That is reported as unfinished rather than dressed up as a result.",
   },
@@ -214,19 +214,19 @@ export const orchestrationCommands: Record<string, AppCommand> = materializeComm
       "That is the point — drift back to the declared state, not a merge.\n" +
       "bootstrap calls this itself, so a fresh deployment and an existing one end up with " +
       "the same settings.\n" +
-      "--dump is the reverse: reconstructs a lost desired-state.json from the live instance's " +
+      "{--dump} is the reverse: reconstructs a lost desired-state.json from the live instance's " +
       "own openclaw.json. Recovery is honestly limited — the live config shows the outcome of " +
       "the declaration, not the declaration itself —\n" +
       "so only a fixed set of commonly declared paths is recovered (a value OpenClaw " +
       "defaults to cannot be told apart from a declared one), paths the live config never " +
       "set are omitted rather than guessed, and recipes are not part of this file at all.\n" +
-      "Refuses to overwrite an existing declaration unless --force is given.\n" +
+      "Refuses to overwrite an existing declaration unless {--force} is given.\n" +
       "The flags are validated against the mode before anything is read or written: " +
-      "--dry-run cannot be combined with --dump — a dump has no dry-run form, it either " +
-      "writes the recovered declaration or does nothing — --break-lock and --break-foreign-lock " +
-      "apply only where an instance lock is taken (the real apply), and --force only applies to --dump.\n" +
-      "Kept separate from `apply`: its --dry-run really validates against the target (lockless, " +
-      "even before the instance is healthy), and --dump --force deliberately overwrites an " +
+      "{--dry-run} cannot be combined with {--dump} — a dump has no dry-run form, it either " +
+      "writes the recovered declaration or does nothing — {--break-lock} and {--break-foreign-lock} " +
+      "apply only where an instance lock is taken (the real apply), and {--force} only applies to {--dump}.\n" +
+      "Kept separate from `apply`: its {--dry-run} really validates against the target (lockless, " +
+      "even before the instance is healthy), and {--dump} {--force} deliberately overwrites an " +
       "existing declaration — `apply` does neither.",
   },
 });

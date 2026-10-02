@@ -1,4 +1,4 @@
-// `./clawforge watch install` / `watch uninstall` — a scheduler entry that runs `watch check`
+// `clawforge watch install` / `watch uninstall` — a scheduler entry that runs `watch check`
 // every N minutes.
 //
 // crontab, not a systemd --user timer: a timer needs `loginctl enable-linger` and systemd as
@@ -11,7 +11,8 @@
 // Crontab conventions and the Windows fallback are shared with `backup install` via
 // ../schedule.ts — this file supplies only watch's job name, invocation and interval.
 
-import { info, infoRaw, log, warn } from "../../../core/io/log.ts";
+import { info, log, warn } from "../../../core/io/log.ts";
+import { commandLine } from "../../../core/io/invocation/render.ts";
 import { deploymentName } from "../../../runtime/deployment.ts";
 import { guardedWith } from "../../../runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "../../../runtime/runtime.ts";
@@ -112,10 +113,10 @@ async function runInstall(ctx: Context, values: Values<typeof WATCH_INSTALL_ARGU
   const line = cronLine(interval, invocation, identity);
 
   log(`crontab entry (every ${interval} minute(s), runs on ${ctx.transport.description})`);
-  infoRaw(line);
+  info(line);
   info(`marked "${watchMarker(identity)}" — re-running this replaces only that line; watch uninstall removes only it`);
   if (ctx.transport.description.startsWith("ssh:")) {
-    info(`assumes this deployment was mirrored to ${ctx.settings.remotePath} by ./clawforge deploy (set OC_REMOTE_PATH if --path differed)`);
+    info(`assumes this deployment was mirrored to ${ctx.settings.remotePath} by ${commandLine("deploy")} (set OC_REMOTE_PATH if --path differed)`);
   }
 
   if (!apply) {

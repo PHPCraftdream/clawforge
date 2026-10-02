@@ -297,6 +297,13 @@
 `./` никогда для cmd и pwsh; вид `shell` побайтно не меняется.
 Объём: 5–7 коммитов.
 
+**Статус: выполнен.** Все советы — значения `Advice` (`command` | `shell` | `manual`) через один
+рендерер `core/io/invocation/render.ts` — единственное место правила `--app` и написания программы;
+`localizeHints`, `infoRaw`, `reportErrorVerbatim` удалены, слой вывода ничего не переписывает.
+Литералы `./clawforge`: 448 + 7 → 11, все в `exempt` (`baseline.json`): `SHIM_PROGRAM`, самоупоминания
+шима, лаунчер MCP чекаута, регистрация имён в автодополнении. Токены `{clawforge …}`/`{--flag}`
+(`help-prose.check.ts`, `proseFlags` 0); `next`/`nextSteps` — из rf4-codes, `nextActions` — строки.
+
 ### Этап 5. Поверхности из спецификации (остаток класса B)
 
 1. **Автодополнение — одно решение** (`completionCandidates`). Вариант выбирается замером в

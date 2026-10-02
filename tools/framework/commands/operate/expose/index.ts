@@ -1,4 +1,4 @@
-// `./clawforge expose` — reach a loopback-bound gateway from outside this host, choosing the
+// `clawforge expose` — reach a loopback-bound gateway from outside this host, choosing the
 // narrowest sensible scope: an SSH tunnel (ssh targets), `tailscale serve` (tailnet-only,
 // never `funnel`), or a status report of what is actually published right now.
 //

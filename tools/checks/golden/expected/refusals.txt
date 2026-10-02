@@ -28,7 +28,7 @@ error: unknown argument: --bogus
 
 === unknown argument: list --bogus — named deployment (./clawforge --app demo) ===
 error: unknown argument: --bogus
-    run ./clawforge --app demo list --help for its full argument list
+    run ./clawforge list --help for its full argument list
 
 === unknown argument: list --bogus — installed command (clawforge) ===
 error: unknown argument: --bogus

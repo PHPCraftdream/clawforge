@@ -1,10 +1,11 @@
-// `./clawforge watch status` — the persisted last state, when it changed, whether an alert
+// `clawforge watch status` — the persisted last state, when it changed, whether an alert
 // webhook/heartbeat is configured, when `watch check` last ran, the most recent
 // config/delivery error, an undelivered alert, and whether the schedule looks stale.
 // Never either URL itself, in any form: only booleans and (for the heartbeat) the last
 // successful ping time and last failure detail.
 
 import { info, log, warn } from "../../../core/io/log.ts";
+import { commandLine } from "../../../core/io/invocation/render.ts";
 import { emit, isCaptured } from "../../../core/io/output.ts";
 import type { Context } from "../../../core/context.ts";
 import { defineAction, type Values } from "../../../core/command/index.ts";
@@ -80,7 +81,7 @@ async function runStatus(ctx: Context, values: Values<typeof WATCH_CHECK_ARGUMEN
   }
   if (lastRunAt === undefined) {
     log("watch: no check has run yet");
-    info("run ./clawforge watch check, or schedule it with ./clawforge watch install");
+    info(`run ${commandLine(["watch", "check"])}, or schedule it with ${commandLine(["watch", "install"])}`);
   } else if (state?.level === undefined) {
     log("watch: no successful check cycle yet");
     info(`last run      ${lastRunAt}`);
@@ -94,7 +95,7 @@ async function runStatus(ctx: Context, values: Values<typeof WATCH_CHECK_ARGUMEN
   if (stale) {
     warn(
       `last run was ${lastRunAt} — over ${thresholdMinutes} minutes ago; the scheduled check may not be ` +
-        "running (see ./clawforge watch install, or ./clawforge watch test to check delivery)",
+        `running (see ${commandLine(["watch", "install"])}, or ${commandLine(["watch", "test"])} to check delivery)`,
     );
   }
   if (state?.lastError !== undefined) warn(`last error: ${state.lastError}`);

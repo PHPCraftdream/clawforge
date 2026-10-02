@@ -132,7 +132,7 @@ check(
     ]));
     check("under --app demo the recipe step is still found", actions.some((step) => step.id === "provision-agent:demo-recipe"), true);
     check("under --app demo the orphan step is still found", actions.some((step) => step.id === "remove-owned:cron-job:demo-refresh"), true);
-    check("the orphan step runs the set forget command", actions.find((step) => step.id === "remove-owned:cron-job:demo-refresh")?.command, "./clawforge set forget --kind cron-job --name demo-refresh");
+    check("the orphan step runs the set forget command", actions.find((step) => step.id === "remove-owned:cron-job:demo-refresh")?.command, "./clawforge --app demo set forget --kind cron-job --name demo-refresh");
   } finally {
     setInvocation({ program: "./clawforge", mode: "checkout", audience: "terminal" });
   }

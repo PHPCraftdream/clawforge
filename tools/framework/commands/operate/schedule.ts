@@ -17,7 +17,8 @@
 import { access, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { posix, resolve } from "node:path";
-import { die, info, infoRaw, regexEscape } from "../../core/io/log.ts";
+import { die, info, regexEscape } from "../../core/io/log.ts";
+import { SHIM_PROGRAM } from "../../core/io/invocation/render.ts";
 import { monorepoRoot } from "../../core/env.ts";
 import { parseInterval } from "../../core/values/durations.ts";
 import { ValueError, type ValueParser } from "../../core/values/value.ts";
@@ -145,7 +146,7 @@ function ownedCronPattern(job: string, name: string, prior?: PriorSchedule): str
   const quoted = (args: readonly string[]): string => args.map(SshTransport.quote).join(" ");
   const schedules = VALID_INTERVAL_MINUTES.map((minutes) => regexEscape(cronSchedule(minutes))).join("|");
   const args = `(${regexEscape(quoted(jobArgs))}|'--app' '[^'%]+' ${regexEscape(quoted(jobArgs))})`;
-  const current = `(${schedules}) cd ('([^'%]|'\\\\'')*') && \\./clawforge ${args} >/dev/null 2>&1 ${regexEscape(jobMarker(job, name))}`;
+  const current = `(${schedules}) cd ('([^'%]|'\\\\'')*') && ${regexEscape(SHIM_PROGRAM)} ${args} >/dev/null 2>&1 ${regexEscape(jobMarker(job, name))}`;
   // Old basename markers are not ownership evidence. Only the exact invocation
   // produced for this root can be migrated; manual/other-root rows stay untouched.
   const invocation = prior?.invocation;
@@ -274,7 +275,7 @@ export function schedulingSupport(ctx: Context): SchedulingSupport {
 }
 
 /** One pasteable command line: an argument with spaces or shell operators (WSL's
- *  `bash -lc "cd … && ./clawforge …"`) is one argv element and must stay quoted, or `&&`
+ *  `bash -lc "cd … && clawforge …"`) is one argv element and must stay quoted, or `&&`
  *  would be run by whatever shell the operator pastes it into. Also how a `schtasks /tr`
  *  value is built: it takes exactly one string the same way. */
 export function displayCommandLine(command: string, args: readonly string[]): string {
@@ -307,12 +308,12 @@ export async function installedShimExists(root: string): Promise<boolean> {
 export async function posixTargetInvocation(ctx: Context, jobArgs: readonly string[]): Promise<ScheduledInvocation> {
   const name = deploymentName();
   if (ctx.transport.description.startsWith("ssh:")) {
-    return { cwd: ctx.settings.remotePath, command: "./clawforge", args: ["--app", name, ...jobArgs] };
+    return { cwd: ctx.settings.remotePath, command: SHIM_PROGRAM, args: ["--app", name, ...jobArgs] };
   }
   const installed = await installedShimExists(deploymentDir());
   return installed
-    ? { cwd: deploymentDir(), command: "./clawforge", args: [...jobArgs] }
-    : { cwd: monorepoRoot, command: "./clawforge", args: ["--app", name, ...jobArgs] };
+    ? { cwd: deploymentDir(), command: SHIM_PROGRAM, args: [...jobArgs] }
+    : { cwd: monorepoRoot, command: SHIM_PROGRAM, args: ["--app", name, ...jobArgs] };
 }
 
 /** cron's own accepted range (cronSchedule), translated into schtasks' vocabulary: a bare
@@ -390,7 +391,7 @@ export async function printSchedulingInstructions(
   const entryTarget = await ctx.paths.toTarget(entryHost);
   const invocation = ctx.transport.clientInvocation(entryTarget, posixArgs);
   info("no unattended install exists for this target from here. Run this yourself, on a scheduler that can reach it:");
-  infoRaw(`  ${displayCommandLine(invocation.command, invocation.args)}`);
+  info(`  ${displayCommandLine(invocation.command, invocation.args)}`);
 
   // Only a WSL target on a Windows host has a schtasks line to offer (local is refused on Windows).
   if (schedulerPlatform !== "win32" || !ctx.transport.description.startsWith("wsl:")) {
@@ -411,7 +412,7 @@ export async function printSchedulingInstructions(
     info("on Windows, Task Scheduler can run this instead, but a path here has a character (% & | < > ^) that cannot be pasted into cmd.exe; use --apply");
   } else {
     info("on Windows, Task Scheduler can run this instead — paste it into cmd.exe only (not PowerShell or Git Bash; use --apply there). `/f` replaces the same named task on a re-run:");
-    infoRaw(`  ${pasteable}`);
+    info(`  ${pasteable}`);
   }
   if (!apply) {
     info("run it yourself, or re-run with --apply to have this command run it for you");

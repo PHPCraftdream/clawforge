@@ -1,11 +1,11 @@
-// `./clawforge recover-env` — repairs .env's CONNECTION FACTS (OC_DATA_DIR,
+// `clawforge recover-env` — repairs .env's CONNECTION FACTS (OC_DATA_DIR,
 // OPENCLAW_GATEWAY_PORT, OC_COMPOSE_PROJECT, OPENCLAW_IMAGE) from the running container,
 // which compose resolved from that same .env at creation time.
 //
 // Which side is authoritative when file and container disagree is undecidable here, so by
 // default only the unambiguous case is written — a name the file lacks entirely. Diverged
 // values are reported, never overwritten, unless --adopt-runtime takes the container as
-// authoritative. The opposite direction (file is right) needs `./clawforge up` to recreate.
+// authoritative. The opposite direction (file is right) needs `up` to recreate.
 // A wholly absent .env cannot be repaired: reaching the target requires the .env that names it.
 // Declared as a body with needs: "deployment": the pipeline (core/command/execute.ts) builds
 // the deployment scope — transport from .env, no Context — and refuses a missing .env in the
@@ -13,6 +13,7 @@
 
 import { readFile } from "node:fs/promises";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit } from "#src/core/io/output.ts";
 import { parseEnv } from "#src/core/env.ts";
 import { envFile } from "#src/runtime/deployment.ts";
@@ -53,8 +54,8 @@ function reportDirectionChoice(diverged: ConnectionFactDiff[]): void {
       "authoritative is the operator's call — nothing is written over them without a direction:",
   );
   for (const fact of diverged) info(fact.name);
-  info("keep the container's values: ./clawforge recover-env --adopt-runtime");
-  info("keep .env's values (the edit is the intent): ./clawforge up recreates the container from the file as it now reads");
+  info(`keep the container's values: ${commandLine(["recover-env", "--adopt-runtime"])}`);
+  info(`keep .env's values (the edit is the intent): ${commandLine("up")} recreates the container from the file as it now reads`);
 }
 
 /** The one argument grammar, parsed for the apply step's entry point (the pipeline parses
@@ -74,7 +75,7 @@ function refuseWithoutEnvFile(raw: string | undefined, path: string): string {
   die(
     `${path} does not exist, and recovery cannot create it: reaching the target to inspect ` +
       "its container already requires the .env that says which target and transport to use — " +
-      "a missing .env has nothing to recover against. Run ./clawforge bootstrap to create one.",
+      `a missing .env has nothing to recover against. Run ${commandLine("bootstrap")} to create one.`,
   );
 }
 
@@ -203,7 +204,7 @@ export async function recoverEnv(ctx: Context, args: string[]): Promise<void> {
     die(
       `${ctx.runtime.description} is not running, or its container could not be inspected — the connection ` +
         "facts are recoverable only from a running container, since that is where compose's resolved " +
-        "values live. Start it and try again: ./clawforge up",
+        `values live. Start it and try again: ${commandLine("up")}`,
     );
   }
 
@@ -248,7 +249,7 @@ export const RECOVER_ENV = commandBody({
       die(
         "docker is not running, or its container could not be inspected — the connection " +
           "facts are recoverable only from a running container, since that is where compose's resolved " +
-          "values live. Start it and try again: ./clawforge up",
+          `values live. Start it and try again: ${commandLine("up")}`,
       );
     }
 

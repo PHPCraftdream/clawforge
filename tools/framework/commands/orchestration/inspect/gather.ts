@@ -1,5 +1,5 @@
-// `./clawforge inspect [--json]` — what this deployment declares, what the instance actually
-// is, and where the two disagree. `./clawforge doctor` lives here too: same inspection, read
+// `inspect [--json]` — what this deployment declares, what the instance actually
+// is, and where the two disagree. `doctor` lives here too: same inspection, read
 // for its problems rather than its inventory, so there is only ever one gatherer.
 //
 // Read-only: nothing here writes, starts, restarts or registers anything, so it is safe to
@@ -46,7 +46,7 @@ export const INSPECT_ARGUMENTS = [
 /** gatherInspection's opt-in extras; a caller that omits this gets the inspection it always did. */
 export interface GatherInspectionOptions {
   /** Also gather `channels status --json` in observeLive's batched CLI call, exposed as
-   *  observed.channels. Only `./clawforge watch check` sets this. */
+   *  observed.channels. Only `watch check` sets this. */
   readonly channels?: boolean;
 }
 
@@ -368,7 +368,7 @@ export function printProblem(entry: Problem): void {
   info(`  → ${entry.nextAction}`);
 }
 
-/** `./clawforge doctor` — the same inspection, answered as "is anything wrong, and what do I run".
+/** `doctor` — the same inspection, answered as "is anything wrong, and what do I run".
  *
  *  Exits non-zero when something blocking was found, because that is the only part of the
  *  answer a script or a CI step can act on without reading the text. Warnings do not fail

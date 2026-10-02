@@ -10,6 +10,7 @@
 // running, something a webhook fired FROM here can never report.
 
 import { deploymentName } from "../../../runtime/deployment.ts";
+import { commandLine } from "../../../core/io/invocation/render.ts";
 import type { Context } from "../../../core/context.ts";
 import type { WatchLevel, WatchReason } from "./state.ts";
 
@@ -274,7 +275,7 @@ export async function postWebhookAlert(target: WatchWebhookTarget, payload: Watc
 /** `watch test`'s own message: never transitionPayload's shape, so a receiving chat or
  *  telegram thread cannot mistake it for a real alert. */
 function testMessageText(at: string): string {
-  return `${deploymentName()}: ./clawforge watch test — this is a TEST alert, not a real transition\nsent ${at}`;
+  return `${deploymentName()}: ${commandLine(["watch", "test"])} — this is a TEST alert, not a real transition\nsent ${at}`;
 }
 
 function testWebhookBody(target: WatchWebhookTarget, at: string): string {

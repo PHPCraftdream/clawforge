@@ -17,20 +17,20 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
     details:
       "Three actions, narrowest scope first.\n" +
       "ssh — for OC_TARGET_LOCATION=ssh deployments, prints the exact `ssh -N -L <local>:127.0.0.1:<gatewayPort> " +
-      "<OC_SSH_HOST>` tunnel and the http://127.0.0.1:<local> URL it opens; --run runs it in the foreground " +
+      "<OC_SSH_HOST>` tunnel and the http://127.0.0.1:<local> URL it opens; {--run} runs it in the foreground " +
       "through the local ssh client (needs a real terminal — refused under MCP or a plain pipe) until Ctrl+C.\n" +
       "wsl/local targets are told no tunnel is needed: Docker Desktop's WSL2 integration already forwards the " +
       "published port to this machine's own loopback.\n" +
       "tailscale — probes, on the target, whether `tailscale` exists and is logged in (`tailscale status --json`), " +
       "then prints the exact `tailscale serve --bg http://127.0.0.1:<gatewayPort>` command — tailnet-only HTTPS, " +
-      "never `tailscale funnel` (refused outright, with the reason, whether or not --apply is given).\n" +
-      "--apply runs it on the target through the transport — mutating, so it needs MCP confirmation and the " +
+      "never `tailscale funnel` (refused outright, with the reason, whether or not {--apply} is given).\n" +
+      "{--apply} runs it on the target through the transport — mutating, so it needs MCP confirmation and the " +
       "instance lock (guarded()), same as every other mutating command.\n" +
       "status — the published bind address/port read back from the RUNNING container (never just .env, which can " +
       "be stale the moment OC_BIND_ADDRESS is edited without a recreate), whether that is loopback-only, and — if " +
       "tailscale is present — a summary of `tailscale serve status`. Warns loudly when the bind address is " +
       "0.0.0.0 or ::.\n" +
-      "The same one-line summary appears in `./clawforge status`. --json emits the same facts " +
+      "The same one-line summary appears in `{clawforge status}`. {--json} emits the same facts " +
       "structured: exposure, configuredBindAddress, bindAddressDrift, tailscale.",
     ...EXPOSE,
   },
@@ -102,8 +102,8 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "failure mode a webhook fired FROM here can never report.\n" +
       "A failed ping is a warning in this cycle's output and in `watch status` (last " +
       "heartbeat error), never a level change or a non-zero exit by itself.\n" +
-      "install / uninstall — print (and, with --apply, install through the transport) a " +
-      "crontab entry that runs `watch check` every --interval (default 5m; a bare number is " +
+      "install / uninstall — print (and, with {--apply}, install through the transport) a " +
+      "crontab entry that runs `watch check` every {--interval} (default 5m; a bare number is " +
       "minutes, or 30m/6h/1d like `backup install`; minutes must divide 60 — 1,2,3,4,5,6,10,12," +
       "15,20,30 — hours must divide a day — 1,2,3,4,6,8,12,24 — anything else is refused, " +
       "naming the nearest valid values, rather than silently misfiring),\n" +
@@ -121,9 +121,9 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "ready `schtasks /create` command (the WSL target's own `wsl.exe -d <distro> --exec bash -lc \"set -e; cd -- …; exec …\"` line); " +
       "`/f` replaces the same named task on a re-run, the Task Scheduler " +
       "counterpart to the crontab marker. schtasks accepts at most 261 characters for the " +
-      "action, so a longer one is refused — no schtasks line is printed and --apply creates " +
+      "action, so a longer one is refused — no schtasks line is printed and {--apply} creates " +
       "nothing; shorten the deployment path or app name.\n" +
-      "--apply on that same Windows host actually runs " +
+      "{--apply} on that same Windows host actually runs " +
       "it, through the same host-spawn helper every other bare-machine action uses; anywhere " +
       "else this only ever prints — it never touches a real crontab or scheduled task by " +
       "itself.\n" +
@@ -136,7 +136,7 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "Also reports when `watch check` last ran at all (a config error or a failed delivery " +
       "still counts), the most recent config/delivery error, an alert still waiting to be " +
       "delivered (since when, and what transition), and warns when that last run is stale —\n" +
-      "more than 3x the interval `watch install --apply` recorded, or 3x the default (5 " +
+      "more than 3x the interval `watch install {--apply}` recorded, or 3x the default (5 " +
       "minutes) when no interval was ever recorded (a state file from before this field, or " +
       "a schedule wired up by hand outside `watch install`).\n" +
       "test — sends one webhook message (clearly marked as a test, never shaped like a real " +
@@ -159,8 +159,8 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "when the route shape cannot be parsed reliably, nothing is turned off and the exact " +
       "manual command is printed instead.\n" +
       "Refuses the whole run outright while the gateway is published on every " +
-      "interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and ./clawforge up, or pass " +
-      "--keep-exposure if that is already handled elsewhere.\n" +
+      "interface (0.0.0.0/::) — set OC_BIND_ADDRESS=127.0.0.1 and {clawforge up}, or pass " +
+      "{--keep-exposure} if that is already handled elsewhere.\n" +
       "A contain failure (most commonly, " +
       "this account is not the tailscale operator on the target — the report names the fix) is " +
       "noted, never fatal: rotate still runs.\n" +
@@ -173,8 +173,8 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "container so it actually takes effect (a repo-env value like this one is fixed at " +
       "container-creation time);\n" +
       "every MCP client paired against the old token needs " +
-      "./clawforge mcp-creds again.\n" +
-      "audit — the same security gate `./clawforge doctor`/`./clawforge accept` " +
+      "{clawforge mcp-creds} again.\n" +
+      "audit — the same security gate `{clawforge doctor}`/`{clawforge accept}` " +
       "run, plus `openclaw doctor --lint`, both reported here rather than gating the run.\n" +
       "collect " +
       "— a bounded log tail of whatever is running by then, both audit outputs and a short " +
@@ -186,7 +186,7 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "preserve and collect run and write unconditionally, even when " +
       "rotate or audit fails: the report still shows where the evidence landed, and the " +
       "original failure still reaches you afterwards as a non-zero exit.\n" +
-      "Mutating (rotate recreates the gateway) — takes the instance lock. --dry-run prints the " +
+      "Mutating (rotate recreates the gateway) — takes the instance lock. {--dry-run} prints the " +
       "plan and performs none of it, not even taking the lock.",
     ...INCIDENT,
     structured: true,
@@ -208,9 +208,9 @@ export const operateCommands: Record<string, AppCommand> = materializeCommands({
       "OPENCLAW_GATEWAY_TOKEN lives beside these lines and protection is per-file; unrelated " +
       "lines pass through untouched.\n" +
       "A plain recover-env fills only the fact names the file is missing entirely and reports " +
-      "the ones both sides carry differently without writing over them; --adopt-runtime is the " +
+      "the ones both sides carry differently without writing over them; {--adopt-runtime} is the " +
       "container-authoritative direction that also merges those over the file's existing values.\n" +
-      "--dry-run prints what would change and writes nothing.",
+      "{--dry-run} prints what would change and writes nothing.",
     ...RECOVER_ENV,
   },
 });

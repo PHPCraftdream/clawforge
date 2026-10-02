@@ -1,6 +1,6 @@
-// `./clawforge accept [<recipe>]` — does this deployment's own work actually work.
+// `clawforge accept [<recipe>]` — does this deployment's own work actually work.
 //
-// `./clawforge smoke` proves the instance is healthy, but not whether a recipe's wiki is
+// `clawforge smoke` proves the instance is healthy, but not whether a recipe's wiki is
 // reachable, its agent has the tools it was given, or its cron job matches the recipe —
 // properties of this deployment, not the framework's business to know.
 //
@@ -14,6 +14,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { recipesDir, deploymentName } from "#src/runtime/deployment.ts";
 import { listRecipeDirectories } from "#src/service/recipe.ts";
@@ -524,7 +525,7 @@ function printAcceptanceReport(
     }
   }
   log(answer.summary);
-  if (notChecked > 0 && !withModel) info("the not-checked ones call the model: ./clawforge accept --with-model");
+  if (notChecked > 0 && !withModel) info(`the not-checked ones call the model: ${commandLine(["accept", "--with-model"])}`);
 }
 
 async function acceptFromSource(ctx: Context, plan: AcceptPlan, verified?: VerifiedArtifact): Promise<void> {

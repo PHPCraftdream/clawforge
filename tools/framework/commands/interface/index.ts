@@ -6,7 +6,7 @@
 // An argument the parser knows and this list does not is invisible over MCP; the reverse is
 // a call that fails.
 //
-// `details` is optional longer text for `./clawforge help <command>` and the MCP tool
+// `details` is optional longer text for `help <command>` and the MCP tool
 // description — used only when the name and summary do not already say everything.
 //
 // Split by command family so no one file holds every entry; each fragment owns its own

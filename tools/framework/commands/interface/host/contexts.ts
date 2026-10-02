@@ -1,4 +1,4 @@
-// Host contexts: the roles `./clawforge host` can target on the operator's own machine.
+// Host contexts: the roles `clawforge host` can target on the operator's own machine.
 //
 // A context is a role, resolved per platform — never a hardcoded "on Windows do X". "target"
 // is the deployment's own transport; "engine" is wherever the container runtime actually

@@ -4,16 +4,15 @@
 import { outputSink } from "./output.ts";
 import type { Advice } from "./invocation/advice.ts";
 import { renderAdvice } from "./invocation/render.ts";
-import { localizeHints } from "./invocation/index.ts";
 
 const useColour = process.stderr.isTTY === true;
 
-/** Diagnostics go to stderr, or to the capture sink when there is one. */
-function write(raw: string, verbatim = false): void {
-  const text = verbatim ? raw : localizeHints(raw);
+/** Diagnostics go to stderr, or to the capture sink when there is one. The text is printed
+ *  as it was handed over: the output layer rewrites nothing. */
+function write(raw: string): void {
   const sink = outputSink();
-  if (sink !== undefined) sink(text);
-  else process.stderr.write(text);
+  if (sink !== undefined) sink(raw);
+  else process.stderr.write(raw);
 }
 
 const C = {
@@ -79,15 +78,11 @@ export function log(message: string): void {
   write(`${C.green}==>${C.off} ${message}\n`);
 }
 
-/** Secondary detail, indented under the preceding log line. */
+/** Secondary detail, indented under the preceding log line. A line built for another
+ *  shell, host or scheduler — a cron entry, a command on a server, a schtasks line — is
+ *  handed to info() as it was built and prints that way under every invocation. */
 export function info(message: string): void {
   write(`${C.dim}    ${message}${C.off}\n`);
-}
-
-/** info() for a line copied into another shell, host or scheduler: printed verbatim, its
- *  checkout spelling never rewritten to this terminal's invocation. */
-export function infoRaw(message: string): void {
-  write(`${C.dim}    ${message}${C.off}\n`, true);
 }
 
 export function warn(message: string): void {
@@ -136,17 +131,17 @@ export function dieWithExitCode(message: string, exitCode: number): never {
   throw new CommandFailedError(message, exitCode);
 }
 
-/** The error message plus, per piece of advice a UserError carries, a rendered line. The
- *  message keeps its transitional localizeHints pass (exactly like write()); advice lines
- *  are rendered fresh by this invocation and left un-localized. All masked once. */
+/** The error message plus, per piece of advice a UserError carries, a rendered line.
+ *  Both are printed as they were built: the message is whatever the thrower wrote, and an
+ *  advice line is rendered by the invocation that reported it. All masked once. */
 export function formatError(error: unknown): string {
-  const message = localizeHints(error instanceof Error ? error.message : String(error));
+  const message = error instanceof Error ? error.message : String(error);
   const advice = error instanceof UserError ? error.advice : [];
   const lines = advice.map((entry) => `\n    → ${renderAdvice(entry)}`).join("");
   return maskSecrets(message + lines);
 }
 
 export function reportError(error: unknown): void {
-  write(`${C.red}error:${C.off} ${formatError(error)}\n`, true);
+  write(`${C.red}error:${C.off} ${formatError(error)}\n`);
 }
 

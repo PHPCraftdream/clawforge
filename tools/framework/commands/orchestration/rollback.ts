@@ -1,6 +1,6 @@
-// `./clawforge rollback` — put back the configuration an operation replaced.
+// `rollback` — put back the configuration an operation replaced.
 //
-// NOT `./clawforge restore`: restore replaces the whole data directory from a snapshot
+// NOT `restore`: restore replaces the whole data directory from a snapshot
 // (every workspace, memory, transcript gone), right when the data itself is what went
 // wrong. `apply` can only break the configuration, so this command puts back one file and
 // stays deliberately separate from restore.
@@ -10,6 +10,7 @@
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { deploymentName, deploymentDir } from "#src/runtime/deployment.ts";
 import { Journal, readOperation, latestRollbackable, newOperationId } from "#src/service/operations.ts";
@@ -66,7 +67,7 @@ export const ROLLBACK_ARGUMENTS = [
 export async function operationToRollback(ctx: Context, wanted?: string): Promise<OperationRecord> {
   if (wanted !== undefined) {
     const record = await readOperation(ctx, wanted);
-    if (record === undefined) die(`no operation "${wanted}" was recorded — ./clawforge operations lists what there is`);
+    if (record === undefined) die(`no operation "${wanted}" was recorded — ${commandLine("operations")} lists what there is`);
     if (record.configSnapshot === undefined) {
       die(
         `operation "${wanted}" took no configuration snapshot, so there is nothing to put back.\n` +
@@ -80,7 +81,7 @@ export async function operationToRollback(ctx: Context, wanted?: string): Promis
   if (latest === undefined) {
     die(
       "no operation with a configuration snapshot has been recorded, so there is nothing to roll back to.\n" +
-        "If it is the instance's DATA you need back, that is a different operation: ./clawforge push (from a snapshot).",
+        `If it is the instance's DATA you need back, that is a different operation: ${commandLine("push")} (from a snapshot).`,
     );
   }
   return latest;
@@ -113,7 +114,7 @@ function rollbackOptions(values: {
   const operation = values.operation;
 
   if (previousSet && (operation !== undefined || !restartAfter)) {
-    die("--previous-set rolls back the whole set through ./clawforge apply — --operation and --no-restart belong to the single-file path only");
+    die(`--previous-set rolls back the whole set through ${commandLine("apply")} — --operation and --no-restart belong to the single-file path only`);
   }
 
   const applyArgs: string[] = [];
@@ -169,7 +170,7 @@ async function rollbackDryRun(ctx: Context, options: RollbackOptions): Promise<v
     info(`artifact: ${artifact}`);
     info("reversed together: prompts, MCP server registrations, schedules, gateway settings");
     if (problem !== undefined) warn(problem);
-    info("does not cover: the step-by-step plan ./clawforge apply would run for it — see ./clawforge plan --set <artifact>");
+    info(`does not cover: the step-by-step plan ${commandLine("apply")} would run for it — see ${commandLine(["plan", "--set", "<artifact>"])}`);
     return;
   }
 
@@ -214,7 +215,7 @@ async function resolvePreviousSetArtifact(ctx: Context): Promise<{ installed: In
     die(
       `the artifact for the previous set is gone — expected ${artifact}.\n` +
         `Set "${previous.name}" (${previous.id}), installed ${previous.installedAt}, cannot be reinstalled without it. ` +
-        "Rebuild it if the source that produced it is still available: ./clawforge set build.",
+        `Rebuild it if the source that produced it is still available: ${commandLine(["set", "build"])}.`,
     );
   });
 
@@ -290,7 +291,7 @@ async function reinstallPreviousSet(
     die(
       `the installed set changed while this rollback was preparing (was "${installed.name}" (${installed.id}), ` +
         `is now ${stillInstalled === undefined ? "nothing recorded" : `"${stillInstalled.name}" (${stillInstalled.id})`}) — ` +
-        "re-run ./clawforge rollback --previous-set against the current state.",
+        `re-run ${commandLine(["rollback", "--previous-set"])} against the current state.`,
     );
   }
 
@@ -335,8 +336,8 @@ async function restoreConfigBeforeCurrentSet(ctx: Context, installed: InstalledS
         ? " (none was ever recorded for it)"
         : ` (operation ${installed.operationId} recorded none, or its snapshot file is gone)`) +
       ".\nWithout it, a setting the current set added but the previous one never declared cannot be " +
-      "proven undone. Put the configuration back by hand, or restore data from a snapshot instead: " +
-      "./clawforge push.",
+      `proven undone. Put the configuration back by hand, or restore data from a snapshot instead: ` +
+      `${commandLine("push")}.`,
   );
 }
 
@@ -401,5 +402,5 @@ async function rollbackRun(ctx: Context, options: RollbackOptions): Promise<void
   log(`rolled back ${target.id}`);
   info(`configuration restored from ${snapshot}`);
   if (!options.restartAfter) info("not restarted (--no-restart): the instance is still running what this replaced");
-  info(`this rollback is itself recorded: ./clawforge operations ${journal.id}`);
+  info(`this rollback is itself recorded: ${commandLine(["operations", journal.id])}`);
 }

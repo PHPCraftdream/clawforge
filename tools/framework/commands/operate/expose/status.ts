@@ -1,4 +1,4 @@
-// `./clawforge expose status` — and the one-line summary `./clawforge status` folds in.
+// `clawforge expose status` — and the one-line summary `clawforge status` folds in.
 //
 // Prefers the PUBLISHED bind address/port read back from the running container
 // (runningConnectionFacts(), extended in runtime.ts/runtime-docker.ts to also carry
@@ -9,6 +9,7 @@
 // this really loopback-only right now" must not be told so on the strength of a stale file.
 
 import { log, info, warn } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { defineAction, type ArgumentSpec, type Values } from "#src/core/command/index.ts";
@@ -50,10 +51,10 @@ export function summarizeExposure(
   };
 }
 
-/** The one line `./clawforge status` folds this command's whole answer into. */
+/** The one line `clawforge status` folds this command's whole answer into. */
 export function exposureOneLiner(summary: ExposureSummary): string {
   const scope = summary.wildcard
-    ? "PUBLIC INTERFACE — see ./clawforge expose status"
+    ? `PUBLIC INTERFACE — see ${commandLine(["expose", "status"])}`
     : summary.loopback
       ? "loopback-only"
       : "non-loopback";
@@ -77,7 +78,7 @@ async function runStatus(ctx: Context, values: Values<typeof EXPOSE_STATUS_ARGUM
   if (summary.running && facts?.bindAddress !== undefined && facts.bindAddress !== ctx.settings.bindAddress) {
     info(
       `note: the running container differs from configured OC_BIND_ADDRESS=${ctx.settings.bindAddress} — ` +
-        "run ./clawforge up to recreate the container with the .env value, or explicitly set " +
+        `run ${commandLine("up")} to recreate the container with the .env value, or explicitly set ` +
         `OC_BIND_ADDRESS=${facts.bindAddress} in .env to adopt the running one.`,
     );
   }
@@ -85,8 +86,8 @@ async function runStatus(ctx: Context, values: Values<typeof EXPOSE_STATUS_ARGUM
     warn(`the gateway is published on ${summary.bindAddress} — reachable from every interface on this host, not loopback-only.`);
     warn(
       "put a reverse proxy with TLS and authentication in front of it (see .env.example), or set " +
-        "OC_BIND_ADDRESS back to 127.0.0.1, run ./clawforge up to apply it, and use " +
-        "./clawforge expose ssh or ./clawforge expose tailscale instead.",
+        `OC_BIND_ADDRESS back to 127.0.0.1, run ${commandLine("up")} to apply it, and use ` +
+        `${commandLine(["expose", "ssh"])} or ${commandLine(["expose", "tailscale"])} instead.`,
     );
   } else if (!summary.loopback) {
     warn(`the gateway is published on ${summary.bindAddress}, not a recognized loopback address — confirm this is intentional.`);

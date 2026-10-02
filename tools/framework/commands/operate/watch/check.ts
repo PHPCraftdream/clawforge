@@ -1,4 +1,4 @@
-// `./clawforge watch check` — one probe cycle: reuse `inspect`'s own gatherer (same probes,
+// `clawforge watch check` — one probe cycle: reuse `inspect`'s own gatherer (same probes,
 // same problem codes), keep only findings that say whether the instance is doing its job,
 // add watch's own channel/disk findings (health.ts), and alert exactly on a change.
 //

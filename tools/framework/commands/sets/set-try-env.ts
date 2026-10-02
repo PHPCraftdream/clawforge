@@ -1,4 +1,4 @@
-// Pure, self-contained environment helpers for `./clawforge set try` — no target I/O, no
+// Pure, self-contained environment helpers for `clawforge set try` — no target I/O, no
 // lifecycle: a free port, a throwaway deployment name, its data-directory sibling path, the
 // .env content it starts with, and whether this run's target location even supports it.
 // set-try.ts keeps TryReport/TryTeardownResult/teardownTry/setTry, the actual lifecycle.

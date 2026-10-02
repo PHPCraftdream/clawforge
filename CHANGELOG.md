@@ -71,15 +71,32 @@ All notable changes to `@clawforge/framework` will be documented here.
   and clears both. Shims and launchers already committed in your repository keep working, and
   `mcp-setup` rewrites a launcher carrying the old spelling as it rewrites its other retired
   texts. No command output changes.
-* Advice for a gate command (`new-app`, `list`, `check` …) no longer carries `--app <name>`:
-  those commands run before a deployment is resolved, so the suggested command is now runnable
-  as printed under every invocation. The same holds for the `--app must come before the
-  command` refusal, whose suggested command line now uses the program as typed (`clawforge`,
-  not the checkout spelling that does not run in cmd.exe or PowerShell).
-* Entry refusals print their advice as an indented `→` line under the message instead of an
-  `error:` line per sentence, and the bash spelling of a suggested command is offered as a
-  separate line marked `(in bash)` instead of a parenthetical inside the sentence.
-* The `exec` entry in the command list and its MCP tool description names `cli` without the program.
+* Advice is data — a suggested command, a line for another shell or host and an action with no
+  command at all are values, and one renderer turns them into text for every surface. What
+  changes for users:
+  * Advice for a gate command (`new-app`, `list`, `check` …) carries no `--app <name>`:
+    those commands run before a deployment is resolved, so the suggested command is now runnable
+    as printed under every invocation. The same holds for the `--app must come before the
+    command` refusal, whose suggested command line now uses the program as typed (`clawforge`,
+    not the checkout spelling that does not run in cmd.exe or PowerShell).
+  * Entry refusals print their advice as an indented `→` line under the message instead of an
+    `error:` line per sentence, and the bash spelling of a suggested command is offered as a
+    separate line marked `(in bash)` instead of a parenthetical inside the sentence.
+  * Problems and JSON documents that carry `nextActions` (inspect/doctor/lock --check/apply/set
+    validate --json) now also carry a structural `next` — the remedies as data instead of
+    rendered strings — and the MCP structured envelope carries `nextSteps` (`{tool, arguments}`)
+    beside the unchanged `nextActions`. Notes that used to name a second command with the
+    program now name it bare (`` `up` ``, `` `expose` ``, `` `lock` ``) in the note.
+  * Nothing on the way out rewrites a line: the cron line of `backup install`/`watch install`,
+    the Task Scheduler command lines, the server bring-up hints of `deploy` and JSON documents
+    come out exactly as built — under a non-default invocation they no longer gain or lose
+    `--app <name>`.
+  * `watch test`'s notification names this deployment's command.
+  * The help text of the framework's own commands renders a command from the invocation, the
+    same for humans wherever it is printed, and an application's own `./clawforge` written in
+    its `details` is no longer rewritten — what the declaration says is what prints.
+  * The `exec` entry in the command list and its MCP tool description names `cli` without the
+    program.
 
 ### Fixed
 
@@ -571,14 +588,6 @@ All notable changes to `@clawforge/framework` will be documented here.
 
 ### Changed
 
-* Problems and JSON documents that carry `nextActions` (inspect/doctor/lock --check/apply/set
-  validate --json) now also carry a structural `next`: the remedies as data instead of rendered
-  strings.
-* The MCP structured envelope now carries `nextSteps` (`{tool, arguments}`) beside the unchanged
-  `nextActions`.
-* The `GATEWAY_PUBLICLY_BOUND`/`UFW_DOCKER_BYPASS` notes and the image-pin advice in `set
-  validate`/`set build` name the main command first; alternatives are named bare (`` `up` ``,
-  `` `expose` ``, `` `lock` ``) in the note.
 * Command hints (log lines, errors, `Usage:`, the `help` footer, `nextActions` in JSON and MCP
   envelopes) now name the command the way it was invoked: `./clawforge` from the monorepo gate
   (plus `--app <name>` for a non-default deployment) and from the committed shim, `clawforge` from

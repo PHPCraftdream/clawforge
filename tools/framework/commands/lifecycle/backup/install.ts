@@ -9,7 +9,7 @@
 // parsed by parseIntervalToMinutes — the same parser `watch install` uses — into the minutes
 // cronSchedule() validates, so the two commands cannot drift.
 
-import { info, infoRaw, log, warn } from "#src/core/io/log.ts";
+import { info, log, warn } from "#src/core/io/log.ts";
 import { commandLine } from "#src/core/io/invocation/render.ts";
 import type { Context } from "#src/core/context.ts";
 import { scheduleIntervalValue } from "#src/commands/operate/schedule.ts";
@@ -88,7 +88,7 @@ export async function backupInstall(ctx: Context, values: InstallValues): Promis
   const line = cronLine(minutes, invocation, JOB, identity);
 
   log(`crontab entry (every ${interval}, runs on ${ctx.transport.description})`);
-  infoRaw(line);
+  info(line);
   info(`marked "${jobMarker(JOB, identity)}" — re-running this replaces only that line; backup uninstall removes only it`);
   if (ctx.transport.description.startsWith("ssh:")) {
     info(`assumes this deployment was mirrored to ${ctx.settings.remotePath} by ${commandLine("deploy")} (set OC_REMOTE_PATH if --path differed)`);

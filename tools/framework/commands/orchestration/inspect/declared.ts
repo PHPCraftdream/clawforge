@@ -1,4 +1,4 @@
-// The declared state `./clawforge inspect` reads: desired-state.json and the recipes
+// The declared state `inspect` reads: desired-state.json and the recipes
 // directory, both local to this repository — never the target. Split out of observe.ts;
 // see helpers.ts (this same directory) for the pure pieces these use, drift.ts for the
 // per-facet declared-vs-target comparisons, and live.ts for what the target itself reports.

@@ -1,4 +1,4 @@
-// `./clawforge apply-config` — applies config/desired-state.json to the instance.
+// `clawforge apply-config` — applies config/desired-state.json to the instance.
 //
 // The declaration in the repository is the source of
 // truth: editing openclaw.json on a host makes that host diverge, re-applying brings it
@@ -7,6 +7,7 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit } from "#src/core/io/output.ts";
 import { desiredStateFile } from "#src/runtime/deployment.ts";
 import type { Context } from "#src/core/context.ts";
@@ -45,9 +46,9 @@ export function stagedFileName(dryRun: boolean): string {
  *  starts or restarts the gateway itself moments later. */
 export function appliedHeadline(restartAdvice: boolean): string {
   return restartAdvice
-    // Not ./clawforge up: a healthy container already converges on `up`, reporting success
+    // Not `clawforge up`: a healthy container already converges on `up`, reporting success
     // while leaving the old settings live.
-    ? "desired state applied — restart to pick it up: ./clawforge restart"
+    ? `desired state applied — restart to pick it up: ${commandLine("restart")}`
     : "desired state applied";
 }
 

@@ -1,8 +1,9 @@
-// `./clawforge cli-start` / `./clawforge cli-stop` — explicit control over the persistent CLI helper
+// `clawforge cli-start` / `cli-stop` — explicit control over the persistent CLI helper
 // container that `cli` and `mcp-serve` exec into when it is running, instead of paying a
 // fresh container's create/destroy cost on every call.
 
 import { log, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import type { Context } from "#src/core/context.ts";
 import { commandBody, runOnContext } from "#src/core/command/index.ts";
 
@@ -17,14 +18,14 @@ export const CLI_START = commandBody({
   arguments: [] as const,
   async run(ctx) {
     if (!(await ctx.runtime.isRunning())) {
-      die("the gateway is not running. Start it with ./clawforge up");
+      die(`the gateway is not running. Start it with ${commandLine("up")}`);
     }
     if (await ctx.runtime.helperRunning(CLI_HELPER_SERVICE)) {
       log("the CLI helper is already running");
       return;
     }
     await ctx.runtime.startHelper(CLI_HELPER_SERVICE, CLI_PROFILE);
-    log("CLI helper started — ./clawforge cli and ./clawforge mcp-serve will exec into it");
+    log(`CLI helper started — ${commandLine("cli")} and ${commandLine("mcp-serve")} will exec into it`);
   },
 });
 

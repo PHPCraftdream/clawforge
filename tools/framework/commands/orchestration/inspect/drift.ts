@@ -1,4 +1,4 @@
-// The per-facet declared-vs-target comparisons `./clawforge inspect` runs: the live
+// The per-facet declared-vs-target comparisons `inspect` runs: the live
 // openclaw.json against declared.ts's declaredState, the .env connection facts against the
 // running container, and the local secret store against what the target holds. Split out of
 // observe.ts; see helpers.ts (this same directory) for the pure pieces these use, and

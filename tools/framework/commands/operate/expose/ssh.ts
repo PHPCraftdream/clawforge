@@ -1,10 +1,11 @@
-// `./clawforge expose ssh` — the SSH tunnel that reaches a loopback-bound remote gateway, for
+// `clawforge expose ssh` — the SSH tunnel that reaches a loopback-bound remote gateway, for
 // OC_TARGET_LOCATION=ssh deployments (the same shape `deploy` prints once, right after a
 // fresh deploy). wsl/local targets need no tunnel at all: Docker Desktop's WSL2 integration
 // (or a shared filesystem, for local) already forwards the published port to this machine's
 // own loopback.
 
 import { log, info, die, dieWithExitCode } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { spawnLocal } from "#src/runtime/transport/transport.ts";
 import { shouldFollow } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
@@ -56,8 +57,8 @@ async function runSsh(ctx: Context, values: Values<typeof EXPOSE_SSH_ARGUMENTS>)
   info(`once open: http://127.0.0.1:${localPort}`);
   info(
     localPort === ctx.settings.gatewayPort
-      ? `./clawforge mcp-creds already prints this exact URL (${ctx.settings.serviceUrl}) — it becomes reachable the moment the tunnel is open.`
-      : `./clawforge mcp-creds prints ${ctx.settings.serviceUrl} (the remote port) — substitute ${localPort} for ${ctx.settings.gatewayPort} in that URL while this tunnel is open.`,
+      ? `${commandLine("mcp-creds")} already prints this exact URL (${ctx.settings.serviceUrl}) — it becomes reachable the moment the tunnel is open.`
+      : `${commandLine("mcp-creds")} prints ${ctx.settings.serviceUrl} (the remote port) — substitute ${localPort} for ${ctx.settings.gatewayPort} in that URL while this tunnel is open.`,
   );
   info("the gateway token from mcp-creds is unchanged — the tunnel only changes how the URL is reached.");
 

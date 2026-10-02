@@ -1,10 +1,11 @@
-// `./clawforge exec …` — runs an arbitrary command in the same sidecar `./clawforge cli` uses:
+// `clawforge exec …` — runs an arbitrary command in the same sidecar `clawforge cli` uses:
 // the OpenClaw image, the gateway's network namespace, the same data mounts — but any
 // command, not just the app's own CLI entrypoint. For diagnostics `cli` cannot reach: reading
 // a file bundled in the image, a curl probe against something only reachable from inside that
 // network namespace (a recipe's sidecar port, for instance).
 
 import { die, dieWithExitCode } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { isCaptured, emitRaw } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import type { ExecResult } from "#src/runtime/transport/transport.ts";
@@ -41,7 +42,7 @@ export async function exec(ctx: Context, args: string[]): Promise<void> {
 async function runExec(ctx: Context, rawArgs: string[]): Promise<void> {
   const [command, ...rest] = rawArgs;
   if (command === undefined) {
-    die("usage: ./clawforge exec <command> [args...], e.g. ./clawforge exec cat /app/docs/channels/telegram.md");
+    die(`usage: ${commandLine("exec")} <command> [args...], e.g. ${commandLine([])} exec cat /app/docs/channels/telegram.md`);
   }
 
   // Same capture/streaming and failure-reporting shape as `cli` — see its own comments for why.
@@ -57,7 +58,7 @@ async function runExec(ctx: Context, rawArgs: string[]): Promise<void> {
   };
 
   if (ctx.runtime.execCommand === undefined) {
-    die(`${ctx.runtime.description} does not support ./clawforge exec`);
+    die(`${ctx.runtime.description} does not support ${commandLine("exec")}`);
   }
 
   // Tried first, same reasoning as `cli`: an already-running helper answers faster than a
@@ -70,7 +71,7 @@ async function runExec(ctx: Context, rawArgs: string[]): Promise<void> {
   }
 
   if (!(await ctx.runtime.isRunning())) {
-    die("the gateway is not running. Start it with ./clawforge up");
+    die(`the gateway is not running. Start it with ${commandLine("up")}`);
   }
 
   // Disposable by design, same as `cli`'s own fallback: everything it touches lives in the

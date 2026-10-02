@@ -1,4 +1,4 @@
-// `./clawforge expose tailscale` — tailnet-only access to the loopback-bound gateway via
+// `clawforge expose tailscale` — tailnet-only access to the loopback-bound gateway via
 // `tailscale serve`. `tailscale funnel` (public internet) is refused outright.
 //
 // The probe runs on the TARGET through the transport, not the operator's machine — a tailnet
@@ -11,6 +11,7 @@
 // turning one off never touches another service's mapping.
 
 import { log, info, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import type { Context } from "#src/core/context.ts";
@@ -134,7 +135,7 @@ async function runTailscale(ctx: Context, values: Values<typeof EXPOSE_TAILSCALE
   info(probe.detail);
   info(command.join(" "));
   info("reachable to tailnet members only — the exact https URL depends on this machine's");
-  info("tailnet name; see `tailscale serve status` (or ./clawforge expose status) once applied.");
+  info(`tailnet name; see \`tailscale serve status\` (or ${commandLine(["expose", "status"])}) once applied.`);
   // The bare-target form above serves https 443 at "/": turn off just that route.
   const undo = tailscaleServeOffCommand({ hostPort: "", port: "443", mountPoint: "/" });
   info(`undo with: ${undo.join(" ")} (run on the target; removes only this route — confirm the port with \`tailscale serve status\`)`);
@@ -155,7 +156,7 @@ async function runTailscale(ctx: Context, values: Values<typeof EXPOSE_TAILSCALE
     if (result.code !== 0) {
       die(`tailscale serve failed (exit ${result.code}): ${(result.stderr || result.stdout).trim()}`);
     }
-    log("applied — check with ./clawforge expose status, or `tailscale serve status` on the target");
+    log(`applied — check with ${commandLine(["expose", "status"])}, or \`tailscale serve status\` on the target`);
   });
 }
 

@@ -8,6 +8,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { die, info, log } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { withArtifactInspected } from "#src/set/artifacts/install.ts";
 import { canonicalJson } from "#src/set/artifacts/model.ts";
@@ -178,7 +179,7 @@ function compareRecipe(changes: SetDiffChange[], name: string, from: SetRecipe, 
       oldAgent,
       undefined,
       "removed",
-      "The agent workspace and memory are left untouched; use ./clawforge set forget --kind agent --name <id> for an explicit separate deletion.",
+      `The agent workspace and memory are left untouched; use ${commandLine(["set", "forget", "--kind", "agent", "--name", "<id>"])} for an explicit separate deletion.`,
     );
   } else if (oldAgent !== undefined && newAgent !== undefined) {
     if (oldAgent.agentId !== newAgent.agentId) {
@@ -190,7 +191,7 @@ function compareRecipe(changes: SetDiffChange[], name: string, from: SetRecipe, 
         oldAgent.agentId,
         newAgent.agentId,
         "changed",
-        `The old agent workspace and memory are left untouched; use ./clawforge set forget --kind agent --name ${oldAgent.agentId} only if that separate deletion is intended.`,
+        `The old agent workspace and memory are left untouched; use ${commandLine(["set", "forget", "--kind", "agent", "--name", oldAgent.agentId])} only if that separate deletion is intended.`,
       );
     }
     if (oldAgent.mcpServerName !== newAgent.mcpServerName) {
@@ -218,7 +219,7 @@ function compareRecipe(changes: SetDiffChange[], name: string, from: SetRecipe, 
 function advisoryForRecipeRemoval(recipe: SetRecipe, _name: string): string | undefined {
   const id = recipe.agent?.agentId;
   if (id === undefined) return undefined;
-  return `The agent workspace and memory for ${id} are left untouched; use ./clawforge set forget --kind agent --name ${id} for an explicit separate deletion.`;
+  return `The agent workspace and memory for ${id} are left untouched; use ${commandLine(["set", "forget", "--kind", "agent", "--name", id])} for an explicit separate deletion.`;
 }
 
 /** Pure semantic diff. `desiredState` and `cronMessages` are loaded from verified staging by
@@ -317,7 +318,7 @@ export function planSetDiff({ from, to, json, artifacts: positional }: Values<ty
     if (from === undefined || to === undefined) throw new ArgumentError("set diff needs both --from and --to artifact paths", from === undefined ? "from" : "to");
     return { from, to, json };
   }
-  if (positional.length !== 2) throw new ArgumentError("usage: ./clawforge set diff <from.tar.gz> <to.tar.gz> [--json]", "artifacts");
+  if (positional.length !== 2) throw new ArgumentError(`usage: ${commandLine(["set", "diff", "<from.tar.gz>", "<to.tar.gz>"])} [--json]`, "artifacts");
   return { from: positional[0], to: positional[1], json };
 }
 
@@ -336,7 +337,7 @@ function humanChange(change: SetDiffChange): string {
   return `${symbol} ${change.kind} ${target}${values}`;
 }
 
-/** `./clawforge set diff A.tar.gz B.tar.gz`; both artifacts are fully verified before comparison.
+/** `clawforge set diff A.tar.gz B.tar.gz`; both artifacts are fully verified before comparison.
  *  Read-only, so the verification gate's semantic findings are ignored here — a diff between a
  *  broken and a good build is exactly what a reader may want to ask (R32-05); the integrity
  *  checks still refuse a corrupt archive. */

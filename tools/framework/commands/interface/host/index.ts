@@ -1,4 +1,4 @@
-// `./clawforge host <context> -- <command> [args...]` runs one ad hoc command against the
+// `clawforge host <context> -- <command> [args...]` runs one ad hoc command against the
 // operator's own machine layers, not the deployment's containers (exec/cli are for that).
 // Three contexts: target (the deployment's transport), engine (where the container engine
 // executes), local (this machine, unwrapped). Root is never implicit — --root and

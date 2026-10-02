@@ -20,8 +20,10 @@ import type { GateCommand } from "#framework/integration/gate.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
-import { renderAdvice, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
-import type { Invocation } from "#framework/core/io/invocation/index.ts";
+import { renderAdvice, shimInvocation, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
+import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
+import { info, reportError, UserError } from "#framework/core/io/log.ts";
+import { withOutputSink } from "#framework/core/io/output.ts";
 import { ADVICE_ROWS, GATE_COMMAND_NAMES, MATRIX_COLUMNS, toolFormCell } from "#checks/golden/advice.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
 
@@ -150,6 +152,43 @@ for (const { label, advice } of ADVICE_ROWS) {
     if (!("invocation" in column)) continue;
     check(`${label} under ${column.label}: byte for byte`, renderAdvice(advice, column.invocation), expected);
   }
+}
+
+/** The same law through the real output path, which is what the flip made true: info() prints
+ *  what it was handed, so a line the renderer built reaches the sink unchanged — note,
+ *  indentation and newline included. info() colours its prefix only when stderr is a TTY, so
+ *  the escape is stripped before the comparison: this asserts no host. */
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+const plain = (text: string): string => text.replace(ANSI, "");
+const CHECKOUT_ROOT: Invocation = { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" };
+
+for (const { label, advice } of ADVICE_ROWS) {
+  if (advice.kind !== "shell") continue;
+  for (const column of MATRIX_COLUMNS) {
+    if (!("invocation" in column)) continue;
+    setInvocation(column.invocation);
+    const line = renderAdvice(advice);
+    let printed = "";
+    await withOutputSink((chunk) => { printed += chunk; }, async () => { info(renderAdvice(advice)); });
+    check(`${label} under ${column.label}: info() writes the rendered line and nothing else`, plain(printed), `    ${line}\n`);
+    setInvocation(CHECKOUT_ROOT);
+  }
+}
+
+// The error path, once per column: the message and formatError's advice lines both come out
+// as they were built. The message is a server command, the one thing the old rewriting would
+// have changed under a non-default invocation.
+const SERVER_BOOTSTRAP = renderAdvice(command(["bootstrap"], { app: "demo" }), shimInvocation("demo"));
+for (const column of MATRIX_COLUMNS) {
+  if (!("invocation" in column)) continue;
+  setInvocation(column.invocation);
+  const adviceLine = renderAdvice(command(["logs"]));
+  let printed = "";
+  await withOutputSink((chunk) => { printed += chunk; }, async () => {
+    reportError(new UserError(SERVER_BOOTSTRAP, { advice: [command(["logs"])] }));
+  });
+  check(`${column.label}: reportError writes the message and its advice line un-rewritten`, plain(printed), `error: ${SERVER_BOOTSTRAP}\n    → ${adviceLine}\n`);
+  setInvocation(CHECKOUT_ROOT);
 }
 
 /** Why a parser refuses an argv, undefined when it accepts it. Strict about names, lenient

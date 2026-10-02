@@ -19,6 +19,7 @@ import { entryRefusalAdvice } from "./matrix.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { imagePinAdvice, provisionRemedy, forgetRemedy, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#framework/set/advice.ts";
 import { pluginReinstall, skillReinstall } from "#framework/commands/management/extensions.ts";
+import { cmdExeLine, displayCommandLine, schtasksCreateCommand } from "#framework/commands/operate/schedule.ts";
 import { toolSteps } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 
@@ -83,6 +84,14 @@ const PROSE_ROWS: readonly AdviceRow[] = Object.entries(openclawCommands).flatMa
   });
 });
 
+/** Group 4 (rf4-sweep-cmds2): the Task Scheduler line `printSchedulingInstructions` builds for a
+ *  WSL target on Windows. The app name is a plain word: a `<…>` placeholder would quote into the
+ *  /tr value and cmdExeLine would refuse to paste it (its own rule). */
+const SCHTASKS_CREATE = schtasksCreateCommand("clawforge-<identity>-backup", 60, {
+  command: SHIM_PROGRAM,
+  args: ["--app", "demo", "backup"],
+});
+
 /** This task's synthetic rows (design 5.2: rf4-advice renders the synthetic group, rf4-codes
  *  and the sweeps append their own). Every row is only a `command`/`shellLine`/`manual`
  *  value: no rendering at module load, where it would freeze the default invocation. */
@@ -105,6 +114,10 @@ export const ADVICE_ROWS: readonly AdviceRow[] = [
   { label: "deploy: remote bootstrap hint (shell)", advice: shellLine("posix", "cd <remotePath> && ./clawforge --app <name> bootstrap") },
   { label: "deploy: remote bootstrap command", advice: command(["bootstrap"], { app: "<name>" }) },
   { label: "deploy: remote secrets --apply command", advice: command(["secrets", "--apply"], { app: "<name>" }) },
+  // Group 4 (rf4-sweep-cmds2): the lines the schedulers get — cron's `cd <root> && <invocation>`
+  // on a posix target, and the schtasks /create line pasted into cmd.exe.
+  { label: "cron: posix target line", advice: shellLine("posix", `cd <root> && ${displayCommandLine(SHIM_PROGRAM, ["--app", "<name>", "backup"])}`) },
+  { label: "schtasks: cmd.exe create line", advice: shellLine("cmd", cmdExeLine(SCHTASKS_CREATE.command, SCHTASKS_CREATE.args)!) },
   ...PROSE_ROWS,
 ];
 

@@ -1,10 +1,11 @@
-// `./clawforge operations [<id>]` — what mutating runs did to this instance.
+// `operations [<id>]` — what mutating runs did to this instance.
 //
 // The journal is written by the commands that change things; this is how anyone reads it.
 // Without it the record would be a file on the target that only someone who already knew
 // where to look could find, which is not much better than no record at all.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { listOperations, readOperation, operationsDir } from "#src/service/operations.ts";
 import type { Context } from "#src/core/context.ts";
@@ -54,7 +55,7 @@ export const OPERATIONS = commandBody({
       info(`outcome   ${record.outcome ?? "unknown"}`);
       if (record.configSnapshot !== undefined) {
         info(`snapshot  ${record.configSnapshot}`);
-        info(`          put it back with: ./clawforge rollback --operation ${record.id}`);
+        info(`          put it back with: ${commandLine(["rollback", "--operation", record.id])}`);
       }
       for (const step of record.steps) {
         const line = `${step.status.padEnd(8)} ${step.id}${step.detail === undefined ? "" : `  ${step.detail}`}`;
@@ -92,7 +93,7 @@ export const OPERATIONS = commandBody({
       const failed = record.steps.filter((step) => step.status === "failed").length;
       info(`${record.id}  ${outcome}${failed > 0 ? `, ${failed} failed step(s)` : ""}`);
     }
-    info("details: ./clawforge operations <id>");
+    info(`details: ${commandLine(["operations", "<id>"])}`);
   },
 });
 

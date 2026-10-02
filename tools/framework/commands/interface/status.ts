@@ -1,4 +1,4 @@
-// `./clawforge status` — what is running and whether it is actually healthy.
+// `clawforge status` — what is running and whether it is actually healthy.
 //
 // One addition came out of a real bug: the
 // runtime's own health verdict is shown next to the HTTP probes, because the two can
@@ -6,6 +6,7 @@
 // while the gateway serves traffic.
 
 import { log, info, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { NotBootstrapped } from "#src/runtime/runtime.ts";
 import { TransportUnreachableError } from "#src/runtime/transport/transport.ts";
@@ -44,7 +45,7 @@ async function runStatus(ctx: Context, jsonOnly: boolean): Promise<void> {
   // means the target is reachable but nothing is there yet — caught here so status answers
   // plainly instead of crashing, skipping every other runtime call below.
   try {
-    info(`exposure: ${exposureOneLiner(summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.()))} — details: ./clawforge expose status`);
+    info(`exposure: ${exposureOneLiner(summarizeExposure(ctx, await ctx.runtime.runningConnectionFacts?.()))} — details: ${commandLine("expose status")}`);
 
     log("containers");
     await ctx.runtime.showStatus();
@@ -54,7 +55,7 @@ async function runStatus(ctx: Context, jsonOnly: boolean): Promise<void> {
       die(`${found.code}  ${found.detail}\n    → ${found.nextAction}`);
     }
     if (!(error instanceof NotBootstrapped)) throw error;
-    info("nothing deployed yet — run ./clawforge bootstrap");
+    info(`nothing deployed yet — run ${commandLine("bootstrap")}`);
     return;
   }
 

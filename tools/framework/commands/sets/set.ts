@@ -1,4 +1,4 @@
-// `./clawforge set` — the command body: build, validate, diff, receipts, try, forget.
+// `clawforge set` — the command body: build, validate, diff, receipts, try, forget.
 //
 // Split for organisation only: set-secrets-guard.ts (value scan before a build writes
 // anything), set-manifest.ts (collectManifest/writeArtifact/buildSet), set-diff.ts,
@@ -7,6 +7,7 @@
 // external importer keeps using "./set.ts".
 
 import { die, log, info } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import type { Context } from "#src/core/context.ts";
 import { deploymentName } from "#src/runtime/deployment.ts";
@@ -49,7 +50,7 @@ export * from "./set-secrets-guard.ts";
 export * from "./set-manifest.ts";
 export { collectManifest } from "#src/set/load.ts";
 
-/** `./clawforge set validate` — the same manifest `build` would produce, or one read back
+/** `clawforge set validate` — the same manifest `build` would produce, or one read back
  *  from an artifact, put through every check that needs no gateway.
  *
  *  Validating the working tree also checks the files are there; validating an artifact runs
@@ -117,13 +118,13 @@ async function validateAction(
   await report(loaded.manifest, "working tree", await validateLoadedSet(loaded));
 }
 
-/** `./clawforge set forget --kind <kind> --name <name>` — removes an object this framework
+/** `clawforge set forget --kind <kind> --name <name>` — removes an object this framework
  *  created and stops tracking it. `apply` does this on its own for an orphaned MCP server
  *  or cron job; exposed by hand for an orphaned agent, whose removal prunes a workspace and
  *  memory — a decision for whoever runs this, not something a plan does automatically. */
 async function forgetAction(ctx: Context, values: Values<typeof SET_FORGET_ARGUMENTS>): Promise<void> {
   const { kind, name } = values;
-  if (!(await ctx.runtime.isRunning())) die("the gateway is not running. Start it with ./clawforge up");
+  if (!(await ctx.runtime.isRunning())) die(`the gateway is not running. Start it with ${commandLine("up")}`);
 
   // `apply` calls this indirectly while already holding the lock; nested, the second acquire
   // would refuse the run its own caller started. Taken only when this is invoked directly.
@@ -133,7 +134,7 @@ async function forgetAction(ctx: Context, values: Values<typeof SET_FORGET_ARGUM
   log(`${kind} "${name}" removed and no longer tracked as owned`);
 }
 
-/** `./clawforge set build`: the artifact, and an inventory of what went into it. */
+/** `clawforge set build`: the artifact, and an inventory of what went into it. */
 async function buildAction(ctx: Context, { name, json: jsonOnly }: Values<typeof SET_BUILD_ARGUMENTS>): Promise<void> {
   const built = await buildSet(ctx, name ?? defaultSetName(deploymentName()));
 

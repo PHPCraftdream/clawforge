@@ -5,7 +5,7 @@
 // own default, before any command runs; the value is read everywhere through the
 // accessors, never re-derived from strings.
 
-import { commandLine, SHIM_PROGRAM } from "./render.ts";
+import { SHIM_PROGRAM } from "./render.ts";
 
 /** The invocation travels to child gate processes as versioned JSON (see serializeInvocation). */
 export const INVOCATION_ENV = "CLAWFORGE_INVOCATION";
@@ -116,29 +116,4 @@ export function takeInvocationFromEnv(): Invocation | undefined {
     if (parsed !== undefined) return parsed;
   }
   return parseLegacyInvokedAs(legacy ?? "");
-}
-
-// A bare checkout-spelling word: not part of a path, an escaped regex, or a quoted argv
-// element — a quoted shim spelling is a real command line, not a hint.
-const HINT = /(?<![\w./\\'-])\.\/clawforge(?![\w/'"-])/g;
-
-/** Rewrites the checkout-spelling hints already written into a message to this invocation.
- *  Identity under the default prefix. A hint that names its own `--app` keeps that one.
- *
- *  The `--app` rule the prefix encodes (stage 4's renderer owns it; today only this
- *  rewriting reads it) — an entry adds `app` to the value exactly when the pasted command
- *  would not re-select the deployment, and this is what that means per selection:
- *
- *  | invocation                                 | rendered prefix          | a hint with its own --app |
- *  | ------------------------------------------ | ------------------------ | ------------------------- |
- *  | no app (cwd, default, or installed mode)   | `program`                | unchanged                 |
- *  | app, selectedBy flag / env / sole          | `program --app <name>`   | `program`                 |
- *  | app, selectedBy cwd                        | never written this way   | —                         |
- */
-export function localizeHints(text: string): string {
-  const full = commandLine([]);
-  if (full === SHIM_PROGRAM || !text.includes(SHIM_PROGRAM)) return text;
-  return text.replace(HINT, (match, offset: number, whole: string) =>
-    whole.startsWith(" --app ", offset + match.length) ? invocation().program : full,
-  );
 }

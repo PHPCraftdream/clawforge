@@ -9,7 +9,6 @@ import {
   INVOKED_AS_ENV,
   INVOCATION_ENV,
   invocation,
-  localizeHints,
   parseInvocation,
   parseLegacyInvokedAs,
   serializeInvocation,
@@ -20,7 +19,7 @@ import {
 import { command, manual, shellLine } from "#framework/core/io/invocation/advice.ts";
 import { commandLine } from "#framework/core/io/invocation/render.ts";
 import { renderAdvice, shimInvocation, useGateCommands } from "#framework/core/io/invocation/render.ts";
-import { die, formatError, registerSecret, UserError, reportError, info, infoRaw } from "#framework/core/io/log.ts";
+import { die, formatError, registerSecret, UserError, reportError, info } from "#framework/core/io/log.ts";
 import { emit, emitRaw, withOutputSink } from "#framework/core/io/output.ts";
 import { structuredResult } from "#framework/integration/mcp/server.ts";
 import { cronLine, displayCommandLine, posixTargetInvocation, schedulerIdentity, withScheduleRunner } from "#framework/commands/operate/schedule.ts";
@@ -74,17 +73,14 @@ try {
   check("commandLine renders the prefix and the rest", commandLine(["bootstrap", "--check"]), "./clawforge bootstrap --check");
   setInvocation(GLOBAL);
   check("commandLine follows the prefix", commandLine(["bootstrap", "--check"]), "clawforge bootstrap --check");
-  check("a bare hint is rewritten", localizeHints("run ./clawforge up, then `./clawforge logs`."), "run clawforge up, then `clawforge logs`.");
-  check("a hint naming its own --app keeps it", localizeHints("run ./clawforge --app x bootstrap"), "run clawforge --app x bootstrap");
-  check("a quoted argv element is left alone", localizeHints("&& './clawforge' 'backup'"), "&& './clawforge' 'backup'");
-  check("a path and a regex source are left alone", localizeHints("apps/x/./clawforge y \\./clawforge z"), "apps/x/./clawforge y \\./clawforge z");
   setInvocation(NAMED);
   check("the app part is in the prefix", commandLine([]), "./clawforge --app staging");
-  check("a non-default deployment is named", localizeHints("run ./clawforge up"), "run ./clawforge --app staging up");
-  check("and not twice", localizeHints("run ./clawforge --app x up"), "run ./clawforge --app x up");
   check("emitRaw never rewrites data", await capture(() => emitRaw("./clawforge up\n")), "./clawforge up\n");
-  check("emit rewrites machine output", await capture(() => emit("./clawforge up\n")), "./clawforge --app staging up\n");
-  check("info rewrites diagnostics", await capture(() => info("./clawforge up")).then((text) => text.includes("./clawforge --app staging up")), true);
+  // The flip: the output layer rewrites nothing. A document and a diagnostic alike leave as
+  // they were built, whatever invocation is set right now — advice-matrix.check.ts's P3
+  // holds the same law for every advice row, through this very info().
+  check("emit passes machine output through", await capture(() => emit("./clawforge up\n")), "./clawforge up\n");
+  check("info passes a diagnostic through, adding no --app of its own", await capture(() => info("./clawforge up")).then((text) => text.includes("./clawforge up") && !text.includes("./clawforge --app staging up")), true);
   // Lines copied into another shell or host are printed verbatim under any prefix.
   const cron = cronLine(60, { cwd: "/srv/app1", command: "./clawforge", args: ["--app", "app1", "backup"] }, "backup", "app1");
   const remote = [
@@ -97,13 +93,13 @@ try {
     setInvocation(value);
     const prefix = commandLine([]);
     for (const line of [cron, ...remote]) {
-      check(`infoRaw keeps the line verbatim under "${prefix}"`, await capture(() => infoRaw(line)).then((text) => text.includes(line)), true);
+      check(`info keeps the line verbatim under "${prefix}"`, await capture(() => info(line)).then((text) => text.includes(line)), true);
     }
-    check(`info would rewrite the cron line under "${prefix}"`, await capture(() => info(cron)).then((text) => text.includes(cron)), false);
   }
   // --- the call sites: what they print is what they install or pass on -----------------------
-  // A bare `./clawforge` in a stubbed command would be rewritten by info(), so reverting any
-  // infoRaw call site to info() turns one of these red under a non-default prefix.
+  // What each of these prints is a line built for another shell, host or scheduler. info()
+  // now prints it as it was built, so reverting a site to a hand-written text — or making it
+  // render for this terminal — turns one of these red under a non-default prefix.
 
   const ok = { code: 0, stdout: "", stderr: "" };
   const REMOTE = "/mnt/x/clawforge";
@@ -348,11 +344,8 @@ try {
   const plainText = reported.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g"), "");
   check("reportError prints the error and its advice line", plainText, `error: nope${ARROW}${HINT} up\n`);
 
-  // 10. localizeHints, the transitional rewriting, is a fixed point on every line the renderer
-  //     produced under a checkout program. (Under a selected deployment a gate command's line
-  //     is rewritten — the documented exception the stage-4 flip removes.)
-  const checkoutRenderings = [STATUS, DEMO_STATUS, NEW_APP_LINE, CHECK_LINE, DEMO_CHECK, SPACED_LOGS, NOTED_UP, SHELL_TEXT, NOTED_SHELL, MANUAL_TEXT];
-  for (const line of checkoutRenderings) check(`localizeHints leaves "${line}" alone`, localizeHints(line), line);
+  // 10. The renderer's fixed point is now the whole output layer: every line above prints
+  //     exactly as renderAdvice() built it, so there is no rewriting left to describe.
   setInvocation(MONO);
 } finally {
   setInvocation(MONO);

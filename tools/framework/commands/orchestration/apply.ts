@@ -1,4 +1,4 @@
-// `./clawforge apply` — run the plan, then check the result.
+// `clawforge apply` — run the plan, then check the result.
 //
 // "Applied" and "working" are different claims. Every step returning successfully doesn't
 // mean the instance is healthy, so this command inspects again afterwards and reports what
@@ -8,6 +8,7 @@
 // applying at once, but stops applying steps chosen for a different repository version.
 
 import { log, info, warn, die } from "#src/core/io/log.ts";
+import { commandLine } from "#src/core/io/invocation/render.ts";
 import { emit, isCaptured } from "#src/core/io/output.ts";
 import { computePlan, printPlanActions } from "./plan.ts";
 import { gatherInspection } from "./inspect/gather.ts";
@@ -76,7 +77,7 @@ export async function preflightControlMarkers(ctx: Context): Promise<void> {
 }
 
 /** How each executable step is actually performed. Called directly rather than shelling
- *  out to `./clawforge`: the step already knows which function it means, and going back
+ *  out to `clawforge`: the step already knows which function it means, and going back
  *  out through the dispatcher would lose the Context, the output sink and the error. */
 const RUNNERS: Record<string, (ctx: Context, action: PlanAction) => Promise<void>> = {
   // Recovery steps write only the operator side (.env, local store, declaration) — nothing
@@ -152,7 +153,7 @@ export class TargetChangedError extends Error {
   constructor(stepId: string, changes: readonly string[], outcomes: StepOutcome[]) {
     super(
       `step "${stepId}" changed the deployment target (${changes.join(", ")}) — the remaining steps were planned for the previous target.\n` +
-        "Re-run ./clawforge apply: it re-plans against the refreshed .env and takes the lock for the new coordinates.",
+        `Re-run ${commandLine("apply")}: it re-plans against the refreshed .env and takes the lock for the new coordinates.`,
     );
     this.name = "TargetChangedError";
     this.stepId = stepId;
@@ -278,7 +279,7 @@ export async function runSteps(
                 await record({
                   id: later.id,
                   status: "blocked",
-                  detail: `the deployment target changed (${refresh.targetChanges.join(", ")}) — re-run ./clawforge apply against the refreshed .env`,
+                  detail: `the deployment target changed (${refresh.targetChanges.join(", ")}) — re-run ${commandLine("apply")} against the refreshed .env`,
                 });
               }
             }
@@ -417,7 +418,7 @@ async function applyFromSource(ctx: Context, plan: ApplyPlan, heldOperationId?: 
 export function refuseUnreliableCliRead(plan: Pick<Plan, "problems">): void {
   const failed = plan.problems.filter((entry) => entry.code === "CLI_READ_FAILED");
   if (failed.length > 0) {
-    die(`apply stopped before changes: ${failed.map((entry) => entry.detail).join("; ")}. Retry ./clawforge inspect`);
+    die(`apply stopped before changes: ${failed.map((entry) => entry.detail).join("; ")}. Retry ${commandLine("inspect")}`);
   }
 }
 
@@ -429,7 +430,7 @@ function refuseStaleDeclaration(expected: string | undefined, plan: Plan): void 
       "the declaration changed after that plan was computed — the steps in it were chosen " +
         "for a different version of this repository.\n" +
         `planned against ${expected}, now ${plan.declarationChecksum}\n` +
-        "Look at the current one and apply that: ./clawforge plan",
+        `Look at the current one and apply that: ${commandLine("plan")}`,
     );
   }
 }
@@ -536,7 +537,7 @@ function throwOnRunFailure(run: PlanRun): void {
   if (run.targetChange !== undefined) {
     throw new Error(
       `${run.targetChange.message}\n` +
-        `What ran, and what did not: ./clawforge operations ${run.journal.id}`,
+        `What ran, and what did not: ${commandLine(["operations", run.journal.id])}`,
     );
   }
 
@@ -544,10 +545,10 @@ function throwOnRunFailure(run: PlanRun): void {
     throw new Error(
       `step "${run.failedStep.id}" failed: ${run.failedStep.detail ?? "no detail"}\n` +
         `The instance is left as that step found it. What ran, and what did not: ` +
-        `./clawforge operations ${run.journal.id}\n` +
+        `${commandLine(["operations", run.journal.id])}\n` +
         (run.snapshot === undefined
           ? "No configuration snapshot was taken, so there is nothing to roll back to."
-          : `Put the previous configuration back: ./clawforge rollback --operation ${run.journal.id}`),
+          : `Put the previous configuration back: ${commandLine(["rollback", "--operation", run.journal.id])}`),
     );
   }
 }

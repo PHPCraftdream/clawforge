@@ -10,11 +10,9 @@ import { renderAdvice, SHIM_PROGRAM, useGateCommands } from "#framework/core/io/
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { setInvocation, type Invocation } from "#framework/core/io/invocation/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
-import { makeVersionGateCommand } from "#framework/integration/version.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
-import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
+import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
 import { entryRefusalAdvice } from "./matrix.ts";
 import { PROBLEM_CODES } from "#framework/service/inspection.ts";
 import { imagePinAdvice, provisionRemedy, forgetRemedy, recipeIncomplete, recipeMissingDir, recipeInvalidDefinition } from "#framework/set/advice.ts";
@@ -23,21 +21,20 @@ import { cmdExeLine, displayCommandLine, schtasksCreateCommand } from "#framewor
 import { toolSteps } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 
-/** The gate names an entry registers before any command runs: the checkout gate's own four
- *  plus version and completion (wired in tools/clawforge.ts), and init, which the installed
- *  entry contributes. Registration is process-global and additive, so importing this module
- *  from any process leaves them all registered — the matrix and the property check see the
- *  same rule the real gate sees, and a later import cannot drop one. */
-export const GATE_COMMAND_NAMES: readonly string[] = [
-  "check", "new-app", "remove-app", "list", "version", "completion", "init",
-];
+/** The gate names an entry registers before any command runs, read from the one registry
+ *  (surfaceRegistry) so there is no hand list to keep in step with the entries. Registration
+ *  is process-global and additive, so importing this module from any process leaves them all
+ *  registered — the matrix and the property check see the same rule the real gate sees, and
+ *  a later import cannot drop one. */
+export const GATE_COMMAND_NAMES: readonly string[] = surfaceRegistry().entries
+  .filter((entry) => entry.origin === "gate")
+  .map((entry) => entry.name);
 
 useGateCommands(GATE_COMMAND_NAMES);
 
 /** The tools a nextStep can name: the declared commands and the gate's own — the surface
  *  an MCP client called, so a remedy names a tool it can actually call. */
-const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand(), makeInitGateCommand("<app-root>")];
-gateCommands.push(makeCompletionGateCommand(gateCommands, true));
+const gateCommands: GateCommand[] = [...checkoutGate(), makeInitGateCommand("<app-root>")];
 const toolByName = new Map<string, Declared>([
   ...Object.entries(openclawCommands).map(([name, declared]): [string, Declared] => [name, declared as Declared]),
   ...gateCommands.map((gate): [string, Declared] => [gate.name, gate as unknown as Declared]),

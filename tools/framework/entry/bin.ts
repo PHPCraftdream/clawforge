@@ -25,11 +25,9 @@ import { info, reportError } from "../core/io/log.ts";
 import { INVOCATION_ENV, invocation, serializeInvocation, setInvocation, takeInvocationFromEnv } from "../core/io/invocation/index.ts";
 import { useGateCommands } from "../core/io/invocation/render.ts";
 import { useDeployment } from "../runtime/deployment.ts";
-import { makeInitGateCommand } from "../integration/deployment/init.ts";
 import { openclawCommands } from "../commands/interface/index.ts";
 import { renderFullCommandHelp } from "../core/io/help-render.ts";
-import { makeVersionGateCommand } from "../integration/version.ts";
-import { makeCompletionGateCommand } from "../integration/completion.ts";
+import { installedGate } from "./registry.ts";
 import { delegateToOwnFramework, refuseStrayCheckoutApp, resolveFrameworkFromSelf, takeDelegationFlag } from "./delegate.ts";
 import { defaultInvocation } from "./root.ts";
 import { missingAppDecision, nodeFs, resolveInstalledEntry } from "./resolve.ts";
@@ -65,16 +63,10 @@ delegateToOwnFramework(fileURLToPath(import.meta.url), appRoot, launchArgv, argv
 resolveFrameworkFromSelf();
 
 // Creating the deployment happens before one can be loaded — no app.ts yet for a fresh
-// consumer repo. `check` is absent: it needs this repository's own test suite, unshipped.
-const gateCommands: GateCommand[] = [
-  // The declaration (and its run) live in integration/deployment/init.ts, like version's and
-  // completion's; the placement decision this entry made rides along.
-  makeInitGateCommand(appRoot, { localTypesOnly, ancestor }),
-  makeVersionGateCommand(appRoot),
-];
-// Pushed after the literal above so the closure sees the finished array, itself included —
-// see completion.ts. No --app here: an installed deployment is always the current directory.
-gateCommands.push(makeCompletionGateCommand(gateCommands, false));
+// consumer repo. `check` is absent: it needs this repository's own test suite, unshipped. One
+// list from entry/registry.ts: init (carrying the placement decision this entry made), version
+// and completion, closing completion over the finished array.
+const gateCommands: GateCommand[] = installedGate(appRoot, { localTypesOnly, ancestor });
 // Registered before any command runs, so the renderer omits --app from these (they run before
 // a deployment is resolved).
 useGateCommands(gateCommands.map((command) => command.name));

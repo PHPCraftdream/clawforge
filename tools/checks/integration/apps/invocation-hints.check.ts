@@ -31,6 +31,7 @@ import { cmdExeArgv } from "#checks/runtime/schedule/fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import { doctor } from "#framework/commands/orchestration/inspect/gather.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
+import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { setupFixtureDeployment, teardownFixtureDeployment } from "#checks/runtime/convergence/inspect/fixture.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
@@ -265,7 +266,7 @@ try {
 
   // 2. Gate commands run before a deployment is resolved, so they never receive an --app — the
   //    same names both entries register before any command runs.
-  const GATE_NAMES = ["new-app", "check", "list", "remove-app", "version", "completion", "init"];
+  const GATE_NAMES = surfaceRegistry().entries.filter((entry) => entry.origin === "gate").map((entry) => entry.name);
   useGateCommands(GATE_NAMES);
   const FLAG_DEMO: Invocation = { ...MONO, app: { name: "demo", selectedBy: "flag" } };
   setInvocation(FLAG_DEMO);

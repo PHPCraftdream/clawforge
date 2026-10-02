@@ -12,11 +12,9 @@ import {
   parseCall, specOf, specShape, tokenize,
 } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
-import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
-import { makeVersionGateCommand } from "#framework/integration/version.ts";
 import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
+import { checkoutGate, surfaceRegistry } from "#framework/entry/registry.ts";
 import { toArgv, toolArguments } from "#framework/integration/mcp/call.ts";
 import type { Declared } from "#framework/integration/mcp/schema.ts";
 import { command, type CommandAdvice } from "#framework/core/io/invocation/advice.ts";
@@ -65,17 +63,17 @@ function withoutNote(line: string, advice: CommandAdvice): string {
   return line.endsWith(suffix) ? line.slice(0, -suffix.length) : line;
 }
 
-// The gate as the checkout root builds it — completion closes over the finished array, and
-// the matrix registers the same names (see below).
-const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand(), makeInitGateCommand("<app-root>")];
-gateCommands.push(makeCompletionGateCommand(gateCommands, true));
+// The gate as the checkout root builds it plus the installed entry's init, one list from
+// entry/registry.ts — the same names the matrix registers (see golden/advice.ts). The
+// registry below is what P4 resolves a command word against.
+const gateCommands: GateCommand[] = [...checkoutGate(), makeInitGateCommand("<app-root>")];
 const gateWords = new Set(gateCommands.map((command) => command.name));
 check(
   "the matrix registers exactly the gate names the entries do",
   [...gateWords].sort(),
   [...GATE_COMMAND_NAMES].sort(),
 );
-const gateByName = new Map(gateCommands.map((command) => [command.name, command]));
+const registry = surfaceRegistry();
 /** The tools a nextStep can name: the declared commands and the gate's own — the surface an
  *  MCP client called, so a remedy names a tool it can actually call. */
 const toolByName = new Map<string, Declared>([
@@ -210,8 +208,10 @@ function parseProblem(parse: () => unknown, declared: readonly CommandArgument[]
   }
 }
 
-/** P4 — the specification: a filled argv parses against the declaration its command word
- *  names, so an unknown command, word or flag fails here and not in a user's session. */
+/** P4 — the specification: a filled argv parses against the registry entry its command word
+ *  names, so an unknown command, word or flag fails here and not in a user's session. One rule
+ *  for every entry: a spec command parses its call shape, a gate/dispatcher command tokenizes
+ *  its declared arguments — `help`'s positional and `control-mcp`'s empty list fall out of that. */
 for (const { label, advice } of ADVICE_ROWS) {
   if (advice.kind !== CLAWFORGE_KIND) continue;
   const filled = advice.argv.map((word) => (PLACEHOLDER_WORD.test(word) ? EXAMPLE : word));
@@ -220,25 +220,15 @@ for (const { label, advice } of ADVICE_ROWS) {
     checkTrue(`${label}: names a command word`, false);
     continue;
   }
-  // `help` and control-mcp are dispatched by runApp before any declaration lookup (the same
-  // special cases help-prose.check.ts makes), and `--help` is the dispatcher's own flag —
-  // it answers before the command's argument spec runs.
-  if (word === "help") {
-    checkTrue(`${label}: help takes one known command name`, allRest.length <= 1 && (allRest.length === 0 || openclawCommands[allRest[0]] !== undefined));
-    continue;
-  }
-  if (word === "control-mcp") {
-    checkTrue(`${label}: control-mcp takes no arguments`, allRest.length === 0);
-    continue;
-  }
-  const rest = allRest.includes("--help") ? allRest.filter((entry) => entry !== "--help") : allRest;
-  const app = openclawCommands[word];
-  const gate = gateByName.get(word);
-  const problem = app !== undefined
-    ? parseProblem(() => parseCall(specShape(specOf(app)!), rest, word), app.arguments)
-    : gate === undefined
-      ? `unknown command: ${word}`
-      : parseProblem(() => tokenize(gate.arguments ?? [], rest), gate.arguments);
+  const entry = registry.find(word);
+  checkTrue(`${label}: ${word} is a registry entry`, entry !== undefined);
+  if (entry === undefined) continue;
+  // `--help` is the dispatcher's own flag — it answers before the command's argument spec runs.
+  const rest = allRest.includes("--help") ? allRest.filter((item) => item !== "--help") : allRest;
+  const spec = entry.command;
+  const problem = spec !== undefined
+    ? parseProblem(() => parseCall(specShape(specOf(spec)!), rest, word), entry.arguments)
+    : parseProblem(() => tokenize(entry.arguments ?? [], rest), entry.arguments);
   checkTrue(`${label}: ${word} parses${problem === undefined ? "" : ` — ${problem}`}`, problem === undefined);
 }
 

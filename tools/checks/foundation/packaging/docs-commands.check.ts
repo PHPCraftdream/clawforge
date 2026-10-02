@@ -1,17 +1,15 @@
 // docs/guide/commands.md must name exactly the commands and flags the declarations declare.
 //
-// Declared side: every deployment command (`openclawCommands`), plus the gate commands as the
-// checkout entry's own generated completion script lists them (one source with `--help`/MCP),
-// plus `init`, which only the installed-mode entry declares. Documented side: the first two
-// cells of each table row. Drift is reported as a readable diff, one line per finding.
+// Declared side: every name the one command registry (entry/registry.ts's surfaceRegistry)
+// names — the deployment commands, both gates' and the two dispatcher commands. Documented
+// side: the first two cells of each table row. Drift is reported as a readable diff, one line
+// per finding.
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
-import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { INIT_ARGUMENTS } from "#framework/integration/deployment/init.ts";
+import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { check, finish } from "#checks/kit/harness.ts";
-import { runProcess } from "#checks/kit/spawn.ts";
 
 interface Surface {
   readonly flags: ReadonlySet<string>;
@@ -27,21 +25,6 @@ const FLAG = /--[a-z][a-z-]*/g;
 
 function surface(flags: Iterable<string>, actions: Iterable<string> = []): Surface {
   return { flags: new Set([...flags].filter((flag) => flag !== "--help")), actions: new Set(actions) };
-}
-
-function declaredFromCompletion(script: string): Map<string, Surface> {
-  const declared = new Map<string, Surface>();
-  const head = script.slice(0, script.indexOf('case "$cmd" in'));
-  const top = [...head.matchAll(/compgen -W "([^"$]*)"/g)].map((match) => match[1] ?? "").sort((a, b) => b.length - a.length)[0] ?? "";
-  for (const word of top.split(/\s+/)) if (word !== "" && !word.startsWith("--")) declared.set(word, surface([]));
-  const arms = [...script.matchAll(/^ {4}([a-z][a-z-]*)\)(.*?)(?=^ {4}[a-z][a-z-]*\)|^ {2}esac)/gms)];
-  for (const [, name, body] of arms) {
-    const lists = [...(body ?? "").matchAll(/compgen -W "([^"]*)"/g)].map((match) => match[1] ?? "");
-    const words = lists.flatMap((list) => list.split(/\s+/));
-    const actionList = (body ?? "").includes("cword -eq") ? (lists[0] ?? "").split(/\s+/) : [];
-    declared.set(name as string, surface(words.filter((word) => word.startsWith("--")), actionList.filter((word) => word !== "" && !word.startsWith("--"))));
-  }
-  return declared;
 }
 
 function declaredFromArguments(args: readonly { name: string; kind: string; choices?: readonly string[] }[]): Surface {
@@ -70,16 +53,8 @@ function difference(left: ReadonlySet<string>, right: ReadonlySet<string>): stri
   return [...left].filter((entry) => !right.has(entry)).sort();
 }
 
-const gate = await runProcess(
-  process.execPath,
-  ["--experimental-strip-types", resolve(monorepoRoot, "tools", "clawforge.ts"), "completion", "bash"],
-  { timeoutMs: 60_000 },
-);
-check("the checkout entry prints its completion script", gate.code, 0);
-
-const declared = declaredFromCompletion(gate.output);
-for (const [name, command] of Object.entries(openclawCommands)) declared.set(name, declaredFromArguments(command.arguments ?? []));
-declared.set("init", declaredFromArguments(INIT_ARGUMENTS));
+const declared = new Map<string, Surface>();
+for (const entry of surfaceRegistry().entries) declared.set(entry.name, declaredFromArguments(entry.arguments ?? []));
 const docs = documented(await readFile(resolve(monorepoRoot, "docs", "guide", "commands.md"), "utf8"));
 
 const problems: string[] = [];

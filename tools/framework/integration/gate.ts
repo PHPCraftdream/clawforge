@@ -17,7 +17,7 @@ import { commandLine } from "../core/io/invocation/render.ts";
 import { shellLine } from "../core/io/invocation/advice.ts";
 import { closestCommand } from "../core/command/index.ts";
 import { helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
-import type { AppDefinition, CommandArgument } from "../core/app.ts";
+import type { AppCommand, AppDefinition, CommandArgument } from "../core/app.ts";
 
 export { closestCommand } from "../core/command/index.ts";
 
@@ -90,7 +90,7 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
   const { checkout } = context;
   // `init` is refused in a checkout, so it is no suggestion there either.
   const offered = checkout === undefined ? commands : commands.filter((entry) => entry.name !== "init");
-  const candidates = [...context.deploymentCommands, ...offered.map((entry) => entry.name), "help"];
+  const candidates = [...context.deploymentCommands, ...offered.map((entry) => entry.name), ...DISPATCHER_COMMANDS];
   if (first !== undefined && first !== "help" && first !== "--help" && first !== "-h") {
     // `<deployment command> --help` answers without a deployment, from the built-in
     // declaration — same as the checkout root (R32-09). A bare command stays a refusal.
@@ -100,7 +100,7 @@ export function helpWithoutDeployment(commands: GateCommand[], argv: string[], c
       return 0;
     }
     // A word nothing declares is a typo, not a missing app.ts; options are left to the caller.
-    if (first.startsWith("-") || first === "control-mcp" || candidates.includes(first) || commands.some((entry) => entry.name === first)) return undefined;
+    if (first.startsWith("-") || candidates.includes(first) || commands.some((entry) => entry.name === first)) return undefined;
     reportUnknownCommand(first, candidates);
     return 1;
   }
@@ -231,17 +231,47 @@ export function misplacedAppFlag(
 
 /** The standard answer to a command name nothing declares: the typo, a nearby spelling
  *  guess, and a pointer to the real list — never the full help screen. */
-export function reportUnknownCommand(name: string, candidates: string[]): void {
+export function reportUnknownCommand(name: string, candidates: readonly string[]): void {
   reportError(`unknown command: ${name}`);
   const suggestion = closestCommand(name, candidates);
   if (suggestion !== undefined) info(`did you mean: ${suggestion}`);
   info(`run ${commandLine(["help"])} to list every command`);
 }
 
-/** Every name the dispatcher can resolve: app commands, gate commands and its own aliases. */
-export function knownCommandNames(app: AppDefinition, gateCommands: readonly GateCommand[]): string[] {
-  return [...Object.keys(app.commands), ...gateCommands.map((command) => command.name), "help", "control-mcp"];
+/** Where a name comes from: the deployment's own commands, the gate's, or the dispatcher's
+ *  two built-ins (control-mcp, help). */
+export type CommandOrigin = "deployment" | "gate" | "dispatcher";
+
+/** One name the dispatcher resolves, for a surface (help, completion, docs, checks) to read
+ *  from — a command declaration plus where it came from. `command`/`gate` carry the effect and
+ *  the run for readers that need them; the help renderer reads only summary/arguments. */
+export interface RegistryEntry {
+  readonly name: string;
+  readonly origin: CommandOrigin;
+  readonly summary: string;
+  readonly details?: string;
+  readonly arguments?: readonly CommandArgument[];
+  /** only "deployment": the spec, effect, group and run */
+  readonly command?: AppCommand;
+  /** only "gate" */
+  readonly gate?: GateCommand;
 }
+
+/** Every name the dispatcher resolves: deployment commands (declaration order), the gate's
+ *  (gate order), then the two dispatcher entries. `find` is what help, the MCP help tool and
+ *  completion read a command by. */
+export interface CommandRegistry {
+  readonly entries: readonly RegistryEntry[];
+  readonly names: readonly string[];
+  find(name: string): RegistryEntry | undefined;
+}
+
+/** The dispatcher's own two commands — not app commands, not the gate's: neither carries a
+ *  Context. The tail of every surface's command list, and the one place their names live. */
+export const DISPATCHER_COMMANDS = ["control-mcp", "help"] as const;
+
+/** The description the `help` command's own positional takes. */
+export const HELP_COMMAND_DESCRIPTION = "Command name; omit to list every command";
 
 /** The details body shared by `help control-mcp` and `control-mcp --help` — control-mcp is
  *  dispatched by runApp (entry/cli.ts) before the app.commands lookup, so no AppCommand
@@ -255,44 +285,80 @@ export const CONTROL_MCP_DETAILS = [
   "by hand outside of testing.",
 ].join("\n");
 
-/** Prints `control-mcp`'s help — the same body `<command> --help` gets from its declaration. */
-export function controlMcpHelp(appName: string): void {
-  renderCommandHelp("control-mcp", {
-    summary: `expose ${appName}'s commands as MCP tools, for agents`,
-    details: CONTROL_MCP_DETAILS,
-  });
+/** Builds the one registry a surface reads: the deployment's commands, the gate's, and the two
+ *  dispatcher entries the tail of `names` (`DISPATCHER_COMMANDS`) names. `help`'s positional
+ *  carries every name as its `choices`, so completion, the docs table and the prose checks read
+ *  it as any other positional. */
+export function commandRegistry(source: {
+  readonly deployment: Readonly<Record<string, AppCommand>>;
+  readonly gate: readonly GateCommand[];
+  readonly appName: string;
+}): CommandRegistry {
+  const names = [
+    ...Object.keys(source.deployment),
+    ...source.gate.map((gate) => gate.name),
+    ...DISPATCHER_COMMANDS,
+  ];
+  const entries: RegistryEntry[] = [
+    ...Object.entries(source.deployment).map(([name, command]): RegistryEntry => ({
+      name, origin: "deployment", summary: command.summary, details: command.details,
+      arguments: command.arguments, command,
+    })),
+    ...source.gate.map((gate): RegistryEntry => ({
+      name: gate.name, origin: "gate", summary: gate.summary, details: gate.details,
+      arguments: gate.arguments, gate,
+    })),
+    {
+      name: "control-mcp", origin: "dispatcher",
+      summary: `expose ${source.appName}'s commands as MCP tools, for agents`,
+      details: CONTROL_MCP_DETAILS, arguments: [],
+    },
+    {
+      name: "help", origin: "dispatcher", summary: "same as: <command> --help",
+      arguments: [{ name: "command", kind: "positional", description: HELP_COMMAND_DESCRIPTION, choices: names }],
+    },
+  ];
+  return { entries, names, find: (name) => entries.find((entry) => entry.name === name) };
+}
+
+/** The footer lines the two dispatcher commands contribute to every gate's command list:
+ *  `control-mcp` and `help <command>` — byte for byte the lines help-render.ts's renderUsage
+ *  used to append itself, so a caller composing `[...gateHelp, ...dispatcherHelpLines]` prints
+ *  the same screen it did. */
+export function dispatcherHelpLines(registry: CommandRegistry): string[] {
+  return registry.entries
+    .filter((entry) => entry.origin === "dispatcher")
+    .map((entry) =>
+      helpEntryLine(
+        `${entry.name}${(entry.arguments ?? []).filter((argument) => argument.kind === "positional").map((argument) => ` <${argument.name}>`).join("")}`,
+        entry.summary,
+      ),
+    );
 }
 
 /** Renders `help [<command>]`; false for an unknown command. Shared by the console
- *  and the MCP `help` tool. */
+ *  and the MCP `help` tool. `help`/`help help` and the bare flags show the command list. */
 export function renderHelp(
   target: string | undefined,
   app: AppDefinition,
-  gateCommands: readonly GateCommand[],
-  gateHelp: string[],
+  registry: CommandRegistry,
+  gateHelp: readonly string[],
 ): boolean {
   // `help` is not in app.commands; `help help` shows the general list.
   if (target === undefined || target === "--help" || target === "-h" || target === "help") {
-    renderUsage(app, gateHelp);
+    renderUsage(app, [...gateHelp, ...dispatcherHelpLines(registry)]);
     return true;
   }
-  // control-mcp is not in app.commands either — it is dispatched by runApp before that
-  // lookup, and skipping it here made `help control-mcp` report the very word as unknown.
-  if (target === "control-mcp") {
-    controlMcpHelp(app.name);
+  // Everything the dispatcher resolves is a registry entry now — a deployment command, a gate
+  // command or one of the two dispatcher commands — so there is no control-mcp lookup left to
+  // special-case here: its help answers from the entry, like any other.
+  const entry = registry.find(target);
+  if (entry !== undefined) {
+    if (entry.command !== undefined) renderFullCommandHelp(target, entry.command);
+    else renderCommandHelp(target, entry);
     return true;
   }
-  const command = app.commands[target];
-  if (command !== undefined) {
-    renderFullCommandHelp(target, command);
-    return true;
-  }
-  const gateCommand = gateCommands.find((entry) => entry.name === target);
-  if (gateCommand !== undefined) {
-    gateCommandHelp(gateCommand);
-    return true;
-  }
-  reportUnknownCommand(target, knownCommandNames(app, gateCommands));
+  reportUnknownCommand(target, registry.names);
   return false;
 }
 

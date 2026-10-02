@@ -18,7 +18,7 @@ import { orchestrationCommands } from "#framework/commands/interface/groups/open
 import { operateCommands } from "#framework/commands/interface/groups/openclawCommands.operate.ts";
 import { setsCommands } from "#framework/commands/interface/groups/openclawCommands.sets.ts";
 import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
-import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
+import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { versionGateCommand } from "#framework/integration/version.ts";
 import { parseProse } from "#framework/core/io/invocation/prose.ts";
 import { specOf } from "#framework/core/command/index.ts";
@@ -57,6 +57,7 @@ interface Baseline {
   readonly imageStringOps: PerFileMetric;
   readonly prosePins: PerFileMetric;
   readonly proseFlags: PerFileMetric;
+  readonly retiredSymbols: { readonly comment: string; readonly names: readonly string[]; readonly total: number };
 }
 
 const root = monorepoRoot;
@@ -202,16 +203,9 @@ const PROSE_SOURCES: Record<string, readonly ProseSource[]> = {
 };
 /** Every name the dispatcher can resolve: a code span quoting one of them is our own prose,
  *  anything else (`openclaw channels status --json`, `tailscale status --json`) belongs to
- *  another tool and its flags are not ours to count. */
-const commandNames = new Set([
-  ...Object.keys(openclawCommands),
-  ...checkoutGateCommands.map((command) => command.name),
-  versionGateCommand.name,
-  makeCompletionGateCommand([], true).name,
-  "help",
-  "control-mcp",
-  "init",
-]);
+ *  another tool and its flags are not ours to count. Read from the one registry
+ *  (entry/registry.ts), the list every surface reconciles against. */
+const commandNames = new Set(surfaceRegistry().names);
 const TOKEN_SPAN = /\{[^{}]*\}/g;
 const CODE_SPAN = /`[^`]*`/g;
 const FLAG_MENTION = /(?<![\w-])--([A-Za-z][A-Za-z0-9-]*)/g;
@@ -305,5 +299,20 @@ for (const file of checkFiles) {
   if (count > 0) proseAfter.set(file, count);
 }
 report(perFileRatchet("prosePins", baseline.prosePins.files, proseAfter));
+
+// 7. Retired symbols — stage 5 (rf5-completion C1): names the command registry made
+// structural that must not reappear anywhere under tools/ outside this check's own directory
+// (excluded so the guard can name them here). A new occurrence fails the build.
+const RETIRED_EXCLUDED = "tools/checks/architecture/";
+const toolsFiles = (await walk(resolve(root, "tools"))).filter((full) => !rel(full).startsWith(RETIRED_EXCLUDED));
+let retiredCount = 0;
+for (const full of toolsFiles) {
+  const content = await readFile(full, "utf8");
+  for (const name of baseline.retiredSymbols.names) {
+    const matches = content.match(new RegExp(`\\b${name}\\b`, "g"));
+    if (matches !== null) retiredCount += matches.length;
+  }
+}
+report(ratchet("retiredSymbols", baseline.retiredSymbols.total, retiredCount, [], []));
 
 finish("architecture ratchet");

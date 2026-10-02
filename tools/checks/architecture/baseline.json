@@ -89,7 +89,6 @@
       "tools/checks/foundation/core/env.check.ts": 1,
       "tools/checks/foundation/hygiene/readme-quickstart.check.ts": 1,
       "tools/checks/foundation/hygiene/spawn-noise.check.ts": 5,
-      "tools/checks/foundation/packaging/docs-commands.check.ts": 1,
       "tools/checks/foundation/providers/provider.check.ts": 1,
       "tools/checks/integration/agent/agent-bundle-portable-content.check.ts": 1,
       "tools/checks/integration/agent/provision-agent.check.ts": 4,
@@ -222,11 +221,16 @@
       "tools/checks/sets/lifecycle/set-validate.check.ts": 22,
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 854
+    "total": 853
   },
   "proseFlags": {
     "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",
     "files": {},
+    "total": 0
+  },
+  "retiredSymbols": {
+    "comment": "stage 5 (rf5-completion C1): names the command registry made structural that must not reappear anywhere under tools/ outside tools/checks/architecture/",
+    "names": ["knownCommandNames", "controlMcpHelp", "builtinHelpLines", "declaredFromCompletion"],
     "total": 0
   }
 }

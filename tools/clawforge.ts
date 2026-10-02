@@ -30,12 +30,11 @@ import { useGateCommands } from "./framework/core/io/invocation/render.ts";
 import { monorepoRoot } from "./framework/core/env.ts";
 import { useDeployment } from "./framework/runtime/deployment.ts";
 import { openclawCommands } from "./framework/commands/interface/index.ts";
-import { normalizeVersionAlias, versionGateCommand } from "./framework/integration/version.ts";
-import { makeCompletionGateCommand } from "./framework/integration/completion.ts";
+import { normalizeVersionAlias } from "./framework/integration/version.ts";
 import type { AppDefinition } from "./framework/core/app.ts";
 import { resolveFrameworkFromSources } from "./framework/entry/delegate.ts";
 import { nodeFs, resolveCheckoutEntry } from "./framework/entry/resolve.ts";
-import { checkoutGateCommands } from "./framework/entry/checkout-gate.ts";
+import { checkoutGate } from "./framework/entry/registry.ts";
 
 // A deployment's app.ts importing @clawforge/framework resolves onto this checkout's
 // sources — there is no dist build here (recipe hooks map the same table in the hook loader).
@@ -47,13 +46,9 @@ const handedOver = takeInvocationFromEnv();
 setInvocation(handedOver ?? { program: SHIM_PROGRAM, mode: "checkout", audience: "terminal" });
 const argv = normalizeVersionAlias(process.argv.slice(2));
 
-// The gate's own commands are declared without side effects in entry/checkout-gate.ts —
-// the same declarations the goldens and the checks import. version/completion stay wired
-// here (see completion.ts).
-const gateCommands: GateCommand[] = [...checkoutGateCommands, versionGateCommand];
-// Pushed after the literal above, not inside it: the closure needs the finished array
-// (itself included), which is only true once this line has run — see completion.ts.
-gateCommands.push(makeCompletionGateCommand(gateCommands, true));
+// The gate's own commands, one list from entry/registry.ts — the declared check/new-app/
+// remove-app/list plus version and completion, closing completion over the finished array.
+const gateCommands: GateCommand[] = checkoutGate();
 // Registered before any command runs, so the renderer omits --app from these (they run before
 // a deployment is resolved).
 useGateCommands(gateCommands.map((command) => command.name));

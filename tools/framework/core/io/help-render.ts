@@ -102,17 +102,10 @@ export function helpEntryLine(name: string, summary: string): string {
   return `  ${name.padEnd(HELP_NAME_WIDTH)} ${summary}`;
 }
 
-/** The two framework-owned lines every gate's `--help` footer carries beside its own
- *  (check/new-app/list, or init): `control-mcp`, and `help`, the dispatcher's own alias. */
-function builtinHelpLines(appName: string): string[] {
-  return [
-    helpEntryLine("control-mcp", `expose ${appName}'s commands as MCP tools, for agents`),
-    helpEntryLine("help <command>", "same as: <command> --help"),
-  ];
-}
-
-/** The top-level `--help` screen, shared by the console and the MCP `help` tool. */
-export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
+/** The top-level `--help` screen, shared by the console and the MCP `help` tool. The footer
+ *  is the caller's to compose: the gate's own lines followed by integration/gate.ts's
+ *  dispatcherHelpLines(registry). */
+export function renderUsage(app: AppDefinition, footer: readonly string[]): void {
   log(`${app.name} — ${app.description}`);
   info("");
   info(`Usage: ${commandLine(["<command>"])} [options]`);
@@ -147,8 +140,7 @@ export function renderUsage(app: AppDefinition, gateHelp: string[]): void {
   if (unknown.length > 0) printGroup("Other", unknown);
 
   info("Framework:");
-  for (const line of gateHelp) info(line);
-  for (const line of builtinHelpLines(app.name)) info(line);
+  for (const line of footer) info(line);
   info("");
   info("  ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)");
   info("");

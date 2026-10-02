@@ -105,8 +105,8 @@ function specFor(name: string, declared: readonly CommandArgument[] | undefined)
 }
 
 /** Every name the console dispatcher can resolve, from the same declarations --help/the MCP
- *  tool list are built from — `help`/`control-mcp` are dispatcher-level (entry/cli.ts), so
- *  they get a fixed flags-only entry here, same as knownCommandNames adds them by hand. */
+ *  tool list are built from — `help`/`control-mcp` are dispatcher-level (dispatched by
+ *  entry/cli.ts before the command lookup), so they get a fixed flags-only entry here. */
 export function buildCompletionModel(gateCommands: readonly GateCommand[]): readonly CommandCompletionSpec[] {
   const gateSpecs = gateCommands.map((command) => specFor(command.name, command.arguments));
   const appSpecs = Object.entries(openclawCommands).map(([name, command]) => specFor(name, command.arguments));

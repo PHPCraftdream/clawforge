@@ -253,17 +253,25 @@ async function applyModuleType(root: string, action: ModuleTypeAction): Promise<
   }
 }
 
+/** The placement decision the installed entry already made — how far inside a ClawForge
+ *  checkout it is and whether its types are local — which `init` reads to decide where to
+ *  print the editor-types line (see resolveInstalledEntry). */
+export interface InitPlacement {
+  readonly localTypesOnly?: boolean;
+  readonly ancestor?: string;
+}
+
 export const INIT_ARGUMENTS: CommandArgument[] = [
   { name: "local", description: "Print the npm command for editor types (also in an already initialised directory)", kind: "flag" },
 ];
 
 /** The installed entry's own gate command, declared without side effects — the same shape
  *  makeVersionGateCommand and makeCompletionGateCommand offer, so the help surfaces and the
- *  checks read the declaration straight from here. `options.localTypesOnly`/`options.ancestor`
+ *  checks read the declaration straight from here. `placement.localTypesOnly`/`placement.ancestor`
  *  carry the placement decision the entry already made (see resolveInstalledEntry). */
 export function makeInitGateCommand(
   appRoot: string,
-  options: { readonly localTypesOnly?: boolean; readonly ancestor?: string } = {},
+  placement: InitPlacement = {},
 ): GateCommand {
   return {
     name: "init",
@@ -279,8 +287,8 @@ export function makeInitGateCommand(
       "`init {--local}` in an already initialised directory only prints the editor-types npm line and writes nothing.",
     arguments: INIT_ARGUMENTS,
     run: async (args) => {
-      const localTypesOnly = options.localTypesOnly === true;
-      const ancestor = options.ancestor;
+      const localTypesOnly = placement.localTypesOnly === true;
+      const ancestor = placement.ancestor;
       if (localTypesOnly && ancestor !== appRoot) {
         for (const line of await localTypesLines()) info(line);
         return 0;

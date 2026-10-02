@@ -1,9 +1,8 @@
 // Help-prose tokens (design 2.1–2.3): every `{…}` span in a declaration's `details` must
 // read as a token, `{clawforge …}` must name a command that takes the argv it spells, and
 // `{--name}` must be a flag this very command declares — so a renamed flag breaks the
-// check, not the help. The declarations are read where the help reads them: the command
-// set, the gate's own commands, version/completion built the way tools/clawforge.ts builds
-// them, and control-mcp's shared body.
+// check, not the help. The declarations are read from the one command registry
+// (entry/registry.ts) — the same list help, completion and the docs table read.
 //
 import { readdir, readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
@@ -12,49 +11,22 @@ import type { CommandArgument } from "#framework/core/app.ts";
 import {
   ArgumentError, UnknownActionError, UnknownArgumentError, parseCall, specOf, specShape, tokenize,
 } from "#framework/core/command/index.ts";
-import { openclawCommands } from "#framework/commands/interface/index.ts";
-import { checkoutGateCommands } from "#framework/entry/checkout-gate.ts";
-import { makeVersionGateCommand } from "#framework/integration/version.ts";
-import { makeCompletionGateCommand } from "#framework/integration/completion.ts";
-import { CONTROL_MCP_DETAILS, type GateCommand } from "#framework/integration/gate.ts";
-import { makeInitGateCommand } from "#framework/integration/deployment/init.ts";
+import { surfaceRegistry } from "#framework/entry/registry.ts";
 import { parseProse, type ProseToken } from "#framework/core/io/invocation/prose.ts";
 import { checkTrue, finish } from "#checks/kit/harness.ts";
 
-// The gate as the checkout root builds it — completion closes over the finished array.
-const gateCommands: GateCommand[] = [...checkoutGateCommands, makeVersionGateCommand(), makeInitGateCommand("<app-root>")];
-gateCommands.push(makeCompletionGateCommand(gateCommands, true));
-
+// Every declaration any surface reads — the deployment commands, the gate's own, and the two
+// dispatcher commands — straight from the one registry (entry/registry.ts). A RegistryEntry
+// already carries the name/details/arguments this prose check reads.
 interface ProseDeclaration {
   readonly name: string;
   readonly details?: string;
   readonly arguments?: readonly CommandArgument[];
 }
 
-const controlMcp: ProseDeclaration = {
-  name: "control-mcp",
-  details: CONTROL_MCP_DETAILS,
-  arguments: [],
-};
-
-/** One declaration's prose surface: the name the dispatcher resolves, its details and its
- *  declared arguments — the same three fields an AppCommand and a GateCommand both carry. */
-function face(
-  name: string,
-  command: { readonly details?: string; readonly arguments?: readonly CommandArgument[] },
-): ProseDeclaration {
-  return { name, details: command.details, arguments: command.arguments };
-}
-
-const declarations: readonly ProseDeclaration[] = [
-  ...Object.entries(openclawCommands).map(([name, command]) => face(name, command)),
-  ...gateCommands.map((command) => face(command.name, command)),
-  controlMcp,
-];
+const registry = surfaceRegistry();
+const declarations: readonly ProseDeclaration[] = registry.entries;
 const byName = new Map(declarations.map((declaration) => [declaration.name, declaration]));
-/** Every name the dispatcher can resolve (gate.ts's knownCommandNames) — what `help` takes. */
-const knownNames = new Set(declarations.map((declaration) => declaration.name));
-const gateByName = new Map(gateCommands.map((command) => [command.name, command]));
 
 /** A `<placeholder>` stands in for one plain word (design 4.2's P4); what example the
  *  declaration would offer is its business, not the token's. */
@@ -99,22 +71,17 @@ function tokenProblem(token: ProseToken, declaration: ProseDeclaration): string 
   const argv = token.argv.map((word) => (PLACEHOLDER.test(word) ? EXAMPLE : word));
   const [word, ...rest] = argv;
   if (word === undefined) return "no command word — a lone --app is not a command";
-  if (word === "help") {
-    if (rest.length === 0) return undefined;
-    if (rest.length > 1) return "help takes one command name";
-    return knownNames.has(rest[0] ?? "") ? undefined : `help names an unknown command: ${rest[0] ?? ""}`;
-  }
-  // Dispatched by runApp before the app.commands lookup, so no command object carries it.
-  if (word === "control-mcp") return rest.length === 0 ? undefined : "control-mcp takes no arguments";
-  const app = openclawCommands[word];
-  if (app !== undefined) {
-    const body = specOf(app);
+  const target = registry.find(word);
+  if (target === undefined) return `unknown command: ${word}`;
+  // A spec command parses its whole call shape (actions, per-action arguments); a gate command
+  // or a dispatcher command tokenizes its declared arguments — `help`'s positional and
+  // `control-mcp`'s empty list fall out of that, with no per-name branch left.
+  if (target.command !== undefined) {
+    const body = specOf(target.command);
     if (body === undefined) return `${word} has no declared command body`;
-    return parseProblem(() => parseCall(specShape(body), rest, word), app.arguments);
+    return parseProblem(() => parseCall(specShape(body), rest, word), target.arguments);
   }
-  const gate = gateByName.get(word);
-  if (gate === undefined) return `unknown command: ${word}`;
-  return parseProblem(() => tokenize(gate.arguments ?? [], rest), gate.arguments);
+  return parseProblem(() => tokenize(target.arguments ?? [], rest), target.arguments);
 }
 
 function validateProse(declaration: ProseDeclaration, details: string): void {

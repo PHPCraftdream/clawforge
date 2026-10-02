@@ -18,7 +18,7 @@
 
 import { createInterface } from "node:readline";
 import { mcpCommands, type AppCommand, type AppDefinition } from "../../core/app.ts";
-import { renderHelp, type GateCommand } from "../gate.ts";
+import { commandRegistry, renderHelp, type GateCommand } from "../gate.ts";
 import { ConfirmationRequiredError } from "../../core/command/errors.ts";
 import { formatError, maskSecrets } from "../../core/io/log.ts";
 import { withOutputSink } from "../../core/io/output.ts";
@@ -203,7 +203,10 @@ async function handleHelpTool(
   const target = typeof args.command === "string" && args.command !== "" ? args.command : undefined;
   const chunks: string[] = [];
   await withOutputSink((chunk) => { chunks.push(chunk); }, async () => {
-    renderHelp(target, app, gateCommands, gateHelp);
+    // The loop and the console's `help` read the same registry, so a tool call and a typed
+    // `help <command>` answer byte for byte alike.
+    const registry = commandRegistry({ deployment: app.commands, gate: gateCommands, appName: app.name });
+    renderHelp(target, app, registry, gateHelp);
   });
   const output = chunks.join("").trim();
   reply(id, {

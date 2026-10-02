@@ -8,8 +8,8 @@ import { reportError, UserError, CommandFailedError, info } from "../core/io/log
 import { UnknownArgumentError } from "../core/command/index.ts";
 import { executeCommand } from "../core/command/execute.ts";
 import { serveMcp } from "../integration/mcp/server.ts";
-import { knownCommandNames, reportUnknownCommand, renderHelp, controlMcpHelp, type GateCommand } from "../integration/gate.ts";
-import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, helpEntryLine, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
+import { commandRegistry, dispatcherHelpLines, reportUnknownCommand, renderHelp, type GateCommand } from "../integration/gate.ts";
+import { GROUP_HEADINGS, GROUP_ORDER, destructiveMarker, destructiveSymbol, helpEntryLine, renderCommandHelp, renderFullCommandHelp, renderUsage } from "../core/io/help-render.ts";
 import { commandLine } from "../core/io/invocation/render.ts";
 import type { AppDefinition } from "../core/app.ts";
 
@@ -44,9 +44,10 @@ export async function runApp(
   gateCommands: GateCommand[] = [],
 ): Promise<number> {
   const [name, ...args] = argv;
+  const registry = commandRegistry({ deployment: app.commands, gate: gateCommands, appName: app.name });
 
   if (name === undefined || name === "-h" || name === "--help") {
-    renderUsage(app, gateHelp);
+    renderUsage(app, [...gateHelp, ...dispatcherHelpLines(registry)]);
     return name === undefined ? 1 : 0;
   }
 
@@ -54,16 +55,17 @@ export async function runApp(
   // --help` does. Shared with the MCP `help` tool (integration/mcp/server.ts) through
   // renderHelp, so the two never answer the same question differently.
   if (name === "help") {
-    return renderHelp(args[0], app, gateCommands, gateHelp) ? 0 : 1;
+    return renderHelp(args[0], app, registry, gateHelp) ? 0 : 1;
   }
 
   // Serves the application's commands as MCP tools, so the instance can be driven from a
   // chat client too. --help is checked before starting: the server owns stdio once it runs.
   if (name === "control-mcp") {
     if (args.includes("--help") || args.includes("-h")) {
-      // From the declaration gate.ts's renderHelp reads, so `help control-mcp` and this
-      // never answer differently.
-      controlMcpHelp(app.name);
+      // From the registry entry renderHelp reads, so `help control-mcp` and this never answer
+      // differently — the same declaration, not a bespoke help printer.
+      const entry = registry.find("control-mcp");
+      if (entry !== undefined) renderCommandHelp("control-mcp", entry);
       return 0;
     }
     // Gate commands travel with the application's — the surface mirrors what the gate
@@ -74,7 +76,7 @@ export async function runApp(
 
   const command = app.commands[name];
   if (command === undefined) {
-    reportUnknownCommand(name, knownCommandNames(app, gateCommands));
+    reportUnknownCommand(name, registry.names);
     return 1;
   }
 

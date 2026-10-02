@@ -9,10 +9,8 @@ import { setInvocation, type Invocation } from "#framework/core/io/invocation/in
 import { commandLine, renderAdvice, SHIM_PROGRAM } from "#framework/core/io/invocation/render.ts";
 import { command, type Advice } from "#framework/core/io/invocation/advice.ts";
 import { UserError } from "#framework/core/io/log.ts";
-import { CHECKOUT_GATE_COMMANDS } from "#framework/entry/checkout-gate.ts";
+import { checkoutGate, installedGate } from "#framework/entry/registry.ts";
 import { checkoutSubfolderReport, missingDeploymentReport } from "#framework/integration/gate.ts";
-import { COMPLETION_COMMAND_NAME } from "#framework/integration/completion.ts";
-import { VERSION_COMMAND_NAME } from "#framework/integration/version.ts";
 import {
   resolveCheckoutEntry,
   resolveInstalledEntry,
@@ -124,7 +122,7 @@ const ENVS: readonly (readonly [string, string | undefined])[] = [
 
 const PLATFORMS: readonly NodeJS.Platform[] = ["linux", "win32", "darwin"];
 
-const GATE_COMMANDS = [...CHECKOUT_GATE_COMMANDS, VERSION_COMMAND_NAME, COMPLETION_COMMAND_NAME];
+const GATE_COMMANDS = checkoutGate().map((command) => command.name);
 const DEPLOYMENT_COMMANDS = ["status", "bootstrap"];
 const VARIADIC_COMMANDS = ["exec"];
 
@@ -146,7 +144,7 @@ const INSTALLED_ARGVS: readonly (readonly string[])[] = [
   ["--bogus"],
 ];
 /** The installed gate's own commands: the executor answers them before the app.ts check. */
-const INSTALLED_GATE_COMMANDS = ["init", "version", "completion"];
+const INSTALLED_GATE_COMMANDS = installedGate("<app-root>").map((command) => command.name);
 
 /** Host-independent path text: this machine's path module may prefix a drive and prefer
  *  backslashes; the fake world spells everything with forward slashes from /. */

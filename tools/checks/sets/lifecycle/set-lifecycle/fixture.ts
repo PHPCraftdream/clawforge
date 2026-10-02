@@ -154,7 +154,7 @@ export async function createFixture(): Promise<LifecycleFixture> {
       else if (command === "rm") await transport.remove(args.at(-1)!);
       // The instance lock's release empties its own root with a plain `rmdir` once the
       // marker and holder are gone — without this, the lock directory
-      // this fixture's `mkdir` created stays in `dirs` forever, and every guarded() call
+      // this fixture's `mkdir` created stays in `dirs` forever, and every guardedWith() call
       // after the first one in the same check file dies "locked by an operation that did
       // not record who it is" against a lock nobody still holds.
       else if (command === "rmdir") {

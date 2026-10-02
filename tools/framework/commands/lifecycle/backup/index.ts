@@ -22,7 +22,7 @@ import {
   archiveCarriesContent, archiveRoot, createArchive, dataDirName, excludesFor, fileSize, backupArchiveName,
   listArchive, parseBackupArchive, privilegePrefixFor, symlinkedDataRoot, PROFILE_SHORTHAND_FLAGS, type Profile,
 } from "#src/service/archive/index.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { requireBootstrapped } from "#src/runtime/runtime.ts";
 import { runningRecipeStacks } from "#src/commands/management/recipe/index.ts";
 import { quiesceRecipeStacks, resumeRecipeStacks } from "#src/commands/management/recipe/lifecycle.ts";
@@ -374,14 +374,14 @@ async function createNativeArchive(
  *
  *  Guarded like every other mutating command: it stops the gateway, archives the data
  *  directory, and starts it again, all of which race against apply/restore/rollback doing
- *  the same instance's work at once if nothing serializes them. guarded() is nesting-safe,
+ *  the same instance's work at once if nothing serializes them. guardedWith() is nesting-safe,
  *  so pull() and smoke() calling this while already holding the lock for their own
  *  operation cost nothing extra here. */
 export async function createBackup(ctx: Context, options: BackupOptions = {}): Promise<string> {
   await requireBootstrapped(ctx);
   // No --break-lock support: its own parser (backup() below) rejects it, so a refusal here
   // must not offer a flag it will then reject as unknown.
-  return guarded(ctx, "backup", [], () => createBackupLocked(ctx, options), { breakLockSupported: false });
+  return guardedWith(ctx, "backup", { breakLock: false }, () => createBackupLocked(ctx, options), { breakLockSupported: false });
 }
 
 async function createBackupLocked(ctx: Context, options: BackupOptions): Promise<string> {

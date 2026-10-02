@@ -1,5 +1,5 @@
 // `secrets --apply` must respect the instance lock, not bypass it: before the fix,
-// applyStore() wrote config/.env on the target with no takeLock()/guarded() call at all —
+// applyStore() wrote config/.env on the target with no takeLock()/guardedWith() call at all —
 // it could run concurrently with apply/restore/rollback and race against them.
 //
 // Split out of secrets-command.check.ts; see fixture.ts for the shared deployment and

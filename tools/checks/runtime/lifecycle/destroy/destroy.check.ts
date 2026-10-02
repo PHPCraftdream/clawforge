@@ -1,7 +1,7 @@
 // `./clawforge destroy` — dry run by default; a real run needs --yes AND --confirm-name,
 // refuses an unsafe target shape or a symlinked target, and removes containers/network/
 // volumes plus whichever of --data/--backups/--snapshots was asked for, in that order,
-// under the REAL instance lock (guarded()/takeLock()) — the same shared fixture
+// under the REAL instance lock (guardedWith()/takeLock()) — the same shared fixture
 // backup/prune-replaced.check.ts layers its own domain exec handling over, not a stand-in
 // for the lock.
 

@@ -109,7 +109,7 @@ async function run(ctx: Context): Promise<string | undefined> {
 // --- an unrecognised argument is refused before the lock is ever taken -------------------
 //
 // up, restart and down all validate their argv the same way (parseDeclaredArgs against the
-// same lock-takeover-only declaration) before calling guarded() — proven once here for all
+// same lock-takeover-only declaration) before calling guardedWith() — proven once here for all
 // three by poisoning every transport/runtime method a lock claim or a mutation would reach;
 // any call at all means the argument check ran too late.
 

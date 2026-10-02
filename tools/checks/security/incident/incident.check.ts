@@ -3,7 +3,7 @@
 // that only show up in the orchestration: preserve runs (and writes) before rotate can destroy
 // what it captures, and preserve/collect's evidence is written unconditionally even when rotate
 // or audit throws — with the original failure still propagating, unwrapped, to the caller. The
-// full command's own wiring (guarded(), the lock) is exercised elsewhere for every other
+// full command's own wiring (guardedWith(), the lock) is exercised elsewhere for every other
 // mutating command; this file's job is the runbook logic itself.
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";

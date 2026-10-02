@@ -21,7 +21,7 @@ import { verifySnapshotQuietly } from "#src/commands/lifecycle/verify.ts";
 import { dataDirName, dataDirParent } from "#src/service/archive/index.ts";
 import { installedRecipePrivatePaths } from "#src/service/recipe.ts";
 import { runMaybePrivileged, sudoFor } from "#src/runtime/datadir.ts";
-import { guarded } from "#src/runtime/lock/instance-lock.ts";
+import { guardedWith } from "#src/runtime/lock/instance-lock.ts";
 import { reach, expect, describeError, evaluate, toResult, type Check, type SmokeResult } from "./verdict.ts";
 
 /** reach() for a call into a command that can refuse on its own: die() is a verdict about
@@ -103,7 +103,7 @@ export const ROUND_TRIP_ENTRY: Check = {
   run: async (ctx) => {
     // `smoke` itself declares no --break-lock (only --quick): a refusal from this internal
     // step must not offer a flag the command has nowhere to read it from.
-    await guarded(ctx, "smoke round-trip", [], () => roundTripCheck(ctx), { breakLockSupported: false });
+    await guardedWith(ctx, "smoke round-trip", { breakLock: false }, () => roundTripCheck(ctx), { breakLockSupported: false });
   },
 };
 
@@ -294,7 +294,7 @@ export async function runArchiveChecks(ctx: Context, wanted: ReadonlySet<string>
   const names = [REJECTS_SECRETS_CHECK, ACCEPTS_SHARE_CHECK, ROUND_TRIP_CHECK].filter((name) => wanted.has(name));
   if (names.length === 0) return [];
 
-  return guarded(ctx, "smoke archives", [], async (): Promise<SmokeResult[]> => {
+  return guardedWith(ctx, "smoke archives", { breakLock: false }, async (): Promise<SmokeResult[]> => {
     let initialRunning: boolean;
     try {
       initialRunning = await reach("ask whether the gateway is running", () => ctx.runtime.isRunning());

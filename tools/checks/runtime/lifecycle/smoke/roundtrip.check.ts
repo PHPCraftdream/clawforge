@@ -320,7 +320,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   /** Every bare `mkdir <lockPath>` is a real, separate acquisition of the instance lock —
    *  the claim-marker and lock-home mkdirs both carry flags and never match this shape (see
    *  instance-lock.ts's claimDirectory). One outer lock covering the whole transaction means
-   *  exactly one of these; createBackup()'s own guarded() finds the lock already held on its
+   *  exactly one of these; createBackup()'s own guardedWith() finds the lock already held on its
    *  async chain and is a no-op. */
   function lockAcquisitions(events: string[]): number {
     return events.filter((event) => event === `mkdir:${LOCK_PATH}`).length;

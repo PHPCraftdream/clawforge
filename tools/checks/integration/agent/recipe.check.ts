@@ -7,7 +7,7 @@ import { recipe } from "#framework/commands/management/recipe/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { callFactsFor } from "#framework/core/command/index.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
-import { guarded, lockPath, readLockHolder, takeLock, withInstanceLock } from "#framework/runtime/lock/instance-lock.ts";
+import { guardedWith, lockPath, readLockHolder, takeLock, withInstanceLock } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import {
   listAgentBundleRecipes,
@@ -467,7 +467,7 @@ try {
       return originalExec(command, args);
     };
     let verifyOut = "";
-    await guarded(ctx, "apply", [], async () => {
+    await guardedWith(ctx, "apply", { breakLock: false }, async () => {
       await withOutputSink((chunk) => {
         verifyOut += chunk;
       }, () => recipe(ctx, ["verify", "prepared"]));

@@ -1,20 +1,19 @@
 // A refusal must never advise a flag the refused command does not accept.
 //
 // `refusalMessage`/`unreadableLockMessage` take a `breakLockSupported` flag from the calling
-// command's own `guarded()`/`withLockUnlessHeld()` call site (instance-lock.ts) rather than
+// command's own `guardedWith()`/`withLockUnlessHeld()` call site (instance-lock.ts) rather than
 // always assuming --break-lock is executable. This file cross-references that against
 // openclawCommands' own declarations (the same list --help, the MCP schema and argv
 // validation read — commands/interface/index.ts), proves the message wording actually changes
 // with the flag, proves the new pid-liveness fact in refusalMessage fires only for
 // a holder recorded on THIS machine, and proves bootstrap/pull's own parsers — which used to
-// reject --break-lock before this fix even reached guarded() — now let it through.
+// reject --break-lock before this fix even reached guardedWith() — now let it through.
 
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import {
   refusalMessage,
   unreadableLockMessage,
-  guarded,
-  parseBreakForeignLockHost,
+  guardedWith,
   lockPath,
   isStale,
   STALE_AFTER_MS,
@@ -46,7 +45,7 @@ function declaresBreakForeignLock(name: string): boolean {
   return declaresBreakForeignLockOption(openclawCommands[name]?.arguments);
 }
 
-// --- every command whose guarded()/withLockUnlessHeld() call reads real argv for --break-lock
+// --- every command whose guardedWith()/withLockUnlessHeld() call carries a takeover
 // declares it, and every command that deliberately does not is left undeclared too ------------
 
 for (const name of ["up", "restart", "down", "restore", "push", "apply", "rollback", "apply-config", "recipe", "provision-agent", "set", "bootstrap", "pull", "configure-provider"]) {
@@ -57,7 +56,7 @@ for (const name of ["secrets"]) {
 }
 
 // backup is a second deliberate asymmetry: bare `backup` (create) takes the lock but its own
-// guarded() call passes breakLockSupported: false (see backup/index.ts) and its creation
+// guardedWith() call passes breakLockSupported: false (see backup/index.ts) and its creation
 // parser (BACKUP_ARGUMENTS) still rejects the flag, same as before; `prune-replaced --apply`
 // is the one action that both reads and needs it, so the merged declaration
 // (BACKUP_ALL_ARGUMENTS) carries it for that action alone.
@@ -179,7 +178,7 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
 // --- bootstrap/pull: the parser itself, not just the declaration, now accepts --break-lock ----
 //
 // Before this fix, bootstrap's and pull's own argument loops died on "unknown argument:
-// --break-lock" before guarded()/withLockUnlessHeld() ever read it — declaring the flag alone
+// --break-lock" before guardedWith()/withLockUnlessHeld() ever read it — declaring the flag alone
 // would not have made `./clawforge bootstrap --break-lock` work. Passing a second, genuinely
 // unknown flag alongside it and asserting the die() names THAT one (never --break-lock) proves
 // break-lock itself parses cleanly, without needing to stand up bootstrap's whole environment:
@@ -219,10 +218,31 @@ check("secrets declares --break-foreign-lock despite never declaring --break-loc
   check("and still rejects a genuinely unknown flag", message.includes("--totally-unknown-flag"), true);
 }
 
-// --- guarded() forwards --break-foreign-lock end to end, the same as --break-lock -------------
+// backup and smoke refuse --break-lock at their own parsers, matching the
+// breakLockSupported: false their lock call sites pass — the refusal must come from
+// the parser naming the flag, not silently accepting it.
 
-check("parseBreakForeignLockHost reads the value after the flag", parseBreakForeignLockHost(["--break-foreign-lock", "host-x"]), "host-x");
-check("and is absent when the flag is not there", parseBreakForeignLockHost(["--break-lock"]), undefined);
+{
+  let message = "";
+  try {
+    await openclawCommands.backup.run({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check("backup's own parser rejects --break-lock", message.includes("--break-lock"), true);
+}
+
+{
+  let message = "";
+  try {
+    await openclawCommands.smoke.run({} as unknown as Context, ["--break-lock", "--totally-unknown-flag"]);
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check("smoke's own parser rejects --break-lock", message.includes("--break-lock"), true);
+}
+
+// --- guardedWith takes a foreign mutation guard over when given the host id --------------------
 
 {
   const { ctx, files, dirs } = stubContext();
@@ -235,13 +255,13 @@ check("and is absent when the flag is not there", parseBreakForeignLockHost(["--
   let ranBody = false;
   let threw: Error | undefined;
   try {
-    await guarded(ctx, "up", ["--break-foreign-lock", foreignMachine], async () => {
+    await guardedWith(ctx, "up", { breakLock: false, breakForeignLockHost: foreignMachine }, async () => {
       ranBody = true;
     });
   } catch (error) {
     threw = error as Error;
   }
-  check("guarded() reads --break-foreign-lock from real argv and takes the guard over", ranBody, true);
+  check("guardedWith takes a foreign guard over with an explicit host id", ranBody, true);
   check("without refusing", threw, undefined);
   check("and the guard it took over is cleaned up afterwards", dirs.has(guard), false);
 }
@@ -250,12 +270,18 @@ check("and is absent when the flag is not there", parseBreakForeignLockHost(["--
 // standalone round-trip — both in smoke/round-trip.ts) must say so — a merge once dropped
 // it from the archive window.
 {
+  const optsOut = (source: string): string[] => source.split("guardedWith(ctx,").slice(1);
   const smokeSource = await readFile(new URL("../../../../framework/commands/lifecycle/smoke/round-trip.ts", import.meta.url), "utf8");
-  const smokeDeclares = declaresBreakLock("smoke");
-  const calls = smokeSource.split("guarded(ctx,").slice(1);
-  check("smoke still takes the instance lock somewhere", calls.length > 0, true);
+  const smokeCalls = optsOut(smokeSource);
+  check("smoke still takes the instance lock somewhere", smokeCalls.length > 0, true);
   check("every smoke lock opts out of --break-lock advice smoke cannot accept",
-    smokeDeclares || calls.every((call) => (call.split("\nasync function ")[0] ?? "").includes("breakLockSupported: false")), true);
+    declaresBreakLock("smoke") || smokeCalls.every((call) => (call.split("\nasync function ")[0] ?? "").includes("breakLockSupported: false")), true);
+
+  const backupSource = await readFile(new URL("../../../../framework/commands/lifecycle/backup/index.ts", import.meta.url), "utf8");
+  const backupCalls = optsOut(backupSource);
+  check("backup still takes the instance lock somewhere", backupCalls.length > 0, true);
+  check("backup's create-path lock opts out too (its parser rejects --break-lock)",
+    backupCalls.every((call) => (call.split("\nasync function ")[0] ?? "").includes("breakLockSupported: false")), true);
 }
 
 finish("instance lock advice");

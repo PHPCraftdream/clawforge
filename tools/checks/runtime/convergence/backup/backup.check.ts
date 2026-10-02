@@ -21,7 +21,7 @@ useDeployment(resolve(monorepoRoot, "apps", "example app"));
 useComposeProjectOverride("example-app");
 // --- createBackup must respect the instance lock, not bypass it ---------------------------
 //
-// Before the fix, createBackup() never called guarded()/takeLock() at all — it paused,
+// Before the fix, createBackup() never called guardedWith()/takeLock() at all — it paused,
 // archived and restarted the gateway regardless of what else was touching the same
 // instance. This simulates a lock already held by another operation (the same mkdir-based
 // claim takeLock itself uses) and asserts backup refuses before ever touching the gateway.

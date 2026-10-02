@@ -5,7 +5,7 @@
 // inside the lock-holding operation's asynchronous chain, against the SAME instance. The
 // chain scope the lock module hands the operation's body is how that is known.
 
-import { takeLock, withInstanceLock, guarded, readLockHolder, refusalMessage, lockHeldHere, lockPath } from "#framework/runtime/lock/instance-lock.ts";
+import { takeLock, withInstanceLock, guardedWith, readLockHolder, refusalMessage, lockHeldHere, lockPath } from "#framework/runtime/lock/instance-lock.ts";
 import { stubContext } from "./fixture.ts";
 import type { Context } from "#framework/core/context.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -29,7 +29,7 @@ import { check, finish } from "#checks/kit/harness.ts";
     // The step shape: a command that takes the lock when invoked on its own, called from
     // inside the operation that already holds it.
     let stepRan = false;
-    await guarded(ctx, "provision-agent demo", [], async () => {
+    await guardedWith(ctx, "provision-agent demo", { breakLock: false }, async () => {
       stepRan = true;
     });
     check("a genuinely nested call runs without refusing", stepRan, true);
@@ -66,7 +66,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   let firstRan = false;
   let firstChainKnows = false;
   let secondRan = false;
-  const first = guarded(ctx, "apply", [], async () => {
+  const first = guardedWith(ctx, "apply", { breakLock: false }, async () => {
     firstRan = true;
     firstChainKnows = lockHeldHere(ctx);
     firstStarted();
@@ -81,7 +81,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   // Started from outside the first operation's callback: no ancestry, no reentrancy.
   const holder = (await readLockHolder(ctx))!;
   let secondError: Error | undefined;
-  await guarded(ctx, "restart", [], async () => {
+  await guardedWith(ctx, "restart", { breakLock: false }, async () => {
     secondRan = true;
   }).then(() => undefined, (error: Error) => { secondError = error; });
 
@@ -120,9 +120,9 @@ import { check, finish } from "#checks/kit/harness.ts";
   const started = new Promise<void>((resolve) => { outerStarted = resolve; });
 
   let innerRan = false;
-  const outer = guarded(first.ctx, "apply", [], async () => {
+  const outer = guardedWith(first.ctx, "apply", { breakLock: false }, async () => {
     outerStarted();
-    await guarded(other, "provision-agent demo", [], async () => {
+    await guardedWith(other, "provision-agent demo", { breakLock: false }, async () => {
       innerRan = true;
       // Observed from inside the inner body: it really won the other instance's lock.
       check("the nested different-instance call took its own lock", first.dirs.has(lockPath(other)), true);
@@ -153,7 +153,7 @@ import { check, finish } from "#checks/kit/harness.ts";
   let innerRan = false;
 
   await withInstanceLock(first.ctx, "local", "op-local", {}, async () => {
-    await guarded(secondCtx, "remote", [], async () => {
+    await guardedWith(secondCtx, "remote", { breakLock: false }, async () => {
       innerRan = true;
       check("same path on another transport takes its own lock", second.dirs.has(lockPath(secondCtx)), true);
     });
@@ -172,9 +172,9 @@ import { check, finish } from "#checks/kit/harness.ts";
   let late!: Promise<void>;
   let lateEntered = false;
 
-  const parent = guarded(ctx, "parent", [], async () => {
+  const parent = guardedWith(ctx, "parent", { breakLock: false }, async () => {
     late = lateGate.then(async () => {
-      await guarded(ctx, "late", [], async () => {
+      await guardedWith(ctx, "late", { breakLock: false }, async () => {
         lateEntered = true;
         throw new Error("late operation entered after release");
       });

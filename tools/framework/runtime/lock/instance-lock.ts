@@ -221,16 +221,6 @@ export async function withLockUnlessHeld<T>(
   }
 }
 
-/** Pulls the confirmed host id out of `--break-foreign-lock <hostId>` — see
- *  `breakForeignLockHost` on `LockOptions` (lock-claim.ts). Exported so the few direct
- *  `withLockUnlessHeld()`/`takeLock()` callers read it the same way `guarded()` does below. */
-export function parseBreakForeignLockHost(args: string[]): string | undefined {
-  const boundary = args.indexOf("--");
-  const index = args.findIndex((arg, at) => (boundary === -1 || at < boundary) && (arg === "--break-foreign-lock" || arg.startsWith("--break-foreign-lock=")));
-  if (index === -1) return undefined;
-  return args[index] === "--break-foreign-lock" ? args[index + 1] : args[index].slice("--break-foreign-lock=".length);
-}
-
 /** The takeover a call asked for: `--break-lock`, and the host id of `--break-foreign-lock`. */
 export interface LockTakeover {
   readonly breakLock: boolean;
@@ -260,13 +250,3 @@ export async function guardedWith<T>(
   );
 }
 
-/** guardedWith for a command that still reads its takeover flags from argv. */
-export async function guarded<T>(
-  ctx: Context,
-  what: string,
-  args: string[],
-  body: () => Promise<T>,
-  options: { breakLockSupported?: boolean } = {},
-): Promise<T> {
-  return guardedWith(ctx, what, { breakLock: args.includes("--break-lock"), breakForeignLockHost: parseBreakForeignLockHost(args) }, body, options);
-}

@@ -4,7 +4,7 @@
 // and proves the flag itself is exempt from both the NOT_BOOTSTRAPPED guard and instance
 // locking (requires-bootstrapped.check.ts's own header explains why bootstrap, which creates
 // the instance, must never gain that guard — this proves --check keeps that exemption too,
-// and additionally never takes the lock guarded() would).
+// and additionally never takes the lock guardedWith() would).
 
 import { bootstrapCheck } from "#framework/commands/lifecycle/bootstrap/check.ts";
 import {

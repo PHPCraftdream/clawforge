@@ -24,7 +24,7 @@ async function deathOf(run: () => unknown): Promise<string> {
 interface RecordedCall { command: string; args: string[] }
 
 /** A transport with no lock support at all: any mkdir/test/mv/rm call (the lock's own shape)
- *  throws, so a case only passes when the command dies before ever reaching guarded(). The
+ *  throws, so a case only passes when the command dies before ever reaching guardedWith(). The
  *  tailscale probe/apply calls themselves are answered from `probe`. */
 function noLockTransport(probe: { present: boolean; state?: string; statusFails?: boolean }): { transport: Context["transport"]; calls: RecordedCall[] } {
   const calls: RecordedCall[] = [];

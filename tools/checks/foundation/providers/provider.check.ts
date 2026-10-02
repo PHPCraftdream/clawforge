@@ -105,7 +105,7 @@ assert.equal(calls.length, 1, "--force does replace it");
 assert.ok(calls[0].includes("models.providers.custom.apiKey"));
 
 // Regression: configure-provider must respect the instance lock, not bypass it. Before the
-// fix, it wrote models.providers.<id>.apiKey with no takeLock()/guarded() call at all.
+// fix, it wrote models.providers.<id>.apiKey with no takeLock()/guardedWith() call at all.
 {
   const holder = JSON.stringify({ operationId: "op-holder", what: "apply", by: "someone@host pid 1", takenAt: new Date().toISOString() });
   const lockedCtx = { ...ctx, transport: {

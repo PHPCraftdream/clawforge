@@ -1,7 +1,7 @@
 // `./clawforge backup prune-replaced` — previews by default, deletes only with --apply,
 // respects --keep, refuses anything that is not exactly a `<dataDir>.replaced-<stamp>`
 // sibling (a symlink, a nested path, an odd name), and takes the instance lock for the
-// delete path. Runs the REAL locking code (guarded()/takeLock()) against the same
+// delete path. Runs the REAL locking code (guardedWith()/takeLock()) against the same
 // mkdir/rmdir/mv/rm-emulating fixture tools/checks/runtime/watch/install.check.ts and
 // tools/checks/security/expose/tailscale.check.ts already layer their own domain-specific
 // exec handling over — never a hand-rolled approximation of the lock.

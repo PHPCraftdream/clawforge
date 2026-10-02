@@ -14,7 +14,7 @@ import type { Transport } from "#framework/runtime/transport/transport.ts";
 import { buildStack } from "#framework/runtime/docker/side-stack.ts";
 import { composeProjectOverride, selectedDeployment, useComposeProjectOverride, useDeployment, deploymentName } from "#framework/runtime/deployment.ts";
 import { clearRecipesDir, useRecipesDir, recipeProjectName } from "#framework/service/recipe.ts";
-import { guarded, lockHeldHere } from "#framework/runtime/lock/instance-lock.ts";
+import { guardedWith, lockHeldHere } from "#framework/runtime/lock/instance-lock.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, finish } from "#checks/kit/harness.ts";
 import { restoreArchive } from "#framework/commands/lifecycle/restore/index.ts";
@@ -186,7 +186,7 @@ try {
   await resetA();
   let outcome;
   // The direct API uses the same execution lock as public restore.
-  await withOutputSink(() => {}, async () => { outcome = await guarded(ctx, "restore", [], () => restoreArchive(ctx, archive, { force: true, noStart: true })); });
+  await withOutputSink(() => {}, async () => { outcome = await guardedWith(ctx, "restore", { breakLock: false }, () => restoreArchive(ctx, archive, { force: true, noStart: true })); });
   assert.deepEqual(outcome, { restored: true, started: false, reason: "no-start", nextAction: "./clawforge up" });
   assert.equal(await readData(`${data}/workspace/value`), "B"); assert.equal(await runtime.isRunning(), false); assert.equal(healthWaits, 1);
   await resetA();

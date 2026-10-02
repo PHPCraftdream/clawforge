@@ -78,7 +78,7 @@ export const BOOTSTRAP = commandBody({
 
     // Read-only, and returned before anything below touches a lock or the target: --check
     // answers "would this bootstrap need something I have not prepared yet" without ever
-    // creating ensureLockHome's own directory, let alone taking the instance lock guarded()
+    // creating ensureLockHome's own directory, let alone taking the instance lock guardedWith()
     // below does. See bootstrap/check.ts.
     if (values.check === true) {
       await bootstrapCheck(ctx, jsonOnly);
@@ -117,7 +117,7 @@ export const BOOTSTRAP = commandBody({
 
     // One lock for the whole sequence: separate locks per sub-command would let a run refused
     // by another operation already holding the lock still WRITE config/.env (ensureSecretsFile)
-    // before the refusal surfaced. guarded() is nesting-safe, so applyConfig()/configureProvider()
+    // before the refusal surfaced. guardedWith() is nesting-safe, so applyConfig()/configureProvider()
     // below run inside this one outer hold instead of each acquiring their own.
     await guardedWith(ctx, "bootstrap", takeover, () => bootstrapLocked(ctx, noPull));
   },

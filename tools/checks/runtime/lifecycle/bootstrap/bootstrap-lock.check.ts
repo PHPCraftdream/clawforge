@@ -4,7 +4,7 @@
 //
 // Before the fix, ensureDataDirs/ensureSecretsFile ran with no lock check of their own at
 // all — bootstrap only ever found out another operation was contending for the instance
-// once applyConfig's own internal guarded() call finally refused, by which point
+// once applyConfig's own internal guardedWith() call finally refused, by which point
 // ensureSecretsFile had already written config/.env. This proves the refusal now happens
 // before anything is written at all: with another operation already holding the lock,
 // bootstrap must refuse immediately, and nothing downstream of that refusal — not
@@ -143,7 +143,7 @@ try {
 
   {
     // A truly fresh host: the lock's own home directory does not exist yet, and its parent
-    // is root:root — writable only via passwordless sudo. Before the fix, guarded()'s own
+    // is root:root — writable only via passwordless sudo. Before the fix, guardedWith()'s own
     // unprivileged claim ran BEFORE ensureDataDirs (and the ensureLockHome escalation inside
     // it) ever got a chance to run, so the first bootstrap ever attempted on such a host
     // died inside claimDirectory() itself, telling the reader to run the very command that

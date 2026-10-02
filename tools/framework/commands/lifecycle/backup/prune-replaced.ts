@@ -112,7 +112,7 @@ export async function backupPruneReplaced(ctx: Context, values: PruneValues): Pr
 
   // The one mutating path here, so the one that takes the instance lock — deleting a
   // replaced copy while a restore is mid-move of a NEW one into that same name is exactly
-  // the race guarded() exists to serialize against.
+  // the race guardedWith() exists to serialize against.
   await guardedWith(ctx, "backup prune-replaced", takeoverOf(values), async () => {
     const deleted: ReplacedCopyInfo[] = [];
     const failed: { path: string; error: string }[] = [];

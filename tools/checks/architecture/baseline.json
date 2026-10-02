@@ -221,7 +221,7 @@
       "tools/checks/sets/lifecycle/set-validate.check.ts": 22,
       "tools/checks/surfaces/effect-markers.check.ts": 2
     },
-    "total": 853
+    "total": 856
   },
   "proseFlags": {
     "comment": "stage 4 (design 2.3): a --name a declaration itself declares, spelled in its own details outside a token and outside a code span quoting another tool — each belongs in a {--name} token, so this counts down to 0",

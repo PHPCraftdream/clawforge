@@ -194,6 +194,11 @@ reads right under every invocation. The ratchets in `tools/checks/architecture/`
 spelling outside the renderer fails `check architecture` (`dotClawforgeLiterals`), and
 `tools/framework/core/io/invocation/render.ts` is the only exemption that table names.
 
+The command table in `docs/guide/commands.md`, between its `<!-- commands:begin … -->` and
+`<!-- commands:end -->` markers, is generated from the command declarations —
+`npm run docs:commands` rewrites it, and `docs-commands.check.ts` fails on a hand-edited block.
+The page's narrative stays manual.
+
 ## Pull requests
 
 Explain the user-visible behavior, security implications, and validation performed. Keep

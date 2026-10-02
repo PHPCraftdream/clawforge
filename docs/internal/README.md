@@ -116,6 +116,8 @@ each list findings that the matching session-task list works through.
   effects instead of argv predicates, `executeCommand` for console and MCP, migration recipe, task split.
 * [refactor-stage4-design.md](refactor-stage4-design.md) — stage 4 design: advice as data, one renderer
   for the `--app` rule, help-prose tokens, `next`/`nextSteps`, the literal ratchet and the advice matrix.
+* [refactor-stage5-design.md](refactor-stage5-design.md) — stage 5 design: one command registry, table-driven
+  completion, MCP descriptions from `summary`, generated command table, structure-first checks.
 * [host-audit-macos-windows.md](host-audit-macos-windows.md) — host code on macOS and Windows
   without WSL (2026-09-29): 9 items, no P0; three P2 left for a separate task.
 * [field-feedback-sidecar-round-13.md](field-feedback-sidecar-round-13.md) — field feedback on

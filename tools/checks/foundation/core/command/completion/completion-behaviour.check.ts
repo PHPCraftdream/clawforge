@@ -12,7 +12,7 @@ import { delimiter, join } from "node:path";
 import { buildCompletionModel, renderCompletion, completionCandidates, makeCompletionGateCommand } from "#framework/integration/completion.ts";
 import type { GateCommand } from "#framework/integration/gate.ts";
 import { runPwshCompleter } from "./pwsh-completer.ts";
-import { check, finish } from "#checks/kit/harness.ts";
+import { check, finish, requires } from "#checks/kit/harness.ts";
 
 // The completion command itself is in the model, as the gates assemble it — so its own
 // positional shell choices are completable too.
@@ -116,64 +116,62 @@ const decision = (rest: string[], word: string, appFlag: boolean): string[] =>
 
 // --- the bash script, actually sourced by a real bash -----------------------------------------
 
-{
-  const probe = spawnSync("bash", ["--version"], { timeout: 15_000 });
-  if (probe.error !== undefined || probe.status !== 0) {
-    process.stderr.write("  skip bash sourcing scenarios (no usable bash)\n");
-  } else {
-    const dir = await mkdtemp(join(tmpdir(), "clawforge-completion-"));
-    try {
-      const scriptPath = join(dir, "completion.sh");
-      await writeFile(scriptPath, renderCompletion("bash", model, true), "utf8");
-      // A stub `clawforge` on PATH answers --app's lazy `list --json` deterministically.
-      const stub = join(dir, "clawforge");
-      await writeFile(stub, "#!/bin/sh\necho '[{\"name\":\"app-one\"},{\"name\":\"app-two\"}]'\n", "utf8");
-      await chmod(stub, 0o755);
-      // Words + cursor -> COMPREPLY, exactly as an interactive shell would call it.
-      const scenario = (words: string[], cword: number): Promise<string[]> =>
-        new Promise((resolveScenario) => {
-          const wordsLit = `(${["clawforge", ...words].map((word) => JSON.stringify(word)).join(" ")})`;
-          const proc = spawnSync(
-            "bash",
-            ["-c", `source "${scriptPath}"\nCOMP_WORDS=${wordsLit}\nCOMP_CWORD=${cword}\n_clawforge_complete\nprintf '%s\n' "\${COMPREPLY[@]}"`],
-            { timeout: 30_000, env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` } },
-          );
-          resolveScenario(proc.stdout.toString().split("\n").filter((line) => line !== ""));
-        });
-      // Differential: every scenario through the REAL bash completer must equal the model.
-      const bashScenario = (scenarioSpec: { rest: string[]; word: string }): Promise<string[]> => {
-        const words = scenarioSpec.word === "" ? [...scenarioSpec.rest, ""] : scenarioSpec.rest;
-        return scenario(words, words.length);
-      };
-      for (const scenarioSpec of scenarios) {
-        const expected = decision(scenarioSpec.rest, scenarioSpec.word, true);
-        check(`bash: ${scenarioSpec.name} matches the model's decision`, norm(await bashScenario(scenarioSpec)), expected);
-      }
-      check("bash: --app after a command offers flags, not deployments",
-        [(await bashScenario(scenarios[8]!)).includes("--help"), (await bashScenario(scenarios[8]!)).includes("app-one")], [true, false]);
-
-      check("bash: typed prefix completes status", (await scenario(["sta"], 1)).includes("status"), true);
-      check("bash: typed flag prefix completes --app", (await scenario(["--ap"], 1)).includes("--app"), true);
-      check("bash: typed prefix completes the list action word", (await scenario(["backup", "l"], 2)).includes("list"), true);
-      const trailing = await scenario(["backup"], 2);
-      check("bash: trailing space offers create and its flags", [trailing.includes("create"), trailing.includes("--hot")], [true, true]);
-      const afterApp = await scenario(["--app", "x", "backup"], 4);
-      check("bash: after --app x backup offers actions and create's flags", [afterApp.includes("create"), afterApp.includes("--hot")], [true, true]);
-      const afterFlag = await scenario(["backup", "--hot"], 3);
-      check("bash: after backup --hot no action word is offered", [afterFlag.includes("--migrate"), afterFlag.includes("list")], [true, false]);
-      check("bash: --client's value position offers its choices", (await scenario(["mcp-setup", "--client"], 3)).sort().join(" "), "both claude codex");
-      check("bash: help completes command names", (await scenario(["help", "st"], 2)).includes("status"), true);
-      check("bash: completion completes the shell names", (await scenario(["completion", "b"], 2)).includes("bash"), true);
-      const hostValues = (await scenario(["host"], 2)).filter((word) => ["engine", "local", "target"].includes(word));
-      check("bash: host's positional choices are offered", hostValues.sort().join(" "), "engine local target");
-      check("bash: watch install's flags complete past the action", (await scenario(["watch", "install", "--int"], 3)).includes("--interval"), true);
-      check("bash: the generated script parses (bash -n)", spawnSync("bash", ["-n", scriptPath], { timeout: 15_000 }).status, 0);
-      const body = (text: string): string => text.slice(text.indexOf("_clawforge_complete()"), text.indexOf("complete -F"));
-      check("bash: zsh shares the completer body verbatim", body(renderCompletion("zsh", model, true)), body(renderCompletion("bash", model, true)));
-    } finally {
-      await rm(dir, { recursive: true, force: true });
+// Whether a usable bash exists is a host fact, not a string to sniff: the `bash` capability
+// probe decides (and OC_CHECK_REQUIRE=bash turns the skip into a failure, which is what CI
+// does), replacing the manual "no usable bash" line this file used to print itself.
+await requires("bash", "the bash script sourced by a real bash", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "clawforge-completion-"));
+  try {
+    const scriptPath = join(dir, "completion.sh");
+    await writeFile(scriptPath, renderCompletion("bash", model, true), "utf8");
+    // A stub `clawforge` on PATH answers --app's lazy `list --json` deterministically.
+    const stub = join(dir, "clawforge");
+    await writeFile(stub, "#!/bin/sh\necho '[{\"name\":\"app-one\"},{\"name\":\"app-two\"}]'\n", "utf8");
+    await chmod(stub, 0o755);
+    // Words + cursor -> COMPREPLY, exactly as an interactive shell would call it.
+    const scenario = (words: string[], cword: number): Promise<string[]> =>
+      new Promise((resolveScenario) => {
+        const wordsLit = `(${["clawforge", ...words].map((word) => JSON.stringify(word)).join(" ")})`;
+        const proc = spawnSync(
+          "bash",
+          ["-c", `source "${scriptPath}"\nCOMP_WORDS=${wordsLit}\nCOMP_CWORD=${cword}\n_clawforge_complete\nprintf '%s\n' "\${COMPREPLY[@]}"`],
+          { timeout: 30_000, env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH ?? ""}` } },
+        );
+        resolveScenario(proc.stdout.toString().split("\n").filter((line) => line !== ""));
+      });
+    // Differential: every scenario through the REAL bash completer must equal the model.
+    const bashScenario = (scenarioSpec: { rest: string[]; word: string }): Promise<string[]> => {
+      const words = scenarioSpec.word === "" ? [...scenarioSpec.rest, ""] : scenarioSpec.rest;
+      return scenario(words, words.length);
+    };
+    for (const scenarioSpec of scenarios) {
+      const expected = decision(scenarioSpec.rest, scenarioSpec.word, true);
+      check(`bash: ${scenarioSpec.name} matches the model's decision`, norm(await bashScenario(scenarioSpec)), expected);
     }
+    check("bash: --app after a command offers flags, not deployments",
+      [(await bashScenario(scenarios[8]!)).includes("--help"), (await bashScenario(scenarios[8]!)).includes("app-one")], [true, false]);
+
+    check("bash: typed prefix completes status", (await scenario(["sta"], 1)).includes("status"), true);
+    check("bash: typed flag prefix completes --app", (await scenario(["--ap"], 1)).includes("--app"), true);
+    check("bash: typed prefix completes the list action word", (await scenario(["backup", "l"], 2)).includes("list"), true);
+    const trailing = await scenario(["backup"], 2);
+    check("bash: trailing space offers create and its flags", [trailing.includes("create"), trailing.includes("--hot")], [true, true]);
+    const afterApp = await scenario(["--app", "x", "backup"], 4);
+    check("bash: after --app x backup offers actions and create's flags", [afterApp.includes("create"), afterApp.includes("--hot")], [true, true]);
+    const afterFlag = await scenario(["backup", "--hot"], 3);
+    check("bash: after backup --hot no action word is offered", [afterFlag.includes("--migrate"), afterFlag.includes("list")], [true, false]);
+    check("bash: --client's value position offers its choices", (await scenario(["mcp-setup", "--client"], 3)).sort().join(" "), "both claude codex");
+    check("bash: help completes command names", (await scenario(["help", "st"], 2)).includes("status"), true);
+    check("bash: completion completes the shell names", (await scenario(["completion", "b"], 2)).includes("bash"), true);
+    const hostValues = (await scenario(["host"], 2)).filter((word) => ["engine", "local", "target"].includes(word));
+    check("bash: host's positional choices are offered", hostValues.sort().join(" "), "engine local target");
+    check("bash: watch install's flags complete past the action", (await scenario(["watch", "install", "--int"], 3)).includes("--interval"), true);
+    check("bash: the generated script parses (bash -n)", spawnSync("bash", ["-n", scriptPath], { timeout: 15_000 }).status, 0);
+    const body = (text: string): string => text.slice(text.indexOf("_clawforge_complete()"), text.indexOf("complete -F"));
+    check("bash: zsh shares the completer body verbatim", body(renderCompletion("zsh", model, true)), body(renderCompletion("bash", model, true)));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
-}
+});
 
 finish("completion behaviour");

@@ -50,14 +50,15 @@ jobs:
 
       - name: Run checks
         # ubuntu-latest ships a working docker daemon, a GNU userland (linux-host, posix-sh,
-        # rsync come preinstalled) and now a loopback sshd: a check that requires any of these
-        # and still cannot reach it should fail loudly, not skip (see the check runner's
-        # capability layer in CONTRIBUTING.md). `ssh-loopback` is provisioned by the step above;
+        # rsync come preinstalled), bash and PowerShell, and now a loopback sshd: a check that
+        # requires any of these and still cannot reach it should fail loudly, not skip (see the
+        # check runner's capability layer in CONTRIBUTING.md).
+        # `ssh-loopback` is provisioned by the step above;
         # it is only a recognized capability name once the check runner's capability list
         # (see CONTRIBUTING.md, "Host capability labels") includes it — this job assumes
         # that has landed (see docs/guide/requirements.md).
         env:
-          OC_CHECK_REQUIRE: docker,ssh-loopback,posix-sh,rsync,linux-host,gnu-userland
+          OC_CHECK_REQUIRE: docker,ssh-loopback,posix-sh,rsync,linux-host,gnu-userland,bash,pwsh
           OC_CHECK_SSH_HOST: localhost
         run: npm test
 
@@ -128,11 +129,12 @@ jobs:
           ssh -o BatchMode=yes -o ConnectTimeout=5 localhost true
 
       - name: Run checks
-        # Only ssh-loopback is demanded here: macOS has no local target and this job does not
-        # claim docker/wsl/rsync/posix-sh — see docs/guide/requirements.md. Same capability-name
-        # landing assumption as the Linux job above.
+        # ssh-loopback plus the two shells a check executes for real (bash, pwsh) are demanded:
+        # macOS ships both, and demanding them is also what proves pwsh is on the runner. This
+        # job still claims no docker/wsl/rsync/posix-sh — macOS has no local target, see
+        # docs/guide/requirements.md. Same capability-name landing assumption as the Linux job.
         env:
-          OC_CHECK_REQUIRE: ssh-loopback
+          OC_CHECK_REQUIRE: ssh-loopback,bash,pwsh
           OC_CHECK_SSH_HOST: localhost
         run: npm run check
 
@@ -159,12 +161,12 @@ jobs:
     # Matrix cell: Windows host, no WSL — the "no-WSL" cell. The same `npm run check` every
     # job runs, plus typecheck/lint/build. No hand-maintained path list: a check file that
     # cannot run without a host capability (a usable docker daemon, a WSL distro, a real POSIX
-    # shell, rsync) names it with a `// check:requires <cap>` header, and the runner skips
+    # shell, bash or PowerShell, rsync) names it with a `// check:requires <cap>` header, and the runner skips
     # exactly that file on a host lacking it — reported as `SKIP <label> — needs <cap>` and
-    # counted separately in the closing summary, never silently. OC_CHECK_REQUIRE (unset here)
-    # would turn a skip into a failure for the named capabilities instead; windows-wsl below and
-    # windows-full.yml's self-hosted WSL+Docker job set it, so a capability that job is supposed
-    # to have but cannot reach fails loudly rather than quietly skipping.
+    # counted separately in the closing summary, never silently. OC_CHECK_REQUIRE (bash,pwsh
+    # here; windows-wsl below and windows-full.yml's self-hosted WSL+Docker job set their own
+    # lists) turns a skip into a failure for the named capabilities instead, so a capability that
+    # job is supposed to have but cannot reach fails loudly rather than quietly skipping.
     name: "Windows (no WSL) — Node ${{ matrix.node }}"
     runs-on: windows-latest
     strategy:
@@ -184,6 +186,11 @@ jobs:
         run: npm ci --include=dev
 
       - name: Run checks
+        # The two shells a check executes for real are demanded too: bash (Git for Windows) and
+        # pwsh (PowerShell 5.1 through the powershell.exe fallback when pwsh is absent) — both
+        # ship on the runner image, so a check requiring either fails loudly, never skips.
+        env:
+          OC_CHECK_REQUIRE: bash,pwsh
         run: npm run check
 
       # The system-wide install a user runs, then the command from PATH in a fresh app folder:

@@ -11,6 +11,7 @@ import { DEFAULT_WSL_DISTRO } from "#framework/core/env.ts";
 
 export const CAPABILITIES = [
   "docker", "wsl", "posix-sh", "rsync", "linux-host", "windows-host", "ssh-loopback", "gnu-userland", "auto-target",
+  "bash", "pwsh",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -49,9 +50,36 @@ export async function hasPosixSh(): Promise<boolean> {
   return swallow(async () => (await spawnLocal("sh", ["-c", "exit 0"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })).code === 0);
 }
 
+/** A `bash` that runs a trivial command — the shell that sources the generated completion
+ *  script for real; neither `sh` nor wsl.exe stands in for it. */
+export async function hasBash(): Promise<boolean> {
+  return swallow(async () => (await spawnLocal("bash", ["-c", "exit 0"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })).code === 0);
+}
+
 /** A real rsync binary on PATH. */
 export async function hasRsync(): Promise<boolean> {
   return swallow(async () => (await spawnLocal("rsync", ["--version"], { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })).code === 0);
+}
+
+const PWSH_PROBE_ARGS = ["-NoProfile", "-NonInteractive", "-Command", "exit 0"];
+
+async function pwshAnswers(binary: string): Promise<boolean> {
+  return swallow(async () => (await spawnLocal(binary, PWSH_PROBE_ARGS, { allowFailure: true, timeoutMs: PROBE_TIMEOUT_MS })).code === 0);
+}
+
+/** The PowerShell this host actually runs, undefined when it has none: `pwsh`, or on Windows
+ *  without it `powershell.exe` (5.1). Exported so a check can spawn the very binary the probe
+ *  accepted instead of assuming one. */
+export async function pwshCommand(): Promise<string | undefined> {
+  if (await pwshAnswers("pwsh")) return "pwsh";
+  if (process.platform === "win32" && await pwshAnswers("powershell.exe")) return "powershell.exe";
+  return undefined;
+}
+
+/** A PowerShell that runs a trivial command — the other shell the completion differential
+ *  really executes. */
+export async function hasPwsh(): Promise<boolean> {
+  return (await pwshCommand()) !== undefined;
 }
 
 /** This process's own host, not a target: some checks assume GNU/Linux tools with no
@@ -127,6 +155,8 @@ export const DEFAULT_PROBES: ProbeMap = {
   "ssh-loopback": hasSshLoopback,
   "gnu-userland": hasGnuUserland,
   "auto-target": hasAutoTarget,
+  bash: hasBash,
+  pwsh: hasPwsh,
 };
 
 /** Probes each capability at most once per instance, regardless of how many files ask —

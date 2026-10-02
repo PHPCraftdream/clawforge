@@ -134,9 +134,9 @@ for the capabilities this runner is supposed to have, instead of a silent skip:
 
 | Job (`ci.yml` / `windows-full.yml`) | Matrix cell | `OC_CHECK_REQUIRE` |
 | --- | --- | --- |
-| `checks` — "Linux (local + ssh)" | Linux host, `local` (default) and host-side `ssh` coverage | `docker,ssh-loopback,posix-sh,rsync,linux-host,gnu-userland` |
-| `macos-checks` — "macOS (ssh target only)" | macOS host, `ssh` (the only target macOS can pick; no `local`) | `ssh-loopback` |
-| `windows-checks` — "Windows (no WSL)" | Windows host, no WSL distro — the "no-WSL" negative case | unset — no capability is demanded, so a Windows host without WSL (or without loopback ssh provisioned) stays green by skipping `wsl`-only checks rather than failing on them |
+| `checks` — "Linux (local + ssh)" | Linux host, `local` (default) and host-side `ssh` coverage | `docker,ssh-loopback,posix-sh,rsync,linux-host,gnu-userland,bash,pwsh` |
+| `macos-checks` — "macOS (ssh target only)" | macOS host, `ssh` (the only target macOS can pick; no `local`) | `ssh-loopback,bash,pwsh` |
+| `windows-checks` — "Windows (no WSL)" | Windows host, no WSL distro — the "no-WSL" negative case | `bash,pwsh` — both shells ship with the runner image; `wsl`-only checks (and loopback ssh, not provisioned here) still skip rather than fail |
 | `windows-wsl` — "Windows (WSL2)" | Windows host, `wsl` (default via `auto`), hosted-runner best effort | `wsl` |
 | `windows-full.yml`'s `checks` | Windows host, `wsl`, self-hosted with real WSL2 + Docker | `docker,wsl` |
 

@@ -63,12 +63,12 @@ the same way, inside a Linux container — see "Reproducing Linux CI locally" be
 
 ### Host capability labels
 
-Most checks assert everything without touching a real docker daemon, WSL distro or POSIX
-shell — a stub transport records what a real one would have been asked to run, so a file
-skipping SOME of its own assertions ("real sh not spawnable here") because a tool happens to
-be missing on THIS machine is normal, and stays a small `if (!available) skip(...)` inside an
-otherwise-meaningful file (`tools/checks/kit/harness.ts` has no opinion on this — it is a
-file-local convention).
+Most checks assert everything without touching a real docker daemon, WSL distro, POSIX shell,
+bash or PowerShell — a stub transport records what a real one would have been asked to run, so
+a file skipping SOME of its own assertions ("real sh not spawnable here") because a tool
+happens to be missing on THIS machine is normal, and stays a small `if (!available) skip(...)`
+inside an otherwise-meaningful file (`tools/checks/kit/harness.ts` has no opinion on this — it
+is a file-local convention).
 
 A file that cannot run AT ALL without a host capability — real docker, a real WSL distro, a
 real `sh`, `rsync`, or a Linux host — says so instead, in its header (first 2KB, same budget
@@ -90,9 +90,12 @@ non-interactive; BatchMode refuses instead of prompting, so a host with no key s
 `OC_TARGET_LOCATION=auto` picks on this host answers docker: `docker info` on Linux,
 `wsl -d ${OC_WSL_DISTRO:-Ubuntu-24.04} docker info` on Windows — a WSL distro without docker
 answers "absent", so a case that needs the target to answer, not merely wsl.exe, gates on this
-one). Each is probed at most once per run, only when some selected file
-actually requires it, and a probe failure (missing tool, timeout, anything) reads as "absent"
-rather than crashing the run.
+one), `bash` (a `bash` that runs a trivial command — `bash -c "exit 0"`; the shell that
+sources the generated completion script for real) and `pwsh` (a PowerShell that runs
+`pwsh -NoProfile -NonInteractive -Command exit 0`, falling back on Windows alone to
+`powershell.exe` — the other shell the completion differential executes). Each is probed at most
+once per run, only when some selected file actually requires it, and a probe failure (missing
+tool, timeout, anything) reads as "absent" rather than crashing the run.
 
 A single case inside an otherwise runnable file can gate the same way: `await requires("docker", "<case name>", body)`
 (`kit/harness.ts`) runs `body` when the capability is present, prints `  SKIP <case name> — needs <cap>`
@@ -138,9 +141,9 @@ this runner is supposed to have into a hard failure instead of a silent skip:
 
 | Job | Matrix cell | `OC_CHECK_REQUIRE` | Provisions before checks |
 | --- | --- | --- | --- |
-| `checks` — "Linux (local + ssh)" | Linux host, `local` + host-side `ssh` | `docker,ssh-loopback,posix-sh,rsync,linux-host,gnu-userland` | loopback `sshd` + key auth |
-| `macos-checks` — "macOS (ssh target only)" | macOS host, `ssh` (no `local`, by design) | `ssh-loopback` | loopback `sshd` + key auth (`systemsetup -setremotelogin`) |
-| `windows-checks` — "Windows (no WSL)" | Windows host, no WSL distro (the negative case) | unset | nothing — capability-gated files just skip |
+| `checks` — "Linux (local + ssh)" | Linux host, `local` + host-side `ssh` | `docker,ssh-loopback,posix-sh,rsync,linux-host,gnu-userland,bash,pwsh` | loopback `sshd` + key auth |
+| `macos-checks` — "macOS (ssh target only)" | macOS host, `ssh` (no `local`, by design) | `ssh-loopback,bash,pwsh` | loopback `sshd` + key auth (`systemsetup -setremotelogin`) |
+| `windows-checks` — "Windows (no WSL)" | Windows host, no WSL distro (the negative case) | `bash,pwsh` | nothing — both shells come with the runner image |
 | `windows-wsl` — "Windows (WSL2)" | Windows host, `wsl`, hosted-runner best effort | `wsl` | `wsl --install -d Ubuntu-24.04` (see the job's own header comment for the nested-virtualization caveat) |
 | `windows-full.yml`'s `checks` | Windows host, `wsl`, self-hosted, real WSL2 + Docker | `docker,wsl` | nothing — the self-hosted runner already has both |
 

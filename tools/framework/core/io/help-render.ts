@@ -6,7 +6,9 @@ import { log, info } from "./log.ts";
 import type { AppCommand, AppDefinition, CommandArgument, CommandGroup } from "../app.ts";
 import type { EffectDeclaration } from "../command/index.ts";
 import { effectProfile, argumentScopes } from "../command/index.ts";
-import { commandLine } from "./invocation/render.ts";
+import { commandLine, renderAdvice } from "./invocation/render.ts";
+import { command } from "./invocation/advice.ts";
+import { invocation, type Invocation } from "./invocation/index.ts";
 import { renderProse } from "./invocation/prose.ts";
 
 /** What renderCommandHelp needs from a command — the shape AppCommand and GateCommand both
@@ -106,13 +108,22 @@ export function helpEntryLine(name: string, summary: string): string {
   return `  ${name.padEnd(HELP_NAME_WIDTH)} ${summary}`;
 }
 
+/** The usage screen's own line and the full-description hint under it — exported so the
+ *  gate's bare screen and the checks assert the same text the renderer prints. */
+export function usageTopLine(on: Invocation = invocation()): string {
+  return `Usage: ${renderAdvice(command(["<command>"]), on)} [options]`;
+}
+export function usageFooterHint(on: Invocation = invocation()): string {
+  return `Run \`${renderAdvice(command(["help", "<command>"]), on)}\` or \`${renderAdvice(command(["<command>", "--help"]), on)}\` for its full description.`;
+}
+
 /** The top-level `--help` screen, shared by the console and the MCP `help` tool. The footer
  *  is the caller's to compose: the gate's own lines followed by integration/gate.ts's
  *  dispatcherHelpLines(registry). */
 export function renderUsage(app: AppDefinition, footer: readonly string[]): void {
   log(`${app.name} — ${app.description}`);
   info("");
-  info(`Usage: ${commandLine(["<command>"])} [options]`);
+  info(usageTopLine());
   info("");
 
   const byGroup = new Map<CommandGroup, [string, AppCommand][]>();
@@ -148,7 +159,7 @@ export function renderUsage(app: AppDefinition, footer: readonly string[]): void
   info("");
   info("  ! destructive     * destructive for some actions (a read-only or --dry-run form is safe)");
   info("");
-  info(`Run \`${commandLine(["help", "<command>"])}\` or \`${commandLine(["<command>", "--help"])}\` for its full description.`);
+  info(usageFooterHint());
 }
 
 /** The envelope every structured tool call answers in (mcp/schema.ts's StructuredResult) —

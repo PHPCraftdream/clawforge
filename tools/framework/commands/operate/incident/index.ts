@@ -35,6 +35,27 @@ import { countValue } from "../../../core/values/value.ts";
 /** Drives both incident's own declaration and its wrapper below. `--dry-run` is the read
  *  form: its effect lowers the body's destroy to read, so a dry run asks no MCP confirmation
  *  and takes no lock. */
+
+/** Fixed phrases of the incident report, exported so the checks assert the same text the
+ *  product prints instead of restating it. */
+export const PUBLIC_EXPOSURE_NOTE = "reachable from every interface";
+export const NOTHING_TO_TURN_OFF = "nothing to turn off";
+export const NO_GATEWAY_ROUTE = "no route to this gateway";
+export const WOULD_RUN = "would run";
+export const RAN = "ran";
+export const NOTHING_TO_ROTATE = "nothing to rotate";
+export const WOULD_ROTATE = "would rotate";
+export const ROTATED_TOKEN = "rotated OPENCLAW_GATEWAY_TOKEN";
+export const RECREATING_GATEWAY = "recreating the gateway";
+export const UNCONFIRMED_TOKEN = "could not confirm";
+export const WOULD_PRESERVE = "would preserve";
+export const NO_PRE_ROTATE_EVIDENCE = "no pre-rotate evidence";
+export const WOULD_COLLECT = "would collect";
+export const CONTAIN_FAILED = "contain failed unexpectedly";
+export function auditFindingsSummary(findings: number, blocking: number): string {
+  return `${findings} finding(s), ${blocking} blocking`;
+}
+
 export const INCIDENT_ARGUMENTS = [
   { name: "dry-run", description: "Print the plan without changing anything", kind: "flag", effect: "read" },
   { name: "keep-exposure", description: "Proceed with the gateway published on every interface", kind: "flag" },
@@ -108,7 +129,7 @@ export async function refuseIfPubliclyExposed(ctx: Context, options: IncidentOpt
 
   if (!options.keepExposure) {
     die(
-      `the gateway is published on ${summary.bindAddress}:${summary.port} — reachable from every interface on ` +
+      `the gateway is published on ${summary.bindAddress}:${summary.port} — ${PUBLIC_EXPOSURE_NOTE} on ` +
         "this host. Refusing to run an incident response while it may still be reachable from outside. To fix " +
         `it: set OC_BIND_ADDRESS=127.0.0.1 in ${envFile()}, then run ${commandLine("up")} to recreate the gateway on ` +
         "loopback. Or pass --keep-exposure if this exposure is already handled elsewhere (a reverse proxy, a " +
@@ -128,7 +149,7 @@ export async function containExposure(ctx: Context, options: IncidentOptions): P
 
   const probe = await probeTailscale(ctx);
   if (!probe.present || !probe.loggedIn) {
-    actions.push(`tailscale: ${probe.detail} — nothing to turn off`);
+    actions.push(`tailscale: ${probe.detail} — ${NOTHING_TO_TURN_OFF}`);
     return { phase: "contain", actions, notes };
   }
 
@@ -143,7 +164,7 @@ export async function containExposure(ctx: Context, options: IncidentOptions): P
     return { phase: "contain", actions, notes };
   }
   if (routes.length === 0) {
-    actions.push("tailscale serve has no route to this gateway — nothing to turn off");
+    actions.push(`tailscale serve has ${NO_GATEWAY_ROUTE} — ${NOTHING_TO_TURN_OFF}`);
     return { phase: "contain", actions, notes };
   }
 
@@ -151,7 +172,7 @@ export async function containExposure(ctx: Context, options: IncidentOptions): P
     const command = tailscaleServeOffCommand(route);
     const label = `${route.hostPort}${route.mountPoint}`;
     if (options.dryRun) {
-      actions.push(`would run: ${command.join(" ")} (turn off tailscale serve route ${label})`);
+      actions.push(`${WOULD_RUN}: ${command.join(" ")} (turn off tailscale serve route ${label})`);
       continue;
     }
     const result = await ctx.transport.exec(command[0], command.slice(1), { allowFailure: true });
@@ -164,7 +185,7 @@ export async function containExposure(ctx: Context, options: IncidentOptions): P
       notes.push(`could not turn off tailscale serve route ${label} (exit ${result.code}): ${detail}${hint}`);
       continue;
     }
-    actions.push(`ran: ${command.join(" ")} (turned off route ${label})`);
+    actions.push(`${RAN}: ${command.join(" ")} (turned off route ${label})`);
   }
 
   return { phase: "contain", actions, notes };
@@ -178,26 +199,26 @@ export async function rotateToken(ctx: Context, options: IncidentOptions): Promi
   const current = readEnvValue(content, "OPENCLAW_GATEWAY_TOKEN")?.trim();
 
   if (current === undefined || current === "") {
-    actions.push("no OPENCLAW_GATEWAY_TOKEN configured — nothing to rotate");
+    actions.push(`no OPENCLAW_GATEWAY_TOKEN configured — ${NOTHING_TO_ROTATE}`);
     return { phase: "rotate", actions, notes };
   }
 
   if (options.dryRun) {
-    actions.push("would rotate OPENCLAW_GATEWAY_TOKEN and recreate the gateway to apply it");
+    actions.push(`${WOULD_ROTATE} OPENCLAW_GATEWAY_TOKEN and recreate the gateway to apply it`);
     return { phase: "rotate", actions, notes };
   }
 
   const token = generateGatewayToken();
   registerSecret(token);
   await replacePrivateFile(path, upsertEnvValue(content, "OPENCLAW_GATEWAY_TOKEN", token));
-  actions.push(`rotated OPENCLAW_GATEWAY_TOKEN in ${path}`);
+  actions.push(`${ROTATED_TOKEN} in ${path}`);
 
   if (!(await ctx.runtime.isRunning())) {
     notes.push(`the instance is stopped — the next ${commandLine("up")} will carry the new token`);
   } else if (typeof ctx.runtime.reconcile !== "function") {
     notes.push(`${ctx.runtime.description} cannot recreate the container — run ${commandLine("up")} to apply the new token`);
   } else {
-    actions.push("recreating the gateway so the new token takes effect");
+    actions.push(`${RECREATING_GATEWAY} so the new token takes effect`);
     await ctx.runtime.reconcile();
     await ctx.runtime.waitForHealth();
     actions.push("gateway is healthy on the new token");
@@ -207,7 +228,7 @@ export async function rotateToken(ctx: Context, options: IncidentOptions): Promi
       if (running?.OPENCLAW_GATEWAY_TOKEN === token) {
         actions.push("confirmed: the running container holds the new token — the old one no longer works");
       } else {
-        notes.push("could not confirm the running container holds the new token — check by hand before trusting the old one is gone");
+        notes.push(`${UNCONFIRMED_TOKEN} the running container holds the new token — check by hand before trusting the old one is gone`);
       }
     } else {
       notes.push(`${ctx.runtime.description} cannot read the running container's environment, so the new token is in force but unconfirmed here`);
@@ -234,7 +255,7 @@ export async function runAudits(ctx: Context): Promise<{ phase: IncidentPhase; s
   const doctorLint = await runDoctorLint(ctx);
   const blocking = blockingProblems(security.problems).length;
   const actions = [
-    `security gate: ${security.problems.length} finding(s), ${blocking} blocking`,
+    `security gate: ${auditFindingsSummary(security.problems.length, blocking)}`,
     doctorLint.error === undefined ? "openclaw doctor --lint recorded" : `openclaw doctor --lint could not run: ${doctorLint.error}`,
   ];
   return { phase: { phase: "audit", actions, notes: [] }, security, doctorLint };
@@ -289,7 +310,7 @@ export async function preserveEvidence(
   const files: string[] = [];
 
   if (options.dryRun) {
-    actions.push("would preserve a log tail and `docker inspect` of the current container before rotate recreates it");
+    actions.push(`${WOULD_PRESERVE} a log tail and \`docker inspect\` of the current container before rotate recreates it`);
     return { phase: "preserve", actions, notes, files: [] };
   }
 
@@ -297,7 +318,7 @@ export async function preserveEvidence(
   try {
     const snapshot = await ctx.runtime.captureIncidentSnapshot?.(options.tail);
     if (snapshot === undefined) {
-      notes.push(`${ctx.runtime.description} has nothing running to snapshot, or cannot introspect it — no pre-rotate evidence to preserve`);
+      notes.push(`${ctx.runtime.description} has nothing running to snapshot, or cannot introspect it — ${NO_PRE_ROTATE_EVIDENCE} to preserve`);
       return { phase: "preserve", actions, notes, files };
     }
     step = `protect the pre-rotate evidence directory ${dir}`;
@@ -328,7 +349,7 @@ export async function collectEvidence(
 ): Promise<IncidentPhase & { archive?: string }> {
   const actions: string[] = [];
   if (options.dryRun) {
-    actions.push("would collect a bounded log tail, both audit outputs and a status summary into a private incidents/ directory");
+    actions.push(`${WOULD_COLLECT} a bounded log tail, both audit outputs and a status summary into a private incidents/ directory`);
     return { phase: "collect", actions, notes: [] };
   }
 

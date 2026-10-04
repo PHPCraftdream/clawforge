@@ -74,10 +74,12 @@ async function writeGitignore(directory: string): Promise<void> {
 /** Printed as part of createApp's next-steps, and its own constant so lock.ts's
  *  COMMIT_ADVICE can be checked for consistency. Deliberately not run automatically (`git
  *  init` is the operator's call), but named so "commit it" (lock.ts) has somewhere to point. */
+export const GIT_INIT_STEP = "git init";
+
 export function gitInitAdvice(name: string): string {
   return (
     `apps/ is entirely in this repository's own .gitignore, so apps/${name} has no git history ` +
-    `of its own — make it one if you want "${commandLine(["lock"])}" committed: cd apps/${name} && git init ` +
+    `of its own — make it one if you want "${commandLine(["lock"])}" committed: cd apps/${name} && ${GIT_INIT_STEP} ` +
     "(the .gitignore just written here already keeps .env and secrets/ out of it)"
   );
 }

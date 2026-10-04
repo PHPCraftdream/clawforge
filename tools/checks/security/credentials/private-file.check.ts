@@ -8,7 +8,7 @@ import { access, chmod, mkdir, mkdtemp, open, readdir, readFile, rename, rm, sta
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPrivateFile, installedWslDistros, privateFileHost, probeWslOpen, protectPrivateFile, replacePrivateFile, resetWslBoundaryDedupe, withPrivateFileRenamer, withToolRunner } from "#framework/security/privacy/private-file.ts";
+import { createPrivateFile, installedWslDistros, privateFileHost, probeWslOpen, protectPrivateFile, replacePrivateFile, resetWslBoundaryDedupe, withPrivateFileRenamer, withToolRunner, WSL_BOUNDARY_NOTE, UNLISTED_NOTE, OPEN_IN_ANOTHER_PROGRAM } from "#framework/security/privacy/private-file.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { check, checkTrue, finish } from "#checks/kit/harness.ts";
@@ -368,32 +368,32 @@ async function wslListingContractChecks(root: string): Promise<void> {
   {
     const run = await protectWithListing({ code: -1, output: "simulated timeout" });
     check("a timed-out WSL listing still protects the file", run.refusal, null);
-    checkTrue("a timed-out WSL listing is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes("could not be listed") && run.captured.includes("simulated timeout"));
+    checkTrue("a timed-out WSL listing is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes(UNLISTED_NOTE) && run.captured.includes("simulated timeout"));
     check("a timed-out WSL listing consults the listing exactly once", run.listings, 1);
   }
 
   {
     const run = await protectWithListing({ code: 1, output: "wsl.exe: unexpected failure" });
     check("a WSL listing that exits nonzero with unrelated output still protects the file", run.refusal, null);
-    checkTrue("a WSL listing that exits nonzero with unrelated output is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes("could not be listed") && run.captured.includes("unexpected failure"));
+    checkTrue("a WSL listing that exits nonzero with unrelated output is reported, naming the file and the reason", run.captured.includes(file) && run.captured.includes(UNLISTED_NOTE) && run.captured.includes("unexpected failure"));
   }
 
   {
     const run = await protectWithListing({ code: -1, errno: "ENOENT", output: "spawn wsl.exe ENOENT" });
     check("protection succeeds when wsl.exe is missing outright", run.refusal, null);
-    check("a missing wsl.exe stays silent — there is no Linux side and no boundary to report", run.captured.includes("Windows/WSL boundary"), false);
+    check("a missing wsl.exe stays silent — there is no Linux side and no boundary to report", run.captured.includes(WSL_BOUNDARY_NOTE), false);
   }
 
   {
     const run = await protectWithListing({ code: 0, output: "" });
     check("protection succeeds on a clean empty WSL listing", run.refusal, null);
-    check("a clean empty WSL listing stays silent", run.captured.includes("Windows/WSL boundary"), false);
+    check("a clean empty WSL listing stays silent", run.captured.includes(WSL_BOUNDARY_NOTE), false);
   }
 
   {
     const run = await protectWithListing({ code: 1, output: utf16ish("There are no installed distributions.") });
     check("protection succeeds when WSL answers that nothing is installed", run.refusal, null);
-    check("the no-installed-distributions answer stays silent", run.captured.includes("Windows/WSL boundary"), false);
+    check("the no-installed-distributions answer stays silent", run.captured.includes(WSL_BOUNDARY_NOTE), false);
   }
 
   {
@@ -451,10 +451,10 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
   if (distros.length === 0) {
     skip("WSL boundary assertions (no WSL distribution installed)");
     if (listingFailure === undefined) {
-      checkTrue("with no WSL installed, protection succeeds without a boundary warning", refusal === null && !captured.includes("Windows/WSL boundary"));
+      checkTrue("with no WSL installed, protection succeeds without a boundary warning", refusal === null && !captured.includes(WSL_BOUNDARY_NOTE));
     } else {
       check("protection succeeds even when the WSL listing itself fails", refusal, null);
-      checkTrue("a failed real WSL listing is reported with its reason", captured.includes("could not be listed") && captured.includes(listingFailure));
+      checkTrue("a failed real WSL listing is reported with its reason", captured.includes(UNLISTED_NOTE) && captured.includes(listingFailure));
     }
   } else {
     const target = automountGuess(file);
@@ -473,7 +473,7 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
       checkTrue("the warning says what to do about it", captured.includes("wsl.conf"));
     } else {
       check("protection succeeds when no distribution can open the file", refusal, null);
-      check("no boundary gap is reported when every distribution is shut out", captured.includes("Windows/WSL boundary"), false);
+      check("no boundary gap is reported when every distribution is shut out", captured.includes(WSL_BOUNDARY_NOTE), false);
     }
   }
 
@@ -498,9 +498,9 @@ async function windowsChecks(root: string, distros: string[], listingFailure?: s
     check("creation writes the complete value", created ? await readFile(join(root, "fresh.env"), "utf8") : "", secret);
     if (distros.length === 0) {
       if (listingFailure === undefined) {
-        check("creation warns nothing when there is no WSL to reach the file", freshCaptured.includes("Windows/WSL boundary"), false);
+        check("creation warns nothing when there is no WSL to reach the file", freshCaptured.includes(WSL_BOUNDARY_NOTE), false);
       } else {
-        checkTrue("creation reports the failed WSL listing too", freshCaptured.includes("could not be listed"));
+        checkTrue("creation reports the failed WSL listing too", freshCaptured.includes(UNLISTED_NOTE));
       }
     } else {
       checkTrue("creation reports the same boundary gap", distros.some((distro) => freshCaptured.includes(`"${distro}"`)));
@@ -610,7 +610,7 @@ async function renameRetryChecks(root: string): Promise<void> {
         persistentError = error as Error;
       }
     });
-    checkTrue("a lock that never clears on Windows names the likely cause", persistentError?.message.includes("open in another program") === true);
+    checkTrue("a lock that never clears on Windows names the likely cause", persistentError?.message.includes(OPEN_IN_ANOTHER_PROGRAM) === true);
     check("the file is untouched after every retry is exhausted", await readFile(file, "utf8"), "OPENCLAW_GATEWAY_TOKEN=after\n");
 
     privateFileHost.platform = "linux";

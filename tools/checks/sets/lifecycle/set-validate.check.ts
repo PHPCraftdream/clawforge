@@ -5,11 +5,18 @@
 // on its own: a rule that cannot fire is not a rule, and a finding that fires on a valid set
 // is worse than no finding.
 
-import { validateSet, cronProblem } from "#framework/set/ownership/validate.ts";
-import { defaultSetName, collectManifest, buildSet } from "#framework/commands/sets/set.ts";
+import { validateSet, cronProblem, INVALID_JSON_NOTE, addingFix } from "#framework/set/ownership/validate.ts";
+import { defaultSetName, collectManifest, buildSet, blockingFindingsMessage, blockingWarningsSummary, ARTIFACT_CONTENTS_MATCH, coherentLine } from "#framework/commands/sets/set.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { unpackArtifactVerified } from "#framework/set/artifacts/install.ts";
-import { problem } from "#framework/service/inspection.ts";
+import { INVALID_ARTIFACT, FOREIGN_DIGEST } from "#framework/set/load.ts";
+import { problem, SET_RECIPE_DIR_NOTE } from "#framework/service/inspection.ts";
+import { missingDescriptionDetail } from "#framework/service/recipe.ts";
+import { recipeInvalidDefinition, imagePinAdvice, afterNote } from "#framework/set/advice.ts";
+import type { DeploymentLock } from "#framework/commands/management/lock.ts";
+import { BLOCKING_MARK, WARN_MARK } from "#framework/core/io/log.ts";
+import { renderAdvice } from "#framework/core/io/invocation/render.ts";
+import type { CommandAdvice } from "#framework/core/io/invocation/advice.ts";
 import { buildSetManifest } from "#framework/set/artifacts/model.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
@@ -99,7 +106,7 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
     // path is the upgrade one — lock only after the gateway really runs the declared tag.
     const locked = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
     check("a lock for another image advises the upgrade path", locked[0]?.nextAction, "./clawforge upgrade --image ghcr.io/openclaw/openclaw:extended-stable  (moves the deployment to the image now declared; `lock` afterwards only if the gateway then runs it (lock records the local image's digest, not the running container's))");
-    check("the detail no longer claims lock records what the running gateway serves", locked[0]?.detail.includes("the running gateway already serves"), false);
+    check("the detail no longer claims lock records what the running gateway serves", locked[0]?.detail, imagePinAdvice("ghcr.io/openclaw/openclaw:extended-stable", { version: 1, image: { reference: "x:y", digest: "x@sha256:z" } } as DeploymentLock).detail);
     check("the detail names the reference the lock was taken for", locked[0]?.detail.includes("x:y"), true);
 
     // A committed lock that carries no digest: neither bootstrap NOR lock is decided for
@@ -107,8 +114,8 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
     await writeFile(lockPath, JSON.stringify({ version: 1, image: { reference: "ghcr.io/openclaw/openclaw:extended-stable" } }));
     const digestless = await validateSet(coherent({ requires: { framework: "0.1.0", image: "ghcr.io/openclaw/openclaw:extended-stable" } }));
     check("a digestless lock is still a finding", codes(digestless), ["SET_IMAGE_UNPINNED"]);
-    check("its advice names upgrade first and bootstrap as the alternative", digestless[0]?.nextAction.includes("./clawforge upgrade --image") && digestless[0]?.nextAction.includes("`bootstrap`"), true);
-    check("and says lock pins the LOCAL image of the tag, not the container", digestless[0]?.detail.includes("local image that OPENCLAW_IMAGE names"), true);
+    check("its advice names upgrade first and bootstrap as the alternative", digestless[0]?.nextAction, renderAdvice(imagePinAdvice("ghcr.io/openclaw/openclaw:extended-stable", { version: 1, image: { reference: "ghcr.io/openclaw/openclaw:extended-stable" } } as DeploymentLock).next));
+    check("and says lock pins the LOCAL image of the tag, not the container", digestless[0]?.detail, imagePinAdvice("ghcr.io/openclaw/openclaw:extended-stable", { version: 1, image: { reference: "ghcr.io/openclaw/openclaw:extended-stable" } } as DeploymentLock).detail);
   } finally {
     await rm(lockPath);
   }
@@ -132,7 +139,7 @@ check("a coherent set produces no findings", codes(await validateSet(coherent())
       } catch (error) {
         refusal = error instanceof Error ? error.message : String(error);
       }
-      check("set build refuses a lock for another image", refusal.includes("does not belong to"), true);
+      check("set build refuses a lock for another image", refusal.includes(FOREIGN_DIGEST), true);
       check("the refusal carries validate's exact advice", advice !== "" && refusal.includes(advice), true);
     } finally {
       await removeBuildDeployment(deployment);
@@ -286,7 +293,7 @@ check("a five-field expression of nonsense is refused", cronProblem("a b c d e")
     const problems = await validateSet(coherent());
     check("a truncated declaration is a finding, not a clean validation", codes(problems), ["SET_DECLARATION_INVALID"]);
     check("the finding names the file", problems[0]?.detail.includes("desired-state.json"), true);
-    check("and says it is the JSON that is wrong", problems[0]?.detail.includes("not valid JSON"), true);
+    check("and says it is the JSON that is wrong", problems[0]?.detail.includes(INVALID_JSON_NOTE), true);
     check("a declaration that cannot be parsed is blocking", problems[0]?.severity, "blocking");
   } finally {
     await rm(deployment, { recursive: true, force: true });
@@ -340,7 +347,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     const pinned = problem("SET_IMAGE_UNPINNED", "");
     check("the finding is blocking like the inspection table says", pinned.severity, "blocking");
     check("the advice names a step possible before the first bootstrap", pinned.nextAction.includes("bootstrap"), true);
-    check("the advice no longer sends the reader to lock", pinned.nextAction.includes("./clawforge lock"), false);
+    check("the advice no longer sends the reader to lock", pinned.next.kind === "clawforge" && pinned.next.argv[0] === "lock", false);
 
     // build: the hard refusal stays — only validate tolerates the gap.
     let refused = false;
@@ -412,8 +419,8 @@ check("leading digits and punctuation are stripped rather than smuggled through"
       process.stderr.write = originalWrite;
     }
     check("validating that tree fails", failed, true);
-    check("blocking findings print as blocking, not warning:", text.includes("blocking: SET_RECIPE_INCOMPLETE") && !text.includes("warning: SET_RECIPE_INCOMPLETE"), true);
-    check("the summary names each failing code once", text.includes("3 blocking, 0 warning(s)") && (text.match(/SET_RECIPE_INCOMPLETE/g) ?? []).length === 3, true);
+    check("blocking findings print as blocking, not warning:", text.includes(BLOCKING_MARK + " SET_RECIPE_INCOMPLETE") && !text.includes(WARN_MARK + " SET_RECIPE_INCOMPLETE"), true);
+    check("the summary names each failing code once", text.includes(blockingWarningsSummary(3, 0)) && (text.match(/SET_RECIPE_INCOMPLETE/g) ?? []).length === 3, true);
 
     // The verb: validate reads an artifact it has no intention of installing.
     let goodText = "";
@@ -429,7 +436,7 @@ check("leading digits and punctuation are stripped rather than smuggled through"
       process.stderr.write = originalWriteAgain;
     }
     check("validate --set says checking, not installing", goodText.includes("checking") && !goodText.includes("installing"), true);
-    check("a good artifact still validates as coherent", goodText.includes("is coherent and its artifact contents match"), true);
+    check("a good artifact still validates as coherent", goodText.includes(coherentLine("demo-set", ARTIFACT_CONTENTS_MATCH)), true);
 
     // --json (a capturing sink) keeps the artifact's content id, as it always carried it.
     let captured = "";
@@ -478,8 +485,8 @@ check("leading digits and punctuation are stripped rather than smuggled through"
       process.stderr.write = originalWrite;
     }
     check("validate --set on a broken artifact fails", failed, true);
-    check("it reports the findings instead of dying in the gate", text.includes("blocking: SET_RECIPE_INCOMPLETE"), true);
-    check("the gate's bare error text is gone", text.includes("is not a valid set artifact"), false);
+    check("it reports the findings instead of dying in the gate", text.includes(BLOCKING_MARK + " SET_RECIPE_INCOMPLETE"), true);
+    check("the gate's bare error text is gone", text.includes(INVALID_ARTIFACT), false);
     check("the recipes are named", text.includes("delta") && text.includes("eps"), true);
 
     // --json: the document exists and carries every problem.
@@ -551,8 +558,8 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     } catch (error) {
       refusal = error instanceof Error ? error.message : String(error);
     }
-    check("the install-time gate still refuses a broken artifact", refusal.includes("is not a valid set artifact"), true);
-    check("the refusal dedupes the code and names the recipes", refusal.includes("SET_RECIPE_INCOMPLETE ×2") && refusal.includes("delta") && refusal.includes("eps"), true);
+    check("the install-time gate still refuses a broken artifact", refusal.includes(INVALID_ARTIFACT), true);
+    check("the refusal dedupes the code and names the recipes", refusal.includes("SET_RECIPE_INCOMPLETE" + " ×2") && refusal.includes("delta") && refusal.includes("eps"), true);
   } finally {
     await removeBuildDeployment(deployment);
   }
@@ -580,12 +587,12 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     let problems = await validateSet(coherent(), { checkFiles: true });
     check("a recipe.json that is not JSON is a finding", codes(problems), ["SET_RECIPE_INVALID"]);
     check("the finding is the loader's, naming the file", problems[0]?.detail.includes("recipes/demo/recipe.json"), true);
-    check("the remedy names the file to fix", problems[0]?.nextAction.includes("fixing recipes/demo/recipe.json"), true);
+    check("the remedy names the file to fix", problems[0]?.nextAction, recipeInvalidDefinition("demo", "").nextAction);
 
     await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), "{}");
     problems = await validateSet(coherent(), { checkFiles: true });
     check("a recipe.json missing a required field is a finding too", codes(problems), ["SET_RECIPE_INVALID"]);
-    check("with the loader's own reason", problems[0]?.detail.includes("needs a description"), true);
+    check("with the loader's own reason", problems[0]?.detail.includes(missingDescriptionDetail("demo")), true);
 
     // A valid definition leaves the recipe silent again.
     await writeFile(resolve(deployment, "recipes", "demo", "recipe.json"), JSON.stringify({ description: "demo" }));
@@ -595,12 +602,13 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     // server.ts line for all five.
     await rm(resolve(deployment, "recipes", "demo", "server.ts"));
     const missingServer = await validateSet(coherent(), { checkFiles: true });
-    check("an agent recipe without server.ts is advised to add server.ts", missingServer[0]?.nextAction.includes("adding server.ts to recipes/demo"), true);
-    check("and not to add recipe.json, which would not fix it", missingServer[0]?.nextAction.includes("recipe.json or server.ts"), false);
+    const missingServerAdvice = (missingServer[0] ?? { next: undefined }).next as CommandAdvice | undefined;
+    check("an agent recipe without server.ts is advised to add server.ts", missingServerAdvice?.note, afterNote(addingFix("server.ts", "demo")));
+    check("and not to add recipe.json, which would not fix it", missingServerAdvice?.note === SET_RECIPE_DIR_NOTE, false);
 
     await rm(resolve(deployment, "recipes", "demo", "agent", "config.json"));
     const missingConfig = await validateSet(coherent(), { checkFiles: true });
-    check("a missing agent/config.json is advised by name", missingConfig.some((entry) => entry.nextAction.includes("adding agent/config.json to recipes/demo")), true);
+    check("a missing agent/config.json is advised by name", missingConfig.some((entry) => (entry.next as CommandAdvice).note === afterNote(addingFix("agent/config.json", "demo"))), true);
 
     await rm(resolve(deployment, "recipes", "demo", "agent"), { recursive: true });
     await rm(resolve(deployment, "recipes", "demo"), { recursive: true });
@@ -658,8 +666,8 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
     }
-    check("set diff refuses naming the broken artifact", message.includes("broken.tar.gz is not a valid set artifact"), true);
-    check("and does not blame the good one", message.includes(`${good.artifact} is not a valid set artifact`), false);
+    check("set diff refuses naming the broken artifact", message.includes("broken.tar.gz" + " " + INVALID_ARTIFACT), true);
+    check("and does not blame the good one", message.includes(good.artifact + " " + INVALID_ARTIFACT), false);
 
     // The MCP path renders the same thrown message (the jsonrpc error's text); the
     // --json failure document (entry/cli.ts) embeds it verbatim too — one message, three
@@ -680,8 +688,8 @@ check("leading digits and punctuation are stripped rather than smuggled through"
     } catch (error) {
       validateMessage = error instanceof Error ? error.message : String(error);
     }
-    check("validate --set ends in the blocking-findings summary", validateMessage.includes("blocking finding(s): SET_RECIPE_INCOMPLETE"), true);
-    check("and never in integrity wording", validateMessage.includes("not a valid set artifact"), false);
+    check("validate --set ends in the blocking-findings summary", validateMessage.includes(blockingFindingsMessage(2, ["SET_RECIPE_INCOMPLETE"])), true);
+    check("and never in integrity wording", validateMessage.includes(INVALID_ARTIFACT), false);
   } finally {
     await removeBuildDeployment(deployment);
   }

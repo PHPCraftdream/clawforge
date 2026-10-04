@@ -37,6 +37,14 @@ function cronFieldLooksValid(field: string): boolean {
 }
 
 /** The reason a cron expression is refused, or undefined when it is accepted. */
+
+/** Fixed parts of the set-finding details, exported so checks assert the same text the
+ *  product prints instead of restating it. */
+export const INVALID_JSON_NOTE = "is not valid JSON";
+export function addingFix(what: string, recipe: string): string {
+  return `adding ${what} to recipes/${recipe}`;
+}
+
 export function cronProblem(expression: string): string | undefined {
   const fields = expression.trim().split(/\s+/).filter((field) => field !== "");
   if (fields.length !== 5) {
@@ -103,7 +111,7 @@ async function declaredConfig(problems: Problem[]): Promise<unknown> {
     parsed = JSON.parse(raw);
   } catch (error) {
     problems.push(
-      problem("SET_DECLARATION_INVALID", `${path} is not valid JSON: ${(error as Error).message}`),
+      problem("SET_DECLARATION_INVALID", `${path} ${INVALID_JSON_NOTE}: ${(error as Error).message}`),
     );
     return [];
   }
@@ -156,13 +164,13 @@ async function checkRecipesComplete(manifest: SetManifest, checkFiles: boolean, 
       // it an MCP recipe. A recipe without one is a plain service (its own compose stack,
       // recipe.json); demanding server.ts of it was a false positive against a real deployment.
       if (declaresAgent && !(await exists(resolve(dir, "server.ts")))) {
-        problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no server.ts — that is the file the gateway is registered to spawn`, `adding server.ts to recipes/${name}`));
+        problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no server.ts — that is the file the gateway is registered to spawn`, addingFix("server.ts", name)));
       }
       if (!declaresAgent && !(await exists(resolve(dir, "recipe.json"))) && !(await exists(resolve(dir, "server.ts")))) {
         problems.push(recipeMissingDir(name, `recipe "${name}" is neither an MCP recipe (server.ts) nor a service (recipe.json)`));
       }
       if (declaresAgent && !(await exists(resolve(dir, "agent", "config.json")))) {
-        problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no agent/config.json`, `adding agent/config.json to recipes/${name}`));
+        problems.push(recipeIncomplete(name, `recipe "${name}" declares an agent but has no agent/config.json`, addingFix("agent/config.json", name)));
       }
       // Parse the definition with the loader recipe list and recipe install use, so a
       // recipe.json `recipe list` calls broken is a finding here too instead of failing

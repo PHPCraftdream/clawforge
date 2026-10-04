@@ -25,6 +25,17 @@ import { renderAdvice } from "#src/core/io/invocation/render.ts";
 export const PLUGINS_LIST_ARGS = ["plugins", "list", "--json"] as const;
 export const SKILLS_LIST_ARGS = ["skills", "list", "--json"] as const;
 
+/** Fixed parts of the unread-inventory details, exported so the checks assert the same
+ *  text the product prints instead of restating it. */
+export function inventoryPrefix(key: "plugins" | "skills"): string {
+  return `openclaw ${key} list`;
+}
+export const NEVER_BOOTSTRAPPED_HINT = "this deployment has never been bootstrapped";
+export const NOT_RUNNING_HINT = "instance is not running — start it or bootstrap first";
+export const UNKNOWN_INVENTORY_TAIL = "; live state is unknown";
+export const NO_LONGER_INSTALLED = "no longer installed";
+export const REVIEW_BEFORE_REMOVAL = "review it, then either remove it or run `lock` to pin it deliberately";
+
 /** One entry from `openclaw plugins list --json`. `origin` is OpenClaw's provenance tag
  *  (see normalizePluginOrigin), kept raw here so a future unseen origin still travels
  *  instead of being coerced into the wrong bucket. */
@@ -69,14 +80,14 @@ function inventoryEntries(result: BatchedCliResult, key: "plugins" | "skills", p
     }
   }
   if (reason === BATCH_NOT_BOOTSTRAPPED) {
-    problems.push(problem("NOT_BOOTSTRAPPED", `openclaw ${key} list not read: this deployment has never been bootstrapped`));
+    problems.push(problem("NOT_BOOTSTRAPPED", `${inventoryPrefix(key)} not read: ${NEVER_BOOTSTRAPPED_HINT}`));
     return undefined;
   }
   if (reason === BATCH_NOT_RUNNING) {
-    problems.push(problem("GATEWAY_DOWN", `openclaw ${key} list not read: instance is not running — start it or bootstrap first`));
+    problems.push(problem("GATEWAY_DOWN", `${inventoryPrefix(key)} not read: ${NOT_RUNNING_HINT}`));
     return undefined;
   }
-  problems.push(problem("CLI_READ_FAILED", `openclaw ${key} list could not be read (${reason}); live state is unknown`));
+  problems.push(problem("CLI_READ_FAILED", `${inventoryPrefix(key)} could not be read (${reason})${UNKNOWN_INVENTORY_TAIL}`));
   return undefined;
 }
 
@@ -179,7 +190,7 @@ export function compareExtensions(
       problems.push(
         problem(
           "PLUGIN_DRIFT",
-          `plugin "${label}" is locked at version ${locked.version ?? "(unknown)"} but is no longer installed — ` +
+          `plugin "${label}" is locked at version ${locked.version ?? "(unknown)"} but is ${NO_LONGER_INSTALLED} — ` +
             `reinstall it: ${renderAdvice(pluginReinstall(label, locked.version))}`,
         ),
       );
@@ -199,7 +210,7 @@ export function compareExtensions(
       problem(
         "PLUGIN_DRIFT",
         `plugin "${live.name ?? id}" (source ${live.source}) is installed but not in the lock — ` +
-          "review it, then either remove it or run `lock` to pin it deliberately",
+          REVIEW_BEFORE_REMOVAL,
       ),
     );
   }
@@ -211,7 +222,7 @@ export function compareExtensions(
     problems.push(
       problem(
         "SKILL_DRIFT",
-        `skill "${name}" (source ${locked.source}) is locked but no longer installed — ` +
+        `skill "${name}" (source ${locked.source}) is locked but ${NO_LONGER_INSTALLED} — ` +
           `reinstall it: ${renderAdvice(skillReinstall(name))}`,
       ),
     );
@@ -222,7 +233,7 @@ export function compareExtensions(
       problem(
         "SKILL_DRIFT",
         `skill "${name}" (source ${live.source}) is installed but not in the lock — ` +
-          "review it, then either remove it or run `lock` to pin it deliberately",
+          REVIEW_BEFORE_REMOVAL,
       ),
     );
   }

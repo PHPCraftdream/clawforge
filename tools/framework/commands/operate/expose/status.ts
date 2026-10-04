@@ -20,6 +20,17 @@ export const EXPOSE_STATUS_ARGUMENTS = [
   { name: "json", description: "Emit the exposure and tailscale report as JSON", kind: "flag" },
 ] as const satisfies readonly ArgumentSpec[];
 
+/** Fixed phrases of the exposure report, exported so checks assert the same text the
+ *  product prints instead of restating it. */
+export const CONTAINER_NOT_RUNNING = "container not running";
+export const EVERY_INTERFACE_NOTE = "reachable from every interface";
+export const NO_SERVE_CONFIG = "no tailscale serve configuration";
+export function bindDriftNote(configured: string, running: string): string {
+  return `note: the running container differs from configured OC_BIND_ADDRESS=${configured} — ` +
+    `run ${commandLine("up")} to recreate the container with the .env value, or explicitly set ` +
+    `OC_BIND_ADDRESS=${running} in .env to adopt the running one.`;
+}
+
 export interface ExposureSummary {
   readonly bindAddress: string;
   readonly port: string;
@@ -73,17 +84,13 @@ async function runStatus(ctx: Context, values: Values<typeof EXPOSE_STATUS_ARGUM
   }
 
   log("gateway exposure");
-  info(`published        ${summary.bindAddress}:${summary.port}${summary.running ? "" : " (container not running — configured .env values, unconfirmed)"}`);
+  info(`published        ${summary.bindAddress}:${summary.port}${summary.running ? "" : ` (${CONTAINER_NOT_RUNNING} — configured .env values, unconfirmed)`}`);
   info(`loopback-only    ${summary.loopback ? "yes" : "no"}`);
   if (summary.running && facts?.bindAddress !== undefined && facts.bindAddress !== ctx.settings.bindAddress) {
-    info(
-      `note: the running container differs from configured OC_BIND_ADDRESS=${ctx.settings.bindAddress} — ` +
-        `run ${commandLine("up")} to recreate the container with the .env value, or explicitly set ` +
-        `OC_BIND_ADDRESS=${facts.bindAddress} in .env to adopt the running one.`,
-    );
+    info(bindDriftNote(ctx.settings.bindAddress, facts.bindAddress));
   }
   if (summary.wildcard) {
-    warn(`the gateway is published on ${summary.bindAddress} — reachable from every interface on this host, not loopback-only.`);
+    warn(`the gateway is published on ${summary.bindAddress} — ${EVERY_INTERFACE_NOTE} on this host, not loopback-only.`);
     warn(
       "put a reverse proxy with TLS and authentication in front of it (see .env.example), or set " +
         `OC_BIND_ADDRESS back to 127.0.0.1, run ${commandLine("up")} to apply it, and use ` +
@@ -104,7 +111,7 @@ async function runStatus(ctx: Context, values: Values<typeof EXPOSE_STATUS_ARGUM
     return;
   }
   const text = serveStatus.stdout.trim();
-  if (text === "") info("no tailscale serve configuration");
+  if (text === "") info(NO_SERVE_CONFIG);
   else for (const line of text.split("\n")) info(line);
 }
 

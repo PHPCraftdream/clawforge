@@ -37,8 +37,13 @@ export function imagePinAdvice(requiredImage: string, lock: DeploymentLock | und
 /** The recipe-completeness finding, with the remedy naming the exact edit for THIS gap, as a
  *  runnable command with the reason in parentheses (R33-08). An artifact's content is fixed
  *  in the tree it was built from and rebuilt. */
+/** The remedy note of a recipe-completeness finding: the reason in front of the edit. */
+export function afterNote(fix: string): string {
+  return `after ${fix}`;
+}
+
 export function recipeIncomplete(recipe: string, detail: string, fix: string, cmd = "set validate"): Problem {
-  return problem("SET_RECIPE_INCOMPLETE", detail, command(cmd, { note: `after ${fix}` }));
+  return problem("SET_RECIPE_INCOMPLETE", detail, command(cmd, { note: afterNote(fix) }));
 }
 
 /** A recipe directory that is absent, or neither an MCP recipe nor a service: the remedy

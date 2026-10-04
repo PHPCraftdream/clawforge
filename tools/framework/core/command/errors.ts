@@ -76,7 +76,7 @@ export function unknownArgumentMessage(token: string, suggestion?: string): stri
 }
 
 export function dieUnknownArgument(token: string, suggestion?: string): never {
-  throw new UnknownArgumentError(unknownArgumentMessage(token, suggestion));
+  throw new UnknownArgumentError(unknownArgumentMessage(token, suggestion), token);
 }
 
 /** An unknown sub-action word; an UnknownArgumentError so entry/cli.ts adds the --help pointer. */

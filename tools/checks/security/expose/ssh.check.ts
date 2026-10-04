@@ -11,7 +11,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { exposeSsh, sshTunnelCommand } from "#framework/commands/operate/expose/ssh.ts";
+import { exposeSsh, sshTunnelCommand, NO_TUNNEL_NOTE, SAME_URL_NOTE, SUBSTITUTE_NOTE, TOKEN_UNCHANGED_NOTE, SSH_HOST_UNSET, REAL_TERMINAL_NOTE, TUNNEL_FAILED } from "#framework/commands/operate/expose/ssh.ts";
+import { portRefusal } from "#framework/core/values/value.ts";
+import { UnknownArgumentError } from "#framework/core/command/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
 import { CommandFailedError } from "#framework/core/io/log.ts";
@@ -66,7 +68,7 @@ check("a different local port and host both come through untouched", sshTunnelCo
 
 for (const location of ["wsl", "local", "auto"]) {
   const output = await run(ctxFor({ location, transportDescription: location === "wsl" ? "wsl:Ubuntu-24.04" : location }), []);
-  checkTrue(`${location} explains no tunnel is needed`, output.includes("no SSH tunnel needed"));
+  checkTrue(`${location} explains no tunnel is needed`, output.includes(NO_TUNNEL_NOTE));
   checkTrue(`${location} still names where the gateway is directly reachable`, output.includes("http://127.0.0.1:18789"));
 }
 
@@ -74,21 +76,21 @@ for (const location of ["wsl", "local", "auto"]) {
 
 {
   const output = await run(ctxFor({ location: "ssh", sshHost: "user@host" }), []);
-  checkTrue("the exact ssh tunnel command is printed", output.includes("ssh -N -L 18789:127.0.0.1:18789 user@host"));
+  checkTrue("the exact ssh tunnel command is printed", output.includes(sshTunnelCommand("user@host", "18789", "18789").join(" ")));
   checkTrue("the resulting local URL is printed", output.includes("http://127.0.0.1:18789"));
   checkTrue(
     "with the default (matching) local port, mcp-creds' own URL is said to already be correct",
-    output.includes("mcp-creds already prints this exact URL"),
+    output.includes(SAME_URL_NOTE),
   );
 }
 
 {
   const output = await run(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "2222"]);
-  checkTrue("a custom --local-port is used in the tunnel command", output.includes("ssh -N -L 2222:127.0.0.1:18789 user@host"));
+  checkTrue("a custom --local-port is used in the tunnel command", output.includes(sshTunnelCommand("user@host", "2222", "18789").join(" ")));
   checkTrue("and in the resulting URL", output.includes("http://127.0.0.1:2222"));
   checkTrue(
     "a differing local port tells the operator to substitute it into mcp-creds' URL",
-    output.includes("substitute 2222 for 18789"),
+    output.includes(SUBSTITUTE_NOTE) && output.includes("2222"),
   );
 }
 
@@ -99,28 +101,33 @@ check(
 );
 {
   const output = await run(ctxFor({ location: "ssh", sshHost: "user@host" }), []);
-  checkTrue("and says so explicitly", output.includes("token from mcp-creds is unchanged"));
+  checkTrue("and says so explicitly", output.includes(TOKEN_UNCHANGED_NOTE));
 }
 
 checkTrue(
   "OC_SSH_HOST missing under OC_TARGET_LOCATION=ssh is refused with a clear reason",
-  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "" }), []))).includes("OC_SSH_HOST is not set"),
+  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "" }), []))).includes(SSH_HOST_UNSET),
 );
 
 // --- argument parsing ----------------------------------------------------------------------------
 
 checkTrue(
   "a non-numeric --local-port is refused",
-  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "abc"]))).includes("must be a port number between 1 and 65535"),
+  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "abc"]))).includes(portRefusal("abc")),
 );
 checkTrue(
   "a --local-port above 65535 is refused",
-  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "99999"]))).includes("must be a port number between 1 and 65535"),
+  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--local-port", "99999"]))).includes(portRefusal("99999")),
 );
-checkTrue(
-  "an unknown argument is refused",
-  (await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--bogus"]))).includes("unknown argument: --bogus"),
-);
+{
+  let caught: unknown;
+  try {
+    await exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--bogus"]);
+  } catch (error) {
+    caught = error;
+  }
+  checkTrue("an unknown argument is refused", caught instanceof UnknownArgumentError && caught.argument === "--bogus");
+}
 
 // --- --run needs a real terminal ------------------------------------------------------------------
 // Under withOutputSink, isCaptured() is true, so shouldFollow() is false regardless of any TTY —
@@ -129,7 +136,7 @@ checkTrue(
 
 checkTrue(
   "--run refuses without a real terminal, rather than blocking this check on a real ssh process",
-  (await deathOf(() => run(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]))).includes("needs a real terminal"),
+  (await deathOf(() => run(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]))).includes(REAL_TERMINAL_NOTE),
 );
 
 // Stub the builtin child boundary while keeping the real runner and CLI error handling.
@@ -180,16 +187,16 @@ checkTrue(
       } }, ["tunnel", "--run"]);
       process.stderr.write = originalWrite;
       check(`CLI propagates SSH exit ${code}`, process.exitCode, code);
-      check(`CLI reports failure only for SSH exit ${code}`, output.includes("SSH tunnel failed"), code !== 0);
+      check(`CLI reports failure only for SSH exit ${code}`, output.includes(TUNNEL_FAILED), code !== 0);
     }
 
     const beforeGate = calls.length;
-    checkTrue("capture refuses foreground even with a TTY", (await deathOf(() => run(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]))).includes("needs a real terminal"));
+    checkTrue("capture refuses foreground even with a TTY", (await deathOf(() => run(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]))).includes(REAL_TERMINAL_NOTE));
     Object.defineProperty(process.stdout, "isTTY", { value: undefined, configurable: true });
     process.stderr.write = (() => true) as typeof process.stderr.write;
     const refusal = await deathOf(() => exposeSsh(ctxFor({ location: "ssh", sshHost: "user@host" }), ["--run"]));
     process.stderr.write = originalWrite;
-    checkTrue("plain pipe refuses foreground", refusal.includes("needs a real terminal"));
+    checkTrue("plain pipe refuses foreground", refusal.includes(REAL_TERMINAL_NOTE));
     check("terminal gates never start a child", calls.length, beforeGate);
   } finally {
     childProcess.spawn = originalSpawn;

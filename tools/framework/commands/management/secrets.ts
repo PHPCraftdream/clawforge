@@ -53,6 +53,17 @@ export const SECRETS_ARGUMENTS = [
  *  store inspect's STORE_INCOMPLETE finding watches, since inspect takes no store name. */
 export const DEFAULT_SECRET_STORE = "local";
 
+/** Fixed phrases of the secrets report, exported so checks assert the same text the product
+ *  prints instead of restating it. */
+export const NOT_OWNER_ONLY = "is not owner-only";
+export const HAS_NOT_READ = "has not read";
+export const INSTANCE_STOPPED_NOTE = "the instance is stopped";
+export const INSTANCE_NOT_RUNNING_NOTE = "the instance is not running";
+export const RECREATE_NOTE = "recreate the container";
+export const REPLACED_NOTE = "replaced, not merely signalled";
+export const DOES_NOT_HOLD = "does not hold";
+export const CANNOT_READ_RUNNING_ENV = "cannot read a running container's own environment";
+
 /** Reads a local store file, dying with the store's own fix-it message — usable before any
  *  lock or transport call, so a typo in --store refuses locally. */
 async function readStoreOrDie(storeName: string): Promise<string> {
@@ -77,7 +88,7 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
   // refusing would leave the keys uninstallable while the fix stays a manual step anyway.
   const exposure = await unprotectedPrivateFile(path);
   if (exposure !== undefined) {
-    warn(`${path} is not owner-only (${exposure}) — anyone this machine's ACLs allow can read the keys in it`);
+    warn(`${path} ${NOT_OWNER_ONLY} (${exposure}) — anyone this machine's ACLs allow can read the keys in it`);
   }
 
   const values = parseEnv(raw);
@@ -136,9 +147,9 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
     // picking it up.
     const target = secretsFileOnTarget(ctx);
     if (await ctx.runtime.isRunning()) {
-      info(`${target} holds the new values, but the running instance has not read them — restart to pick them up: ${commandLine("restart")}`);
+      info(`${target} holds the new values, but the running instance ${HAS_NOT_READ} them — restart to pick them up: ${commandLine("restart")}`);
     } else {
-      info(`${target} holds the new values, and the instance is stopped — the next start reads them: ${commandLine("up")}`);
+      info(`${target} holds the new values, and ${INSTANCE_STOPPED_NOTE} — the next start reads them: ${commandLine("up")}`);
     }
   }
 
@@ -162,16 +173,16 @@ async function applyStore(ctx: Context, storeName: string): Promise<void> {
 /** Puts rotated repo-env values in force, and says what was done either way. */
 async function deliverRepositoryValues(ctx: Context, entries: SecretRequirement[], values: Record<string, string | undefined>): Promise<void> {
   if (!(await ctx.runtime.isRunning())) {
-    info(`${envFile()} holds the new values, and the instance is stopped — the next start creates the container with them: ${commandLine("up")}`);
+    info(`${envFile()} holds the new values, and ${INSTANCE_STOPPED_NOTE} — the next start creates the container with them: ${commandLine("up")}`);
     return;
   }
   // A runtime that cannot recreate gets the correct instruction, not the old lie.
   if (typeof ctx.runtime.reconcile !== "function") {
     info(`${envFile()} holds the new values, but the running container keeps the environment it was created with — a restart does not apply them`);
-    info(`recreate the container so compose interpolates the new values: ${commandLine("up")}`);
+    info(`${RECREATE_NOTE} so compose interpolates the new values: ${commandLine("up")}`);
     return;
   }
-  info("recreating the container so compose interpolates the new values — it is replaced, not merely signalled: connections drop and the service starts fresh");
+  info(`recreating the container so compose interpolates the new values — it is ${REPLACED_NOTE}: connections drop and the service starts fresh`);
   await ctx.runtime.reconcile();
   log(`waiting for the gateway at ${ctx.settings.serviceUrl}`);
   await ctx.runtime.waitForHealth();
@@ -193,7 +204,7 @@ async function confirmRepositoryValues(ctx: Context, entries: SecretRequirement[
   }
   const stale = entries.filter((entry) => environment[entry.name] !== values[entry.name]).map((entry) => entry.name);
   if (stale.length > 0) {
-    warn(`the running container does not hold the new value(s) for ${stale.join(", ")} — recreate with ${commandLine("up")}`);
+    warn(`the running container ${DOES_NOT_HOLD} the new value(s) for ${stale.join(", ")} — recreate with ${commandLine("up")}`);
     return;
   }
   log(entries.length === 1
@@ -284,9 +295,9 @@ async function dumpToStore(ctx: Context, storeName: string, force: boolean): Pro
     warn(`could not recover ${unrecovered.length} value(s) — left blank in ${path}, fill in by hand:`);
     for (const name of unrecovered) info(name);
     if (repoEntries.length > 0 && !canReadRunningEnvironment) {
-      info(`${ctx.runtime.description} cannot read a running container's own environment, so repo-env values were not attempted`);
+      info(`${ctx.runtime.description} ${CANNOT_READ_RUNNING_ENV}, so repo-env values were not attempted`);
     } else if (repoEntries.length > 0 && runningEnvironment === undefined) {
-      info("the instance is not running (or could not be inspected) — repo-env values cannot be recovered while it is stopped");
+      info(`${INSTANCE_NOT_RUNNING_NOTE} (or could not be inspected) — repo-env values cannot be recovered while it is stopped`);
     }
   }
 }

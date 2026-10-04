@@ -39,6 +39,22 @@ import type { ArgumentSpec } from "#src/core/command/index.ts";
 
 export const LOCK_VERSION = 1;
 
+/** Fixed phrases of the report, exported so the checks assert the same text the product
+ *  prints instead of restating it. */
+export const AGENT_BUNDLE_DRIFT = "the agent bundle differs from the lock";
+export const PREDATES_AGENT_BUNDLE = "the lock predates agent-bundle pinning";
+export const PREDATES_PLUGIN_PINNING = "the lock predates plugin pinning";
+export const PREDATES_SKILL_PINNING = "the lock predates skill pinning";
+export const LOCK_NOT_WRITTEN = "lock not written";
+export const COULD_NOT_COMPARE = "could not compare";
+export const REASON_NOT_RUNNING = "instance is not running";
+export const REASON_NEVER_BOOTSTRAPPED = "instance never bootstrapped";
+export const DIFFERENCES_PHRASE = "difference(s) from the lock";
+export const UNREAD_PHRASE = "inventory read(s) could not be compared";
+export function versionMismatchDetail(lockVersion: number): string {
+  return `the lock file is version ${lockVersion}, this framework writes version ${LOCK_VERSION}`;
+}
+
 export const LOCK_ARGUMENTS = [
   { name: "check", description: "Compare against the existing lock instead of writing one", kind: "flag", effect: "read" },
   { name: "json", description: "Emit the lock, or the differences, as JSON", kind: "flag" },
@@ -47,8 +63,9 @@ export const LOCK_ARGUMENTS = [
 /** Printed once the lock is written. Its own constant so it stays consistent with
  *  scaffold.ts's git-init note: the deployment directory is meant to become its own git
  *  repository (distinct from the framework's, since `apps/` is gitignored at monorepo root). */
+export const COMMIT_ADVICE_TARGET = "this deployment's own git repository (not the framework's, if the two differ)";
 export const COMMIT_ADVICE =
-  "commit it in this deployment's own git repository (not the framework's, if the two differ) " +
+  `commit it in ${COMMIT_ADVICE_TARGET} ` +
   "— that is what makes the deployment reproducible rather than merely configured";
 
 export interface DeploymentLock {
@@ -185,7 +202,7 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
     return [problem("LOCK_MISSING", `no ${"config/deployment.lock.json"} — this instance's composition is not pinned`)];
   }
   if (lock.version !== LOCK_VERSION) {
-    return [problem("LOCK_DRIFT", `the lock file is version ${lock.version}, this framework writes version ${LOCK_VERSION}`)];
+    return [problem("LOCK_DRIFT", versionMismatchDetail(lock.version))];
   }
 
   const problems: Problem[] = [];
@@ -226,7 +243,7 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
       problems.push(
         problem(
           "LOCK_DRIFT",
-          `recipe "${name}": the lock predates agent-bundle pinning and does not record it — re-pin to cover the agent's prompts`,
+          `recipe "${name}": ${PREDATES_AGENT_BUNDLE} and does not record it — re-pin to cover the agent's prompts`,
         ),
       );
     }
@@ -239,7 +256,7 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
       problems.push(
         problem(
           "LOCK_DRIFT",
-          `recipe "${name}": the agent bundle differs from the lock in ${changed.length} file(s): ${changed.slice(0, 3).join(", ")}${changed.length > 3 ? ", …" : ""}`,
+          `recipe "${name}": ${AGENT_BUNDLE_DRIFT} in ${changed.length} file(s): ${changed.slice(0, 3).join(", ")}${changed.length > 3 ? ", …" : ""}`,
         ),
       );
     }
@@ -259,10 +276,10 @@ export function compareLock(lock: DeploymentLock | undefined, current: Deploymen
   // Plugins/skills, only when the caller actually fetched them: a bare currentComposition
   // (what plan/apply ask for) leaves these undefined, and absent must not read as "none".
   if (current.plugins !== undefined && lock.plugins === undefined && current.plugins.length > 0) {
-    problems.push(problem("LOCK_DRIFT", "the lock predates plugin pinning and does not record it — re-pin to cover installed plugins"));
+    problems.push(problem("LOCK_DRIFT", `${PREDATES_PLUGIN_PINNING} and does not record it — re-pin to cover installed plugins`));
   }
   if (current.skills !== undefined && lock.skills === undefined && current.skills.length > 0) {
-    problems.push(problem("LOCK_DRIFT", "the lock predates skill pinning and does not record it — re-pin to cover installed skills"));
+    problems.push(problem("LOCK_DRIFT", `${PREDATES_SKILL_PINNING} and does not record it — re-pin to cover installed skills`));
   }
   if (current.plugins !== undefined) {
     problems.push(...compareExtensions(lock.plugins, current.plugins, undefined, []));
@@ -282,14 +299,14 @@ function summarizeCheck(problems: readonly Problem[], inventoryProblems: readonl
   const missing = others.some((entry) => entry.code === "LOCK_MISSING");
   const differences = others.filter((entry) => entry.code !== "LOCK_MISSING");
   const reason = unread.length > 0 && unread.every((entry) => entry.code === "GATEWAY_DOWN")
-    ? "instance is not running"
+    ? REASON_NOT_RUNNING
     : unread.length > 0 && unread.every((entry) => entry.code === "NOT_BOOTSTRAPPED")
-      ? "instance never bootstrapped"
+      ? REASON_NEVER_BOOTSTRAPPED
       : "inventory not read";
   const parts = [
     ...(missing ? ["no lock file to compare against"] : []),
-    ...(differences.length > 0 ? [`${differences.length} difference(s) from the lock`] : []),
-    ...(unread.length > 0 ? [`${unread.length} inventory read(s) could not be compared (${reason})`] : []),
+    ...(differences.length > 0 ? [`${differences.length} ${DIFFERENCES_PHRASE}`] : []),
+    ...(unread.length > 0 ? [`${unread.length} ${UNREAD_PHRASE} (${reason})`] : []),
   ];
   return { unread, differences, reason, summary: parts.length > 0 ? parts.join("; ") : undefined };
 }
@@ -325,7 +342,7 @@ async function runLock(ctx: Context, checkOnly: boolean, jsonOnly: boolean): Pro
     }
     log("checking the instance against config/deployment.lock.json");
     if (report.unread.length > 0) {
-      info(`could not compare — ${report.reason}:`);
+      info(`${COULD_NOT_COMPARE} — ${report.reason}:`);
       for (const entry of report.unread) info(`  ${entry.code}  ${entry.detail}`);
     }
     if (report.differences.length > 0) {
@@ -335,7 +352,7 @@ async function runLock(ctx: Context, checkOnly: boolean, jsonOnly: boolean): Pro
     dieWithExitCode(report.summary, 1);
   }
   if (inventoryProblems.length > 0) {
-    throw new Error(`lock not written: ${inventoryProblems.map((entry) => entry.detail).join("; ")}`);
+    throw new Error(`${LOCK_NOT_WRITTEN}: ${inventoryProblems.map((entry) => entry.detail).join("; ")}`);
   }
 
 

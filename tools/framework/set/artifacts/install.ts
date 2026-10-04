@@ -15,7 +15,7 @@ import { safeName } from "#src/core/values/names.ts";
 import { problem } from "#src/service/inspection.ts";
 import { writeFileAtomic } from "#src/set/ownership/ledger.ts";
 import { readFileCandidate } from "#src/set/ownership/candidate-file.ts";
-import { loadSet, validateLoadedSet, coherenceSummary, ArtifactCoherenceError, ArtifactIntegrityError } from "#src/set/load.ts";
+import { loadSet, validateLoadedSet, coherenceSummary, ArtifactCoherenceError, ArtifactIntegrityError, INVALID_ARTIFACT } from "#src/set/load.ts";
 import type { LoadedSet, VerifiedArtifact } from "#src/set/load.ts";
 import type { Problem } from "#src/service/inspection.ts";
 import type { Context } from "#src/core/context.ts";
@@ -27,7 +27,7 @@ import { digestOf, sameContent } from "#src/runtime/docker/image-ref.ts";
 // The integrity/verification machinery lives in set/load.ts (one loading pipeline for tree
 // and artifact alike); this module installs from what it loads, and must never be imported
 // BY load.ts — the dependency runs one way only (set-module-load.check.ts guards this).
-export { coherenceSummary };
+export { coherenceSummary, INVALID_ARTIFACT } from "#src/set/load.ts";
 export type { VerifiedArtifact };
 
 /** What was installed immediately before the current set — one level, not a stack, same
@@ -215,7 +215,7 @@ async function loadArtifactSet(artifact: string): Promise<LoadedSet> {
   try {
     loaded = await loadSet({ kind: "artifact", path: artifact });
   } catch (error) {
-    if (error instanceof ArtifactIntegrityError) die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
+    if (error instanceof ArtifactIntegrityError) die(`${artifact} ${INVALID_ARTIFACT}: ${(error as Error).message}`);
     throw error;
   }
   const staging = loaded.staging;
@@ -227,7 +227,7 @@ async function loadArtifactSet(artifact: string): Promise<LoadedSet> {
     return loaded;
   } catch (error) {
     await rm(staging, { recursive: true, force: true });
-    if (error instanceof ArtifactCoherenceError) die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
+    if (error instanceof ArtifactCoherenceError) die(`${artifact} ${INVALID_ARTIFACT}: ${(error as Error).message}`);
     throw error;
   }
 }
@@ -257,7 +257,7 @@ export async function withArtifactInspected<T>(
   // reports them through its own report/JSON path and an MCP client sees the problems
   // rather than "error, no problems" (R32-05).
   const loaded = await loadSet({ kind: "artifact", path: artifact }).catch((error: unknown) => {
-    if (error instanceof ArtifactIntegrityError) die(`${artifact} is not a valid set artifact: ${(error as Error).message}`);
+    if (error instanceof ArtifactIntegrityError) die(`${artifact} ${INVALID_ARTIFACT}: ${(error as Error).message}`);
     throw error;
   });
   const staging = loaded.staging;

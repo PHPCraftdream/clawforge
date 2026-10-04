@@ -27,6 +27,12 @@ import { persistedPrivatePaths } from "../security/privacy/private-paths-ledger.
 
 let explicitRecipesDir: string | undefined;
 
+/** The loader's own refusal for a recipe.json without a description, exported so the checks
+ *  assert the same text the product prints. */
+export function missingDescriptionDetail(name: string): string {
+  return `recipes/${name}/recipe.json needs a description`;
+}
+
 /** Overrides the deployment recipe root for low-level callers and checks. */
 export function useRecipesDir(directory: string): void {
   explicitRecipesDir = directory;
@@ -262,7 +268,7 @@ export function parseRecipeDefinition(name: string, raw: string): unknown {
   }
   assertShape(parsed, name);
   const description = typeof (parsed as { description?: unknown }).description === "string" ? (parsed as { description: string }).description : "";
-  if (description === "") throw new Error(`recipes/${name}/recipe.json needs a description`);
+  if (description === "") throw new Error(missingDescriptionDetail(name));
   return parsed;
 }
 

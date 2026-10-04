@@ -32,6 +32,7 @@ import { delegateToOwnFramework, refuseStrayCheckoutApp, resolveFrameworkFromSel
 import { defaultInvocation } from "./root.ts";
 import { missingAppDecision, nodeFs, resolveInstalledEntry } from "./resolve.ts";
 import type { AppDefinition } from "../core/app.ts";
+import { CANNOT_LOAD } from "./resolve.ts";
 
 // First, before anything can spawn: the flag covers this hand-over only, not descendants.
 const handedOver = takeDelegationFlag();
@@ -137,7 +138,7 @@ try {
   const cannotReadTypeScript = message.includes("Unknown file extension") || message.includes("experimental-strip-types");
   if (cannotReadTypeScript && process.env.CLAWFORGE_TYPE_STRIPPING_RETRY !== "1") retryWithTypeStripping();
 
-  reportError(`cannot load ${appFile}: ${message}`);
+  reportError(`${CANNOT_LOAD} ${appFile}: ${message}`);
   if (cannotReadTypeScript) {
     reportError("this Node cannot execute TypeScript even with --experimental-strip-types — Node 24 or newer is required");
   }

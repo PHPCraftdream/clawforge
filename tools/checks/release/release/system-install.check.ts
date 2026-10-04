@@ -10,14 +10,29 @@ import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/p
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { basename, delimiter, join, resolve } from "node:path";
 import { monorepoRoot } from "#framework/core/env.ts";
 import { createApp, appsDir } from "#framework/integration/deployment/scaffold.ts";
 import { CLAWFORGE_CONTROL_MCP_NAME, projectMcpEntries } from "#framework/integration/mcp/project.ts";
+import { usageTopLine, usageFooterHint } from "#framework/core/io/help-render.ts";
+import { command } from "#framework/core/io/invocation/advice.ts";
+import { renderAdvice } from "#framework/core/io/invocation/render.ts";
+import type { Invocation } from "#framework/core/io/invocation/index.ts";
+import { FULL_LIST_NOTE, CHECKOUT_NOTE, NO_APP_TS_HERE, RUNS_INSIDE_NOTE, CHECKOUT_ROOT_NOTE, unknownCommandMessage, didYouMeanMessage, emptyDirNote, closestCommand } from "#framework/integration/gate.ts";
+import { surfaceRegistry } from "#framework/entry/registry.ts";
+import { INIT_REFUSES_NOTE, ALREADY_INITIALISED, noSaveInstall } from "#framework/integration/deployment/init.ts";
+import { ALREADY_HOLDS_APP, NOTHING_TO_INSTALL_NOTE, IN_BASH_NOTE, NOT_INITIALISED_NOTE, FROM_CHECKOUT_ROOT, takeoverNote, CANNOT_LOAD } from "#framework/entry/resolve.ts";
+import { APP_CONFLICT_NOTE, FOREIGN_SOURCES_NOTE } from "#framework/entry/delegate.ts";
+import { INSTALLED_MARK, NOT_ON_PATH_HINT } from "#tools/dev/install-messages.ts";
 import { check, requires, finish } from "#checks/kit/harness.ts";
 import { runProcess } from "#checks/kit/spawn.ts";
 
 const windows = process.platform === "win32";
+
+const installedHint: Invocation = { program: "clawforge", mode: "installed", audience: "terminal" };
+const shimHint: Invocation = { program: "./clawforge", mode: "checkout", audience: "terminal" };
+const names = surfaceRegistry().names;
+const say = (argv: string[], on: Invocation, app?: string): string => renderAdvice(command(argv, app === undefined ? undefined : { app }), on);
 
 interface Run {
   code: number | null;
@@ -71,8 +86,8 @@ try {
   const installed = await run(process.execPath, ["--experimental-strip-types", resolve(monorepoRoot, "tools", "dev", "install-system.ts"), "--prefix", prefix], monorepoRoot, { timeoutMs: 300_000 });
   tail(installed);
   check("the installer succeeds into a scratch prefix", installed.code, 0);
-  check("and reports the installed command", installed.output.includes("==> installed:"), true);
-  check("it names a prefix that is not on PATH instead of staying silent", installed.output.includes("is not on PATH"), true);
+  check("and reports the installed command", installed.output.includes(INSTALLED_MARK), true);
+  check("it names a prefix that is not on PATH instead of staying silent", installed.output.includes(NOT_ON_PATH_HINT), true);
   check("npm's shim for this platform is in the prefix", existsSync(join(bin, windows ? "clawforge.cmd" : "clawforge")), true);
 
   const version = await clawforge(["version"], outside);
@@ -85,27 +100,27 @@ try {
   const verbose = await clawforge(["version", "--verbose"], outside);
   check("version --verbose adds the source and path lines", verbose.output.trim().split("\n").map((line) => line.trim()), [`clawforge ${expected}`, "source: global", `path: ${await realpath(globalPackage)}`]);
   const outsideStatus = await clawforge(["status"], outside);
-  check("outside any app the advice stays: run clawforge init", outsideStatus.code === 1 && outsideStatus.output.includes("initialised as an OpenClaw deployment yet") && outsideStatus.output.includes("→ clawforge init"), true);
+  check("outside any app the advice stays: run clawforge init", outsideStatus.code === 1 && outsideStatus.output.includes(NOT_INITIALISED_NOTE) && outsideStatus.output.includes(say(["init"], installedHint)), true);
 
   // Outside an app, help lists the gate commands instead of failing.
   for (const args of [["help"], ["--help"], ["-h"]]) {
     const gateHelp = await clawforge(args, outside);
     check(`outside any app clawforge ${args.join(" ")} lists the gate commands and exits 0`, gateHelp.code === 0 && ["init", "version", "completion"].every((name) => gateHelp.output.includes(name)), true);
-    check(`and points at an initialised app folder (${args.join(" ")})`, gateHelp.output.includes("initialised app folder") && !gateHelp.output.includes("no app.ts"), true);
+    check(`and points at an initialised app folder (${args.join(" ")})`, gateHelp.output.includes(FULL_LIST_NOTE) && !gateHelp.output.includes(NO_APP_TS_HERE), true);
   }
   const gateInitHelp = await clawforge(["help", "init"], outside);
-  check("outside any app help init prints init's help", gateInitHelp.code === 0 && gateInitHelp.output.includes("Refuses if app.ts already exists"), true);
+  check("outside any app help init prints init's help", gateInitHelp.code === 0 && gateInitHelp.output.includes(INIT_REFUSES_NOTE), true);
   const appHelp = await clawforge(["help", "status"], outside);
   check(
     "outside any app help <app command> prints the command's help and says where it runs (R32-09)",
-    appHelp.code === 0 && /Usage: (\.\/)?clawforge status/.test(appHelp.output) && appHelp.output.includes("runs inside an app folder"),
+    appHelp.code === 0 && /Usage: (\.\/)?clawforge status/.test(appHelp.output) && appHelp.output.includes(RUNS_INSIDE_NOTE),
     true,
   );
 
   const bareRun = await clawforge([], outside);
-  check("outside any app a bare clawforge lists the gate commands and exits 0", bareRun.code === 0 && bareRun.output.includes("init") && !bareRun.output.includes("no app.ts"), true);
+  check("outside any app a bare clawforge lists the gate commands and exits 0", bareRun.code === 0 && bareRun.output.includes("init") && !bareRun.output.includes(NO_APP_TS_HERE), true);
   const unknownHelp = await clawforge(["help", "int"], outside);
-  check("outside any app help <unknown> is an unknown command with a suggestion", unknownHelp.code === 1 && unknownHelp.output.includes("unknown command: int") && unknownHelp.output.includes("did you mean:"), true);
+  check("outside any app help <unknown> is an unknown command with a suggestion", unknownHelp.code === 1 && unknownHelp.output.includes(unknownCommandMessage("int")) && unknownHelp.output.includes(didYouMeanMessage(closestCommand("int", names)!)), true);
 
   // --- a fresh app folder with no framework of its own ----------------------------------------
   const fresh = join(outside, "cf-fresh");
@@ -119,13 +134,13 @@ try {
   tail(helped);
   check("app.ts's @clawforge/framework imports resolve to the system-wide package", helped.code, 0);
   check("so the deployment's own commands are listed", helped.output.includes("bootstrap"), true);
-  check("the global command's help footer says clawforge help <command>", helped.output.includes("Run `clawforge help <command>` or `clawforge <command> --help`"), true);
-  check("and never advises ./clawforge, which does not run in every shell", helped.output.includes("Usage: ./clawforge") || helped.output.includes("`./clawforge help"), false);
-  check("the help heading carries the directory name, not a hardcoded openclaw", helped.output.includes("cf-fresh — ") && !helped.output.includes("openclaw — "), true);
+  check("the global command's help footer says clawforge help <command>", helped.output.includes(usageFooterHint(installedHint)), true);
+  check("and never advises ./clawforge, which does not run in every shell", helped.output.includes(usageTopLine(shimHint)) || helped.output.includes(usageFooterHint(shimHint)), false);
+  check("the help heading carries the directory name, not a hardcoded openclaw", helped.output.includes("cf-fresh" + " — ") && !helped.output.includes("openclaw" + " — "), true);
   const localAgain = await clawforge(["init", "--local"], fresh);
-  check("init --local in an initialised folder prints the npm line and exits 0", localAgain.code === 0 && localAgain.output.includes("npm install --no-save "), true);
+  check("init --local in an initialised folder prints the npm line and exits 0", localAgain.code === 0 && localAgain.output.includes(noSaveInstall("")), true);
   const plainAgain = await clawforge(["init"], fresh);
-  check("plain init in an initialised folder still refuses", plainAgain.code === 1 && plainAgain.output.includes("already initialised"), true);
+  check("plain init in an initialised folder still refuses", plainAgain.code === 1 && plainAgain.output.includes(ALREADY_INITIALISED), true);
 
   // A subfolder of the app: the deployment is found upward; init there is refused, not nested.
   const sub = join(fresh, "recipes", "sub");
@@ -135,10 +150,10 @@ try {
   check("in a subfolder of the app the deployment is found upward", subHelp.code === 0 && subHelp.output.includes("bootstrap"), true);
   const subInit = await clawforge(["init"], sub);
   check("init in a subfolder of an app is refused", subInit.code, 1);
-  check("and says which ancestor holds app.ts", subInit.output.includes("already holds app.ts") && subInit.output.includes("cf-fresh"), true);
+  check("and says which ancestor holds app.ts", subInit.output.includes(ALREADY_HOLDS_APP) && subInit.output.includes("cf-fresh"), true);
   check("and creates nothing there", existsSync(join(sub, "app.ts")), false);
   const subLocal = await clawforge(["init", "--local"], sub);
-  check("init --local in a subfolder prints the editor-types line instead of refusing", subLocal.code === 0 && subLocal.output.includes("npm install --no-save "), true);
+  check("init --local in a subfolder prints the editor-types line instead of refusing", subLocal.code === 0 && subLocal.output.includes(noSaveInstall("")), true);
   check("and still writes nothing there", existsSync(join(sub, "app.ts")) || existsSync(join(sub, "config")), false);
 
   // The committed MCP launcher, as a client starts it: no local package, so the system-wide
@@ -162,7 +177,7 @@ try {
     check("without a local package the ./clawforge shim hands over to the system-wide command", shimmed.output.trim(), `clawforge ${expected}`);
     const shimHelp = await run(bash, ["./clawforge", "help"], fresh, { env });
     tail(shimHelp);
-    check("through the shim the hints say ./clawforge, which is what runs there", shimHelp.output.includes("Run `./clawforge help <command>` or `./clawforge <command> --help`") && shimHelp.output.includes("Usage: ./clawforge <command>"), true);
+    check("through the shim the hints say ./clawforge, which is what runs there", shimHelp.output.includes(usageFooterHint(shimHint)) && shimHelp.output.includes(usageTopLine(shimHint)), true);
 
     // A global `clawforge` on PATH that cannot run (npm's shim without node on PATH) must not
     // be exec'd: the shim runs the package next to it with the node it already found.
@@ -201,9 +216,9 @@ try {
   // global command behind it, so hints say the committed ./clawforge shim.
   const localBin = await run(process.execPath, [join(localPackage, "dist", "entry", "bin.js"), "help"], pinned, { env });
   tail(localBin);
-  check("an app's own package run directly hints ./clawforge", localBin.output.includes("Run `./clawforge help <command>`"), true);
+  check("an app's own package run directly hints ./clawforge", localBin.output.includes(usageFooterHint(shimHint)), true);
   const globalBin = await run(process.execPath, [join(globalPackage, "dist", "entry", "bin.js"), "help"], fresh, { env });
-  check("the global package run directly still hints clawforge", globalBin.output.includes("Run `clawforge help <command>`"), true);
+  check("the global package run directly still hints clawforge", globalBin.output.includes(usageFooterHint(installedHint)), true);
 
   const pinnedSub = join(pinned, "recipes");
   const localInfo = lastJson(await clawforge(["version", "--json"], pinnedSub));
@@ -235,7 +250,7 @@ try {
   const probe = await clawforge(["probe"], pinned);
   tail(probe);
   check("a descendant does not inherit the hand-over flag", probe.output.includes("flag:unset"), true);
-  check("so a clawforge run in another app still hands over to that app's own package", probe.output.includes(`child:clawforge ${expected}-other|`), true);
+  check("so a clawforge run in another app still hands over to that app's own package", probe.output.includes("child:" + `clawforge ${expected}-other|`), true);
 
   // --- this checkout: apps/<name> and the root hand over to the checkout's own gate -------------
   await createApp(checkoutApp);
@@ -251,14 +266,14 @@ try {
   await mkdir(emptyApp, { recursive: true });
   try {
     const emptyStatus = await clawforge(["--app", `${checkoutApp}-empty`, "status"], monorepoRoot);
-    check("--app at an empty apps/<name> offers new-app to take it over", emptyStatus.code === 1 && emptyStatus.output.includes(`→ clawforge new-app ${checkoutApp}-empty`) && !emptyStatus.output.includes("add one there"), true);
+    check("--app at an empty apps/<name> offers new-app to take it over", emptyStatus.code === 1 && emptyStatus.output.includes(emptyDirNote(emptyApp)) && emptyStatus.output.includes(say(["new-app", `${checkoutApp}-empty`], installedHint)), true);
   } finally {
     await rm(emptyApp, { recursive: true, force: true });
   }
   const inApp = await clawforge(["help"], resolve(appsDir, checkoutApp));
   tail(inApp);
   check("in apps/<name> of a checkout the checkout's own gate answers", inApp.code === 0 && inApp.output.includes("new-app"), true);
-  check("and its hints keep the name the user typed", inApp.output.includes("Run `clawforge help <command>`"), true);
+  check("and its hints keep the name the user typed", inApp.output.includes(usageFooterHint(installedHint)), true);
   const checkoutInfo = lastJson(await clawforge(["version", "--json"], resolve(appsDir, checkoutApp)));
   check("version --json in a checkout app says checkout and the checkout root", [checkoutInfo.source, checkoutInfo.path], ["checkout", await realpath(monorepoRoot)]);
   // --app is passed on once: the same name as the cwd's is kept, another one is refused.
@@ -266,17 +281,17 @@ try {
   const sameApp = await clawforge(["--app", checkoutApp, "help"], appDir);
   check("apps/<name> accepts its own --app without doubling it", sameApp.code === 0 && sameApp.output.includes("new-app"), true);
   const otherApp = await clawforge(["--app", "someone-else", "help"], appDir);
-  check("a different --app there is a clear error, not an unknown command", otherApp.code === 1 && otherApp.output.includes("conflicts with this directory") && !otherApp.output.includes("unknown command"), true);
+  check("a different --app there is a clear error, not an unknown command", otherApp.code === 1 && otherApp.output.includes(APP_CONFLICT_NOTE) && !otherApp.output.includes(unknownCommandMessage("help")), true);
   // A named deployment is named in the hints unless the cwd already selects it.
   const helpFromRoot = await clawforge(["--app", checkoutApp, "help"], monorepoRoot);
-  check("from the checkout root help hints keep the named deployment", helpFromRoot.output.includes(`clawforge --app ${checkoutApp} help <command>`), true);
+  check("from the checkout root help hints keep the named deployment", helpFromRoot.output.includes(say(["help", "<command>"], installedHint, checkoutApp)), true);
   // status needs a reachable target (Linux, WSL with docker, ssh); without one it fails before
   // any hint — gated by a declared capability, not an ad-hoc output sniff (plan stage 0.3).
   await requires("auto-target", "status hints name the named deployment", async () => {
     const fromRoot = await clawforge(["--app", checkoutApp, "status"], monorepoRoot);
-    check("from the checkout root hints keep the named deployment", fromRoot.output.includes(`clawforge --app ${checkoutApp} bootstrap`), true);
+    check("from the checkout root hints keep the named deployment", fromRoot.output.includes(say(["bootstrap"], installedHint, checkoutApp)), true);
     const fromApp = await clawforge(["status"], appDir);
-    check("from apps/<name> the cwd selects it, so hints stay plain", fromApp.output.includes("clawforge bootstrap") && !fromApp.output.includes("--app"), true);
+    check("from apps/<name> the cwd selects it, so hints stay plain", fromApp.output.includes(say(["bootstrap"], installedHint)) && !fromApp.output.includes("--app"), true);
   });
 
   // The file system may not tell apps from APPS; the hand-over must not depend on the spelling.
@@ -294,7 +309,7 @@ try {
   try {
     await writeFile(join(strayDir, "app.ts"), 'import { defineApp } from "../../../tools/framework/core/app.ts";\nexport default defineApp({});\n', "utf8");
     const stray = await clawforge(["status"], strayDir);
-    check("a checkout-style app.ts that the gate cannot take over is refused", stray.code === 1 && stray.output.includes("imports the framework sources") && !stray.output.includes("cannot load"), true);
+    check("a checkout-style app.ts that the gate cannot take over is refused", stray.code === 1 && stray.output.includes(FOREIGN_SOURCES_NOTE) && !stray.output.includes(CANNOT_LOAD), true);
     const strayVersion = await clawforge(["version"], strayDir);
     check("version answers there anyway — it does not need the app", strayVersion.code === 0 && strayVersion.output.includes("clawforge"), true);
     // Decided by content: the package specifier needs no second copy of the sources.
@@ -304,7 +319,7 @@ try {
     const scheduledStyle = await clawforge(["--project-root", strayDir, "version"], strayDir);
     check("also with --project-root", scheduledStyle.code === 0, true);
     const installedStatus = await clawforge(["status"], strayDir);
-    check("and its commands are not refused for their location", installedStatus.output.includes("imports the framework sources"), false);
+    check("and its commands are not refused for their location", installedStatus.output.includes(FOREIGN_SOURCES_NOTE), false);
   } finally {
     await rm(resolve(appsDir, `.${checkoutApp}-stray`), { recursive: true, force: true });
   }
@@ -312,23 +327,23 @@ try {
   // The global command inside a checkout never creates a deployment in the framework sources.
   const docs = resolve(monorepoRoot, "docs");
   const docsHelp = await clawforge(["help"], docs);
-  check("help in a checkout folder does not offer init and names the checkout", docsHelp.code === 0 && docsHelp.output.includes("ClawForge checkout") && !docsHelp.output.includes("clawforge init"), true);
+  check("help in a checkout folder does not offer init and names the checkout", docsHelp.code === 0 && docsHelp.output.includes(CHECKOUT_NOTE) && !docsHelp.output.includes(say(["init"], installedHint)), true);
   const inDocs = await clawforge(["status"], docs);
-  check("in a non-app subfolder of a checkout it names the checkout entry", inDocs.code === 1 && inDocs.output.includes("from its root") && !inDocs.output.includes("clawforge init"), true);
+  check("in a non-app subfolder of a checkout it names the checkout entry", inDocs.code === 1 && inDocs.output.includes(FROM_CHECKOUT_ROOT) && !inDocs.output.includes(say(["init"], installedHint)), true);
   // The checkout's own gate commands are real from any folder of the checkout — they just run at the root.
   for (const args of [["list"], ["new-app", "x"], ["check"], ["remove-app", "x"]]) {
     const subfolder = await clawforge(args, docs);
-    check(`clawforge ${args.join(" ")} from a checkout subfolder says to run it from the root, not unknown`, subfolder.code === 1 && subfolder.output.includes("checkout root") && !subfolder.output.includes("unknown command"), true);
+    check(`clawforge ${args.join(" ")} from a checkout subfolder says to run it from the root, not unknown`, subfolder.code === 1 && subfolder.output.includes(CHECKOUT_ROOT_NOTE) && !subfolder.output.includes(unknownCommandMessage(args[0])), true);
   }
   const typo = await clawforge(["stauts"], docs);
-  check("a typo outside an app is an unknown command with a suggestion, not a missing app.ts", typo.code === 1 && typo.output.includes("unknown command: stauts") && typo.output.includes("did you mean: status") && !typo.output.includes("no app.ts"), true);
+  check("a typo outside an app is an unknown command with a suggestion, not a missing app.ts", typo.code === 1 && typo.output.includes(unknownCommandMessage("stauts")) && typo.output.includes(didYouMeanMessage(closestCommand("stauts", names)!)) && !typo.output.includes(NO_APP_TS_HERE), true);
   const helpTypo = await clawforge(["help", "int"], docs);
-  check("help <typo> in a checkout never suggests init", helpTypo.code === 1 && helpTypo.output.includes("unknown command: int") && !helpTypo.output.includes("init"), true);
+  check("help <typo> in a checkout never suggests init", helpTypo.code === 1 && helpTypo.output.includes(unknownCommandMessage("int")) && !helpTypo.output.includes("init"), true);
   const emptyDocs = resolve(docs, `${checkoutApp}-empty`);
   await mkdir(emptyDocs, { recursive: true });
   try {
     const nested = await clawforge(["init"], emptyDocs);
-    check("an empty folder that is not apps/<name> is not offered for reuse", nested.code === 1 && nested.output.includes("(in bash)") && !nested.output.includes("takes over"), true);
+    check("an empty folder that is not apps/<name> is not offered for reuse", nested.code === 1 && nested.output.includes("(" + IN_BASH_NOTE + ")") && !nested.output.includes(takeoverNote(basename(emptyDocs))), true);
   } finally {
     await rm(emptyDocs, { recursive: true, force: true });
   }
@@ -336,7 +351,7 @@ try {
   await mkdir(freshApp, { recursive: true });
   try {
     const initInCheckout = await clawforge(["init"], freshApp);
-    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes("clawforge new-app <name>") && initInCheckout.output.includes("(in bash)") && initInCheckout.output.includes(`new-app ${checkoutApp}-new takes over`), true);
+    check("init inside a checkout is refused with the new-app advice", initInCheckout.code === 1 && initInCheckout.output.includes(say(["new-app", "<name>"], installedHint)) && initInCheckout.output.includes("(" + IN_BASH_NOTE + ")") && initInCheckout.output.includes(takeoverNote(`${checkoutApp}-new`)), true);
     check("and writes nothing", existsSync(join(freshApp, "app.ts")), false);
   } finally {
     await rm(freshApp, { recursive: true, force: true });
@@ -347,7 +362,7 @@ try {
     await mkdir(unusable, { recursive: true });
     try {
       const refused = await clawforge(["init"], unusable);
-      check(`init in empty apps/${folder} withholds the take-over advice`, refused.code === 1 && !refused.output.includes("takes over") && refused.output.includes("new-app <name>"), true);
+      check(`init in empty apps/${folder} withholds the take-over advice`, refused.code === 1 && !refused.output.includes(takeoverNote(basename(unusable))) && refused.output.includes(say(["new-app", "<name>"], installedHint)), true);
     } finally {
       await rm(unusable, { recursive: true, force: true });
     }
@@ -357,7 +372,7 @@ try {
   await mkdir(resolve(appDir, "recipes"), { recursive: true });
   for (const where of [appDir, resolve(appDir, "recipes")]) {
     const local = await clawforge(["init", "--local"], where);
-    check("init --local in a checkout deployment says nothing needs installing", local.code === 0 && local.output.includes("nothing to install") && !local.output.includes("npm install") && !local.output.includes("unknown command"), true);
+    check("init --local in a checkout deployment says nothing needs installing", local.code === 0 && local.output.includes(NOTHING_TO_INSTALL_NOTE) && !local.output.includes(noSaveInstall("")) && !local.output.includes(unknownCommandMessage("init")), true);
   }
 
   const atRoot = await clawforge(["help"], monorepoRoot);

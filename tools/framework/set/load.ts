@@ -38,6 +38,11 @@ import type { Problem } from "#src/service/inspection.ts";
 /** Where a set is loaded from: the working tree, or a packed artifact. */
 export type SetSource = { readonly kind: "tree" } | { readonly kind: "artifact"; readonly path: string };
 
+/** Fixed parts of the set refusals, exported so checks assert the same text the product
+ *  prints instead of restating it. */
+export const INVALID_ARTIFACT = "is not a valid set artifact";
+export const FOREIGN_DIGEST = "does not belong to";
+
 /** Thrown only while proving an artifact IS a set: the archive cannot be read, disagrees with
  *  its own manifest, or the manifest is malformed. Carries the artifact's path; the message is
  *  the bare cause so callers composing `"<path> is not a valid set artifact: …"` keep one path
@@ -115,7 +120,7 @@ async function requiredImage(image: string, tolerateUnpinned: boolean): Promise<
       // Same decision set validate reports — one advice, not two commands guessing.
       const advice = imagePinAdvice(image, lock);
       die(
-        `the lock's digest does not belong to ${image} — it was recorded for ${lock.image.reference}, ` +
+        `the lock's digest ${FOREIGN_DIGEST} ${image} — it was recorded for ${lock.image.reference}, ` +
           "and pinning it here would put the previous image's runtime under a declaration that no longer names it.\n" +
           `${renderAdvice(advice.next)}. Or set OPENCLAW_IMAGE to a @sha256 reference.`,
       );

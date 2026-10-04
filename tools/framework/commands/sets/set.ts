@@ -50,6 +50,19 @@ export * from "./set-secrets-guard.ts";
 export * from "./set-manifest.ts";
 export { collectManifest } from "#src/set/load.ts";
 
+/** Fixed phrases of set validate's own report, exported so checks assert the same text the
+ *  product prints instead of restating it. */
+export function blockingFindingsMessage(count: number, codes: readonly string[]): string {
+  return `${count} blocking finding(s): ${[...new Set(codes)].join(", ")}`;
+}
+export function blockingWarningsSummary(blocking: number, warnings: number): string {
+  return `${blocking} blocking, ${warnings} warning(s)`;
+}
+export const ARTIFACT_CONTENTS_MATCH = " and its artifact contents match";
+export function coherentLine(name: string, note = ""): string {
+  return `set ${name} is coherent${note}`;
+}
+
 /** `clawforge set validate` — the same manifest `build` would produce, or one read back
  *  from an artifact, put through every check that needs no gateway.
  *
@@ -88,11 +101,11 @@ async function validateAction(
       info(`${Object.keys(manifest.recipes).length} recipe(s), ${manifest.secrets.length} secret name(s)`);
       info("checked without a gateway; whether the pinned image supports what the recipes use is settled at install");
     } else {
-      log(`set ${manifest.name}: ${blocking.length} blocking, ${problems.length - blocking.length} warning(s)`);
+      log(`set ${manifest.name}: ${blockingWarningsSummary(blocking.length, problems.length - blocking.length)}`);
       for (const entry of problems) printProblem(entry);
     }
     if (blocking.length > 0) {
-      throw new Error(`${blocking.length} blocking finding(s): ${[...new Set(blocking.map((entry) => entry.code))].join(", ")}`);
+      throw new Error(blockingFindingsMessage(blocking.length, blocking.map((entry) => entry.code)));
     }
   };
 
@@ -104,7 +117,7 @@ async function validateAction(
     // same report as the tree — blocking: lines, the JSON document, MCP problems — instead
     // of dying as one bare error string before anything was printed (R32-05).
     return withArtifactInspected(artifact, (_staging, verified, problems) =>
-      report(verified.manifest, artifact, problems, " and its artifact contents match", verified.id));
+      report(verified.manifest, artifact, problems, ARTIFACT_CONTENTS_MATCH, verified.id));
   }
   // The tag is kept in requires.image rather than dying here: validate reports the gap
   // itself (SET_IMAGE_UNPINNED) together with everything else it found. An invalid

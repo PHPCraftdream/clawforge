@@ -35,6 +35,18 @@ export interface FsProbe {
   realpath(path: string): string;
 }
 
+/** Fixed parts of the entry refusals, exported so checks assert the same text the product
+ *  prints instead of restating it. */
+export const ALREADY_HOLDS_APP = "already holds app.ts";
+export const NOTHING_TO_INSTALL_NOTE = "nothing to install";
+export const IN_BASH_NOTE = "in bash";
+export const NOT_INITIALISED_NOTE = "has not been initialised as an OpenClaw deployment yet";
+export const FROM_CHECKOUT_ROOT = "run the gate from its root";
+export const CANNOT_LOAD = "cannot load";
+export function takeoverNote(directory: string): string {
+  return `new-app ${directory} takes over this empty directory, or remove it`;
+}
+
 export const nodeFs: FsProbe = {
   exists: (path) => existsSync(path),
   isDirectory: (path) => {
@@ -373,11 +385,11 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
   // `init --local` writes nothing, so from a subfolder it only prints the editor-types line.
   const localTypesOnly = initializing && argv.includes("--local") && ancestor !== undefined;
   if (initializing && !scheduled && ancestor !== undefined && ancestor !== here && !localTypesOnly) {
-    return { kind: "refuse", refusals: [new UserError(`${ancestor} already holds app.ts — this directory is inside that deployment; init here would nest a second one`)] };
+    return { kind: "refuse", refusals: [new UserError(`${ancestor} ${ALREADY_HOLDS_APP} — this directory is inside that deployment; init here would nest a second one`)] };
   }
   // A checkout deployment reads the framework from the checkout's sources: nothing to install.
   if (localTypesOnly && ancestor !== undefined && importsCheckoutSourcesIn(ancestor, fs)) {
-    return { kind: "checkout-types-note", line: "editor types: this deployment imports the framework from its ClawForge checkout, so they already resolve there — nothing to install (npm ci in the checkout root is enough)" };
+    return { kind: "checkout-types-note", line: `editor types: this deployment imports the framework from its ClawForge checkout, so they already resolve there — ${NOTHING_TO_INSTALL_NOTE} (npm ci in the checkout root is enough)` };
   }
   const checkout = scheduled ? undefined : findCheckoutRootIn(cwd, fs);
   if (initializing && ancestor === undefined && checkout !== undefined) {
@@ -392,10 +404,10 @@ export function resolveInstalledEntry(input: InstalledEntryInput): InstalledEntr
     // nothing rewrites it to the program that was typed.
     const advice: Advice[] = [
       command(["new-app", "<name>"]),
-      shellLine("posix", renderAdvice(command(["new-app", "<name>"]), shimInvocation()), { note: "in bash" }),
+      shellLine("posix", renderAdvice(command(["new-app", "<name>"]), shimInvocation()), { note: IN_BASH_NOTE }),
     ];
     if (reusable) {
-      advice.push(manual(`new-app ${basename(cwd)} takes over this empty directory, or remove it`));
+      advice.push(manual(takeoverNote(basename(cwd))));
     }
     return {
       kind: "refuse",
@@ -454,12 +466,12 @@ export function missingAppDecision(input: MissingAppInput): MissingAppDecision {
     return { kind: "subfolder-report", headline: `no app.ts in ${appRoot}`, refusal: subfolder };
   }
   const refusals: readonly UserError[] = checkout === undefined
-    ? [new UserError("this directory has not been initialised as an OpenClaw deployment yet", { advice: [command(["init"])] })]
+    ? [new UserError(`this directory ${NOT_INITIALISED_NOTE}`, { advice: [command(["init"])] })]
     : [
-        new UserError(`this is a ClawForge checkout (${checkout}) — run the gate from its root:`, {
+        new UserError(`this is a ClawForge checkout (${checkout}) — ${FROM_CHECKOUT_ROOT}:`, {
           advice: [
             command([]),
-            shellLine("posix", renderAdvice(command([]), shimInvocation()), { note: "in bash" }),
+            shellLine("posix", renderAdvice(command([]), shimInvocation()), { note: IN_BASH_NOTE }),
           ],
         }),
       ];

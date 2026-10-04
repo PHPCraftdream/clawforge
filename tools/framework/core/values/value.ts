@@ -44,7 +44,11 @@ export function countValue(expected = "a non-negative integer", refusal: Refusal
 /** A TCP port, 1-65535. Empty is its own refusal, as `--local-port` has always had. */
 export const PORT_RANGE = "must be a port number between 1 and 65535";
 
-export function portValue(refusal: Refusal = (raw) => (raw === "" ? "needs a port number" : `${PORT_RANGE}, got: ${raw}`)): ValueParser<number> {
+export function portRefusal(raw: string): string {
+  return raw === "" ? "needs a port number" : `${PORT_RANGE}, got: ${raw}`;
+}
+
+export function portValue(refusal: Refusal = portRefusal): ValueParser<number> {
   return {
     expected: "a port number between 1 and 65535", example: "8080", invalidExample: "70000",
     parse(raw) {

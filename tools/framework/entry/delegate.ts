@@ -20,6 +20,10 @@ import { nodeFs, checkoutGateIn, findCheckoutRootIn, frameworkOwner, strayChecko
 const PACKAGE = "@clawforge/framework";
 const DELEGATED = "CLAWFORGE_DELEGATED";
 
+/** Fixed parts of the hand-over refusals, exported for the system-install check. */
+export const APP_CONFLICT_NOTE = "conflicts with this directory";
+export const FOREIGN_SOURCES_NOTE = "imports the framework sources";
+
 /** The local package's entry point, when the app resolves one of its own. */
 function localEntry(appRoot: string): string | undefined {
   try {
@@ -71,7 +75,7 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
     reportError("--app needs a deployment name");
     process.exit(1);
   }
-  reportError(new UserError(`--app ${decision.typed} conflicts with this directory, deployment ${decision.app} of the checkout — run this from the checkout root:`, { advice: [command([], { app: decision.typed })] }));
+  reportError(new UserError(`--app ${decision.typed} ${APP_CONFLICT_NOTE}, deployment ${decision.app} of the checkout — run this from the checkout root:`, { advice: [command([], { app: decision.typed })] }));
   process.exit(1);
 }
 
@@ -81,7 +85,7 @@ export function delegateToOwnFramework(self: string, appRoot: string, launchArgv
 export function refuseStrayCheckoutApp(self: string, appRoot: string): void {
   const stray = strayCheckoutApp({ self, appRoot, fs: nodeFs });
   if (stray === undefined) return;
-  reportError(`${appRoot} imports the framework sources of the ClawForge checkout ${stray.checkout} but is not one of its apps/<name> deployments — move it into apps/<name> (new-app), or switch its imports to @clawforge/framework`);
+  reportError(`${appRoot} ${FOREIGN_SOURCES_NOTE} of the ClawForge checkout ${stray.checkout} but is not one of its apps/<name> deployments — move it into apps/<name> (new-app), or switch its imports to @clawforge/framework`);
   process.exit(1);
 }
 

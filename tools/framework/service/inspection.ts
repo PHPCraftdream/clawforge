@@ -78,6 +78,10 @@ interface CodeMeaning {
   readonly next: Advice;
 }
 
+/** The generic recipe-completeness remedy's note, exported so checks can tell the table's
+ *  advice apart from a gap-specific one. */
+export const SET_RECIPE_DIR_NOTE = "after adding recipe.json or server.ts to the recipe's directory, or removing the directory";
+
 export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
   NOT_BOOTSTRAPPED: {
     severity: "blocking",
@@ -260,7 +264,7 @@ export const PROBLEM_CODES: Record<ProblemCode, CodeMeaning> = {
     severity: "blocking",
     summary: "a recipe the set declares is absent, or lacks a file its own declaration implies",
     // The fix is an edit, not re-running the validator the finding came from (R32-05).
-    next: command("set validate", { note: "after adding recipe.json or server.ts to the recipe's directory, or removing the directory" }),
+    next: command("set validate", { note: SET_RECIPE_DIR_NOTE }),
   },
   SET_RECIPE_INVALID: {
     severity: "blocking",

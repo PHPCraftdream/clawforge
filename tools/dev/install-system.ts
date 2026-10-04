@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveOnPath, shadowMessage } from "./resolve-on-path.ts";
+import { INSTALLED_MARK, NOT_ON_PATH_HINT } from "./install-messages.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packageDir = resolve(repoRoot, "tools", "framework");
@@ -104,11 +105,11 @@ try {
     : spawnSync(shim, ["version"], { encoding: "utf8", cwd: scratch });
   if (ran.status !== 0 || !ran.stdout.includes(`clawforge ${version}`)) failed(`${shim} version`, ran);
 
-  process.stderr.write(`==> installed: ${shim} (clawforge ${version})\n`);
+  process.stderr.write(`${INSTALLED_MARK} ${shim} (clawforge ${version})\n`);
   if (onPath(bin)) {
     process.stderr.write("    in an app folder: clawforge init, then clawforge bootstrap / status / help\n");
   } else {
-    process.stderr.write(`    ${bin} is not on PATH — add it to use \`clawforge\` from any folder\n`);
+    process.stderr.write(`    ${bin} ${NOT_ON_PATH_HINT} — add it to use \`clawforge\` from any folder\n`);
   }
   // Only for npm's own global prefix: a scratch --prefix is never expected to be on PATH.
   const shadow = requestedPrefix === undefined ? shadowMessage(shim, resolveOnPath("clawforge")) : undefined;

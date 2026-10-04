@@ -16,6 +16,10 @@ import { sudoForRead } from "../runtime/datadir.ts";
 /** Where a variable is expected to be defined. */
 export type SecretLocation = "repo-env" | "target-env";
 
+/** The template's note for a repo-env value, exported so checks assert the same text the
+ *  product prints. */
+export const REPO_ENV_COPY_NOTE = "already exists in the repository's own .env";
+
 export interface SecretRequirement {
   /** Environment variable name. */
   readonly name: string;
@@ -357,7 +361,7 @@ export function template(entries: SecretRequirement[]): string {
     // A repo-env value is owned by the repository's own .env (compose/bootstrap wrote it
     // once) — inventing a fresh one here produces a value nothing running agrees with.
     if (location === "repo-env") {
-      lines.push("# a repo-env value usually already exists in the repository's own .env — copy it here, do not invent a new one");
+      lines.push(`# a repo-env value usually ${REPO_ENV_COPY_NOTE} — copy it here, do not invent a new one`);
     }
     for (const entry of group) {
       lines.push(`# used by: ${entry.usedBy}`);

@@ -269,6 +269,12 @@ export function resetWslBoundaryDedupe(): void {
   reportedBoundaryDirs.clear();
 }
 
+/** Fixed phrases of the boundary report, exported so checks assert the same text the
+ *  product prints instead of restating it. */
+export const WSL_BOUNDARY_NOTE = "Windows/WSL boundary";
+export const UNLISTED_NOTE = "could not be listed";
+export const OPEN_IN_ANOTHER_PROGRAM = "open in another program";
+
 /** What the boundary probe below found, before either caller turns it into text. */
 type WslBoundaryFindings = { exposed: { distro: string; targetPath: string }[]; unverified: string[] };
 
@@ -286,7 +292,7 @@ async function findWslBoundary(file: string): Promise<WslBoundaryFindings | unde
   const unverified: string[] = [];
   const exposed: { distro: string; targetPath: string }[] = [];
   if (listing.state === "unlisted") {
-    unverified.push(`the installed distributions could not be listed (${listing.reason})`);
+    unverified.push(`the installed distributions ${UNLISTED_NOTE} (${listing.reason})`);
   }
   for (const distro of listing.state === "listed" ? listing.distros : []) {
     const targetPath = await automountedPath(distro, file);
@@ -323,7 +329,7 @@ async function reportWslBoundary(file: string): Promise<void> {
     );
   }
   if (unverified.length > 0) {
-    warn(`could not verify ${file} as owner-only across the Windows/WSL boundary — ${unverified.join("; ")}`);
+    warn(`could not verify ${file} as owner-only across the ${WSL_BOUNDARY_NOTE} — ${unverified.join("; ")}`);
     info(
       "check by hand with: wsl.exe -d <distro> -u root --exec runuser -u nobody -- head -c 0 <path in the distribution>; " +
         "a file this opens is readable by every Linux user of this machine",
@@ -519,7 +525,7 @@ export async function renameOverPrivateFile(temporary: string, file: string): Pr
       if (!transient || attempt >= attempts) {
         if (privateFileHost.platform === "win32" && transient) {
           throw new Error(
-            `could not replace ${file}: it appears to be open in another program (an editor, backup tool or ` +
+            `could not replace ${file}: it appears to be ${OPEN_IN_ANOTHER_PROGRAM} (an editor, backup tool or ` +
               `antivirus scan) — close it and retry (${(error as Error).message})`,
           );
         }

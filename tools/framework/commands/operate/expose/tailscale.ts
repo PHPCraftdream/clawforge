@@ -33,6 +33,10 @@ export const EXPOSE_TAILSCALE_ARGUMENTS = [
   ...LOCK_TAKEOVER_ARGUMENTS,
 ] as const satisfies readonly ArgumentSpec[];
 
+/** The probe's refusal when the target has no tailscale, exported so checks assert the same
+ *  text the product prints. */
+export const TAILSCALE_ABSENT = "tailscale is not installed on the target";
+
 export interface TailscaleProbe {
   readonly present: boolean;
   readonly loggedIn: boolean;
@@ -54,7 +58,7 @@ function backendState(result: ExecResult): string | undefined {
 export async function probeTailscale(ctx: Context): Promise<TailscaleProbe> {
   const found = await ctx.transport.exec("sh", ["-c", "command -v tailscale"], { allowFailure: true });
   if (found.code !== 0 || found.stdout.trim() === "") {
-    return { present: false, loggedIn: false, detail: "tailscale is not installed on the target" };
+    return { present: false, loggedIn: false, detail: TAILSCALE_ABSENT };
   }
   const status = await ctx.transport.exec("tailscale", ["status", "--json"], { allowFailure: true });
   if (status.code !== 0) {
@@ -146,7 +150,7 @@ async function runTailscale(ctx: Context, values: Values<typeof EXPOSE_TAILSCALE
     return;
   }
 
-  if (!probe.present) die("cannot --apply: tailscale is not installed on the target");
+  if (!probe.present) die(`cannot --apply: ${TAILSCALE_ABSENT}`);
   if (!probe.loggedIn) die(`cannot --apply: ${probe.detail}`);
 
   await requireBootstrapped(ctx);

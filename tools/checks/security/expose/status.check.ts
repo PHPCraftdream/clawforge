@@ -3,7 +3,11 @@
 // not-running, and the full command: it must warn loudly on 0.0.0.0/::, stay quiet on a
 // loopback address, and fold in a tailscale summary only when tailscale is present.
 
-import { summarizeExposure, exposureOneLiner } from "#framework/commands/operate/expose/status.ts";
+import { summarizeExposure, exposureOneLiner, CONTAINER_NOT_RUNNING, EVERY_INTERFACE_NOTE, NO_SERVE_CONFIG, bindDriftNote } from "#framework/commands/operate/expose/status.ts";
+import { TAILSCALE_ABSENT } from "#framework/commands/operate/expose/tailscale.ts";
+import { commandLine } from "#framework/core/io/invocation/render.ts";
+import { WARN_MARK } from "#framework/core/io/log.ts";
+import { UnknownArgumentError } from "#framework/core/command/index.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -105,45 +109,45 @@ async function run(ctx: Context): Promise<string> {
 {
   const output = await run(ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false }));
   check("loopback: no warning at all", output.includes("warning:"), false);
-  checkTrue("loopback-only is reported yes", output.includes("loopback-only    yes"));
-  checkTrue("tailscale absent is reported", output.includes("tailscale is not installed on the target"));
+  checkTrue("loopback-only is reported yes", output.includes("loopback-only" + "    yes"));
+  checkTrue("tailscale absent is reported", output.includes(TAILSCALE_ABSENT));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "0.0.0.0", port: "18789" }, { present: false }));
-  checkTrue("0.0.0.0 warns loudly", output.includes("warning:") && output.includes("reachable from every interface"));
-  checkTrue("and suggests the fix", output.includes("expose ssh or ./clawforge expose tailscale"));
-  checkTrue("loopback-only is reported no", output.includes("loopback-only    no"));
+  checkTrue("0.0.0.0 warns loudly", output.includes(WARN_MARK) && output.includes(EVERY_INTERFACE_NOTE));
+  checkTrue("and suggests the fix", output.includes(commandLine(["expose", "ssh"]) + " or " + commandLine(["expose", "tailscale"]) + " instead"));
+  checkTrue("loopback-only is reported no", output.includes("loopback-only" + "    no"));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "::", port: "18789" }, { present: false }));
-  checkTrue(":: (IPv6 wildcard) warns loudly too", output.includes("warning:") && output.includes("reachable from every interface"));
+  checkTrue(":: (IPv6 wildcard) warns loudly too", output.includes(WARN_MARK) && output.includes(EVERY_INTERFACE_NOTE));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "10.0.0.5", port: "18789" }, { present: false }));
-  checkTrue("a non-wildcard, non-loopback address gets a softer warning, not the loud one", output.includes("warning:") && !output.includes("reachable from every interface"));
+  checkTrue("a non-wildcard, non-loopback address gets a softer warning, not the loud one", output.includes(WARN_MARK) && !output.includes(EVERY_INTERFACE_NOTE));
 }
 
 {
   const output = await run(ctxFor(undefined, { present: false }));
-  checkTrue("not running: configured .env values are shown, unconfirmed", output.includes("container not running"));
+  checkTrue("not running: configured .env values are shown, unconfirmed", output.includes(CONTAINER_NOT_RUNNING));
 }
 
 {
   const output = await run(ctxFor({ bindAddress: "0.0.0.0", port: "18789" }, { present: false }));
-  checkTrue("a drifted bind address (vs. configured .env) is noted", output.includes("differs from configured OC_BIND_ADDRESS"));
-  checkTrue("bind drift recommends recreation with up", output.includes("./clawforge up to recreate the container with the .env value"));
-  checkTrue("adopting a running bind requires the explicit .env edit", output.includes("OC_BIND_ADDRESS=0.0.0.0 in .env to adopt the running one"));
+  checkTrue("a drifted bind address (vs. configured .env) is noted", output.includes(bindDriftNote("127.0.0.1", "0.0.0.0")));
+  checkTrue("bind drift recommends recreation with up", output.includes(bindDriftNote("127.0.0.1", "0.0.0.0")));
+  checkTrue("adopting a running bind requires the explicit .env edit", output.includes(bindDriftNote("127.0.0.1", "0.0.0.0")));
   check("bind drift never recommends restart or unsupported recovery", /restart|recover-env/.test(output), false);
 }
 
 {
   const ctx = ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false });
   const output = await run({ ...ctx, settings: { ...ctx.settings, bindAddress: "0.0.0.0" } });
-  checkTrue("reverse bind drift also recommends up", output.includes("./clawforge up to recreate the container"));
-  checkTrue("reverse bind drift offers the actual runtime bind", output.includes("OC_BIND_ADDRESS=127.0.0.1 in .env"));
+  checkTrue("reverse bind drift also recommends up", output.includes(bindDriftNote("0.0.0.0", "127.0.0.1")));
+  checkTrue("reverse bind drift offers the actual runtime bind", output.includes(bindDriftNote("0.0.0.0", "127.0.0.1")));
   check("reverse drift does not suggest unsupported recovery", output.includes("recover-env"), false);
 }
 
@@ -154,7 +158,7 @@ async function run(ctx: Context): Promise<string> {
 
 {
   const output = await run(ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: true, serveStatus: "" }));
-  checkTrue("tailscale present but nothing served", output.includes("no tailscale serve configuration"));
+  checkTrue("tailscale present but nothing served", output.includes(NO_SERVE_CONFIG));
 }
 
 // --- exposeStatus --json / captured: the structured counterpart -----------------------------
@@ -210,13 +214,13 @@ async function runJson(ctx: Context, args: string[]): Promise<Record<string, unk
 
 {
   const ctx = ctxFor({ bindAddress: "127.0.0.1", port: "18789" }, { present: false });
-  let message: string | undefined;
+  let caught: unknown;
   try {
     await withOutputSink(() => {}, () => exposeStatus(ctx, ["--bogus"]));
   } catch (error) {
-    message = error instanceof Error ? error.message : String(error);
+    caught = error;
   }
-  check("an unknown argument is refused", message?.includes("unknown argument: --bogus"), true);
+  check("an unknown argument is refused", caught instanceof UnknownArgumentError && caught.argument === "--bogus", true);
 }
 
 finish("expose status");

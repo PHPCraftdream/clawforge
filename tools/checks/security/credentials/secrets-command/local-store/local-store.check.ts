@@ -5,7 +5,10 @@ import { readFile, writeFile, stat, chmod, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
-import { secrets } from "#framework/commands/management/secrets.ts";
+import { secrets, NOT_OWNER_ONLY, HAS_NOT_READ, INSTANCE_STOPPED_NOTE, INSTANCE_NOT_RUNNING_NOTE, RECREATE_NOTE, REPLACED_NOTE, DOES_NOT_HOLD, CANNOT_READ_RUNNING_ENV } from "#framework/commands/management/secrets.ts";
+import { REPO_ENV_COPY_NOTE } from "#framework/service/secrets.ts";
+import { command } from "#framework/core/io/invocation/advice.ts";
+import { renderAdvice } from "#framework/core/io/invocation/render.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import { spawnLocal } from "#framework/runtime/transport/transport.ts";
 import type { Context } from "#framework/core/context.ts";
@@ -182,7 +185,7 @@ try {
   const hintStore = resolve(deployDir, "secrets", "hint.env");
   const hintTemplate = await readFile(hintStore, "utf8");
   checkTrue("a central store template includes repository requirements", hintTemplate.includes("REPO_SECRET="));
-  checkTrue("the repo-env section tells the operator to copy the existing value", hintTemplate.includes("already exists in the repository's own .env"));
+  checkTrue("the repo-env section tells the operator to copy the existing value", hintTemplate.includes(REPO_ENV_COPY_NOTE));
   await writeFile(hintStore, "ZAI_API_KEY=zai-value\n", "utf8");
 
   running = true;
@@ -193,9 +196,9 @@ try {
     },
     () => secrets(applyCtx, ["--apply", "--store", "hint"]),
   );
-  checkTrue("a running instance is told to restart, not to run up", runningOutput.includes("./clawforge restart"));
-  check("the running hint does not name ./clawforge up", runningOutput.includes("./clawforge up"), false);
-  checkTrue("the running hint says the file is written but has not been read", runningOutput.includes("has not read"));
+  checkTrue("a running instance is told to restart, not to run up", runningOutput.includes(renderAdvice(command(["restart"]))));
+  check("the running hint does not name ./clawforge up", runningOutput.includes(renderAdvice(command(["up"]))), false);
+  checkTrue("the running hint says the file is written but has not been read", runningOutput.includes(HAS_NOT_READ));
   check("the values were installed before the hint is given", targetEnvContent, "ZAI_API_KEY=zai-value\n");
 
   running = false;
@@ -206,8 +209,8 @@ try {
     },
     () => secrets(applyCtx, ["--apply", "--store", "hint"]),
   );
-  checkTrue("a stopped instance is told to start, not to restart", stoppedOutput.includes("./clawforge up"));
-  check("the stopped hint does not name ./clawforge restart", stoppedOutput.includes("./clawforge restart"), false);
+  checkTrue("a stopped instance is told to start, not to restart", stoppedOutput.includes(renderAdvice(command(["up"]))));
+  check("the stopped hint does not name ./clawforge restart", stoppedOutput.includes(renderAdvice(command(["restart"]))), false);
 
   // The same contract on the status listing's own hint (the missing-secrets branch):
   // which command applies the change depends on whether an instance is running at all.
@@ -387,7 +390,7 @@ try {
       },
       () => secrets(applyCtx, ["--apply", "--store", "sealed"]),
     );
-    checkTrue("applying a store that is not owner-only says so, naming the file", exposedOutput.includes(sealedStore) && exposedOutput.includes("not owner-only"));
+    checkTrue("applying a store that is not owner-only says so, naming the file", exposedOutput.includes(sealedStore) && exposedOutput.includes(NOT_OWNER_ONLY));
     check("the exposure report never carries the value", exposedOutput.includes("zai-value"), false);
     check("the report is a warning, not a refusal — the values are still installed", targetEnvContent, "ZAI_API_KEY=zai-value\n");
   }
@@ -446,10 +449,10 @@ try {
     );
     checkTrue("a running instance gets the recreate performed, not suggested", delivered.reconciled);
     checkTrue("the command waits for health after recreating", delivered.waited);
-    checkTrue("the recreate is announced as replacing the container", deliveryOutput.includes("replaced, not merely signalled"));
+    checkTrue("the recreate is announced as replacing the container", deliveryOutput.includes(REPLACED_NOTE));
     checkTrue("the confirmation names the variable in force", deliveryOutput.includes("confirmed") && deliveryOutput.includes("REPO_SECRET"));
     check("the confirmation never carries the value", deliveryOutput.includes("repo-value-two"), false);
-    check("nothing suggests restart for repository values", deliveryOutput.includes("./clawforge restart"), false);
+    check("nothing suggests restart for repository values", deliveryOutput.includes(renderAdvice(command(["restart"]))), false);
 
     // A container that still answers with the previous value is named, by variable only.
     await writeFile(repositoryStore, "REPO_SECRET=repo-value-three\n", "utf8");
@@ -461,9 +464,9 @@ try {
       },
       () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
     );
-    checkTrue("a container still holding the old value is reported by name", staleOutput.includes("REPO_SECRET") && staleOutput.includes("does not hold"));
+    checkTrue("a container still holding the old value is reported by name", staleOutput.includes("REPO_SECRET") && staleOutput.includes(DOES_NOT_HOLD));
     check("the mismatch report never carries either value", staleOutput.includes("repo-value-three") || staleOutput.includes("previous-value"), false);
-    checkTrue("the mismatch repair names the recreate", staleOutput.includes("./clawforge up"));
+    checkTrue("the mismatch repair names the recreate", staleOutput.includes(renderAdvice(command(["up"]))));
 
     // Without the capability the command says so and hands over the honest verb.
     delete applyCtx.runtime.reconcile;
@@ -475,8 +478,8 @@ try {
       },
       () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
     );
-    checkTrue("a runtime that cannot recreate is told to run up", incapableOutput.includes("recreate the container") && incapableOutput.includes("./clawforge up"));
-    check("the incapable runtime still gets no restart suggestion", incapableOutput.includes("./clawforge restart"), false);
+    checkTrue("a runtime that cannot recreate is told to run up", incapableOutput.includes(RECREATE_NOTE) && incapableOutput.includes(renderAdvice(command(["up"]))));
+    check("the incapable runtime still gets no restart suggestion", incapableOutput.includes(renderAdvice(command(["restart"]))), false);
 
     // Stopped: the next start creates the container with the new values.
     running = false;
@@ -489,7 +492,7 @@ try {
       },
       () => secrets(applyCtx, ["--apply", "--store", "repo-delivery"]),
     );
-    checkTrue("a stopped instance is told the next start carries the values", stoppedDeliveryOutput.includes("the instance is stopped") && stoppedDeliveryOutput.includes("./clawforge up"));
+    checkTrue("a stopped instance is told the next start carries the values", stoppedDeliveryOutput.includes(INSTANCE_STOPPED_NOTE) && stoppedDeliveryOutput.includes(renderAdvice(command(["up"]))));
     check("a stopped instance is not recreated by --apply", delivered.reconciled, reconciledBefore);
 
     // The dump block below proves target-env recovery with a ZAI_API_KEY value, which only
@@ -549,7 +552,7 @@ try {
     const partialContent = await readFile(recoveredStore, "utf8");
     checkTrue("an unrecovered repo-env name is left blank", /^REPO_SECRET=$/m.test(partialContent));
     checkTrue("an unrecovered name is reported by name", partialOutput.includes("REPO_SECRET"));
-    check("a running instance that answers empty is not reported as not running", partialOutput.includes("not running"), false);
+    check("a running instance that answers empty is not reported as not running", partialOutput.includes(INSTANCE_NOT_RUNNING_NOTE), false);
 
     // The runtime cannot introspect its container at all (the default stub above).
     applyCtx.runtime.runningEnvironment = undefined;
@@ -560,7 +563,7 @@ try {
       },
       () => secrets(applyCtx, ["--dump", "--store", "recovered", "--force"]),
     );
-    checkTrue("a runtime without the capability says so", noCapabilityOutput.includes("cannot read a running container's own environment"));
+    checkTrue("a runtime without the capability says so", noCapabilityOutput.includes(CANNOT_READ_RUNNING_ENV));
 
     // The runtime has the capability but reports the instance unreachable/not running.
     applyCtx.runtime.runningEnvironment = async () => undefined;
@@ -571,7 +574,7 @@ try {
       },
       () => secrets(applyCtx, ["--dump", "--store", "recovered", "--force"]),
     );
-    checkTrue("an unreachable running instance is reported as such", notRunningOutput.includes("the instance is not running"));
+    checkTrue("an unreachable running instance is reported as such", notRunningOutput.includes(INSTANCE_NOT_RUNNING_NOTE));
   }
 } finally {
   await teardownDeployment(deployDir);

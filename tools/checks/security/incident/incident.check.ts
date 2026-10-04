@@ -12,6 +12,9 @@ import { tmpdir } from "node:os";
 import {
   refuseIfPubliclyExposed, containExposure, rotateToken, runAudits, preserveEvidence, collectEvidence, runPhases,
   IncidentPhaseFailure,
+  PUBLIC_EXPOSURE_NOTE, NOTHING_TO_TURN_OFF, NO_GATEWAY_ROUTE, WOULD_RUN, RAN, NOTHING_TO_ROTATE, WOULD_ROTATE,
+  ROTATED_TOKEN, RECREATING_GATEWAY, UNCONFIRMED_TOKEN, WOULD_PRESERVE, NO_PRE_ROTATE_EVIDENCE, WOULD_COLLECT,
+  CONTAIN_FAILED, auditFindingsSummary,
 } from "#framework/commands/operate/incident/index.ts";
 import { useDeployment, envFile } from "#framework/runtime/deployment.ts";
 import { unprotectedPrivateFile } from "#framework/security/privacy/private-file.ts";
@@ -22,6 +25,8 @@ import { readEnvValue } from "#framework/core/env.ts";
 import type { ExecResult } from "#framework/runtime/transport/transport.ts";
 import { openclawCommands } from "#framework/commands/interface/index.ts";
 import { callFactsFor, effectProfile, UnknownArgumentError } from "#framework/core/command/index.ts";
+import { command } from "#framework/core/io/invocation/advice.ts";
+import { renderAdvice } from "#framework/core/io/invocation/render.ts";
 import { executeCommand } from "#framework/core/command/execute.ts";
 import type { AppDefinition } from "#framework/core/app.ts";
 import type { Transport } from "#framework/runtime/transport/transport.ts";
@@ -111,9 +116,9 @@ await withDeployment(async () => {
   } catch (error) {
     thrown = error instanceof Error ? error.message : String(error);
   }
-  checkTrue("a publicly bound gateway refuses outright without --keep-exposure", thrown.includes("every interface"));
+  checkTrue("a publicly bound gateway refuses outright without --keep-exposure", thrown.includes(PUBLIC_EXPOSURE_NOTE));
   checkTrue("naming the override", thrown.includes("--keep-exposure"));
-  checkTrue("naming the exact fix", thrown.includes("OC_BIND_ADDRESS=127.0.0.1") && thrown.includes("./clawforge up"));
+  checkTrue("naming the exact fix", thrown.includes("OC_BIND_ADDRESS=127.0.0.1") && thrown.includes(renderAdvice(command(["up"]))));
 });
 
 await withDeployment(async () => {
@@ -151,20 +156,20 @@ await withDeployment(async () => {
 await withDeployment(async () => {
   const ctx = stubContext({ tailscale: { present: false, loggedIn: false } });
   const phase = await containExposure(ctx, { dryRun: false, keepExposure: false, tail: "500" });
-  checkTrue("tailscale absent: nothing to turn off", phase.actions.some((line) => line.includes("nothing to turn off")));
+  checkTrue("tailscale absent: nothing to turn off", phase.actions.some((line) => line.includes(NOTHING_TO_TURN_OFF)));
   check("no serve exec attempted at all", ctx.execCalls.some((call) => call[0] === "tailscale" && call[1] === "serve"), false);
 });
 
 await withDeployment(async () => {
   const ctx = stubContext({ tailscale: { present: true, loggedIn: true, serveJson: "{}" } });
   const phase = await containExposure(ctx, { dryRun: false, keepExposure: false, tail: "500" });
-  checkTrue("tailscale present but no route to this gateway: nothing to turn off", phase.actions.some((line) => line.includes("no route to this gateway")));
+  checkTrue("tailscale present but no route to this gateway: nothing to turn off", phase.actions.some((line) => line.includes(NO_GATEWAY_ROUTE)));
 });
 
 await withDeployment(async () => {
   const ctx = stubContext({ tailscale: { present: true, loggedIn: true, serveJson: GATEWAY_ROUTE_JSON } });
   const phase = await containExposure(ctx, { dryRun: true, keepExposure: false, tail: "500" });
-  checkTrue("dry-run: prints the exact off command", phase.actions.some((line) => line.includes("would run: tailscale serve --https=443 off")));
+  checkTrue("dry-run: prints the exact off command", phase.actions.some((line) => line.includes(WOULD_RUN) && line.includes("tailscale serve --https=443 off")));
   check("dry-run: never actually turns it off", ctx.execCalls.some((call) => call.includes("off")), false);
 });
 
@@ -172,7 +177,7 @@ await withDeployment(async () => {
   const ctx = stubContext({ tailscale: { present: true, loggedIn: true, serveJson: GATEWAY_ROUTE_JSON } });
   const phase = await containExposure(ctx, { dryRun: false, keepExposure: false, tail: "500" });
   checkTrue("the gateway's own route is actually turned off", ctx.execCalls.some((call) => call.join(" ") === "tailscale serve --https=443 off"));
-  checkTrue("and reported", phase.actions.some((line) => line.includes("ran: tailscale serve --https=443 off")));
+  checkTrue("and reported", phase.actions.some((line) => line.includes(RAN) && line.includes("tailscale serve --https=443 off")));
 });
 
 await withDeployment(async () => {
@@ -231,7 +236,7 @@ await withDeployment(async (dir) => {
   await writeFile(resolve(dir, ".env"), "OC_BIND_ADDRESS=127.0.0.1\n", "utf8");
   const ctx = stubContext({});
   const phase = await rotateToken(ctx, { dryRun: false, keepExposure: false, tail: "500" });
-  checkTrue("no token configured: nothing to rotate", phase.actions.some((line) => line.includes("nothing to rotate")));
+  checkTrue("no token configured: nothing to rotate", phase.actions.some((line) => line.includes(NOTHING_TO_ROTATE)));
   check("the file is untouched", await readFile(resolve(dir, ".env"), "utf8"), "OC_BIND_ADDRESS=127.0.0.1\n");
 });
 
@@ -239,7 +244,7 @@ await withDeployment(async (dir) => {
   await writeFile(resolve(dir, ".env"), "OPENCLAW_GATEWAY_TOKEN=old-token-value-0123456789\n", "utf8");
   const ctx = stubContext({});
   const phase = await rotateToken(ctx, { dryRun: true, keepExposure: false, tail: "500" });
-  checkTrue("dry-run: prints the plan", phase.actions.some((line) => line.includes("would rotate")));
+  checkTrue("dry-run: prints the plan", phase.actions.some((line) => line.includes(WOULD_ROTATE)));
   check("dry-run: the token is untouched", await readFile(resolve(dir, ".env"), "utf8"), "OPENCLAW_GATEWAY_TOKEN=old-token-value-0123456789\n");
 });
 
@@ -258,7 +263,7 @@ await withDeployment(async (dir) => {
   const rewritten = await readFile(resolve(dir, ".env"), "utf8");
   const newToken = /^OPENCLAW_GATEWAY_TOKEN=(.*)$/m.exec(rewritten)?.[1];
   checkTrue("a new token is written", newToken !== undefined && newToken !== "old-token-value-0123456789" && newToken !== "");
-  checkTrue("the recreate is performed", phase.actions.some((line) => line.includes("recreating the gateway")));
+  checkTrue("the recreate is performed", phase.actions.some((line) => line.includes(RECREATING_GATEWAY)));
   checkTrue("the new token is confirmed in force", phase.actions.some((line) => line.includes("confirmed")));
   checkTrue("MCP clients are told to re-pair", phase.notes.some((line) => line.includes("mcp-creds")));
   check("no secret value ever appears in the phase's own text", JSON.stringify(phase).includes(newToken ?? "\0"), false);
@@ -271,14 +276,14 @@ await withDeployment(async () => {
   const ctx = stubContext({ running: true, runningEnvironment: async () => ({ OPENCLAW_GATEWAY_TOKEN: "old-token-value-0123456789" }) });
   const phase = await rotateToken(ctx, { dryRun: false, keepExposure: false, tail: "500" });
   check("a container still answering with the old token is not reported as confirmed", phase.actions.some((line) => line.includes("confirmed")), false);
-  checkTrue("it is reported as unconfirmed instead", phase.notes.some((line) => line.includes("could not confirm")));
+  checkTrue("it is reported as unconfirmed instead", phase.notes.some((line) => line.includes(UNCONFIRMED_TOKEN)));
 });
 
 await withDeployment(async () => {
   await writeFile(resolve(envFile()), "OPENCLAW_GATEWAY_TOKEN=old-token-value-0123456789\n", "utf8");
   const ctx = stubContext({ running: false });
   const phase = await rotateToken(ctx, { dryRun: false, keepExposure: false, tail: "500" });
-  checkTrue("a stopped instance is told the next start carries the new token", phase.notes.some((line) => line.includes("./clawforge up")));
+  checkTrue("a stopped instance is told the next start carries the new token", phase.notes.some((line) => line.includes(renderAdvice(command(["up"])))));
 });
 
 // U2: an `export ... # comment` token line — invisible to the old ad-hoc regex, which
@@ -295,14 +300,14 @@ await withDeployment(async (dir) => {
     newToken !== undefined && newToken !== "" && newToken !== "old-token-value-0123456789",
   );
   check("no second token line is appended", (rewritten.match(/OPENCLAW_GATEWAY_TOKEN/g) ?? []).length, 1);
-  checkTrue("rotate still reports it ran (not 'nothing to rotate')", phase.actions.some((line) => line.includes("rotated OPENCLAW_GATEWAY_TOKEN")));
+  checkTrue("rotate still reports it ran (not 'nothing to rotate')", phase.actions.some((line) => line.includes(ROTATED_TOKEN)));
 });
 
 await withDeployment(async () => {
   await writeFile(resolve(envFile()), "OPENCLAW_GATEWAY_TOKEN=old-token-value-0123456789\n", "utf8");
   const ctx = stubContext({ running: true, hasReconcile: false });
   const phase = await rotateToken(ctx, { dryRun: false, keepExposure: false, tail: "500" });
-  checkTrue("a runtime that cannot recreate is told to run up by hand", phase.notes.some((line) => line.includes("./clawforge up")));
+  checkTrue("a runtime that cannot recreate is told to run up by hand", phase.notes.some((line) => line.includes(renderAdvice(command(["up"])))));
 });
 
 // --- audit: the security gate plus doctor --lint --------------------------------------------
@@ -310,7 +315,7 @@ await withDeployment(async () => {
 await withDeployment(async () => {
   const ctx = stubContext({ running: true, cliAnswers: { "security audit": JSON.stringify({ findings: [] }), "secrets audit": JSON.stringify({ findings: [] }) } });
   const { phase, security } = await runAudits(ctx);
-  checkTrue("the audit phase names how many findings and how many are blocking", phase.actions[0].includes("0 finding(s), 0 blocking"));
+  checkTrue("the audit phase names how many findings and how many are blocking", phase.actions[0].includes(auditFindingsSummary(0, 0)));
   check("the security report travels back to the caller", security.problems.length, 0);
 });
 
@@ -320,7 +325,7 @@ await withDeployment(async (dir) => {
   const ctx = stubContext({});
   const archiveDir = resolve(dir, "incidents", "preserve-dry-run");
   const preserved = await preserveEvidence(ctx, { dryRun: true, keepExposure: false, tail: "500" }, archiveDir);
-  checkTrue("dry-run: prints the plan and writes nothing", preserved.actions.some((line) => line.includes("would preserve")));
+  checkTrue("dry-run: prints the plan and writes nothing", preserved.actions.some((line) => line.includes(WOULD_PRESERVE)));
   check("dry-run: nothing listed as preserved", preserved.files, []);
 });
 
@@ -328,7 +333,7 @@ await withDeployment(async (dir) => {
   const ctx = stubContext({ captureSnapshot: async () => undefined });
   const archiveDir = resolve(dir, "incidents", "preserve-nothing-running");
   const preserved = await preserveEvidence(ctx, { dryRun: false, keepExposure: false, tail: "500" }, archiveDir);
-  checkTrue("nothing running to snapshot: noted, not fatal", preserved.notes.some((line) => line.includes("no pre-rotate evidence")));
+  checkTrue("nothing running to snapshot: noted, not fatal", preserved.notes.some((line) => line.includes(NO_PRE_ROTATE_EVIDENCE)));
   check("nothing listed as preserved", preserved.files, []);
 });
 
@@ -357,7 +362,7 @@ await withDeployment(async (dir) => {
   const { security } = await runAudits(ctx);
   const archiveDir = resolve(dir, "incidents", "collect-dry-run");
   const collected = await collectEvidence(ctx, { dryRun: true, keepExposure: false, tail: "500" }, archiveDir, [], security, { raw: "" });
-  checkTrue("dry-run: prints the plan and writes nothing", collected.actions.some((line) => line.includes("would collect")));
+  checkTrue("dry-run: prints the plan and writes nothing", collected.actions.some((line) => line.includes(WOULD_COLLECT)));
   check("dry-run: no archive path is reported", collected.archive, undefined);
 });
 
@@ -474,7 +479,7 @@ await withDeployment(async (dir) => {
     checkTrue("incident --dry-run with an unreachable target fails", failure instanceof IncidentPhaseFailure);
     checkTrue("the failure names the contain phase's transport error", (failure as Error).message.includes("unreachable"));
     const report = (failure as IncidentPhaseFailure).report;
-    check("the report still reaches the caller", report.phases[0].notes.some((note) => note.includes("contain failed unexpectedly")), true);
+    check("the report still reaches the caller", report.phases[0].notes.some((note) => note.includes(CONTAIN_FAILED)), true);
 
     // The control: a real run still proceeds to rotate over the same contain failure.
     let realRunFailed = false;
@@ -501,7 +506,7 @@ await withDeployment(async (dir) => {
     [["--tail", "abc"], "tail", false],
     [["--tail", ""], "tail", false],
     [["--tail=-1"], "tail", false],
-    [["--bogus"], undefined, true],
+    [["--bogus"], "--bogus", true],
   ] as const) {
     const contacts: string[] = [];
     const transport = new Proxy({} as Transport, {

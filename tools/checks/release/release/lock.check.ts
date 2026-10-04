@@ -8,17 +8,19 @@
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { compareLock, COMMIT_ADVICE, LOCK_VERSION, declarationChecksum, currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
-import { gitInitAdvice } from "#framework/integration/deployment/scaffold.ts";
+import { compareLock, COMMIT_ADVICE, COMMIT_ADVICE_TARGET, LOCK_VERSION, AGENT_BUNDLE_DRIFT, PREDATES_AGENT_BUNDLE, PREDATES_PLUGIN_PINNING, PREDATES_SKILL_PINNING, LOCK_NOT_WRITTEN, COULD_NOT_COMPARE, REASON_NOT_RUNNING, REASON_NEVER_BOOTSTRAPPED, DIFFERENCES_PHRASE, UNREAD_PHRASE, versionMismatchDetail, declarationChecksum, currentComposition, lock, lockFile } from "#framework/commands/management/lock.ts";
+import { gitInitAdvice, GIT_INIT_STEP } from "#framework/integration/deployment/scaffold.ts";
 import { checksumOfFileMap } from "#framework/service/checksums.ts";
 import type { DeploymentLock } from "#framework/commands/management/lock.ts";
-import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList } from "#framework/commands/management/extensions.ts";
+import { pluginsForLock, skillsForLock, parsePluginsList, parseSkillsList, pluginReinstall, skillReinstall, inventoryPrefix, NEVER_BOOTSTRAPPED_HINT, NOT_RUNNING_HINT, UNKNOWN_INVENTORY_TAIL, NO_LONGER_INSTALLED, REVIEW_BEFORE_REMOVAL } from "#framework/commands/management/extensions.ts";
+import { renderAdvice } from "#framework/core/io/invocation/render.ts";
 import type { LockPlugin, LockSkill } from "#framework/commands/management/extensions.ts";
 import { useDeployment } from "#framework/runtime/deployment.ts";
 import { monorepoRoot } from "#framework/core/env.ts";
 import type { Context } from "#framework/core/context.ts";
 import { withOutputSink } from "#framework/core/io/output.ts";
 import type { Problem } from "#framework/service/inspection.ts";
+import type { Advice } from "#framework/core/io/invocation/advice.ts";
 import type { BatchedCliResult } from "#framework/service/openclaw-cli.ts";
 import { NotBootstrapped } from "#framework/runtime/runtime.ts";
 import { check, finish } from "#checks/kit/harness.ts";
@@ -85,7 +87,7 @@ check("a secret no longer required is not", details({ secrets: ["OPENCLAW_GATEWA
 {
   const found = compareLock({ ...composition(), version: 99 }, composition());
   check("a lock from another format version is a single, clear finding", found.length, 1);
-  check("naming both versions", found[0].detail.includes("version 99") && found[0].detail.includes(`version ${LOCK_VERSION}`), true);
+  check("naming both versions", found[0].detail, versionMismatchDetail(99));
 }
 
 check("a missing lock is reported as missing, not as drift", compareLock(undefined, composition()).map((entry) => entry.code), ["LOCK_MISSING"]);
@@ -125,7 +127,7 @@ check(
 
   const edited = compareLock(withAgent(), withAgent({ "AGENTS.md": "9".repeat(64) }));
   check("an edited prompt is drift from the lock", edited.length, 1);
-  check("named as the agent bundle, not as served content", edited[0].detail.includes("agent bundle"), true);
+  check("named as the agent bundle, not as served content", edited[0].detail.includes(AGENT_BUNDLE_DRIFT), true);
   check("and the file is named", edited[0].detail.includes("AGENTS.md"), true);
 
   // The two halves are independent: content can change without the prompts, and the other
@@ -136,7 +138,7 @@ check(
     { ...withAgent(), recipes: { demo: { ...withAgent().recipes.demo, checksum: checksumOfFileMap(contentOnly), files: contentOnly } } },
   );
   check("served content and prompts are reported separately", both.length, 1);
-  check("and this one is about the content", both[0].detail.includes("agent bundle"), false);
+  check("and this one is about the content", both[0].detail.includes(AGENT_BUNDLE_DRIFT), false);
 }
 
 {
@@ -154,7 +156,7 @@ check(
 
   const found = compareLock(oldLock, nowWithBundle);
   check("a lock that predates bundle pinning is reported", found.length, 1);
-  check("saying what it does not cover", found[0].detail.includes("predates agent-bundle pinning"), true);
+  check("saying what it does not cover", found[0].detail.includes(PREDATES_AGENT_BUNDLE), true);
   check("and it is a warning, like every other lock finding", found[0].severity, "warning");
 
   // A recipe with no agent bundle has nothing to pin, so an absent checksum there is not a
@@ -222,14 +224,14 @@ check(
   {
     const found = compareLock(withExtensions([lockedPlugin], []), withExtensions([], []));
     check("a plugin removed since the lock is drift", found.map((entry) => entry.code), ["PLUGIN_DRIFT"]);
-    check("saying it is no longer installed", found[0].detail.includes("no longer installed"), true);
-    check("and naming the reinstall command", found[0].detail.includes("./clawforge cli plugins install"), true);
+    check("saying it is no longer installed", found[0].detail.includes(NO_LONGER_INSTALLED), true);
+    check("and naming the reinstall command", found[0].detail.includes(renderAdvice(pluginReinstall("@acme/tool", "1.0.0"))), true);
   }
 
   {
     const found = compareLock(withExtensions([], []), withExtensions([{ ...lockedPlugin, id: "another-tool", name: "@acme/another" }], []));
     check("a plugin installed since the lock is drift too", found.map((entry) => entry.code), ["PLUGIN_DRIFT"]);
-    check("but never proposed for removal — only for the reader to decide", found[0].detail.includes("review it"), true);
+    check("but never proposed for removal — only for the reader to decide", found[0].detail.includes(REVIEW_BEFORE_REMOVAL), true);
   }
 
   {
@@ -241,13 +243,13 @@ check(
   {
     const found = compareLock(withExtensions([], [lockedSkill]), withExtensions([], []));
     check("a skill removed since the lock is drift", found.map((entry) => entry.code), ["SKILL_DRIFT"]);
-    check("naming the reinstall command", found[0].detail.includes("./clawforge cli skills install"), true);
+    check("naming the reinstall command", found[0].detail.includes(renderAdvice(skillReinstall("acme-skill"))), true);
   }
 
   {
     const found = compareLock(withExtensions([], []), withExtensions([], [{ name: "another-skill", source: "git" }]));
     check("a skill installed since the lock is drift too", found.map((entry) => entry.code), ["SKILL_DRIFT"]);
-    check("but never proposed for removal either", found[0].detail.includes("review it"), true);
+    check("but never proposed for removal either", found[0].detail.includes(REVIEW_BEFORE_REMOVAL), true);
   }
 
   check("every plugin/skill finding is a warning, like every other lock finding", compareLock(withExtensions([lockedPlugin], []), withExtensions([], [])).every((entry) => entry.severity === "warning"), true);
@@ -261,8 +263,8 @@ check(
     const found = compareLock(oldLock, nowWithExtensions);
     const gaps = found.filter((entry) => entry.detail.includes("predates"));
     check("a lock that predates plugin/skill pinning is reported", gaps.length, 2);
-    check("naming plugins specifically", gaps.some((entry) => entry.detail.includes("predates plugin pinning")), true);
-    check("and skills specifically", gaps.some((entry) => entry.detail.includes("predates skill pinning")), true);
+    check("naming plugins specifically", gaps.some((entry) => entry.detail.includes(PREDATES_PLUGIN_PINNING)), true);
+    check("and skills specifically", gaps.some((entry) => entry.detail.includes(PREDATES_SKILL_PINNING)), true);
 
     // Nothing installed yet has nothing to pin, so an old lock is not reported as a gap.
     check("an old lock with nothing installed is not reported as a gap", compareLock(oldLock, withExtensions([], [])).filter((entry) => entry.detail.includes("predates")), []);
@@ -282,12 +284,11 @@ check(
 // that ignore rule makes impossible. Both sides name the same model: a deployment directory
 // is meant to become its own git repository.
 
-check("lock's advice does not read as committable in THIS repository", COMMIT_ADVICE.includes("commit it"), true);
-check("it says the deployment's own repository, not an unqualified one", COMMIT_ADVICE.includes("own git repository"), true);
+check("lock's advice names the deployment's own repository, not an unqualified one", COMMIT_ADVICE.includes(COMMIT_ADVICE_TARGET), true);
 
 const initAdvice = gitInitAdvice("demo");
 check("new-app's own note explains why (apps/ is gitignored here)", initAdvice.includes("gitignore"), true);
-check("and names the concrete command, not just the idea", initAdvice.includes("git init"), true);
+check("and names the concrete command, not just the idea", initAdvice.includes(GIT_INIT_STEP), true);
 check("and confirms secrets are already kept out of that new repository", initAdvice.includes(".env") && initAdvice.includes("secrets/"), true);
 
 // --- a recipes root that is not a directory must die naming it, not pin an empty lock -----
@@ -383,18 +384,18 @@ check("and confirms secrets are already kept out of that new repository", initAd
         let refusal = "";
         try { await withOutputSink(() => {}, () => lock(ctx, ["--json"])); }
         catch (error) { refusal = (error as Error).message; }
-        check(`${label}: writer refuses unknown inventory`, refusal.includes("lock not written") && scenario.unknown.every((key) => refusal.includes(`${key} list`)), true);
+        check(`${label}: writer refuses unknown inventory`, refusal.includes(LOCK_NOT_WRITTEN) && scenario.unknown.every((key) => refusal.includes(inventoryPrefix(key as "plugins" | "skills"))), true);
         check(`${label}: writer preserves exact prior bytes`, await readFile(lockFile(), "utf8"), priorBytes);
         const { output, failure } = await runCheck();
         const report = JSON.parse(output) as { problems: Problem[] };
-        check(`${label}: check fails on unknown inventory`, failure.includes("inventory read(s) could not be compared"), true);
+        check(`${label}: check fails on unknown inventory`, failure.includes(UNREAD_PHRASE), true);
         check(`${label}: unknown inventories are not counted as differences`, failure,
           `${report.problems.length > scenario.unknown.length ? `${report.problems.length - scenario.unknown.length} difference(s) from the lock; ` : ""}${scenario.unknown.length} inventory read(s) could not be compared (inventory not read)`);
         check(`${label}: check names only unknown inventories`,
           report.problems.filter((entry) => entry.code === "CLI_READ_FAILED").map((entry) =>
-            entry.detail.includes("plugins list") ? "plugins" : "skills"), scenario.unknown);
+            entry.detail.includes(inventoryPrefix("plugins")) ? "plugins" : "skills"), scenario.unknown);
         check(`${label}: unknown inventories do not imply deletion`,
-          report.problems.some((entry) => entry.detail.includes("no longer installed")), false);
+          report.problems.some((entry) => entry.detail.includes(NO_LONGER_INSTALLED)), false);
         check(`${label}: check also preserves prior bytes`, await readFile(lockFile(), "utf8"), priorBytes);
       }
     }
@@ -409,7 +410,7 @@ check("and confirms secrets are already kept out of that new repository", initAd
     try { await currentComposition(ctx, { includeExtensions: true }); }
     catch (error) { compositionRefusal = (error as Error).message; }
     check("composition callers without an outcome collector cannot silently accept unknown pins",
-      compositionRefusal.includes("plugins list") && compositionRefusal.includes("unknown"), true);
+      compositionRefusal.includes(inventoryPrefix("plugins")) && compositionRefusal.includes(UNKNOWN_INVENTORY_TAIL), true);
     slots = [success("plugins", []), success("skills", [])];
     await writeFile(lockFile(), JSON.stringify(baseline));
     const removedRun = await runCheck();
@@ -428,15 +429,16 @@ check("and confirms secrets are already kept out of that new repository", initAd
       const isRunning = state === true;
       wholeBatch = "throw";
       const down = await runCheck();
-      const doc = JSON.parse(down.output) as { problems: Problem[]; nextActions: string[] };
+      const doc = JSON.parse(down.output) as { problems: Problem[]; nextActions: string[]; next: Advice[] };
       const codes = doc.problems.map((entry) => entry.code);
       const unreadCode = state === "never" ? "NOT_BOOTSTRAPPED" : "GATEWAY_DOWN";
       check(`${name} instance with unreadable inventory fails the check`, down.failure !== "", true);
       check(`${name} instance: unreadable inventory is classified`, codes, isRunning ? ["CLI_READ_FAILED", "CLI_READ_FAILED"] : [unreadCode, unreadCode]);
-      check(`${name} instance: not-running detail`, down.output.includes("not running — start it or bootstrap first"), state === false);
-      check(`${name} instance: never-bootstrapped detail`, down.output.includes("has never been bootstrapped"), state === "never");
-      check(`${name} instance: nextActions`, doc.nextActions.includes("./clawforge bootstrap"), state === "never");
-      check(`${name} instance: nextActions never offer up for a never-bootstrapped one`, doc.nextActions.includes("./clawforge up"), state === false);
+      check(`${name} instance: not-running detail`, down.output.includes(NOT_RUNNING_HINT), state === false);
+      check(`${name} instance: never-bootstrapped detail`, down.output.includes(NEVER_BOOTSTRAPPED_HINT), state === "never");
+      check(`${name} instance: nextActions`, doc.next.some((entry) => entry.kind === "clawforge" && entry.argv[0] === "bootstrap"), state === "never");
+      check(`${name} instance: nextActions never offer up for a never-bootstrapped one`,
+        doc.next.some((entry) => entry.kind === "clawforge" && entry.argv[0] === "up"), state === false);
       // Unread is not a difference, in json/MCP as in text: the lock is present here, so nothing differs.
       check(`${name} instance: json failure wording`, down.failure, isRunning ? "2 inventory read(s) could not be compared (inventory not read)" : `2 inventory read(s) could not be compared (${state === "never" ? "instance never bootstrapped" : "instance is not running"})`);
     }
@@ -454,11 +456,11 @@ check("and confirms secrets are already kept out of that new repository", initAd
     wholeBatch = "throw";
     await rm(lockFile(), { force: true });
     const unread = await humanRun();
-    check("not running: unread inventories are named as not compared", unread.text.includes("could not compare — instance is not running:"), true);
+    check("not running: unread inventories are named as not compared", unread.text.includes(COULD_NOT_COMPARE + " — " + REASON_NOT_RUNNING + ":"), true);
     check("not running: a headline precedes the sections", unread.text.indexOf("==>") >= 0 && unread.text.indexOf("==>") < unread.text.indexOf("could not compare"), true);
     check("not running: both inventories listed", unread.text.match(/GATEWAY_DOWN/g)?.length, 2);
     check("not running: a missing lock is named in the summary, not the difference list", unread.text.match(/LOCK_MISSING/g)?.length ?? 0, 0);
-    check("not running: the summary is the failure alone, not repeated in the output", unread.text.includes("difference(s) from the lock"), false);
+    check("not running: the summary is the failure alone, not repeated in the output", unread.text.includes(DIFFERENCES_PHRASE), false);
     check("not running: one summary counting differences and unread separately", unread.failure, "no lock file to compare against; 2 inventory read(s) could not be compared (instance is not running)");
     check("not running: a missing lock is not counted as a difference", unread.failure.includes("difference(s)"), false);
     const jsonUnread = await runCheck();
@@ -468,7 +470,7 @@ check("and confirms secrets are already kept out of that new repository", initAd
     check("only unread inventories: no difference count", onlyUnread.failure, "2 inventory read(s) could not be compared (instance is not running)");
     running = "never";
     const neverRun = await humanRun();
-    check("never bootstrapped: text names it", neverRun.text.includes("could not compare — instance never bootstrapped:"), true);
+    check("never bootstrapped: text names it", neverRun.text.includes(COULD_NOT_COMPARE + " — " + REASON_NEVER_BOOTSTRAPPED + ":"), true);
     check("never bootstrapped: failure names it", neverRun.failure, "2 inventory read(s) could not be compared (instance never bootstrapped)");
     running = false;
     check("only unread inventories: no differences section", onlyUnread.text.includes("differences:"), false);

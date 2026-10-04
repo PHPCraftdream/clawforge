@@ -286,6 +286,10 @@ export const INIT_ARGUMENTS: CommandArgument[] = [
   },
 ];
 
+/** Fixed parts of init's own messages, exported so checks assert the same text the product
+ *  prints instead of restating it. */
+export const INIT_REFUSES_NOTE = "Refuses if app.ts already exists";
+
 /** The installed entry's own gate command, declared without side effects — the same shape
  *  makeVersionGateCommand and makeCompletionGateCommand offer, so the help surfaces and the
  *  checks read the declaration straight from here. `placement.localTypesOnly`/`placement.ancestor`
@@ -304,7 +308,7 @@ export function makeInitGateCommand(
       "that delegates to this package's CLI. Project MCP settings for Claude Code and Codex " +
       "are created automatically, without changing global client settings.\n" +
       "The port is randomized; it is not a host availability check. Bootstrap checks active Docker deployments on the target before preparing data or pulling an image.\n" +
-      "Refuses if app.ts already exists — run this once, then {clawforge bootstrap}. " +
+      `${INIT_REFUSES_NOTE} — run this once, then {clawforge bootstrap}. ` +
       "`init {--local}` in an already initialised directory only prints the editor-types npm line and writes nothing.",
     arguments: INIT_ARGUMENTS,
     run: async (args) => {
